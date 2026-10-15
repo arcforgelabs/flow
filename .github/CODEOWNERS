@@ -1,0 +1,9 @@
+# GitHub requests a review from these owners on pull requests that touch
+# these paths.
+*                       @IAMSamuelRodda
+
+# Release, CI and security policy carry extra weight: a change here alters what
+# gets published under @arcforgelabs/flow and ghcr.io/arcforgelabs/flow.
+/.github/               @IAMSamuelRodda
+/SECURITY.md            @IAMSamuelRodda
+/package.json           @IAMSamuelRodda
