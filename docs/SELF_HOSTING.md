@@ -5,6 +5,9 @@ installation pins one release by version and fingerprint, checks it before it
 runs, and upgrades by changing the pin. This is the same model as
 [Field](https://github.com/arcforgelabs/field/blob/main/docs/SELF_HOSTING.md).
 
+Flow needs a PostgreSQL database, given as `DATABASE_URL`. The server runs
+its migrations when it starts (`docs/DATA_MODEL.md`).
+
 Flow has no release yet. The release workflows (npm package with provenance,
 container image, GitHub Release with `release-manifest.json`) come before the
 first installation, and this guide fills in then.
