@@ -1,6 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import { sql } from 'drizzle-orm';
 import { pushInvoice } from './drafts.js';
+import { readPayments } from './ledger.js';
 import { createXeroRouter } from './routes.js';
 import { createXeroRuntime, requireXeroSettings } from './runtime.js';
 import { writesAllowed } from './settings.js';
@@ -9,7 +10,7 @@ import { writesAllowed } from './settings.js';
 // XERO_MODE says which Xero it acts on. Its tables are created only while it
 // is on (docs/INTEGRATIONS.md).
 
-export const XERO_TABLES = Object.freeze(['xero_connections', 'xero_contacts', 'xero_items', 'xero_sync_runs', 'xero_invoice_pushes']);
+export const XERO_TABLES = Object.freeze(['xero_connections', 'xero_contacts', 'xero_items', 'xero_sync_runs', 'xero_invoice_pushes', 'xero_payment_cursors']);
 
 // `runtime` is for tests. Otherwise start() builds it from the environment,
 // so a turned-off adapter never reads its settings, and a malformed setting
@@ -44,6 +45,9 @@ export function createXeroAdapter({ runtime: given = null } = {}) {
       // One issued invoice to a Xero draft (drafts.js). The Flow invoice id
       // and version are the idempotency key.
       pushInvoice: ({ organisationId, invoiceId, pushedBy = null }) => pushInvoice(database, current(), { organisationId, invoiceId, pushedBy }),
+      // Sales invoice payments changed since `since` (ledger.js). The answer's
+      // cursor is the next `since`.
+      pullPayments: ({ organisationId, since }) => readPayments(database, current(), organisationId, { since: new Date(since) }),
     },
     routes: ({ db, personAuth, log }) => createXeroRouter({ db, personAuth, runtime: current(), log }),
   };

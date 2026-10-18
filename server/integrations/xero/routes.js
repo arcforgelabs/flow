@@ -1,10 +1,11 @@
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import express from 'express';
 import { FlowError } from '../../core/errors.js';
-import { organisations } from '../../db/schema.js';
+import { billingObligations, organisations } from '../../db/schema.js';
 import { lastSync, listContacts, listItems, syncCatalogue } from './catalogue.js';
 import { createXeroClient } from './client.js';
 import { describePush, listPushes, MAX_BATCH, previewDrafts, pushDrafts } from './drafts.js';
+import { recordXeroEvidence, recordXeroPayments } from './ledger.js';
 import { decryptToken, deleteConnection, describeConnection, readConnection, saveConnection } from './connections.js';
 import { authorizeUrl, exchangeCode, fetchConnections, revokeToken, selectConnection } from './oauth.js';
 import { writesAllowed } from './settings.js';
@@ -22,6 +23,9 @@ import { writesAllowed } from './settings.js';
 //                                  would make, and what stops them (no Xero calls)
 //   POST /invoices/push            owner or admin: issued invoices to Xero drafts
 //   GET  /invoices/:invoiceId/pushes?organisationId=   any signed-in person
+//   POST /obligations/:obligationId/check   owner or admin: Xero's invoice for
+//                                  a billable job, recorded on the ledger
+//   POST /payments/sync            owner or admin: Xero payments to the ledger
 //
 // Only an owner, with a verified owner sign-in, can connect or disconnect.
 // The callback carries no Flow session: the one-use state from /connect,
@@ -208,6 +212,22 @@ export function createXeroRouter({ db, personAuth, runtime, log = console }) {
     const organisationId = await requireOrganisation(db, req.query.organisationId);
     const [invoiceId] = requireInvoiceIds([req.params.invoiceId], 'invoiceId');
     res.json({ ok: true, pushes: (await listPushes(db, organisationId, invoiceId)).map(describePush) });
+  }));
+
+  router.post('/obligations/:obligationId/check', ...manager, handle(log, async (req, res) => {
+    const organisationId = await requireOrganisation(db, req.body?.organisationId);
+    const [obligationId] = requireInvoiceIds([req.params.obligationId], 'obligationId');
+    const [obligation] = await db.select().from(billingObligations)
+      .where(and(eq(billingObligations.organisationId, organisationId), eq(billingObligations.id, obligationId)));
+    if (!obligation) throw Object.assign(new FlowError('not_found', 'obligation not found'), { status: 404 });
+    const row = await recordXeroEvidence(db, runtime, organisationId, obligation, { actor: `person:${req.person.id}` });
+    res.json({ ok: true, obligation: row });
+  }));
+
+  router.post('/payments/sync', ...manager, handle(log, async (req, res) => {
+    const organisationId = await requireOrganisation(db, req.body?.organisationId);
+    const result = await recordXeroPayments(db, runtime, organisationId, { actor: `person:${req.person.id}` });
+    res.json({ ok: true, ...result });
   }));
 
   return router;

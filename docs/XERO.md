@@ -208,6 +208,45 @@ pushedBy })` sends one issued invoice and answers as one entry above.
   a repeat never makes a second Xero invoice.
 - A preview never writes; only `push` does, and only for issued versions.
 
+## The billing ledger
+
+`server/integrations/xero/ledger.js` answers the billing obligation ledger
+(`server/core/ledger.js`) in its own evidence shapes.
+
+- **Does Xero hold an invoice for this job?** `xeroLiveCheck(db, runtime,
+  organisationId)` is the `liveCheck` for `draftInvoiceForObligation`. It
+  answers `{ state, accountingRef, accountingUrl, matchedBy, checkedAt }`.
+  `POST /api/xero/obligations/<id>/check` (owner or admin) runs it and records
+  the answer with `recordAccountingEvidence`.
+- **Payments.** `POST /api/xero/payments/sync` (owner or admin) reads Xero
+  sales payments changed since the last read (`xero_payment_cursors`; the
+  first read goes back 90 days) and records each with `recordPayment`. When
+  payments cover the total, the ledger queues the "paid" write-back. The
+  port's `pullPayments({ organisationId, since })` returns the payments in
+  `recordPayment`'s shape with a cursor.
+
+| `matchedBy` | Exact? | How Flow finds the Xero invoice |
+| --- | --- | --- |
+| `flow_invoice` | yes | Made by Flow from the job's Flow invoice (`xero_invoice_pushes`) |
+| `accounting_ref` | yes | The Xero invoice id the ledger already holds |
+| `source_invoice_ref` | yes | A Xero sales invoice whose number or reference is the work system's invoice number |
+| `reference` | no | A Xero invoice for the same customer with the job's case reference |
+| `several` | no | More than one Xero invoice answers |
+| `unsettled_push` | no | A push to Xero whose outcome is still unknown |
+
+The ledger records a match that is not exact as ambiguous, and any answer but
+`not_found` refuses a draft. A Xero error throws, and the ledger refuses the
+draft. Xero states map to the ledger's: `DRAFT` and `SUBMITTED` to
+`drafted`, `AUTHORISED` to `authorised` (or `part_paid` once money is paid),
+`PAID` to `paid`, `VOIDED` to `voided`, `DELETED` to `deleted`.
+`accountingUrl` is a Xero deep link for a person.
+
+A payment is recorded only when its Xero invoice ties to one job by
+`flow_invoice` or `accounting_ref`. Flow refreshes that job's Xero state
+first, so the ledger accepts it. Payments that tie to no job, and deleted
+payments, are listed in the answer and not recorded. The cursor moves only
+when no payment failed, so a failed one is read again.
+
 ## Rate limits and retries
 
 Every Xero call goes through `server/integrations/xero/governor.js`, per
