@@ -1,0 +1,12 @@
+node_modules/
+data/
+config.json
+config.local.json
+.env
+.env.*
+!.env.example
+coverage/
+.artifacts/
+# Replit
+attached_assets/
+.local/
