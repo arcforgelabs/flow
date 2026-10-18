@@ -21,11 +21,13 @@ paste a credential, in full or in part.
 - **One installation per lab.** Each installation runs with its own database,
   configuration and secrets. Installations never share data or credentials.
 - **People.** People sign in with Clerk. Flow's PostgreSQL holds each person's
-  role (`owner` or `staff`) and approval. Owner-only actions need a verified
-  owner sign-in.
-- **Machine access.** API tokens act as an operator of that installation, are
-  read only from the `Authorization` header, and are checked against the
-  holder's current access on every use.
+  role (`owner`, `admin` or `staff`) and access. A Clerk account with no Flow
+  role gets no access, and an installation is invitation only by default.
+  Owner-only actions need a verified owner sign-in (`docs/SELF_HOSTING.md`,
+  "Sign-in (Clerk)").
+- **Machine access.** The Flow API uses signed connector keys, never Clerk
+  sessions. Keys are read only from request headers and are checked against
+  the holder's current access on every use.
 - **Integrations.** Seazona, Xero and every later adapter reach the core only
   through the integration port. Their credentials are stored per
   organisation, encrypted, and are write-only in Settings.
