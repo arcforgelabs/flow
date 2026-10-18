@@ -14,9 +14,11 @@ Licence: MIT (`LICENSE`).
 This repository is the new home of Flow, with a new history. Code moves here
 from an earlier private codebase one module at a time (`CONTRIBUTING.md`,
 "Porting from the earlier codebase"). Today it holds the repository's rules,
-CI, the integration port, a health check, Clerk sign-in with roles kept in
-Flow, and the first part of the core: the PostgreSQL data model for
-organisations, contacts, the price list and invoices. It is not ready to run a lab.
+CI, the release track (npm, container image and GitHub Release, on a beta and
+a stable channel), the integration port, a health check, Clerk sign-in with
+roles kept in Flow, and the first part of the core: the PostgreSQL data model
+for organisations, contacts, the price list and invoices. It is not ready to
+run a lab.
 
 ## Documentation
 
@@ -28,7 +30,9 @@ organisations, contacts, the price list and invoices. It is not ready to run a l
 | `SECURITY.md` | How to report a security problem, the trust model, and the rules held hard |
 | `LICENSE` | MIT licence |
 | `docs/DATA_MODEL.md` | The PostgreSQL records, the rules the database holds, and how to change the schema |
-| `docs/SELF_HOSTING.md` | Running a pinned Flow release, the `deploy/replit/` template, and Clerk sign-in |
+| `docs/RELEASING.md` | Versions and channels, the release workflows, how to cut and roll back a release, and the one-time setup |
+| `docs/SELF_HOSTING.md` | Running a Flow release with Docker, Node or Replit, the update notice, and Clerk sign-in |
+| `docs/REPLIT.md` | A Replit workspace of this repository that follows a release channel (`FLOW_DEPLOY_REF`) |
 | `server/integrations/port.js` | The integration port every adapter implements |
 
 ## Getting started

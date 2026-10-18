@@ -1,21 +1,110 @@
 # Self-hosting Flow
 
 Run a published Flow release, not a branch of this repository. Each
-installation pins one release by version and fingerprint, checks it before it
-runs, and upgrades by changing the pin. This is the same model as
+installation pins one release by version and fingerprint, or follows a
+release channel, checks the release before it runs, and upgrades by changing
+the pin or publishing again. `docs/RELEASING.md` describes what a release
+publishes and how it is made. This is the same model as
 [Field](https://github.com/arcforgelabs/field/blob/main/docs/SELF_HOSTING.md).
 
-Flow needs a PostgreSQL database, given as `DATABASE_URL`. The server runs
-its migrations when it starts (`docs/DATA_MODEL.md`).
+Every installation needs the same things, whatever runs it:
 
-Flow has no release yet. The release workflows (npm package with provenance,
-container image, GitHub Release with `release-manifest.json`) come before the
-first installation, and this guide fills in then.
+- **PostgreSQL**: `DATABASE_URL`. The server runs its migrations when it
+  starts (`docs/DATA_MODEL.md`), so the first start creates the tables.
+- **Sign-in**: `FLOW_AUTH=clerk` and the settings in "Sign-in (Clerk)"
+  below. Without it, every person route answers 503.
+
+Keep every secret in your platform's secret store. Never put one in a file in
+a repository, including your own deploy repository.
+
+## Update notice
+
+An installation that runs a release (`GET /health` shows it as
+`build.release`) checks whether a newer release is out on its channel. When
+one is, the server logs `[flow] update available: <tag> (running <tag>,
+channel <channel>)` with links to the release notes and the upgrade steps,
+and an owner can read the same from `GET /api/updates`. The server checks at
+start and then at most every six hours (`server/update-check.js`), with an
+anonymous GET of public release data from GitHub, or npm when GitHub cannot
+answer. It sends nothing about the installation. `FLOW_UPDATE_CHECK=off`
+turns it off.
+
+The channel is `stable` unless the installation runs a beta, or
+`FLOW_DEPLOYED_REF` (Replit) says `beta`; `FLOW_UPDATE_CHANNEL=stable` or
+`beta` overrides it. A build that is not a release, such as a checkout of
+`main`, asks nothing.
+
+## Pin a release
+
+Each release's `release-manifest.json` (on its GitHub Release) records its
+npm integrity, its image digest and its commit.
+`deploy/replit/verify-release.mjs` turns one release into a lock file:
+
+```bash
+node deploy/replit/verify-release.mjs pin 2026.10.18
+```
+
+It downloads that release's manifest, checks the manifest against its
+`.sha256`, checks that npm serves the same integrity, and writes `flow.lock`
+(see `deploy/replit/flow.lock.example`). Commit `flow.lock` to your deploy
+repository. To upgrade, pin a newer version. To roll back, pin the earlier
+one.
+
+## Docker
+
+Run the image by the digest in `flow.lock`, after you verify GitHub's
+attestation for that digest:
+
+```bash
+gh attestation verify oci://ghcr.io/arcforgelabs/flow@sha256:<digest> --repo arcforgelabs/flow
+docker run -d -p 19300:19300 -e DATABASE_URL -e FLOW_AUTH=clerk \
+  -e CLERK_SECRET_KEY -e CLERK_PUBLISHABLE_KEY \
+  ghcr.io/arcforgelabs/flow@sha256:<digest>
+```
+
+The image listens on 19300 as an unprivileged user, with its code read only.
+`GET /health` names the commit it was built from (`build.revision`) and the
+release (`build.release`).
+
+## Node
+
+Install the exact version on Node 24. The package's shrinkwrap pins every
+dependency to the tree CI tested. Then check its signatures and provenance:
+
+```bash
+mkdir flow && cd flow
+npm init -y
+npm install --omit=dev --save-exact @arcforgelabs/flow@2026.10.18
+npm audit signatures
+```
+
+`npm audit signatures` checks the registry signature and the provenance
+attestation cryptographically. To check what the provenance claims (the
+commit, this repository and its release workflow) against your `flow.lock`,
+copy `deploy/replit/verify-release.mjs` from this repository next to your
+`flow.lock` and run `node verify-release.mjs verify <install-dir>`. Use your
+own copy, not one from the installed package: a package must not vouch for
+itself.
+
+Start it with the `flow-server` command, with the environment above:
+
+```bash
+DATABASE_URL=postgres://… npx flow-server
+```
+
+Run it under a supervisor (systemd, for example) that restarts it.
 
 ## Replit
 
-`deploy/replit/` is a template for a Replit deployment that runs a pinned
-release:
+There are two ways to run Flow on Replit:
+
+- **A workspace of this repository that follows a channel.** Import
+  `arcforgelabs/flow` into Replit and set the deployment secret
+  `FLOW_DEPLOY_REF=stable`. Each publish deploys the current stable release
+  from GitHub, after it checks the release manifest and CI. This is how
+  Field runs on Replit. `docs/REPLIT.md` is the runbook.
+- **A private deploy repository that pins one npm release.**
+  `deploy/replit/` is the template:
 
 | File | Does |
 | --- | --- |
@@ -26,10 +115,21 @@ release:
 | `flow.lock.example` | The shape of `flow.lock`. |
 | `.npmrc` | Lets npm install through Replit's package firewall. |
 
-To use it, create your own **private** deploy repository and copy the
-contents of `deploy/replit/` into its root. Your deploy repository holds your
-pin and your Replit settings; this public repository never does. Keep every
-secret in Replit Secrets.
+To use the template:
+
+1. Create your own **private** repository and copy the contents of
+   `deploy/replit/` into its root. Your deploy repository holds your pin and
+   your Replit settings; this public repository never does.
+2. Pin a release: `node verify-release.mjs pin <version>`, and commit
+   `flow.lock`.
+3. Import the repository into Replit. Add a PostgreSQL database, which sets
+   `DATABASE_URL`. Add the sign-in settings below as Secrets.
+4. Publish. The build log shows `Verified @arcforgelabs/flow@<version>` and
+   the commit, or `REFUSED:` with the reason.
+
+To upgrade, open a pull request in your deploy repository that changes
+`flow.lock` (`pin <newer version>`), merge it, and publish again. Before you
+upgrade, read the release's notes and the migrations in its manifest.
 
 ## Sign-in (Clerk)
 
