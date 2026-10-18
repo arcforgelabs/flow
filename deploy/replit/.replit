@@ -1,6 +1,7 @@
-# Replit template for running a pinned Flow release (docs/SELF_HOSTING.md).
-# Copy this folder into your own private deploy repository; do not deploy the
-# public Flow repository itself.
+# Replit template for running a pinned Flow npm release (docs/SELF_HOSTING.md).
+# Copy this folder into your own private deploy repository. To run a Replit
+# workspace of the Flow repository itself, which follows a release channel,
+# use the .replit at the repository's root instead (docs/REPLIT.md).
 modules = ["nodejs-24", "bash"]
 run = ["bash", "start.sh"]
 
