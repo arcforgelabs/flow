@@ -14,6 +14,12 @@ erDiagram
   price_items |o--o{ invoice_lines : "fills"
   invoices ||--o{ invoice_versions : "was sent as"
   people |o--o{ people : "invited"
+  organisations ||--o{ billing_obligations : tracks
+  contacts |o--o{ billing_obligations : "is billed for"
+  billing_obligations |o--o| invoices : "is invoiced by"
+  billing_obligations ||--o{ obligation_events : "is explained by"
+  billing_obligations ||--o{ obligation_payments : "is paid by"
+  billing_obligations ||--o{ obligation_writebacks : "reports back by"
 ```
 
 `people` lists who may sign in and their role (`owner`, `admin`, `staff`).
@@ -22,6 +28,38 @@ One installation serves one lab, so it is installation-wide.
 Each integration adapter owns its own tables, named after it (`seazona_…`).
 They exist only once the adapter has been on at a start, and they are not in
 `server/db/schema.js` (`docs/INTEGRATIONS.md`).
+
+## Billing obligation ledger
+
+One billable job in a work system is one `billing_obligations` row, keyed by
+`(organisation_id, source_system, source_job_ref)`. It stores what the work
+system reported (a case number, never patient data), what the accounting
+system reported, and how that evidence matched. `server/core/ledger.js` gives
+each obligation one view from that evidence only:
+
+```mermaid
+stateDiagram-v2
+  [*] --> pending: job observed
+  pending --> ready: accounting checked (not found), lines mapped, report fresh
+  ready --> drafted: guarded draft (live check finds no invoice)
+  drafted --> invoiced: accounting reports authorised
+  invoiced --> paid: payments cover the total
+  paid --> [*]: paid status written back to the work system
+  ready --> held: operator hold
+  held --> ready: released
+  drafted --> review_required: job changed, or evidence ambiguous or in conflict
+  invoiced --> review_required: invoice voided or deleted
+```
+
+- Accounting evidence counts only when it matches the job exactly
+  (`flow_invoice`, `source_invoice_ref` or `accounting_ref`). Any other match
+  makes the obligation `ambiguous`, for a person to resolve.
+- A payment counts only with an exact match and a confirmed invoice. A part
+  payment shows as `part_paid`.
+- When the payments cover the total, an `obligation_writebacks` row holds the
+  paid status for the work system, with the evidence: the invoice link and
+  each payment (date, amount, reference, reconciled or not). A failed
+  write-back stays and is tried again. It never changes the accounting record.
 
 ## Rules
 
@@ -33,6 +71,8 @@ They exist only once the adapter has been on at a start, and they are not in
 | A draft invoice can change. Issuing gives it the organisation's next number and stores the document exactly as sent in `invoice_versions`. Each document line keeps its price item's code (`itemCode`, null for a line typed by hand), so accounting software gets the item even after the price list changes. | `server/core/invoices.js` |
 | What was sent never changes: `invoice_versions` rows cannot be updated or deleted, lines change only on a draft, a number never changes, an issued invoice is voided and never deleted, and a void invoice is final. | Triggers in `0001_records_are_append_only.sql` |
 | A person's email is stored lower-case and is unique. A Clerk user links to at most one person. | Constraints on `people` |
+| One job gives one obligation. Its view comes only from stored evidence. A draft invoice is made only when the evidence allows it and a live accounting check just before the write finds no invoice; any doubt refuses it and records why. | `server/core/ledger.js` |
+| `obligation_events` rows cannot be updated or deleted. | Trigger in `0004_ledger_events_append_only.sql` |
 | To change an issued invoice, revise it to a draft and issue it again. It keeps its number and gets the next version. | `reviseInvoice` |
 
 ## Change the schema
