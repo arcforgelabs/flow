@@ -1,5 +1,6 @@
 import { fileURLToPath } from 'node:url';
 import { sql } from 'drizzle-orm';
+import { pushInvoice } from './drafts.js';
 import { createXeroRouter } from './routes.js';
 import { createXeroRuntime, requireXeroSettings } from './runtime.js';
 import { writesAllowed } from './settings.js';
@@ -8,7 +9,7 @@ import { writesAllowed } from './settings.js';
 // XERO_MODE says which Xero it acts on. Its tables are created only while it
 // is on (docs/INTEGRATIONS.md).
 
-export const XERO_TABLES = Object.freeze(['xero_connections', 'xero_contacts', 'xero_items', 'xero_sync_runs']);
+export const XERO_TABLES = Object.freeze(['xero_connections', 'xero_contacts', 'xero_items', 'xero_sync_runs', 'xero_invoice_pushes']);
 
 // `runtime` is for tests. Otherwise start() builds it from the environment,
 // so a turned-off adapter never reads its settings, and a malformed setting
@@ -40,6 +41,9 @@ export function createXeroAdapter({ runtime: given = null } = {}) {
         const { rows } = await database.execute(sql`select count(*)::int as connected from xero_connections where mode = ${settings.mode}`);
         return { ok: true, mode: settings.mode, writesAllowed: writesAllowed(settings), connected: rows[0].connected };
       },
+      // One issued invoice to a Xero draft (drafts.js). The Flow invoice id
+      // and version are the idempotency key.
+      pushInvoice: ({ organisationId, invoiceId, pushedBy = null }) => pushInvoice(database, current(), { organisationId, invoiceId, pushedBy }),
     },
     routes: ({ db, personAuth, log }) => createXeroRouter({ db, personAuth, runtime: current(), log }),
   };

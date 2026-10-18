@@ -15,6 +15,13 @@
       "when": 1792368060000,
       "tag": "0001_xero_catalogue",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792368120000,
+      "tag": "0002_xero_invoice_pushes",
+      "breakpoints": true
     }
   ]
 }

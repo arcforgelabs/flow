@@ -3,7 +3,7 @@ import { after, before, describe, test } from 'node:test';
 import { sql } from 'drizzle-orm';
 import { createIntegrations } from '../server/integrations/index.js';
 import { defineAdapter } from '../server/integrations/port.js';
-import { createXeroAdapter } from '../server/integrations/xero/index.js';
+import { createXeroAdapter, XERO_TABLES } from '../server/integrations/xero/index.js';
 import { decryptToken } from '../server/integrations/xero/connections.js';
 import { selectConnection } from '../server/integrations/xero/oauth.js';
 import { request } from './support/clerk.js';
@@ -88,7 +88,7 @@ describe('connecting Xero', { skip: skipWithoutDatabase }, () => {
     });
 
     test('a start creates every Xero table', async () => {
-      assert.deepEqual(await xeroTables(handle.db), ['xero_connections', 'xero_contacts', 'xero_items', 'xero_sync_runs']);
+      assert.deepEqual(await xeroTables(handle.db), [...XERO_TABLES].sort());
     });
 
     test('status needs a sign-in, and shows the mode and no connection yet', async () => {
