@@ -33,6 +33,7 @@ run a lab.
 | `docs/RELEASING.md` | Versions and channels, the release workflows, how to cut and roll back a release, and the one-time setup |
 | `docs/SELF_HOSTING.md` | Running a Flow release with Docker, Node or Replit, the update notice, and Clerk sign-in |
 | `docs/REPLIT.md` | A Replit workspace of this repository that follows a release channel (`FLOW_DEPLOY_REF`) |
+| `docs/INTEGRATIONS.md` | How an integration adapter is built, turned on and off, and owns its tables |
 | `server/integrations/port.js` | The integration port every adapter implements |
 
 ## Getting started

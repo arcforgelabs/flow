@@ -13,6 +13,10 @@ Every installation needs the same things, whatever runs it:
   starts (`docs/DATA_MODEL.md`), so the first start creates the tables.
 - **Sign-in**: `FLOW_AUTH=clerk` and the settings in "Sign-in (Clerk)"
   below. Without it, every person route answers 503.
+- **Integrations**: `FLOW_INTEGRATIONS`, the integrations to turn on,
+  separated by commas (for example `seazona,xero`). Unset: none. An unknown
+  name stops boot. An integration's tables are created at the first start
+  with it on, and turning it off never drops them (`docs/INTEGRATIONS.md`).
 
 Keep every secret in your platform's secret store. Never put one in a file in
 a repository, including your own deploy repository.
