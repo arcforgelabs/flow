@@ -1,0 +1,101 @@
+import assert from 'node:assert/strict';
+import { after, before, beforeEach, describe, test } from 'node:test';
+import { sql } from 'drizzle-orm';
+import { createSeazonaClient } from '../server/integrations/seazona/client.js';
+import { createSeazonaGovernor } from '../server/integrations/seazona/governor.js';
+import { createReplayFetch } from '../server/integrations/seazona/replay.js';
+import { resolveSeazonaSettings } from '../server/integrations/seazona/settings.js';
+import { skipWithoutDatabase } from './support/db.js';
+import { fakeClock, freshSeazonaDatabase } from './support/seazona.js';
+
+// Synthetic data only (CONTRIBUTING.md). The clock is fake: "waiting" moves it.
+describe('Seazona rate governor', { skip: skipWithoutDatabase }, () => {
+  let handle;
+  let db;
+  let clock;
+
+  before(async () => {
+    handle = await freshSeazonaDatabase();
+    db = handle.db;
+  });
+  after(async () => handle?.close());
+  beforeEach(async () => {
+    await db.execute(sql`truncate seazona_api_requests, seazona_api_governor`);
+    clock = fakeClock();
+  });
+
+  const governor = (options = {}) => createSeazonaGovernor({
+    db, clientKey: 'client-a', now: clock.now, sleepFn: clock.sleep, ...options,
+  });
+
+  test('requests are spaced out to stay inside the limit', async () => {
+    const gate = governor({ requestsPerMinute: 30 });
+    assert.equal(gate.minIntervalMs, 2_000);
+    const start = clock.now();
+    for (let i = 0; i < 5; i += 1) await gate.reserve();
+    assert.equal(clock.now() - start, 8_000);
+  });
+
+  test('no more than the limit is admitted in any minute, across two processes', async () => {
+    // Two governors on one database are two processes with one API client.
+    const one = governor({ requestsPerMinute: 3 });
+    const two = governor({ requestsPerMinute: 3 });
+    const times = [];
+    for (let i = 0; i < 4; i += 1) {
+      await (i % 2 ? two : one).reserve();
+      times.push(clock.now());
+    }
+    const { rows } = await db.execute(sql`select count(*)::int as n from seazona_api_requests`);
+    assert.equal(rows[0].n, 4);
+    // The fourth waits until the first has left the 60 second window.
+    assert.ok(times[3] - times[0] > 60_000, `fourth admitted after ${times[3] - times[0]} ms`);
+  });
+
+  test('a limit above 30 a minute is lowered to 30', () => {
+    assert.equal(governor({ requestsPerMinute: 60 }).limitPerMinute, 30);
+  });
+
+  test('a 429 cooldown holds the next request', async () => {
+    const gate = governor();
+    const { requestId } = await gate.reserve();
+    await gate.recordResponse({ requestId, path: '/v1/clients/', statusCode: 429, retryAfterMs: 30_000 });
+    const before429 = clock.now();
+    await gate.reserve();
+    assert.ok(clock.now() - before429 >= 30_000);
+    assert.ok((await gate.status()).lastDay.rateLimited === 1);
+  });
+
+  test('a request that cannot get a slot in time gives up with a named error', async () => {
+    const gate = governor({ requestsPerMinute: 1, maxWaitMs: 5_000 });
+    await gate.reserve();
+    await assert.rejects(gate.reserve(), { code: 'seazona_api_governor_timeout', kind: 'governor_timeout' });
+  });
+
+  test('telemetry names each failing path and keeps no host or query', async () => {
+    const fetchImpl = createReplayFetch({ responses: [
+      { path: 'orders/ORD-404', status: 404 },
+      { path: 'orders/ORD-1', status: 200, body: { id: 'ORD-1' } },
+    ] });
+    const settings = resolveSeazonaSettings({ SEAZONA_MODE: 'replay', SEAZONA_REPLAY_FILE: 'unused.json' });
+    const client = createSeazonaClient({ settings, db, fetchImpl, now: clock.now, sleepFn: clock.sleep });
+    for (let i = 0; i < 3; i += 1) await client.get('orders/ORD-404', { probe: 'x' }).catch(() => {});
+    await client.get('orders/ORD-1');
+    const month = await client.governor.summarise({ from: new Date(clock.now() - 30 * 86_400_000), to: new Date(clock.now() + 1) });
+    assert.equal(month.requests, 4);
+    assert.equal(month.failed, 3);
+    assert.deepEqual(month.failures, [{ path: '/v1/orders/ORD-404', statusCode: 404, failureKind: null, requests: 3 }]);
+    const { rows } = await db.execute(sql`select request_path from seazona_api_requests`);
+    assert.ok(rows.every((row) => !row.request_path.includes('?') && !row.request_path.includes('replay')));
+  });
+
+  test('telemetry older than the retention is removed', async () => {
+    const gate = governor({ telemetryRetentionMs: 86_400_000 });
+    const old = await gate.reserve();
+    await gate.recordResponse({ requestId: old.requestId, path: '/v1/products/', statusCode: 200 });
+    clock.advance(2 * 86_400_000);
+    const fresh = await gate.reserve();
+    await gate.recordResponse({ requestId: fresh.requestId, path: '/v1/products/', statusCode: 200 });
+    const { rows } = await db.execute(sql`select count(*)::int as n from seazona_api_requests`);
+    assert.equal(rows[0].n, 1);
+  });
+});
