@@ -5,11 +5,12 @@ import { seedFirstOwner } from './auth/people.js';
 import { createPersonAuth } from './auth/session.js';
 import { resolveSignInSettings } from './auth/settings.js';
 import { migrateDatabase, openDatabase } from './db/index.js';
+import { createIntegrations } from './integrations/index.js';
 import { createUpdateChecker, UPDATE_CHECK_INTERVAL_MS } from './update-check.js';
 
 const port = Number(process.env.FLOW_PORT || process.env.PORT || 19300);
 
-// Sign-in settings first: a malformed setting stops boot before anything runs.
+// Settings first: a malformed setting stops boot before anything runs.
 let settings;
 try {
   settings = resolveSignInSettings();
@@ -17,11 +18,22 @@ try {
   console.error(`[auth] ${error.message}`);
   process.exit(1);
 }
+let integrations;
+try {
+  integrations = createIntegrations();
+} catch (error) {
+  console.error(`[integrations] ${error.message}`);
+  process.exit(1);
+}
 
 // Flow's records live in PostgreSQL. Migrations run before the server accepts
-// requests, so a release never serves an older schema.
+// requests, so a release never serves an older schema. Then each enabled
+// integration's own tables, and no others (docs/INTEGRATIONS.md).
 const database = openDatabase();
 await migrateDatabase(database.db);
+await integrations.start(database.db);
+const integrationsOn = integrations.list().filter((a) => a.enabled).map((a) => a.id);
+console.log(`[integrations] on: ${integrationsOn.join(', ') || 'none'} (FLOW_INTEGRATIONS)`);
 
 let auth = null;
 if (settings.mode === 'clerk') {

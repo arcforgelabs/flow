@@ -19,6 +19,10 @@ erDiagram
 `people` lists who may sign in and their role (`owner`, `admin`, `staff`).
 One installation serves one lab, so it is installation-wide.
 
+Each integration adapter owns its own tables, named after it (`seazona_…`).
+They exist only once the adapter has been on at a start, and they are not in
+`server/db/schema.js` (`docs/INTEGRATIONS.md`).
+
 ## Rules
 
 | Rule | Where it is held |
@@ -43,5 +47,6 @@ One installation serves one lab, so it is installation-wide.
 
 Tests that need PostgreSQL read `FLOW_TEST_DATABASE_URL`. Setup drops and
 recreates the whole `public` schema, so point it only at a throwaway database.
+For the same reason `npm test` runs one test file at a time.
 Outside CI those tests skip when it is unset; CI runs them against a
 PostgreSQL service.
