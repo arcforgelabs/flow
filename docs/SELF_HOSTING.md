@@ -84,9 +84,9 @@ Keep these in the installation's secret store, never in a repository.
 | `CLERK_PROXY_URL` | set by Replit | On a published Replit app. Flow serves Clerk's Frontend API on that path. |
 | `FLOW_PUBLIC_SIGN_UP` | configuration | `on` lets strangers ask for access. Unset or `off`: invitation only. |
 | `FLOW_FIRST_OWNER_EMAIL` | configuration | The first owner's email. Used only while there is no owner. |
-| `FLOW_OWNER_GOOGLE_DOMAINS` | configuration | Your Google Workspace domain, for example `example.com`. Comma-separated. No default: unset turns the Google Workspace owner path off. |
+| `FLOW_OWNER_GOOGLE_DOMAINS` | configuration | Your Google Workspace domain, for example `example.com`. Comma-separated. Required on Replit's managed Clerk: unset, no owner can manage people. No default. |
 | `FLOW_OWNER_MFA_MAX_AGE` | configuration | How long a Clerk second factor counts for owner actions. Default `12h`. |
-| `FLOW_PUBLIC_ORIGIN` | configuration | The published `https://` origin. Clerk then accepts only sessions minted for it. Leave unset in a development workspace. |
+| `FLOW_PUBLIC_ORIGIN` | configuration | The published app's `https://` origin: its `*.replit.app` address, or a custom domain if it has one. Clerk then accepts only sessions minted for it. Leave unset in a development workspace. |
 
 Boot stops if a setting is malformed or a key is missing. Error messages name
 the variable, never its value.
@@ -95,22 +95,27 @@ the variable, never its value.
 
 Owner actions need one of these:
 
-- **(a) A second factor.** The Clerk session passed a second factor within
-  `FLOW_OWNER_MFA_MAX_AGE`. This needs a Clerk application with MFA, which
-  Replit's managed Clerk does not have.
-- **(b) Google Workspace.** The owner's Clerk account has a verified Google
-  account with the owner's Flow email, on a domain in
+- **(a) Google Workspace. This is the main path.** The owner's Clerk account
+  has a verified Google account with the owner's Flow email, on a domain in
   `FLOW_OWNER_GOOGLE_DOMAINS`, and no password. Google, and the 2-Step
-  Verification its Workspace enforces, is then the only way into the account.
+  Verification that the Workspace administrator enforces in Google Admin, is
+  then the only way into the account. The second factor lives in Google, not
+  in Clerk.
+- **(b) A Clerk second factor.** The Clerk session passed a second factor
+  within `FLOW_OWNER_MFA_MAX_AGE`. Only an installation with its own Clerk
+  application and MFA turned on has this (below). Replit's managed Clerk has
+  no MFA.
 
 Otherwise the action gets `403 owner_verification_required`. If Clerk cannot
 be asked, it gets `503`, never a pass.
 
 ### Replit's managed Clerk
 
-This is the same model as
+This is the main setup, and the same model as
 [Field](https://github.com/arcforgelabs/field/blob/main/docs/REPLIT.md)
-("Sign-in (Clerk)").
+("Sign-in (Clerk)"). It works on the app's plain `*.replit.app` address. A
+custom domain is optional, and no DNS change is needed: Replit's managed Clerk
+serves Clerk through the app's own address (`CLERK_PROXY_URL`).
 
 1. In the Replit workspace, open **Tools > Users & Auth** and add Clerk.
    Replit makes the Clerk instances (development and production) and stores
@@ -119,11 +124,13 @@ This is the same model as
 2. In the Auth pane's **Configure** tab, turn on **Google** only. Turn off
    email and password, email codes and email links: each is a way in without
    Google's 2-Step Verification.
-3. In Google Admin, enforce **2-Step Verification** for your Workspace
-   domain.
+3. **Owner step, in Google Admin**: enforce **2-Step Verification** for
+   your Workspace domain (Security > Authentication > 2-Step Verification).
+   Flow's owner check relies on it.
 4. Set `FLOW_AUTH=clerk`, `FLOW_OWNER_GOOGLE_DOMAINS=<your domain>` and
-   `FLOW_FIRST_OWNER_EMAIL=<owner's email>` as configuration values. Set
-   `FLOW_PUBLIC_ORIGIN` on the published app only.
+   `FLOW_FIRST_OWNER_EMAIL=<owner's email>` as configuration values, never
+   in a repository. On the published app only, set `FLOW_PUBLIC_ORIGIN` to its
+   address, for example `https://<app>.replit.app`.
 5. Restart. The boot log names the settings it used, never a key.
 6. The owner opens `/sign-in` and signs in with Google. The People list
    shows when the owner sign-in is verified. Invite the other people there.
@@ -133,10 +140,19 @@ protection comes from Google Workspace. People whose email is not on the
 Workspace domain can still be `admin` or `staff`, protected by their own
 Google account's settings.
 
+### Optional: a custom domain
+
+A custom domain is not needed. To add one, connect it in Replit's deployment
+settings, then set `FLOW_PUBLIC_ORIGIN` to the new `https://` origin and
+restart.
+
 ### Your own Clerk application (Clerk MFA)
 
 An installation that must require MFA in Clerk itself uses its own Clerk
-application instead of Replit's managed one:
+application instead of Replit's managed one. Clerk's production instances
+need DNS records on a domain the operator controls, so this route needs a
+custom domain. An installation on a plain `*.replit.app` address uses
+Replit's managed Clerk and Google Workspace instead.
 
 1. Create an application at [dashboard.clerk.com](https://dashboard.clerk.com),
    owned by the organisation that runs the installation.
@@ -149,7 +165,7 @@ application instead of Replit's managed one:
 5. Put the instance's keys in `CLERK_SECRET_KEY` and `CLERK_PUBLISHABLE_KEY`
    (not through Replit's Users & Auth pane), and set `FLOW_AUTH=clerk`.
 
-Owners then pass path (a) on every sign-in, and `FLOW_OWNER_GOOGLE_DOMAINS`
+Owners then pass path (b) on every sign-in, and `FLOW_OWNER_GOOGLE_DOMAINS`
 can stay unset.
 
 ### Machine access
@@ -168,4 +184,5 @@ against a real Clerk instance:
 - the Clerk user shape Replit's managed instance returns for a Google-only
   user;
 - the sign-in widget with `transferable: false` on Replit's managed instance;
-- how many proxies Replit puts in front of a published app (Flow trusts one).
+- how many proxies Replit puts in front of a published app (Flow trusts one);
+- sign-in through `CLERK_PROXY_URL` on a published `*.replit.app` address.

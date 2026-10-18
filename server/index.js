@@ -44,7 +44,16 @@ if (settings.mode === 'clerk') {
       });
     }
   }
-  console.log(`[auth] Clerk sign-in on (CLERK_SECRET_KEY, ${keys.publishableSource}); public sign-up ${settings.publicSignUp ? 'on' : 'off'}; owner actions: second factor within ${settings.ownerMfaMaxAgeMinutes} min${settings.ownerGoogleDomains.length ? `, or Google Workspace sign-in on ${settings.ownerGoogleDomains.join(', ')} with no password` : ' (FLOW_OWNER_GOOGLE_DOMAINS unset: Google Workspace path off)'}${proxyPath ? `; Clerk proxied at ${proxyPath}` : ''}`);
+  const ownerPaths = [
+    ...(settings.ownerGoogleDomains.length ? [`Google Workspace sign-in on ${settings.ownerGoogleDomains.join(', ')} with no password`] : []),
+    `a Clerk second factor within ${settings.ownerMfaMaxAgeMinutes} min`,
+  ];
+  console.log(`[auth] Clerk sign-in on (CLERK_SECRET_KEY, ${keys.publishableSource}); public sign-up ${settings.publicSignUp ? 'on' : 'off'}; owner actions: ${ownerPaths.join(', or ')}${proxyPath ? `; Clerk proxied at ${proxyPath}` : ''}`);
+  // Replit's managed Clerk has no MFA, so there the Google Workspace path is
+  // the only way an owner can manage people.
+  if (!settings.ownerGoogleDomains.length && (process.env.REPL_ID || process.env.REPLIT_DEPLOYMENT)) {
+    console.warn('[auth] FLOW_OWNER_GOOGLE_DOMAINS is unset: on Replit\'s managed Clerk no owner can manage people (docs/SELF_HOSTING.md, "Sign-in (Clerk)")');
+  }
 } else {
   console.log('[auth] sign-in off (FLOW_AUTH unset): person routes answer 503');
 }
