@@ -16,11 +16,14 @@ import { rateLimit } from './rate-limit.js';
 // `clerkProxyRateLimitPerMinute` for Clerk's Frontend API, which a signed-in
 // browser calls often. `build` is what GET /health reports
 // (server/deployed-build.js); `updates` is a server/update-check.js checker.
+// `integrations` is the started registry (server/integrations/index.js); each
+// adapter's own routes are mounted under /api/<id>.
 export function createApp({
   build = deployedBuildStatus(),
   database = null,
   auth = null,
   updates = null,
+  integrations = null,
   trustProxy = false,
   rateLimitPerMinute = 120,
   signInRateLimitPerMinute = 30,
@@ -70,6 +73,10 @@ export function createApp({
         error: 'Sign-in is not configured on this installation (FLOW_AUTH is unset).',
       }));
     }
+  }
+
+  for (const { path, handler } of integrations?.routes({ db: database?.db ?? null, personAuth: auth?.personAuth ?? null, log }) ?? []) {
+    app.use(path, handler);
   }
 
   app.use(createSignInRouter({
