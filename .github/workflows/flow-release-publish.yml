@@ -217,11 +217,12 @@ jobs:
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
           COMMIT: ${{ needs.checks.outputs.commit }}
+          VERSION: ${{ needs.checks.outputs.version }}
           DATABASE_URL: postgres://flow:flow@localhost:5432/flow_smoke
         run: |
           set -euo pipefail
           docker pull "${IMAGE}@${DIGEST}"
-          scripts/release/image-smoke.sh "${IMAGE}@${DIGEST}" "$COMMIT"
+          scripts/release/image-smoke.sh "${IMAGE}@${DIGEST}" "$COMMIT" "v${VERSION}"
 
       - name: Tag the verified digest for its channel
         id: channel

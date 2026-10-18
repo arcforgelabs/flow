@@ -10,6 +10,9 @@ import { freshDatabase, skipWithoutDatabase } from './support/db.js';
 // Clerk sign-in against PostgreSQL, with Clerk faked (no keys, no network).
 // Synthetic people only (CONTRIBUTING.md).
 const OWNER = 'owner@example.test';
+// A stand-in for server/update-check.js: no network.
+const UPDATE_STATUS = { enabled: true, channel: 'stable', current: 'v2026.10.18', latest: 'v2026.10.19', updateAvailable: true };
+const updates = { status: async () => UPDATE_STATUS };
 
 function signInApp(handle, clerk, { publicSignUp = false } = {}) {
   const settings = { mode: 'clerk', keys: { publishableKey: TEST_PUBLISHABLE_KEY, proxyUrl: null }, publicSignUp };
@@ -21,7 +24,7 @@ function signInApp(handle, clerk, { publicSignUp = false } = {}) {
     ownerMfaMaxAgeMinutes: 60,
     log: { info() {}, warn() {}, error() {} },
   });
-  return createApp({ database: handle, auth: { settings, clerk, personAuth }, log: { error() {} } });
+  return createApp({ database: handle, auth: { settings, clerk, personAuth }, updates, log: { error() {} } });
 }
 
 describe('Clerk sign-in', { skip: skipWithoutDatabase }, () => {
@@ -134,6 +137,19 @@ describe('Clerk sign-in', { skip: skipWithoutDatabase }, () => {
     assert.equal(res.status, 403);
     assert.equal(res.body.code, 'owner_required');
     assert.equal((await request(app, '/api/people', { token: adminToken })).status, 403);
+  });
+
+  test('only an owner sees whether a newer release is out', async () => {
+    const owner = await request(app, '/api/updates', { token: ownerToken });
+    assert.equal(owner.status, 200);
+    assert.deepEqual(owner.body, { ok: true, ...UPDATE_STATUS });
+
+    await request(app, '/api/people', { token: ownerToken, method: 'POST', body: { email: 'updates-staff@example.test', role: 'staff' } });
+    const staffToken = clerk.signIn(await clerk.findUserIdByEmail('updates-staff@example.test'));
+    const staff = await request(app, '/api/updates', { token: staffToken });
+    assert.equal(staff.status, 403);
+    assert.equal(staff.body.code, 'role_required');
+    assert.equal((await request(app, '/api/updates')).status, 401);
   });
 
   test('owner actions need a verified owner sign-in', async () => {
