@@ -88,7 +88,7 @@ describe('connecting Xero', { skip: skipWithoutDatabase }, () => {
     });
 
     test('a start creates every Xero table', async () => {
-      assert.deepEqual(await xeroTables(handle.db), ['xero_connections']);
+      assert.deepEqual(await xeroTables(handle.db), ['xero_connections', 'xero_contacts', 'xero_items', 'xero_sync_runs']);
     });
 
     test('status needs a sign-in, and shows the mode and no connection yet', async () => {

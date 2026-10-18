@@ -80,3 +80,14 @@ export async function seedLab(handle, clerk) {
   const staffToken = clerk.signIn(clerk.addUser({ email: STAFF }));
   return { organisation, owner, ownerToken, staffToken };
 }
+
+// A stored connection with a fresh access token in memory, so a test spends
+// no replayed token calls.
+export async function connectDirectly(handle, runtime, organisationId) {
+  const { saveConnection } = await import('../../server/integrations/xero/connections.js');
+  await saveConnection(handle.db, {
+    organisationId, mode: runtime.settings.mode, tenantId: TENANT, tenantName: 'Example Lab (Demo)',
+    scope: null, refreshToken: 'synthetic-refresh-0', connectedBy: null, key: runtime.settings.tokenKey,
+  });
+  runtime.remember(organisationId, { access_token: 'synthetic-access-0', expires_in: 1800 });
+}

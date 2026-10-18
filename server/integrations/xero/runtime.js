@@ -30,6 +30,20 @@ export function createXeroRuntime({ settings, fetch, now = Date.now, log = conso
   const states = createStateStore({ now });
   const accessTokens = new Map(); // organisation id -> { token, expiresAt }
   const refreshing = new Map(); // organisation id -> promise
+  const queues = new Map(); // organisation id -> tail of its work queue
+
+  // Runs heavy Xero work for one organisation one at a time, in order: a
+  // sync and a batch of drafts draw on the same call budget, and running them
+  // together only buys 429s.
+  function serial(organisationId, fn) {
+    const run = (queues.get(organisationId) ?? Promise.resolve()).then(fn);
+    const tail = run.catch(() => {});
+    queues.set(organisationId, tail);
+    tail.then(() => {
+      if (queues.get(organisationId) === tail) queues.delete(organisationId);
+    });
+    return run;
+  }
 
   function remember(organisationId, tokens) {
     const seconds = Number(tokens.expires_in) || 1800;
@@ -112,6 +126,7 @@ export function createXeroRuntime({ settings, fetch, now = Date.now, log = conso
     remember,
     forget: (organisationId) => accessTokens.delete(organisationId),
     clientFor,
+    serial,
     assertEnvironment,
     assertWritesAllowed,
     log,
