@@ -186,3 +186,20 @@ The workspace tracks `main` on
 Nothing commits to `main` directly; the ruleset on `main` refuses a direct
 push (`CONTRIBUTING.md`, "Merging to main"). Work on a branch, open a pull
 request, merge it on GitHub, then pull. Publishing does not need the pull.
+
+- `scripts/github-sync.sh status`: remote, ahead/behind, and whether
+  `GITHUB_TOKEN` works.
+- `scripts/github-sync.sh pull`: fast-forward `main` from GitHub. It needs no
+  token for a public repository. It drops Replit's "Published your App"
+  commits when together they change no files, and stops if a local commit
+  changes files.
+- `scripts/github-sync.sh open-pr "<title>" [body-file]`: push the current
+  branch and open a pull request.
+- `scripts/github-sync.sh handoff`: what to click in the Git pane when no
+  token is set.
+
+`GITHUB_TOKEN` (Replit Secret) is needed only to push or open pull requests
+from the workspace: a fine-grained token scoped to this repository only, with
+Contents and Pull requests read/write. An installation that only follows
+releases needs none. Replit Agent reads `replit.md`, and its GitHub
+instructions are in `.agents/skills/github-sync/SKILL.md`.
