@@ -1,0 +1,73 @@
+{
+  "description": "Synthetic Seazona answers for one small lab. Every name, number and amount is made up (CONTRIBUTING.md).",
+  "responses": [
+    {
+      "path": "invoices/",
+      "query": { "lastModified": "*" },
+      "body": [
+        { "id": "INV-ID-1", "invoiceNumber": 5001, "clientId": "CL-1", "company": "Example Practice", "fullName": "Dr Example", "patient": "Synthetic Patient A", "status": "Open", "due": "31/10/2026", "lastModified": "2026-10-01T09:00:00Z", "subtotal": 220, "tax": 22, "total": 242 }
+      ]
+    },
+    {
+      "path": "invoices/INV-ID-1",
+      "body": {
+        "id": "INV-ID-1", "invoiceNumber": 5001, "clientId": "CL-1", "accountNumber": "ACC-1", "company": "Example Practice", "fullName": "Dr Example", "patient": "Synthetic Patient A", "status": "Open", "invoiceDate": "01/10/2026", "due": "31/10/2026", "lastModified": "2026-10-01T09:00:00Z",
+        "productServiceItems": [{ "id": "P-CROWN", "name": "Example crown", "code": "CRN", "price": 230, "taxable": true }],
+        "discountItems": [{ "id": "D-1", "name": "Loyalty discount", "amount": 10 }],
+        "subtotal": 220, "tax": 22, "total": 242, "discounts": 10
+      }
+    },
+    {
+      "path": "orders/",
+      "query": { "ordered": "*" },
+      "body": [
+        { "id": "ORD-1001", "invoiceNumber": 5001, "company": "Example Practice", "clientName": "Dr Example", "patient": "Synthetic Patient A", "status": "Complete", "department": "Crown and bridge", "ordered": "29/09/2026", "due": "06/10/2026" },
+        { "id": "ORD-1002", "company": "Another Practice", "clientName": "Dr Sample", "patient": "Synthetic Patient B", "status": "In Production", "department": "Dentures", "ordered": "30/09/2026", "due": "08/10/2026" }
+      ]
+    },
+    {
+      "path": "orders/ORD-1001",
+      "body": {
+        "id": "ORD-1001", "invoiceNumber": 5001, "clientId": "CL-1", "company": "Example Practice", "clientName": "Dr Example", "patient": "Synthetic Patient A", "status": "Complete", "department": "Crown and bridge", "ordered": "29/09/2026", "due": "06/10/2026", "lastModified": "2026-10-01T08:00:00Z",
+        "notes": "Synthetic clinical note that Flow must not keep",
+        "files": [{ "name": "scan.stl", "url": "https://files.example.test/scan.stl" }],
+        "products": [{ "id": "P-CROWN", "code": "CRN", "name": "Example crown", "price": 230, "taxable": true, "tooth": 14 }]
+      }
+    },
+    {
+      "path": "orders/ORD-1002",
+      "body": {
+        "id": "ORD-1002", "clientId": "CL-2", "company": "Another Practice", "clientName": "Dr Sample", "patient": "Synthetic Patient B", "status": "In Production", "department": "Dentures", "ordered": "30/09/2026", "due": "08/10/2026", "lastModified": "2026-10-01T08:30:00Z",
+        "products": [{ "id": "P-DENT", "code": "DEN", "name": "Example denture", "price": 450.5, "taxable": true }]
+      }
+    },
+    {
+      "path": "clients/",
+      "body": [
+        { "id": "CL-1", "accountNumber": "ACC-1", "company": "Example Practice", "fullName": "Dr Example", "email": "accounts@example.test", "lastModified": "2026-09-01T00:00:00Z" },
+        { "id": "CL-2", "accountNumber": "ACC-2", "company": "Another Practice", "fullName": "Dr Sample", "email": "office@example.test", "lastModified": "2026-09-02T00:00:00Z" }
+      ]
+    },
+    {
+      "path": "clients/CL-1",
+      "body": { "id": "CL-1", "accountNumber": "ACC-1", "company": "Example Practice", "fullName": "Dr Example", "email": "accounts@example.test", "phone1": "00 0000 0000", "address1": "1 Example Street", "city": "Exampletown", "region": "EX", "postalCode": "0000", "countryCode": "AU", "taxRate": 10, "discontinued": false, "deliveryNotes": "Synthetic note that Flow must not keep", "doctors": [{ "id": "DR-1", "fullName": "Dr Example", "phone": "00 0000 0001", "notes": "Synthetic note" }], "lastModified": "2026-09-01T00:00:00Z" }
+    },
+    {
+      "path": "clients/CL-2",
+      "body": { "id": "CL-2", "accountNumber": "ACC-2", "company": "Another Practice", "fullName": "Dr Sample", "email": "office@example.test", "discontinued": false, "doctors": [], "lastModified": "2026-09-02T00:00:00Z" }
+    },
+    {
+      "path": "products/",
+      "body": [
+        { "id": "P-CROWN", "code": "CRN", "name": "Example crown", "type": "product", "price": 230, "taxable": true },
+        { "id": "P-DENT", "code": "DEN", "name": "Example denture", "type": "product", "price": 450.5, "taxable": true }
+      ]
+    },
+    {
+      "path": "users/",
+      "body": [
+        { "id": "U-1", "fullName": "Example Technician", "email": "tech@example.test" }
+      ]
+    }
+  ]
+}

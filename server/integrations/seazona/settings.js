@@ -77,8 +77,51 @@ export function resolveSeazonaSettings(env = process.env) {
     telemetryRetentionMs: clampInt(env.SEAZONA_API_TELEMETRY_RETENTION_DAYS, 35, 1, 90) * DAY_MS,
   };
 
+  const MINUTE = 60_000;
+  const ms = (name, fallback, min, max) => clampInt(env[name], fallback, min, max);
+  const sync = {
+    // How often each lane runs in live mode, and how old its data may get
+    // before /health calls it stale.
+    lanes: {
+      invoices: { cadenceMs: ms('SEAZONA_INVOICE_CADENCE_MS', 2 * MINUTE, MINUTE, DAY_MS), freshnessMs: 10 * MINUTE },
+      orders_recent: { cadenceMs: ms('SEAZONA_ORDER_CADENCE_MS', 5 * MINUTE, MINUTE, DAY_MS), freshnessMs: 15 * MINUTE },
+      orders_active: { cadenceMs: ms('SEAZONA_ACTIVE_ORDER_CADENCE_MS', 5 * MINUTE, MINUTE, DAY_MS), freshnessMs: 30 * MINUTE },
+      clients: { cadenceMs: ms('SEAZONA_CLIENT_CADENCE_MS', 30 * MINUTE, MINUTE, DAY_MS), freshnessMs: 60 * MINUTE },
+      products: { cadenceMs: ms('SEAZONA_REFERENCE_CADENCE_MS', DAY_MS, MINUTE, 30 * DAY_MS), freshnessMs: 2 * DAY_MS },
+      users: { cadenceMs: ms('SEAZONA_REFERENCE_CADENCE_MS', DAY_MS, MINUTE, 30 * DAY_MS), freshnessMs: 2 * DAY_MS },
+    },
+    // Re-read this much before a lastModified cursor, so a change written
+    // while the last run was reading is not missed.
+    cursorOverlapMs: 5 * MINUTE,
+    // The recent-order lane reads orders placed in the last N days, a few
+    // days per run (GET orders/?ordered= matches one UTC day).
+    orderLookbackDays: clampInt(env.SEAZONA_ORDER_LOOKBACK_DAYS, 30, 1, 3650),
+    orderDaysPerRun: clampInt(env.SEAZONA_ORDER_DAYS_PER_RUN, 6, 1, 31),
+    // The first invoice run reads from the start of today (UTC) minus this.
+    invoiceLookbackDays: clampInt(env.SEAZONA_INVOICE_LOOKBACK_DAYS, 0, 0, 3650),
+    // Seazona documents no paging. A list exactly this long may be cut off,
+    // so the lane holds its cursor instead of trusting it.
+    listCap: clampInt(env.SEAZONA_LIST_CAP, 50, 1, 10_000),
+    // The active-order lane re-reads this many open orders per run, oldest first.
+    activeOrdersPerRun: clampInt(env.SEAZONA_ACTIVE_ORDERS_PER_RUN, 25, 1, 500),
+    // Issue #12: after this many failed reads in a row an order waits this long.
+    orderQuarantineFailures: clampInt(env.SEAZONA_ORDER_QUARANTINE_FAILURES, 3, 1, 20),
+    orderQuarantineMs: ms('SEAZONA_ORDER_QUARANTINE_MS', DAY_MS, 5 * MINUTE, 30 * DAY_MS),
+    // A failed lane waits 1 minute, doubling to at most 6 hours.
+    retryBaseMs: MINUTE,
+    retryMaxMs: 6 * 60 * MINUTE,
+    heldRetryMs: 60 * MINUTE,
+    // A lane marked as running for longer than this is taken to have died.
+    stuckLaneMs: 20 * MINUTE,
+    // VISION.md: Flow keeps a patient reference only where an invoice must
+    // print one. Off by default; on, orders and invoices keep Seazona's
+    // patient field as the reference.
+    keepPatientReference: ['1', 'true', 'on', 'yes'].includes(text(env.SEAZONA_KEEP_PATIENT_REFERENCE).toLowerCase()),
+  };
+
   const settings = {
     mode,
+    sync,
     baseUrl: '',
     credentials: null,
     replayFile: '',

@@ -7,5 +7,11 @@ export const seazonaSchema = Object.freeze({
   tables: Object.freeze([
     'seazona_api_governor',
     'seazona_api_requests',
+    'seazona_orders',
+    'seazona_invoices',
+    'seazona_clients',
+    'seazona_reference',
+    'seazona_lane_state',
+    'seazona_order_read_failures',
   ]),
 });

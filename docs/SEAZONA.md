@@ -6,8 +6,8 @@ users. It never writes to Seazona, and it never drives a browser. The code is
 in `server/integrations/seazona/`. Core code never imports it
 (`CONTRIBUTING.md`).
 
-Status: the API client and the rate governor are in place. The sync lanes and
-the connection to the integration port come next.
+Status: the API client, the rate governor and the sync lanes are in place.
+The connection to the integration port and the live scheduler come next.
 
 ## Modes
 
@@ -37,6 +37,14 @@ workspace live credentials.
 | `SEAZONA_API_TIMEOUT_MS` | Time limit for one request. Default 30000. |
 | `SEAZONA_API_MAX_WAIT_MS` | How long a request may wait for a free slot. Default 120000. |
 | `SEAZONA_API_TELEMETRY_RETENTION_DAYS` | How long request telemetry is kept. Default 35, so last month's question from Seazona can be answered. Maximum 90. |
+| `SEAZONA_KEEP_PATIENT_REFERENCE` | `on` keeps Seazona's patient field on orders and invoices as the patient reference an invoice prints. Default off: no patient field is stored. |
+| `SEAZONA_INVOICE_CADENCE_MS`, `SEAZONA_ORDER_CADENCE_MS`, `SEAZONA_ACTIVE_ORDER_CADENCE_MS`, `SEAZONA_CLIENT_CADENCE_MS`, `SEAZONA_REFERENCE_CADENCE_MS` | How often each lane runs in live mode. Defaults below. |
+| `SEAZONA_ORDER_LOOKBACK_DAYS` | How far back the recent-order lane reads. Default 30. |
+| `SEAZONA_ORDER_DAYS_PER_RUN` | Days the recent-order lane reads per run. Default 6. |
+| `SEAZONA_INVOICE_LOOKBACK_DAYS` | Days before today the first invoice run reads. Default 0. |
+| `SEAZONA_ACTIVE_ORDERS_PER_RUN` | Open orders the active-order lane re-reads per run. Default 25. |
+| `SEAZONA_LIST_CAP` | A list exactly this long may be cut off, so its lane holds. Default 50. |
+| `SEAZONA_ORDER_QUARANTINE_FAILURES`, `SEAZONA_ORDER_QUARANTINE_MS` | Failed reads in a row before an order is quarantined, and for how long. Defaults 3 and 1 day. |
 
 The code holds no Seazona host or account. Every address and credential is
 configuration.
@@ -65,6 +73,61 @@ host, the query, a credential or a response. `governor.summarise({ from, to })`
 gives the totals for a period and each failing path with its count, which
 answers a question such as "why did this account make thousands of failed
 reads last month?".
+
+## Sync lanes
+
+Each lane keeps one kind of record fresh, on its own cadence
+(`server/integrations/seazona/lanes.js`). One failing lane never stops
+another.
+
+| Lane | Reads | Cadence |
+| --- | --- | --- |
+| `invoices` | `GET invoices/?lastModified=` since the cursor (less 5 minutes), then each changed invoice's detail | 2 minutes |
+| `orders_recent` | `GET orders/?ordered=` for each day of the last 30 (6 days a run), then each new or changed order's detail | 5 minutes |
+| `orders_active` | Each open order Flow already knows, oldest first, 25 a run. "Complete" stays open until Seazona says it shipped. | 5 minutes |
+| `clients` | The whole list the first time, then changes since the cursor, then each changed client's detail | 30 minutes |
+| `products`, `users` | The whole list | Daily |
+
+A list row whose list fields did not change costs no detail read. Seazona
+documents no paging, so a list exactly `SEAZONA_LIST_CAP` long may be cut off:
+the lane holds (`held`), keeps its cursor and tries again in an hour.
+
+A failed lane waits 1 minute, doubling to at most 6 hours, or as long as a 429
+asked. A lane that says it is running for more than 20 minutes is taken to
+have died, and another run may claim it.
+
+### Bad orders (issue #12)
+
+Every order read follows these rules:
+
+- **A 404 marks the order deleted in Seazona.** Its row and history stay and
+  its sync time is refreshed, so it never comes first again. It reads as
+  "Deleted in Seazona", leaves the active-order rotation and is out of
+  billing. If it shows up in an order list again it is read, and a successful
+  read clears the mark.
+- **Each other failure is recorded per order** (`seazona_order_read_failures`):
+  the HTTP status or the kind (`empty_response`, `timeout`, `invalid_json`,
+  `network`). A failed order moves to the back of the rotation.
+- **An empty answer is a failure**, never a success.
+- **After 3 failures in a row an order is quarantined for 1 day**, then gets
+  one more read. A failure then quarantines it again; a success clears it.
+- **A lane fails only when most of its reads fail.** A few bad orders never
+  push every other order into the lane's backoff.
+- **A 429, or a request that waits too long for a slot, stops the lane**
+  without counting against any order: it is about Seazona, not the order.
+- **Errors name each failing order.** A failed lane's error lists up to 10 as
+  `ORD-1 (HTTP 500), ORD-2 (timeout)`. The lane's failure details hold up to
+  25, with the quarantined orders. `readSeazonaSyncHealth()` returns them for
+  /health. None of it holds patient data.
+
+### What is kept
+
+The mirror keeps what billing needs, in integer cents as Seazona reported
+them: order and invoice numbers, practice and dentist, status, dates, lines
+(description, code, amount, taxable) and totals; client account, email,
+phone, address and dentist names; product prices; user names. It keeps no
+notes, files, settings, staff email or dentist phone, and no patient field
+unless `SEAZONA_KEEP_PATIENT_REFERENCE` is on.
 
 ## Replay files
 
@@ -105,6 +168,12 @@ installation-wide.
 | --- | --- |
 | `seazona_api_governor` | For each API client: when the next request may go, and any 429 cooldown |
 | `seazona_api_requests` | One row per request sent: the rate limit counts these, and they are the telemetry |
+| `seazona_orders` | Orders: status, lines, totals, the deleted-in-Seazona mark |
+| `seazona_invoices` | Seazona invoices, by invoice number, with lines and totals |
+| `seazona_clients` | Practices: account, contact, address, dentists |
+| `seazona_reference` | Products and users |
+| `seazona_lane_state` | Each lane's cursor, next run, status and last failure |
+| `seazona_order_read_failures` | Failed reads per order, and quarantine |
 
 To change them, edit `server/integrations/seazona/schema.js` and run:
 
