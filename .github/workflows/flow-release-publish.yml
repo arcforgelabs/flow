@@ -1,0 +1,385 @@
+name: Flow Release Publish
+run-name: flow ${{ inputs.tag }}
+
+# Publishes one release tag (docs/RELEASING.md). Flow Release Prepare
+# starts it after it creates the tag; it can also be started by hand for an
+# existing tag, which re-runs the checks and skips what is already published.
+#
+#   checks          flow-release-checks.yml: tag, every CI lane, npm tarball
+#   approve         the one approval of a stable release: environment
+#                   release (Samuel), alongside the checks. A beta uses
+#                   release-beta, which has no reviewer.
+#   image           after both: GHCR by digest,
+#                   build attestation and SBOM, smoke of the pushed digest
+#                   against PostgreSQL, then the channel's tags
+#   github-release  GitHub Release "flow <version>" with notes, manifest and
+#                   .sha256 files
+#   npm             starts Flow NPM Release (flow-npm-release.yml) for the
+#                   tarball this run proved; it publishes on this run's
+#                   approval, without a second one
+#
+# Channels follow openclaw/openclaw: a beta (vYYYY.M.D-beta.N) goes to npm and
+# GHCR `beta` and a GitHub pre-release; a stable release (vYYYY.M.D) goes to
+# npm `latest`, GHCR `stable` and `latest`, and GitHub's latest release.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag, for example v2026.10.15-beta.1
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: flow-release-publish-${{ inputs.tag }}
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: "24"
+  PACKAGE: "@arcforgelabs/flow"
+  IMAGE: ghcr.io/arcforgelabs/flow
+
+jobs:
+  guard:
+    name: guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      channel: ${{ steps.tag.outputs.channel }}
+    steps:
+      - name: Require the workflow from main
+        if: github.ref != 'refs/heads/main'
+        run: |
+          echo "::error::Run Flow Release Publish from main, not ${GITHUB_REF}." >&2
+          exit 1
+
+      # Only a release tag: vYYYY.M.D (stable) or vYYYY.M.D-beta.N (beta).
+      # Flow Release Checks also requires it to be on main and to match
+      # package.json, and runs every CI lane on its commit.
+      - name: Read the channel from the tag
+        id: tag
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          if [[ "$TAG" =~ ^v20[0-9]{2}\.[1-9][0-9]?\.[1-9][0-9]?-beta\.[1-9][0-9]*$ ]]; then
+            echo "channel=beta" >> "$GITHUB_OUTPUT"
+          elif [[ "$TAG" =~ ^v20[0-9]{2}\.[1-9][0-9]?\.[1-9][0-9]?$ ]]; then
+            echo "channel=stable" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::${TAG} is not a release tag (vYYYY.M.D or vYYYY.M.D-beta.N)." >&2
+            exit 1
+          fi
+
+  # The one human gate of a stable release: Samuel approves environment
+  # release here, while the checks run. Flow NPM Release accepts this
+  # approval and does not ask again. A beta runs in release-beta, which has
+  # no reviewer, so nothing waits.
+  approve:
+    name: Approve ${{ inputs.tag }}
+    needs: guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    environment: ${{ needs.guard.outputs.channel == 'stable' && 'release' || 'release-beta' }}
+    permissions: {}
+    steps:
+      - name: Record the approval
+        env:
+          TAG: ${{ inputs.tag }}
+          CHANNEL: ${{ needs.guard.outputs.channel }}
+        run: echo "Approved flow ${TAG} (${CHANNEL})"
+
+  checks:
+    name: checks
+    needs: guard
+    uses: ./.github/workflows/flow-release-checks.yml
+    with:
+      tag: ${{ inputs.tag }}
+
+  image:
+    name: image
+    needs: [checks, approve]
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    # A throwaway database for the image smoke; not a secret.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: flow
+          POSTGRES_PASSWORD: flow
+          POSTGRES_DB: flow_smoke
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U flow"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+      tags: ${{ steps.channel.outputs.tags }}
+    steps:
+      # The tag, not a commit passed between jobs (as in flow-release-checks).
+      - name: Check out the release tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/tags/${{ inputs.tag }}
+          persist-credentials: false
+
+      - name: Require the commit the checks proved
+        env:
+          RESOLVED: ${{ needs.checks.outputs.commit }}
+        run: |
+          set -euo pipefail
+          head="$(git rev-parse HEAD)"
+          if [ "$head" != "$RESOLVED" ]; then
+            echo "::error::The tag now points at ${head}, not the ${RESOLVED} that the checks proved is on main. Run the release again." >&2
+            exit 1
+          fi
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Sign in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      # Pushed by digest, with no tag: tags are added only after the
+      # attestation and the smoke pass. BuildKit attaches its own SBOM and
+      # provenance to the image index.
+      - name: Build and push the image by digest
+        id: build
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          platforms: linux/amd64
+          tags: ${{ env.IMAGE }}
+          outputs: type=image,push-by-digest=true,name-canonical=true,push=true
+          build-args: |
+            VCS_REF=${{ needs.checks.outputs.commit }}
+            FLOW_RELEASE=v${{ needs.checks.outputs.version }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/arcforgelabs/flow
+            org.opencontainers.image.version=${{ needs.checks.outputs.version }}
+            org.opencontainers.image.revision=${{ needs.checks.outputs.commit }}
+            org.opencontainers.image.licenses=MIT
+            org.opencontainers.image.title=Flow
+          sbom: true
+          provenance: mode=max
+          # No layer cache: the published image is built from the commit alone.
+          no-cache: true
+
+      - name: Attest the build
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+
+      - name: Extract the image SBOM
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          VERSION: ${{ needs.checks.outputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/image"
+          docker buildx imagetools inspect "${IMAGE}@${DIGEST}" --format '{{ json .SBOM.SPDX }}' > "$RUNNER_TEMP/image/flow-image-${VERSION}.spdx.json"
+          jq -e '.packages | length > 0' "$RUNNER_TEMP/image/flow-image-${VERSION}.spdx.json" >/dev/null
+
+      - name: Attest the SBOM
+        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          sbom-path: ${{ runner.temp }}/image/flow-image-${{ needs.checks.outputs.version }}.spdx.json
+          push-to-registry: true
+
+      - name: Verify the attestation by digest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: gh attestation verify "oci://${IMAGE}@${DIGEST}" --repo "$GITHUB_REPOSITORY"
+
+      # The same smoke as CI's docker-build lane, against the pushed bytes.
+      - name: Smoke the pushed digest
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          COMMIT: ${{ needs.checks.outputs.commit }}
+          DATABASE_URL: postgres://flow:flow@localhost:5432/flow_smoke
+        run: |
+          set -euo pipefail
+          docker pull "${IMAGE}@${DIGEST}"
+          scripts/release/image-smoke.sh "${IMAGE}@${DIGEST}" "$COMMIT"
+
+      - name: Tag the verified digest for its channel
+        id: channel
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          VERSION: ${{ needs.checks.outputs.version }}
+          CHANNEL: ${{ needs.checks.outputs.channel }}
+        run: |
+          set -euo pipefail
+          # A beta moves `beta`; a stable release moves `stable` and `latest`,
+          # as npm's dist-tags do.
+          if [[ "$CHANNEL" == "beta" ]]; then
+            channel_tags=(beta)
+          else
+            channel_tags=(stable latest)
+          fi
+          args=(--tag "${IMAGE}:${VERSION}")
+          for tag in "${channel_tags[@]}"; do args+=(--tag "${IMAGE}:${tag}"); done
+          tags="$(printf '%s\n' "$VERSION" "${channel_tags[@]}" | jq -R . | jq -sc .)"
+          docker buildx imagetools create "${args[@]}" "${IMAGE}@${DIGEST}"
+          echo "tags=${tags}" >> "$GITHUB_OUTPUT"
+          echo "${IMAGE}@${DIGEST} tags: ${tags}" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Keep the image SBOM
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: image-sbom
+          path: ${{ runner.temp }}/image
+          retention-days: 30
+
+
+  github-release:
+    name: github-release
+    needs: [checks, approve, image]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      # The tag, not a commit passed between jobs (as in flow-release-checks).
+      - name: Check out the release tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/tags/${{ inputs.tag }}
+          persist-credentials: false
+
+      - name: Require the commit the checks proved
+        env:
+          RESOLVED: ${{ needs.checks.outputs.commit }}
+        run: |
+          set -euo pipefail
+          head="$(git rev-parse HEAD)"
+          if [ "$head" != "$RESOLVED" ]; then
+            echo "::error::The tag now points at ${head}, not the ${RESOLVED} that the checks proved is on main. Run the release again." >&2
+            exit 1
+          fi
+
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Fetch the tarball and SBOMs
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: "{npm-package,image-sbom,sbom}"
+          path: ${{ runner.temp }}/artifacts
+
+      # npm's integrity and shasum are the tarball's SHA-512 and SHA-1, so the
+      # manifest records them before npm publishes; Flow NPM Release
+      # requires npm to serve exactly these.
+      - name: Write release-manifest.json
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+          COMMIT: ${{ needs.checks.outputs.commit }}
+          TARBALL: ${{ needs.checks.outputs.tarball }}
+          TARBALL_SHA256: ${{ needs.checks.outputs.tarball_sha256 }}
+          DIGEST: ${{ needs.image.outputs.digest }}
+          IMAGE_TAGS: ${{ needs.image.outputs.tags }}
+        run: |
+          set -euo pipefail
+          package_dir="$RUNNER_TEMP/artifacts/npm-package"
+          echo "${TARBALL_SHA256}  ${package_dir}/${TARBALL}" | sha256sum -c -
+          integrity="sha512-$(openssl dgst -sha512 -binary "${package_dir}/${TARBALL}" | base64 -w0)"
+          shasum="$(sha1sum "${package_dir}/${TARBALL}" | cut -d' ' -f1)"
+          # Each lane of flow-release-checks, by name, with its conclusion.
+          gh api --paginate "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/attempts/${GITHUB_RUN_ATTEMPT}/jobs" \
+            --jq '.jobs[] | select(.name | startswith("checks / ")) | {(.name | sub("^checks / (ci / )?"; "")): .conclusion}' \
+            | jq -s 'add' > "$RUNNER_TEMP/checks.json"
+          jq -n \
+            --arg tag "$TAG" --arg commit "$COMMIT" --arg repository "$GITHUB_REPOSITORY" \
+            --arg run "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+            --arg created "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg node "$NODE_VERSION" \
+            --slurpfile checks "$RUNNER_TEMP/checks.json" \
+            --arg package "$PACKAGE" --arg integrity "$integrity" --arg shasum "$shasum" \
+            --arg tarball "$TARBALL" --arg tarballSha256 "$TARBALL_SHA256" \
+            --arg image "$IMAGE" --arg digest "$DIGEST" --argjson imageTags "$IMAGE_TAGS" \
+            '{tag: $tag, commit: $commit, repository: $repository, workflowRun: $run, createdAt: $created, node: $node,
+              checks: $checks[0],
+              npm: {package: $package, integrity: $integrity, shasum: $shasum, tarball: $tarball, tarballSha256: $tarballSha256},
+              image: {ref: $image, digest: $digest, tags: $imageTags}}' > "$RUNNER_TEMP/facts.json"
+          mkdir -p "$RUNNER_TEMP/assets"
+          node scripts/release/release.mjs manifest --input "$RUNNER_TEMP/facts.json" \
+            --migrations "${package_dir}/migrations.json" \
+            --output "$RUNNER_TEMP/assets/release-manifest.json"
+          jq . "$RUNNER_TEMP/assets/release-manifest.json"
+
+      - name: Create the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+          VERSION: ${{ needs.checks.outputs.version }}
+          CHANNEL: ${{ needs.checks.outputs.channel }}
+          TARBALL: ${{ needs.checks.outputs.tarball }}
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/assets"
+          cp "$RUNNER_TEMP/artifacts/npm-package/$TARBALL" .
+          cp "$RUNNER_TEMP/artifacts/image-sbom/"*.spdx.json .
+          cp "$RUNNER_TEMP/artifacts/sbom/flow-server.cdx.json" "flow-server-${VERSION}.cdx.json"
+          for file in *; do sha256sum "$file" > "$file.sha256"; done
+          flags=(--verify-tag --title "flow ${VERSION}" --generate-notes)
+          if [[ "$CHANNEL" == "beta" ]]; then
+            flags+=(--prerelease --latest=false)
+          else
+            flags+=(--latest)
+          fi
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber ./*
+          else
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" "${flags[@]}" ./*
+          fi
+          echo "Released ${TAG}: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/${TAG}" >> "$GITHUB_STEP_SUMMARY"
+
+  # npm trusted publishing names one workflow file, and checks the top-level
+  # workflow of a run, so the npm publish is its own workflow
+  # (flow-npm-release.yml) rather than a job here. This starts it for the
+  # tarball this run proved.
+  npm:
+    name: npm
+    needs: [checks, approve, github-release]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: write
+    steps:
+      - name: Start Flow NPM Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          gh workflow run flow-npm-release.yml --repo "$GITHUB_REPOSITORY" --ref main \
+            -f tag="$TAG" -f release_publish_run_id="$GITHUB_RUN_ID"
+          {
+            echo "Started Flow NPM Release for ${TAG}."
+            echo "Approve its npm-release environment to publish:"
+            echo "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/workflows/flow-npm-release.yml"
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,15 @@
+.git
+.github
+.claude
+node_modules
+test
+docs
+deploy
+coverage
+data
+config.json
+config.local.json
+.env
+.env.*
+*.log
+.flow-deploy

@@ -1,19 +1,32 @@
 {
   "name": "@arcforgelabs/flow",
   "version": "2026.10.18",
-  "private": true,
   "description": "Invoicing, bill entry and a financial dashboard for labs, with Seazona and Xero integrations.",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/arcforgelabs/flow.git"
   },
+  "homepage": "https://github.com/arcforgelabs/flow#readme",
+  "bugs": {
+    "url": "https://github.com/arcforgelabs/flow/issues"
+  },
   "type": "module",
   "engines": {
     "node": ">=24"
   },
   "bin": {
-    "flow-server": "server/index.js"
+    "flow-server": "./server/index.js"
+  },
+  "files": [
+    "server/",
+    "SECURITY.md",
+    "VISION.md",
+    "npm-shrinkwrap.json"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
   },
   "scripts": {
     "start": "node server/index.js",

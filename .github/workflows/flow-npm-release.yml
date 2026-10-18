@@ -1,0 +1,351 @@
+name: Flow NPM Release
+run-name: flow npm ${{ inputs.tag }}
+
+# Publishes the npm tarball that Flow Release Publish proved for a tag
+# (docs/RELEASING.md). Flow Release Publish starts it with its own run id;
+# it can be started again by hand with the same inputs, and skips a version
+# npm already serves with the same bytes.
+#
+#   resolve   the tarball from that run must match the GitHub Release's
+#             manifest (SHA-256 and npm integrity)
+#   approve   environment npm-release: Samuel approves the publish, unless
+#             this run was dispatched by an approved Flow Release Publish
+#             run (below). A manual dispatch always waits for it.
+#   publish   environment npm-publish: npm trusted publishing with
+#             provenance, no stored token
+#   evidence  verifies what npm serves and attaches postpublish-evidence.json
+#
+# A stable release has one approval: environment release, at the start of
+# Flow Release Publish. This run accepts it instead of asking again only
+# when GitHub Actions itself dispatched it (github.actor is
+# github-actions[bot], which no person can be; a re-run keeps it), the run it names is a Flow
+# Release Publish run from main for this tag, and, for a stable release,
+# GitHub's approvals record of that run shows environment release approved.
+# A beta needs no approval when it was dispatched that way.
+#
+# npm's trusted publisher for @arcforgelabs/flow names this file
+# (flow-npm-release.yml) and environment npm-publish. Renaming either breaks
+# publishing until the trusted publisher is changed on npmjs.com.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag, for example v2026.10.15-beta.1
+        required: true
+        type: string
+      release_publish_run_id:
+        description: The Flow Release Publish run that proved this tag's tarball
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: flow-npm-release-${{ inputs.tag }}
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: "24"
+  # The first npm CLI that can also move dist-tags through trusted publishing.
+  NPM_VERSION: "11.21.0"
+  PACKAGE: "@arcforgelabs/flow"
+
+jobs:
+  resolve:
+    name: resolve
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+      channel: ${{ steps.release.outputs.channel }}
+      dist_tag: ${{ steps.release.outputs.dist_tag }}
+      tarball: ${{ steps.release.outputs.tarball }}
+      integrity: ${{ steps.release.outputs.integrity }}
+      digest: ${{ steps.release.outputs.digest }}
+      needs_approval: ${{ steps.approval.outputs.needs_approval }}
+    steps:
+      - name: Require the workflow from main
+        if: github.ref != 'refs/heads/main'
+        run: |
+          echo "::error::Run Flow NPM Release from main, not ${GITHUB_REF}." >&2
+          exit 1
+
+      - name: Fetch the proved tarball and the release manifest
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+          RUN_ID: ${{ inputs.release_publish_run_id }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$TAG" =~ ^v20[0-9]{2}\.[1-9][0-9]?\.[1-9][0-9]?(-beta\.[1-9][0-9]*)?$ ]]; then
+            echo "::error::${TAG} is not a release tag (vYYYY.M.D or vYYYY.M.D-beta.N)." >&2
+            exit 1
+          fi
+          run="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}")"
+          if [[ "$(jq -r .path <<< "$run")" != ".github/workflows/flow-release-publish.yml" || "$(jq -r .head_branch <<< "$run")" != "main" ]]; then
+            echo "::error::Run ${RUN_ID} is not a Flow Release Publish run from main." >&2
+            exit 1
+          fi
+          if [[ "$(jq -r .display_title <<< "$run")" != "flow ${TAG}" ]]; then
+            echo "::error::Run ${RUN_ID} published $(jq -r .display_title <<< "$run"), not flow ${TAG}." >&2
+            exit 1
+          fi
+          mkdir -p "$RUNNER_TEMP/package" "$RUNNER_TEMP/release"
+          gh run download "$RUN_ID" --repo "$GITHUB_REPOSITORY" --name npm-package --dir "$RUNNER_TEMP/package"
+          cd "$RUNNER_TEMP/release"
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern 'release-manifest.json*'
+          sha256sum -c release-manifest.json.sha256
+          manifest="$RUNNER_TEMP/release/release-manifest.json"
+          jq -e --arg tag "$TAG" '.tag == $tag' "$manifest" >/dev/null || { echo "::error::The manifest is not for ${TAG}." >&2; exit 1; }
+          tarball="$(jq -r .npm.tarball "$manifest")"
+          cd "$RUNNER_TEMP/package"
+          echo "$(jq -r .npm.tarballSha256 "$manifest")  ${tarball}" | sha256sum -c -
+          integrity="sha512-$(openssl dgst -sha512 -binary "$tarball" | base64 -w0)"
+          if [[ "$integrity" != "$(jq -r .npm.integrity "$manifest")" ]]; then
+            echo "::error::The tarball's integrity does not match the release manifest." >&2
+            exit 1
+          fi
+          {
+            echo "version=$(jq -r .version "$manifest")"
+            echo "channel=$(jq -r .channel "$manifest")"
+            echo "dist_tag=$(jq -r .npm.distTag "$manifest")"
+            echo "tarball=${tarball}"
+            echo "integrity=${integrity}"
+            echo "digest=$(jq -r .image.digest "$manifest")"
+          } | tee -a "$GITHUB_OUTPUT" >> "$GITHUB_STEP_SUMMARY"
+
+      # Does this run need its own approval? Only GitHub Actions can be the
+      # actor github-actions[bot] (a re-run keeps the original actor); a
+      # person dispatching this workflow by hand always gets the npm-release
+      # gate.
+      - name: Decide whether npm-release must approve
+        id: approval
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ inputs.release_publish_run_id }}
+          CHANNEL: ${{ steps.release.outputs.channel }}
+          DISPATCHED_BY: ${{ github.actor }}
+        run: |
+          set -euo pipefail
+          needs_approval=true
+          if [[ "$DISPATCHED_BY" == "github-actions[bot]" ]]; then
+            if [[ "$CHANNEL" == "beta" ]]; then
+              needs_approval=false
+              echo "A beta dispatched by Flow Release Publish run ${RUN_ID}: no approval needed."
+            else
+              approved="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}/approvals" \
+                --jq '[.[] | select(.state == "approved" and any(.environments[]; .name == "release")) | .user.login] | first // ""')"
+              if [[ -n "$approved" ]]; then
+                needs_approval=false
+                echo "Flow Release Publish run ${RUN_ID} was approved for environment release by ${approved}: no second approval."
+              else
+                echo "::warning::Run ${RUN_ID} has no approval of environment release; npm-release must approve."
+              fi
+            fi
+          else
+            echo "Dispatched by ${DISPATCHED_BY}, not by Flow Release Publish: npm-release must approve."
+          fi
+          echo "needs_approval=${needs_approval}" >> "$GITHUB_OUTPUT"
+          echo "npm-release approval needed: ${needs_approval}" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Keep the tarball for the publish job
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: npm-package
+          path: ${{ runner.temp }}/package
+          retention-days: 30
+          if-no-files-found: error
+
+  approve:
+    name: Approve ${{ inputs.tag }} for npm ${{ needs.resolve.outputs.dist_tag }}
+    needs: resolve
+    if: needs.resolve.outputs.needs_approval == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    environment: npm-release
+    permissions: {}
+    steps:
+      - name: Record the approval
+        env:
+          TAG: ${{ inputs.tag }}
+          DIST_TAG: ${{ needs.resolve.outputs.dist_tag }}
+          INTEGRITY: ${{ needs.resolve.outputs.integrity }}
+        run: echo "Approved ${PACKAGE} ${TAG} for npm ${DIST_TAG} (${INTEGRITY})"
+
+  publish:
+    name: publish
+    needs: [resolve, approve]
+    # After its own approval, or, when resolve proved the dispatching run's
+    # approval (or a beta), with that approval job skipped.
+    if: >-
+      ${{ !cancelled() && needs.resolve.result == 'success' && (
+        needs.approve.result == 'success' ||
+        (needs.resolve.outputs.needs_approval == 'false' && needs.approve.result == 'skipped')
+      ) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: npm-publish
+      url: https://www.npmjs.com/package/@arcforgelabs/flow/v/${{ needs.resolve.outputs.version }}
+    permissions:
+      contents: read
+      # Trusted publishing: npm exchanges GitHub's OIDC token for a
+      # short-lived publish token and signs SLSA provenance for this run.
+      # Do not set NODE_AUTH_TOKEN or a registry-url: npm would use that
+      # instead of OIDC.
+      id-token: write
+    steps:
+      - name: Fetch the tarball
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: npm-package
+          path: package
+
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install npm ${{ env.NPM_VERSION }}
+        run: npm install -g "npm@${NPM_VERSION}" && npm --version
+
+      # Idempotent, so a rerun is safe: a version npm already serves with the
+      # manifest's integrity is not published again, and npm's "already
+      # published" answer to a version it has not yet shown (registry lag)
+      # is checked by the read-back below instead of failing here.
+      - name: Publish to npm
+        working-directory: package
+        env:
+          TARBALL: ${{ needs.resolve.outputs.tarball }}
+          VERSION: ${{ needs.resolve.outputs.version }}
+          DIST_TAG: ${{ needs.resolve.outputs.dist_tag }}
+          INTEGRITY: ${{ needs.resolve.outputs.integrity }}
+        run: |
+          set -euo pipefail
+          local_integrity="sha512-$(openssl dgst -sha512 -binary "$TARBALL" | base64 -w0)"
+          [[ "$local_integrity" == "$INTEGRITY" ]] || { echo "::error::The tarball changed between jobs." >&2; exit 1; }
+          published="$(npm view "${PACKAGE}@${VERSION}" dist.integrity 2>/dev/null || true)"
+          if [[ -n "$published" ]]; then
+            if [[ "$published" != "$INTEGRITY" ]]; then
+              echo "::error::${PACKAGE}@${VERSION} is already on npm with different bytes (${published}). A version is never republished; cut a new tag." >&2
+              exit 1
+            fi
+            echo "${PACKAGE}@${VERSION} is already on npm with these bytes; not publishing again."
+            exit 0
+          fi
+          if ! npm publish "./${TARBALL}" --access public --tag "$DIST_TAG" --provenance 2> "$RUNNER_TEMP/publish.err"; then
+            cat "$RUNNER_TEMP/publish.err" >&2
+            if grep -qiE "cannot publish over|previously published|EPUBLISHCONFLICT" "$RUNNER_TEMP/publish.err"; then
+              echo "::warning::npm says ${PACKAGE}@${VERSION} is already published; the read-back checks its bytes."
+              exit 0
+            fi
+            exit 1
+          fi
+
+      # npm can take minutes to serve a new version everywhere: retry with
+      # backoff for about 15 minutes before calling it missing.
+      - name: Read back what npm serves
+        env:
+          VERSION: ${{ needs.resolve.outputs.version }}
+          INTEGRITY: ${{ needs.resolve.outputs.integrity }}
+        run: |
+          set -euo pipefail
+          served=""
+          delay=5
+          deadline=$((SECONDS + 900))
+          while (( SECONDS < deadline )); do
+            served="$(npm view "${PACKAGE}@${VERSION}" dist.integrity --prefer-online 2>/dev/null || true)"
+            [[ -n "$served" ]] && break
+            echo "npm does not serve ${PACKAGE}@${VERSION} yet; retrying in ${delay}s"
+            sleep "$delay"
+            delay=$(( delay * 2 > 60 ? 60 : delay * 2 ))
+          done
+          if [[ "$served" != "$INTEGRITY" ]]; then
+            echo "::error::npm serves ${served:-nothing} for ${PACKAGE}@${VERSION}; the release manifest says ${INTEGRITY}." >&2
+            exit 1
+          fi
+          {
+            echo "npm serves ${PACKAGE}@${VERSION} with ${served}"
+            npm view "$PACKAGE" dist-tags --json
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  evidence:
+    name: evidence
+    needs: [resolve, publish]
+    if: ${{ !cancelled() && needs.publish.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      # Read the image's attestations even while the package is private.
+      packages: read
+    env:
+      IMAGE: ghcr.io/arcforgelabs/flow
+    steps:
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install npm ${{ env.NPM_VERSION }}
+        run: npm install -g "npm@${NPM_VERSION}"
+
+      - name: Sign in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      # What anyone can check from outside: the npm registry signature and
+      # provenance of the published version, and GitHub's attestation of the
+      # image digest.
+      - name: Verify the published release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+          VERSION: ${{ needs.resolve.outputs.version }}
+          DIGEST: ${{ needs.resolve.outputs.digest }}
+        run: |
+          set -euo pipefail
+          work="$(mktemp -d)"
+          (cd "$work" && npm init -y >/dev/null)
+          delay=5
+          deadline=$((SECONDS + 900))
+          until (cd "$work" && npm install --omit=dev --ignore-scripts --no-audit --no-fund --prefer-online "${PACKAGE}@${VERSION}" >/dev/null); do
+            (( SECONDS < deadline )) || { echo "::error::${PACKAGE}@${VERSION} did not install within 15 minutes." >&2; exit 1; }
+            echo "npm cannot install ${PACKAGE}@${VERSION} yet; retrying in ${delay}s"
+            sleep "$delay"
+            delay=$(( delay * 2 > 60 ? 60 : delay * 2 ))
+          done
+          (cd "$work" && npm audit signatures --json) > "$RUNNER_TEMP/npm-signatures.json" || {
+            cat "$RUNNER_TEMP/npm-signatures.json" >&2; exit 1; }
+          npm view "${PACKAGE}@${VERSION}" dist --json > "$RUNNER_TEMP/npm-dist.json"
+          jq -e '.attestations.provenance.predicateType == "https://slsa.dev/provenance/v1"' "$RUNNER_TEMP/npm-dist.json" >/dev/null
+          # Both attestations: build provenance (gh's default) and the SBOM.
+          for type in https://slsa.dev/provenance/v1 https://spdx.dev/Document/v2.3; do
+            gh attestation verify "oci://${IMAGE}@${DIGEST}" --repo "$GITHUB_REPOSITORY" --predicate-type "$type" --format json
+          done | jq -s 'add' > "$RUNNER_TEMP/image-attestation.json"
+          mkdir -p "$RUNNER_TEMP/evidence"
+          jq -n \
+            --arg tag "$TAG" --arg checkedAt "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --slurpfile signatures "$RUNNER_TEMP/npm-signatures.json" \
+            --slurpfile dist "$RUNNER_TEMP/npm-dist.json" \
+            --slurpfile attestation "$RUNNER_TEMP/image-attestation.json" \
+            --arg image "${IMAGE}@${DIGEST}" \
+            '{tag: $tag, checkedAt: $checkedAt,
+              npm: {integrity: $dist[0].integrity, shasum: $dist[0].shasum, provenance: $dist[0].attestations.provenance.predicateType,
+                    auditSignatures: $signatures[0]},
+              image: {ref: $image, verifiedAttestations: ($attestation[0] | length),
+                      predicateTypes: ([$attestation[0][].verificationResult.statement.predicateType] | unique)}}' \
+            > "$RUNNER_TEMP/evidence/postpublish-evidence.json"
+          cd "$RUNNER_TEMP/evidence"
+          sha256sum postpublish-evidence.json > postpublish-evidence.json.sha256
+          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber postpublish-evidence.json postpublish-evidence.json.sha256
+          jq . postpublish-evidence.json >> "$GITHUB_STEP_SUMMARY"
