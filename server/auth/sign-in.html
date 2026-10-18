@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Sign in to Flow</title>
+<style>
+  :root { color-scheme: light dark; --fg: #1d1d1f; --bg: #f7f7f8; --muted: #66666e; --line: #d9d9de; --accent: #2f5bd3; }
+  @media (prefers-color-scheme: dark) { :root { --fg: #ececf0; --bg: #16161a; --muted: #a0a0aa; --line: #34343c; --accent: #7d9cf0; } }
+  body { margin: 0; font: 16px/1.5 system-ui, sans-serif; color: var(--fg); background: var(--bg); }
+  main { max-width: 760px; margin: 0 auto; padding: 32px 16px; }
+  h1 { font-size: 1.4rem; margin: 0 0 16px; }
+  h2 { font-size: 1.1rem; margin: 32px 0 8px; }
+  p.note { color: var(--muted); }
+  .error { color: #c62828; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 6px 4px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+  form { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+  input, select, button { font: inherit; padding: 6px 8px; }
+  button { cursor: pointer; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Flow</h1>
+  <p id="status" class="note">Loading sign-in…</p>
+  <div id="sign-in"></div>
+  <section id="signed-in" hidden>
+    <p>Signed in as <strong id="me-email"></strong> (<span id="me-role"></span>). <button id="sign-out" type="button">Sign out</button></p>
+    <p id="owner-note" class="note" hidden></p>
+    <section id="people-section" hidden>
+      <h2>People</h2>
+      <table>
+        <thead><tr><th>Email</th><th>Role</th><th>Access</th><th></th></tr></thead>
+        <tbody id="people"></tbody>
+      </table>
+      <h2>Invite someone</h2>
+      <form id="invite">
+        <input name="email" type="email" required placeholder="name@example.com" autocomplete="off">
+        <select name="role"><option value="staff">staff</option><option value="admin">admin</option><option value="owner">owner</option></select>
+        <button type="submit">Invite</button>
+      </form>
+      <p id="people-error" class="error" role="alert"></p>
+    </section>
+  </section>
+</main>
+<script type="module">
+// Flow's sign-in page. Clerk's sign-in widget signs people in; Flow then
+// decides what they may do (GET /api/me). Every Flow request carries the
+// session token in the Authorization header. Text from the server is only
+// ever set with textContent.
+const $ = (id) => document.getElementById(id);
+const status = (text, isError = false) => { $('status').textContent = text; $('status').className = isError ? 'error' : 'note'; };
+
+const config = await fetch('/api/auth/config').then((res) => res.json()).catch(() => null);
+if (!config || config.mode !== 'clerk') {
+  status('Sign-in is not configured on this installation. The operator sets FLOW_AUTH=clerk (docs/SELF_HOSTING.md).', true);
+} else {
+  await loadClerk(config.clerk);
+  const Clerk = window.Clerk;
+  await Clerk.load();
+  Clerk.addListener(({ user }) => { if (user && $('signed-in').hidden) showSignedIn(); });
+  if (Clerk.user) {
+    await showSignedIn();
+  } else {
+    status(config.publicSignUp ? 'Sign in, or ask for access.' : 'Sign in with the account you were invited with.');
+    // With public sign-up off the widget never creates a Clerk account: no
+    // sign-up link, and an OAuth sign-in for an unknown email is not turned
+    // into a sign-up (transferable: false).
+    Clerk.mountSignIn($('sign-in'), {
+      forceRedirectUrl: '/sign-in',
+      withSignUp: config.publicSignUp,
+      transferable: config.publicSignUp,
+      ...(config.publicSignUp ? {} : { appearance: { elements: { footerAction: { display: 'none' } } } }),
+    });
+  }
+}
+
+function loadClerk({ publishableKey, proxyUrl, scriptUrl }) {
+  return new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = scriptUrl;
+    script.crossOrigin = 'anonymous';
+    script.dataset.clerkPublishableKey = publishableKey;
+    if (proxyUrl) script.dataset.clerkProxyUrl = proxyUrl;
+    script.onload = resolve;
+    script.onerror = () => { status('Could not load sign-in. Try again shortly.', true); reject(new Error('clerk-js')); };
+    document.head.append(script);
+  });
+}
+
+async function flow(path, options = {}) {
+  const token = await window.Clerk.session?.getToken();
+  const res = await fetch(path, {
+    ...options,
+    headers: { Authorization: `Bearer ${token}`, ...(options.body ? { 'Content-Type': 'application/json' } : {}) },
+  });
+  const body = await res.json().catch(() => ({ ok: false, error: `HTTP ${res.status}` }));
+  if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
+  return body;
+}
+
+async function showSignedIn() {
+  $('sign-in').replaceChildren();
+  $('sign-out').onclick = () => window.Clerk.signOut({ redirectUrl: '/sign-in' });
+  let me;
+  try {
+    me = await flow('/api/me');
+  } catch (error) {
+    status(error.message, true);
+    $('signed-in').hidden = false;
+    $('me-email').textContent = window.Clerk.user?.primaryEmailAddress?.emailAddress ?? '';
+    $('me-role').textContent = 'no Flow access';
+    return;
+  }
+  status('');
+  $('signed-in').hidden = false;
+  $('me-email').textContent = me.person.email;
+  $('me-role').textContent = me.person.role;
+  if (me.person.role !== 'owner') return;
+  if (!me.ownerActions?.allowed) {
+    $('owner-note').hidden = false;
+    $('owner-note').textContent = 'Managing people needs a verified owner sign-in: Google Workspace on the owner domain with no password, or a second factor.';
+    return;
+  }
+  $('people-section').hidden = false;
+  $('invite').onsubmit = async (event) => {
+    event.preventDefault();
+    const form = new FormData(event.target);
+    await act(() => flow('/api/people', { method: 'POST', body: JSON.stringify({ email: form.get('email'), role: form.get('role') }) }));
+    event.target.reset();
+  };
+  await renderPeople(me.person.id);
+}
+
+async function act(fn) {
+  $('people-error').textContent = '';
+  try {
+    await fn();
+  } catch (error) {
+    $('people-error').textContent = error.message;
+  }
+  const me = await flow('/api/me');
+  await renderPeople(me.person.id);
+}
+
+async function renderPeople(selfId) {
+  const { people } = await flow('/api/people');
+  const rows = people.map((person) => {
+    const tr = document.createElement('tr');
+    const email = document.createElement('td');
+    email.textContent = person.email + (person.invited ? ' (invited)' : '');
+    const role = document.createElement('td');
+    const access = document.createElement('td');
+    const actions = document.createElement('td');
+    if (person.id === selfId) {
+      role.textContent = person.role;
+      access.textContent = person.status;
+    } else {
+      const select = document.createElement('select');
+      for (const value of ['owner', 'admin', 'staff']) select.add(new Option(value, value, false, value === person.role));
+      select.onchange = () => act(() => flow(`/api/people/${person.id}`, { method: 'PATCH', body: JSON.stringify({ role: select.value }) }));
+      role.append(select);
+      const toggle = document.createElement('button');
+      toggle.type = 'button';
+      toggle.textContent = person.status === 'active' ? 'Turn off' : person.status === 'pending' ? 'Approve' : 'Turn on';
+      toggle.onclick = () => act(() => flow(`/api/people/${person.id}`, { method: 'PATCH', body: JSON.stringify({ status: person.status === 'active' ? 'disabled' : 'active' }) }));
+      access.append(`${person.status} `, toggle);
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.textContent = 'Remove';
+      remove.onclick = () => { if (confirm(`Remove ${person.email}?`)) act(() => flow(`/api/people/${person.id}`, { method: 'DELETE' })); };
+      actions.append(remove);
+    }
+    tr.append(email, role, access, actions);
+    return tr;
+  });
+  $('people').replaceChildren(...rows);
+}
+</script>
+</body>
+</html>

@@ -15,6 +15,13 @@
       "when": 1792133500543,
       "tag": "0001_records_are_append_only",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792322911044,
+      "tag": "0002_people",
+      "breakpoints": true
     }
   ]
 }

@@ -140,3 +140,30 @@ export const invoiceVersions = pgTable('invoice_versions', {
   }),
   check('invoice_versions_version_positive', sql`${t.version} > 0`),
 ]);
+
+export const PERSON_ROLES = ['owner', 'admin', 'staff'];
+export const PERSON_STATUSES = ['active', 'pending', 'disabled'];
+
+// Who may sign in to this installation, and with which role. Clerk proves who
+// someone is; this table decides what they may do. One installation serves one
+// lab, so people are installation-wide and carry no organisation_id. Emails
+// are stored lower-case. `clerk_user_id` is set on the person's first verified
+// sign-in; until then the row is an invitation.
+export const people = pgTable('people', {
+  id: id(),
+  email: text('email').notNull(),
+  name: text('name'),
+  role: text('role').notNull(),
+  status: text('status').notNull().default('active'),
+  clerkUserId: text('clerk_user_id'),
+  invitedBy: uuid('invited_by').references(() => people.id, { onDelete: 'set null' }),
+  linkedAt: timestamp('linked_at', { withTimezone: true }),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, (t) => [
+  unique('people_email').on(t.email),
+  unique('people_clerk_user_id').on(t.clerkUserId),
+  check('people_email_lower', sql`${t.email} = lower(${t.email})`),
+  check('people_role_valid', sql`${t.role} in ('owner', 'admin', 'staff')`),
+  check('people_status_valid', sql`${t.status} in ('active', 'pending', 'disabled')`),
+]);

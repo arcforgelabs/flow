@@ -14,9 +14,9 @@ Licence: MIT (`LICENSE`).
 This repository is the new home of Flow, with a new history. Code moves here
 from an earlier private codebase one module at a time (`CONTRIBUTING.md`,
 "Porting from the earlier codebase"). Today it holds the repository's rules,
-CI, the integration port, a health check and the first part of the core: the
-PostgreSQL data model for organisations, contacts, the price list and
-invoices. It is not ready to run a lab.
+CI, the integration port, a health check, Clerk sign-in with roles kept in
+Flow, and the first part of the core: the PostgreSQL data model for
+organisations, contacts, the price list and invoices. It is not ready to run a lab.
 
 ## Documentation
 
@@ -28,7 +28,7 @@ invoices. It is not ready to run a lab.
 | `SECURITY.md` | How to report a security problem, the trust model, and the rules held hard |
 | `LICENSE` | MIT licence |
 | `docs/DATA_MODEL.md` | The PostgreSQL records, the rules the database holds, and how to change the schema |
-| `docs/SELF_HOSTING.md` | Running a pinned Flow release, and the `deploy/replit/` template |
+| `docs/SELF_HOSTING.md` | Running a pinned Flow release, the `deploy/replit/` template, and Clerk sign-in |
 | `server/integrations/port.js` | The integration port every adapter implements |
 
 ## Getting started
