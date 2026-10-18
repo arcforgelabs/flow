@@ -8,7 +8,7 @@ import { writesAllowed } from './settings.js';
 // XERO_MODE says which Xero it acts on. Its tables are created only while it
 // is on (docs/INTEGRATIONS.md).
 
-export const XERO_TABLES = Object.freeze(['xero_connections']);
+export const XERO_TABLES = Object.freeze(['xero_connections', 'xero_contacts', 'xero_items', 'xero_sync_runs']);
 
 // `runtime` is for tests. Otherwise start() builds it from the environment,
 // so a turned-off adapter never reads its settings, and a malformed setting

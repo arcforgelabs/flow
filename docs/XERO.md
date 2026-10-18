@@ -4,9 +4,9 @@ Xero is an optional integration (`VISION.md`). The adapter lives in
 `server/integrations/xero/` and sits behind the integration port
 (`server/integrations/port.js`). Core code never imports it.
 
-Status: the settings, the rate-limit governor, the API client, replay mode
-and connecting Xero are in. Contact and item sync and draft invoices come in
-the next pull requests.
+Status: the settings, the rate-limit governor, the API client, replay mode,
+connecting Xero, and contact and item sync are in. Draft invoices come in the
+next pull request.
 
 ## Turn it on
 
@@ -92,6 +92,34 @@ an owner connects again. So does a refresh token that Xero no longer accepts
 (unused for 60 days, or revoked): Flow answers `xero_reconnect_needed`. If
 `XERO_TOKEN_KEY` changes, the stored token cannot be read and an owner
 connects again.
+
+## Contacts and items
+
+Xero owns the lab's contacts and items. Flow never creates or changes them
+(as before): a missing or doubled contact is for a person to fix in Xero.
+
+`POST /api/xero/sync` with `{ "organisationId": "…" }` (owner or admin)
+reads every Xero contact (100 a page) and item (one call) and replaces
+Flow's copy in `xero_contacts` and `xero_items` in one transaction. Records
+gone from Xero leave the copy. Items with no code are left out, because an
+invoice line names an item by code. A failed read keeps the copy as it was.
+Each sync is recorded in `xero_sync_runs`; `GET /api/xero/status` shows the
+last one.
+
+`GET /api/xero/contacts?organisationId=…&q=…` and
+`GET /api/xero/items?organisationId=…` (anyone signed in) list the copy.
+
+For invoice preparation, `server/integrations/xero/catalogue.js` offers:
+
+| Function | Answers |
+| --- | --- |
+| `matchContact(db, organisationId, name)` | `matched` with the one active Xero contact whose name is the same (case and doubled spaces ignored), `ambiguous` with the matches, or `missing` |
+| `itemsByCode(db, organisationId, codes)` | A map from item code to the Xero item (sales price in cents, account code, tax type) |
+| `listContacts`, `listItems` | The copy |
+| `lastSuccessfulSyncAt(db, organisationId)` | When the copy was last refreshed, or null |
+
+A sync and a batch of drafts for one organisation run one at a time
+(`runtime.serial`), because they share one call budget.
 
 ## Rate limits and retries
 
