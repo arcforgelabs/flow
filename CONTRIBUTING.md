@@ -38,8 +38,21 @@ Title: `type: user-facing description`, where type is one of `feat`, `fix`,
 
 The ruleset in `.github/rulesets/main.json` requires a pull request and the
 checks `test` (CI) and `gitleaks` (Secret Scan), and blocks force pushes and
-deletion of `main`. Apply it once the repository exists:
+deletion of `main`. The ruleset in `.github/rulesets/release-tags.json` stops
+anyone from deleting, moving or force-pushing a release tag (`v20*`).
+
+Both rulesets are live (applied 18 Oct 2026). To apply them again, for
+example on a fork:
 
 ```bash
 gh api -X POST repos/arcforgelabs/flow/rulesets --input .github/rulesets/main.json
+gh api -X POST repos/arcforgelabs/flow/rulesets --input .github/rulesets/release-tags.json
+```
+
+Claude Code sessions merge a pull request through the REST endpoint that
+`.claude/settings.json` allows, because cloud sessions block `gh pr` (it uses
+GraphQL):
+
+```bash
+gh api -X PUT repos/arcforgelabs/flow/pulls/<number>/merge -f merge_method=squash
 ```
