@@ -34,6 +34,7 @@ run a lab.
 | `docs/SELF_HOSTING.md` | Running a Flow release with Docker, Node or Replit, the update notice, and Clerk sign-in |
 | `docs/REPLIT.md` | A Replit workspace of this repository that follows a release channel (`FLOW_DEPLOY_REF`) |
 | `docs/INTEGRATIONS.md` | How an integration adapter is built, turned on and off, and owns its tables |
+| `docs/XERO.md` | The Xero adapter: modes, settings, rate limits, connecting Xero and draft invoices |
 | `server/integrations/port.js` | The integration port every adapter implements |
 
 ## Getting started
