@@ -1,0 +1,45 @@
+{
+  "description": "A synthetic Xero Demo Company for XERO_MODE=replay. Every name, number and id here is made up.",
+  "interactions": [
+    {
+      "repeat": true,
+      "request": { "method": "GET", "url": "https://api.xero.com/api.xro/2.0/Organisation" },
+      "response": {
+        "headers": { "x-daylimit-remaining": "990", "x-minlimit-remaining": "59", "x-appminlimit-remaining": "9999" },
+        "body": { "Organisations": [{ "OrganisationID": "00000000-0000-4000-8000-0000000000a1", "Name": "Example Lab (Demo)", "Class": "DEMO", "CountryCode": "AU", "BaseCurrency": "AUD" }] }
+      }
+    },
+    {
+      "repeat": true,
+      "request": { "method": "GET", "url": "https://api.xero.com/api.xro/2.0/Contacts" },
+      "response": {
+        "body": { "Contacts": [
+          { "ContactID": "00000000-0000-4000-8000-0000000000c1", "Name": "Example Practice", "EmailAddress": "accounts@example.test", "ContactStatus": "ACTIVE", "IsCustomer": true, "IsSupplier": false, "UpdatedDateUTC": "/Date(1792000000000+0000)/" },
+          { "ContactID": "00000000-0000-4000-8000-0000000000c2", "Name": "Another Practice", "ContactStatus": "ACTIVE", "IsCustomer": true, "IsSupplier": false, "UpdatedDateUTC": "/Date(1792000000000+0000)/" },
+          { "ContactID": "00000000-0000-4000-8000-0000000000c3", "Name": "Example Supplier", "ContactStatus": "ACTIVE", "IsCustomer": false, "IsSupplier": true, "UpdatedDateUTC": "/Date(1792000000000+0000)/" }
+        ] }
+      }
+    },
+    {
+      "repeat": true,
+      "request": { "method": "GET", "url": "https://api.xero.com/api.xro/2.0/Items" },
+      "response": {
+        "body": { "Items": [
+          { "ItemID": "00000000-0000-4000-8000-0000000000e1", "Code": "CROWN", "Name": "Crown", "Description": "Crown", "IsSold": true, "SalesDetails": { "UnitPrice": 250.0, "AccountCode": "200", "TaxType": "OUTPUT" }, "UpdatedDateUTC": "/Date(1792000000000+0000)/" },
+          { "ItemID": "00000000-0000-4000-8000-0000000000e2", "Code": "REPAIR", "Name": "Repair", "IsSold": true, "SalesDetails": { "UnitPrice": 80.0, "AccountCode": "200", "TaxType": "OUTPUT" }, "UpdatedDateUTC": "/Date(1792000000000+0000)/" }
+        ] }
+      }
+    },
+    {
+      "repeat": true,
+      "request": { "method": "GET", "url": "https://api.xero.com/api.xro/2.0/TrackingCategories" },
+      "response": {
+        "body": { "TrackingCategories": [
+          { "TrackingCategoryID": "00000000-0000-4000-8000-0000000000f1", "Name": "Department", "Status": "ACTIVE", "Options": [
+            { "TrackingOptionID": "00000000-0000-4000-8000-0000000000f2", "Name": "Laboratory", "Status": "ACTIVE" }
+          ] }
+        ] }
+      }
+    }
+  ]
+}
