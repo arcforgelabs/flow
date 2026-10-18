@@ -1,0 +1,194 @@
+name: Flow Release Checks
+
+# Proves a release tag before anything is published (docs/RELEASING.md):
+# the tag is a calendar version that matches package.json, it sits on main,
+# every CI lane passes on its exact commit (.github/workflows/ci.yml), and the
+# npm tarball installs and starts against PostgreSQL. Flow Release Publish calls this first; run it on its own to rehearse
+# a release. It never publishes.
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: Release tag, for example v2026.10.15-beta.1
+        required: true
+        type: string
+    outputs:
+      commit:
+        value: ${{ jobs.resolve.outputs.commit }}
+      version:
+        value: ${{ jobs.resolve.outputs.version }}
+      channel:
+        value: ${{ jobs.resolve.outputs.channel }}
+      npm_dist_tag:
+        value: ${{ jobs.resolve.outputs.npm_dist_tag }}
+      tarball:
+        value: ${{ jobs.package.outputs.tarball }}
+      tarball_sha256:
+        value: ${{ jobs.package.outputs.tarball_sha256 }}
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag, for example v2026.10.15-beta.1
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: "24"
+
+jobs:
+  resolve:
+    name: resolve
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      commit: ${{ steps.tag.outputs.commit }}
+      version: ${{ steps.tag.outputs.version }}
+      channel: ${{ steps.tag.outputs.channel }}
+      npm_dist_tag: ${{ steps.tag.outputs.npm_dist_tag }}
+    steps:
+      - name: Check out the tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/tags/${{ inputs.tag }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Require a reviewed commit and a matching version
+        id: tag
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          commit="$(git rev-parse "refs/tags/${TAG}^{commit}")"
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          if ! git merge-base --is-ancestor "$commit" refs/remotes/origin/main; then
+            echo "::error::${TAG} (${commit}) is not on main. Only reviewed main commits are released." >&2
+            exit 1
+          fi
+          node scripts/release/release.mjs check --tag "$TAG" > "$RUNNER_TEMP/release.json"
+          {
+            echo "commit=${commit}"
+            echo "version=$(jq -r .version "$RUNNER_TEMP/release.json")"
+            echo "channel=$(jq -r .channel "$RUNNER_TEMP/release.json")"
+            echo "npm_dist_tag=$(jq -r .npmDistTag "$RUNNER_TEMP/release.json")"
+          } | tee -a "$GITHUB_OUTPUT" >> "$GITHUB_STEP_SUMMARY"
+
+  ci:
+    name: ci
+    needs: resolve
+    uses: ./.github/workflows/ci.yml
+    with:
+      ref: ${{ needs.resolve.outputs.commit }}
+      tag: ${{ inputs.tag }}
+
+  package:
+    name: package
+    needs: resolve
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # A throwaway database for the package smoke, as in CI's test job.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: flow
+          POSTGRES_PASSWORD: flow
+          POSTGRES_DB: flow_smoke
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U flow"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    outputs:
+      tarball: ${{ steps.pack.outputs.tarball }}
+      tarball_sha256: ${{ steps.pack.outputs.sha256 }}
+    steps:
+      # The tag, not a commit passed between jobs: the build runs only what
+      # resolve proved is on main. A tag moved since then fails here.
+      - name: Check out the release tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/tags/${{ inputs.tag }}
+          persist-credentials: false
+
+      - name: Require the commit resolve proved
+        env:
+          RESOLVED: ${{ needs.resolve.outputs.commit }}
+        run: |
+          set -euo pipefail
+          head="$(git rev-parse HEAD)"
+          if [ "$head" != "$RESOLVED" ]; then
+            echo "::error::The tag now points at ${head}, not the ${RESOLVED} that resolve proved is on main. Run the release again." >&2
+            exit 1
+          fi
+
+      # No Actions cache: what is published is built from the registry and
+      # the lockfiles alone, and a release run never writes a cache that
+      # main's later runs would read.
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install
+        run: npm ci --no-audit --no-fund
+
+      # A beta's version is package.json's version with -beta.N; npm version
+      # writes it to package.json and package-lock.json in this job only.
+      # The shrinkwrap pins every installed dependency to what CI tested.
+      - name: Pack the npm tarball
+        id: pack
+        env:
+          VERSION: ${{ needs.resolve.outputs.version }}
+        run: |
+          set -euo pipefail
+          npm version "$VERSION" --no-git-tag-version --allow-same-version
+          cp package-lock.json npm-shrinkwrap.json
+          mkdir -p "$RUNNER_TEMP/package"
+          tarball="$(npm pack --pack-destination "$RUNNER_TEMP/package" --json | jq -r '.[0].filename')"
+          (cd "$RUNNER_TEMP/package" && sha256sum "$tarball" > "$tarball.sha256")
+          node scripts/release/release.mjs migrations --output "$RUNNER_TEMP/package/migrations.json"
+          echo "tarball=${tarball}" >> "$GITHUB_OUTPUT"
+          echo "sha256=$(cut -d' ' -f1 "$RUNNER_TEMP/package/$tarball.sha256")" >> "$GITHUB_OUTPUT"
+          echo "Packed ${tarball}: $(cat "$RUNNER_TEMP/package/$tarball.sha256")" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Install the tarball in an empty directory and start it
+        env:
+          # A throwaway database inside this job; not a secret.
+          DATABASE_URL: postgres://flow:flow@localhost:5432/flow_smoke
+        run: scripts/release/package-smoke.sh "$RUNNER_TEMP/package/${{ steps.pack.outputs.tarball }}"
+
+      # CycloneDX SBOM of the production dependencies the shrinkwrap pins.
+      - name: Write the server SBOM
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/sbom"
+          npm sbom --omit dev --sbom-format cyclonedx > "$RUNNER_TEMP/sbom/flow-server.cdx.json"
+          jq -e '.components | length > 0' "$RUNNER_TEMP/sbom/flow-server.cdx.json" >/dev/null
+
+      - name: Keep the SBOM
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sbom
+          path: ${{ runner.temp }}/sbom
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Keep the tarball for publishing
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: npm-package
+          path: ${{ runner.temp }}/package
+          retention-days: 30
+          if-no-files-found: error

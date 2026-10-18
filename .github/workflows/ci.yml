@@ -1,20 +1,35 @@
 name: CI
 
 # The `test` job is the gate the main ruleset (.github/rulesets/main.json)
-# requires by name, so keep that name.
+# and the release and Replit deploy checks (scripts/deploy-checks.js) require
+# by name, so keep that name. `docker-build` builds the image and starts it.
 
 on:
   pull_request:
   push:
     branches: [main]
   workflow_dispatch:
+  # flow-release-checks.yml runs every lane on the exact commit it releases.
+  workflow_call:
+    inputs:
+      ref:
+        description: Commit to test
+        required: true
+        type: string
+      tag:
+        description: Release tag this run checks, so releases of one commit (a beta and a stable) test in parallel
+        required: false
+        type: string
+        default: ""
 
 permissions:
   contents: read
 
+# One group per ref, and per release tag for a release check. A release check
+# is never cancelled; a newer push to a pull request cancels the older run.
 concurrency:
-  group: flow-ci-${{ github.ref }}
-  cancel-in-progress: true
+  group: flow-ci-${{ inputs.tag && format('{0}-', inputs.tag) || '' }}${{ inputs.ref || github.ref }}
+  cancel-in-progress: ${{ !inputs.ref }}
 
 jobs:
   test:
@@ -41,12 +56,17 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref || '' }}
+          persist-credentials: false
 
       - name: Set up Node
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
-          cache: npm
+          # A release check (workflow_call with a ref) never reads or writes
+          # the npm cache, so a release run cannot poison what main reads.
+          cache: ${{ !inputs.ref && 'npm' || '' }}
 
       - name: Install
         run: npm ci
@@ -56,3 +76,37 @@ jobs:
 
       - name: Audit production dependencies
         run: npm audit --omit=dev --audit-level=high
+
+  docker-build:
+    name: docker-build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: flow
+          POSTGRES_PASSWORD: flow
+          POSTGRES_DB: flow_smoke
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U flow"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref || '' }}
+          persist-credentials: false
+
+      - name: Build the image
+        run: docker build --build-arg VCS_REF="$(git rev-parse HEAD)" --tag flow:ci .
+
+      - name: Start the image and check it answers
+        env:
+          # A throwaway database inside this job; not a secret.
+          DATABASE_URL: postgres://flow:flow@localhost:5432/flow_smoke
+        run: scripts/release/image-smoke.sh flow:ci "$(git rev-parse HEAD)"
