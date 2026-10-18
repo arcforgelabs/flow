@@ -24,12 +24,22 @@ export const exampleAdapter = {
     health: async () => ({ ok: true }), // required
     pullWorkItems: async (cursor) => { /* … */ },
   },
+  start: async ({ db, log }) => { /* optional */ },
+  stop: async () => { /* optional */ },
 };
 ```
 
 The capabilities are `pullWorkItems`, `pushInvoice`, `pushBill`,
 `pullPayments` and `health`. An adapter declares only the ones it has, and
 must declare `health`.
+
+Two optional functions give an adapter a lifecycle:
+
+- `start({ db, log })` runs once at server start, only while the adapter is
+  on, after its tables are in place. Keep the database handle here and start
+  background work (a scheduler, a poller).
+- `stop()` ends that work. `registry.stop()` calls it for every adapter that
+  started, newest first. Tests call it so they end cleanly.
 
 To ship an adapter, add it to the list in `server/integrations/adapters.js`.
 Core code never imports an adapter; it asks the registry.
