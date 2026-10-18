@@ -1,4 +1,5 @@
 import { eq, sql } from 'drizzle-orm';
+import { ledgerLinesFor, toLedgerHold, toLedgerJob } from './ledger.js';
 import { orderStatusLabel, parseSeazonaDate } from './map.js';
 import { seazonaClients, seazonaInvoices, seazonaOrders } from './schema.js';
 
@@ -36,6 +37,8 @@ export async function readBillableWork(db, { cursor = null, limit = 200 } = {}) 
     order: seazonaOrders,
     invoice: seazonaInvoices,
     client: { accountNumber: seazonaClients.accountNumber, company: seazonaClients.company, email: seazonaClients.email },
+    // How many orders carry the same Seazona invoice (ledger.js, ledgerLinesFor).
+    invoiceOrderCount: sql`(select count(*)::int from ${seazonaOrders} as same where same.invoice_number = ${seazonaOrders.invoiceNumber} and same.deleted_in_source_at is null)`,
     changedAt: sql`to_char(${changedAt} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`,
   })
     .from(seazonaOrders)
@@ -47,17 +50,18 @@ export async function readBillableWork(db, { cursor = null, limit = 200 } = {}) 
 
   const items = [];
   const withdrawn = [];
-  for (const { order, invoice, client } of rows) {
+  for (const { order, invoice, client, invoiceOrderCount } of rows) {
     const billable = !order.deletedInSourceAt && BILLABLE.test(order.status ?? '');
     if (!billable) {
-      withdrawn.push({
+      const entry = {
         sourceId: order.id,
         status: orderStatusLabel(order),
         reason: order.deletedInSourceAt ? 'deleted_in_seazona' : 'not_billable',
-      });
+      };
+      withdrawn.push({ ...entry, ledgerHold: toLedgerHold(entry) });
       continue;
     }
-    items.push({
+    const item = {
       source: 'seazona',
       sourceId: order.id,
       invoiceNumber: order.invoiceNumber,
@@ -86,7 +90,9 @@ export async function readBillableWork(db, { cursor = null, limit = 200 } = {}) 
         patientReference: invoice.patientReference,
       } : null,
       client: client?.accountNumber || client?.company || client?.email ? client : null,
-    });
+      invoiceOrderCount: order.invoiceNumber ? Number(invoiceOrderCount) : 0,
+    };
+    items.push({ ...item, linesFrom: ledgerLinesFor(item).linesFrom, ledgerJob: toLedgerJob(item) });
   }
   const lastRow = rows.at(-1);
   return {
