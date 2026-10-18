@@ -6,8 +6,30 @@ users. It never writes to Seazona, and it never drives a browser. The code is
 in `server/integrations/seazona/`. Core code never imports it
 (`CONTRIBUTING.md`).
 
-Status: the API client, the rate governor and the sync lanes are in place.
-The connection to the integration port and the live scheduler come next.
+Status: the adapter is on the integration port. It keeps Seazona's invoices,
+orders, clients, products and users in step and gives invoice preparation a
+billing feed. Invoice preparation itself is not built yet.
+
+## Turn it on
+
+1. Add `seazona` to `FLOW_INTEGRATIONS` (`docs/INTEGRATIONS.md`). Its tables
+   are created at the next start.
+2. Set `SEAZONA_MODE` and the settings for that mode (below). With Seazona on
+   and no mode, or a malformed setting, Flow does not start: the adapter never
+   guesses which account it acts on.
+3. Start Flow. The log says `[seazona] mode live; background sync on`.
+4. Check `GET /health`: `integrations` lists Seazona with its mode, each lane
+   and the rate governor.
+
+In `sandbox` or `replay`, sync when you choose:
+
+```bash
+DATABASE_URL=postgres://… FLOW_INTEGRATIONS=seazona SEAZONA_MODE=sandbox … \
+  node server/integrations/seazona/sync-once.js [lane …]
+```
+
+It runs the named lanes (all when none is named) once, through the rate
+governor, and prints what each did.
 
 ## Modes
 
@@ -74,6 +96,13 @@ gives the totals for a period and each failing path with its count, which
 answers a question such as "why did this account make thousands of failed
 reads last month?".
 
+## The background sync
+
+Only `live` mode starts it (`server/integrations/seazona/scheduler.js`). It
+first runs 5 seconds after start, runs every lane that is due, then sleeps
+until the next lane is due (at least 15 seconds, at most 30 minutes). One run
+at a time; a lane that another process is running is skipped.
+
 ## Sync lanes
 
 Each lane keeps one kind of record fresh, on its own cadence
@@ -128,6 +157,44 @@ them: order and invoice numbers, practice and dentist, status, dates, lines
 phone, address and dentist names; product prices; user names. It keeps no
 notes, files, settings, staff email or dentist phone, and no patient field
 unless `SEAZONA_KEEP_PATIENT_REFERENCE` is on.
+
+## Billing feed
+
+The adapter's `pullWorkItems(cursor)` capability is what invoice preparation
+reads (`server/integrations/seazona/feed.js`). Each call returns the orders
+that changed since the cursor, oldest change first, up to 200:
+
+- `items`: complete and shipped orders. Each has the order (`sourceId`,
+  `invoiceNumber`, `status`, `shipped`, practice, dentist, `orderedOn`,
+  `dueOn`, `lines`, `subtotalCents`, `patientReference`), the Seazona invoice
+  that carries it (`invoice`, or null) and the practice's account and email
+  (`client`).
+- `withdrawn`: every other changed order, with `reason`
+  `deleted_in_seazona` or `not_billable`, so work already held for it can be
+  dropped. An order deleted in Seazona is never an item, from any cursor.
+- `cursor`: pass it to the next call. `more` is true when the page was full.
+
+A change to an order or to its Seazona invoice puts the order at the end of
+the feed again. Call `registry.whenEnabled('seazona', …)` to reach it, so a
+turned-off adapter answers as turned off (`docs/INTEGRATIONS.md`).
+
+## Health
+
+`health()` reads Flow's database only; it never calls Seazona. `GET /health`
+shows it under `integrations`:
+
+- `mode`, `scheduled` and the request limit;
+- `governor`: requests in the last minute, any 429 cooldown, and the last
+  day's requests, failures, 429s and retries;
+- `lanes`: for each lane its status (`ok`, `failed`, `held`, `processing`,
+  `never_run`), whether it is fresh, its last success and error, and the
+  failing orders by id and status; `orders_active` also lists the
+  quarantined orders;
+- `deletedOrders`: how many orders are marked deleted in Seazona.
+
+`ok` is false while a lane is failed or held. An integration problem never
+fails Flow's own health check. None of it holds a host, a credential or
+patient data.
 
 ## Replay files
 

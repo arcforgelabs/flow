@@ -127,6 +127,14 @@ that are on with their tables in place. `registry.list()` gives each
 adapter's `state`: `disabled`, `ready`, `restart_needed`, or `not_started`
 before the first start.
 
+## Health
+
+`GET /health` lists every adapter under `integrations` with `enabled` and
+`state`. When an adapter is ready its `health()` answer is there too, so it
+must read Flow's own data and answer fast: an answer slower than 5 seconds,
+or an error, shows as `{ ok: false, error }`. An integration problem never
+fails Flow's own health check (`server/integrations/health.js`).
+
 ## Tests
 
 `test/integration-schema.test.js` proves the rules against PostgreSQL with a
