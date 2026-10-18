@@ -4,14 +4,22 @@ Xero is an optional integration (`VISION.md`). The adapter lives in
 `server/integrations/xero/` and sits behind the integration port
 (`server/integrations/port.js`). Core code never imports it.
 
-Status: the settings, the rate-limit governor, the API client and replay mode
-are in. Connecting Xero, contact and item sync, and draft invoices come in
+Status: the settings, the rate-limit governor, the API client, replay mode
+and connecting Xero are in. Contact and item sync and draft invoices come in
 the next pull requests.
+
+## Turn it on
+
+1. Set `FLOW_INTEGRATIONS=xero` (with other ids, comma-separated). Flow then
+   creates the Xero tables at the next start (`docs/INTEGRATIONS.md`).
+2. Set `XERO_MODE`. With Xero on and `XERO_MODE` unset, Flow does not start.
+3. For `live` or `sandbox`, set the Xero app's keys, `XERO_TOKEN_KEY`, and
+   the address (below), then connect.
 
 ## Modes
 
-`XERO_MODE` turns the adapter on and says which Xero it acts on. It has no
-default: unset, the adapter is off (issue #10).
+`XERO_MODE` says which Xero the adapter acts on. It has no default
+(issue #10).
 
 | Mode | Acts on | Writes |
 | --- | --- | --- |
@@ -26,7 +34,7 @@ credentials. Tests use replay only and never call the real Xero API.
 
 | Setting | Kind | What it does |
 | --- | --- | --- |
-| `XERO_MODE` | configuration | `live`, `sandbox` or `replay`. Unset: the adapter is off. |
+| `XERO_MODE` | configuration | `live`, `sandbox` or `replay`. Required when `FLOW_INTEGRATIONS` includes `xero`. |
 | `XERO_CLIENT_ID` | configuration | The Xero app's client id. Needed for `live` and `sandbox`. |
 | `XERO_CLIENT_SECRET` | secret | The Xero app's client secret. Needed for `live` and `sandbox`. |
 | `XERO_TOKEN_KEY` | secret | A 32-byte key (64 hex characters or base64) that encrypts the Xero refresh token at rest. Needed for `live` and `sandbox`. Make one with `openssl rand -hex 32`. |
@@ -43,6 +51,47 @@ credentials. Tests use replay only and never call the real Xero API.
 | `XERO_REPLAY_FIXTURES` | configuration | Replay mode only: a fixture file in place of the bundled one. |
 
 Errors name a setting, never its value.
+
+## Connect Xero
+
+Only an owner can connect or disconnect Xero, with a verified owner sign-in
+(`docs/SELF_HOSTING.md`, "Sign-in (Clerk)"). Flow connects one Xero
+organisation to each Flow organisation, and a Xero organisation to at most
+one Flow organisation.
+
+1. On the Xero app (developer.xero.com, My Apps), add the redirect URI
+   `https://<this installation's address>/api/xero/oauth/callback`. On Replit
+   that is the app's `*.replit.app` address. Flow reads the address from
+   `FLOW_PUBLIC_ORIGIN` (or `XERO_REDIRECT_URI`); the two must match exactly.
+2. `POST /api/xero/connect` with `{ "organisationId": "…" }` answers with
+   `authorizeUrl`. Open it in the browser and approve the organisation in
+   Xero.
+3. Xero sends the browser back to `/api/xero/oauth/callback`. Flow checks the
+   one-use state (ten minutes), exchanges the code, and keeps the
+   organisation `XERO_TENANT_ID` or `XERO_TENANT_NAME` names. If several are
+   approved and the settings name none, it refuses. In `sandbox` it refuses
+   an organisation that is not a Demo Company. A refused approval is revoked
+   at Xero.
+
+`GET /api/xero/status?organisationId=…` (anyone signed in) shows the mode,
+whether writes are allowed, the redirect URI, the connection and the day's
+Xero call budget. `POST /api/xero/disconnect` (owner) revokes the token at
+Xero and deletes Flow's copy.
+
+### The refresh token
+
+Xero gives a new refresh token on every refresh and the old one stops
+working, so Flow stores the newest one in `xero_connections`, encrypted with
+`XERO_TOKEN_KEY` (AES-256-GCM) and bound to its Flow organisation. A refresh
+holds that row's lock and stores the new token in the same transaction, so
+two refreshes never race. Access tokens stay in memory for their 30 minutes.
+No token is ever logged or shown.
+
+A connection made in one mode is not used in another: change `XERO_MODE` and
+an owner connects again. So does a refresh token that Xero no longer accepts
+(unused for 60 days, or revoked): Flow answers `xero_reconnect_needed`. If
+`XERO_TOKEN_KEY` changes, the stored token cannot be read and an owner
+connects again.
 
 ## Rate limits and retries
 

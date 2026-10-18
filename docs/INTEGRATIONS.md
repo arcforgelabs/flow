@@ -33,6 +33,14 @@ The capabilities are `pullWorkItems`, `pushInvoice`, `pushBill`,
 `pullPayments` and `health`. An adapter declares only the ones it has, and
 must declare `health`.
 
+An adapter may also declare `routes(context)`: a function that returns an
+Express router, with `context` `{ db, personAuth, log }`. Flow mounts it at
+`/api/<id>` (`registry.routes` in `server/integrations/port.js`), after the
+`/api` rate limit. The router is built only for an adapter that is on with
+its tables in place; for one that is off, every request under `/api/<id>`
+gets the turned-off answer (below) with status 503. The router does its own
+sign-in checks with `personAuth`.
+
 Two optional functions give an adapter a lifecycle:
 
 - `start({ db, log })` runs once at server start, only while the adapter is

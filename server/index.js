@@ -76,7 +76,7 @@ const trustProxy = process.env.REPL_ID || process.env.REPLIT_DEPLOYMENT ? 1 : fa
 
 const updates = createUpdateChecker();
 
-createApp({ database, auth, trustProxy, updates }).listen(port, () => {
+createApp({ database, auth, trustProxy, updates, integrations }).listen(port, () => {
   console.log(`[flow] listening on ${port}`);
 });
 
