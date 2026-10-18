@@ -1,0 +1,23 @@
+# Replit settings for a workspace imported from this repository
+# (docs/REPLIT.md). The workspace's Run button starts the workspace files. The
+# deployment builds and runs a release or commit fetched from GitHub instead:
+# FLOW_DEPLOY_REF=stable, beta, a release tag or a commit; main when unset
+# (scripts/replit-deploy.sh). Keep every secret in Replit Secrets.
+modules = ["nodejs-24", "bash"]
+run = ["bash", "scripts/replit-start.sh"]
+
+[env]
+FLOW_RUNTIME = "replit"
+
+[[ports]]
+localPort = 19300
+externalPort = 80
+
+# Reserved VM: Flow runs its integration outbox and scheduled invoice email
+# in-process, so it must stay up (an autoscale deployment would sleep and miss
+# them).
+[deployment]
+deploymentTarget = "vm"
+build = ["bash", "scripts/replit-deploy.sh", "build"]
+run = ["bash", "scripts/replit-deploy.sh", "start"]
+ignorePorts = false
