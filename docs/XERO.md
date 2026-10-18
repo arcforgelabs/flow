@@ -4,9 +4,10 @@ Xero is an optional integration (`VISION.md`). The adapter lives in
 `server/integrations/xero/` and sits behind the integration port
 (`server/integrations/port.js`). Core code never imports it.
 
-Status: the settings, the rate-limit governor, the API client, replay mode,
-connecting Xero, and contact and item sync are in. Draft invoices come in the
-next pull request.
+The adapter connects one Xero organisation to each Flow organisation, copies
+its contacts and items, and sends issued Flow invoices to Xero as draft
+invoices. The lab checks and approves them in Xero. Bills and payments are not
+ported yet.
 
 ## Turn it on
 
@@ -120,6 +121,92 @@ For invoice preparation, `server/integrations/xero/catalogue.js` offers:
 
 A sync and a batch of drafts for one organisation run one at a time
 (`runtime.serial`), because they share one call budget.
+
+## Draft invoices
+
+Flow is the store of record; Xero gets a copy (`VISION.md`). An issued Flow
+invoice version goes to Xero as one draft sales invoice (`ACCREC`, `DRAFT`).
+
+```mermaid
+flowchart TD
+  start[Send issued invoice] --> pushed{Pushed before?}
+  pushed -- settled --> done[already in Xero: nothing sent]
+  pushed -- unknown outcome --> resume{Six minutes since the key was sent?}
+  resume -- no --> same[Same request, same key]
+  resume -- yes --> look[Look in Xero by reference]
+  look -- one match --> reconciled[Record it]
+  look -- none --> newkey[Same request, new key]
+  pushed -- no --> earlier{Earlier version in Xero, not deleted or voided?}
+  earlier -- yes --> refuse[Refuse: change it in Xero first]
+  earlier -- no --> check[Contact, items, live reference check]
+  check -- same contact, reference and total --> existing[Record the Xero invoice: nothing sent]
+  check -- same contact and reference, other total, 90 days --> hold[Hold for a person]
+  check -- clear --> store[Store request and key] --> send[POST] --> verify[Read back and compare]
+```
+
+The rules:
+
+- **What is sent is the issued document.** Flow sends the latest issued
+  version's document (`invoice_versions`), never live lines. A draft or void
+  invoice is never sent.
+- **A sent invoice is never changed in place.** Flow never updates a Xero
+  invoice. A revised invoice (version 2) is sent only after the earlier
+  version's Xero invoice is deleted or voided in Xero; Flow checks that live
+  and keeps the earlier record.
+- **Flow never creates a Xero contact.** The Flow customer's name must match
+  exactly one active Xero contact in the synced copy.
+- **Each line names its item.** A line's `itemCode` from the issued document
+  becomes the Xero `ItemCode`; a code Xero does not have stops the draft. Tax
+  types come from `XERO_TAX_TYPE_GST` and `XERO_TAX_TYPE_GST_FREE`; amounts are
+  tax-exclusive with each line's amount sent as Flow calculated it.
+- **Reference and dates.** The Xero reference is the invoice's reference, or
+  its number. The date is the issue date; the due date is the invoice's, or
+  `XERO_DEFAULT_DUE_DAYS` later. With `XERO_INVOICE_NUMBER=flow` Xero gets
+  Flow's number.
+- **Duplicates.** Before it creates, Flow asks Xero for invoices with the same
+  reference. One for the same contact and total is the same work: Flow records
+  it (`existing`) and sends nothing. One for the same contact at another total
+  dated within 90 days is held, unless the person sends again with that
+  invoice in `allowExistingReference`.
+- **Uncertain outcomes.** The request and its `Idempotency-Key` are stored in
+  `xero_invoice_pushes` before they leave. If Xero refuses the first request,
+  the record is dropped and the invoice can be sent again once fixed. If the
+  outcome is unknown (timeout, 5xx), the record stays `ambiguous`. Sending
+  again within six minutes repeats the same request with the same key (Xero
+  keeps keys six minutes); after that Flow looks in Xero by reference, settles
+  on the one matching draft it finds, and sends under a new key only when
+  there is none.
+- **Read back.** After a create Flow reads the draft and compares contact,
+  subtotal, tax, total, line count, reference and date with the document. A
+  difference is recorded as `mismatch` for a person to check in Xero.
+- **One at a time.** A batch runs on the `writes` lane, after any sync for
+  the same organisation. A daily-limit 429 stops the batch and says which
+  invoices were not tried.
+- **Live writes.** In `live` mode nothing is written unless
+  `XERO_ALLOW_LIVE_WRITES=on`. In `sandbox` the organisation's class is
+  checked before each batch.
+
+| Route | Who | What |
+| --- | --- | --- |
+| `POST /api/xero/invoices/preview` `{ organisationId, invoiceIds }` | anyone signed in | Each invoice's Xero draft, its contact match, and what stops it. No Xero calls. |
+| `POST /api/xero/invoices/push` `{ organisationId, invoiceIds, allowExistingReference? }` | owner or admin | Sends up to 100 issued invoices. Each answers `created`, `reconciled`, `existing`, `already_in_xero`, `mismatch`, `ambiguous`, `failed` or `not_tried`. |
+| `GET /api/xero/invoices/<invoiceId>/pushes?organisationId=` | anyone signed in | The push records of one invoice, without the request. |
+
+Through the integration port, `pushInvoice({ organisationId, invoiceId,
+pushedBy })` sends one issued invoice and answers as one entry above.
+
+### What invoice preparation can rely on
+
+- `previewDrafts(db, runtime, organisationId, invoiceIds)` and the preview
+  route cost no Xero calls. A preview `state` is `ready`, `blocked` (with
+  `problems`), `in_xero`, `ambiguous`, `dispatching` or `mismatch`. Problem
+  codes: `invoice_not_issued`, `invoice_void`, `xero_contact_missing`,
+  `xero_contact_ambiguous`, `xero_item_missing`, and
+  `xero_earlier_version_in_xero` (shown, not blocking: the push checks Xero
+  live). Warnings: `xero_not_synced`, `xero_sync_stale` (over 24 hours).
+- A push is safe to repeat: the Flow invoice id and version are the key, and
+  a repeat never makes a second Xero invoice.
+- A preview never writes; only `push` does, and only for issued versions.
 
 ## Rate limits and retries
 

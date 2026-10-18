@@ -91,3 +91,22 @@ export async function connectDirectly(handle, runtime, organisationId) {
   });
   runtime.remember(organisationId, { access_token: 'synthetic-access-0', expires_in: 1800 });
 }
+
+// A replay runtime whose answers each test scripts, with a clock the test
+// moves (the six-minute idempotency window).
+export function scriptedXero(env = {}) {
+  let replay = createReplayFetch([]);
+  const clock = { at: Date.now() };
+  const log = quietLog();
+  const settings = resolveXeroSettings({ XERO_MODE: 'replay', XERO_TOKEN_KEY: TOKEN_KEY, FLOW_PUBLIC_ORIGIN: ORIGIN, ...env });
+  const runtime = createXeroRuntime({ settings, fetch: (...args) => replay(...args), now: () => clock.at, log });
+  return {
+    runtime,
+    log,
+    clock,
+    script(interactions) {
+      replay = createReplayFetch(interactions);
+      return replay;
+    },
+  };
+}

@@ -4,6 +4,7 @@ import { FlowError } from '../../core/errors.js';
 import { organisations } from '../../db/schema.js';
 import { lastSync, listContacts, listItems, syncCatalogue } from './catalogue.js';
 import { createXeroClient } from './client.js';
+import { describePush, listPushes, MAX_BATCH, previewDrafts, pushDrafts } from './drafts.js';
 import { decryptToken, deleteConnection, describeConnection, readConnection, saveConnection } from './connections.js';
 import { authorizeUrl, exchangeCode, fetchConnections, revokeToken, selectConnection } from './oauth.js';
 import { writesAllowed } from './settings.js';
@@ -17,6 +18,10 @@ import { writesAllowed } from './settings.js';
 //   POST /sync                     owner or admin: copies Xero contacts and items
 //   GET  /contacts?organisationId=&q=   any signed-in person: the copy
 //   GET  /items?organisationId=    any signed-in person: the copy
+//   POST /invoices/preview         any signed-in person: the Xero drafts Flow
+//                                  would make, and what stops them (no Xero calls)
+//   POST /invoices/push            owner or admin: issued invoices to Xero drafts
+//   GET  /invoices/:invoiceId/pushes?organisationId=   any signed-in person
 //
 // Only an owner, with a verified owner sign-in, can connect or disconnect.
 // The callback carries no Flow session: the one-use state from /connect,
@@ -40,6 +45,13 @@ export function sendError(res, error, log) {
   if (error.details !== undefined) body.details = error.details;
   if (error.retryAfterMs) res.set('Retry-After', String(Math.ceil(error.retryAfterMs / 1000)));
   return res.status(status).json(body);
+}
+
+function requireInvoiceIds(raw, name = 'invoiceIds') {
+  if (!Array.isArray(raw) || !raw.length || raw.length > MAX_BATCH || !raw.every((id) => typeof id === 'string' && UUID.test(id))) {
+    throw new FlowError('invalid', `${name} must list 1 to ${MAX_BATCH} Flow invoice ids`);
+  }
+  return [...new Set(raw)];
 }
 
 export async function requireOrganisation(db, raw) {
@@ -175,6 +187,27 @@ export function createXeroRouter({ db, personAuth, runtime, log = console }) {
   router.get('/items', ...signedIn, handle(log, async (req, res) => {
     const organisationId = await requireOrganisation(db, req.query.organisationId);
     res.json({ ok: true, items: await listItems(db, organisationId) });
+  }));
+
+  router.post('/invoices/preview', ...signedIn, handle(log, async (req, res) => {
+    const organisationId = await requireOrganisation(db, req.body?.organisationId);
+    const preview = await previewDrafts(db, runtime, organisationId, requireInvoiceIds(req.body?.invoiceIds));
+    res.json({ ok: true, mode: settings.mode, writesAllowed: writesAllowed(settings), ...preview });
+  }));
+
+  router.post('/invoices/push', ...manager, handle(log, async (req, res) => {
+    const organisationId = await requireOrganisation(db, req.body?.organisationId);
+    const invoiceIds = requireInvoiceIds(req.body?.invoiceIds);
+    const allowExistingReference = req.body?.allowExistingReference === undefined ? [] : requireInvoiceIds(req.body.allowExistingReference, 'allowExistingReference');
+    const result = await pushDrafts(db, runtime, organisationId, invoiceIds, { pushedBy: req.person.id, allowExistingReference });
+    log.info?.(`[xero] organisation ${organisationId}: person ${req.person.id} sent ${invoiceIds.length} invoice(s) to Xero: ${JSON.stringify(result.summary)}`);
+    res.json({ ok: true, ...result });
+  }));
+
+  router.get('/invoices/:invoiceId/pushes', ...signedIn, handle(log, async (req, res) => {
+    const organisationId = await requireOrganisation(db, req.query.organisationId);
+    const [invoiceId] = requireInvoiceIds([req.params.invoiceId], 'invoiceId');
+    res.json({ ok: true, pushes: (await listPushes(db, organisationId, invoiceId)).map(describePush) });
   }));
 
   return router;
