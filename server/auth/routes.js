@@ -1,6 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import express from 'express';
 import { FlowError } from '../core/errors.js';
+import { rateLimit } from '../rate-limit.js';
 import { ensureClerkAccount } from './clerk.js';
 import {
   findPersonByEmail,
@@ -36,15 +37,18 @@ function sendError(res, error, log) {
 }
 
 // Sign-in routes. `settings` comes from resolveSignInSettings; with sign-in
-// off, person routes answer 503 and nothing else is mounted.
-export function createSignInRouter({ settings, db, clerk, personAuth, log = console }) {
+// off, person routes answer 503 and nothing else is mounted. The sign-in page
+// and its config have their own limit per client (`rateLimitPerMinute`);
+// /api/me and /api/people sit under the app's /api limit as well.
+export function createSignInRouter({ settings, db, clerk, personAuth, rateLimitPerMinute = 30, log = console }) {
   const router = express.Router();
   const signInOn = settings.mode === 'clerk';
+  const signInLimit = rateLimit({ limit: rateLimitPerMinute, windowMs: 60_000 });
 
   // Public: what the sign-in page needs. The publishable key is meant for
   // browsers. Served at runtime, so one build serves Replit's development
   // and production Clerk instances.
-  router.get('/api/auth/config', (_req, res) => {
+  router.get('/api/auth/config', signInLimit, (_req, res) => {
     res.set('Cache-Control', 'no-store');
     if (!signInOn) return res.json({ ok: true, mode: 'off' });
     const { publishableKey, proxyUrl } = settings.keys;
@@ -56,8 +60,8 @@ export function createSignInRouter({ settings, db, clerk, personAuth, log = cons
     });
   });
 
-  router.get('/', (_req, res) => res.redirect(302, '/sign-in'));
-  router.get('/sign-in', (_req, res) => {
+  router.get('/', signInLimit, (_req, res) => res.redirect(302, '/sign-in'));
+  router.get('/sign-in', signInLimit, (_req, res) => {
     res.set('Cache-Control', 'no-store');
     res.set('X-Frame-Options', 'DENY');
     res.sendFile(signInPage);

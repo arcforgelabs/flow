@@ -10,7 +10,11 @@ import { rateLimit } from './rate-limit.js';
 // `auth` is { settings, clerk, personAuth, clerkProxy } from server/index.js
 // (or a test). Without it sign-in is off and every person route answers 503.
 // `trustProxy` is Express's `trust proxy`: 1 hop on Replit, so rate limits
-// count per client rather than per proxy. `build` is what GET /health reports
+// count per client rather than per proxy. The limits are requests per minute
+// per client, sized for a lab of a few people: `rateLimitPerMinute` for /api,
+// `signInRateLimitPerMinute` for the sign-in page and its config, and
+// `clerkProxyRateLimitPerMinute` for Clerk's Frontend API, which a signed-in
+// browser calls often. `build` is what GET /health reports
 // (server/deployed-build.js); `updates` is a server/update-check.js checker.
 export function createApp({
   build = deployedBuildStatus(),
@@ -19,6 +23,8 @@ export function createApp({
   updates = null,
   trustProxy = false,
   rateLimitPerMinute = 120,
+  signInRateLimitPerMinute = 30,
+  clerkProxyRateLimitPerMinute = 300,
   log = console,
 } = {}) {
   const app = express();
@@ -39,7 +45,9 @@ export function createApp({
 
   // Clerk's Frontend API through Flow's origin (CLERK_PROXY_URL). Before any
   // body parser, so request bodies reach Clerk intact.
-  if (auth?.clerkProxy) app.use(auth.clerkProxy.path, auth.clerkProxy.handler);
+  if (auth?.clerkProxy) {
+    app.use(auth.clerkProxy.path, rateLimit({ limit: clerkProxyRateLimitPerMinute, windowMs: 60_000 }), auth.clerkProxy.handler);
+  }
 
   app.use('/api', rateLimit({ limit: rateLimitPerMinute, windowMs: 60_000 }));
 
@@ -69,6 +77,7 @@ export function createApp({
     db: database?.db ?? null,
     clerk: auth?.clerk ?? null,
     personAuth: auth?.personAuth ?? null,
+    rateLimitPerMinute: signInRateLimitPerMinute,
     log,
   }));
 
