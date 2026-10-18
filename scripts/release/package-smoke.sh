@@ -6,7 +6,8 @@
 #
 # DATABASE_URL must be a throwaway PostgreSQL database: `flow-server` runs its
 # migrations there when it starts. It starts `flow-server` from the install
-# and requires GET /health to be ok with the database reachable. Everything
+# and requires GET /health to be ok with the database reachable, and its
+# build.release to be the package's version. Everything
 # else lives in a temporary directory that is removed on exit.
 set -euo pipefail
 
@@ -43,7 +44,8 @@ for _ in $(seq 1 60); do
   kill -0 "$server_pid" 2>/dev/null || { echo "flow-server exited before it answered /health" >&2; exit 1; }
   sleep 1
 done
-curl -fsS "http://127.0.0.1:${port}/health" | node -e '
+expected_release="v$(node -p 'require(process.argv[1]).version' "$installed/package.json")"
+curl -fsS "http://127.0.0.1:${port}/health" | EXPECTED="$expected_release" node -e '
 let s = "";
 process.stdin.on("data", (d) => (s += d)).on("end", () => {
   const h = JSON.parse(s);
@@ -51,5 +53,9 @@ process.stdin.on("data", (d) => (s += d)).on("end", () => {
     console.error(`health is not ok: ${s}`);
     process.exit(1);
   }
-  console.log("health ok, database reachable");
+  if (h.build?.release !== process.env.EXPECTED) {
+    console.error(`health build.release is ${h.build?.release}, expected ${process.env.EXPECTED}`);
+    process.exit(1);
+  }
+  console.log(`health ok, database reachable, release ${h.build.release}`);
 });'

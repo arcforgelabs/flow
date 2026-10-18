@@ -2,7 +2,9 @@ name: CI
 
 # The `test` job is the gate the main ruleset (.github/rulesets/main.json)
 # and the release and Replit deploy checks (scripts/deploy-checks.js) require
-# by name, so keep that name. `docker-build` builds the image and starts it.
+# by name, so keep that name. `docker-build` builds the image and starts it;
+# `package` packs the npm tarball, installs it in an empty directory and
+# starts it, as Flow Release Checks does for a release.
 
 on:
   pull_request:
@@ -110,3 +112,47 @@ jobs:
           # A throwaway database inside this job; not a secret.
           DATABASE_URL: postgres://flow:flow@localhost:5432/flow_smoke
         run: scripts/release/image-smoke.sh flow:ci "$(git rev-parse HEAD)"
+
+  package:
+    name: package
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: flow
+          POSTGRES_PASSWORD: flow
+          POSTGRES_DB: flow_smoke
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U flow"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref || '' }}
+          persist-credentials: false
+
+      # No npm cache: this lane installs only what the tarball pins.
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+
+      - name: Pack the npm tarball with a shrinkwrap
+        run: |
+          set -euo pipefail
+          cp package-lock.json npm-shrinkwrap.json
+          mkdir -p "$RUNNER_TEMP/package"
+          npm pack --pack-destination "$RUNNER_TEMP/package"
+
+      - name: Install the tarball in an empty directory and start it
+        env:
+          # A throwaway database inside this job; not a secret.
+          DATABASE_URL: postgres://flow:flow@localhost:5432/flow_smoke
+        run: scripts/release/package-smoke.sh "$RUNNER_TEMP"/package/*.tgz

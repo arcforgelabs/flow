@@ -1,17 +1,19 @@
 #!/usr/bin/env bash
 # Starts a Flow image and checks it answers, as an operator would run it.
 #
-#   DATABASE_URL=postgres://… scripts/release/image-smoke.sh <image> <commit>
+#   DATABASE_URL=postgres://… scripts/release/image-smoke.sh <image> <commit> [<release>]
 #
 # DATABASE_URL must be a throwaway PostgreSQL database on this host: the
 # container uses the host network and runs its migrations there when it
 # starts. GET /health must be ok, reach the database, and report <commit> as
-# the revision. The container is removed on exit.
+# build.revision and, when given, <release> (for example v2026.10.18) as
+# build.release. The container is removed on exit.
 set -euo pipefail
 
 : "${DATABASE_URL:?image-smoke.sh needs DATABASE_URL (a throwaway PostgreSQL database)}"
 image="${1:?usage: image-smoke.sh <image> <commit>}"
-commit="${2:?usage: image-smoke.sh <image> <commit>}"
+commit="${2:?usage: image-smoke.sh <image> <commit> [<release>]}"
+release="${3:-}"
 port="${FLOW_IMAGE_SMOKE_PORT:-19299}"
 name="flow-image-smoke-$$"
 cleanup() {
@@ -32,7 +34,7 @@ for _ in $(seq 1 60); do
   [[ "$(docker inspect -f '{{.State.Running}}' "$name")" == "true" ]] || { echo "the container exited before it answered /health" >&2; exit 1; }
   sleep 1
 done
-curl -fsS "http://127.0.0.1:${port}/health" | EXPECTED="$commit" node -e '
+curl -fsS "http://127.0.0.1:${port}/health" | EXPECTED="$commit" RELEASE="$release" node -e '
 let s = "";
 process.stdin.on("data", (d) => (s += d)).on("end", () => {
   const h = JSON.parse(s);
@@ -40,11 +42,15 @@ process.stdin.on("data", (d) => (s += d)).on("end", () => {
     console.error(`health is not ok: ${s}`);
     process.exit(1);
   }
-  if (h.revision !== process.env.EXPECTED) {
-    console.error(`health revision is ${h.revision}, expected ${process.env.EXPECTED}`);
+  if (h.build?.revision !== process.env.EXPECTED) {
+    console.error(`health build.revision is ${h.build?.revision}, expected ${process.env.EXPECTED}`);
     process.exit(1);
   }
-  console.log(`health ok, database reachable, revision ${h.revision}`);
+  if ((h.build?.release ?? "") !== process.env.RELEASE) {
+    console.error(`health build.release is ${h.build?.release}, expected ${process.env.RELEASE || "none"}`);
+    process.exit(1);
+  }
+  console.log(`health ok, database reachable, revision ${h.build.revision}, release ${h.build.release ?? "none"}`);
 });'
 if [[ "$(docker exec "$name" id -u)" == "0" ]]; then
   echo "the container runs as root" >&2

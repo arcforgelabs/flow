@@ -5,6 +5,7 @@ import { seedFirstOwner } from './auth/people.js';
 import { createPersonAuth } from './auth/session.js';
 import { resolveSignInSettings } from './auth/settings.js';
 import { migrateDatabase, openDatabase } from './db/index.js';
+import { createUpdateChecker, UPDATE_CHECK_INTERVAL_MS } from './update-check.js';
 
 const port = Number(process.env.FLOW_PORT || process.env.PORT || 19300);
 
@@ -61,6 +62,24 @@ if (settings.mode === 'clerk') {
 // Replit puts one proxy in front of the app.
 const trustProxy = process.env.REPL_ID || process.env.REPLIT_DEPLOYMENT ? 1 : false;
 
-createApp({ database, auth, trustProxy }).listen(port, () => {
+const updates = createUpdateChecker();
+
+createApp({ database, auth, trustProxy, updates }).listen(port, () => {
   console.log(`[flow] listening on ${port}`);
 });
+
+// The update notice: a release build logs when a newer release is out on its
+// channel, at start and every six hours. A build that is not a release asks
+// nobody.
+async function noticeUpdate() {
+  try {
+    const status = await updates.status();
+    if (status.updateAvailable) {
+      console.log(`[flow] update available: ${status.latest} (running ${status.current}, channel ${status.channel}). Notes: ${status.releaseUrl}. How to update: ${status.upgradeUrl}`);
+    }
+  } catch (error) {
+    console.error(`[flow] update check failed: ${error?.message || error}`);
+  }
+}
+noticeUpdate();
+setInterval(noticeUpdate, UPDATE_CHECK_INTERVAL_MS).unref();

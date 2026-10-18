@@ -16,7 +16,7 @@
     "node": ">=24"
   },
   "bin": {
-    "flow-server": "./server/index.js"
+    "flow-server": "./server/flow-server.js"
   },
   "files": [
     "server/",
