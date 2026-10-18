@@ -290,3 +290,30 @@ against a real Clerk instance:
 - the sign-in widget with `transferable: false` on Replit's managed instance;
 - how many proxies Replit puts in front of a published app (Flow trusts one);
 - sign-in through `CLERK_PROXY_URL` on a published `*.replit.app` address.
+
+## Move from the earlier codebase
+
+An installation that ran the earlier Flow codebase moves its records into a
+new, empty Flow database with `server/import-earlier-flow.js`
+(`server/import/earlier-flow.js` says what moves and why).
+
+| Moves | Source in the earlier database |
+| --- | --- |
+| Customers and suppliers | Its copy of the accounting system's contacts. Archived contacts stay behind. |
+| The price list | Its copy of the accounting system's sold items, with their price and tax type. |
+| Invoice prefix and next number | The highest sales invoice number, so Flow never issues a number the accounting system already holds. |
+
+Patient and case details, sync state and logins never move. Each integration
+reads its own records again from its source when it is turned on, and people
+sign in with Clerk ("Sign-in (Clerk)").
+
+1. Make a copy of the earlier database and use the copy as the source.
+2. Run a dry run. It reads the source in a read-only transaction and prints
+   counts and the reasons rows stay behind, never names or amounts:
+   `EARLIER_FLOW_DATABASE_URL=… node server/import-earlier-flow.js --dry-run`.
+3. Run it against the new Flow database:
+   `EARLIER_FLOW_DATABASE_URL=… DATABASE_URL=… node server/import-earlier-flow.js --organisation "<lab name>"`.
+   It runs Flow's migrations, refuses a database that already has an
+   organisation, writes in one transaction and checks the row counts.
+
+Keep both connection strings out of chat and shell history.
