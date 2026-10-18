@@ -72,8 +72,10 @@ Flow has two places for data, and only two:
 
 The object storage adapter has one interface (put, get, delete, signed link)
 with one implementation per host: a local folder for a single machine or
-tests, S3-compatible storage, and Replit Object Storage. The first feature that
-stores a file adds it; until then Flow stores no files.
+tests, S3-compatible storage, and Replit Object Storage. A published Replit
+app keeps no files between publishes, so it never uses the local folder. The
+first feature that stores a file adds the adapter (#42); until then Flow
+stores no files.
 
 Flow uses no other database: no document store, key-value store or cache
 server. A change that seems to need one says why in its pull request, and
