@@ -14,7 +14,9 @@ Licence: MIT (`LICENSE`).
 This repository is the new home of Flow, with a new history. Code moves here
 from an earlier private codebase one module at a time (`CONTRIBUTING.md`,
 "Porting from the earlier codebase"). Today it holds the repository's rules,
-CI, the integration port and a health check. It is not ready to run a lab.
+CI, the integration port, a health check and the first part of the core: the
+PostgreSQL data model for organisations, contacts, the price list and
+invoices. It is not ready to run a lab.
 
 ## Documentation
 
@@ -25,15 +27,16 @@ CI, the integration port and a health check. It is not ready to run a lab.
 | `CONTRIBUTING.md` | How to file issues and pull requests, porting rules, merging |
 | `SECURITY.md` | How to report a security problem, the trust model, and the rules held hard |
 | `LICENSE` | MIT licence |
+| `docs/DATA_MODEL.md` | The PostgreSQL records, the rules the database holds, and how to change the schema |
 | `docs/SELF_HOSTING.md` | Running a pinned Flow release, and the `deploy/replit/` template |
 | `server/integrations/port.js` | The integration port every adapter implements |
 
 ## Getting started
 
-Requirements: Node 24 and npm.
+Requirements: Node 24, npm and PostgreSQL 16 or later.
 
 ```bash
 npm ci
-npm test
-npm start          # http://localhost:19300/health
+FLOW_TEST_DATABASE_URL=postgres://… npm test   # a throwaway database
+DATABASE_URL=postgres://… npm start             # http://localhost:19300/health
 ```

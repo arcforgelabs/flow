@@ -17,9 +17,15 @@
   },
   "scripts": {
     "start": "node server/index.js",
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.js",
+    "db:generate": "drizzle-kit generate"
   },
   "dependencies": {
-    "express": "5.3.0"
+    "drizzle-orm": "0.45.3",
+    "express": "5.3.0",
+    "pg": "8.23.1"
+  },
+  "devDependencies": {
+    "drizzle-kit": "0.31.11"
   }
 }
