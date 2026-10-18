@@ -20,6 +20,8 @@ export const XERO_ENDPOINTS = Object.freeze({
   token: 'https://identity.xero.com/connect/token',
   revoke: 'https://identity.xero.com/connect/revocation',
   connections: 'https://api.xero.com/connections',
+  // Deep links into the Xero web app, for a person to open a record.
+  web: 'https://go.xero.com',
 });
 
 export const XERO_CALLBACK_PATH = '/api/xero/oauth/callback';

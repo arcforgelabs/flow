@@ -219,6 +219,17 @@ export function createXeroClient({
         query: { page, where: `Type=="ACCREC" AND Reference==${quote(reference)}` },
       })).Invoices, { maxPages: 10 });
     },
+    async findInvoicesByNumber(number) {
+      return (await request('GET', 'Invoices', { query: { InvoiceNumbers: number } })).Invoices ?? [];
+    },
+    // Sales invoice payments created or changed since `since` (a Date), page
+    // by page. Xero's If-Modified-Since narrows Payments to changed records.
+    async listPaymentsSince(since, { maxPages } = {}) {
+      return collectPages(async (page) => (await request('GET', 'Payments', {
+        query: { page, where: 'PaymentType=="ACCRECPAYMENT"' },
+        headers: { 'If-Modified-Since': since.toISOString().replace(/\.\d{3}Z$/, '') },
+      })).Payments, { maxPages });
+    },
     // One invoice. `idempotencyKey` makes a retry within Xero's window
     // return the first result instead of a second invoice.
     async createInvoice(invoice, { idempotencyKey }) {
