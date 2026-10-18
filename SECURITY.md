@@ -46,7 +46,10 @@ paste a credential, in full or in part.
   Secrets), never in the repository, a log, an issue or a pull request. Name
   the variable, never its value.
 - No account has a built-in or fallback password, in any environment.
-- Sign-in, API and integration routes are rate limited.
+- Sign-in, API and integration routes are rate limited per client
+  (`server/rate-limit.js`): the sign-in page and its config 30 requests a
+  minute, `/api` 120, and the Clerk proxy 300. A client over the limit gets
+  `429` with `Retry-After`.
 - Session cookies are `Secure`, `HttpOnly` and `SameSite`.
 - Flow stores no clinical notes, images or scans, and keeps a patient
   reference only where an invoice must print one.
