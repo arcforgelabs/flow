@@ -22,6 +22,20 @@
       "when": 1792322911044,
       "tag": "0002_people",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1792329648463,
+      "tag": "0003_billing_ledger",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1792329649575,
+      "tag": "0004_ledger_events_append_only",
+      "breakpoints": true
     }
   ]
 }

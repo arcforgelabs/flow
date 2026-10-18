@@ -1,0 +1,34 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1792368000000,
+      "tag": "0000_xero_connections",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1792368060000,
+      "tag": "0001_xero_catalogue",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792368120000,
+      "tag": "0002_xero_invoice_pushes",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1792368180000,
+      "tag": "0003_xero_payment_cursors",
+      "breakpoints": true
+    }
+  ]
+}

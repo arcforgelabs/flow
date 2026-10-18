@@ -35,3 +35,23 @@ test('an adapter id registers once', () => {
   registry.register({ id: 'xero', name: 'Xero', capabilities: { health } });
   assert.throws(() => registry.register({ id: 'xero', name: 'Xero', capabilities: { health } }), /already registered/);
 });
+
+test('start runs each enabled adapter after its tables are ready, and stop ends them newest first', async () => {
+  const calls = [];
+  const hooks = (id) => ({
+    start: async ({ db }) => calls.push(`start ${id} ${db}`),
+    stop: async () => calls.push(`stop ${id}`),
+  });
+  const registry = createRegistry();
+  registry.register({ id: 'first', name: 'First', capabilities: { health }, ...hooks('first') });
+  registry.register({ id: 'second', name: 'Second', capabilities: { health }, ...hooks('second') });
+  registry.register({ id: 'off', name: 'Off', capabilities: { health }, ...hooks('off') });
+  registry.enable('first');
+  registry.enable('second');
+
+  await registry.start('db');
+  assert.deepEqual(calls, ['start first db', 'start second db']);
+  await registry.stop();
+  assert.deepEqual(calls.slice(2), ['stop second', 'stop first']);
+  assert.throws(() => defineAdapter({ id: 'bad', name: 'Bad', capabilities: { health }, start: 'now' }), /start must be a function/);
+});

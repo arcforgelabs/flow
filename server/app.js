@@ -2,6 +2,7 @@ import express from 'express';
 import { createConnectorApi } from './api/connector.js';
 import { createSignInRouter } from './auth/routes.js';
 import { deployedBuildStatus } from './deployed-build.js';
+import { integrationsHealth } from './integrations/health.js';
 import { rateLimit } from './rate-limit.js';
 
 // The Flow HTTP app. Routes are added per module (invoices, bills, payments,
@@ -16,11 +17,15 @@ import { rateLimit } from './rate-limit.js';
 // `clerkProxyRateLimitPerMinute` for Clerk's Frontend API, which a signed-in
 // browser calls often. `build` is what GET /health reports
 // (server/deployed-build.js); `updates` is a server/update-check.js checker.
+// `integrations` is the started registry (server/integrations/index.js); each
+// adapter's own routes are mounted under /api/<id>, and GET /health reports
+// each one (server/integrations/health.js).
 export function createApp({
   build = deployedBuildStatus(),
   database = null,
   auth = null,
   updates = null,
+  integrations = null,
   trustProxy = false,
   rateLimitPerMinute = 120,
   signInRateLimitPerMinute = 30,
@@ -40,7 +45,12 @@ export function createApp({
     // The running build (commit, deploy ref, source, CI result, release), so
     // an operator can confirm what a publish deployed. The repository is
     // public, so none of it is a secret.
-    res.status(ok ? 200 : 503).json({ ok, service: 'flow', database: databaseOk, build });
+    // Each integration's state and its own health (mode, freshness, failing
+    // records). An integration problem does not fail the health check: Flow's
+    // core works with no integration connected (VISION.md).
+    const body = { ok, service: 'flow', database: databaseOk, build };
+    if (integrations) body.integrations = await integrationsHealth(integrations);
+    res.status(ok ? 200 : 503).json(body);
   });
 
   // Clerk's Frontend API through Flow's origin (CLERK_PROXY_URL). Before any
@@ -70,6 +80,10 @@ export function createApp({
         error: 'Sign-in is not configured on this installation (FLOW_AUTH is unset).',
       }));
     }
+  }
+
+  for (const { path, handler } of integrations?.routes({ db: database?.db ?? null, personAuth: auth?.personAuth ?? null, log }) ?? []) {
+    app.use(path, handler);
   }
 
   app.use(createSignInRouter({

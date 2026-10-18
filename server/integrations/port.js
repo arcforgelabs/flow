@@ -61,7 +61,7 @@ export function defineAdapter(adapter) {
   if (!adapter || typeof adapter !== 'object') {
     throw new TypeError('An adapter must be an object');
   }
-  const { id, name, bundled = false, capabilities, schema } = adapter;
+  const { id, name, bundled = false, capabilities, schema, start, stop, routes } = adapter;
   if (typeof id !== 'string' || !ID_PATTERN.test(id)) {
     throw new TypeError(`Adapter id must match ${ID_PATTERN}`);
   }
@@ -82,12 +82,29 @@ export function defineAdapter(adapter) {
   if (typeof capabilities.health !== 'function') {
     throw new TypeError(`Adapter ${id} must declare health`);
   }
+  for (const [hook, fn] of Object.entries({ start, stop })) {
+    if (fn !== undefined && typeof fn !== 'function') {
+      throw new TypeError(`Adapter ${id} ${hook} must be a function`);
+    }
+  }
+  if (routes !== undefined && typeof routes !== 'function') {
+    throw new TypeError(`Adapter ${id} routes must be a function that returns a router`);
+  }
   return Object.freeze({
     id,
     name,
     bundled: Boolean(bundled),
     capabilities: Object.freeze({ ...capabilities }),
     schema: defineSchema(id, schema),
+    // Optional lifecycle: start({ db, log }) runs once at server start, after
+    // the adapter's tables are in place, and only while it is enabled; it is
+    // where an adapter keeps its database handle and starts background work.
+    // stop() ends that work (tests, shutdown).
+    start: start ?? null,
+    stop: stop ?? null,
+    // Optional HTTP routes: routes({ db, personAuth, log }) returns a router
+    // mounted at /api/<id> (registry.routes).
+    routes: routes ?? null,
   });
 }
 
@@ -98,6 +115,7 @@ export function createRegistry({ log = console } = {}) {
   // without a schema needs none, so it is ready as soon as it is enabled.
   const tablesReady = new Set();
   let started = false;
+  const running = []; // adapters whose start() ran, in start order
 
   const state = (adapter) => {
     if (!enabled.has(adapter.id)) return 'disabled';
@@ -125,8 +143,9 @@ export function createRegistry({ log = console } = {}) {
       enabled.delete(id);
     },
     // Runs once at server start, after the core migrations: creates the
-    // tables of every enabled adapter and nothing else. An adapter turned on
-    // later gets its tables at the next start. Returns the ids it migrated.
+    // tables of every enabled adapter and nothing else, then calls each
+    // enabled adapter's start({ db, log }). An adapter turned on later gets
+    // its tables at the next start. Returns the ids it migrated.
     async start(db) {
       if (started) throw new Error('The integration registry has already started');
       started = true;
@@ -138,7 +157,20 @@ export function createRegistry({ log = console } = {}) {
         tablesReady.add(id);
         migrated.push(id);
       }
+      for (const id of enabled) {
+        const adapter = adapters.get(id);
+        if (!adapter.start) continue;
+        await adapter.start({ db, log });
+        running.push(adapter);
+      }
       return migrated;
+    },
+    // Calls stop() on every adapter whose start() ran, newest first.
+    async stop() {
+      while (running.length) {
+        const adapter = running.pop();
+        await adapter.stop?.();
+      }
     },
     list() {
       return [...adapters.values()].map((a) => ({
@@ -161,6 +193,20 @@ export function createRegistry({ log = console } = {}) {
       return [...enabled]
         .map((id) => adapters.get(id))
         .filter((a) => ready(a) && typeof a.capabilities[capability] === 'function');
+    },
+    // The adapters' own HTTP routes, each under /api/<id>. `context` is
+    // { db, personAuth, log }. An enabled, ready adapter's router is built
+    // once, here; a request to an adapter that is off gets its turned-off
+    // answer (503), so a turned-off adapter never reads its settings or
+    // tables.
+    routes(context) {
+      return [...adapters.values()].filter((a) => a.routes).map((adapter) => {
+        const path = `/api/${adapter.id}`;
+        if (!ready(adapter)) {
+          return { path, handler: (_req, res) => res.status(503).json(turnedOff(adapter, state(adapter) === 'disabled' ? 'disabled' : 'restart_needed')) };
+        }
+        return { path, handler: adapter.routes(context) };
+      });
     },
     // The one way to read or write an adapter's tables: runs fn(adapter) when
     // the adapter is enabled and its tables are in place, and otherwise

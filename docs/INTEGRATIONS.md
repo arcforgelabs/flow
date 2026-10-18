@@ -24,12 +24,30 @@ export const exampleAdapter = {
     health: async () => ({ ok: true }), // required
     pullWorkItems: async (cursor) => { /* … */ },
   },
+  start: async ({ db, log }) => { /* optional */ },
+  stop: async () => { /* optional */ },
 };
 ```
 
 The capabilities are `pullWorkItems`, `pushInvoice`, `pushBill`,
 `pullPayments` and `health`. An adapter declares only the ones it has, and
 must declare `health`.
+
+An adapter may also declare `routes(context)`: a function that returns an
+Express router, with `context` `{ db, personAuth, log }`. Flow mounts it at
+`/api/<id>` (`registry.routes` in `server/integrations/port.js`), after the
+`/api` rate limit. The router is built only for an adapter that is on with
+its tables in place; for one that is off, every request under `/api/<id>`
+gets the turned-off answer (below) with status 503. The router does its own
+sign-in checks with `personAuth`.
+
+Two optional functions give an adapter a lifecycle:
+
+- `start({ db, log })` runs once at server start, only while the adapter is
+  on, after its tables are in place. Keep the database handle here and start
+  background work (a scheduler, a poller).
+- `stop()` ends that work. `registry.stop()` calls it for every adapter that
+  started, newest first. Tests call it so they end cleanly.
 
 To ship an adapter, add it to the list in `server/integrations/adapters.js`.
 Core code never imports an adapter; it asks the registry.
@@ -108,6 +126,14 @@ shows that answer instead of crashing:
 that are on with their tables in place. `registry.list()` gives each
 adapter's `state`: `disabled`, `ready`, `restart_needed`, or `not_started`
 before the first start.
+
+## Health
+
+`GET /health` lists every adapter under `integrations` with `enabled` and
+`state`. When an adapter is ready its `health()` answer is there too, so it
+must read Flow's own data and answer fast: an answer slower than 5 seconds,
+or an error, shows as `{ ok: false, error }`. An integration problem never
+fails Flow's own health check (`server/integrations/health.js`).
 
 ## Tests
 

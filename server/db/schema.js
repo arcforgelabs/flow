@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm';
 import {
+  boolean,
   check,
   date,
   foreignKey,
@@ -166,4 +167,140 @@ export const people = pgTable('people', {
   check('people_email_lower', sql`${t.email} = lower(${t.email})`),
   check('people_role_valid', sql`${t.role} in ('owner', 'admin', 'staff')`),
   check('people_status_valid', sql`${t.status} in ('active', 'pending', 'disabled')`),
+]);
+
+// Billing obligations (issue 3). One billable job in a work system gives one
+// obligation. The obligation keeps the evidence for its state: what the work
+// system reported, what the accounting system reported, each payment, and each
+// status write-back to the work system. Flow is not the source of truth for
+// accounting; the ledger is its audit and workflow memory over what the
+// integrations report.
+
+export const ACCOUNTING_STATES = [
+  'unknown', 'not_found', 'drafted', 'authorised', 'part_paid', 'paid',
+  'voided', 'deleted', 'ambiguous', 'conflict',
+];
+export const HOLD_STATES = ['none', 'held', 'review'];
+export const WRITEBACK_STATES = ['pending', 'sent', 'failed', 'not_supported'];
+
+const inList = (column, values) => sql.raw(`${column} in (${values.map((v) => `'${v}'`).join(', ')})`);
+
+export const billingObligations = pgTable('billing_obligations', {
+  id: id(),
+  organisationId: organisationId().references(() => organisations.id),
+  // The job's identity in the work system, for example `seazona` and its job id.
+  sourceSystem: text('source_system').notNull(),
+  sourceJobRef: text('source_job_ref').notNull(),
+  // The work system's own invoice identity for the job, when it has one.
+  sourceInvoiceRef: text('source_invoice_ref'),
+  // A case number only. Never patient data.
+  caseRef: text('case_ref'),
+  contactId: uuid('contact_id'),
+  practitioner: text('practitioner'),
+  shippedOn: date('shipped_on'),
+  // The lines as the work system reported them, normalised.
+  lines: jsonb('lines').notNull().default(sql`'[]'::jsonb`),
+  lineFingerprint: text('line_fingerprint').notNull(),
+  subtotalCents: integer('subtotal_cents').notNull(),
+  taxCents: integer('tax_cents').notNull(),
+  totalCents: integer('total_cents').notNull(),
+  // Every line maps to a price item.
+  mappingComplete: boolean('mapping_complete').notNull(),
+  sourceSeenAt: timestamp('source_seen_at', { withTimezone: true }).notNull(),
+  holdState: text('hold_state').notNull().default('none'),
+  holdReason: text('hold_reason'),
+  // The Flow invoice made for this job.
+  invoiceId: uuid('invoice_id'),
+  // What the accounting system reported, how it matched, and when Flow checked.
+  accountingState: text('accounting_state').notNull().default('unknown'),
+  accountingRef: text('accounting_ref'),
+  accountingUrl: text('accounting_url'),
+  accountingMatchedBy: text('accounting_matched_by'),
+  accountingCheckedAt: timestamp('accounting_checked_at', { withTimezone: true }),
+  paidCents: integer('paid_cents').notNull().default(0),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, (t) => [
+  unique('billing_obligations_org_id').on(t.organisationId, t.id),
+  unique('billing_obligations_source_job').on(t.organisationId, t.sourceSystem, t.sourceJobRef),
+  unique('billing_obligations_invoice').on(t.organisationId, t.invoiceId),
+  foreignKey({
+    name: 'billing_obligations_contact_same_org',
+    columns: [t.organisationId, t.contactId],
+    foreignColumns: [contacts.organisationId, contacts.id],
+  }),
+  foreignKey({
+    name: 'billing_obligations_invoice_same_org',
+    columns: [t.organisationId, t.invoiceId],
+    foreignColumns: [invoices.organisationId, invoices.id],
+  }),
+  check('billing_obligations_hold_state_valid', inList('hold_state', HOLD_STATES)),
+  check('billing_obligations_accounting_state_valid', inList('accounting_state', ACCOUNTING_STATES)),
+  check('billing_obligations_paid_not_negative', sql`${t.paidCents} >= 0`),
+]);
+
+// Why each obligation is in its state. Append-only: a trigger in the
+// migrations refuses UPDATE and DELETE.
+export const obligationEvents = pgTable('obligation_events', {
+  id: id(),
+  organisationId: organisationId(),
+  obligationId: uuid('obligation_id').notNull(),
+  kind: text('kind').notNull(),
+  actor: text('actor').notNull(),
+  evidence: jsonb('evidence').notNull().default(sql`'{}'::jsonb`),
+  createdAt: createdAt(),
+}, (t) => [
+  foreignKey({
+    name: 'obligation_events_obligation_same_org',
+    columns: [t.organisationId, t.obligationId],
+    foreignColumns: [billingObligations.organisationId, billingObligations.id],
+  }),
+]);
+
+// Each payment the accounting system reported against the job's invoice.
+export const obligationPayments = pgTable('obligation_payments', {
+  id: id(),
+  organisationId: organisationId(),
+  obligationId: uuid('obligation_id').notNull(),
+  paymentRef: text('payment_ref').notNull(),
+  paidOn: date('paid_on').notNull(),
+  amountCents: integer('amount_cents').notNull(),
+  reference: text('reference'),
+  reconciled: boolean('reconciled').notNull(),
+  accountingUrl: text('accounting_url'),
+  observedAt: timestamp('observed_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  unique('obligation_payments_ref').on(t.organisationId, t.obligationId, t.paymentRef),
+  foreignKey({
+    name: 'obligation_payments_obligation_same_org',
+    columns: [t.organisationId, t.obligationId],
+    foreignColumns: [billingObligations.organisationId, billingObligations.id],
+  }),
+  check('obligation_payments_amount_positive', sql`${t.amountCents} > 0`),
+]);
+
+// Status sent back to the work system (for example "paid"), with the evidence
+// sent. A failed write-back stays here and is tried again; it never changes the
+// accounting record.
+export const obligationWritebacks = pgTable('obligation_writebacks', {
+  id: id(),
+  organisationId: organisationId(),
+  obligationId: uuid('obligation_id').notNull(),
+  targetSystem: text('target_system').notNull(),
+  status: text('status').notNull(),
+  state: text('state').notNull().default('pending'),
+  evidence: jsonb('evidence').notNull(),
+  attempts: integer('attempts').notNull().default(0),
+  lastError: text('last_error'),
+  sentAt: timestamp('sent_at', { withTimezone: true }),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, (t) => [
+  unique('obligation_writebacks_status').on(t.organisationId, t.obligationId, t.status),
+  foreignKey({
+    name: 'obligation_writebacks_obligation_same_org',
+    columns: [t.organisationId, t.obligationId],
+    foreignColumns: [billingObligations.organisationId, billingObligations.id],
+  }),
+  check('obligation_writebacks_state_valid', inList('state', WRITEBACK_STATES)),
 ]);
