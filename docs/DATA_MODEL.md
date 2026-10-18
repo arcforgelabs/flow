@@ -30,7 +30,7 @@ They exist only once the adapter has been on at a start, and they are not in
 | Every row except in `people` belongs to one organisation. A child row points at its parent through `(organisation_id, id)`, so a row that joins two organisations is refused. | Composite foreign keys |
 | Every read and write in the core takes an organisation id. | `server/core/*` |
 | Money is integer cents. GST is 10%, calculated and rounded per line, half away from zero. | `server/core/money.js` |
-| A draft invoice can change. Issuing gives it the organisation's next number and stores the document exactly as sent in `invoice_versions`. | `server/core/invoices.js` |
+| A draft invoice can change. Issuing gives it the organisation's next number and stores the document exactly as sent in `invoice_versions`. Each document line keeps its price item's code (`itemCode`, null for a line typed by hand), so accounting software gets the item even after the price list changes. | `server/core/invoices.js` |
 | What was sent never changes: `invoice_versions` rows cannot be updated or deleted, lines change only on a draft, a number never changes, an issued invoice is voided and never deleted, and a void invoice is final. | Triggers in `0001_records_are_append_only.sql` |
 | A person's email is stored lower-case and is unique. A Clerk user links to at most one person. | Constraints on `people` |
 | To change an issued invoice, revise it to a draft and issue it again. It keeps its number and gets the next version. | `reviseInvoice` |

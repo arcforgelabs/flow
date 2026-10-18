@@ -107,7 +107,10 @@ export async function issueInvoice(db, organisationId, invoiceId, { issuedBy, is
   return db.transaction(async (tx) => {
     const invoice = await loadInvoice(tx, organisationId, invoiceId, { lock: true });
     if (invoice.status !== 'draft') throw new FlowError('not_draft', 'only a draft invoice can be issued');
-    const lines = await tx.select().from(invoiceLines)
+    // Each line with its price item's code, so the document says which item
+    // was sold even if the price list changes later.
+    const lines = await tx.select({ line: invoiceLines, itemCode: priceItems.code }).from(invoiceLines)
+      .leftJoin(priceItems, eq(priceItems.id, invoiceLines.priceItemId))
       .where(eq(invoiceLines.invoiceId, invoice.id)).orderBy(asc(invoiceLines.position));
     if (!lines.length) throw new FlowError('invalid', 'an invoice needs at least one line');
 
@@ -129,8 +132,8 @@ export async function issueInvoice(db, organisationId, invoiceId, { issuedBy, is
       reference: invoice.reference,
       currency: invoice.currency,
       contact: { id: contact.id, name: contact.name, email: contact.email },
-      lines: lines.map(({ position, description, quantity, unitAmountCents, taxCode, lineAmountCents, taxCents }) => (
-        { position, description, quantity, unitAmountCents, taxCode, lineAmountCents, taxCents }
+      lines: lines.map(({ line: { position, description, quantity, unitAmountCents, taxCode, lineAmountCents, taxCents }, itemCode }) => (
+        { position, itemCode: itemCode ?? null, description, quantity, unitAmountCents, taxCode, lineAmountCents, taxCents }
       )),
       subtotalCents: invoice.subtotalCents,
       taxCents: invoice.taxCents,

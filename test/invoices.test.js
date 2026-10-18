@@ -55,6 +55,7 @@ describe('invoices', { skip: skipWithoutDatabase }, () => {
     const [v1] = await listInvoiceVersions(db, lab.id, draft.id);
     assert.equal(v1.document.totalCents, 48400);
     assert.equal(v1.document.contact.name, 'Example Practice');
+    assert.equal(v1.document.lines[0].itemCode, 'CRN', 'the document names the item sold');
     await assert.rejects(updateDraftInvoice(db, lab.id, draft.id, { reference: 'x' }), { code: 'not_draft' });
   });
 
@@ -68,6 +69,7 @@ describe('invoices', { skip: skipWithoutDatabase }, () => {
     assert.equal(second.issuedVersion, 2);
     const versions = await listInvoiceVersions(db, lab.id, draft.id);
     assert.deepEqual(versions.map((v) => v.document.totalCents), [24200, 22000]);
+    assert.deepEqual(versions.map((v) => v.document.lines[0].itemCode), ['CRN', 'CRN']);
   });
 
   test('invoice numbers count up per organisation', async () => {
@@ -75,6 +77,8 @@ describe('invoices', { skip: skipWithoutDatabase }, () => {
     const a = await createDraftInvoice(db, otherLab.id, { contactId: otherPractice.id, lines: [{ description: 'Item', unitAmountCents: 100 }] });
     const b = await createDraftInvoice(db, otherLab.id, { contactId: otherPractice.id, lines: [{ description: 'Item', unitAmountCents: 100 }] });
     const ia = await issueInvoice(db, otherLab.id, a.id, { issuedBy: 'user:test', issueDate: '2026-10-16' });
+    const [version] = await listInvoiceVersions(db, otherLab.id, a.id);
+    assert.equal(version.document.lines[0].itemCode, null, 'a line typed by hand names no item');
     const ib = await issueInvoice(db, otherLab.id, b.id, { issuedBy: 'user:test', issueDate: '2026-10-16' });
     assert.deepEqual([ia.number, ib.number], ['INV-0001', 'INV-0002']);
   });
