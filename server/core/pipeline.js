@@ -439,7 +439,7 @@ export async function runPipelineOnce(db, integrations, { now = new Date() } = {
     const settings = await readInvoicingSettings(db, organisationId);
     summary.matching = await matchJobs(db, organisationId, { accounting, now, staleDays: settings.staleDays });
   }
-  if (work || accounting) summary.automations = await runAutomations(db, organisationId, { accounting: accounting ?? null, now });
+  if (work || accounting) summary.automations = await runAutomations(db, organisationId, { accounting: accounting ?? null, work: work ?? null, now });
   return summary;
 }
 

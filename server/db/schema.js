@@ -606,6 +606,8 @@ export const invoicingSettings = pgTable('invoicing_settings', {
   // The price item code of a rush charge, and its share of the other lines.
   rushItemCode: text('rush_item_code'),
   rushPercent: integer('rush_percent').notNull().default(20),
+  // The invoice Reference, from tokens (server/core/references.js).
+  referenceTemplate: text('reference_template').notNull().default('{practitioner} - {patient}'),
   // The fixed checks above became invoice rules (invoice_rules). True once
   // this organisation's starter rules were made from them.
   rulesSeeded: boolean('rules_seeded').notNull().default(false),

@@ -5,6 +5,7 @@ import {
 import { FlowError, notFound } from './errors.js';
 import { listRules, ruleReasons } from './invoice-rules.js';
 import { draftInvoiceForObligation } from './ledger.js';
+import { checkReferenceTemplate, DEFAULT_REFERENCE, jobReference } from './references.js';
 
 // Invoicing rules (docs/INVOICING_RULES.md). They are the checks a job that
 // is ready to invoice passes before Flow drafts its invoice, and how a checked
@@ -30,6 +31,7 @@ export const INVOICING_DEFAULTS = Object.freeze({
   requirePractitioner: false,
   rushItemCode: null,
   rushPercent: 20,
+  referenceTemplate: DEFAULT_REFERENCE,
 });
 
 const CUSTOMER_DEFAULTS = Object.freeze({
@@ -58,6 +60,15 @@ function shortText(value, name) {
   return value.trim() || null;
 }
 
+// An empty rule gives no Reference: the accounting system shows the number.
+function referenceTemplate(value) {
+  if (value === null) return '';
+  if (typeof value !== 'string' || value.length > 200) throw invalid('referenceTemplate must be text of 200 characters at most');
+  const problem = checkReferenceTemplate(value);
+  if (problem) throw invalid(`referenceTemplate: ${problem}`);
+  return value.trim();
+}
+
 function sendMode(value, name) {
   if (!SEND_MODES.includes(value)) throw invalid(`${name} must be one of ${SEND_MODES.join(', ')}`);
   return value;
@@ -79,6 +90,7 @@ function readSettingChanges(changes) {
     else if (key === 'paymentTermsDays') out[key] = wholeNumber(value, key, 0, 365);
     else if (key === 'rushPercent') out[key] = wholeNumber(value, key, 0, 100);
     else if (key === 'rushItemCode') out[key] = shortText(value, key);
+    else if (key === 'referenceTemplate') out[key] = referenceTemplate(value);
     else throw invalid(`unknown setting: ${key}`);
   }
   return out;
@@ -215,7 +227,7 @@ export function copyCheck(accounting, organisationId) {
 // The draft automation (automations.js) runs it. Answers counts.
 // With `accounting` null no accounting system is connected: Flow's own records
 // are the only check, as for a person's draft (ledger.js, ledgerView).
-export async function autoDraftJobs(db, organisationId, { accounting = null, now = new Date(), limit = DRAFT_BATCH, actor = ACTOR }) {
+export async function autoDraftJobs(db, organisationId, { accounting = null, work = null, now = new Date(), limit = DRAFT_BATCH, actor = ACTOR }) {
   const result = { drafted: 0, waiting: 0, off: 0, refused: 0 };
   const settings = await readInvoicingSettings(db, organisationId);
   const rules = await listRules(db, organisationId);
@@ -255,6 +267,7 @@ export async function autoDraftJobs(db, organisationId, { accounting = null, now
         liveCheck,
         actor,
         now,
+        reference: await jobReference(db, organisationId, obligation, { template: settings.referenceTemplate, work }),
         dueDate: addDays(invoiceDate, effective.paymentTermsDays),
       });
       result.drafted += 1;

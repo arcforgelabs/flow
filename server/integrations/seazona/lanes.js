@@ -139,7 +139,7 @@ function judgeReads(what, attempted, failures, extra = {}) {
 
 // Reads one order's detail and applies issue #12. Returns
 // { outcome: 'read' | 'deleted' | 'failed', failure? }.
-async function readOrder(ctx, id, { listItem = null, known = null } = {}) {
+export async function readOrder(ctx, id, { listItem = null, known = null } = {}) {
   const { db, client, sync, at } = ctx;
   const mapOptions = { keepPatientReference: sync.keepPatientReference };
   try {

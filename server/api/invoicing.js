@@ -16,6 +16,7 @@ import {
   saveCustomerBilling, saveInvoicingSettings, sendModeFor, sendModeSummary,
 } from '../core/invoicing-rules.js';
 import { boardJobs, describeObligations } from '../core/job-board.js';
+import { jobReference } from '../core/references.js';
 import { draftInvoiceForObligation, explainObligation, listObligations, setReady } from '../core/ledger.js';
 import { invoiceView, invoiceViews, markNotReady, markReady, sendAgain, sendAllReady } from '../core/sending.js';
 import {
@@ -456,7 +457,11 @@ export function createInvoicingRouter({
     const organisationId = await organisationOf(req);
     // With no accounting system connected, Flow's own records are the check.
     const liveCheck = liveCheckFor(organisationId) ?? null;
-    const { invoice } = await draftInvoiceForObligation(db, organisationId, obligationId, { liveCheck, actor: `person:${req.person.id}` });
+    const [obligation] = await db.select().from(billingObligations)
+      .where(and(eq(billingObligations.organisationId, organisationId), eq(billingObligations.id, obligationId)));
+    const { referenceTemplate: template } = await readInvoicingSettings(db, organisationId);
+    const reference = obligation ? await jobReference(db, organisationId, obligation, { template, work: work().find((a) => a.id === obligation.sourceSystem) ?? null }) : null;
+    const { invoice } = await draftInvoiceForObligation(db, organisationId, obligationId, { liveCheck, actor: `person:${req.person.id}`, reference });
     log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} drafted invoice ${invoice.id} from job ${obligationId}`);
     res.status(201).json({ ok: true, invoice: await invoiceDetail(db, organisationId, invoice.id) });
   }));

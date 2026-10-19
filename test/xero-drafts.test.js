@@ -418,9 +418,9 @@ describe('Xero drafts from issued invoices', { skip: skipWithoutDatabase }, () =
       lines: [{ itemCode: 'CROWN', description: 'Crown', quantity: 1 }], observedAt: now,
     });
     await recordAccountingEvidence(handle.db, org, job.id, { state: 'not_found', actor: 'test', checkedAt: now });
-    const { invoice } = await draftInvoiceForObligation(handle.db, org, job.id, { liveCheck: async () => ({ state: 'not_found' }), actor: 'test', now });
+    const { invoice } = await draftInvoiceForObligation(handle.db, org, job.id, { liveCheck: async () => ({ state: 'not_found' }), actor: 'test', now, reference: 'Dr Copy - Pat Copy' });
     await issueInvoice(handle.db, org, invoice.id, { issuedBy: 'user:test', issueDate: '2026-10-18' });
-    const replay = xero.script([created('c1'), readBack('c1', { reference: 'CASE-COPY-1' })]);
+    const replay = xero.script([created('c1'), readBack('c1', { reference: 'Dr Copy - Pat Copy' })]);
     const res = await push([invoice.id]);
     assert.equal(res.body.invoices[0].outcome, 'created', JSON.stringify(res.body));
     assert.equal(replay.calls.filter((c) => c.method === 'GET' && c.path.endsWith('/Invoices')).length, 0);
