@@ -188,6 +188,67 @@ that are on with their tables in place. `registry.list()` gives each
 adapter's `state`: `disabled`, `ready`, `restart_needed`, or `not_started`
 before the first start.
 
+## Outbound calls
+
+A provider can cut off an installation's API access after many failed
+calls, even inside its rate limit. So every adapter that calls an outside
+system sends each call through the **call guard**
+(`server/integrations/call-guard.js`, issues #101 and #111). The guard names
+no vendor. Each adapter brings its own tables and its own policy.
+
+```
+call ──> guard.check ──> rate limit ──> provider ──> guard.record
+             │                                          │
+             └── stopped: CallsStopped, no call         └── failure? update circuit,
+                                                             budget, halt; report once
+```
+
+The guard stops calls in four ways:
+
+| Stop | Starts when | Ends when |
+|---|---|---|
+| `halted` | a refused credential (401/403, or a token refresh refused for good) | a person saves the settings or connects again (`resume()`) |
+| `resource_stopped` | a 401/403 on one resource, when `authStops` is `resource` | a person acts (`resume()`) |
+| `circuit_open` | 5 failed calls in 10 minutes | the pause passes: 5 minutes, doubling after each failed probe, at most 6 hours; a success closes it |
+| `budget_spent` | 50 failed calls in one UTC day | the next UTC day |
+
+A failed call is no answer, a 5xx, a 429, or any other 4xx except 404 (a
+404 on one record means it was deleted). A stopped call throws
+`CallsStopped` at once (`kind: 'calls_stopped'`, `code`
+`<id>_api_halted`, `<id>_api_resource_stopped`, `<id>_api_circuit_open` or
+`<id>_api_failure_budget_spent`, `retryAfterMs` null for a stop only a
+person ends). Each stop is reported once with `log.error`, so the connected
+error service gets one report per problem; a repeat is a warning. Reports
+carry the resource and the HTTP status, never a host, a query, a token or a
+response body.
+
+To follow the pattern, an adapter:
+
+1. Creates two tables in its own migrations, with the columns in
+   `CALL_GUARD_COLUMNS`: a state table (one row per credential or tenant:
+   `key`, `circuit_open_until`, `circuit_opens`, `halted_reason`,
+   `halted_at`, `stopped_resources`, `updated_at`) and a calls table (one
+   row per call: `key`, `at`, `resource`, `request_path`, `status_code`,
+   `failure_kind`, `duration_ms`). The state is in PostgreSQL, so every
+   process on one database shares it and a restart does not clear it.
+2. Declares `callGuard: { integration, name, tables: { state, calls },
+   policy }` on the adapter. `defineAdapter` checks that the tables are the
+   adapter's own.
+3. Calls `guard.check(key, { resource })` before each call and
+   `guard.record(key, { resource, path, statusCode | failureKind,
+   durationMs })` after it, and `guard.resume()` from `start()` when
+   `reconfigured` is true.
+4. Treats `CallsStopped` as "wait", not as a failure: a background job does
+   not spend its attempts on it, and a batch stops at the first one.
+5. Shows `guard.status(key)` in its `health()`.
+
+`test/integration-call-guard.test.js` fails when a shipped adapter has no
+call guard and is not listed as exempt with a reason, and runs the same
+contract suite (`test/support/call-guard-contract.js`) against each guarded
+adapter's tables and policy. Xero uses the guard. Seazona has the same
+guards in its own governor and moves onto the shared guard next. Sentry is
+exempt: its SDK follows Sentry's own limits.
+
 ## Health
 
 `GET /health` lists every adapter under `integrations` with `enabled` and

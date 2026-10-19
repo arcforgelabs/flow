@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { and, eq, inArray, sql } from 'drizzle-orm';
+import { isCallsStopped } from '../call-guard.js';
 import { getInvoice, listInvoiceVersions } from '../../core/invoices.js';
 import { sendModeFor } from '../../core/invoicing-rules.js';
 import { contacts as flowContacts, invoices as flowInvoices, priceItems } from '../../db/schema.js';
@@ -313,7 +314,7 @@ export async function pushDrafts(db, runtime, organisationId, invoiceIds, { push
       try {
         results.push(await pushOne(db, runtime, client, organisationId, invoiceId, { pushedBy, allowExisting: allowed.has(invoiceId) }));
       } catch (error) {
-        if (error.code === 'xero_rate_limited' || error.code === 'xero_reconnect_needed') {
+        if (stopsTheBatch(error)) {
           // Every later invoice would fail the same way: stop and say so.
           results.push(failed(invoiceId, error));
           for (const rest of invoiceIds.slice(invoiceIds.indexOf(invoiceId) + 1)) results.push(failed(rest, error, 'not_tried'));
@@ -392,9 +393,13 @@ async function assertTracking(client, tracking) {
   }
 }
 
-// Xero errors that prove no invoice was made: Xero refused the request.
+// Errors after which every later call would fail the same way: stop the batch.
+const stopsTheBatch = (error) => error.code === 'xero_rate_limited' || error.code === 'xero_reconnect_needed' || isCallsStopped(error);
+
+// Xero errors that prove no invoice was made: Xero refused the request, or
+// the call guard stopped it before it went.
 function provesNothingCreated(error) {
-  return error.code === 'xero_validation_failed' || error.code === 'xero_rate_limited'
+  return isCallsStopped(error) || error.code === 'xero_validation_failed' || error.code === 'xero_rate_limited'
     || error.code === 'xero_unauthorized' || error.code === 'xero_reconnect_needed'
     || (error.code === 'xero_api_error' && error.status >= 400 && error.status < 500);
 }
@@ -509,7 +514,7 @@ async function dispatch(db, client, push, document, { fresh = false } = {}) {
       throw error;
     }
     await settle(db, push.id, { state: 'ambiguous', errorCode: error.code ?? 'xero_uncertain', errorMessage: error.message });
-    if (error.code === 'xero_rate_limited' || error.code === 'xero_reconnect_needed') throw error;
+    if (stopsTheBatch(error)) throw error;
     return {
       invoiceId: push.invoiceId,
       version: push.version,
@@ -555,8 +560,9 @@ async function verify(db, client, push, draft, document, created, outcome) {
 // ---------------------------------------------------------------------------
 // Email
 
-// Xero errors that prove it sent no email: it refused the request.
-const emailRefused = (error) => error.code === 'xero_validation_failed'
+// Xero errors that prove it sent no email: it refused the request, or the
+// call guard stopped it before it went.
+const emailRefused = (error) => isCallsStopped(error) || error.code === 'xero_validation_failed'
   || (error.code === 'xero_api_error' && error.status >= 400 && error.status < 500);
 
 // Asks Xero to email an approved invoice that Flow sent and checked, once.
@@ -576,7 +582,7 @@ async function emailIfDue(db, client, push) {
       ? `Xero did not email the invoice: ${error.message}`
       : 'Flow does not know whether Xero emailed the invoice. Check the invoice in Xero before you send it again.';
     await db.execute(sql`update xero_invoice_pushes set email_state = ${state}, email_error = ${message}, updated_at = now() where id = ${push.id}`);
-    if (error.code === 'xero_rate_limited' || error.code === 'xero_reconnect_needed') throw error;
+    if (stopsTheBatch(error)) throw error;
     return { state, error: message, at: null };
   }
   const { rows: [done] } = await db.execute(sql`update xero_invoice_pushes set email_state = 'sent', email_error = null, emailed_at = now(), updated_at = now()
@@ -613,7 +619,7 @@ async function resume(db, runtime, client, push, document) {
       .filter((inv) => !GONE.has(inv.Status) && !push.preExistingIds.includes(inv.InvoiceID)
         && differences(inv, draft, document).filter((d) => d !== 'date').length === 0);
   } catch (error) {
-    if (error.code === 'xero_rate_limited') throw error;
+    if (error.code === 'xero_rate_limited' || isCallsStopped(error)) throw error;
     return { invoiceId: push.invoiceId, version: push.version, outcome: 'ambiguous', error: { code: 'xero_outcome_unknown', message: 'Flow could not look in Xero to settle an earlier attempt. Send again later.' } };
   }
   if (candidates.length === 1) return verify(db, client, push, draft, document, candidates[0], 'reconciled');

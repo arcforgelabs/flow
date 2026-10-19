@@ -1,3 +1,4 @@
+import { createCallGuard } from '../call-guard.js';
 import { createXeroClient, xeroError } from './client.js';
 import { decryptToken, readConnection, storeRotatedToken } from './connections.js';
 import { createGovernor } from './governor.js';
@@ -6,9 +7,21 @@ import { createReplayFetch, DEFAULT_REPLAY_FIXTURES, loadReplayFixtures } from '
 import { resolveXeroSettings, writesAllowed } from './settings.js';
 
 // The Xero adapter's state for one Flow process: settings, the rate-limit
-// governor, the transport (real fetch, or replay), OAuth states, and the
-// access tokens in memory. Access tokens live 30 minutes and are never
-// stored; the refresh token is stored sealed (connections.js).
+// governor, the call guard (its state is in PostgreSQL), the transport (real
+// fetch, or replay), OAuth states, and the access tokens in memory. Access
+// tokens live 30 minutes and are never stored; the refresh token is stored
+// sealed (connections.js).
+
+// The call guard's tables and policy (../call-guard.js, docs/XERO.md). A 401
+// or 403 that a fresh token does not clear stops only the resource it came
+// from: a connection can lack one scope (payments) and still serve the rest.
+// A refused token refresh halts every call.
+export const XERO_CALL_GUARD = Object.freeze({
+  integration: 'xero',
+  name: 'Xero',
+  tables: Object.freeze({ state: 'xero_call_guard', calls: 'xero_calls' }),
+  policy: Object.freeze({ authStops: 'resource' }),
+});
 
 export function requireXeroSettings(env = process.env) {
   const settings = resolveXeroSettings(env);
@@ -31,6 +44,14 @@ export function createXeroRuntime({ settings, fetch, now = Date.now, log = conso
   const accessTokens = new Map(); // organisation id -> { token, expiresAt }
   const refreshing = new Map(); // organisation id -> promise
   const queues = new Map(); // organisation id -> tail of its work queue
+  const guards = new WeakMap(); // database handle -> call guard
+
+  // The call guard for one database. Keyed by the Xero tenant id: Xero's
+  // limits are per organisation.
+  function guardFor(db) {
+    if (!guards.has(db)) guards.set(db, createCallGuard({ db, ...XERO_CALL_GUARD, now, log }));
+    return guards.get(db);
+  }
 
   // Runs heavy Xero work for one organisation one at a time, in order: a
   // sync and a batch of drafts draw on the same call budget, and running them
@@ -67,11 +88,29 @@ export function createXeroRuntime({ settings, fetch, now = Date.now, log = conso
 
   // Refresh under a row lock, and store the rotated refresh token in the same
   // transaction, so two refreshes never race and the newest token is kept.
+  // A refresh Xero refuses for good halts every call until an owner connects
+  // again or saves the settings; another failed refresh counts as a failed
+  // call.
   async function refresh(db, organisationId) {
+    const guard = guardFor(db);
     return db.transaction(async (tx) => {
       const connection = usable(await readConnection(tx, organisationId, { lock: true }));
+      await guard.check(connection.tenantId, { resource: 'token' });
       const refreshToken = decryptToken(connection.refreshTokenEnc, settings.tokenKey, organisationId);
-      const tokens = await refreshTokens(settings, transport, refreshToken);
+      let tokens;
+      try {
+        tokens = await refreshTokens(settings, transport, refreshToken);
+      } catch (error) {
+        // invalid_grant: the connection is gone. invalid_client: the app's
+        // client id or secret is wrong. Neither clears without a person.
+        if (error?.code === 'xero_reconnect_needed' || ['invalid_client', 'unauthorized_client'].includes(error?.oauthError)) {
+          await guard.halt(connection.tenantId, 'auth', { detail: `Xero refused the token refresh${error.oauthError ? ` (${error.oauthError})` : ''}` });
+        } else if (error?.code !== 'xero_replay_no_match') {
+          await guard.record(connection.tenantId, { resource: 'token', failureKind: error?.code === 'xero_unreachable' ? 'network' : 'token_refresh' });
+        }
+        throw error;
+      }
+      await guard.record(connection.tenantId, { resource: 'token', statusCode: 200 });
       await storeRotatedToken(tx, organisationId, { refreshToken: tokens.refresh_token, scope: tokens.scope, key: settings.tokenKey });
       remember(organisationId, tokens);
       return tokens.access_token;
@@ -96,6 +135,7 @@ export function createXeroRuntime({ settings, fetch, now = Date.now, log = conso
       invalidateAccessToken: () => accessTokens.delete(organisationId),
       fetch: transport,
       governor,
+      guard: guardFor(db),
       apiBase: settings.endpoints.api,
       log,
     });
@@ -122,6 +162,7 @@ export function createXeroRuntime({ settings, fetch, now = Date.now, log = conso
     settings,
     transport,
     governor,
+    guardFor,
     states,
     remember,
     forget: (organisationId) => accessTokens.delete(organisationId),

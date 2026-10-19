@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import { enqueueJob, runNextJob } from '../../core/queue.js';
+import { isCallsStopped } from '../call-guard.js';
 import { lastSync, syncCatalogue } from './catalogue.js';
 import { MIRROR_RESOURCES, mirrorXero } from './mirror.js';
 
@@ -46,9 +47,19 @@ export async function organisationsToImport(db, mode) {
 
 // One slice of the import for one job. Answers what it read and whether more
 // remains (`more`: 'budget' or 'max_pages').
+// While the call guard stops Xero calls the slice does not fail, so it does
+// not spend the job's attempts: it answers `more: 'stopped'` with the wait,
+// or no wait for a stop only a person clears (connecting queues the import).
 export async function runImportSlice(db, runtime, job, { maxPages = SLICE_PAGES } = {}) {
-  const results = await mirrorXero(db, runtime, job.organisationId, { maxPages });
-  const stopped = results.find((r) => r.stopped !== 'done')?.stopped ?? null;
+  let results;
+  try {
+    results = await mirrorXero(db, runtime, job.organisationId, { maxPages });
+  } catch (error) {
+    if (!isCallsStopped(error)) throw error;
+    return { results: [], more: error.retryAfterMs === null ? null : 'stopped', retryAfterMs: error.retryAfterMs, stoppedBy: error.code };
+  }
+  // A refused resource waits for a person; it never queues another slice.
+  const stopped = results.find((r) => !['done', 'refused'].includes(r.stopped))?.stopped ?? null;
   return { results, more: stopped };
 }
 
@@ -61,25 +72,58 @@ export async function runImportOnce(db, runtime, { workerId = `xero-import-${ran
     handlers: { [IMPORT_KIND]: (job) => runImportSlice(db, runtime, job, { maxPages }) },
   });
   if (ran?.outcome === 'succeeded' && ran.job.result?.more) {
-    const wait = ran.job.result.more === 'budget' ? BUDGET_WAIT_MS : 0;
+    const { more, retryAfterMs } = ran.job.result;
+    const wait = more === 'budget' ? BUDGET_WAIT_MS : more === 'stopped' ? Math.max(IDLE_MS, Number(retryAfterMs) || BUDGET_WAIT_MS) : 0;
     await queueHistoryImport(db, ran.job.organisationId, { reason: ran.job.result.more, runAfter: new Date(Number(now()) + wait) });
   }
   return ran;
 }
 
+// Failed catalogue reads in a row since the last good one, and the newest
+// failure's code.
+async function failuresInARow(db, organisationId) {
+  const { rows } = await db.execute(sql`
+    select count(*)::int as failures,
+      (array_agg(error_code order by started_at desc))[1] as last_code
+    from xero_sync_runs
+    where organisation_id = ${organisationId} and status = 'failed'
+      and started_at > coalesce((select max(started_at) from xero_sync_runs
+        where organisation_id = ${organisationId} and status = 'succeeded'), 'epoch')`);
+  return { failures: rows[0]?.failures ?? 0, lastCode: rows[0]?.last_code ?? null };
+}
+
+// The wait after `failures` failed reads in a row: an hour, doubling, at most
+// a day (issue #111: never every hour for ever).
+export function catalogueRetryMs(failures) {
+  return Math.min(CATALOGUE_EVERY_MS, BUDGET_WAIT_MS * 2 ** Math.max(0, failures - 1));
+}
+
 // Reads the contacts and items of each connected organisation whose last good
-// read is older than a day. A failure is logged and tried again next hour.
+// read is older than a day. A failed read waits longer each time (above). A
+// failure is reported once with log.error; the same failure again is a
+// warning. While the call guard stops Xero calls, no read is tried.
 export async function refreshStaleCatalogues(db, runtime, { now = Date.now, log = console } = {}) {
-  const { rows } = await db.execute(sql`select organisation_id from xero_connections where mode = ${runtime.settings.mode}`);
-  for (const { organisation_id: organisationId } of rows) {
+  const { rows } = await db.execute(sql`select organisation_id, tenant_id from xero_connections where mode = ${runtime.settings.mode}`);
+  for (const { organisation_id: organisationId, tenant_id: tenantId } of rows) {
     const last = await lastSync(db, organisationId);
     const at = last?.finishedAt ?? last?.startedAt;
-    if (last && at && Number(now()) - new Date(at) < (last.status === 'succeeded' ? CATALOGUE_EVERY_MS : BUDGET_WAIT_MS)) continue;
+    const { failures, lastCode } = last?.status === 'failed' ? await failuresInARow(db, organisationId) : { failures: 0, lastCode: null };
+    if (last && at && Number(now()) - new Date(at) < (last.status === 'succeeded' ? CATALOGUE_EVERY_MS : catalogueRetryMs(failures))) continue;
+    try {
+      await runtime.guardFor(db).check(tenantId);
+    } catch (error) {
+      if (isCallsStopped(error)) continue;
+      throw error;
+    }
     try {
       const run = await syncCatalogue(db, runtime, organisationId);
       log.info?.(`[xero] contacts and items read for organisation ${organisationId}: ${run.contactCount} contacts, ${run.itemCount} items`);
     } catch (error) {
-      log.error?.(`[xero] reading contacts and items for organisation ${organisationId} failed: ${error?.code ?? 'error'}`);
+      const code = error?.code ?? 'error';
+      const line = `[xero] reading contacts and items for organisation ${organisationId} failed: ${code}; next try in ${Math.round(catalogueRetryMs(failures + 1) / 60_000)} minutes`;
+      // The guard reported a stop already; a repeat of the same failure is a warning.
+      if (isCallsStopped(error) || (failures > 0 && code === lastCode)) log.warn?.(line);
+      else log.error?.(line);
     }
   }
 }

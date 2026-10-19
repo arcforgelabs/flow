@@ -2,9 +2,11 @@ import { FlowError } from '../../core/errors.js';
 import { XERO_ENDPOINTS } from './settings.js';
 
 // The Xero Accounting API client. Every call goes through the rate-limit
-// governor (governor.js). A 429 is retried after the wait Xero asks for,
-// except a DayLimit 429, which opens the circuit and fails fast. Tokens are
-// sent only in the Authorization header and never logged or put in errors.
+// governor (governor.js) and, when one is given, the call guard
+// (../call-guard.js): a call the guard has stopped fails at once, and every
+// call's ending is recorded there. A 429 is retried after the wait Xero asks
+// for, except a DayLimit 429, which opens the circuit and fails fast. Tokens
+// are sent only in the Authorization header and never logged or put in errors.
 
 export const DEFAULT_TIMEOUT_MS = 15_000;
 export const DEFAULT_ATTEMPTS = 2;
@@ -86,6 +88,14 @@ function quote(value) {
 
 const first = (list) => (Array.isArray(list) && list.length ? list[0] : null);
 
+// The resource a call reads or writes, for the call guard: the first path
+// segment (Invoices, Payments, Contacts). A 401 or 403 that a fresh token
+// does not clear stops that resource only, so a scope the connection lacks
+// (for example payments) does not stop the rest.
+export function resourceOf(path) {
+  return String(path).replace(/^\/+/, '').split(/[/?#]/)[0] || null;
+}
+
 // `accessToken()` returns a current access token; `invalidateAccessToken()`
 // drops a cached one after Xero answers 401, and the request is tried once
 // more with a fresh token.
@@ -95,6 +105,7 @@ export function createXeroClient({
   invalidateAccessToken = () => {},
   fetch: fetchImpl = globalThis.fetch,
   governor,
+  guard = null,
   apiBase = XERO_ENDPOINTS.api,
   timeoutMs = DEFAULT_TIMEOUT_MS,
   attempts = DEFAULT_ATTEMPTS,
@@ -106,10 +117,12 @@ export function createXeroClient({
   const base = apiBase.endsWith('/') ? apiBase : `${apiBase}/`;
   let lastRateLimit = null;
 
-  async function send(method, url, headers, bodyText) {
+  // `call` is { resource, path } for the guard.
+  async function send(method, url, headers, bodyText, call) {
     await governor.acquire(tenantId);
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const startedAt = Date.now();
     try {
       let response;
       try {
@@ -117,6 +130,7 @@ export function createXeroClient({
       } catch (error) {
         if (error?.code === 'xero_replay_no_match') throw error;
         const timedOut = error?.name === 'AbortError';
+        await guard?.record(tenantId, { ...call, failureKind: timedOut ? 'timeout' : 'network', durationMs: Date.now() - startedAt });
         throw xeroError(timedOut ? 'xero_timeout' : 'xero_unreachable',
           timedOut ? `Xero did not answer within ${timeoutMs} ms.` : 'Flow could not reach Xero.',
           { status: timedOut ? 504 : 503 });
@@ -124,7 +138,7 @@ export function createXeroClient({
       const text = await response.text().catch(() => '');
       lastRateLimit = readRateLimitHeaders(response);
       governor.observe(tenantId, lastRateLimit);
-      return { response, text };
+      return { response, text, durationMs: Date.now() - startedAt };
     } finally {
       clearTimeout(timer);
       governor.release(tenantId);
@@ -139,8 +153,10 @@ export function createXeroClient({
     // Serialised once, so a retry sends the same bytes under the same
     // Idempotency-Key.
     const bodyText = body === undefined ? undefined : JSON.stringify(body);
+    const call = { resource: resourceOf(path), path: url.pathname };
     let refreshed = false;
     for (let attempt = 1; ; attempt += 1) {
+      await guard?.check(tenantId, { resource: call.resource });
       const headers = {
         ...extra,
         Authorization: `Bearer ${await accessToken()}`,
@@ -148,12 +164,16 @@ export function createXeroClient({
         'xero-tenant-id': tenantId,
         ...(bodyText === undefined ? {} : { 'Content-Type': 'application/json' }),
       };
-      const { response, text } = await send(method, url, headers, bodyText);
+      const { response, text, durationMs } = await send(method, url, headers, bodyText, call);
       const payload = parseJson(text);
+      // A first 401 usually means the access token expired: it is not counted,
+      // and the call is tried once more with a fresh token.
+      const expiredToken = response.status === 401 && !refreshed;
+      if (!expiredToken) await guard?.record(tenantId, { ...call, statusCode: response.status, durationMs });
       if (response.ok) return payload ?? {};
 
       const error = apiError(response, payload);
-      if (response.status === 401 && !refreshed) {
+      if (expiredToken) {
         refreshed = true;
         invalidateAccessToken();
         attempt -= 1;

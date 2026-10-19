@@ -155,6 +155,8 @@ export function createXeroRouter({ db, personAuth, runtime, log = console, messa
         key: settings.tokenKey,
       });
       runtime.remember(entry.organisationId, tokens);
+      // A new connection is a person acting: calls stopped before resume.
+      await runtime.guardFor(db).resume();
       // Another Xero organisation starts its history from the beginning.
       if (previous && previous.tenantId !== connection.tenantId) await resetImport(db, entry.organisationId);
       await queueHistoryImport(db, entry.organisationId, { reason: 'connected' });
