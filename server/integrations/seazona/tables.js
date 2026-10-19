@@ -13,5 +13,6 @@ export const seazonaSchema = Object.freeze({
     'seazona_reference',
     'seazona_lane_state',
     'seazona_order_read_failures',
+    'seazona_record_read_failures',
   ]),
 });

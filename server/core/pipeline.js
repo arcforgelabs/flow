@@ -9,7 +9,7 @@ import { readInvoicingSettings } from './invoicing-rules.js';
 import { observeJob, recordAccountingEvidence, setHold } from './ledger.js';
 import { loadMappingContext, mapLines } from './line-mapping.js';
 import { linkRecord, priorLinkFor } from './links.js';
-import { enqueueJob, runNextJob } from './queue.js';
+import { deadHoldSince, deadSince, enqueueJob, runNextJob } from './queue.js';
 
 // The pipeline (docs/DATA_SPINE.md, issue 58). It joins what the integrations
 // copy into Flow, and never writes to another system:
@@ -448,6 +448,7 @@ export async function runPipelineOnce(db, integrations, { now = new Date() } = {
 // systems' copies and writes Flow's own records.
 export function createPipelineWorker({ db, integrations, log = console, timers = { setTimeout, clearTimeout }, everyMs = RUN_EVERY_MS, firstDelayMs = 15_000 }) {
   const workerId = `pipeline-${randomUUID()}`;
+  const startedAtMs = Date.now();
   let timer = null;
   let running = null;
   let stopped = true;
@@ -467,6 +468,9 @@ export function createPipelineWorker({ db, integrations, log = console, timers =
         if (!integrations.with('pullWorkItems').length && !integrations.with('findInvoices').length) return;
         const organisationId = await soleOrganisation(db);
         if (!organisationId) return;
+        // Issue #101: a run that gave up waits for a person, a restart or the
+        // next day; the timer never starts it again by itself.
+        if (await deadSince(db, organisationId, { kind: PIPELINE_KIND, dedupeKey: 'all', since: deadHoldSince(startedAtMs) })) return;
         await enqueueJob(db, organisationId, { kind: PIPELINE_KIND, dedupeKey: 'all' });
         const ran = await runNextJob(db, {
           workerId,
@@ -474,8 +478,10 @@ export function createPipelineWorker({ db, integrations, log = console, timers =
           handlers: { [PIPELINE_KIND]: () => runPipelineOnce(db, integrations) },
         });
         const line = ran ? `${ran.outcome}: ${JSON.stringify(ran.job.result ?? ran.job.lastError ?? {})}` : '';
-        // Log a run only when its outcome differs from the last one.
-        if (line && line !== last) log.info?.(`[pipeline] ${line}`);
+        // Log a run only when its outcome differs from the last one. A run
+        // that gave up is reported once to the error services.
+        if (ran?.outcome === 'dead') log.error?.('[pipeline] the pipeline run gave up after its last attempt');
+        if (line && line !== last) (ran.outcome === 'succeeded' ? log.info : log.warn)?.(`[pipeline] ${line}`);
         last = line || last;
       } catch (error) {
         log.error?.(`[pipeline] ${error?.code ?? 'error'}: ${error?.message ?? error}`);

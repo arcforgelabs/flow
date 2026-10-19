@@ -10,10 +10,17 @@ const at = (name) => timestamp(name, { withTimezone: true });
 
 // One row per API client: when the next request may go, and any cooldown a
 // 429 asked for. Every process that shares the database shares this row.
+// Issue #101: the circuit breaker (open until, and how many times in a row it
+// opened) and a stop that waits for a person (`halted_reason`, for example
+// `auth` after a 401).
 export const seazonaApiGovernor = pgTable('seazona_api_governor', {
   clientKey: text('client_key').primaryKey(),
   nextEligibleAt: at('next_eligible_at').notNull().default(sql`'epoch'`),
   cooldownUntil: at('cooldown_until').notNull().default(sql`'epoch'`),
+  circuitOpenUntil: at('circuit_open_until').notNull().default(sql`'epoch'`),
+  circuitOpens: integer('circuit_opens').notNull().default(0),
+  haltedReason: text('halted_reason'),
+  haltedAt: at('halted_at'),
   updatedAt: at('updated_at').notNull().defaultNow(),
 });
 
@@ -155,3 +162,18 @@ export const seazonaOrderReadFailures = pgTable('seazona_order_read_failures', {
   lastError: text('last_error'),
   quarantinedUntil: at('quarantined_until'),
 });
+
+// Issue #101: each failed detail read of an invoice or a client, per record.
+// Orders keep their own table (issue #12). After a few failures in a row the
+// record is quarantined: the lane skips it and its cursor moves on.
+export const seazonaRecordReadFailures = pgTable('seazona_record_read_failures', {
+  resource: text('resource').notNull(),
+  recordKey: text('record_key').notNull(),
+  failureCount: integer('failure_count').notNull(),
+  lastAttemptAt: at('last_attempt_at').notNull(),
+  lastHttpStatus: integer('last_http_status'),
+  lastFailureKind: text('last_failure_kind'),
+  quarantinedUntil: at('quarantined_until'),
+}, (t) => [
+  primaryKey({ columns: [t.resource, t.recordKey] }),
+]);

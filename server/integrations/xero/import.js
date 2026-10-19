@@ -109,6 +109,7 @@ export function createImportWorker({ db, runtime, log = console, timers = { setT
         if (ran) {
           busy = true;
           const read = (ran.job.result?.results ?? []).map((r) => `${r.resource} ${r.read}`).join(', ');
+          if (ran.outcome === 'dead') log.error?.('[xero] the history import gave up after its last attempt');
           log.info?.(`[xero] import ${ran.outcome} for organisation ${ran.job.organisationId}${read ? `: ${read}` : ''}${ran.job.result?.more ? `; more (${ran.job.result.more})` : ''}`);
         }
       } catch (error) {

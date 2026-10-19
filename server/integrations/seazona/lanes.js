@@ -13,12 +13,16 @@ import { seazonaOrders } from './schema.js';
 import {
   claimLane,
   clearOrderFailure,
+  clearRecordFailures,
   finishLane,
   markOrderDeleted,
   readKnown,
   readLaneStates,
   readQuarantinedOrders,
+  readQuarantinedRecordCounts,
+  readQuarantinedRecords,
   recordOrderFailure,
+  recordRecordFailure,
   selectActiveOrders,
   touchSynced,
   upsertRecords,
@@ -39,6 +43,13 @@ import {
 // Seazona, an empty answer is a failure, each failure is recorded per order
 // and quarantines it after a few in a row, and a lane fails only when most of
 // its reads fail. Errors and /health name each failing order and its status.
+//
+// Issue #101 holds for every lane: invoices and clients quarantine a record
+// after a few failed reads too, so one bad record never holds a cursor. A
+// list call that Seazona refuses (400, 401, 403, 404) means the path or the
+// API client is wrong, and no wait fixes it: the lane stops and runs again
+// only after a person saves the settings or Flow restarts on a new release.
+// Calls the governor stopped (SeazonaCallsStopped) wait out its pause.
 
 export const LANES = Object.freeze(['invoices', 'orders_recent', 'orders_active', 'clients', 'products', 'users']);
 
@@ -73,7 +84,23 @@ function listOrFail(list, what, sync) {
 // A failure that is about Seazona or the rate limit, not one record: the
 // whole lane stops and waits.
 function isLaneLevel(error) {
-  return error?.statusCode === 429 || error?.kind === 'governor_timeout';
+  return error?.statusCode === 429 || error?.statusCode === 401 || error?.statusCode === 403
+    || error?.kind === 'governor_timeout' || error?.kind === 'calls_stopped';
+}
+
+// Answers how a lane that threw should wait: { status, heldReason, delayMs }.
+// A null delay means the lane is stopped until a person or a release.
+const REJECTED = new Set([400, 401, 403, 404]);
+function laneOutcome(error, state, sync) {
+  if (error?.kind === 'calls_stopped') {
+    if (error.reason === 'halted') return { status: 'stopped', heldReason: error.code, delayMs: null };
+    return { status: 'failed', heldReason: null, delayMs: Math.max(sync.retryBaseMs, error.retryAfterMs ?? 0) };
+  }
+  if (error?.name === 'SeazonaApiError' && REJECTED.has(error.statusCode)) {
+    const auth = error.statusCode === 401 || error.statusCode === 403;
+    return { status: 'stopped', heldReason: auth ? 'seazona_api_halted' : 'seazona_request_rejected', delayMs: null };
+  }
+  return { status: error?.held ? 'held' : 'failed', heldReason: error?.held ? error.code : null, delayMs: failureDelayMs(error, state, sync) };
 }
 
 function describeReadFailure(error) {
@@ -156,17 +183,26 @@ function addSummary(total, summary) {
 // Invoices and clients: a list since a cursor, then a detail read for each
 // row whose list fields changed.
 async function syncListWithDetail(ctx, { mirror, what, items, keyOf, idOf, signatureOf, detailPath, map }) {
-  const { db, client, at } = ctx;
+  const { db, client, sync, at } = ctx;
   const keyed = items.map((item) => ({ item, key: keyOf(item) })).filter((entry) => entry.key);
   const known = await readKnown(db, mirror, keyed.map((entry) => entry.key));
+  const quarantined = await readQuarantinedRecords(db, mirror, keyed.map((entry) => entry.key), { at });
   const summary = { created: 0, changed: 0, unchanged: 0 };
   const unchanged = [];
+  const read = [];
   const failures = [];
+  const skipped = [];
+  let newlyQuarantined = 0;
   let detailReads = 0;
   for (const { item, key } of keyed) {
     const signature = signatureOf(item);
     if (known.get(key)?.listSignature === signature) {
       unchanged.push(key);
+      continue;
+    }
+    // Issue #101: a quarantined record costs no call until its wait ends.
+    if (quarantined.has(key)) {
+      skipped.push(key);
       continue;
     }
     const id = idOf(item);
@@ -178,16 +214,29 @@ async function syncListWithDetail(ctx, { mirror, what, items, keyOf, idOf, signa
         if (!detail || typeof detail !== 'object' || Array.isArray(detail)) throw emptyResponse(`${what} ${key}`);
       } catch (error) {
         if (isLaneLevel(error)) throw error;
-        failures.push({ id: key, ...describeReadFailure(error) });
+        const failure = describeReadFailure(error);
+        const recorded = await recordRecordFailure(db, mirror, key, failure, {
+          at,
+          quarantineFailures: sync.orderQuarantineFailures,
+          quarantineMs: sync.orderQuarantineMs,
+        });
+        if (recorded.quarantinedUntil) newlyQuarantined += 1;
+        failures.push({ id: key, ...failure, ...recorded });
         continue;
       }
     }
+    read.push(key);
     addSummary(summary, await upsertRecords(db, mirror, [map(item, detail)], { at, listSignatures: new Map([[key, signature]]) }));
   }
   await touchSynced(db, mirror, unchanged, { at });
+  await clearRecordFailures(db, mirror, read);
   summary.unchanged += unchanged.length;
-  const failureDetails = judgeReads(`${what} reads`, detailReads, failures);
-  return { summary, detailReads, listCount: items.length, failureDetails, anyFailed: failures.length > 0 };
+  const extra = skipped.length ? { quarantinedIds: skipped.slice(0, MAX_REPORTED) } : {};
+  const failureDetails = judgeReads(`${what} reads`, detailReads, failures, extra);
+  // A quarantined record no longer holds the cursor; a record that may still
+  // be read again does.
+  const anyFailed = failures.some((failure) => !failure.quarantinedUntil);
+  return { summary, detailReads, listCount: items.length, failureDetails, anyFailed, newlyQuarantined, quarantined: skipped.length };
 }
 
 function cursorSince(ctx, fallbackMs) {
@@ -358,6 +407,7 @@ export async function runSeazonaSync(db, client, { settings, now = Date.now, onl
   for (const lane of wanted) {
     const state = states.get(lane) ?? null;
     const startMs = Number(now());
+    if (!force && !only.length && state?.status === 'stopped') continue;
     if (!force && !only.length && state?.nextRunAt && state.nextRunAt.getTime() > startMs) continue;
     const at = new Date(startMs);
     if (!(await claimLane(db, lane, { at, stuckMs: sync.stuckLaneMs }))) {
@@ -382,18 +432,19 @@ export async function runSeazonaSync(db, client, { settings, now = Date.now, onl
       const { cursor, cursorTime, anyFailed, ...reported } = result;
       results[lane] = { ok: true, ...reported };
     } catch (error) {
-      const delayMs = failureDelayMs(error, state, sync);
+      const { status, heldReason, delayMs } = laneOutcome(error, state, sync);
       const message = text(error?.message) || 'Seazona lane failed';
+      const code = heldReason ?? error?.code ?? 'seazona_lane_failed';
       await finishLane(db, lane, {
-        status: error?.held ? 'held' : 'failed',
+        status,
         lastAttemptAt: at,
-        nextRunAt: new Date(Number(now()) + delayMs),
+        nextRunAt: delayMs === null ? null : new Date(Number(now()) + delayMs),
         failureCount: (state?.failureCount ?? 0) + 1,
         lastError: message,
-        failureDetails: error?.details ?? null,
-        heldReason: error?.held ? error.code : null,
+        failureDetails: error?.details ?? (Number.isInteger(error?.statusCode) ? { httpStatus: error.statusCode, path: error.path ?? null } : null),
+        heldReason,
       });
-      results[lane] = { ok: false, error: message, code: error?.code ?? 'seazona_lane_failed', details: error?.details ?? null, retryAfterMs: delayMs };
+      results[lane] = { ok: false, status, error: message, code, details: error?.details ?? null, retryAfterMs: delayMs };
     }
   }
   return { ok: Object.values(results).every((result) => result.ok), results };
@@ -407,6 +458,7 @@ export async function readSeazonaSyncHealth(db, settings, { now = Date.now } = {
   const states = await readLaneStates(db);
   const quarantinedOrders = await readQuarantinedOrders(db, { at: new Date(nowMs), limit: MAX_REPORTED });
   const [{ deleted }] = await db.select({ deleted: count() }).from(seazonaOrders).where(isNotNull(seazonaOrders.deletedInSourceAt));
+  const quarantinedRecords = await readQuarantinedRecordCounts(db, { at: new Date(nowMs) });
   const lanes = LANES.map((lane) => {
     const state = states.get(lane);
     const { freshnessMs } = settings.sync.lanes[lane];
@@ -424,10 +476,11 @@ export async function readSeazonaSyncHealth(db, settings, { now = Date.now } = {
       heldReason: state?.heldReason ?? null,
       failureDetails: state?.failureDetails ?? null,
       ...(lane === 'orders_active' ? { quarantinedOrders } : {}),
+      ...(quarantinedRecords[lane] ? { quarantinedRecords: quarantinedRecords[lane] } : {}),
     };
   });
   return {
-    ok: lanes.every((lane) => lane.status !== 'failed' && lane.status !== 'held'),
+    ok: lanes.every((lane) => !['failed', 'held', 'stopped'].includes(lane.status)),
     lanes,
     deletedOrders: Number(deleted),
   };

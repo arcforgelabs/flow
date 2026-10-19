@@ -75,6 +75,16 @@ export function resolveSeazonaSettings(env = process.env) {
     maxWaitMs: clampInt(env.SEAZONA_API_MAX_WAIT_MS, 120_000, 1_000, 15 * 60_000),
     // Long enough to answer a vendor's question about last month.
     telemetryRetentionMs: clampInt(env.SEAZONA_API_TELEMETRY_RETENTION_DAYS, 35, 1, 90) * DAY_MS,
+    // Issue #101: a vendor can cut off API access after many failed calls,
+    // even inside the rate limit. This many failed calls inside the window
+    // open the circuit: no call goes out for the pause, which doubles each
+    // time the probe after it fails, to at most 6 hours.
+    circuitFailures: clampInt(env.SEAZONA_CIRCUIT_FAILURES, 5, 1, 100),
+    circuitWindowMs: clampInt(env.SEAZONA_CIRCUIT_WINDOW_MS, 10 * 60_000, 60_000, DAY_MS),
+    circuitPauseMs: clampInt(env.SEAZONA_CIRCUIT_PAUSE_MS, 5 * 60_000, 60_000, 6 * 60 * 60_000),
+    // Failed calls allowed in one UTC day. When they are spent, calls stop
+    // until the next day.
+    dailyFailureBudget: clampInt(env.SEAZONA_DAILY_FAILURE_BUDGET, 50, 1, 10_000),
   };
 
   const MINUTE = 60_000;

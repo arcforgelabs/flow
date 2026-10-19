@@ -76,6 +76,34 @@ test('the scheduler runs, then sleeps until the next lane is due, one run at a t
   assert.equal(timers.pending[0].cleared, true);
 });
 
+test('the scheduler reports a lane failure once, and again only when it changes', async () => {
+  const clock = fakeClock();
+  const timers = manualTimers();
+  const errors = [];
+  const log = { info() {}, warn() {}, error: (line) => errors.push(line) };
+  const db = { select: () => ({ from: async () => [] }) };
+  const outcomes = [
+    { ok: false, status: 'failed', code: 'seazona_api_request_failed', error: 'HTTP 500' },
+    { ok: false, status: 'failed', code: 'seazona_api_request_failed', error: 'HTTP 502' },
+    { ok: false, status: 'failed', code: 'seazona_api_circuit_open', error: 'paused' },
+    { ok: true, newlyQuarantined: 2 },
+    { ok: false, status: 'stopped', code: 'seazona_api_halted', error: 'refused' },
+  ];
+  const scheduler = createSeazonaScheduler({
+    db, now: clock.now, log, timers, firstDelayMs: 1,
+    run: async () => ({ ok: false, results: { invoices: outcomes.shift() } }),
+  });
+  scheduler.start();
+  for (let i = 0; i < 5; i += 1) await timers.fire();
+  await scheduler.stop();
+  assert.deepEqual(errors, [
+    '[seazona] invoices lane failed: seazona_api_request_failed',
+    '[seazona] invoices lane failed: seazona_api_circuit_open',
+    '[seazona] invoices: records quarantined after repeated failed reads',
+    '[seazona] invoices lane stopped: seazona_api_halted',
+  ]);
+});
+
 describe('Seazona adapter on the integration port', { skip: skipWithoutDatabase }, () => {
   let handle;
   let db;
