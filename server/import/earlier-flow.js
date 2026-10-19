@@ -45,6 +45,12 @@ function parseJson(text) {
   }
 }
 
+// The earlier codebase stored some accounting payloads as the API sent them
+// (`UnitPrice`) and some as its SDK returned them (`unitPrice`).
+function field(object, name) {
+  return object[name] ?? object[name[0].toLowerCase() + name.slice(1)];
+}
+
 function isTrue(value) {
   return value === true || value === 1 || value === '1' || value === 'true';
 }
@@ -82,8 +88,8 @@ function planContacts(rows, skipped) {
       skipped.push({ table: 'contacts', key, reason: 'unreadable_raw_json' });
       continue;
     }
-    const customer = isTrue(raw.IsCustomer);
-    const supplier = isTrue(raw.IsSupplier);
+    const customer = isTrue(field(raw, 'IsCustomer'));
+    const supplier = isTrue(field(raw, 'IsSupplier'));
     // A contact the accounting system has never billed or paid is most often
     // a new customer, so it comes across as one.
     const kinds = supplier && !customer ? ['supplier'] : supplier ? ['customer', 'supplier'] : ['customer'];
@@ -120,12 +126,12 @@ function planPriceItems(rows, skipped, defaulted) {
       skipped.push({ table: 'price_items', key, reason: 'unreadable_sales_details' });
       continue;
     }
-    const unitAmountCents = toCents(sales.UnitPrice);
+    const unitAmountCents = toCents(field(sales, 'UnitPrice'));
     if (unitAmountCents === null) {
       skipped.push({ table: 'price_items', key, reason: 'no_sales_price' });
       continue;
     }
-    const taxType = String(sales.TaxType ?? '').trim().toUpperCase();
+    const taxType = String(field(sales, 'TaxType') ?? '').trim().toUpperCase();
     if (!taxType) defaulted.push({ table: 'price_items', key, reason: 'no_tax_type_used_gst' });
     const taxCode = !taxType || GST_TAX_TYPES.has(taxType) ? 'GST' : 'GST_FREE';
     planned.push({ sourceKey: key, code, name, unitAmountCents, taxCode });

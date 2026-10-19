@@ -28,11 +28,13 @@ const SOURCE = {
     contact('c5', 'Old Practice', { IsCustomer: true }, { status: 'ARCHIVED' }),
     contact('c6', '  ', { IsCustomer: true }),
     contact('c7', 'Example Practice', { IsCustomer: true }),
+    contact('c8', 'Camel Supplies', { isSupplier: true }),
   ],
   items: [
     item('CRN', 'Crown', { UnitPrice: 220, TaxType: 'OUTPUT' }),
     item('FRT', 'Freight', { UnitPrice: '15.505', TaxType: 'EXEMPTOUTPUT' }),
     item('RPR', 'Repair', { UnitPrice: 40.1 }),
+    item('POL', 'Polish', { unitPrice: '12.5', taxType: 'OUTPUT' }),
     item('BUY', 'Bought in', { UnitPrice: 5, TaxType: 'INPUT' }, { is_sold: 0 }),
     item('NOP', 'No price', {}),
   ],
@@ -57,16 +59,17 @@ describe('import from the earlier Flow codebase: plan', () => {
       ['customer', 'Both Ways Clinic'],
       ['supplier', 'Both Ways Clinic'],
       ['customer', 'New Practice'],
+      ['supplier', 'Camel Supplies'],
     ]);
     assert.deepEqual(plan.skipped.filter((s) => s.table === 'contacts').map((s) => [s.key, s.reason]), [
       ['c5', 'status_archived'], ['c6', 'no_name'], ['c7', 'duplicate_customer_name'],
     ]);
   });
 
-  test('sold items with a price become price items with their tax code', () => {
+  test('sold items with a price become price items with their tax code, in either key casing', () => {
     const plan = planImport(SOURCE);
     assert.deepEqual(plan.priceItems.map((p) => [p.code, p.unitAmountCents, p.taxCode]), [
-      ['CRN', 22000, 'GST'], ['FRT', 1551, 'GST_FREE'], ['RPR', 4010, 'GST'],
+      ['CRN', 22000, 'GST'], ['FRT', 1551, 'GST_FREE'], ['RPR', 4010, 'GST'], ['POL', 1250, 'GST'],
     ]);
     assert.deepEqual(plan.skipped.filter((s) => s.table === 'price_items').map((s) => [s.key, s.reason]), [
       ['BUY', 'not_sold'], ['NOP', 'no_sales_price'],
@@ -97,10 +100,10 @@ describe('import from the earlier Flow codebase: write', { skip: skipWithoutData
   test('writes one organisation with its contacts, price list and numbering, then refuses a second run', async () => {
     const plan = planImport(SOURCE);
     const result = await applyImport(handle.db, plan, { organisationName: 'Example Lab' });
-    assert.deepEqual(result.counts, { contacts: 5, priceItems: 3 });
+    assert.deepEqual(result.counts, { contacts: 6, priceItems: 4 });
     const { rows: [organisation] } = await handle.pool.query('select invoice_prefix, next_invoice_number from organisations');
     assert.deepEqual(organisation, { invoice_prefix: 'INV-', next_invoice_number: 2441 });
-    assert.deepEqual((await listPriceItems(handle.db, result.organisationId)).map((p) => p.code), ['CRN', 'FRT', 'RPR']);
+    assert.deepEqual((await listPriceItems(handle.db, result.organisationId)).map((p) => p.code), ['CRN', 'FRT', 'POL', 'RPR']);
     await assert.rejects(applyImport(handle.db, plan, { organisationName: 'Example Lab' }), /already has an organisation/);
   });
 
