@@ -68,6 +68,22 @@ describe('invoicing API', { skip: skipWithoutDatabase }, () => {
       },
     });
     integrations.enable('accounts');
+    // A work system that lists its jobs for the Jobs board (listWork).
+    integrations.register({
+      id: 'worksystem',
+      name: 'Work system',
+      capabilities: {
+        health: async () => ({ ok: true }),
+        listWork: async () => ({
+          items: [
+            { sourceSystem: 'worksystem', sourceJobRef: 'JOB-1', caseRef: 'CASE-JOB-1', status: 'Shipped', clientName: 'Example Practice Pty', practitioner: 'Dr Example', dueOn: '2026-10-20', lines: [], totalCents: 22000 },
+            { sourceSystem: 'worksystem', sourceJobRef: 'JOB-9', caseRef: 'CASE-JOB-9', status: 'In Production', clientName: 'Work System Clinic', practitioner: 'Dr Sample', dueOn: '2026-10-25', lines: [{ code: 'BRG', description: 'Bridge', amountCents: 50000 }, { code: 'ZZZ', description: 'Other', amountCents: 100 }], totalCents: 50100 },
+          ],
+          statuses: [{ label: 'Shipped', firstSeenAt: '2026-10-01T00:00:00.000Z' }, { label: 'In Production', firstSeenAt: '2026-10-02T00:00:00.000Z' }],
+        }),
+      },
+    });
+    integrations.enable('worksystem');
     await integrations.start(handle.db);
     app = invoicingApp({ integrations });
     appWithoutCheck = invoicingApp();
@@ -278,6 +294,39 @@ describe('invoicing API', { skip: skipWithoutDatabase }, () => {
     assert.equal(again.status, 409);
     assert.equal(again.body.code, 'not_ready');
     assert.ok(again.body.details.reasons.includes('the job already has an invoice'));
+  });
+
+  test('the Jobs board lists the work system jobs by status, each with its invoice, and a job has its activity', async () => {
+    const board = await call('/board', { token: staffToken });
+    assert.equal(board.status, 200, JSON.stringify(board.body));
+    assert.deepEqual(board.body.statuses.map((s) => s.label), ['Shipped', 'In Production']);
+    const [shipped, inLab] = board.body.jobs;
+    // A linked client shows as the Flow customer; the work system's name stays for the panel.
+    assert.deepEqual([shipped.sourceJobRef, shipped.status, shipped.clientName, shipped.workClientName], ['JOB-1', 'Shipped', 'Example Practice', 'Example Practice Pty']);
+    assert.equal(shipped.obligation.view, 'drafted');
+    assert.equal(shipped.obligation.invoiceStatus, 'draft');
+    assert.equal(shipped.obligation.invoiceView, 'to_check');
+    assert.deepEqual(shipped.obligation.invoiceProblems, []);
+    assert.equal(shipped.totalCents, 24200, 'the ledger total wins over the work system copy');
+    assert.deepEqual(shipped.lines, [{ code: 'CRN', description: 'Crown', amountCents: 22000, mapped: true }]);
+    // A job still in the lab has no obligation; its lines map by price code.
+    assert.deepEqual([inLab.clientName, inLab.obligation], ['Work System Clinic', null]);
+    assert.deepEqual(inLab.lines.map((l) => [l.code, l.mapped]), [['BRG', true], ['ZZZ', false]]);
+
+    // With no work system that lists jobs, the board shows the ledger's jobs.
+    const ledgerOnly = await request(appWithoutCheck, '/api/invoicing/board', { token: ownerToken });
+    assert.equal(ledgerOnly.status, 200);
+    const second = ledgerOnly.body.jobs.find((j) => j.sourceJobRef === 'JOB-2');
+    assert.equal(second.obligation.view, 'ready', 'with no accounting system, Flow\'s own records are the check');
+    assert.equal(second.clientName, 'Example Practice');
+
+    const activity = await call(`/jobs/${shipped.obligation.id}/activity`, { token: staffToken });
+    assert.equal(activity.status, 200);
+    // Newest first, and only who did it: a person, an automation or a system.
+    assert.deepEqual(activity.body.events.slice(0, 2).map((e) => [e.kind, e.by]), [['draft_refused', 'person'], ['drafted', 'person']]);
+    assert.equal(activity.body.events.at(-1).kind, 'observed');
+    assert.ok(activity.body.events.every((e) => Object.keys(e).sort().join() === 'by,createdAt,kind'));
+    assert.equal((await call(`/jobs/${MISSING}/activity`)).status, 404);
   });
 
   test('with more than one organisation, a request must name one', async () => {

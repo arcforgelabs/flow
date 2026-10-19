@@ -85,8 +85,9 @@ export function openSearch({ h, flow, go, icon, views }) {
     .map((job) => ({
       // A job with an invoice opens that invoice; any other opens the Jobs page, filtered to it.
       path: job.invoiceId ? `/invoices/${job.invoiceId}` : `/jobs?q=${encodeURIComponent(job.caseRef || job.sourceJobRef || '')}`,
-      title: job.caseRef || job.sourceJobRef || 'Job',
-      detail: [job.contactName, job.practitioner].filter(Boolean).join(' · '),
+      // A person reads the client, not the case number.
+      title: job.contactName || job.practitioner || 'Job',
+      detail: [job.contactName ? job.practitioner : null, job.invoiceNumber].filter(Boolean).join(' · '),
       kind: 'jobs',
     }));
 

@@ -6,9 +6,10 @@ import { createOrganisation } from '../server/core/directory.js';
 import { explainObligation, ledgerView, observeJob, setHold } from '../server/core/ledger.js';
 import { billingObligations } from '../server/db/schema.js';
 import { createSeazonaClient } from '../server/integrations/seazona/client.js';
-import { readBillableWork } from '../server/integrations/seazona/feed.js';
+import { listWork, readBillableWork } from '../server/integrations/seazona/feed.js';
 import { runSeazonaSync } from '../server/integrations/seazona/lanes.js';
 import { ledgerLinesFor, toLedgerJob } from '../server/integrations/seazona/ledger.js';
+import { seazonaOrders } from '../server/integrations/seazona/schema.js';
 import { createReplayFetch, loadReplay } from '../server/integrations/seazona/replay.js';
 import { resolveSeazonaSettings } from '../server/integrations/seazona/settings.js';
 import { skipWithoutDatabase } from './support/db.js';
@@ -95,5 +96,25 @@ describe('Seazona work in the billing ledger', { skip: skipWithoutDatabase }, ()
     ));
     const held = await setHold(db, lab.id, obligation.id, { holdState: ledgerHold.holdState, reason: ledgerHold.reason, actor: 'seazona' });
     assert.deepEqual(ledgerView(held), { view: 'review_required', reasons: ['the order was deleted in Seazona'] });
+  });
+
+  test('the Jobs board lists open orders from the copy, with the client name and status, never deleted ones', async () => {
+    const { items, statuses } = await listWork(db, { now: clock.now() });
+    assert.deepEqual(items.map((i) => [i.sourceJobRef, i.status]), [['ORD-1002', 'In Production']]);
+    // The last read of this order had no client: the board says so.
+    assert.equal(items[0].clientName, null);
+    // The Seazona client's name comes first; the order's own company is next.
+    await db.update(seazonaOrders).set({ clientId: 'CL-1', company: 'Order Company' }).where(eq(seazonaOrders.id, 'ORD-1002'));
+    assert.equal((await listWork(db, { now: clock.now() })).items[0].clientName, 'Example Practice');
+    await db.update(seazonaOrders).set({ clientId: 'CL-404' }).where(eq(seazonaOrders.id, 'ORD-1002'));
+    assert.equal((await listWork(db, { now: clock.now() })).items[0].clientName, 'Order Company');
+    assert.deepEqual(statuses.map((s) => s.label), ['In Production']);
+    assert.ok(!JSON.stringify(items).includes('Synthetic Patient'));
+    // A finished order leaves the board 30 days after it last changed.
+    const later = await listWork(db, { now: clock.now() + 40 * 86_400_000 });
+    assert.deepEqual(later.items.map((i) => i.sourceJobRef), ['ORD-1002'], 'an open order stays');
+    await db.update(seazonaOrders).set({ status: 'Shipped', lastChangedAt: new Date(clock.now()) }).where(eq(seazonaOrders.id, 'ORD-1002'));
+    assert.equal((await listWork(db, { now: clock.now() })).items.length, 1, 'a shipped order shows for a while');
+    assert.equal((await listWork(db, { now: clock.now() + 40 * 86_400_000 })).items.length, 0);
   });
 });
