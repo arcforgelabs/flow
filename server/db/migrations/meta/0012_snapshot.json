@@ -1,5 +1,5 @@
 {
-  "id": "3103db4c-f164-43cf-82c5-68e83bc0d350",
+  "id": "db24ea2a-b74c-4621-a7f2-34af5750da29",
   "prevId": "08b87727-b323-4b65-88f9-13c7780db019",
   "version": "7",
   "dialect": "postgresql",
@@ -1638,6 +1638,18 @@
           "notNull": true,
           "default": 0
         },
+        "ready_at": {
+          "name": "ready_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ready_by": {
+          "name": "ready_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "send_state": {
           "name": "send_state",
           "type": "text",
@@ -1690,6 +1702,19 @@
             "id"
           ],
           "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "invoices_ready_by_people_id_fk": {
+          "name": "invoices_ready_by_people_id_fk",
+          "tableFrom": "invoices",
+          "tableTo": "people",
+          "columnsFrom": [
+            "ready_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
           "onUpdate": "no action"
         },
         "invoices_send_requested_by_people_id_fk": {

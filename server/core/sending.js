@@ -6,12 +6,14 @@ import { issueInvoice } from './invoices.js';
 import { soleOrganisation } from './pipeline.js';
 import { enqueueJob, runNextJob } from './queue.js';
 
-// Ready, Problem and Send all ready (docs/INVOICE_SENDING.md).
+// Drafts, Problem, Ready and Send all ready (docs/INVOICE_SENDING.md).
 //
-// Every draft is either ready or has a problem. Flow checks its own data
-// first: the draft has lines, a total above zero, and a price item on every
-// line. When an accounting system is connected, its own checks are added (for
-// Xero: the customer matches one Xero contact, every item is in Xero).
+// Flow checks every draft. It checks its own data first: the draft has lines,
+// a total above zero, and a price item on every line. When an accounting
+// system is connected, its own checks are added (for Xero: the customer
+// matches one Xero contact, every item is in Xero). A draft with a problem is
+// in Problem. A person marks a draft without one ready; any later change to
+// the draft sends it back to be checked again.
 //
 // Send all ready issues every ready draft (each gets its number) and, when an
 // accounting system is connected, queues it to go there. The send worker
@@ -44,31 +46,39 @@ export function draftProblems(invoice, lines) {
   return problems;
 }
 
-// The Ready and Problem views. `accounting` is the connected accounting
-// adapter, or null. Answers { ready: [ids], problems: Map(id -> problems),
-// sending: Set(ids) }.
-export async function invoiceViews(db, organisationId, { accounting = null } = {}) {
-  const drafts = await db.select({ id: invoices.id, totalCents: invoices.totalCents }).from(invoices)
-    .where(and(eq(invoices.organisationId, organisationId), eq(invoices.status, 'draft')))
-    .orderBy(asc(invoices.createdAt), asc(invoices.id))
-    .limit(CHECK_LIMIT);
+// Flow's checks, and the accounting system's, for some drafts. Answers
+// Map(id -> problems) holding only the drafts that have one.
+async function checkDrafts(db, organisationId, drafts, accounting) {
   const ids = drafts.map((d) => d.id);
-  const lines = ids.length
-    ? await db.select({ invoiceId: invoiceLines.invoiceId, position: invoiceLines.position, priceItemId: invoiceLines.priceItemId })
-      .from(invoiceLines).where(inArray(invoiceLines.invoiceId, ids)).orderBy(asc(invoiceLines.position))
-    : [];
-  const linesOf = Map.groupBy(lines, (l) => l.invoiceId);
   const problems = new Map();
+  if (!ids.length) return problems;
+  const lines = await db.select({ invoiceId: invoiceLines.invoiceId, position: invoiceLines.position, priceItemId: invoiceLines.priceItemId })
+    .from(invoiceLines).where(inArray(invoiceLines.invoiceId, ids)).orderBy(asc(invoiceLines.position));
+  const linesOf = Map.groupBy(lines, (l) => l.invoiceId);
   for (const draft of drafts) {
     const found = draftProblems(draft, linesOf.get(draft.id) ?? []);
     if (found.length) problems.set(draft.id, found);
   }
-  if (accounting && ids.length) {
+  if (accounting) {
     const outside = await accounting.capabilities.checkDrafts({ organisationId, invoiceIds: ids });
     for (const [id, found] of outside ?? []) {
       if (found.length) problems.set(id, [...(problems.get(id) ?? []), ...found]);
     }
   }
+  return problems;
+}
+
+// The views of the Invoices page. `accounting` is the accounting adapter, or
+// null. Every draft is in one view: Problem (a check failed), Ready (a person
+// marked it ready) or To check (the rest). An issued invoice is Sending while
+// queued, and a Problem when the accounting system refused it. Answers
+// { toCheck: [ids], ready: [ids], problems: Map(id -> problems), sending: Set(ids) }.
+export async function invoiceViews(db, organisationId, { accounting = null } = {}) {
+  const drafts = await db.select({ id: invoices.id, totalCents: invoices.totalCents, readyAt: invoices.readyAt }).from(invoices)
+    .where(and(eq(invoices.organisationId, organisationId), eq(invoices.status, 'draft')))
+    .orderBy(asc(invoices.createdAt), asc(invoices.id))
+    .limit(CHECK_LIMIT);
+  const problems = await checkDrafts(db, organisationId, drafts, accounting);
   const sending = new Set();
   const issued = await db.select({ id: invoices.id, sendState: invoices.sendState, sendError: invoices.sendError }).from(invoices)
     .where(and(eq(invoices.organisationId, organisationId), eq(invoices.status, 'issued'), inArray(invoices.sendState, ['queued', 'failed'])))
@@ -77,7 +87,48 @@ export async function invoiceViews(db, organisationId, { accounting = null } = {
     if (row.sendState === 'queued') sending.add(row.id);
     else problems.set(row.id, [row.sendError ?? problem('send_failed', 'Sending failed.')]);
   }
-  return { ready: ids.filter((id) => !problems.has(id)), problems, sending };
+  const clean = drafts.filter((d) => !problems.has(d.id));
+  return {
+    toCheck: clean.filter((d) => !d.readyAt).map((d) => d.id),
+    ready: clean.filter((d) => d.readyAt).map((d) => d.id),
+    problems,
+    sending,
+  };
+}
+
+// The view of one invoice, with its problems, for the invoice page.
+export async function invoiceView(db, organisationId, invoice, { accounting = null } = {}) {
+  if (invoice.status === 'void') return { view: null, problems: [] };
+  if (invoice.status === 'issued') {
+    if (invoice.sendState === 'queued') return { view: 'sending', problems: [] };
+    if (invoice.sendState === 'failed') return { view: 'problem', problems: [invoice.sendError ?? problem('send_failed', 'Sending failed.')] };
+    return { view: null, problems: [] };
+  }
+  const found = (await checkDrafts(db, organisationId, [invoice], accounting)).get(invoice.id) ?? [];
+  return { view: found.length ? 'problem' : invoice.readyAt ? 'ready' : 'to_check', problems: found };
+}
+
+// Mark ready: a person checked these drafts. A draft with a problem stays
+// where it is. Answers { marked, refused: [{ invoiceId, problems }] }.
+export async function markReady(db, organisationId, invoiceIds, { personId, accounting = null }) {
+  const drafts = await db.select({ id: invoices.id, totalCents: invoices.totalCents }).from(invoices)
+    .where(and(eq(invoices.organisationId, organisationId), eq(invoices.status, 'draft'), inArray(invoices.id, invoiceIds)));
+  if (drafts.length !== new Set(invoiceIds).size) throw new FlowError('not_draft', 'only a draft can be marked ready');
+  const problems = await checkDrafts(db, organisationId, drafts, accounting);
+  const good = drafts.filter((d) => !problems.has(d.id)).map((d) => d.id);
+  if (good.length) {
+    await db.update(invoices).set({ readyAt: sql`now()`, readyBy: personId ?? null })
+      .where(and(eq(invoices.organisationId, organisationId), eq(invoices.status, 'draft'), inArray(invoices.id, good)));
+  }
+  return { marked: good.length, refused: [...problems].map(([invoiceId, found]) => ({ invoiceId, problems: found })) };
+}
+
+// Back to drafts: the drafts need another look before they go.
+export async function markNotReady(db, organisationId, invoiceIds) {
+  const rows = await db.update(invoices).set({ readyAt: null, readyBy: null })
+    .where(and(eq(invoices.organisationId, organisationId), eq(invoices.status, 'draft'), inArray(invoices.id, invoiceIds)))
+    .returning({ id: invoices.id });
+  return { moved: rows.length };
 }
 
 // Before Flow issues anything: an accounting system that is on must be

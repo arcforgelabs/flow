@@ -311,6 +311,9 @@ a.fx-strong:hover { text-decoration: underline; }
 .fx-sendbar[hidden] { display: none; }
 .fx-sendbar p { margin: 0; }
 .fx-problem { color: var(--t-danger); }
+.fx-sendbar__actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.fx-tick-cell { width: 40px; }
+.fx-tick { width: 16px; height: 16px; accent-color: var(--t-brand); cursor: pointer; }
 .fx-search { width: min(320px, 100%); margin-bottom: 8px; }
 .fx-table--rows tbody tr { cursor: pointer; }
 .fx-table th.fx-num { text-align: right; }

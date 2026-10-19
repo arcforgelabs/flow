@@ -85,6 +85,10 @@ export const invoices = pgTable('invoices', {
   subtotalCents: integer('subtotal_cents').notNull().default(0),
   taxCents: integer('tax_cents').notNull().default(0),
   totalCents: integer('total_cents').notNull().default(0),
+  // When a person marked the draft ready to send, and who. Any change to the
+  // draft clears it (server/core/sending.js).
+  readyAt: timestamp('ready_at', { withTimezone: true }),
+  readyBy: uuid('ready_by').references(() => people.id, { onDelete: 'set null' }),
   // Sending to the accounting system (server/core/sending.js): queued by a
   // person, then sent or failed. `sendError` is { code, message } while failed.
   sendState: text('send_state'),
