@@ -1,0 +1,30 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { describe, test } from 'node:test';
+
+// clerk-appearance.js reads the --t-* tokens from <html>; give it a fixed set.
+const TOKENS = { '--t-text': '#1d2a33', '--t-paper': '#ffffff', '--t-dim': '#56606a' };
+globalThis.document = { documentElement: {} };
+globalThis.getComputedStyle = () => ({ getPropertyValue: (name) => TOKENS[name] ?? '' });
+const { flowClerkAppearance } = await import('../server/ui/clerk-appearance.js');
+
+describe('Clerk appearance', () => {
+  test('the "Manage account" icon is drawn as a gear, in the text colour', () => {
+    const icon = flowClerkAppearance().elements.userButtonPopoverActionButtonIcon__manageAccount;
+    assert.equal(icon['&&'].background, 'currentColor');
+    const svg = decodeURIComponent(icon['&&'].mask.match(/data:image\/svg\+xml,([^"]+)"/)[1]);
+    assert.match(svg, /^<svg [^>]*viewBox="0 0 16 16"[^>]*stroke-width="1.5"/);
+    assert.match(svg, /<circle /, 'the gear has a hub');
+    assert.equal(icon['&&'].WebkitMask, icon['&&'].mask);
+    assert.deepEqual(icon['&& > *'], { visibility: 'hidden' }, "Clerk's own cog is hidden");
+  });
+
+  test('windows Clerk opens itself follow a theme or mode change', () => {
+    // The "Manage account" window takes the button's userProfileProps, and
+    // any other Clerk window takes the appearance given to Clerk.load(). Both
+    // must be refreshed, or the window keeps the colours from page load.
+    const app = readFileSync(new URL('../server/ui/app.js', import.meta.url), 'utf8');
+    assert.match(app, /if \(kind === 'userButton'\) props\.userProfileProps = \{ \.\.\.options\.userProfileProps, appearance: clerkAppearance\('modal'\) \};/);
+    assert.match(app, /onAppearanceChange\(\(\) => \{\n  window\.Clerk\?\.__internal_updateProps\?\.\(\{ appearance: clerkAppearance\('modal'\) \}\);/);
+  });
+});
