@@ -28,6 +28,8 @@ export const XERO_CALLBACK_PATH = '/api/xero/oauth/callback';
 export const DEFAULT_XERO_SCOPE = 'offline_access accounting.contacts accounting.invoices accounting.settings.read';
 export const DEFAULT_XERO_DAY_LIMIT = 1000;
 export const DEFAULT_DUE_DAYS = 30;
+export const DEFAULT_MIRROR_PAGE_SIZE = 200;
+export const MAX_MIRROR_PAGE_SIZE = 1000;
 
 function readEnv(env, name) {
   const value = env?.[name];
@@ -159,6 +161,12 @@ export function resolveXeroSettings(env = process.env) {
     defaultDueDays: readPositiveInteger(env, 'XERO_DEFAULT_DUE_DAYS', DEFAULT_DUE_DAYS),
     invoiceNumber,
     replayFixtures: readEnv(env, 'XERO_REPLAY_FIXTURES') || null,
+    // Free text on Xero records (references, line descriptions) can name a
+    // patient. Flow keeps it only when the lab turns this on (VISION.md).
+    keepReference: readOnOff(env, 'XERO_KEEP_REFERENCE'),
+    mirrorPageSize: Math.min(readPositiveInteger(env, 'XERO_MIRROR_PAGE_SIZE', DEFAULT_MIRROR_PAGE_SIZE), MAX_MIRROR_PAGE_SIZE),
+    // The share of the day's calls the mirror leaves for drafts and people.
+    mirrorReserveFraction: readFraction(env, 'XERO_MIRROR_RESERVE_FRACTION', 0.3),
     endpoints: XERO_ENDPOINTS,
   };
 }

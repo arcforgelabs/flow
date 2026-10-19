@@ -6,8 +6,9 @@ Xero is an optional integration (`VISION.md`). The adapter lives in
 
 The adapter connects one Xero organisation to each Flow organisation, copies
 its contacts and items, and sends issued Flow invoices to Xero as draft
-invoices. The lab checks and approves them in Xero. Bills and payments are not
-ported yet.
+invoices. The lab checks and approves them in Xero. It also keeps a copy of
+the organisation's invoices, credit notes and payments, history included
+("The mirror"). Bills are not ported yet.
 
 ## Turn it on
 
@@ -50,6 +51,9 @@ credentials. Tests use replay only and never call the real Xero API.
 | `XERO_DEFAULT_DUE_DAYS` | configuration | Days from the invoice date to the due date when a Flow invoice has none. Default 30. |
 | `XERO_INVOICE_NUMBER` | configuration | `xero` (default): Xero numbers the invoice. `flow`: Xero gets Flow's invoice number. |
 | `XERO_REPLAY_FIXTURES` | configuration | Replay mode only: a fixture file in place of the bundled one. |
+| `XERO_KEEP_REFERENCE` | configuration | `on` keeps free text from Xero records in the mirror: invoice and payment references and line descriptions. They can name a patient. Default off: those fields are stored empty. |
+| `XERO_MIRROR_PAGE_SIZE` | configuration | Records per mirror call. Default 200, at most 1000. |
+| `XERO_MIRROR_RESERVE_FRACTION` | configuration | The share of the day's calls the mirror leaves for drafts and people. Default 0.3. |
 
 Errors name a setting, never its value.
 
@@ -207,6 +211,49 @@ pushedBy })` sends one issued invoice and answers as one entry above.
 - A push is safe to repeat: the Flow invoice id and version are the key, and
   a repeat never makes a second Xero invoice.
 - A preview never writes; only `push` does, and only for issued versions.
+
+## The mirror
+
+Flow keeps a copy of the connected organisation's invoices, credit notes and
+payments (`server/integrations/xero/mirror.js`, issue #54), so its reports
+cover the years before Flow was installed and its records can link to Xero's
+without spending calls. Xero owns these records; Flow never changes them.
+
+| Table | What it holds |
+| --- | --- |
+| `xero_invoices` | Sales and purchase invoices: number, contact, status, dates, totals, amounts due, paid and credited, lines |
+| `xero_credit_notes` | Credit notes, with what each is allocated to |
+| `xero_payments` | Payments, with the invoice or credit note each pays |
+| `xero_mirror_cursors` | Where the next read of each resource starts |
+
+`POST /api/xero/mirror` with `{ "organisationId": "…", "resources"?: [...] }`
+(owner or admin) reads each resource from its cursor. `GET /api/xero/mirror`
+(anyone signed in) shows the counts and cursors.
+
+```mermaid
+flowchart LR
+  cursor[Cursor: changed since T, page P] --> call[GET Invoices<br/>If-Modified-Since T<br/>oldest change first]
+  call --> store[Upsert the page<br/>and move the cursor<br/>in one transaction]
+  store -- full page --> cursor
+  store -- short page --> done[Pass done]
+```
+
+- **The first read copies the whole history.** It has no cursor. 7,000
+  invoices at 200 a page cost 35 calls.
+- **Later reads copy changes only.** Each read starts from the last change
+  it stored.
+- **It can stop at any page.** Each page and the cursor are stored in one
+  transaction, so a failed call, a restart or a spent budget loses nothing.
+- **It never skips a record.** After a full page the cursor moves to the
+  page's last change time, less one second, so a record that changes during
+  a read is read again. Only when one second holds a full page does the page
+  number move on.
+- **It keeps calls for drafts and people.** It stops when the day's
+  remaining calls fall to `XERO_MIRROR_RESERVE_FRACTION` of the limit.
+- **A row changes only when its content does.** Each row keeps a hash of
+  what Flow stores; `last_changed_at` moves only with it.
+- **No patient text by default.** References and line descriptions are kept
+  only with `XERO_KEEP_REFERENCE=on`.
 
 ## The billing ledger
 

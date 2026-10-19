@@ -9,6 +9,7 @@ import { XERO_ENDPOINTS } from './settings.js';
 export const DEFAULT_TIMEOUT_MS = 15_000;
 export const DEFAULT_ATTEMPTS = 2;
 export const XERO_PAGE_SIZE = 100;
+const MIRROR_PATHS = Object.freeze({ invoices: 'Invoices', credit_notes: 'CreditNotes', payments: 'Payments' });
 
 export function xeroError(code, message, { status = 502, ...extra } = {}) {
   const error = new FlowError(code, message, extra.details);
@@ -229,6 +230,18 @@ export function createXeroClient({
         query: { page, where: 'PaymentType=="ACCRECPAYMENT"' },
         headers: { 'If-Modified-Since': since.toISOString().replace(/\.\d{3}Z$/, '') },
       })).Payments, { maxPages });
+    },
+    // One page of invoices, credit notes or payments changed since
+    // `modifiedSince` (a Date, or null for all), oldest change first. The
+    // mirror (mirror.js) pages by that time, so it never skips a record.
+    async listChangedPage(resource, { page = 1, pageSize = XERO_PAGE_SIZE, modifiedSince = null } = {}) {
+      const path = MIRROR_PATHS[resource];
+      if (!path) throw new TypeError(`listChangedPage: unknown resource ${resource}`);
+      const payload = await request('GET', path, {
+        query: { page, pageSize, order: 'UpdatedDateUTC ASC' },
+        headers: modifiedSince ? { 'If-Modified-Since': modifiedSince.toISOString().replace(/\.\d{3}Z$/, '') } : {},
+      });
+      return payload[path] ?? [];
     },
     // One invoice. `idempotencyKey` makes a retry within Xero's window
     // return the first result instead of a second invoice.

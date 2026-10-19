@@ -6,6 +6,7 @@ import { lastSync, listContacts, listItems, syncCatalogue } from './catalogue.js
 import { createXeroClient } from './client.js';
 import { describePush, listPushes, MAX_BATCH, previewDrafts, pushDrafts } from './drafts.js';
 import { recordXeroEvidence, recordXeroPayments } from './ledger.js';
+import { MIRROR_RESOURCES, mirrorStatus, mirrorXero } from './mirror.js';
 import { decryptToken, deleteConnection, describeConnection, readConnection, saveConnection } from './connections.js';
 import { authorizeUrl, exchangeCode, fetchConnections, revokeToken, selectConnection } from './oauth.js';
 import { writesAllowed } from './settings.js';
@@ -28,6 +29,9 @@ import { messagePage as themedMessagePage } from '../../ui/page.js';
 //   POST /obligations/:obligationId/check   owner or admin: Xero's invoice for
 //                                  a billable job, recorded on the ledger
 //   POST /payments/sync            owner or admin: Xero payments to the ledger
+//   POST /mirror                   owner or admin: copies Xero invoices, credit
+//                                  notes and payments changed since the last copy
+//   GET  /mirror?organisationId=   any signed-in person: what the copy holds
 //
 // Only an owner, with a verified owner sign-in, can connect or disconnect.
 // The callback carries no Flow session: the one-use state from /connect,
@@ -225,6 +229,22 @@ export function createXeroRouter({ db, personAuth, runtime, log = console, messa
     const organisationId = await requireOrganisation(db, req.body?.organisationId);
     const result = await recordXeroPayments(db, runtime, organisationId, { actor: `person:${req.person.id}` });
     res.json({ ok: true, ...result });
+  }));
+
+  router.post('/mirror', ...manager, handle(log, async (req, res) => {
+    const organisationId = await requireOrganisation(db, req.body?.organisationId);
+    const resources = req.body?.resources ?? MIRROR_RESOURCES;
+    if (!Array.isArray(resources) || !resources.length || !resources.every((r) => MIRROR_RESOURCES.includes(r))) {
+      throw new FlowError('invalid', `resources must list some of: ${MIRROR_RESOURCES.join(', ')}`);
+    }
+    const results = await mirrorXero(db, runtime, organisationId, { resources: [...new Set(resources)] });
+    log.info?.(`[xero] organisation ${organisationId}: person ${req.person.id} copied Xero records: ${JSON.stringify(results)}`);
+    res.json({ ok: true, results, ...(await mirrorStatus(db, organisationId)) });
+  }));
+
+  router.get('/mirror', ...signedIn, handle(log, async (req, res) => {
+    const organisationId = await requireOrganisation(db, req.query.organisationId);
+    res.json({ ok: true, ...(await mirrorStatus(db, organisationId)) });
   }));
 
   return router;
