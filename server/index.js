@@ -6,7 +6,10 @@ import { createPersonAuth } from './auth/session.js';
 import { resolveSignInSettings } from './auth/settings.js';
 import { migrateDatabase, openDatabase } from './db/index.js';
 import { importEarlierAtStart, importEarlierLinksAtStart, resolveImportAtStart } from './import/at-start.js';
-import { createIntegrations } from './integrations/index.js';
+import { resolveSecretsKey } from './core/secrets.js';
+import { adapters as shippedAdapters } from './integrations/adapters.js';
+import { createIntegrations, resolveEnabledIntegrations } from './integrations/index.js';
+import { readStoredSettings, settingsEnvironment, storedEnabled } from './integrations/setup.js';
 import { resolveDefaultFamily } from './theme/themes.js';
 import { createUpdateChecker, UPDATE_CHECK_INTERVAL_MS } from './update-check.js';
 
@@ -27,9 +30,10 @@ try {
   console.error(`[ui] ${error.message}`);
   process.exit(1);
 }
-let integrations;
+let secrets;
 try {
-  integrations = createIntegrations();
+  resolveEnabledIntegrations();
+  secrets = resolveSecretsKey();
 } catch (error) {
   console.error(`[integrations] ${error.message}`);
   process.exit(1);
@@ -59,9 +63,21 @@ try {
 // failure is logged and the start goes on.
 await importEarlierLinksAtStart({ db: database.db, pool: database.pool, settings: importAtStart })
   .catch((error) => console.error(`[import] ${error.message}`));
-await integrations.start(database.db);
-const integrationsOn = integrations.list().filter((a) => a.enabled).map((a) => a.id);
-console.log(`[integrations] on: ${integrationsOn.join(', ') || 'none'} (FLOW_INTEGRATIONS)`);
+// What an owner set in Settings, Integrations, with the host's own
+// environment over it (server/integrations/setup.js).
+let integrations;
+try {
+  const stored = await readStoredSettings(database.db);
+  const { env: settingsEnv, unreadable } = settingsEnvironment({ env: process.env, stored, adapters: shippedAdapters, secrets });
+  if (unreadable.length) console.warn(`[integrations] stored credentials Flow cannot read with this secrets key: ${unreadable.join(', ')}. An owner enters them again in Settings.`);
+  integrations = createIntegrations({ turnedOnInFlow: storedEnabled(stored, process.env), settingsEnv });
+  await integrations.start(database.db);
+} catch (error) {
+  console.error(`[integrations] ${error.message}`);
+  process.exit(1);
+}
+const integrationsOn = integrations.list().filter((a) => a.enabled).map((a) => `${a.id}${a.state === 'ready' ? '' : ` (${a.state})`}`);
+console.log(`[integrations] on: ${integrationsOn.join(', ') || 'none'}; secrets key ${secrets ? `from ${secrets.source}` : 'not set (FLOW_SECRETS_KEY)'}`);
 
 let auth = null;
 if (settings.mode === 'clerk') {
@@ -104,7 +120,7 @@ const trustProxy = process.env.REPL_ID || process.env.REPLIT_DEPLOYMENT ? 1 : fa
 
 const updates = createUpdateChecker();
 
-createApp({ database, auth, trustProxy, updates, integrations, defaultFamily }).listen(port, () => {
+createApp({ database, auth, trustProxy, updates, integrations, secrets, defaultFamily }).listen(port, () => {
   console.log(`[flow] listening on ${port}; design system ${defaultFamily} (FLOW_THEME)`);
 });
 

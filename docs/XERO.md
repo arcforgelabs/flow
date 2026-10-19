@@ -12,11 +12,25 @@ the organisation's invoices, credit notes and payments, history included
 
 ## Turn it on
 
-1. Set `FLOW_INTEGRATIONS=xero` (with other ids, comma-separated). Flow then
-   creates the Xero tables at the next start (`docs/INTEGRATIONS.md`).
-2. Set `XERO_MODE`. With Xero on and `XERO_MODE` unset, Flow does not start.
-3. For `live` or `sandbox`, set the Xero app's keys, `XERO_TOKEN_KEY`, and
-   the address (below), then connect.
+Each lab uses its own Xero app. There is no shared Flow Xero app, so no one
+else holds the lab's Xero sign-in.
+
+In Flow, an owner opens **Integrations**, then Xero:
+
+1. **Create your Xero app** at developer.xero.com, My Apps: a Web app, with
+   this installation's address and the redirect URI the screen shows
+   (`https://<this installation>/api/xero/oauth/callback`, **Copy**).
+2. **Paste** the client id and the client secret. Choose the mode, and for
+   live type the Xero organisation's exact name.
+3. **Save and turn Xero on.** Flow creates its tables and starts Xero at
+   once. If a setting is missing, the screen says which.
+4. **Connect to Xero**, sign in to Xero and allow access. Flow then copies
+   the history in the background ("The mirror").
+
+The refresh token's key (`XERO_TOKEN_KEY`) comes from Flow's secrets key
+(`docs/INTEGRATIONS.md`, "The secrets key"). A host can instead set
+`FLOW_INTEGRATIONS=xero`, `XERO_MODE` and the settings below; a host setting
+wins over the screen.
 
 ## Modes
 

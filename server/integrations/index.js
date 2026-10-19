@@ -16,11 +16,17 @@ export function resolveEnabledIntegrations(env = process.env, adapters = shipped
 }
 
 // The registry for one Flow process: every shipped adapter registered, the
-// chosen ones enabled. Call registry.start(db) after the core migrations.
-export function createIntegrations({ env = process.env, adapters = shipped, log = console } = {}) {
+// chosen ones enabled. `turnedOnInFlow` are the ids an owner turned on in
+// Settings (server/integrations/setup.js): one of those that cannot start is
+// reported, not fatal. `settingsEnv` is what adapters read as their settings.
+// Call registry.start(db) after the core migrations.
+export function createIntegrations({ env = process.env, adapters = shipped, log = console, turnedOnInFlow = [], settingsEnv = env } = {}) {
   const enabled = resolveEnabledIntegrations(env, adapters);
-  const registry = createRegistry({ log });
+  const registry = createRegistry({ log, env: settingsEnv });
   for (const adapter of adapters) registry.register(adapter);
   for (const id of enabled) registry.enable(id);
+  for (const id of turnedOnInFlow) {
+    if (!enabled.includes(id) && registry.get(id)) registry.enable(id, { optional: true });
+  }
   return registry;
 }

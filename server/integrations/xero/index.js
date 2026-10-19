@@ -13,9 +13,34 @@ import { writesAllowed } from './settings.js';
 
 export const XERO_TABLES = Object.freeze(['xero_connections', 'xero_contacts', 'xero_items', 'xero_sync_runs', 'xero_invoice_pushes', 'xero_payment_cursors', 'xero_invoices', 'xero_credit_notes', 'xero_payments', 'xero_mirror_cursors']);
 
-// `runtime` is for tests. Otherwise start() builds it from the environment,
-// so a turned-off adapter never reads its settings, and a malformed setting
-// stops boot when Xero is on.
+// What an owner enters in Settings, Integrations (server/integrations/setup.js).
+// The refresh token's key comes from Flow's secrets key.
+export const XERO_SETUP = {
+  guide: {
+    title: 'Create your own Xero app',
+    link: 'https://developer.xero.com/app/manage',
+    steps: [
+      'Sign in at developer.xero.com with a Xero login that can manage the organisation, and open My Apps.',
+      'Press New app. Name it, for example "Flow". Choose Web app.',
+      'Company or application URL: this installation\'s address.',
+      'Redirect URI: copy it from below, exactly.',
+      'Open the app\'s Configuration. Copy the client id. Generate a secret and copy it: Xero shows it once.',
+      'Paste both below, choose the mode, name your Xero organisation, and turn Xero on.',
+    ],
+  },
+  fields: [
+    { name: 'XERO_MODE', label: 'Mode', kind: 'choice', choices: [{ value: 'live', label: 'Live: your Xero organisation' }, { value: 'sandbox', label: 'Sandbox: a Xero Demo Company' }] },
+    { name: 'XERO_REDIRECT_URI', label: 'Redirect URI', kind: 'url', suggest: 'callback', help: 'This installation\'s address plus /api/xero/oauth/callback. Register the same address on the Xero app.' },
+    { name: 'XERO_CLIENT_ID', label: 'Client id', help: 'From the Xero app\'s Configuration.' },
+    { name: 'XERO_CLIENT_SECRET', label: 'Client secret', secret: true, help: 'Stored encrypted. Flow never shows it again.' },
+    { name: 'XERO_TENANT_NAME', label: 'Xero organisation name', help: 'Live mode connects only the organisation with this exact name.' },
+    { name: 'XERO_ALLOW_LIVE_WRITES', label: 'Create draft invoices in live Xero', kind: 'onoff', help: 'Off: Flow only reads from Xero.' },
+  ],
+  derivedKeys: ['XERO_TOKEN_KEY'],
+};
+
+// `runtime` is for tests. Otherwise start() builds it from its settings, so a
+// turned-off adapter never reads them, and a malformed setting stops it.
 export function createXeroAdapter({ runtime: given = null } = {}) {
   let runtime = given;
   let database = null;
@@ -33,8 +58,10 @@ export function createXeroAdapter({ runtime: given = null } = {}) {
       migrationsFolder: fileURLToPath(new URL('./migrations', import.meta.url)),
       tables: [...XERO_TABLES],
     },
-    async start({ db, log }) {
+    setup: XERO_SETUP,
+    async start({ db, log, env }) {
       database = db;
+      if (!given) runtime = createXeroRuntime({ settings: requireXeroSettings(env ?? process.env) });
       const { settings } = current();
       log.info?.(`[xero] mode ${settings.mode}; writes ${writesAllowed(settings) ? 'on' : 'off (XERO_ALLOW_LIVE_WRITES)'}; redirect URI ${settings.redirectUri ?? 'not set (FLOW_PUBLIC_ORIGIN)'}`);
       // The history import (import.js) runs in the background outside replay
@@ -47,6 +74,7 @@ export function createXeroAdapter({ runtime: given = null } = {}) {
     async stop() {
       await importer?.stop();
       importer = null;
+      runtime = given;
     },
     capabilities: {
       async health() {
