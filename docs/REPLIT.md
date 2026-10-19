@@ -11,10 +11,11 @@ workspace of this repository.
 
 ## What runs here
 
-- The workspace's Run button starts the workspace files with
-  `scripts/replit-start.sh`. The published app is built and started by
-  `scripts/replit-deploy.sh` from a release or commit fetched from GitHub
-  ("Publishing").
+- The workspace's Run button updates the workspace's database to the build
+  the next publish will deploy (`scripts/replit-deploy.sh update-workspace`,
+  "Updates go to the workspace first"). It starts no server. The published
+  app is built and started by `scripts/replit-deploy.sh` from a release or
+  commit fetched from GitHub ("Publishing").
 - Runtime: Node 24 (`.replit` module `nodejs-24`), as in CI and the
   `Dockerfile`.
 - Flow keeps its records in PostgreSQL (`DATABASE_URL`) and runs its
@@ -79,14 +80,15 @@ It never treats an unreadable answer as a pass.
 
 To publish:
 
-1. Publishing > Republish. Nothing needs pulling first.
-   - **If the publish stops at "Development database changes detected", press
-     Cancel.** Never pick an option there. The workspace and the published
-     app have separate databases, and Replit offers to make production's
-     tables match the workspace's; when the workspace is behind, every option
-     drops or renames production tables. Flow migrates production itself when
-     it starts.
-2. When Replit says it is done, open `GET /health`. Its `build` shows what is
+1. Press Run in the workspace, and wait for `[deploy] the workspace database
+   is at <release>` ("Updates go to the workspace first").
+2. Publishing > Republish. Nothing needs pulling first. If Replit stops at
+   "Development database changes detected", read its list:
+   - **Only additions** (`CREATE TABLE`, `ADD COLUMN`, `CREATE INDEX`,
+     `ADD CONSTRAINT`): approve. They are the release's new tables.
+   - **Any `DROP` or `RENAME`**: press Cancel. The workspace's database is
+     behind production. Press Run, then publish again.
+3. When Replit says it is done, open `GET /health`. Its `build` shows what is
    live: `revision` (the commit), `ref` (`main`, the pinned ref, or the
    channel `stable` or `beta`), `release` (the release tag, when the build is
    one), `source` (`github`, or `workspace` for an emergency build) and
@@ -99,6 +101,32 @@ To publish:
 a publish takes from the workspace. When a commit changes them, the build log
 says `note: ... differs from <ref>`; pull `main` into the workspace before
 the next publish so the new ones take effect.
+
+### Updates go to the workspace first
+
+The workspace and the published app have separate databases. Before each
+publish, Replit compares the workspace's tables with production's and offers
+to make production's match. Flow uses that check:
+
+1. **Run** builds the release the next publish will deploy (the same
+   `FLOW_DEPLOY_REF`, with the same CI check), then runs its migrations on
+   the workspace's database: Flow's own tables and the tables of every
+   integration it ships, on or off. A failed migration stops here, before
+   production.
+2. **Publish**: the workspace is now at the new release and production at the
+   old one, so Replit can only offer to add tables and columns. Approve that.
+3. **Start**: Flow runs the same migrations on production. Every migration
+   skips what already exists (`docs/DATA_MODEL.md`, "Change the schema"), so
+   it finds Replit's additions in place and carries on.
+
+If Run was skipped, the two databases are the same, Replit shows nothing, and
+Flow migrates production itself when it starts. Production then moves ahead,
+so press Run before the next publish. A `DROP` in Replit's list always means
+the workspace is behind: Cancel, Run, publish again. Cancel also stops the
+build, and the old build stays live.
+
+Set `FLOW_DEPLOY_REF` in the workspace's Secrets as well as the deployment's,
+to the same value, so Run and Publish build the same release.
 
 ### Following stable releases
 

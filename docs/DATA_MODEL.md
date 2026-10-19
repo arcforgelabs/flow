@@ -165,6 +165,15 @@ installation low maintenance.
 3. Put rules Drizzle cannot express (triggers, functions) in a custom
    migration: `npx drizzle-kit generate --custom --name <what>`.
 4. Never edit a migration that is on `main`. Add a new one.
+5. A migration only adds: no drop, no rename. `npm run db:generate` then
+   guards it (`scripts/db-guard-migrations.js`): `IF NOT EXISTS` on each new
+   table, column and index, and an "already exists" catch on each constraint,
+   so it also runs on a database that already has them. A hand-written
+   migration needs the same; `test/migrations-guarded.test.js` fails without
+   it. The guard was added to migrations `0010` on and to every adapter's
+   migrations after they shipped; it changes nothing for a database that ran
+   them before. On Replit, publishing can add a release's tables before Flow
+   starts (`docs/REPLIT.md`, "Updates go to the workspace first").
 
 ## Tests
 

@@ -1,6 +1,6 @@
 -- The Xero connection of each Flow organisation. The refresh token is
 -- AES-256-GCM ciphertext (XERO_TOKEN_KEY); the plain token is never stored.
-CREATE TABLE "xero_connections" (
+CREATE TABLE IF NOT EXISTS "xero_connections" (
 	"organisation_id" uuid PRIMARY KEY NOT NULL REFERENCES "organisations"("id"),
 	"mode" text NOT NULL,
 	"tenant_id" text NOT NULL,

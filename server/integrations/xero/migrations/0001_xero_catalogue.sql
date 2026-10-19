@@ -1,6 +1,6 @@
 -- Flow's copy of the Xero contacts and items of each connected organisation,
 -- and a record of each sync. Xero owns these records; a sync replaces the copy.
-CREATE TABLE "xero_contacts" (
+CREATE TABLE IF NOT EXISTS "xero_contacts" (
 	"organisation_id" uuid NOT NULL REFERENCES "organisations"("id"),
 	"xero_contact_id" text NOT NULL,
 	"name" text NOT NULL,
@@ -14,9 +14,9 @@ CREATE TABLE "xero_contacts" (
 	CONSTRAINT "xero_contacts_pk" PRIMARY KEY("organisation_id", "xero_contact_id")
 );
 --> statement-breakpoint
-CREATE INDEX "xero_contacts_org_name" ON "xero_contacts" ("organisation_id", lower("name"));
+CREATE INDEX IF NOT EXISTS "xero_contacts_org_name" ON "xero_contacts" ("organisation_id", lower("name"));
 --> statement-breakpoint
-CREATE TABLE "xero_items" (
+CREATE TABLE IF NOT EXISTS "xero_items" (
 	"organisation_id" uuid NOT NULL REFERENCES "organisations"("id"),
 	"xero_item_id" text NOT NULL,
 	"code" text NOT NULL,
@@ -32,7 +32,7 @@ CREATE TABLE "xero_items" (
 	CONSTRAINT "xero_items_org_code" UNIQUE("organisation_id", "code")
 );
 --> statement-breakpoint
-CREATE TABLE "xero_sync_runs" (
+CREATE TABLE IF NOT EXISTS "xero_sync_runs" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"organisation_id" uuid NOT NULL REFERENCES "organisations"("id"),
 	"status" text DEFAULT 'running' NOT NULL,
@@ -46,4 +46,4 @@ CREATE TABLE "xero_sync_runs" (
 	CONSTRAINT "xero_sync_runs_status_valid" CHECK ("status" in ('running', 'succeeded', 'failed'))
 );
 --> statement-breakpoint
-CREATE INDEX "xero_sync_runs_org_started" ON "xero_sync_runs" ("organisation_id", "started_at");
+CREATE INDEX IF NOT EXISTS "xero_sync_runs_org_started" ON "xero_sync_runs" ("organisation_id", "started_at");

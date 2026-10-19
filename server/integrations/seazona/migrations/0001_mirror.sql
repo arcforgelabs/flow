@@ -1,4 +1,4 @@
-CREATE TABLE "seazona_clients" (
+CREATE TABLE IF NOT EXISTS "seazona_clients" (
 	"id" text PRIMARY KEY NOT NULL,
 	"account_number" text,
 	"company" text,
@@ -17,7 +17,7 @@ CREATE TABLE "seazona_clients" (
 	"last_changed_at" timestamp with time zone NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "seazona_invoices" (
+CREATE TABLE IF NOT EXISTS "seazona_invoices" (
 	"invoice_number" text PRIMARY KEY NOT NULL,
 	"seazona_id" text,
 	"client_id" text,
@@ -41,7 +41,7 @@ CREATE TABLE "seazona_invoices" (
 	"last_changed_at" timestamp with time zone NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "seazona_lane_state" (
+CREATE TABLE IF NOT EXISTS "seazona_lane_state" (
 	"lane" text PRIMARY KEY NOT NULL,
 	"status" text DEFAULT 'idle' NOT NULL,
 	"cursor_time" timestamp with time zone,
@@ -56,7 +56,7 @@ CREATE TABLE "seazona_lane_state" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "seazona_order_read_failures" (
+CREATE TABLE IF NOT EXISTS "seazona_order_read_failures" (
 	"order_id" text PRIMARY KEY NOT NULL,
 	"failure_count" integer NOT NULL,
 	"last_attempt_at" timestamp with time zone NOT NULL,
@@ -66,7 +66,7 @@ CREATE TABLE "seazona_order_read_failures" (
 	"quarantined_until" timestamp with time zone
 );
 --> statement-breakpoint
-CREATE TABLE "seazona_orders" (
+CREATE TABLE IF NOT EXISTS "seazona_orders" (
 	"id" text PRIMARY KEY NOT NULL,
 	"invoice_number" text,
 	"client_id" text,
@@ -88,7 +88,7 @@ CREATE TABLE "seazona_orders" (
 	"last_changed_at" timestamp with time zone NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "seazona_reference" (
+CREATE TABLE IF NOT EXISTS "seazona_reference" (
 	"resource" text NOT NULL,
 	"id" text NOT NULL,
 	"name" text,
@@ -101,6 +101,6 @@ CREATE TABLE "seazona_reference" (
 	CONSTRAINT "seazona_reference_resource_id_pk" PRIMARY KEY("resource","id")
 );
 --> statement-breakpoint
-CREATE INDEX "seazona_invoices_changed" ON "seazona_invoices" USING btree ("last_changed_at");--> statement-breakpoint
-CREATE INDEX "seazona_orders_invoice_number" ON "seazona_orders" USING btree ("invoice_number");--> statement-breakpoint
-CREATE INDEX "seazona_orders_changed" ON "seazona_orders" USING btree ("last_changed_at");
+CREATE INDEX IF NOT EXISTS "seazona_invoices_changed" ON "seazona_invoices" USING btree ("last_changed_at");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "seazona_orders_invoice_number" ON "seazona_orders" USING btree ("invoice_number");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "seazona_orders_changed" ON "seazona_orders" USING btree ("last_changed_at");

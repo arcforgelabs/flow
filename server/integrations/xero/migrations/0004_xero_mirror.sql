@@ -4,7 +4,7 @@
 -- without spending Xero calls. A row is upserted by its Xero id, and changes
 -- only when its content hash changes. Free text (references, line
 -- descriptions) is kept only with XERO_KEEP_REFERENCE=on.
-CREATE TABLE "xero_invoices" (
+CREATE TABLE IF NOT EXISTS "xero_invoices" (
 	"organisation_id" uuid NOT NULL REFERENCES "organisations"("id"),
 	"xero_invoice_id" text NOT NULL,
 	"type" text NOT NULL,
@@ -30,11 +30,11 @@ CREATE TABLE "xero_invoices" (
 	CONSTRAINT "xero_invoices_pk" PRIMARY KEY("organisation_id", "xero_invoice_id")
 );
 --> statement-breakpoint
-CREATE INDEX "xero_invoices_number" ON "xero_invoices" ("organisation_id", "invoice_number");
+CREATE INDEX IF NOT EXISTS "xero_invoices_number" ON "xero_invoices" ("organisation_id", "invoice_number");
 --> statement-breakpoint
-CREATE INDEX "xero_invoices_contact" ON "xero_invoices" ("organisation_id", "xero_contact_id", "issued_on");
+CREATE INDEX IF NOT EXISTS "xero_invoices_contact" ON "xero_invoices" ("organisation_id", "xero_contact_id", "issued_on");
 --> statement-breakpoint
-CREATE TABLE "xero_credit_notes" (
+CREATE TABLE IF NOT EXISTS "xero_credit_notes" (
 	"organisation_id" uuid NOT NULL REFERENCES "organisations"("id"),
 	"xero_credit_note_id" text NOT NULL,
 	"type" text NOT NULL,
@@ -57,7 +57,7 @@ CREATE TABLE "xero_credit_notes" (
 	CONSTRAINT "xero_credit_notes_pk" PRIMARY KEY("organisation_id", "xero_credit_note_id")
 );
 --> statement-breakpoint
-CREATE TABLE "xero_payments" (
+CREATE TABLE IF NOT EXISTS "xero_payments" (
 	"organisation_id" uuid NOT NULL REFERENCES "organisations"("id"),
 	"xero_payment_id" text NOT NULL,
 	"payment_type" text,
@@ -75,12 +75,12 @@ CREATE TABLE "xero_payments" (
 	CONSTRAINT "xero_payments_pk" PRIMARY KEY("organisation_id", "xero_payment_id")
 );
 --> statement-breakpoint
-CREATE INDEX "xero_payments_invoice" ON "xero_payments" ("organisation_id", "xero_invoice_id");
+CREATE INDEX IF NOT EXISTS "xero_payments_invoice" ON "xero_payments" ("organisation_id", "xero_invoice_id");
 --> statement-breakpoint
 -- Where the next read of each resource starts. `modified_since` is the
 -- keyset: the next read asks Xero for records changed since then, oldest
 -- change first. `page` moves on only when one second holds a full page.
-CREATE TABLE "xero_mirror_cursors" (
+CREATE TABLE IF NOT EXISTS "xero_mirror_cursors" (
 	"organisation_id" uuid NOT NULL REFERENCES "organisations"("id"),
 	"resource" text NOT NULL,
 	"modified_since" timestamp with time zone,

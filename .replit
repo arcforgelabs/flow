@@ -1,10 +1,12 @@
 # Replit settings for a workspace imported from this repository
-# (docs/REPLIT.md). The workspace's Run button starts the workspace files. The
-# deployment builds and runs a release or commit fetched from GitHub instead:
+# (docs/REPLIT.md). The workspace's Run button builds what the next publish
+# will build and brings the workspace's database up to it, so publishing only
+# ever offers to add tables. The deployment builds and runs a release or
+# commit fetched from GitHub:
 # FLOW_DEPLOY_REF=stable, beta, a release tag or a commit; main when unset
 # (scripts/replit-deploy.sh). Keep every secret in Replit Secrets.
 modules = ["nodejs-24", "bash"]
-run = ["bash", "scripts/replit-start.sh"]
+run = ["bash", "scripts/replit-deploy.sh", "update-workspace"]
 
 [env]
 FLOW_RUNTIME = "replit"
