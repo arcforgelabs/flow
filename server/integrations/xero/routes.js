@@ -6,6 +6,7 @@ import { lastSync, listContacts, listItems, syncCatalogue } from './catalogue.js
 import { createXeroClient } from './client.js';
 import { describePush, listPushes, MAX_BATCH, previewDrafts, pushDrafts } from './drafts.js';
 import { recordXeroEvidence, recordXeroPayments } from './ledger.js';
+import { queueHistoryImport, resetImport } from './import.js';
 import { MIRROR_RESOURCES, mirrorStatus, mirrorXero } from './mirror.js';
 import { decryptToken, deleteConnection, describeConnection, readConnection, saveConnection } from './connections.js';
 import { authorizeUrl, exchangeCode, fetchConnections, revokeToken, selectConnection } from './oauth.js';
@@ -142,6 +143,7 @@ export function createXeroRouter({ db, personAuth, runtime, log = console, messa
         await revokeToken(settings, runtime.transport, tokens.refresh_token).catch(() => false);
         throw error;
       }
+      const previous = await readConnection(db, entry.organisationId);
       const connection = await saveConnection(db, {
         organisationId: entry.organisationId,
         mode: settings.mode,
@@ -153,8 +155,11 @@ export function createXeroRouter({ db, personAuth, runtime, log = console, messa
         key: settings.tokenKey,
       });
       runtime.remember(entry.organisationId, tokens);
+      // Another Xero organisation starts its history from the beginning.
+      if (previous && previous.tenantId !== connection.tenantId) await resetImport(db, entry.organisationId);
+      await queueHistoryImport(db, entry.organisationId, { reason: 'connected' });
       log.info?.(`[xero] organisation ${entry.organisationId} connected to Xero tenant ${connection.tenantId} (${settings.mode}) by person ${entry.personId}`);
-      return res.type('html').send(page('Xero is connected', `Flow is connected to ${connection.tenantName || 'your Xero organisation'} (${settings.mode}). You can close this tab.`, 'success'));
+      return res.type('html').send(page('Xero is connected', `Flow is connected to ${connection.tenantName || 'your Xero organisation'} (${settings.mode}). Flow is now copying its invoice and payment history in the background. You can close this tab.`, 'success'));
     } catch (error) {
       log.error?.(`[xero] connect failed: ${error.code ?? 'error'}: ${error.message}`);
       const message = error instanceof FlowError ? error.message : 'Something went wrong talking to Xero. Try again.';

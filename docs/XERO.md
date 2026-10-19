@@ -226,8 +226,35 @@ without spending calls. Xero owns these records; Flow never changes them.
 | `xero_payments` | Payments, with the invoice or credit note each pays |
 | `xero_mirror_cursors` | Where the next read of each resource starts |
 
+### The history import
+
+Connecting Xero starts the import. Nobody runs a script.
+
+```mermaid
+flowchart LR
+  connect[Owner connects Xero] --> job[Job xero.import<br/>in background_jobs]
+  boot[Flow starts: a connected<br/>organisation with no finished copy] --> job
+  job --> slice[Slice: up to 20 pages<br/>of each resource]
+  slice -- day budget used --> later[Next slice in 1 hour]
+  slice -- page limit --> next[Next slice now]
+  later --> slice
+  next --> slice
+  slice -- all resources done --> done[History complete]
+```
+
+- The import is a job on the core queue (`server/integrations/xero/import.js`).
+  One import per organisation is open at a time.
+- A Flow that starts with Xero already connected, and with a resource that has
+  no finished pass, queues the import too. So an upgrade imports with no step.
+- Connecting another Xero organisation clears the cursors, so its history is
+  read from the start.
+- The worker runs outside replay mode. It only reads from Xero. It leaves the
+  reserve share of the day's calls (`XERO_MIRROR_RESERVE_FRACTION`).
+- A failed slice retries with the queue's back-off. After its last attempt
+  it opens a review item (`job.dead`).
+
 `POST /api/xero/mirror` with `{ "organisationId": "…", "resources"?: [...] }`
-(owner or admin) reads each resource from its cursor. `GET /api/xero/mirror`
+(owner or admin) reads each resource from its cursor now. `GET /api/xero/mirror`
 (anyone signed in) shows the counts and cursors.
 
 ```mermaid

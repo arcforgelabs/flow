@@ -1,6 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import { sql } from 'drizzle-orm';
 import { pushInvoice } from './drafts.js';
+import { createImportWorker } from './import.js';
 import { readPayments } from './ledger.js';
 import { createXeroRouter } from './routes.js';
 import { createXeroRuntime, requireXeroSettings } from './runtime.js';
@@ -18,6 +19,7 @@ export const XERO_TABLES = Object.freeze(['xero_connections', 'xero_contacts', '
 export function createXeroAdapter({ runtime: given = null } = {}) {
   let runtime = given;
   let database = null;
+  let importer = null;
   const current = () => {
     runtime ??= createXeroRuntime({ settings: requireXeroSettings(process.env) });
     return runtime;
@@ -35,6 +37,16 @@ export function createXeroAdapter({ runtime: given = null } = {}) {
       database = db;
       const { settings } = current();
       log.info?.(`[xero] mode ${settings.mode}; writes ${writesAllowed(settings) ? 'on' : 'off (XERO_ALLOW_LIVE_WRITES)'}; redirect URI ${settings.redirectUri ?? 'not set (FLOW_PUBLIC_ORIGIN)'}`);
+      // The history import (import.js) runs in the background outside replay
+      // mode. Replay tests run its slices directly.
+      if (settings.mode !== 'replay') {
+        importer = createImportWorker({ db, runtime: current(), log });
+        await importer.start();
+      }
+    },
+    async stop() {
+      await importer?.stop();
+      importer = null;
     },
     capabilities: {
       async health() {

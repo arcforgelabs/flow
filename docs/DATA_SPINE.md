@@ -170,7 +170,7 @@ row is dropped.
 
 | Phase | What | Issues |
 | --- | --- | --- |
-| 2 | Xero mirror of invoices, credit notes and payments with history (built: `docs/XERO.md`, "The mirror"); seed links from an earlier installation's job ledger with exact ids | #54, #45 |
+| 2 | Xero mirror of invoices, credit notes and payments with history, imported as a job when Xero is connected (built: `docs/XERO.md`, "The mirror"); seed links from an earlier installation's job ledger with exact ids | #54, #45 |
 | 3 | The pipeline on the job queue, with no writes | #58 |
 | 4 | Writes through the outbox, each behind its own switch | #39 |
 | 5 | Screens: review queue, accounting usage, price differences, duplicates | #2, #46, #47 |

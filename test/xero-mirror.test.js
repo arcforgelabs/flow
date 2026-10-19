@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { after, before, describe, test } from 'node:test';
 import { sql } from 'drizzle-orm';
 import { invitePerson } from '../server/auth/people.js';
+import { organisationsToImport, queueHistoryImport, resetImport, runImportOnce } from '../server/integrations/xero/import.js';
 import { mapInvoice, mapPayment, mirrorResource, nextPosition, toCents } from '../server/integrations/xero/mirror.js';
 import { request } from './support/clerk.js';
 import { freshDatabase, skipWithoutDatabase } from './support/db.js';
@@ -152,6 +153,36 @@ describe('Xero mirror', { skip: skipWithoutDatabase }, () => {
     const result = await mirrorResource(handle.db, tight.runtime, lab.organisation.id, 'invoices');
     assert.equal(result.stopped, 'budget');
     assert.equal(replay.calls.length, 0);
+  });
+
+  test('the history import runs in slices as a job, and queues the next slice until it is done', async () => {
+    await resetImport(handle.db, lab.organisation.id);
+    assert.deepEqual(await organisationsToImport(handle.db, 'replay'), [lab.organisation.id], 'a reset history is not complete');
+    const { job, queued } = await queueHistoryImport(handle.db, lab.organisation.id);
+    assert.equal(queued, true);
+    assert.equal((await queueHistoryImport(handle.db, lab.organisation.id)).job.id, job.id, 'one open import at a time');
+
+    xero.script([
+      page('invoices', 'Invoices', [invoice('i1', '2024-05-01T00:00:00Z'), invoice('i4', '2024-06-01T00:00:00Z')], { page: 1 }),
+      page('credit_notes', 'CreditNotes', [], { page: 1 }),
+      page('payments', 'Payments', [], { page: 1 }),
+    ]);
+    const first = await runImportOnce(handle.db, xero.runtime, { maxPages: 1 });
+    assert.equal(first.outcome, 'succeeded', first.job.lastError);
+    assert.equal(first.job.result.more, 'max_pages');
+
+    const replay = xero.script([
+      page('invoices', 'Invoices', [invoice('i4', '2024-06-01T00:00:00Z')], { page: 1 }),
+      page('credit_notes', 'CreditNotes', [], { page: 1 }),
+      page('payments', 'Payments', [], { page: 1 }),
+    ]);
+    const second = await runImportOnce(handle.db, xero.runtime, { maxPages: 1 });
+    assert.equal(second.outcome, 'succeeded');
+    assert.equal(second.job.result.more, null);
+    assert.equal(replay.unused().length, 0);
+    assert.equal(await runImportOnce(handle.db, xero.runtime), null, 'nothing more is queued');
+    assert.deepEqual(await organisationsToImport(handle.db, 'replay'), []);
+    assert.equal(await count('xero_invoices'), 4);
   });
 
   test('a bad resource list is refused', async () => {
