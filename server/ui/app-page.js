@@ -40,7 +40,7 @@ const BODY = `<div class="fx-app">
       <nav class="fx-nav" id="nav" aria-label="Flow"></nav>
       <div class="fx-side__end">
         <div id="user-button" class="fx-side__user"></div>
-        <button type="button" class="fx-btn fx-btn--ghost fx-btn--icon fx-mode-toggle" data-mode-toggle>Light or dark</button>
+        <button type="button" class="fx-btn fx-btn--ghost fx-btn--icon" id="search" title="Search (Ctrl+K)" aria-label="Search" aria-keyshortcuts="Control+K Meta+K"></button>
       </div>
     </aside>
     <main id="main" class="fx-main" tabindex="-1"></main>
