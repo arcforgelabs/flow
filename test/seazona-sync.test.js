@@ -8,6 +8,7 @@ import { DELETED_STATUS, orderStatusLabel } from '../server/integrations/seazona
 import { createReplayFetch, loadReplay } from '../server/integrations/seazona/replay.js';
 import { seazonaClients, seazonaInvoices, seazonaOrderReadFailures, seazonaOrders, seazonaReference } from '../server/integrations/seazona/schema.js';
 import { resolveSeazonaSettings } from '../server/integrations/seazona/settings.js';
+import { resetFailedLanes, resetStoppedLanes } from '../server/integrations/seazona/store.js';
 import { skipWithoutDatabase } from './support/db.js';
 import { fakeClock, freshSeazonaDatabase } from './support/seazona.js';
 
@@ -40,7 +41,7 @@ describe('Seazona sync lanes', { skip: skipWithoutDatabase }, () => {
   after(async () => handle?.close());
   beforeEach(async () => {
     await db.execute(sql`truncate seazona_orders, seazona_invoices, seazona_clients, seazona_reference,
-      seazona_lane_state, seazona_order_read_failures, seazona_api_requests, seazona_api_governor`);
+      seazona_lane_state, seazona_order_read_failures, seazona_record_read_failures, seazona_api_requests, seazona_api_governor`);
     clock = fakeClock('2026-10-01T12:00:00.000Z');
   });
 
@@ -270,5 +271,52 @@ describe('Seazona sync lanes', { skip: skipWithoutDatabase }, () => {
     await run(billing(), { only: ['products'] });
     const { calls } = await run(billing(), { force: false });
     assert.ok(!calls.some((call) => call.path === 'products/'), 'products ran a moment ago and are not due');
+  });
+
+  // Issue #101.
+  test('a list path Seazona rejects stops the lane until a restart or a person', async () => {
+    const responses = [{ path: 'clients/', status: 404 }];
+    const first = await run(responses, { only: ['clients'] });
+    assert.equal(first.result.results.clients.status, 'stopped');
+    assert.equal(first.result.results.clients.code, 'seazona_request_rejected');
+    const scheduled = await run(responses, { force: false });
+    assert.ok(!scheduled.calls.some((call) => call.path === 'clients/'), 'a stopped lane is not due');
+    assert.deepEqual(await resetStoppedLanes(db, { at: new Date(clock.now()) }), ['clients']);
+    const again = await run(responses, { force: false });
+    assert.equal(again.calls.filter((call) => call.path === 'clients/').length, 1);
+  });
+
+  test('a 401 stops every lane with one call, and nothing else calls Seazona', async () => {
+    const { result, calls } = await run([{ path: 'invoices/', query: { lastModified: '*' }, status: 401 }]);
+    assert.equal(calls.length, 1);
+    assert.equal(result.results.invoices.status, 'stopped');
+    // orders_active has no known order yet, so it makes no call at all.
+    for (const lane of ['orders_recent', 'clients', 'products', 'users']) {
+      assert.equal(result.results[lane].code, 'seazona_api_halted', lane);
+      assert.equal(result.results[lane].status, 'stopped', lane);
+    }
+    const health = await readSeazonaSyncHealth(db, settingsFor(), { now: clock.now });
+    assert.equal(health.ok, false);
+    assert.equal((await resetFailedLanes(db, { at: new Date(clock.now()) })).length, 5);
+  });
+
+  test('an invoice that keeps failing is quarantined and no longer holds the cursor', async () => {
+    const list = { path: 'invoices/', query: { lastModified: '*' }, body: [{ invoiceNumber: 7001, id: 'INV-7001', status: 'Shipped' }] };
+    const responses = [list, { path: 'invoices/INV-7001', status: 500 }];
+    // The circuit is set wide here, so only the record quarantine acts.
+    const env = { SEAZONA_API_MAX_RETRIES: '0', SEAZONA_CIRCUIT_FAILURES: '100' };
+    const cursorOf = async () => (await readSeazonaSyncHealth(db, settingsFor(), { now: clock.now })).lanes.find((l) => l.lane === 'invoices');
+    for (let i = 0; i < 3; i += 1) {
+      const { result } = await run(responses, { env, only: ['invoices'] });
+      assert.equal(result.results.invoices.ok, false, `run ${i + 1}: one of one read failed`);
+      clock.advance(MINUTE);
+    }
+    const { result, calls } = await run(responses, { env, only: ['invoices'] });
+    assert.equal(result.results.invoices.ok, true);
+    assert.equal(result.results.invoices.quarantined, 1);
+    assert.ok(!calls.some((call) => call.path === 'invoices/INV-7001'), 'a quarantined invoice costs no call');
+    const lane = await cursorOf();
+    assert.equal(lane.quarantinedRecords, 1);
+    assert.ok(lane.lastSuccessAt);
   });
 });

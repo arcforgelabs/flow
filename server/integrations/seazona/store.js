@@ -6,6 +6,7 @@ import {
   seazonaLaneState,
   seazonaOrderReadFailures,
   seazonaOrders,
+  seazonaRecordReadFailures,
   seazonaReference,
 } from './schema.js';
 
@@ -192,6 +193,60 @@ export async function readQuarantinedOrders(db, { at, limit = 25 }) {
   }));
 }
 
+// Issue #101: failed detail reads of invoices and clients, per record.
+// Answers Map(key -> row) for the keys that are quarantined at `at`.
+export async function readQuarantinedRecords(db, resource, keys, { at }) {
+  if (!keys.length) return new Map();
+  const rows = await db.select().from(seazonaRecordReadFailures).where(and(
+    eq(seazonaRecordReadFailures.resource, resource),
+    inArray(seazonaRecordReadFailures.recordKey, keys),
+    gt(seazonaRecordReadFailures.quarantinedUntil, at),
+  ));
+  return new Map(rows.map((row) => [row.recordKey, row]));
+}
+
+export async function clearRecordFailures(db, resource, keys) {
+  if (!keys.length) return;
+  await db.delete(seazonaRecordReadFailures).where(and(
+    eq(seazonaRecordReadFailures.resource, resource),
+    inArray(seazonaRecordReadFailures.recordKey, keys),
+  ));
+}
+
+// Records one failed read, as recordOrderFailure does for orders. Answers
+// { failureCount, quarantinedUntil }.
+export async function recordRecordFailure(db, resource, key, failure, { at, quarantineFailures, quarantineMs }) {
+  const until = new Date(at.getTime() + quarantineMs);
+  const [row] = await db.insert(seazonaRecordReadFailures).values({
+    resource,
+    recordKey: key,
+    failureCount: 1,
+    lastAttemptAt: at,
+    lastHttpStatus: failure.httpStatus,
+    lastFailureKind: failure.kind,
+    quarantinedUntil: quarantineFailures <= 1 ? until : null,
+  }).onConflictDoUpdate({
+    target: [seazonaRecordReadFailures.resource, seazonaRecordReadFailures.recordKey],
+    set: {
+      failureCount: sql`${seazonaRecordReadFailures.failureCount} + 1`,
+      lastAttemptAt: at,
+      lastHttpStatus: failure.httpStatus,
+      lastFailureKind: failure.kind,
+      quarantinedUntil: sql`case when ${seazonaRecordReadFailures.failureCount} + 1 >= ${quarantineFailures}
+        then ${until}::timestamptz else null end`,
+    },
+  }).returning();
+  return { failureCount: row.failureCount, quarantinedUntil: row.quarantinedUntil?.toISOString() ?? null };
+}
+
+export async function readQuarantinedRecordCounts(db, { at }) {
+  const rows = await db.select({ resource: seazonaRecordReadFailures.resource, records: sql`count(*)::int` })
+    .from(seazonaRecordReadFailures)
+    .where(gt(seazonaRecordReadFailures.quarantinedUntil, at))
+    .groupBy(seazonaRecordReadFailures.resource);
+  return Object.fromEntries(rows.map((row) => [row.resource, row.records]));
+}
+
 // Lane state.
 
 export async function readLaneStates(db) {
@@ -212,6 +267,25 @@ export async function claimLane(db, lane, { at, stuckMs }) {
     ))
     .returning({ lane: seazonaLaneState.lane });
   return claimed.length > 0;
+}
+
+// Issue #101: a lane stopped for a person or a release runs again. Answers
+// the lanes it reset.
+export async function resetStoppedLanes(db, { at }) {
+  const rows = await db.update(seazonaLaneState)
+    .set({ status: 'idle', nextRunAt: at, failureCount: 0, heldReason: null, updatedAt: at })
+    .where(eq(seazonaLaneState.status, 'stopped'))
+    .returning({ lane: seazonaLaneState.lane });
+  return rows.map((row) => row.lane);
+}
+
+// A person acted: every lane that failed or stopped runs at the next tick.
+export async function resetFailedLanes(db, { at }) {
+  const rows = await db.update(seazonaLaneState)
+    .set({ status: 'idle', nextRunAt: at, failureCount: 0, heldReason: null, updatedAt: at })
+    .where(inArray(seazonaLaneState.status, ['stopped', 'failed', 'held']))
+    .returning({ lane: seazonaLaneState.lane });
+  return rows.map((row) => row.lane);
 }
 
 export async function finishLane(db, lane, patch) {

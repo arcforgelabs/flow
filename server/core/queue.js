@@ -38,6 +38,28 @@ export async function enqueueJob(db, organisationId, {
   return { job: open, queued: false };
 }
 
+// Issue #101: the newest job of this kind and key that gave up after `since`,
+// or null. A worker on a timer checks this before it queues the next run, so
+// a job that always fails is not started again and again: it waits for a
+// person (the review item), a restart on a new release, or the next day.
+export async function deadSince(db, organisationId, { kind, dedupeKey = '', since }) {
+  const [row] = await db.select().from(backgroundJobs).where(and(
+    eq(backgroundJobs.organisationId, organisationId),
+    eq(backgroundJobs.kind, kind),
+    eq(backgroundJobs.dedupeKey, dedupeKey),
+    eq(backgroundJobs.state, 'dead'),
+    sql`${backgroundJobs.updatedAt} > ${since}`,
+  )).orderBy(sql`${backgroundJobs.updatedAt} desc`).limit(1);
+  return row ?? null;
+}
+
+// When a timer may queue the job again after it gave up: the later of this
+// process's start and one day ago.
+export const DEAD_HOLD_MS = 24 * 60 * 60 * 1000;
+export function deadHoldSince(startedAtMs, nowMs = Date.now()) {
+  return new Date(Math.max(startedAtMs, nowMs - DEAD_HOLD_MS));
+}
+
 async function giveUp(tx, job, error) {
   const [row] = await tx.update(backgroundJobs)
     .set({ state: 'dead', lockedBy: null, lockedUntil: null, lastError: error, updatedAt: sql`now()` })

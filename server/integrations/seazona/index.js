@@ -2,6 +2,7 @@ import { createSeazonaClient } from './client.js';
 import { listClients, listWork, readBillableWork } from './feed.js';
 import { readSeazonaSyncHealth, runSeazonaSync } from './lanes.js';
 import { createSeazonaScheduler } from './scheduler.js';
+import { resetFailedLanes, resetStoppedLanes } from './store.js';
 import { describeSeazonaSettings, resolveSeazonaSettings } from './settings.js';
 import { seazonaSchema } from './tables.js';
 
@@ -58,9 +59,21 @@ export function createSeazonaAdapter({ env = null, fetchImpl = null, now = Date.
     schema: seazonaSchema,
     setup: SEAZONA_SETUP,
 
-    async start({ db, log = console, env: settingsEnv }) {
+    // `reconfigured` is true when a person saved the settings or turned
+    // Seazona on (issue #101): that clears a halt after a refused API client,
+    // closes the circuit, and runs every failed lane again. A plain start (a
+    // restart or a new release) runs again only the lanes stopped by a
+    // refused path; a halt still waits for a person.
+    async start({ db, log = console, env: settingsEnv, reconfigured = false }) {
       const settings = requireSeazonaSettings(env ?? settingsEnv ?? process.env);
       const client = createSeazonaClient({ settings, db, fetchImpl: fetchImpl ?? undefined, workflow: 'seazona-sync', now });
+      const at = new Date(Number(now()));
+      if (reconfigured) {
+        await client.governor?.resume();
+        await resetFailedLanes(db, { at });
+      } else {
+        await resetStoppedLanes(db, { at });
+      }
       const run = (options = {}) => runSeazonaSync(db, client, { settings, now, ...options });
       // The background sync starts in live mode only. A sandbox or replay
       // installation syncs only when someone asks (sync-once.js).
