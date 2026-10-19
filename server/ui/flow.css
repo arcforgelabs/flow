@@ -536,3 +536,23 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+/* ── Sentry's report form (monitoring.js) ──────────────────────────────────
+   The form lives in a shadow root and reads these variables from its host.
+   Rules here win over the form's own defaults, so it takes each person's
+   theme and mode, and follows a change at once. */
+#sentry-feedback {
+  --font-family: var(--t-body);
+  --foreground: var(--t-text);
+  --background: var(--t-paper);
+  --accent-foreground: var(--t-on-primary);
+  --accent-background: var(--t-primary);
+  --success-color: var(--t-success);
+  --error-color: var(--t-danger);
+  --border: 1px solid var(--t-control);
+  --box-shadow: var(--t-shadow);
+  --outline: 2px solid var(--t-primary);
+  --interactive-filter: brightness(95%);
+  color-scheme: light;
+}
+[data-mode="dark"] #sentry-feedback { --interactive-filter: brightness(150%); color-scheme: dark; }

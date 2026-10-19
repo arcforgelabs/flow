@@ -25,7 +25,9 @@ import { createUiAssetsRouter } from './ui/routes.js';
 // `integrations` is the started registry (server/integrations/index.js); each
 // adapter's own routes are mounted under /api/<id>, and GET /health reports
 // each one (server/integrations/health.js). `defaultFamily` is the design
-// system every page starts on (FLOW_THEME, server/theme/themes.js).
+// system every page starts on (FLOW_THEME, server/theme/themes.js). `log`
+// is the console, or the monitored log (server/core/monitoring.js) that also
+// sends each error to the installation's error service.
 export function createApp({
   build = deployedBuildStatus(),
   database = null,
@@ -111,6 +113,17 @@ export function createApp({
     };
     app.use('/api/invoicing', createInvoicingRouter({ db: database.db, personAuth: auth.personAuth, log, liveCheckFor }));
   }
+  // What a signed-in browser needs to report its errors and problems to the
+  // installation's own error service (docs/SENTRY.md): the first integration
+  // that offers `browserMonitoring`, or `{ on: false }`.
+  if (auth?.personAuth) {
+    app.get('/api/monitoring', auth.personAuth.requireSession, (_req, res) => {
+      res.set('Cache-Control', 'no-store');
+      const [adapter] = integrations?.with('browserMonitoring') ?? [];
+      const settings = adapter?.capabilities.browserMonitoring() ?? null;
+      res.json(settings ? { ok: true, on: true, service: adapter.id, ...settings } : { ok: true, on: false });
+    });
+  }
   for (const { path, handler } of integrations?.routes({ db: database?.db ?? null, personAuth: auth?.personAuth ?? null, log, messagePage: page }) ?? []) {
     app.use(path, handler);
   }
@@ -124,6 +137,16 @@ export function createApp({
     rateLimitPerMinute: signInRateLimitPerMinute,
     log,
   }));
+
+  // An error no route answered. A server fault goes to `log` (and from there
+  // to the error service, when one is on) and the answer carries no detail;
+  // any other error keeps Express's own answer.
+  app.use((error, _req, res, next) => {
+    const status = error?.status ?? error?.statusCode ?? 500;
+    if (status < 500 || res.headersSent) return next(error);
+    log.error?.(`[http] ${error?.message ?? error}`, ...(error instanceof Error ? [error] : []));
+    return res.status(500).json({ ok: false, code: 'internal', error: 'Something went wrong.' });
+  });
 
   return app;
 }

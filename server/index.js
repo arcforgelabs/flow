@@ -6,6 +6,7 @@ import { createPersonAuth } from './auth/session.js';
 import { resolveSignInSettings } from './auth/settings.js';
 import { migrateDatabase, openDatabase } from './db/index.js';
 import { importEarlierAtStart, importEarlierLinksAtStart, resolveImportAtStart } from './import/at-start.js';
+import { createMonitoredLog } from './core/monitoring.js';
 import { createPipelineWorker } from './core/pipeline.js';
 import { resolveSecretsKey } from './core/secrets.js';
 import { adapters as shippedAdapters } from './integrations/adapters.js';
@@ -66,12 +67,15 @@ await importEarlierLinksAtStart({ db: database.db, pool: database.pool, settings
   .catch((error) => console.error(`[import] ${error.message}`));
 // What an owner set in Settings, Integrations, with the host's own
 // environment over it (server/integrations/setup.js).
+// Every part of Flow logs here: each error also goes to the installation's
+// own error service while one is on (docs/SENTRY.md).
 let integrations;
+const log = createMonitoredLog({ log: console, reporters: () => integrations?.with('captureError') ?? [] });
 try {
   const stored = await readStoredSettings(database.db);
   const { env: settingsEnv, unreadable } = settingsEnvironment({ env: process.env, stored, adapters: shippedAdapters, secrets });
   if (unreadable.length) console.warn(`[integrations] stored credentials Flow cannot read with this secrets key: ${unreadable.join(', ')}. An owner enters them again in Settings.`);
-  integrations = createIntegrations({ turnedOnInFlow: storedEnabled(stored, process.env), settingsEnv });
+  integrations = createIntegrations({ turnedOnInFlow: storedEnabled(stored, process.env), settingsEnv, log });
   await integrations.start(database.db);
 } catch (error) {
   console.error(`[integrations] ${error.message}`);
@@ -85,14 +89,14 @@ console.log(`[integrations] on: ${integrationsOn.join(', ') || 'none'}; secrets 
 // only while an integration that feeds it is on, and writes to no other
 // system. FLOW_PIPELINE=off stops it.
 if (process.env.FLOW_PIPELINE !== 'off') {
-  createPipelineWorker({ db: database.db, integrations }).start();
+  createPipelineWorker({ db: database.db, integrations, log }).start();
 }
 
 let auth = null;
 if (settings.mode === 'clerk') {
   const { keys } = settings;
   const clerk = await loadClerkAdapter({ ...keys, authorizedParties: settings.authorizedParties });
-  const personAuth = createPersonAuth({ db: database.db, clerk, ...settings });
+  const personAuth = createPersonAuth({ db: database.db, clerk, ...settings, log });
   let clerkProxy = null;
   const proxyPath = resolveClerkProxyPath(keys.proxyUrl);
   if (proxyPath) {
@@ -129,7 +133,7 @@ const trustProxy = process.env.REPL_ID || process.env.REPLIT_DEPLOYMENT ? 1 : fa
 
 const updates = createUpdateChecker();
 
-createApp({ database, auth, trustProxy, updates, integrations, secrets, defaultFamily }).listen(port, () => {
+createApp({ database, auth, trustProxy, updates, integrations, secrets, defaultFamily, log }).listen(port, () => {
   console.log(`[flow] listening on ${port}; design system ${defaultFamily} (FLOW_THEME)`);
 });
 
