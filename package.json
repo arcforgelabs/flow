@@ -35,7 +35,7 @@
     "db:generate": "drizzle-kit generate"
   },
   "dependencies": {
-    "@clerk/backend": "3.23.2",
+    "@clerk/backend": "3.24.0",
     "@fontsource-variable/atkinson-hyperlegible-next": "5.3.0",
     "@fontsource-variable/dm-sans": "5.3.0",
     "@fontsource-variable/geist": "5.3.0",
@@ -47,9 +47,9 @@
     "@fontsource-variable/playfair-display": "5.3.0",
     "@fontsource-variable/plus-jakarta-sans": "5.3.0",
     "@fontsource-variable/space-grotesk": "5.3.0",
-    "drizzle-orm": "0.45.3",
+    "drizzle-orm": "0.45.4",
     "express": "5.3.0",
-    "express-rate-limit": "8.7.0",
+    "express-rate-limit": "8.7.1",
     "pg": "8.23.1"
   },
   "devDependencies": {
