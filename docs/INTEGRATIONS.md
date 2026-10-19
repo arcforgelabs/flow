@@ -245,9 +245,17 @@ To follow the pattern, an adapter:
 `test/integration-call-guard.test.js` fails when a shipped adapter has no
 call guard and is not listed as exempt with a reason, and runs the same
 contract suite (`test/support/call-guard-contract.js`) against each guarded
-adapter's tables and policy. Xero uses the guard. Seazona has the same
-guards in its own governor and moves onto the shared guard next. Sentry is
+adapter's tables and policy. Xero and Seazona use the guard. Sentry is
 exempt: its SDK follows Sentry's own limits.
+
+An adapter that admits each call in its own transaction (Seazona's rate
+governor writes the call row when it admits a call) passes `lockName` so the
+guard takes the same lock, calls `guard.stoppedNow(tx, key)` inside that
+transaction, and passes the row's id as `callId` to `record`. Its existing
+tables keep their names: `columns` maps `key` and `at` (Seazona:
+`client_key`, `admitted_at`), and `callDefaults` fills other required
+columns of a new row. `report: false` is for an adapter that already reports
+each stop once at a higher level (Seazona's lanes).
 
 ## Health
 

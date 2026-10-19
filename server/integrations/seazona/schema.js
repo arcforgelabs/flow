@@ -21,6 +21,9 @@ export const seazonaApiGovernor = pgTable('seazona_api_governor', {
   circuitOpens: integer('circuit_opens').notNull().default(0),
   haltedReason: text('halted_reason'),
   haltedAt: at('halted_at'),
+  // The call guard's stopped resources (../call-guard.js). Seazona's guard
+  // halts on any 401 or 403, so this stays empty; the shared guard needs it.
+  stoppedResources: jsonb('stopped_resources').notNull().default({}),
   updatedAt: at('updated_at').notNull().defaultNow(),
 });
 
@@ -33,6 +36,7 @@ export const seazonaApiRequests = pgTable('seazona_api_requests', {
   clientKey: text('client_key').notNull(),
   workflow: text('workflow').notNull(),
   admittedAt: at('admitted_at').notNull(),
+  resource: text('resource'),
   requestPath: text('request_path'),
   statusCode: integer('status_code'),
   failureKind: text('failure_kind'),

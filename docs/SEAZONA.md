@@ -102,8 +102,10 @@ because Seazona does (`server/integrations/seazona/governor.js`):
 ### Failed calls (issue #101)
 
 Seazona can cut off an account's API access when it sees many failed calls,
-even inside the rate limit. So the governor also stops calls. A stopped call
-fails at once with `SeazonaCallsStopped` and makes no request.
+even inside the rate limit. So the governor also stops calls, through the
+shared call guard (`docs/INTEGRATIONS.md`, "Outbound calls", issue #111) on
+the governor's own tables. A stopped call fails at once with
+`SeazonaCallsStopped` and makes no request.
 
 ```mermaid
 flowchart LR

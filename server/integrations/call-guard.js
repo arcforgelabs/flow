@@ -136,13 +136,20 @@ const iso = (value) => (value ? new Date(value).toISOString() : null);
 
 // `integration` is the adapter id (codes, the advisory lock), `name` what a
 // person reads. `tables` names the adapter's two tables; `columns` renames
-// the `key` and `at` columns when an adapter's tables use other names.
+// the `key` and `at` columns when an adapter's tables use other names, and
+// `callDefaults` fills other required columns of a new call row. An adapter
+// that admits its calls in its own transaction passes `lockName`, so the
+// guard takes the same lock. `report: false` leaves the reports to the
+// adapter, for one that already reports each stop once at a higher level.
 export function createCallGuard({
   db,
   integration,
   name = integration,
   tables,
   columns = {},
+  callDefaults = {},
+  lockName = `${integration}-call-guard`,
+  report: reports = true,
   policy: overrides = {},
   now = Date.now,
   log = console,
@@ -157,7 +164,9 @@ export function createCallGuard({
   const tag = `[${integration}]`;
   const failed = sql`(failure_kind is not null or status_code >= 500 or (status_code >= 400 and status_code <> 404))`;
 
-  const lock = (tx, key) => tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`${integration}-call-guard:${key}`}))`);
+  const lock = (tx, key) => tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`${lockName}:${key}`}))`);
+  const extraColumns = Object.keys(callDefaults).map((column) => sql`, ${sql.identifier(column)}`);
+  const extraValues = Object.values(callDefaults).map((value) => sql`, ${value}`);
 
   async function readState(runner, key) {
     const { rows } = await runner.execute(sql`select circuit_open_until, circuit_opens, halted_reason, halted_at, stopped_resources
@@ -181,20 +190,27 @@ export function createCallGuard({
 
   const ensureRow = (runner, key) => runner.execute(sql`insert into ${T.state} (${C.key}) values (${key}) on conflict do nothing`);
 
-  // Throws CallsStopped when no call may go to `resource` now.
-  async function check(rawKey, { resource = null } = {}) {
+  // Why no call may go to `resource` now, or null. `runner` is the database
+  // or a transaction the adapter holds (with the guard's lock).
+  async function stoppedNow(runner, rawKey, { resource = null } = {}) {
     const key = cleanKey(rawKey);
     const nowMs = Number(now());
-    const state = await readState(db, key);
-    const failedToday = await failuresSince(db, key, startOfUtcDay(nowMs));
-    const stopped = stoppedReason(state, { nowMs, failedToday, resource: cleanResource(resource) }, policy);
+    const state = await readState(runner, key);
+    const failedToday = await failuresSince(runner, key, startOfUtcDay(nowMs));
+    return stoppedReason(state, { nowMs, failedToday, resource: cleanResource(resource) }, policy);
+  }
+
+  // Throws CallsStopped when no call may go to `resource` now.
+  async function check(rawKey, options = {}) {
+    const stopped = await stoppedNow(db, rawKey, options);
     if (stopped) throw new CallsStopped({ integration, name, ...stopped });
   }
 
   // Records how one call ended, and what that does to the guard. Answers
   // what this call stopped ({ halted, resourceStopped, opened, budgetSpent }),
-  // each of which was just reported once.
-  async function record(rawKey, { resource = null, path = null, statusCode = null, failureKind = null, durationMs = null } = {}) {
+  // each of which was just reported once. `callId` names a call row the
+  // adapter wrote when it admitted the call: that row is updated, not added.
+  async function record(rawKey, { callId = null, resource = null, path = null, statusCode = null, failureKind = null, durationMs = null } = {}) {
     const key = cleanKey(rawKey);
     const where = cleanResource(resource);
     const nowMs = Number(now());
@@ -203,10 +219,15 @@ export function createCallGuard({
     const outcome = await db.transaction(async (tx) => {
       await lock(tx, key);
       await ensureRow(tx, key);
-      await tx.execute(sql`insert into ${T.calls} (${C.key}, ${C.at}, resource, request_path, status_code, failure_kind, duration_ms)
-        values (${key}, ${nowAt}, ${where}, ${normaliseRequestPath(path)}, ${status},
-          ${failureKind ? String(failureKind).slice(0, 40) : null},
-          ${Number.isFinite(durationMs) ? Math.max(0, Math.round(durationMs)) : null})`);
+      const kind = failureKind ? String(failureKind).slice(0, 40) : null;
+      const took = Number.isFinite(durationMs) ? Math.max(0, Math.round(durationMs)) : null;
+      if (callId !== null) {
+        await tx.execute(sql`update ${T.calls} set resource = ${where}, request_path = ${normaliseRequestPath(path)}, status_code = ${status},
+          failure_kind = ${kind}, duration_ms = ${took} where id = ${callId} and ${C.key} = ${key}`);
+      } else {
+        await tx.execute(sql`insert into ${T.calls} (${C.key}, ${C.at}, resource, request_path, status_code, failure_kind, duration_ms${sql.join(extraColumns, sql``)})
+          values (${key}, ${nowAt}, ${where}, ${normaliseRequestPath(path)}, ${status}, ${kind}, ${took}${sql.join(extraValues, sql``)})`);
+      }
       const state = await readState(tx, key);
       if (!countsAsFailure({ statusCode: status, failureKind })) {
         if (state.circuitOpens > 0) {
@@ -251,6 +272,7 @@ export function createCallGuard({
   // circuit that opens again after a failed probe is a warning: the first
   // opening was reported.
   function report(outcome, { status, failureKind, where }) {
+    if (!reports) return;
     const cause = status ? `HTTP ${status}` : failureKind;
     if (outcome.halted) log.error?.(`${tag} ${name} refused the connection (${cause}). Calls are stopped until a person checks the ${name} settings or connects again.`);
     if (outcome.resourceStopped) log.error?.(`${tag} ${name} refused calls to ${where} (${cause}). Calls to ${where} are stopped until a person checks the connection.`);
@@ -274,7 +296,7 @@ export function createCallGuard({
         where ${C.key} = ${key} and halted_reason is null returning 1`);
       return rows.length > 0;
     });
-    if (changed) log.error?.(`${tag} ${name} calls are stopped until a person checks the ${name} settings or connects again${detail ? ` (${detail})` : ''}.`);
+    if (changed && reports) log.error?.(`${tag} ${name} calls are stopped until a person checks the ${name} settings or connects again${detail ? ` (${detail})` : ''}.`);
     return changed;
   }
 
@@ -310,5 +332,5 @@ export function createCallGuard({
     };
   }
 
-  return { integration, policy, check, record, halt, resume, status };
+  return { integration, policy, check, stoppedNow, record, halt, resume, status };
 }
