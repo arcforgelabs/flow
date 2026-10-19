@@ -325,6 +325,34 @@ describe('invoicing API', { skip: skipWithoutDatabase }, () => {
 
     // A job with no invoice lists the rules it waits on.
     const jobs = await call(`/jobs?organisationId=${lab.id}&view=pending`);
-    assert.ok(jobs.body.jobs.every((j) => j.waitingFor.includes('the customer is not billable')), JSON.stringify(jobs.body.jobs.map((j) => j.waitingFor)));
+    assert.ok(jobs.body.jobs.every((j) => j.waitingFor.includes('rule "Customer not billable": not drafted by rule')), JSON.stringify(jobs.body.jobs.map((j) => j.waitingFor)));
+  });
+
+  test('invoice rules: everyone reads them and their menus, an owner or admin changes them', async () => {
+    const read = await call(`/rules?organisationId=${lab.id}`, { token: staffToken });
+    assert.equal(read.status, 200, JSON.stringify(read.body));
+    assert.ok(read.body.rules.some((r) => r.name === 'Old job' && r.starter));
+    const fields = await call(`/rule-fields?organisationId=${lab.id}`, { token: staffToken });
+    assert.equal(fields.status, 200);
+    assert.ok(fields.body.fields.some((f) => f.key === 'line_share' && f.tests.includes('is_not')));
+    assert.ok(fields.body.options.customers.some((c) => c.value === practice.id));
+    assert.ok(fields.body.options.customers.every((c) => c.value !== supplier.id));
+    assert.ok(Array.isArray(fields.body.options.items));
+
+    const rule = { organisationId: lab.id, name: 'Big jobs', conditions: [{ field: 'job_total', test: 'more_than', value: 5000 }], action: { kind: 'wait' } };
+    assert.equal((await call('/rules', { method: 'POST', token: staffToken, body: rule })).status, 403);
+    const made = await call('/rules', { method: 'POST', body: rule });
+    assert.equal(made.status, 201, JSON.stringify(made.body));
+    assert.equal(made.body.rule.name, 'Big jobs');
+    assert.equal((await call(`/rules?organisationId=${lab.id}`, { method: 'POST', body: { ...rule, action: { kind: 'email' } } })).status, 400);
+    assert.equal((await call('/rules', { method: 'POST', body: { ...rule, colour: 'red' } })).status, 400);
+
+    const off = await call(`/rules/${made.body.rule.id}?organisationId=${lab.id}`, { method: 'PUT', body: { enabled: false } });
+    assert.equal(off.status, 200, JSON.stringify(off.body));
+    assert.equal(off.body.rule.enabled, false);
+    assert.equal((await call(`/rules/${MISSING}?organisationId=${lab.id}`, { method: 'PUT', body: { enabled: false } })).status, 404);
+    assert.equal((await call(`/rules/${made.body.rule.id}?organisationId=${lab.id}`, { method: 'DELETE', token: staffToken })).status, 403);
+    assert.equal((await call(`/rules/${made.body.rule.id}?organisationId=${lab.id}`, { method: 'DELETE' })).status, 200);
+    assert.ok((await call(`/rules?organisationId=${lab.id}`)).body.rules.every((r) => r.id !== made.body.rule.id));
   });
 });
