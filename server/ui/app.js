@@ -524,11 +524,13 @@ function renderAccount(main) {
   mountClerk('profile', host, { routing: 'virtual' });
 }
 
-// Appearance: light or dark, the design system and an accent colour, for
-// this browser.
+// Appearance: light or dark, the design system and an accent colour. Each
+// person's choice is saved with their account (PUT /api/me/appearance) and
+// applied when they sign in; the browser keeps a copy so the next page paints
+// in it at once.
 function renderAppearance(main) {
   main.append(
-    pageHeader('Appearance', { subtitle: 'For this browser. Clerk\'s sign-in and account screens follow it too.' }),
+    pageHeader('Appearance', { subtitle: 'Saved with your account, so it follows you to any device. Clerk\'s sign-in and account screens follow it too.' }),
     h('div', { class: 'fx-appearance', id: 'appearance' }));
   drawAppearance();
 }
@@ -564,13 +566,13 @@ function drawAppearance() {
 
   const modes = [{ value: 'light', label: 'Light' }, { value: 'dark', label: 'Dark' }, { value: 'system', label: 'Auto' }];
   const modeGroup = radioGroup('Mode', modes, modes.findIndex((m) => m.value === colorMode),
-    (m) => setAppearance({ colorMode: m.value }),
+    (m) => chooseAppearance({ colorMode: m.value }),
     (m) => h('button', { type: 'button', class: 'fx-seg__item' }, m.label));
   modeGroup.classList.add('fx-seg');
 
   const familyIndex = THEME_FAMILIES.findIndex((f) => f.id === family);
   const families = radioGroup('Design system', THEME_FAMILIES, familyIndex,
-    (f) => setAppearance({ family: f.id }),
+    (f) => chooseAppearance({ family: f.id }),
     (f) => {
       // The card shows the family as it is, not the active theme.
       const t = tokensFor(f.id, mode);
@@ -591,14 +593,14 @@ function drawAppearance() {
   const presetIndex = accent ? ACCENT_PRESETS.findIndex((p) => p.id === accent) : 0;
   const customHex = accent && presetIndex < 0 ? normalizeAccent(accent) : null;
   const accents = radioGroup('Accent colour', ACCENT_PRESETS, presetIndex,
-    (p) => setAppearance({ accent: p.hex ? p.id : null }),
+    (p) => chooseAppearance({ accent: p.hex ? p.id : null }),
     (p) => p.hex
       ? h('button', { type: 'button', class: 'fx-swatch', title: p.label, 'aria-label': p.label, style: { background: p.hex } })
       : h('button', { type: 'button', class: 'fx-swatch fx-swatch--default', title: `${active.label}'s own`, 'aria-label': `${active.label}'s own accent` },
         h('span', { 'aria-hidden': 'true', style: { background: `linear-gradient(135deg, ${active.swatches[mode].primary} 50%, ${active.swatches[mode].accent} 50%)` } })));
   accents.classList.add('fx-swatches');
   const custom = h('label', { class: 'fx-swatch-custom' },
-    h('input', { type: 'color', 'aria-label': 'Custom accent colour', value: customHex ?? '#0d4e5f', onchange: (event) => setAppearance({ accent: event.target.value }) }),
+    h('input', { type: 'color', 'aria-label': 'Custom accent colour', value: customHex ?? '#0d4e5f', onchange: (event) => chooseAppearance({ accent: event.target.value }) }),
     'Custom');
   const accentLabel = customHex ? `Custom ${customHex}` : presetIndex > 0 ? ACCENT_PRESETS[presetIndex].label : `${active.label}'s own`;
 
@@ -610,11 +612,41 @@ function drawAppearance() {
     h('section', { class: 'fx-group' },
       h('h2', { class: 'fx-label' }, 'Design system'),
       families,
-      h('p', { class: 'fx-dim' }, 'Each design system brings its own colours, type and corners, in light and dark. Harbour is Flow\'s own; the rest are OpenClaw\'s themes.')),
+      h('p', { class: 'fx-dim' }, 'Each design system brings its own colours, type and corners, in light and dark. Harbour and Meridian are Flow\'s own; the rest are OpenClaw\'s themes.')),
     h('section', { class: 'fx-group' },
       h('h2', { class: 'fx-label' }, 'Accent colour'),
       h('div', { class: 'fx-row' }, accents, custom),
       h('p', { class: 'fx-dim', 'aria-live': 'polite' }, `Using ${accentLabel}. Buttons, highlights and focus rings take the accent; text in the accent is adjusted until it reads clearly.`)));
+}
+
+// A person's own change: show it, then save it to their account once they
+// are signed in. Signed out (the sign-in screen's switch) it stays in this
+// browser.
+let savingAppearance = null;
+function chooseAppearance(update) {
+  setAppearance(update);
+  saveAccountAppearance();
+}
+
+function accountAppearance() {
+  const { colorMode, family, accent } = getAppearance();
+  return { colorMode, themeFamily: family, ...(accent ? { accent } : {}) };
+}
+
+function saveAccountAppearance() {
+  if (!me) return;
+  clearTimeout(savingAppearance);
+  savingAppearance = setTimeout(() => {
+    flow('/api/me/appearance', { method: 'PUT', body: JSON.stringify(accountAppearance()) })
+      .catch(() => toast('Flow could not save your appearance to your account. It stays in this browser for now.', 'danger'));
+  }, 300);
+}
+
+// On sign-in: the account's appearance wins. An account with none yet takes
+// this browser's current choice.
+function adoptAccountAppearance(saved) {
+  if (!saved) return saveAccountAppearance();
+  setAppearance({ colorMode: saved.colorMode, family: saved.themeFamily, accent: saved.accent ?? null });
 }
 
 onAppearanceChange(() => {
@@ -639,7 +671,7 @@ function drawModeToggles() {
 }
 
 for (const button of document.querySelectorAll('[data-mode-toggle]')) {
-  button.addEventListener('click', () => setAppearance({ colorMode: getAppearance().mode === 'dark' ? 'light' : 'dark' }));
+  button.addEventListener('click', () => chooseAppearance({ colorMode: getAppearance().mode === 'dark' ? 'light' : 'dark' }));
 }
 onAppearanceChange(drawModeToggles);
 drawModeToggles();
@@ -687,6 +719,7 @@ async function start() {
   }
   try {
     me = await flow('/api/me');
+    adoptAccountAppearance(me.appearance);
   } catch (error) {
     renderNoAccess(error);
     return;

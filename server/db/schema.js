@@ -153,7 +153,9 @@ export const PERSON_STATUSES = ['active', 'pending', 'disabled'];
 // someone is; this table decides what they may do. One installation serves one
 // lab, so people are installation-wide and carry no organisation_id. Emails
 // are stored lower-case. `clerk_user_id` is set on the person's first verified
-// sign-in; until then the row is an invitation.
+// sign-in; until then the row is an invitation. `appearance` is the person's
+// own design system, light or dark and accent (server/auth/people.js,
+// normaliseAppearance); null until they first choose.
 export const people = pgTable('people', {
   id: id(),
   email: text('email').notNull(),
@@ -163,6 +165,7 @@ export const people = pgTable('people', {
   clerkUserId: text('clerk_user_id'),
   invitedBy: uuid('invited_by').references(() => people.id, { onDelete: 'set null' }),
   linkedAt: timestamp('linked_at', { withTimezone: true }),
+  appearance: jsonb('appearance'),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 }, (t) => [

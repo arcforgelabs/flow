@@ -1,6 +1,7 @@
 import { and, asc, eq, isNull, ne, sql } from 'drizzle-orm';
 import { people, PERSON_ROLES } from '../db/schema.js';
 import { FlowError } from '../core/errors.js';
+import { isThemeFamily, normalizeAccent } from '../theme/themes.js';
 import { isPlainEmail } from './settings.js';
 
 // The people who may sign in, and their roles. Only an owner changes this
@@ -22,6 +23,31 @@ export function publicPerson(row) {
     invited: !row.clerkUserId,
     createdAt: row.createdAt?.toISOString?.() ?? row.createdAt,
   };
+}
+
+const COLOR_MODES = ['light', 'dark', 'system'];
+
+// A person's appearance as Flow stores it: only the known keys, each checked.
+// A family Flow does not have, or a malformed accent, is dropped, so the page
+// falls back to the installation's default.
+export function normaliseAppearance(input) {
+  const value = input && typeof input === 'object' ? input : {};
+  const out = { colorMode: COLOR_MODES.includes(value.colorMode) ? value.colorMode : 'system' };
+  if (isThemeFamily(value.themeFamily)) out.themeFamily = value.themeFamily;
+  const accent = typeof value.accent === 'string' ? value.accent.trim().toLowerCase() : '';
+  if (normalizeAccent(accent)) out.accent = accent;
+  return out;
+}
+
+// Each person keeps their own appearance, so people who share a browser or
+// move between devices each see theirs.
+export async function setPersonAppearance(db, { id, appearance }) {
+  const [row] = await db.update(people)
+    .set({ appearance: normaliseAppearance(appearance), updatedAt: new Date() })
+    .where(eq(people.id, id))
+    .returning();
+  if (!row) throw new FlowError('not_found', 'person not found');
+  return row.appearance;
 }
 
 export async function findPersonById(db, id) {
