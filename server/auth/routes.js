@@ -18,14 +18,23 @@ const signInPage = fileURLToPath(new URL('./sign-in.html', import.meta.url));
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const ERROR_STATUS = { invalid: 400, forbidden: 403, not_found: 404, conflict: 409 };
 
-// The Clerk script the sign-in page loads: through Flow's own origin when
+// The Clerk scripts the sign-in page loads: through Flow's own origin when
 // CLERK_PROXY_URL is set, otherwise from the Clerk instance's Frontend API
-// (its host is encoded in the publishable key).
-export function clerkScriptUrl({ publishableKey, proxyUrl }) {
-  const base = proxyUrl
+// (its host is encoded in the publishable key). clerk-js 6 ships without its
+// prebuilt components; the sign-in widget comes from @clerk/ui, passed to
+// Clerk.load().
+function clerkScriptBase({ publishableKey, proxyUrl }) {
+  return proxyUrl
     ? proxyUrl.replace(/\/+$/, '')
     : `https://${Buffer.from(publishableKey.split('_')[2] ?? '', 'base64').toString('utf8').replace(/\$$/, '')}`;
-  return `${base}/npm/@clerk/clerk-js@6/dist/clerk.browser.js`;
+}
+
+export function clerkScriptUrl(keys) {
+  return `${clerkScriptBase(keys)}/npm/@clerk/clerk-js@6/dist/clerk.browser.js`;
+}
+
+export function clerkUiScriptUrl(keys) {
+  return `${clerkScriptBase(keys)}/npm/@clerk/ui@1/dist/ui.browser.js`;
 }
 
 function sendError(res, error, log) {
@@ -56,7 +65,7 @@ export function createSignInRouter({ settings, db, clerk, personAuth, rateLimitP
       ok: true,
       mode: 'clerk',
       publicSignUp: settings.publicSignUp,
-      clerk: { publishableKey, proxyUrl, scriptUrl: clerkScriptUrl(settings.keys) },
+      clerk: { publishableKey, proxyUrl, scriptUrl: clerkScriptUrl(settings.keys), uiScriptUrl: clerkUiScriptUrl(settings.keys) },
     });
   });
 

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import { createApp } from '../server/app.js';
 import { googleWorkspaceOwner, resolveClerkProxyPath, secondFactorVerified } from '../server/auth/clerk.js';
-import { clerkScriptUrl } from '../server/auth/routes.js';
+import { clerkScriptUrl, clerkUiScriptUrl } from '../server/auth/routes.js';
 import { createPersonAuth } from '../server/auth/session.js';
 import { resolveSignInSettings } from '../server/auth/settings.js';
 import { fakeClerk, request, TEST_PUBLISHABLE_KEY } from './support/clerk.js';
@@ -76,6 +76,8 @@ describe('sign-in routes without a database', () => {
   test('the sign-in page loads Clerk from the Frontend API or the proxy', () => {
     assert.equal(clerkScriptUrl({ publishableKey: TEST_PUBLISHABLE_KEY, proxyUrl: null }), 'https://clerk.example.test/npm/@clerk/clerk-js@6/dist/clerk.browser.js');
     assert.equal(clerkScriptUrl({ publishableKey: TEST_PUBLISHABLE_KEY, proxyUrl: '/api/__clerk/' }), '/api/__clerk/npm/@clerk/clerk-js@6/dist/clerk.browser.js');
+    assert.equal(clerkUiScriptUrl({ publishableKey: TEST_PUBLISHABLE_KEY, proxyUrl: null }), 'https://clerk.example.test/npm/@clerk/ui@1/dist/ui.browser.js');
+    assert.equal(clerkUiScriptUrl({ publishableKey: TEST_PUBLISHABLE_KEY, proxyUrl: '/api/__clerk/' }), '/api/__clerk/npm/@clerk/ui@1/dist/ui.browser.js');
     assert.equal(resolveClerkProxyPath('https://flow.example.test/api/__clerk/'), '/api/__clerk');
     assert.equal(resolveClerkProxyPath(''), null);
   });
