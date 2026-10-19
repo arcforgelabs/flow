@@ -329,7 +329,7 @@ export async function readBatch(db, batchId, { outcome = null, limit = 100, offs
 // A client id picks the Seazona client when the name matched several.
 export async function decideJobs(db, batchId, decisions, { by, now = Date.now }) {
   const batch = await requireBatch(db, batchId);
-  if (batch.status !== 'reconciled') throw conflict(`The batch is ${batch.status}`);
+  if (!['reconciled', 'running'].includes(batch.status)) throw conflict(`The batch is ${batch.status}`);
   if (!Array.isArray(decisions) || !decisions.length || decisions.length > 5000) throw invalid('decisions must list 1 to 5000 jobs');
   const at = new Date(Number(now()));
   let changed = 0;
@@ -350,6 +350,49 @@ export async function decideJobs(db, batchId, decisions, { by, now = Date.now })
   return { changed, ...(await summarise(db, await requireBatch(db, batch.id))) };
 }
 
+// Writes batch jobs into Flow's history. Answers { applied, updated }: new
+// jobs, and jobs an earlier batch wrote.
+async function writeHistoryJobs(tx, batchId, jobs, at) {
+  let applied = 0;
+  let updated = 0;
+  for (const part of chunks(jobs)) {
+    const values = part.map((j) => ({
+      jobKey: j.jobKey,
+      invoiceNumber: j.job.invoiceNumber ?? null,
+      caseRef: j.job.caseRef ?? null,
+      clientId: j.clientId,
+      company: j.job.company ?? null,
+      doctorName: j.job.doctorName ?? null,
+      status: j.job.status ?? null,
+      jobDate: j.job.jobDate ?? null,
+      dueDate: j.job.dueDate ?? null,
+      shippedDate: j.job.shippedDate ?? null,
+      lines: j.job.lines ?? [],
+      subtotalCents: j.job.subtotalCents ?? null,
+      totalCents: j.job.totalCents ?? null,
+      patientReference: j.job.patientReference ?? null,
+      mirrorOrderId: j.mirrorOrderId,
+      mirrorInvoiceNumber: j.mirrorInvoiceNumber,
+      recordHash: j.recordHash,
+      batchId,
+      firstBatchId: batchId,
+      firstImportedAt: at,
+      lastChangedAt: at,
+    }));
+    const rows = await tx.insert(seazonaHistoryJobs).values(values).onConflictDoUpdate({
+      target: seazonaHistoryJobs.jobKey,
+      set: Object.fromEntries(['invoiceNumber', 'caseRef', 'clientId', 'company', 'doctorName', 'status', 'jobDate', 'dueDate', 'shippedDate', 'lines',
+        'subtotalCents', 'totalCents', 'patientReference', 'mirrorOrderId', 'mirrorInvoiceNumber', 'recordHash', 'batchId', 'lastChangedAt']
+        .map((field) => [field, sql.raw(`excluded."${seazonaHistoryJobs[field].name}"`)])),
+    }).returning({ firstBatchId: seazonaHistoryJobs.firstBatchId });
+    for (const row of rows) {
+      if (row.firstBatchId === batchId) applied += 1;
+      else updated += 1;
+    }
+  }
+  return { applied, updated };
+}
+
 // Reconciles once more, then writes each job that apply writes into Flow's
 // history. Jobs waiting for a person stay out; the batch can be applied only
 // once. Answers the batch with `applied` and `updated` counts.
@@ -361,49 +404,67 @@ export async function applyBatch(db, batchId, { by, now = Date.now }) {
     const [batch] = await tx.execute(sql`select status from seazona_history_batches where id = ${Number(batchId)} for update`).then((r) => r.rows);
     if (batch.status !== 'reconciled') throw conflict(`The batch is ${batch.status}`);
     const jobs = (await tx.select().from(seazonaHistoryBatchJobs).where(eq(seazonaHistoryBatchJobs.batchId, Number(batchId)))).filter(writes);
-    let applied = 0;
-    let updated = 0;
-    for (const part of chunks(jobs)) {
-      const values = part.map((j) => ({
-        jobKey: j.jobKey,
-        invoiceNumber: j.job.invoiceNumber ?? null,
-        caseRef: j.job.caseRef ?? null,
-        clientId: j.clientId,
-        company: j.job.company ?? null,
-        doctorName: j.job.doctorName ?? null,
-        status: j.job.status ?? null,
-        jobDate: j.job.jobDate ?? null,
-        dueDate: j.job.dueDate ?? null,
-        shippedDate: j.job.shippedDate ?? null,
-        lines: j.job.lines ?? [],
-        subtotalCents: j.job.subtotalCents ?? null,
-        totalCents: j.job.totalCents ?? null,
-        patientReference: j.job.patientReference ?? null,
-        mirrorOrderId: j.mirrorOrderId,
-        mirrorInvoiceNumber: j.mirrorInvoiceNumber,
-        recordHash: j.recordHash,
-        batchId: Number(batchId),
-        firstBatchId: Number(batchId),
-        firstImportedAt: at,
-        lastChangedAt: at,
-      }));
-      const rows = await tx.insert(seazonaHistoryJobs).values(values).onConflictDoUpdate({
-        target: seazonaHistoryJobs.jobKey,
-        set: Object.fromEntries(['invoiceNumber', 'caseRef', 'clientId', 'company', 'doctorName', 'status', 'jobDate', 'dueDate', 'shippedDate', 'lines',
-          'subtotalCents', 'totalCents', 'patientReference', 'mirrorOrderId', 'mirrorInvoiceNumber', 'recordHash', 'batchId', 'lastChangedAt']
-          .map((field) => [field, sql.raw(`excluded."${seazonaHistoryJobs[field].name}"`)])),
-      }).returning({ firstBatchId: seazonaHistoryJobs.firstBatchId });
-      for (const row of rows) {
-        if (row.firstBatchId === Number(batchId)) applied += 1;
-        else updated += 1;
-      }
-    }
+    const { applied, updated } = await writeHistoryJobs(tx, Number(batchId), jobs, at);
     await tx.update(seazonaHistoryBatches)
       .set({ status: 'applied', appliedAt: at, appliedBy: String(by), counts: { ...(await countBatch(tx, Number(batchId))), applied, updated } })
       .where(eq(seazonaHistoryBatches.id, Number(batchId)));
     return { applied, updated };
   });
   return { ...(await summarise(db, await requireBatch(db, batchId))), ...result };
+}
+
+// The API backfill (backfill.js) writes jobs as it reads them: each batch of
+// mapped jobs is staged, reconciled, and the new ones written to history at
+// once, so a long backfill keeps its progress. Jobs that need a person wait
+// in the batch. Answers { staged, applied, waiting }.
+export async function stageApiJobs(db, batchId, jobs, { at }) {
+  if (!jobs.length) return { staged: 0, applied: 0, waiting: 0 };
+  const rows = jobs.map(({ jobKey, job }) => ({ batchId, jobKey, job, recordHash: hashOf(job) }));
+  await db.insert(seazonaHistoryBatchJobs).values(rows).onConflictDoUpdate({
+    target: [seazonaHistoryBatchJobs.batchId, seazonaHistoryBatchJobs.jobKey],
+    set: { job: sql`excluded.job`, recordHash: sql`excluded.record_hash` },
+  });
+  const staged = await db.select().from(seazonaHistoryBatchJobs).where(and(
+    eq(seazonaHistoryBatchJobs.batchId, batchId),
+    inArray(seazonaHistoryBatchJobs.jobKey, rows.map((r) => r.jobKey)),
+  ));
+  const evidence = await loadEvidence(db, staged);
+  return db.transaction(async (tx) => {
+    const ready = [];
+    let waiting = 0;
+    for (const job of staged) {
+      const result = reconcileJob(job, evidence);
+      await tx.update(seazonaHistoryBatchJobs).set(result)
+        .where(and(eq(seazonaHistoryBatchJobs.batchId, batchId), eq(seazonaHistoryBatchJobs.jobKey, job.jobKey)));
+      if (writes({ ...job, ...result })) ready.push({ ...job, ...result });
+      else if (result.outcome !== 'same') waiting += 1;
+    }
+    const { applied, updated } = await writeHistoryJobs(tx, batchId, ready, at);
+    await tx.update(seazonaHistoryBatches).set({ counts: await countBatch(tx, batchId) }).where(eq(seazonaHistoryBatches.id, batchId));
+    return { staged: staged.length, applied: applied + updated, waiting };
+  });
+}
+
+export async function createApiBatch(db, { createdBy, from, through, at }) {
+  const [batch] = await db.insert(seazonaHistoryBatches).values({
+    fileName: `Seazona API orders ${from} to ${through}`,
+    fileSha256: `api:${from}:${through}:${at.toISOString()}`,
+    profile: 'api_orders',
+    columns: {},
+    ignoredColumns: [],
+    status: 'running',
+    counts: {},
+    createdBy: String(createdBy),
+    createdAt: at,
+  }).returning();
+  return batch;
+}
+
+// The backfill finished: the batch waits like an upload, for a person to
+// decide what is left and apply it.
+export async function finishApiBatch(db, batchId, { status = 'reconciled', at }) {
+  await db.update(seazonaHistoryBatches).set({ status, reconciledAt: at, counts: await countBatch(db, batchId) })
+    .where(eq(seazonaHistoryBatches.id, batchId));
 }
 
 export async function cancelBatch(db, batchId) {

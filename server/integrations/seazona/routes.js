@@ -13,6 +13,7 @@ import {
   reconcileBatch,
   stageBatch,
 } from './history/index.js';
+import { readBackfill, startBackfill, stopBackfill } from './history/backfill.js';
 
 // The Seazona adapter's routes, mounted at /api/seazona (server/integrations/port.js).
 // The history import (docs/SEAZONA.md, "History import"):
@@ -27,6 +28,9 @@ import {
 //   POST /history/batches/:id/decisions   owner or admin: { decisions: [{ jobKey, decision, clientId? }] }
 //   POST /history/batches/:id/apply       owner or admin: write the batch into Flow's history
 //   POST /history/batches/:id/cancel      owner or admin
+//   POST /history/backfill                owner or admin: { from, through? } reads
+//                                         past orders from the Seazona API, a few a run
+//   POST /history/backfill/stop           owner or admin
 //   GET  /history/ledger?state=&limit=&offset=   any signed-in person: held
 //                                         history jobs by accounting state
 //                                         (state: one state, or needs_person)
@@ -69,7 +73,7 @@ export function createSeazonaRouter({ db, personAuth, settings, log = console })
   }
 
   router.get('/history', ...signedIn, handle(log, async (req, res) => {
-    res.json({ ok: true, history: await historySummary(db), batches: await listBatches(db) });
+    res.json({ ok: true, history: await historySummary(db), backfill: await readBackfill(db), batches: await listBatches(db) });
   }));
 
   router.get('/history/columns', ...signedIn, (req, res) => res.json({ ok: true, profile: 'invoice_lines', columns: describeColumns() }));
@@ -115,6 +119,16 @@ export function createSeazonaRouter({ db, personAuth, settings, log = console })
     if (!id) throw Object.assign(new FlowError('invalid', 'the installation needs exactly one organisation'), { status: 409 });
     return id;
   };
+
+  router.post('/history/backfill', ...manager, json, handle(log, async (req, res) => {
+    const backfill = await startBackfill(db, { from: req.body?.from, through: req.body?.through ?? null, createdBy: actor(req), settings });
+    log.info?.(`[seazona] history backfill from ${backfill.from} to ${backfill.through} started by ${actor(req)}`);
+    res.status(201).json({ ok: true, backfill });
+  }));
+
+  router.post('/history/backfill/stop', ...manager, handle(log, async (req, res) => {
+    res.json({ ok: true, backfill: await stopBackfill(db) });
+  }));
 
   router.get('/history/ledger', ...signedIn, handle(log, async (req, res) => {
     const { state = null, limit, offset } = req.query;

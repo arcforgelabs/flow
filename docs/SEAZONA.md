@@ -78,6 +78,7 @@ workspace live credentials.
 | `SEAZONA_CIRCUIT_FAILURES`, `SEAZONA_CIRCUIT_WINDOW_MS` | Failed calls inside the window that open the circuit. Defaults 5 and 10 minutes. |
 | `SEAZONA_CIRCUIT_PAUSE_MS` | The first pause when the circuit opens. It doubles after each failed probe, to at most 6 hours. Default 5 minutes. |
 | `SEAZONA_DAILY_FAILURE_BUDGET` | Failed calls allowed in one UTC day. When they are spent, calls stop until the next day. Default 50. |
+| `SEAZONA_HISTORY_CALLS_PER_RUN`, `SEAZONA_HISTORY_CADENCE_MS` | Calls the history backfill makes per run, and how often it runs. Defaults 10 and 2 minutes. It calls Seazona only while a person has started one. |
 
 The code holds no Seazona host or account. Every address and credential is
 configuration.
@@ -165,6 +166,7 @@ another.
 | `orders_active` | Each open order Flow already knows, oldest first, 25 a run. "Complete" stays open until Seazona says it shipped. | 5 minutes |
 | `clients` | The whole list the first time, then changes since the cursor, then each changed client's detail | 30 minutes |
 | `products`, `users` | The whole list | Daily |
+| `history` | Past orders, one UTC day at a time, a few calls a run (History import, below) | Every 2 minutes, only while a backfill runs |
 
 A list row whose list fields did not change costs no detail read. Seazona
 documents no paging, so a list exactly `SEAZONA_LIST_CAP` long may be cut off:
@@ -265,9 +267,51 @@ reads.
 ## History import
 
 The API sync reads forward from the day it started. The history import brings
-in the years before that from Seazona's own CSV export, with no API call, so
-Flow holds the lab's full job history. The code is in
-`server/integrations/seazona/history/`; the routes are under
+in the years before that, so Flow holds the lab's full job history. It has
+two sources, and both end in the same batches, reconciliation and history
+table:
+
+- **The API backfill** (the main source, below). It reads every past order
+  from the Seazona API. Each order it reads is a batch row: the record of
+  what the API confirmed.
+- **A CSV export** (a fallback). Seazona's help pages document no export
+  format, so this path is only for a file a person has.
+
+The earlier app's own links from orders to Xero invoices are already in
+`prior_links` (imported at start); the matcher uses them as evidence for
+each history job (`docs/JOB_INVOICE_LINKS.md`). The earlier app read only
+30 days of orders, so its archive is not a full history.
+
+### The API backfill
+
+An owner or admin starts it: `POST /api/seazona/history/backfill` with
+`{ "from": "2019-01-01" }` (and `through`, by default the day before the
+recent-order lane's window). The `history` lane then:
+
+1. lists one UTC day of orders (`GET orders/?ordered=<day>`, with `page`
+   and `pageSize`; Seazona answers the orders placed on that day);
+2. leaves out the orders the live copy already holds;
+3. reads each other order (`GET orders/<id>`), maps it as the live lanes do,
+   and stages it as job `case:<order id>` in the backfill's batch;
+4. reconciles each staged job at once, and writes a new one to Flow's
+   history; a job that needs a person waits in the batch.
+
+It makes at most `SEAZONA_HISTORY_CALLS_PER_RUN` calls a run (default 10,
+at most 25), every `SEAZONA_HISTORY_CADENCE_MS` (default 2 minutes), through
+the same rate governor, circuit and failed-call budget as the live lanes.
+At the default, about 300 calls an hour. A 404 means the order is gone and
+is skipped. Other failed reads are retried later in the walk and quarantined
+after `SEAZONA_ORDER_QUARANTINE_FAILURES`. A refused or halted call stops
+the lane as it stops the others. The lane keeps its place (day, page and
+orders still to read) in its cursor, so it resumes after a restart. When
+the last day is done, the batch waits like an upload for a person to decide
+what is left. `POST /api/seazona/history/backfill/stop` ends it early.
+`GET /api/seazona/history` shows `backfill`: the next day, days done,
+orders read and orders still to read.
+
+### CSV upload
+
+The code is in `server/integrations/seazona/history/`; the routes are under
 `/api/seazona/history` (`routes.js`). There is no screen yet.
 
 ```mermaid

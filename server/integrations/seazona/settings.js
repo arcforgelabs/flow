@@ -99,7 +99,13 @@ export function resolveSeazonaSettings(env = process.env) {
       clients: { cadenceMs: ms('SEAZONA_CLIENT_CADENCE_MS', 30 * MINUTE, MINUTE, DAY_MS), freshnessMs: 60 * MINUTE },
       products: { cadenceMs: ms('SEAZONA_REFERENCE_CADENCE_MS', DAY_MS, MINUTE, 30 * DAY_MS), freshnessMs: 2 * DAY_MS },
       users: { cadenceMs: ms('SEAZONA_REFERENCE_CADENCE_MS', DAY_MS, MINUTE, 30 * DAY_MS), freshnessMs: 2 * DAY_MS },
+      // The history backfill (docs/SEAZONA.md, "History import"). It calls
+      // Seazona only while a person has started one.
+      history: { cadenceMs: ms('SEAZONA_HISTORY_CADENCE_MS', 2 * MINUTE, MINUTE, DAY_MS), freshnessMs: 30 * DAY_MS },
     },
+    // Calls the history backfill makes per run, at most: a small share of
+    // the rate limit, so the live lanes always have room.
+    historyCallsPerRun: clampInt(env.SEAZONA_HISTORY_CALLS_PER_RUN, 10, 1, 25),
     // Re-read this much before a lastModified cursor, so a change written
     // while the last run was reading is not missed.
     cursorOverlapMs: 5 * MINUTE,

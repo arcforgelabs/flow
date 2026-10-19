@@ -12,6 +12,7 @@ import {
   applyBatch,
   cancelBatch,
   decideJobs,
+  listBatches,
   readBatch,
   readHistoryWork,
   stageBatch,
@@ -20,7 +21,12 @@ import { detectColumns, groupJobs, moneyCents, readRow } from '../server/integra
 import { seazonaClients, seazonaHistoryJobs, seazonaHistoryRows, seazonaInvoices, seazonaOrders } from '../server/integrations/seazona/schema.js';
 import { fakeClerk, request, TEST_PUBLISHABLE_KEY } from './support/clerk.js';
 import { freshDatabase, skipWithoutDatabase } from './support/db.js';
-import { freshSeazonaDatabase } from './support/seazona.js';
+import { fakeClock, freshSeazonaDatabase } from './support/seazona.js';
+import { createSeazonaClient } from '../server/integrations/seazona/client.js';
+import { runSeazonaSync } from '../server/integrations/seazona/lanes.js';
+import { createReplayFetch } from '../server/integrations/seazona/replay.js';
+import { resolveSeazonaSettings } from '../server/integrations/seazona/settings.js';
+import { readBackfill, startBackfill } from '../server/integrations/seazona/history/backfill.js';
 
 // Synthetic data only (CONTRIBUTING.md): no real lab, practice, dentist or patient.
 
@@ -223,5 +229,68 @@ describe('Seazona history import routes', { skip: skipWithoutDatabase }, () => {
     assert.equal(summary.body.history.jobs, 1);
     const columns = await request(app, '/api/seazona/history/columns', { token: staffToken });
     assert.ok(columns.body.columns.some((c) => c.field === 'invoiceNumber'));
+  });
+});
+
+describe('Seazona history backfill from the API', { skip: skipWithoutDatabase }, () => {
+  let handle;
+  let db;
+  let clock;
+  const settings = resolveSeazonaSettings({ SEAZONA_MODE: 'replay', SEAZONA_REPLAY_FILE: 'unused.json', SEAZONA_HISTORY_CALLS_PER_RUN: '4' });
+
+  before(async () => {
+    handle = await freshSeazonaDatabase();
+    db = handle.db;
+  });
+  after(async () => handle?.close());
+  beforeEach(async () => {
+    await db.execute(sql`truncate seazona_orders, seazona_clients, seazona_lane_state, seazona_record_read_failures,
+      seazona_history_batches, seazona_history_rows, seazona_history_batch_jobs, seazona_history_jobs restart identity`);
+    clock = fakeClock('2026-10-20T00:00:00.000Z');
+    const at = new Date(clock.now());
+    await db.insert(seazonaOrders).values({ id: 'LIVE-1', company: 'Example Dental', recordHash: 'h', firstSeenAt: at, lastSyncedAt: at, lastChangedAt: at });
+  });
+
+  const order = (id, invoiceNumber) => ({ id, invoiceNumber, company: 'Example Dental', clientName: 'Dr Example', status: 'Shipped', ordered: '02/01/2020', due: '05/01/2020', products: [{ id: 'P1', name: 'Crown', code: 'CROWN', price: 200 }] });
+  const responses = [
+    { path: 'orders/', query: { ordered: '2020-01-02T00:00:00' }, body: [{ id: 'H-1' }, { id: 'LIVE-1' }, { id: 'H-2' }] },
+    { path: 'orders/', query: { ordered: '2020-01-03T00:00:00' }, body: [{ id: 'H-3' }] },
+    { path: 'orders/H-1', body: order('H-1', 'S-1') },
+    { path: 'orders/H-2', status: 404 },
+    { path: 'orders/H-3', body: order('H-3', 'S-3') },
+  ];
+  const run = async (calls) => {
+    const fetchImpl = createReplayFetch({ responses });
+    const client = createSeazonaClient({ settings, db, fetchImpl, now: clock.now, sleepFn: clock.sleep, random: () => 0 });
+    const result = await runSeazonaSync(db, client, { settings, now: clock.now, only: ['history'] });
+    calls.push(...fetchImpl.calls.map((c) => c.path));
+    return result.results.history;
+  };
+
+  test('walks each day, skips what the live copy holds, keeps its place, and writes history', async () => {
+    const idle = await run([]);
+    assert.equal(idle.idle, true, 'no calls until a person starts one');
+    const started = await startBackfill(db, { from: '2020-01-02', through: '2020-01-03', createdBy: 'person:test', settings, now: clock.now });
+    assert.equal(started.running, true);
+    await assert.rejects(startBackfill(db, { from: '2020-01-02', createdBy: 'person:test', settings, now: clock.now }), /already running/);
+
+    const calls = [];
+    const first = await run(calls);
+    assert.equal(first.calls, 4);
+    assert.deepEqual(calls, ['orders/', 'orders/H-1', 'orders/H-2', 'orders/']);
+    const second = await run(calls);
+    assert.equal(second.backfill.running, false);
+    assert.ok(!calls.includes('orders/LIVE-1'), 'an order the live copy holds is not read again');
+
+    const history = await db.select().from(seazonaHistoryJobs);
+    assert.deepEqual(history.map((h) => h.jobKey).sort(), ['case:H-1', 'case:H-3']);
+    assert.equal(history.find((h) => h.jobKey === 'case:H-1').invoiceNumber, 'S-1');
+    const work = await readHistoryWork(db);
+    assert.equal(work.items.find((i) => i.jobKey === 'case:H-1').ledgerJob.sourceJobRef, 'H-1');
+    const batch = (await readBackfill(db));
+    assert.equal(batch.ordersRead, 2);
+    const [summary] = await listBatches(db);
+    assert.equal(summary.profile, 'api_orders');
+    assert.equal(summary.status, 'reconciled');
   });
 });
