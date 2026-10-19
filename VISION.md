@@ -47,6 +47,15 @@ sensitive. Flow keeps the case number and the practice. It keeps a patient
 reference only when a practice needs one printed on its invoice, and it keeps
 no clinical notes or images.
 
+### Why does Flow keep its records in PostgreSQL only?
+
+One database is less to run, back up and upgrade. Every record lives in
+PostgreSQL, with `jsonb` for evidence and documents. Files (PDFs, payment
+proof, exports) go through one object storage port, and PostgreSQL keeps only
+each file's key, owner, size, type and hash. A need that seems to call for
+another kind of database is raised as a decision first. The goal is an
+installation that needs little maintenance (`docs/DATA_MODEL.md`, "Storage").
+
 ### Why does each lab get its own installation?
 
 Labs' customers, prices and credentials must never meet. Each installation has
