@@ -9,6 +9,7 @@ import {
   integer,
   jsonb,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   unique,
@@ -205,6 +206,9 @@ export const billingObligations = pgTable('billing_obligations', {
   contactId: uuid('contact_id'),
   practitioner: text('practitioner'),
   shippedOn: date('shipped_on'),
+  // The day of the work, for matching it to an accounting invoice: the work
+  // system's invoice date, else its due date, else its order date.
+  jobDate: date('job_date'),
   // The lines as the work system reported them, normalised.
   lines: jsonb('lines').notNull().default(sql`'[]'::jsonb`),
   lineFingerprint: text('line_fingerprint').notNull(),
@@ -319,7 +323,9 @@ export const obligationWritebacks = pgTable('obligation_writebacks', {
 // one active link per external record and per Flow record, in each system. A
 // link that is not exact stays `proposed` until a person confirms it.
 export const LINK_ENTITIES = ['contact', 'price_item', 'obligation', 'invoice', 'payment', 'credit_note'];
-export const LINK_MATCHES = ['created_by_flow', 'exact_id', 'imported', 'name', 'person'];
+// `exact_name`: the same name, after spacing and case are evened out, held by
+// exactly one record on each side.
+export const LINK_MATCHES = ['created_by_flow', 'exact_id', 'exact_name', 'imported', 'name', 'person'];
 export const LINK_STATES = ['active', 'proposed', 'superseded'];
 
 export const externalLinks = pgTable('external_links', {
@@ -492,4 +498,64 @@ export const integrationSettingEvents = pgTable('integration_setting_events', {
 }, (t) => [
   index('integration_setting_events_adapter').on(t.adapterId, t.createdAt),
   check('integration_setting_events_kind_valid', inList('kind', INTEGRATION_SETTING_EVENTS)),
+]);
+
+// The pipeline (server/core/pipeline.js, issue 58). Where each step that reads
+// another system's records stands, by name, so a restart goes on from there.
+export const pipelineCursors = pgTable('pipeline_cursors', {
+  organisationId: organisationId().references(() => organisations.id),
+  name: text('name').notNull(),
+  cursor: text('cursor'),
+  updatedAt: updatedAt(),
+}, (t) => [
+  primaryKey({ name: 'pipeline_cursors_pk', columns: [t.organisationId, t.name] }),
+]);
+
+// The matcher's suggestions: accounting invoices that could bill a job, with
+// the signals that agreed. Only exact evidence links a job by itself; a
+// suggestion waits for a person. A newer run marks the ones it no longer
+// makes `stale`.
+export const LINK_SUGGESTION_STATES = ['open', 'accepted', 'rejected', 'stale'];
+
+export const linkSuggestions = pgTable('link_suggestions', {
+  id: id(),
+  organisationId: organisationId().references(() => organisations.id),
+  obligationId: uuid('obligation_id').notNull(),
+  system: text('system').notNull(),
+  externalId: text('external_id').notNull(),
+  externalNumber: text('external_number'),
+  score: integer('score').notNull(),
+  rank: integer('rank').notNull(),
+  signals: jsonb('signals').notNull().default(sql`'[]'::jsonb`),
+  state: text('state').notNull().default('open'),
+  decidedBy: text('decided_by'),
+  decidedAt: timestamp('decided_at', { withTimezone: true }),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, (t) => [
+  unique('link_suggestions_pair').on(t.organisationId, t.obligationId, t.system, t.externalId),
+  index('link_suggestions_open').on(t.organisationId, t.state, t.obligationId),
+  foreignKey({
+    name: 'link_suggestions_obligation_same_org',
+    columns: [t.organisationId, t.obligationId],
+    foreignColumns: [billingObligations.organisationId, billingObligations.id],
+  }),
+  check('link_suggestions_state_valid', inList('state', LINK_SUGGESTION_STATES)),
+]);
+
+// A person's "not this one": the matcher never suggests the pair again.
+export const linkRejections = pgTable('link_rejections', {
+  organisationId: organisationId().references(() => organisations.id),
+  obligationId: uuid('obligation_id').notNull(),
+  system: text('system').notNull(),
+  externalId: text('external_id').notNull(),
+  actor: text('actor').notNull(),
+  createdAt: createdAt(),
+}, (t) => [
+  primaryKey({ name: 'link_rejections_pk', columns: [t.organisationId, t.obligationId, t.system, t.externalId] }),
+  foreignKey({
+    name: 'link_rejections_obligation_same_org',
+    columns: [t.organisationId, t.obligationId],
+    foreignColumns: [billingObligations.organisationId, billingObligations.id],
+  }),
 ]);

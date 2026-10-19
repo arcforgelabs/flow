@@ -25,12 +25,20 @@ erDiagram
   organisations ||--o{ outbox : "writes out through"
   organisations ||--o{ review_items : "asks a person through"
   organisations ||--o{ prior_links : "carries over from an earlier app"
+  billing_obligations ||--o{ link_suggestions : "may be billed by"
+  billing_obligations ||--o{ link_rejections : "is never billed by"
+  organisations ||--o{ pipeline_cursors : "reads on from"
 ```
 
 `external_links`, `background_jobs`, `outbox` and `review_items` are the data
 spine every integration shares (`docs/DATA_SPINE.md`). `prior_links` holds
 job to accounting record links from an earlier installation, one per job and
 system, until the job becomes an obligation.
+
+`link_suggestions`, `link_rejections` and `pipeline_cursors` belong to the
+pipeline that links each job to its accounting invoice
+(`docs/JOB_INVOICE_LINKS.md`). `billing_obligations.job_date` is the day of
+the work that the matcher compares with invoice dates.
 
 `people` lists who may sign in and their role (`owner`, `admin`, `staff`).
 One installation serves one lab, so it is installation-wide.

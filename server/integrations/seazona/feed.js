@@ -102,3 +102,14 @@ export async function readBillableWork(db, { cursor = null, limit = 200 } = {}) 
     more: rows.length === pageSize,
   };
 }
+
+// Seazona clients, by id and the company name an invoice bills. A client
+// with no company name is listed by its full name.
+export async function listClients(db) {
+  const rows = await db.select({ id: seazonaClients.id, company: seazonaClients.company, fullName: seazonaClients.fullName, active: seazonaClients.active })
+    .from(seazonaClients);
+  return rows
+    .filter((r) => r.active !== false)
+    .map((r) => ({ id: r.id, name: (r.company || r.fullName || '').trim() }))
+    .filter((r) => r.name);
+}

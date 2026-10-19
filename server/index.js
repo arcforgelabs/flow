@@ -6,6 +6,7 @@ import { createPersonAuth } from './auth/session.js';
 import { resolveSignInSettings } from './auth/settings.js';
 import { migrateDatabase, openDatabase } from './db/index.js';
 import { importEarlierAtStart, importEarlierLinksAtStart, resolveImportAtStart } from './import/at-start.js';
+import { createPipelineWorker } from './core/pipeline.js';
 import { resolveSecretsKey } from './core/secrets.js';
 import { adapters as shippedAdapters } from './integrations/adapters.js';
 import { createIntegrations, resolveEnabledIntegrations } from './integrations/index.js';
@@ -78,6 +79,14 @@ try {
 }
 const integrationsOn = integrations.list().filter((a) => a.enabled).map((a) => `${a.id}${a.state === 'ready' ? '' : ` (${a.state})`}`);
 console.log(`[integrations] on: ${integrationsOn.join(', ') || 'none'}; secrets key ${secrets ? `from ${secrets.source}` : 'not set (FLOW_SECRETS_KEY)'}`);
+
+// The pipeline (server/core/pipeline.js) joins what the integrations copy into
+// Flow: jobs into the ledger, and each job to its accounting invoice. It runs
+// only while an integration that feeds it is on, and writes to no other
+// system. FLOW_PIPELINE=off stops it.
+if (process.env.FLOW_PIPELINE !== 'off') {
+  createPipelineWorker({ db: database.db, integrations }).start();
+}
 
 let auth = null;
 if (settings.mode === 'clerk') {

@@ -30,7 +30,13 @@ export const exampleAdapter = {
 ```
 
 The capabilities are `pullWorkItems`, `pushInvoice`, `pushBill`,
-`pullPayments`, `checkInvoice` and `health`. `checkInvoice({ organisationId,
+`pullPayments`, `checkInvoice`, `listCustomers`, `findInvoices` and `health`.
+`listCustomers({ organisationId })` answers the system's customers as
+`{ id, name }`. `findInvoices({ organisationId, invoiceIds, numbers,
+flowInvoiceIds, contactId, from, to })` answers sales invoices from the
+adapter's own copy, never a live call, with the copy's state (`complete`,
+`fresh`, `changedAt`). The pipeline uses both (`docs/JOB_INVOICE_LINKS.md`).
+`checkInvoice({ organisationId,
 obligation })` answers whether the accounting system holds an invoice for a
 billable job, in the ledger's evidence shape; it is the live check before
 Flow drafts a job's invoice (`POST /api/invoicing/jobs/:id/draft`). An adapter declares only the ones it has, and

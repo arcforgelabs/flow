@@ -3,6 +3,7 @@ import { sql } from 'drizzle-orm';
 import { pushInvoice } from './drafts.js';
 import { createImportWorker } from './import.js';
 import { readPayments, xeroLiveCheck } from './ledger.js';
+import { findInvoices, listCustomers } from './lookup.js';
 import { createXeroRouter } from './routes.js';
 import { createXeroRuntime, requireXeroSettings } from './runtime.js';
 import { writesAllowed } from './settings.js';
@@ -91,6 +92,10 @@ export function createXeroAdapter({ runtime: given = null } = {}) {
       // Xero's invoice for one billable job, looked up live (ledger.js): the
       // `liveCheck` for draftInvoiceForObligation.
       checkInvoice: ({ organisationId, obligation }) => xeroLiveCheck(database, current(), organisationId)(obligation),
+      // Active Xero contacts, from Flow's copy (lookup.js).
+      listCustomers: ({ organisationId }) => listCustomers(database, organisationId),
+      // Sales invoices from the mirror, with the mirror's state (lookup.js).
+      findInvoices: ({ organisationId, ...query }) => findInvoices(database, organisationId, query),
     },
     routes: ({ db, personAuth, log, messagePage }) => createXeroRouter({ db, personAuth, runtime: current(), log, messagePage }),
   };

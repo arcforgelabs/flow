@@ -1,5 +1,5 @@
 import { createSeazonaClient } from './client.js';
-import { readBillableWork } from './feed.js';
+import { listClients, readBillableWork } from './feed.js';
 import { readSeazonaSyncHealth, runSeazonaSync } from './lanes.js';
 import { createSeazonaScheduler } from './scheduler.js';
 import { describeSeazonaSettings, resolveSeazonaSettings } from './settings.js';
@@ -98,6 +98,12 @@ export function createSeazonaAdapter({ env = null, fetchImpl = null, now = Date.
       // so invoice preparation can drop them (issue #12).
       async pullWorkItems(cursor = null, options = {}) {
         return readBillableWork(current().db, { cursor, ...options });
+      },
+
+      // Seazona clients by id and company name, for the identity map. Reads
+      // Flow's copy only.
+      async listCustomers() {
+        return listClients(current().db);
       },
     },
   };

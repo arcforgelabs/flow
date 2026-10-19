@@ -33,6 +33,7 @@ run a lab.
 | `docs/DESIGN.md` | The design systems (theme families), how pages and Clerk's components take them, and the screens |
 | `docs/DATA_MODEL.md` | The PostgreSQL records, the rules the database holds, and how to change the schema |
 | `docs/DATA_SPINE.md` | The design of the tables and jobs every integration shares: mirror, identity map, job queue, outbox, review queue |
+| `docs/JOB_INVOICE_LINKS.md` | The pipeline: how each job links to its customer and to the accounting invoice that bills it |
 | `docs/RELEASING.md` | Versions and channels, the release workflows, how to cut and roll back a release, and the one-time setup |
 | `docs/SELF_HOSTING.md` | Running a Flow release with Docker, Node or Replit, the update notice, and Clerk sign-in |
 | `docs/REPLIT.md` | A Replit workspace of this repository that follows a release channel (`FLOW_DEPLOY_REF`) |

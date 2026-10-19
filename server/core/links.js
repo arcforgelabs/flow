@@ -8,12 +8,12 @@ import { openReview, resolveReviewFor } from './review.js';
 // Pushes, imports and the ledger read the link first; matching by name only
 // ever proposes one.
 //
-// A link is exact when Flow made the external record, or both sides carry the
-// same id. A name match is a guess: it stays `proposed` and opens a review item
+// A link is exact when Flow made the external record, both sides carry the
+// same id, or one record on each side has the same name. A looser name match is a guess: it stays `proposed` and opens a review item
 // until a person confirms it. A link is never deleted; a replaced one is
 // `superseded`.
 
-const EXACT = new Set(['created_by_flow', 'exact_id', 'imported', 'person']);
+const EXACT = new Set(['created_by_flow', 'exact_id', 'exact_name', 'imported', 'person']);
 
 function check({ entity, flowId, system, externalId, matchedBy }) {
   if (!LINK_ENTITIES.includes(entity)) throw new FlowError('invalid', `unknown link entity: ${entity}`);

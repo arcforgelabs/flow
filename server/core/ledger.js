@@ -16,8 +16,10 @@ import { invoiceTotals, lineTotals } from './money.js';
 // How old the work system's report of a job may be when Flow drafts its invoice.
 export const SOURCE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
-// Ways to tie accounting evidence to a job that are exact, not a guess.
-export const EXACT_MATCHES = ['flow_invoice', 'source_invoice_ref', 'accounting_ref'];
+// Ways to tie accounting evidence to a job that are exact, not a guess:
+// `prior_link` is a link the earlier installation held, checked against the
+// accounting mirror; `person` is a link a person chose.
+export const EXACT_MATCHES = ['flow_invoice', 'source_invoice_ref', 'accounting_ref', 'prior_link', 'person'];
 
 const LINKED_STATES = ['drafted', 'authorised', 'part_paid', 'paid', 'voided', 'deleted'];
 
@@ -107,6 +109,7 @@ export async function observeJob(db, organisationId, job) {
       contactId: job.contactId ?? null,
       practitioner: job.practitioner ?? null,
       shippedOn: job.shippedOn ?? null,
+      jobDate: job.jobDate ?? null,
       lines,
       lineFingerprint: fingerprint(lines),
       ...invoiceTotals(lines),
@@ -135,7 +138,7 @@ export async function observeJob(db, organisationId, job) {
     const changed = ['sourceInvoiceRef', 'caseRef', 'contactId', 'practitioner', 'shippedOn', 'lineFingerprint', 'totalCents']
       .filter((key) => String(existing[key] ?? '') !== String(facts[key] ?? ''));
     if (!changed.length) {
-      return update(tx, existing, { sourceSeenAt: seenAt, mappingComplete: facts.mappingComplete, lines });
+      return update(tx, existing, { sourceSeenAt: seenAt, mappingComplete: facts.mappingComplete, lines, jobDate: facts.jobDate });
     }
     const fields = { ...facts, sourceSeenAt: seenAt };
     if (existing.invoiceId && changed.some((key) => ['lineFingerprint', 'totalCents', 'contactId'].includes(key))) {
