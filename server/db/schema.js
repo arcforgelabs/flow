@@ -64,8 +64,12 @@ export const priceItems = pgTable('price_items', {
   description: text('description'),
   unitAmountCents: integer('unit_amount_cents').notNull(),
   taxCode: text('tax_code').notNull().default('GST'),
+  // The sales account a line with this code books to, when the lab sets one.
+  accountCode: text('account_code'),
   archivedAt: timestamp('archived_at', { withTimezone: true }),
+  updatedBy: uuid('updated_by').references(() => people.id, { onDelete: 'set null' }),
   createdAt: createdAt(),
+  updatedAt: updatedAt(),
 }, (t) => [
   unique('price_items_org_id').on(t.organisationId, t.id),
   unique('price_items_org_code').on(t.organisationId, t.code),
@@ -716,4 +720,30 @@ export const lineMappings = pgTable('line_mappings', {
   check('line_mappings_target', sql`(${t.kind} = 'account' and ${t.accountCode} is not null) or (${t.kind} <> 'account' and ${t.itemCode} is not null)`),
   check('line_mappings_price', sql`${t.kind} not in ('price_alias', 'saved') or ${t.unitAmountCents} is not null`),
   check('line_mappings_label_valid', sql`length(${t.label}) between 1 and 200`),
+]);
+
+// The price list's links (server/core/price-list.js, docs/PRICE_LIST.md): one
+// row joins one record in a connected system's price list (a Xero item, a
+// Seazona product) to one Flow price item. Flow's price list stays the source
+// of truth; a link only says which record to compare and map. Many Seazona
+// products can share one price item; a price item has one accounting item at
+// most (the code checks it: the adapter says which kind it is).
+//   matched_by  code     the same code on both sides, linked by Flow
+//               person   a person chose it
+export const PRICE_LINK_MATCHES = ['code', 'person'];
+export const priceItemLinks = pgTable('price_item_links', {
+  id: id(),
+  organisationId: organisationId().references(() => organisations.id),
+  priceItemId: uuid('price_item_id').notNull(),
+  system: text('system').notNull(),
+  externalId: text('external_id').notNull(),
+  externalCode: text('external_code'),
+  matchedBy: text('matched_by').notNull(),
+  createdBy: uuid('created_by').references(() => people.id, { onDelete: 'set null' }),
+  createdAt: createdAt(),
+}, (t) => [
+  foreignKey({ name: 'price_item_links_item_same_org', columns: [t.organisationId, t.priceItemId], foreignColumns: [priceItems.organisationId, priceItems.id] }).onDelete('cascade'),
+  uniqueIndex('price_item_links_external').on(t.organisationId, t.system, t.externalId),
+  check('price_item_links_matched_by_valid', sql`${t.matchedBy} in ('code', 'person')`),
+  check('price_item_links_system_valid', sql`${t.system} ~ '^[a-z][a-z0-9-]{1,31}$'`),
 ]);

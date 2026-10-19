@@ -31,7 +31,11 @@ export const exampleAdapter = {
 
 The capabilities are `pullWorkItems`, `pushInvoice`, `pushBill`,
 `pullPayments`, `checkInvoice`, `listCustomers`, `findInvoices`, `listWork`,
-`captureError`, `browserMonitoring` and `health`. `listWork({ organisationId })`
+`listPriceItems`, `captureError`, `browserMonitoring` and `health`.
+`listPriceItems({ organisationId })` answers the system's own price list from
+the adapter's copy, never a live call: `{ kind, syncedAt, items }`, `kind`
+`accounting` or `work`, each item `{ id, code, name, unitAmountCents,
+taxCode, sold }` (`docs/PRICE_LIST.md`). `listWork({ organisationId })`
 answers the work system's jobs for the Jobs board from the adapter's own copy,
 never a live call: `{ items, statuses }`, each item with its `sourceSystem`,
 `sourceJobRef`, `status`, `clientName`, `practitioner`, dates, lines and

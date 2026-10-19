@@ -179,9 +179,21 @@ publish step will offer:
 The doctor also names tables in `public` that the build does not know.
 Replit offers to copy those to production too.
 
-The updater arrives with a `git pull` of a release that has it, once. A
-workspace is fetch-only ("A production installation: fetch only"): pull, never
-push.
+The updater reaches a workspace once, from a release that has it. A
+workspace whose history has its own commits cannot `git pull` main, so take
+the deploy files from the newest stable release instead, in the Shell, then
+start the updater:
+
+```bash
+git fetch --tags origin
+T=$(git tag -l 'v20*' --sort=-v:refname | grep -v beta | head -1)
+git checkout "$T" -- .replit .gitignore scripts/replit-deploy.sh \
+  scripts/deploy-checks.js scripts/deploy-release.js server/release-channel.js
+bash scripts/replit-deploy.sh boot
+```
+
+A workspace is fetch-only ("A production installation: fetch only"): fetch,
+never push.
 
 ### Each release brings its own build steps
 

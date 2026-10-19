@@ -22,6 +22,32 @@ export async function listCustomers(db, organisationId) {
   return rows.map((r) => ({ id: r.xero_contact_id, name: r.name }));
 }
 
+// Xero's items, from Flow's copy (catalogue.js, read on each sync), for the
+// price list's links and price check (server/core/price-list.js). A tax type
+// that charges GST reads as GST; any other set type reads as GST free.
+const GST_TAX_TYPES = new Set(['OUTPUT', 'OUTPUT2']);
+export async function listPriceItems(db, organisationId, { taxTypes = {} } = {}) {
+  const { rows } = await db.execute(sql`
+    select xero_item_id, code, name, description, is_sold, sales_unit_amount_cents, sales_tax_type, synced_at
+    from xero_items where organisation_id = ${organisationId} order by code`);
+  const taxOf = (type) => {
+    if (!type) return null;
+    return type === taxTypes.GST || GST_TAX_TYPES.has(type) ? 'GST' : 'GST_FREE';
+  };
+  return {
+    kind: 'accounting',
+    syncedAt: rows.reduce((at, r) => (!at || r.synced_at > at ? r.synced_at : at), null),
+    items: rows.map((r) => ({
+      id: r.xero_item_id,
+      code: r.code,
+      name: r.name || r.description || r.code,
+      unitAmountCents: r.sales_unit_amount_cents,
+      taxCode: taxOf(r.sales_tax_type),
+      sold: r.is_sold,
+    })),
+  };
+}
+
 // Whether the mirror holds the whole history and was read lately. Until then a
 // search that finds nothing proves nothing.
 export async function mirrorState(db, organisationId, { now = new Date() } = {}) {
