@@ -33,13 +33,14 @@ export function flowClerkAppearance({ embedded = false, publicSignUp = false } =
   const danger = token('--t-danger', '#b8442a');
   const inputEdge = { ...controlEdge, '&&[data-feedback="error"]': { boxShadow: edge(danger) } };
   const display = token('--t-display', 'ui-serif, Georgia, serif');
+  const dim = token('--t-dim', '#5b6773');
   return {
     variables: {
       colorPrimary: token('--t-primary', '#1f6f8f'),
       colorPrimaryForeground: token('--t-on-primary', '#ffffff'),
       colorBackground: token('--t-paper', '#ffffff'),
       colorForeground: text,
-      colorMutedForeground: token('--t-dim', '#5b6773'),
+      colorMutedForeground: dim,
       colorMuted: token('--t-s1', '#f7f9fb'),
       colorInput: token('--t-paper', '#ffffff'),
       colorInputForeground: text,
@@ -47,7 +48,10 @@ export function flowClerkAppearance({ embedded = false, publicSignUp = false } =
       colorSuccess: token('--t-success', '#3f6b2a'),
       colorWarning: token('--t-warn', '#8a5a00'),
       colorNeutral: text,
-      colorBorder: line,
+      // Clerk builds its border shades (dividers, hover edges, the badge text)
+      // as fractions of colorBorder, so it takes the opaque text colour: a
+      // colour already faded to 12% left the "Primary" badge near 1:1.
+      colorBorder: text,
       colorRing: token('--t-ring', '#1f6f8f'),
       fontFamily: token('--t-body', 'ui-sans-serif, system-ui, sans-serif'),
       fontSize: '14px',
@@ -67,6 +71,9 @@ export function flowClerkAppearance({ embedded = false, publicSignUp = false } =
       scrollBox: embedded ? { borderRadius: 0 } : undefined,
       formFieldInput: inputEdge,
       otpCodeFieldInput: inputEdge,
+      // Clerk's default badge ("Primary" by an email address) draws its text
+      // in a 62% border shade, under 4.5:1 on light papers; --t-dim reads.
+      badge: { '&&': { color: dim, background: `color-mix(in srgb, ${text} 5%, transparent)`, borderColor: line } },
       formButtonPrimary: { boxShadow: 'none', textTransform: 'none', fontWeight: 650 },
       socialButtonsBlockButton: controlEdge,
       userButtonPopoverCard: { border: `1px solid ${line}`, boxShadow: shadow },
