@@ -49,6 +49,8 @@ function clerkAppearance(kind) {
 function mountClerk(kind, element, options = {}) {
   const Clerk = window.Clerk;
   const props = { ...options, appearance: clerkAppearance(kind) };
+  // The "Manage account" modal does not inherit the button's appearance.
+  if (kind === 'userButton') props.userProfileProps = { ...options.userProfileProps, appearance: clerkAppearance('modal') };
   if (kind === 'signIn') Clerk.mountSignIn(element, props);
   else if (kind === 'userButton') Clerk.mountUserButton(element, props);
   else if (kind === 'profile') Clerk.mountUserProfile(element, props);
@@ -72,8 +74,10 @@ function unmountAllIn(container) {
 }
 
 // Clerk reads its appearance when a component mounts, so a new appearance
-// remounts each one (after the tokens have changed on <html>).
+// remounts each one (after the tokens have changed on <html>). Modals Clerk
+// opens itself use the appearance from Clerk.load(), so update that too.
 onAppearanceChange(() => {
+  window.Clerk?.__internal_updateProps?.({ appearance: clerkAppearance('modal') });
   for (const [element, { kind, options }] of [...mounted]) {
     unmountClerk(element);
     mountClerk(kind, element, options);
