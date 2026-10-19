@@ -36,7 +36,11 @@ describe('Clerk appearance', () => {
     assert.equal(name.whiteSpace, 'nowrap');
     assert.equal(name.minWidth, 0);
     assert.deepEqual(name['@media (max-width: 820px)'], { display: 'none' });
-    assert.equal(elements.userButtonTrigger['&&'].width, '100%');
+    const chip = elements.userButtonTrigger['&&'];
+    assert.equal(chip.maxWidth, '100%');
+    assert.equal(chip.background, 'transparent', 'plain at rest');
+    assert.equal(chip.boxShadow, 'none', 'no outline at rest');
+    assert.match(chip['&:hover, &:focus-visible, &[aria-expanded="true"]'].boxShadow, /^inset 0 0 0 1px /, 'outlined on hover');
     const app = readFileSync(new URL('../server/ui/app.js', import.meta.url), 'utf8');
     assert.match(app, /const userButton = \{ afterSignOutUrl: '\/sign-in', showName: true \};/);
     // The narrow-screen rule matches the one in flow.css, where the sidebar becomes a bar.
