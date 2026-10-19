@@ -131,6 +131,8 @@ body:is([data-state="off"], [data-state="error"], [data-state="no-access"]) .fx-
 .fx-ico svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .fx-side__end { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 12px 6px 0; border-top: 1px solid var(--fx-line); }
 .fx-side__user { display: flex; min-width: 32px; min-height: 32px; align-items: center; }
+/* Clerk replaces the mount's classes with its root box's, so this uses the id. */
+#user-button { flex: 1 1 auto; min-width: 0; }
 .fx-main { flex: 1; min-width: 0; max-width: 1180px; margin: 0 auto; padding: 32px clamp(16px, 4vw, 48px) 64px; display: grid; gap: 20px; align-content: start; }
 .fx-main:focus { outline: none; box-shadow: none; }
 
@@ -524,6 +526,7 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
   .fx-nav a { padding: 7px 9px; }
   .fx-nav a .fx-ico { display: none; }
   .fx-side__end { padding: 0; border-top: 0; }
+  #user-button { flex: none; }
 }
 
 /* ── Phones ─────────────────────────────────────────────────────────────── */

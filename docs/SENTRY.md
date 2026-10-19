@@ -9,7 +9,7 @@ installation.
 flowchart LR
   server[Flow server] -- "each logged error" --> log[Monitored log]
   log -- captureError --> sdk[@sentry/node]
-  browser[Browser] -- "GET /api/monitoring" --> config[DSN, environment,<br/>release, report button]
+  browser[Browser] -- "GET /api/monitoring" --> config[DSN, environment,<br/>release, Report a problem]
   browser -- "errors and<br/>Report a problem" --> project[(The installation's<br/>Sentry project)]
   sdk --> project
   project -- "Sentry's own integrations" --> tracker[Issue tracker, alerts]
@@ -28,7 +28,7 @@ flowchart LR
 | --- | --- | --- |
 | `SENTRY_DSN` | The project's DSN. Browsers see it, so it is not a secret. | none: Sentry cannot start |
 | `SENTRY_ENVIRONMENT` | The environment Sentry shows for this installation. | `production` |
-| `SENTRY_FEEDBACK` | `on`: the Report a problem button shows for everyone signed in. | `on` |
+| `SENTRY_FEEDBACK` | `on`: "Report a problem" shows in the account menu for everyone signed in. | `on` |
 
 A change in Flow applies at once, with no restart. The adapter has no tables.
 
@@ -39,8 +39,8 @@ A change in Flow applies at once, with no restart. The adapter has no tables.
   leading `[tag]` becomes the `source` tag. A server fault no route answered
   is logged as `[http]` and answered with no detail.
 - **Browser errors.** Uncaught errors in the signed-in app.
-- **Problem reports.** The flag button at the foot of the sidebar opens
-  Sentry's feedback form, with an optional screenshot. It shows only while
+- **Problem reports.** "Report a problem" in the account menu (the name at
+  the foot of the sidebar) opens Sentry's feedback form, with an optional screenshot. It shows only while
   Sentry is on and `SENTRY_FEEDBACK` is on.
 - **Who.** Each browser event carries the person's Flow id and email, so the
   lab can follow up. `sendDefaultPii` is off: no cookies, request bodies or IP

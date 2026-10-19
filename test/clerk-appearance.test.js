@@ -27,4 +27,20 @@ describe('Clerk appearance', () => {
     assert.match(app, /if \(kind === 'userButton'\) props\.userProfileProps = \{ \.\.\.options\.userProfileProps, appearance: clerkAppearance\('modal'\) \};/);
     assert.match(app, /onAppearanceChange\(\(\) => \{\n  window\.Clerk\?\.__internal_updateProps\?\.\(\{ appearance: clerkAppearance\('modal'\) \}\);/);
   });
+
+  test('the account button is a chip with the name, clipped to fit, and the photo alone on narrow screens', () => {
+    const { elements } = flowClerkAppearance();
+    assert.equal(elements.userButtonBox.flexDirection, 'row-reverse', 'the photo or initial comes first');
+    const name = elements.userButtonOuterIdentifier;
+    assert.equal(name.textOverflow, 'ellipsis');
+    assert.equal(name.whiteSpace, 'nowrap');
+    assert.equal(name.minWidth, 0);
+    assert.deepEqual(name['@media (max-width: 820px)'], { display: 'none' });
+    assert.equal(elements.userButtonTrigger['&&'].width, '100%');
+    const app = readFileSync(new URL('../server/ui/app.js', import.meta.url), 'utf8');
+    assert.match(app, /const userButton = \{ afterSignOutUrl: '\/sign-in', showName: true \};/);
+    // The narrow-screen rule matches the one in flow.css, where the sidebar becomes a bar.
+    const css = readFileSync(new URL('../server/ui/flow.css', import.meta.url), 'utf8');
+    assert.match(css, /@media \(max-width: 820px\) \{\n  \.fx-shell \{ flex-direction: column; \}/);
+  });
 });

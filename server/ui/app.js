@@ -217,6 +217,17 @@ function icon(name) {
   return node;
 }
 
+// "Report a problem" in Clerk's account menu, between "Manage account" and
+// "Sign out". Clerk mounts and unmounts the icon itself.
+function reportMenuItem(openReport) {
+  return {
+    label: 'Report a problem',
+    onClick: () => { openReport().catch((error) => toast(error.message, 'danger')); },
+    mountIcon: (element) => element.replaceChildren(icon('flag')),
+    unmountIcon: (element) => element.replaceChildren(),
+  };
+}
+
 // The view and, for one record, its id: /invoices/<id> is ['invoices', '<id>'].
 function currentView() {
   const [name, id = null] = location.pathname.replace(/^\/+|\/+$/g, '').split('/');
@@ -289,11 +300,19 @@ function renderShell() {
     items.push(h('a', { href: `/${name}`, 'data-nav': name, onclick: navigate }, icon(view.icon), h('span', {}, view.label)));
   }
   nav.replaceChildren(...items);
-  mountClerk('userButton', $('user-button'), { afterSignOutUrl: '/sign-in', showName: false });
+  // The sidebar foot shows who is signed in: photo or initial, then the name
+  // (the email when the account has no name). It opens the account menu.
+  const userButton = { afterSignOutUrl: '/sign-in', showName: true };
+  mountClerk('userButton', $('user-button'), userButton);
   // Errors and problem reports go to the installation's own Sentry, when the
-  // Sentry integration is on (monitoring.js). Flow works the same without it.
-  $('report-problem').replaceChildren(icon('flag'));
-  startMonitoring({ flow, person: me.person, button: $('report-problem') })
+  // Sentry integration is on (monitoring.js). Then the account menu has
+  // "Report a problem". Flow works the same without it.
+  startMonitoring({ flow, person: me.person })
+    .then((openReport) => {
+      if (!openReport) return;
+      unmountClerk($('user-button'));
+      mountClerk('userButton', $('user-button'), { ...userButton, customMenuItems: [reportMenuItem(openReport)] });
+    })
     .catch((error) => console.warn(`[monitoring] ${error.message}`));
   window.addEventListener('popstate', route);
   return route();
