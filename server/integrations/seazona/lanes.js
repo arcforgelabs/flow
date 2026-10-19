@@ -309,8 +309,11 @@ const laneRuns = {
   async clients(ctx) {
     const { client, sync, at } = ctx;
     // The first run reads the whole list; later runs read changes only.
+    // Seazona answers the whole list only to an empty `?lastModified=`; a
+    // bare path is a 404.
     const since = ctx.state?.cursorTime ? cursorSince(ctx, 0) : '';
-    const items = listOrFail(await client.get('clients/', since ? { lastModified: since } : {}), 'client list', sync);
+    const reply = since ? await client.get('clients/', { lastModified: since }) : await client.get('clients/?lastModified=');
+    const items = listOrFail(reply, 'client list', sync);
     const result = await syncListWithDetail(ctx, {
       mirror: 'clients',
       what: 'client',

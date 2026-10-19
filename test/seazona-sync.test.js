@@ -110,6 +110,13 @@ describe('Seazona sync lanes', { skip: skipWithoutDatabase }, () => {
     assert.equal((await db.select().from(seazonaInvoices))[0].patientReference, 'Synthetic Patient A');
   });
 
+  test('the first client read asks for every client with an empty lastModified', async () => {
+    await db.execute(sql`truncate seazona_lane_state`);
+    const { calls } = await run(billing(), { only: ['clients'] });
+    const list = calls.find((call) => call.path === 'clients/');
+    assert.deepEqual(list.query, { lastModified: '' });
+  });
+
   test('an unchanged list row costs no detail read', async () => {
     await run(billing(), { only: ['invoices', 'orders_recent', 'clients'] });
     clock.advance(10 * MINUTE);
