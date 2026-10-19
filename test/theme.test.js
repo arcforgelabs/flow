@@ -100,7 +100,7 @@ describe('pages and assets', () => {
     const css = await request(app, '/assets/themes.css');
     assert.equal(css.status, 200);
     assert.match(css.text, /\[data-theme="harbour"\]\[data-mode="dark"\]/);
-    for (const path of ['/assets/theme/themes.js', '/assets/theme/openclaw-palettes.js', '/assets/theme/color-contrast.js', '/assets/theme/font-families.js', '/assets/ui/flow.css', '/assets/ui/appearance.js', '/assets/ui/clerk-appearance.js', '/assets/ui/app.js', '/assets/ui/invoicing.js', '/assets/ui/jobs.js', '/assets/ui/logos/xero.svg', '/assets/ui/logos/seazona.svg']) {
+    for (const path of ['/assets/theme/themes.js', '/assets/theme/openclaw-palettes.js', '/assets/theme/color-contrast.js', '/assets/theme/font-families.js', '/assets/ui/flow.css', '/assets/ui/appearance.js', '/assets/ui/clerk-appearance.js', '/assets/ui/app.js', '/assets/ui/invoicing.js', '/assets/ui/invoicing-settings.js', '/assets/ui/automations.js', '/assets/ui/jobs.js', '/assets/ui/logos/xero.svg', '/assets/ui/logos/seazona.svg']) {
       assert.equal((await request(app, path)).status, 200, path);
     }
     const font = await request(app, '/assets/fonts/nunito-sans/index.css');

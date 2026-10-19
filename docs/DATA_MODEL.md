@@ -28,6 +28,9 @@ erDiagram
   billing_obligations ||--o{ link_suggestions : "may be billed by"
   billing_obligations ||--o{ link_rejections : "is never billed by"
   organisations ||--o{ pipeline_cursors : "reads on from"
+  organisations ||--o| invoicing_settings : "drafts and sends by"
+  contacts ||--o| customer_billing_settings : "overrides rules by"
+  organisations ||--o{ automations : "runs"
 ```
 
 `external_links`, `background_jobs`, `outbox` and `review_items` are the data
@@ -39,6 +42,13 @@ system, until the job becomes an obligation.
 pipeline that links each job to its accounting invoice
 (`docs/JOB_INVOICE_LINKS.md`). `billing_obligations.job_date` is the day of
 the work that the matcher compares with invoice dates.
+
+`invoicing_settings` and `customer_billing_settings` hold the invoicing rules
+and send modes (`docs/INVOICING_RULES.md`). `billing_obligations.ready_at`
+and `ready_by` record Flow's own "ready to invoice" stage: when, and which
+person or automation. `billing_obligations.source_status` is the work
+system's status. `automations` holds each organisation's choices for Flow's
+routines, such as marking a job ready from that status (`docs/AUTOMATIONS.md`).
 
 `people` lists who may sign in and their role (`owner`, `admin`, `staff`).
 One installation serves one lab, so it is installation-wide.
@@ -100,7 +110,7 @@ while the installation has exactly one. Money is integer cents. Answers are
 | `GET /contacts?q=&limit=` | anyone | Customers, by name |
 | `GET /price-items?q=` | anyone | The price list, by code |
 | `GET /jobs?view=&limit=` | anyone | Billable jobs with `contactName`, `view` and `reasons`; `counts` by view |
-| `POST /jobs/:id/draft` | owner or admin | The job's draft invoice, made only after a live check in the accounting system (`checkInvoice`, `docs/INTEGRATIONS.md`) finds none; with no accounting integration it is refused (`live_check_unavailable`) |
+| `POST /jobs/:id/draft` | owner or admin | The job's draft invoice. With an accounting integration it is made only after a live check there (`checkInvoice`, `docs/INTEGRATIONS.md`) finds none. With none connected, Flow's own records are the check: one invoice for each job |
 
 A line is `{ priceItemId?, description?, quantity?, unitAmountCents?,
 taxCode? }`; a price item fills what the line leaves out.

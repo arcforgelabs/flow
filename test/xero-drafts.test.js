@@ -3,6 +3,8 @@ import { after, before, beforeEach, describe, test } from 'node:test';
 import { sql } from 'drizzle-orm';
 import { createContact, createPriceItem } from '../server/core/directory.js';
 import { createDraftInvoice, issueInvoice, listInvoiceVersions, reviseInvoice } from '../server/core/invoices.js';
+import { saveCustomerBilling } from '../server/core/invoicing-rules.js';
+import { draftInvoiceForObligation, observeJob, recordAccountingEvidence } from '../server/core/ledger.js';
 import { buildDraft, differences, pushDrafts } from '../server/integrations/xero/drafts.js';
 import { createXeroRuntime } from '../server/integrations/xero/runtime.js';
 import { resolveXeroSettings } from '../server/integrations/xero/settings.js';
@@ -319,5 +321,108 @@ describe('Xero drafts from issued invoices', { skip: skipWithoutDatabase }, () =
     assert.equal(res.body.pushes[0].state, 'created');
     assert.equal(res.body.pushes[0].requestBody, undefined);
     assert.equal(res.body.pushes[0].idempotencyKey, undefined);
+  });
+
+  describe('a customer whose invoices are approved in Flow and emailed by Xero', () => {
+    const XE = '00000000-0000-4000-8000-0000000000e1';
+    let emailing;
+    const emailed = (id, options = {}) => xeroAnswer(`Invoices/${id}/Email`, undefined, { method: 'POST', status: 204, ...options });
+    const approved = (id) => xeroAnswer('Invoices', { Invoices: [{ InvoiceID: id, InvoiceNumber: `INV-${id}`, Status: 'AUTHORISED' }] }, { method: 'POST' });
+    const readApproved = (id, reference) => xeroAnswer(`Invoices/${id}`, { Invoices: [{ ...xeroInvoice(id, { reference, status: 'AUTHORISED' }), Contact: { ContactID: XE } }] });
+
+    before(async () => {
+      const org = lab.organisation.id;
+      emailing = await createContact(handle.db, org, { kind: 'customer', name: 'Email Practice' });
+      await handle.db.execute(sql`insert into xero_contacts (organisation_id, xero_contact_id, name, email, status, is_customer) values (${org}, ${XE}, 'Email Practice', 'accounts@example.com', 'ACTIVE', true)`);
+      await saveCustomerBilling(handle.db, org, emailing.id, { sendMode: 'approve_and_email' });
+    });
+
+    async function issuedFor(contact, reference = `CASE-${++counter}`) {
+      const draft = await createDraftInvoice(handle.db, lab.organisation.id, { contactId: contact.id, reference, lines: [{ priceItemId: crown.id }] });
+      return issueInvoice(handle.db, lab.organisation.id, draft.id, { issuedBy: 'user:test', issueDate: '2026-10-18' });
+    }
+
+    test('preview names the send mode', async () => {
+      xero.script([]);
+      const invoice = await issuedFor(emailing);
+      const res = await request(app, '/api/xero/invoices/preview', {
+        token: lab.staffToken, method: 'POST', body: { organisationId: lab.organisation.id, invoiceIds: [invoice.id] },
+      });
+      assert.equal(res.body.invoices[0].sendMode, 'approve_and_email');
+      assert.equal(res.body.invoices[0].draft.Status, 'AUTHORISED');
+      assert.deepEqual(res.body.invoices[0].problems, []);
+    });
+
+    test('the invoice goes to Xero approved, Xero emails it once, and sending again emails nothing', async () => {
+      const invoice = await issuedFor(emailing);
+      const replay = xero.script([byReference([]), approved('e1'), readApproved('e1', invoice.reference), emailed('e1')]);
+      const res = await push([invoice.id]);
+      assert.equal(res.status, 200, JSON.stringify(res.body));
+      const [result] = res.body.invoices;
+      assert.equal(result.outcome, 'created');
+      assert.equal(result.email.state, 'sent');
+      assert.equal(res.body.summary.emailed, 1);
+      const [sent] = posts(replay);
+      assert.equal(sent.body.Invoices[0].Status, 'AUTHORISED');
+      assert.equal(posts(replay)[1].path, '/api.xro/2.0/Invoices/e1/Email');
+      const [row] = await pushRow(invoice.id);
+      assert.equal(row.send_mode, 'approve_and_email');
+      assert.equal(row.email_state, 'sent');
+
+      const again = xero.script([]);
+      const second = await push([invoice.id]);
+      assert.equal(second.body.invoices[0].outcome, 'already_in_xero');
+      assert.equal(second.body.invoices[0].email.state, 'sent');
+      assert.equal(again.calls.length, 0);
+    });
+
+    test('an email Xero refused is tried again on the next send; an unknown outcome is not', async () => {
+      const invoice = await issuedFor(emailing);
+      xero.script([byReference([]), approved('e2'), readApproved('e2', invoice.reference),
+        emailed('e2', { status: 400 })]);
+      const refused = await push([invoice.id]);
+      assert.equal(refused.body.invoices[0].outcome, 'created');
+      assert.equal(refused.body.invoices[0].email.state, 'failed');
+      assert.equal(refused.body.summary.emailProblems, 1);
+
+      xero.script([emailed('e2', { status: 503 })]);
+      const unknown = await push([invoice.id]);
+      assert.equal(unknown.body.invoices[0].email.state, 'unknown');
+
+      const none = xero.script([]);
+      const after = await push([invoice.id]);
+      assert.equal(after.body.invoices[0].email.state, 'unknown');
+      assert.equal(none.calls.length, 0);
+    });
+
+    test('other customers still get a Xero draft and no email', async () => {
+      const invoice = await issued();
+      const replay = xero.script([byReference([]), created('d1'), readBack('d1', { reference: invoice.reference })]);
+      const res = await push([invoice.id]);
+      assert.equal(res.body.invoices[0].outcome, 'created');
+      assert.equal(res.body.invoices[0].email, undefined);
+      assert.equal(posts(replay)[0].body.Invoices[0].Status, 'DRAFT');
+      assert.equal(posts(replay).length, 1);
+    });
+  });
+
+  test('an invoice drafted from a job that Flow\'s fresh copy of Xero cleared needs no live duplicate check', async () => {
+    const org = lab.organisation.id;
+    const now = new Date(xero.clock.at);
+    for (const resource of ['invoices', 'credit_notes', 'payments']) {
+      await handle.db.execute(sql`insert into xero_mirror_cursors (organisation_id, resource, passes, last_pass_finished_at)
+        values (${org}, ${resource}, 1, ${now}) on conflict (organisation_id, resource) do update set passes = 1, last_pass_finished_at = ${now}`);
+    }
+    const job = await observeJob(handle.db, org, {
+      sourceSystem: 'seazona', sourceJobRef: 'job-copy-1', caseRef: 'CASE-COPY-1', contactId: practice.id,
+      lines: [{ itemCode: 'CROWN', description: 'Crown', quantity: 1 }], observedAt: now,
+    });
+    await recordAccountingEvidence(handle.db, org, job.id, { state: 'not_found', actor: 'test', checkedAt: now });
+    const { invoice } = await draftInvoiceForObligation(handle.db, org, job.id, { liveCheck: async () => ({ state: 'not_found' }), actor: 'test', now });
+    await issueInvoice(handle.db, org, invoice.id, { issuedBy: 'user:test', issueDate: '2026-10-18' });
+    const replay = xero.script([created('c1'), readBack('c1', { reference: 'CASE-COPY-1' })]);
+    const res = await push([invoice.id]);
+    assert.equal(res.body.invoices[0].outcome, 'created', JSON.stringify(res.body));
+    assert.equal(replay.calls.filter((c) => c.method === 'GET' && c.path.endsWith('/Invoices')).length, 0);
   });
 });

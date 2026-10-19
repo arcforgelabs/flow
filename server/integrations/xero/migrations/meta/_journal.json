@@ -36,6 +36,13 @@
       "when": 1792388000000,
       "tag": "0004_xero_mirror",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1792406000000,
+      "tag": "0005_xero_send_modes",
+      "breakpoints": true
     }
   ]
 }

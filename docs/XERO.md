@@ -146,7 +146,10 @@ A sync and a batch of drafts for one organisation run one at a time
 ## Draft invoices
 
 Flow is the store of record; Xero gets a copy (`VISION.md`). An issued Flow
-invoice version goes to Xero as one draft sales invoice (`ACCREC`, `DRAFT`).
+invoice version goes to Xero as one sales invoice (`ACCREC`). The customer's
+send mode (`docs/INVOICING_RULES.md`) decides its status: a draft (`DRAFT`,
+the default) that a person approves in Xero, or an approved invoice
+(`AUTHORISED`) that Flow then asks Xero to email to the customer.
 
 ```mermaid
 flowchart TD
@@ -184,7 +187,9 @@ The rules:
   its number. The date is the issue date; the due date is the invoice's, or
   `XERO_DEFAULT_DUE_DAYS` later. With `XERO_INVOICE_NUMBER=flow` Xero gets
   Flow's number.
-- **Duplicates.** Before it creates, Flow asks Xero for invoices with the same
+- **Duplicates.** For an invoice Flow drafted from a job that its complete,
+  fresh copy of Xero showed has no invoice, Flow asks Xero nothing more.
+  Otherwise, before it creates, Flow asks Xero for invoices with the same
   reference. One for the same contact and total is the same work: Flow records
   it (`existing`) and sends nothing. One for the same contact at another total
   dated within 90 days is held, unless the person sends again with that
@@ -200,6 +205,11 @@ The rules:
 - **Read back.** After a create Flow reads the draft and compares contact,
   subtotal, tax, total, line count, reference and date with the document. A
   difference is recorded as `mismatch` for a person to check in Xero.
+- **Email.** In the `approve_and_email` send mode, after Flow reads back an
+  approved invoice that matches, it calls Xero's email action for it once
+  (`POST Invoices/{id}/Email`). The push records `email_state`: `sent`,
+  `failed` (Xero refused; sending again retries) or `unknown` (a person
+  checks Xero; Flow does not retry, because a repeat emails twice).
 - **One at a time.** A batch runs on the `writes` lane, after any sync for
   the same organisation. A daily-limit 429 stops the batch and says which
   invoices were not tried.

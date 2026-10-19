@@ -71,6 +71,13 @@
       "when": 1792404377371,
       "tag": "0009_pipeline_matcher",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1792407554981,
+      "tag": "0010_invoicing_rules",
+      "breakpoints": true
     }
   ]
 }

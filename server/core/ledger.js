@@ -8,8 +8,8 @@ import { createDraftInvoice } from './invoices.js';
 import { invoiceTotals, lineTotals } from './money.js';
 
 // The billing obligation ledger. One billable job in a work system is one
-// obligation. Its view (Ready, Pending, Held, Drafted, Invoiced, Paid, Review
-// required) comes only from the evidence stored on it, never from a fresh
+// obligation. Its view (In work, Ready, Pending, Held, Drafted, Invoiced,
+// Paid, Review required) comes only from the evidence stored on it, never from a fresh
 // guess, and each change of evidence is an event. To make a draft invoice is a
 // guarded transition that fails closed.
 
@@ -32,8 +32,11 @@ async function loadObligation(tx, organisationId, obligationId, { lock = false }
   return row;
 }
 
+// clock_timestamp, not now(): events written in one transaction keep their
+// order when they are read back by time.
 async function addEvent(tx, obligation, kind, actor, evidence = {}) {
   await tx.insert(obligationEvents).values({
+    createdAt: sql`clock_timestamp()`,
     organisationId: obligation.organisationId,
     obligationId: obligation.id,
     kind,
@@ -110,6 +113,7 @@ export async function observeJob(db, organisationId, job) {
       practitioner: job.practitioner ?? null,
       shippedOn: job.shippedOn ?? null,
       jobDate: job.jobDate ?? null,
+      sourceStatus: job.sourceStatus ?? null,
       lines,
       lineFingerprint: fingerprint(lines),
       ...invoiceTotals(lines),
@@ -138,7 +142,9 @@ export async function observeJob(db, organisationId, job) {
     const changed = ['sourceInvoiceRef', 'caseRef', 'contactId', 'practitioner', 'shippedOn', 'lineFingerprint', 'totalCents']
       .filter((key) => String(existing[key] ?? '') !== String(facts[key] ?? ''));
     if (!changed.length) {
-      return update(tx, existing, { sourceSeenAt: seenAt, mappingComplete: facts.mappingComplete, lines, jobDate: facts.jobDate });
+      return update(tx, existing, {
+        sourceSeenAt: seenAt, mappingComplete: facts.mappingComplete, lines, jobDate: facts.jobDate, sourceStatus: facts.sourceStatus,
+      });
     }
     const fields = { ...facts, sourceSeenAt: seenAt };
     if (existing.invoiceId && changed.some((key) => ['lineFingerprint', 'totalCents', 'contactId'].includes(key))) {
@@ -313,6 +319,20 @@ export async function recordWritebackResult(db, organisationId, writebackId, { o
   });
 }
 
+// Marks a job ready to invoice, or back in work. `actor` is a person or the
+// automation that decided. A job with an invoice stays as it is.
+export async function setReady(db, organisationId, obligationId, { ready = true, actor }) {
+  requireActor(actor);
+  return db.transaction(async (tx) => {
+    const obligation = await loadObligation(tx, organisationId, obligationId, { lock: true });
+    if (Boolean(obligation.readyAt) === ready) return obligation;
+    if (!ready && obligation.invoiceId) throw new FlowError('invalid', 'the job has an invoice already');
+    const row = await update(tx, obligation, ready ? { readyAt: sql`now()`, readyBy: actor } : { readyAt: null, readyBy: null });
+    await addEvent(tx, row, ready ? 'ready' : 'in_work', actor, {});
+    return row;
+  });
+}
+
 // Puts an obligation on hold, sends it to review, or releases it.
 export async function setHold(db, organisationId, obligationId, { holdState, reason = null, actor }) {
   requireActor(actor);
@@ -329,7 +349,9 @@ export async function setHold(db, organisationId, obligationId, { holdState, rea
 }
 
 // The obligation's view and the reasons for it, from its stored evidence only.
-export function ledgerView(obligation, { now = new Date(), sourceMaxAgeMs = SOURCE_MAX_AGE_MS } = {}) {
+// `accounting` is false while no accounting system is connected: Flow's own
+// records are then the only check, so a job nobody checked in one can draft.
+export function ledgerView(obligation, { now = new Date(), sourceMaxAgeMs = SOURCE_MAX_AGE_MS, accounting = true } = {}) {
   const o = obligation;
   if (o.holdState === 'review') return { view: 'review_required', reasons: [o.holdReason ?? 'sent to review'] };
   if (['ambiguous', 'conflict'].includes(o.accountingState)) {
@@ -344,15 +366,20 @@ export function ledgerView(obligation, { now = new Date(), sourceMaxAgeMs = SOUR
     return { view: 'invoiced', reasons: [`invoice ${o.accountingRef} is ${o.accountingState.replace('_', ' ')}`] };
   }
   if (o.invoiceId || o.accountingState === 'drafted') return { view: 'drafted', reasons: ['a draft invoice exists'] };
-  const reasons = draftBlockers(o, { now, sourceMaxAgeMs });
+  const reasons = draftBlockers(o, { now, sourceMaxAgeMs, accounting });
+  // Flow's own stage: a job is in work until a person or an automation marks
+  // it ready to invoice (setReady).
+  if (!o.readyAt) return { view: 'in_work', reasons: ['the job is not marked ready to invoice', ...reasons] };
   return reasons.length ? { view: 'pending', reasons } : { view: 'ready', reasons: ['all checks pass'] };
 }
 
-function draftBlockers(o, { now, sourceMaxAgeMs }) {
+function draftBlockers(o, { now, sourceMaxAgeMs, accounting = true }) {
   const reasons = [];
   if (o.holdState !== 'none') reasons.push(`the job is ${o.holdState}`);
   if (o.invoiceId) reasons.push('the job already has an invoice');
-  if (o.accountingState === 'unknown') reasons.push('the accounting system was not checked');
+  if (o.accountingState === 'unknown') {
+    if (accounting) reasons.push('the accounting system was not checked');
+  }
   else if (o.accountingState !== 'not_found') reasons.push(`the accounting system reports ${o.accountingState}`);
   if (!o.mappingComplete) reasons.push('a line does not map to a price item');
   if (!o.contactId) reasons.push('the job has no customer contact');
@@ -365,15 +392,17 @@ function draftBlockers(o, { now, sourceMaxAgeMs }) {
 // the write, finds no invoice for the job. Any doubt refuses the draft, and
 // the refusal is recorded.
 export async function draftInvoiceForObligation(db, organisationId, obligationId, {
-  liveCheck, actor, now = new Date(), sourceMaxAgeMs = SOURCE_MAX_AGE_MS,
+  liveCheck, actor, now = new Date(), sourceMaxAgeMs = SOURCE_MAX_AGE_MS, dueDate = null,
 }) {
   requireActor(actor);
-  if (typeof liveCheck !== 'function') throw new FlowError('invalid', 'liveCheck is required');
+  // A null liveCheck says no accounting system is connected (ledgerView).
+  if (liveCheck !== null && typeof liveCheck !== 'function') throw new FlowError('invalid', 'liveCheck must be a function, or null with no accounting system');
+  const accounting = liveCheck !== null;
   const outcome = await db.transaction(async (tx) => {
     const obligation = await loadObligation(tx, organisationId, obligationId, { lock: true });
-    const reasons = draftBlockers(obligation, { now, sourceMaxAgeMs });
+    const reasons = draftBlockers(obligation, { now, sourceMaxAgeMs, accounting });
     let live = null;
-    if (!reasons.length) {
+    if (!reasons.length && accounting) {
       try {
         live = await liveCheck(obligation);
       } catch (error) {
@@ -388,11 +417,15 @@ export async function draftInvoiceForObligation(db, organisationId, obligationId
     const invoice = await createDraftInvoice(tx, organisationId, {
       contactId: obligation.contactId,
       reference: obligation.caseRef ?? obligation.sourceJobRef,
+      dueDate,
       lines: obligation.lines.map(({ priceItemId, description, quantity, unitAmountCents, taxCode }) => (
         { priceItemId, description, quantity, unitAmountCents, taxCode }
       )),
     });
-    const row = await update(tx, obligation, { invoiceId: invoice.id, accountingCheckedAt: now });
+    // Drafting the invoice says the job is ready, whoever asked.
+    const row = await update(tx, obligation, {
+      invoiceId: invoice.id, accountingCheckedAt: now, ...(obligation.readyAt ? {} : { readyAt: now, readyBy: actor }),
+    });
     await addEvent(tx, row, 'drafted', actor, { invoiceId: invoice.id, totalCents: invoice.totalCents, live });
     return { obligation: row, invoice };
   });

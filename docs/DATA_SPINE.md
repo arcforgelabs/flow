@@ -185,6 +185,6 @@ row is dropped.
 | Phase | What | Issues |
 | --- | --- | --- |
 | 2 | Xero mirror of invoices, credit notes and payments with history, imported as a job when Xero is connected (built: `docs/XERO.md`, "The mirror"); links from an earlier installation imported at start (built: `prior_links`) | #54, #45 |
-| 3 | The pipeline on the job queue, with no writes. Customers, jobs and the matcher are built (`docs/JOB_INVOICE_LINKS.md`) | #58 |
+| 3 | The pipeline on the job queue, with no writes. Customers, jobs and the matcher are built (`docs/JOB_INVOICE_LINKS.md`), and drafts by rule (`docs/INVOICING_RULES.md`) | #58 |
 | 4 | Writes through the outbox, each behind its own switch | #39 |
 | 5 | Screens: review queue, accounting usage, price differences, duplicates | #2, #46, #47 |

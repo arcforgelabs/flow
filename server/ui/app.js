@@ -10,6 +10,8 @@ import { getAppearance, onAppearanceChange, setAppearance, loadFonts } from '/as
 import { flowClerkAppearance } from '/assets/ui/clerk-appearance.js';
 import { ACCENT_PRESETS, normalizeAccent, THEME_FAMILIES, tokensFor } from '/assets/theme/themes.js';
 import { renderInvoice, renderInvoiceList } from '/assets/ui/invoicing.js';
+import { automationSection } from '/assets/ui/automations.js';
+import { renderInvoicingSettings, sendModeSection } from '/assets/ui/invoicing-settings.js';
 import { renderJobs } from '/assets/ui/jobs.js';
 import { startMonitoring } from '/assets/ui/monitoring.js';
 
@@ -191,6 +193,7 @@ let me = null;
 const VIEWS = {
   jobs: { label: 'Jobs', icon: 'jobs', group: 'Work', render: (main) => renderJobs(main, ui()) },
   invoices: { label: 'Invoices', icon: 'invoices', group: 'Work', render: (main, id) => (id ? renderInvoice(main, ui(), id) : renderInvoiceList(main, ui())) },
+  'invoicing-settings': { label: 'Invoicing', icon: 'invoices', group: 'Settings', render: (main) => renderInvoicingSettings(main, ui()) },
   people: { label: 'People', icon: 'people', group: 'Settings', ownerOnly: true, render: renderPeople },
   integrations: { label: 'Integrations', icon: 'plug', group: 'Settings', ownerOnly: true, render: (main, id) => (id ? renderIntegration(main, id) : renderIntegrations(main)) },
   account: { label: 'Account', icon: 'person', group: 'Settings', render: renderAccount },
@@ -634,6 +637,8 @@ async function renderIntegration(main, id) {
           !body.secretsKey ? notice('Flow has no secrets key, so it cannot store a client secret. Ask whoever hosts Flow to set FLOW_SECRETS_KEY (64 hex characters), then restart Flow.', 'warn', 'No secrets key.') : null,
           current.state === 'failed' && current.error ? notice(current.error, 'danger', 'It could not start.') : null,
           current.id === 'xero' && current.state === 'ready' ? h('section', { class: 'fx-int-section' }, xeroConnection(body.organisations, canChange)) : null,
+          current.id === 'seazona' ? h('section', { class: 'fx-int-section fx-card', style: { padding: '8px 20px 16px' } }, automationSection(ui(), 'seazona', 'Ready to invoice')) : null,
+          current.id === 'xero' ? h('section', { class: 'fx-int-section fx-card', style: { padding: '8px 20px 16px' } }, sendModeSection(ui())) : null,
           guide ? h('section', { class: 'fx-int-section' },
             h('h2', { class: 'fx-int-section__title' }, 'Set up'),
             h('ol', { class: 'fx-steps' }, guide.steps.map((step) => h('li', {}, step))),

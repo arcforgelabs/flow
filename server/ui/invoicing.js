@@ -425,20 +425,24 @@ function issuedView(invoice, ui, context, redraw) {
   ];
 }
 
-// Send to Xero: a draft in Xero from the issued invoice (POST /api/xero/invoices/push).
+// Send to Xero (POST /api/xero/invoices/push). The customer's send mode
+// (Settings, Invoicing) decides what Xero gets: a draft that a person approves
+// there, or an approved invoice that Xero emails to the customer.
 function sendToXero(invoice, ui, context) {
   const { h, flow, toast } = ui;
   const organisationId = context.organisations[0]?.id;
   if (!organisationId || !context.xero) return null;
-  return h('button', {
+  const button = h('button', {
     class: 'fx-btn fx-btn--primary', type: 'button',
-    onclick: async (event) => {
-      const button = event.currentTarget;
+    onclick: async () => {
       button.disabled = true;
       try {
         const res = await flow('/api/xero/invoices/push', { method: 'POST', body: JSON.stringify({ organisationId, invoiceIds: [invoice.id] }) });
         const result = res.invoices?.[0];
-        if (['created', 'reconciled', 'existing'].includes(result?.outcome)) toast(`${invoice.number} is in Xero as a draft.`, 'success');
+        const email = result?.email;
+        if (email && ['failed', 'unknown'].includes(email.state)) toast(email.error, 'danger');
+        else if (email?.state === 'sent') toast(`${invoice.number} is approved in Xero, and Xero emailed it to the customer.`, 'success');
+        else if (['created', 'reconciled', 'existing'].includes(result?.outcome)) toast(`${invoice.number} is in Xero as a draft.`, 'success');
         else if (result?.outcome === 'already_in_xero') toast(`Xero already has ${invoice.number}.`, 'info');
         else toast(result?.error?.message ?? 'Xero did not take it.', 'danger');
       } catch (error) {
@@ -448,4 +452,11 @@ function sendToXero(invoice, ui, context) {
       }
     },
   }, 'Send to Xero');
+  // The preview reads only Flow's copy of Xero: it costs no Xero calls.
+  flow('/api/xero/invoices/preview', { method: 'POST', body: JSON.stringify({ organisationId, invoiceIds: [invoice.id] }) })
+    .then((res) => {
+      if (res.invoices?.[0]?.sendMode === 'approve_and_email') button.textContent = 'Send to Xero and email';
+    })
+    .catch(() => {});
+  return button;
 }

@@ -1,13 +1,21 @@
 import { createHash } from 'node:crypto';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { getInvoice, listInvoiceVersions } from '../../core/invoices.js';
+import { sendModeFor } from '../../core/invoicing-rules.js';
 import { contacts as flowContacts, priceItems } from '../../db/schema.js';
 import { itemsByCode, lastSuccessfulSyncAt, matchContact, normaliseName } from './catalogue.js';
 import { xeroError } from './client.js';
 import { withXeroLane } from './governor.js';
+import { mirrorState } from './lookup.js';
 
-// Issued Flow invoices become Xero draft invoices (ACCREC, DRAFT). The lab
-// checks and approves them in Xero.
+// Issued Flow invoices go to Xero. How depends on the customer's send mode
+// (server/core/invoicing-rules.js):
+// - accounting_draft (the default): a Xero draft (ACCREC, DRAFT). The lab
+//   approves and sends it in Xero.
+// - approve_and_email: issuing in Flow was the approval. Flow sends it
+//   approved (AUTHORISED), then asks Xero to email it to the contact with the
+//   organisation's own template.
+// Either way the mirror (mirror.js) reads Xero's status back to Flow.
 //
 // The rules, as in the earlier codebase:
 // - What Flow sends is the issued version's document, exactly. A sent
@@ -19,7 +27,12 @@ import { withXeroLane } from './governor.js';
 // - Before it creates, Flow asks Xero for invoices with the same reference.
 //   One for the same contact and total is the same work: Flow records it and
 //   creates nothing. One for the same contact at another total within 90
-//   days is held for a person, unless they chose to send it anyway.
+//   days is held for a person, unless they chose to send it anyway. Flow skips
+//   this call for an invoice it drafted from a job when its complete, fresh
+//   copy of Xero showed no invoice for that job (docs/JOB_INVOICE_LINKS.md).
+// - Xero's email action is not idempotent. Flow records `sending` before it
+//   calls, and calls again only after Xero refused (`failed`), never after an
+//   unknown outcome: a person checks Xero then.
 // - The request, with its Idempotency-Key, is stored before it leaves. An
 //   uncertain outcome (timeout, 5xx) is resolved later: within Xero's
 //   six-minute idempotency window Flow repeats the same request with the same
@@ -103,7 +116,7 @@ function trackingFor(settings, contact) {
 }
 
 // The Xero draft for a document, and what stops it.
-export function buildDraft(document, { settings, contact, items }) {
+export function buildDraft(document, { settings, contact, items, sendMode = 'accounting_draft' }) {
   const problems = [];
   const tracking = trackingFor(settings, contact);
   const lines = document.lines.map((line) => {
@@ -124,7 +137,7 @@ export function buildDraft(document, { settings, contact, items }) {
   const issueDate = document.issueDate;
   const draft = {
     Type: 'ACCREC',
-    Status: 'DRAFT',
+    Status: sendMode === 'approve_and_email' ? 'AUTHORISED' : 'DRAFT',
     Contact: contact ? { ContactID: contact.xeroContactId } : { Name: document.contact.name },
     ...(issueDate ? { Date: issueDate, DueDate: document.dueDate ?? addDays(issueDate, settings.defaultDueDays) } : {}),
     Reference: xeroReference(document),
@@ -168,6 +181,8 @@ function mapPush(row) {
     verified: row.verified,
     error: row.error_code ? { code: row.error_code, message: row.error_message } : null,
     attempts: row.attempts,
+    sendMode: row.send_mode ?? 'accounting_draft',
+    email: row.email_state ? { state: row.email_state, error: row.email_error ?? null, at: row.emailed_at ?? null } : null,
     pushedBy: row.pushed_by,
     firstDispatchedAt: row.first_dispatched_at,
     lastDispatchedAt: row.last_dispatched_at,
@@ -240,8 +255,12 @@ async function previewOne(db, runtime, organisationId, invoiceId) {
   if (match.state === 'missing') problems.push(problem('xero_contact_missing', `No Xero contact is named "${document.contact.name}". Add it in Xero (Flow never creates Xero contacts), then sync.`));
   if (match.state === 'ambiguous') problems.push(problem('xero_contact_ambiguous', `More than one Xero contact is named "${document.contact.name}". Merge or rename them in Xero, then sync.`));
   const items = await itemsByCode(db, organisationId, document.lines.map((l) => l.itemCode));
-  const { draft, problems: lineProblems } = buildDraft(document, { settings: runtime.settings, contact: match.contact, items });
+  const sendMode = await sendModeFor(db, organisationId, invoice.contactId);
+  const { draft, problems: lineProblems } = buildDraft(document, { settings: runtime.settings, contact: match.contact, items, sendMode });
   problems.push(...lineProblems);
+  if (sendMode === 'approve_and_email' && match.state === 'matched' && !match.contact.email) {
+    problems.push(problem('xero_contact_no_email', `The Xero contact "${match.contact.name}" has no email address, so Xero cannot email the invoice. Add one in Xero, then sync.`, { blocking: false }));
+  }
 
   const pushes = await listPushes(db, organisationId, invoiceId);
   const current = version ? pushes.find((p) => p.version === version) : null;
@@ -259,6 +278,7 @@ async function previewOne(db, runtime, organisationId, invoiceId) {
     invoiceId,
     number: document.number,
     version,
+    sendMode,
     state,
     problems,
     contact: { state: match.state, xeroContactId: match.contact?.xeroContactId ?? null, name: match.contact?.name ?? null },
@@ -316,6 +336,8 @@ function summarise(results) {
       mismatched: count('mismatch'),
       ambiguous: count('ambiguous'),
       failed: count('failed') + count('not_tried'),
+      emailed: results.filter((r) => r.email?.state === 'sent').length,
+      emailProblems: results.filter((r) => r.email && ['failed', 'unknown'].includes(r.email.state)).length,
     },
     invoices: results,
   };
@@ -347,7 +369,8 @@ async function pushOne(db, runtime, client, organisationId, invoiceId, { pushedB
   const pushes = await listPushes(db, organisationId, invoiceId);
   const current = pushes.find((p) => p.version === version);
   if (current && SETTLED.has(current.state)) {
-    return { invoiceId, version, outcome: 'already_in_xero', xero: current.xero };
+    const email = await emailIfDue(db, client, current);
+    return { invoiceId, version, outcome: 'already_in_xero', xero: current.xero, ...(email ? { email } : {}) };
   }
   if (current?.state === 'mismatch') {
     return { invoiceId, version, outcome: 'mismatch', xero: current.xero, error: current.error };
@@ -377,14 +400,18 @@ async function pushOne(db, runtime, client, organisationId, invoiceId, { pushedB
       { status: 409 });
   }
   const items = await itemsByCode(db, organisationId, document.lines.map((l) => l.itemCode));
-  const { draft, problems } = buildDraft(document, { settings: runtime.settings, contact: match.contact, items });
+  const sendMode = await sendModeFor(db, organisationId, invoice.contactId);
+  const { draft, problems } = buildDraft(document, { settings: runtime.settings, contact: match.contact, items, sendMode });
   if (problems.length) throw xeroError(problems[0].code, problems.map((p) => p.message).join(' '), { status: 409 });
 
   // Live duplicate check: invoices in Xero with this reference, made by Flow
-  // or by hand.
+  // or by hand. Not needed when Flow's own copy of Xero already answered it
+  // for the job this invoice bills.
   const earlierIds = new Set(pushes.map((p) => p.xero?.invoiceId).filter(Boolean));
-  const sameReference = (await client.findInvoicesByReference(draft.Reference))
-    .filter((inv) => !GONE.has(inv.Status) && !earlierIds.has(inv.InvoiceID));
+  const sameReference = (await copyShowsNoInvoice(db, runtime, organisationId, invoiceId))
+    ? []
+    : (await client.findInvoicesByReference(draft.Reference))
+      .filter((inv) => !GONE.has(inv.Status) && !earlierIds.has(inv.InvoiceID));
   const sameContact = sameReference.filter((inv) => inv.Contact?.ContactID === match.contact.xeroContactId);
   if (!allowExisting) {
     const same = sameContact.find((inv) => cents(inv.Total) === document.totalCents);
@@ -406,9 +433,9 @@ async function pushOne(db, runtime, client, organisationId, invoiceId, { pushedB
   const preExisting = sameReference.map((inv) => inv.InvoiceID);
   const { rows } = await db.execute(sql`
     insert into xero_invoice_pushes (organisation_id, invoice_id, version, state, idempotency_key, request_body, body_hash, pre_existing_ids, pushed_by,
-      first_dispatched_at, last_dispatched_at)
+      first_dispatched_at, last_dispatched_at, send_mode, email_state)
     values (${organisationId}, ${invoiceId}, ${version}, 'dispatching', ${key}, ${body}, ${bodyHash}, ${JSON.stringify(preExisting)}::jsonb, ${pushedBy},
-      ${new Date(runtime.now())}, ${new Date(runtime.now())})
+      ${new Date(runtime.now())}, ${new Date(runtime.now())}, ${sendMode}, ${sendMode === 'approve_and_email' ? 'pending' : null})
     on conflict (invoice_id, version) do nothing returning *`);
   if (!rows.length) throw xeroError('xero_push_in_progress', 'This invoice is being sent to Xero already. Check again shortly.', { status: 409 });
   return dispatch(db, client, mapPush(rows[0]), document, { fresh: true });
@@ -481,7 +508,50 @@ async function verify(db, client, push, draft, document, created, outcome) {
     return { invoiceId: push.invoiceId, version: push.version, outcome: 'mismatch', xero: settled.xero, error: settled.error };
   }
   const settled = await settle(db, push.id, { state: 'created', xeroInvoiceId: live.InvoiceID, xeroNumber: live.InvoiceNumber, xeroStatus: live.Status, verified: true });
-  return { invoiceId: push.invoiceId, version: push.version, outcome, verified: true, xero: settled.xero };
+  const email = await emailIfDue(db, client, settled);
+  return { invoiceId: push.invoiceId, version: push.version, outcome, verified: true, xero: settled.xero, ...(email ? { email } : {}) };
+}
+
+// ---------------------------------------------------------------------------
+// Email
+
+// Xero errors that prove it sent no email: it refused the request.
+const emailRefused = (error) => error.code === 'xero_validation_failed'
+  || (error.code === 'xero_api_error' && error.status >= 400 && error.status < 500);
+
+// Asks Xero to email an approved invoice that Flow sent and checked, once.
+// Answers the email's state, or null when the push sends no email.
+async function emailIfDue(db, client, push) {
+  if (push.sendMode !== 'approve_and_email' || !push.email) return null;
+  if (!push.verified || !push.xero?.invoiceId || !['pending', 'failed'].includes(push.email.state)) return push.email;
+  // Claim the email, so two pushes never both send it.
+  const { rows } = await db.execute(sql`update xero_invoice_pushes set email_state = 'sending', updated_at = now()
+    where id = ${push.id} and email_state in ('pending', 'failed') returning id`);
+  if (!rows.length) return { state: 'sending', error: null, at: null };
+  try {
+    await client.emailInvoice(push.xero.invoiceId);
+  } catch (error) {
+    const state = emailRefused(error) ? 'failed' : 'unknown';
+    const message = state === 'failed'
+      ? `Xero did not email the invoice: ${error.message}`
+      : 'Flow does not know whether Xero emailed the invoice. Check the invoice in Xero before you send it again.';
+    await db.execute(sql`update xero_invoice_pushes set email_state = ${state}, email_error = ${message}, updated_at = now() where id = ${push.id}`);
+    if (error.code === 'xero_rate_limited' || error.code === 'xero_reconnect_needed') throw error;
+    return { state, error: message, at: null };
+  }
+  const { rows: [done] } = await db.execute(sql`update xero_invoice_pushes set email_state = 'sent', email_error = null, emailed_at = now(), updated_at = now()
+    where id = ${push.id} returning emailed_at`);
+  return { state: 'sent', error: null, at: done.emailed_at };
+}
+
+// Flow drafted this invoice from a job, and its complete, fresh copy of Xero
+// showed no invoice for that job: Xero needs no live duplicate check.
+async function copyShowsNoInvoice(db, runtime, organisationId, invoiceId) {
+  const { rows: [job] } = await db.execute(sql`select accounting_state from billing_obligations
+    where organisation_id = ${organisationId} and invoice_id = ${invoiceId}`);
+  if (job?.accounting_state !== 'not_found') return false;
+  const mirror = await mirrorState(db, organisationId, { now: new Date(runtime.now()) });
+  return mirror.complete && mirror.fresh;
 }
 
 // An earlier attempt whose outcome is unknown.

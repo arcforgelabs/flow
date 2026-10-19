@@ -4,7 +4,12 @@ import { FlowError } from '../core/errors.js';
 import {
   createDraftInvoice, getInvoice, issueInvoice, listInvoiceVersions, reviseInvoice, updateDraftInvoice, voidInvoice,
 } from '../core/invoices.js';
-import { draftInvoiceForObligation, listObligations } from '../core/ledger.js';
+import { listAutomations, saveAutomation, workStatuses } from '../core/automations.js';
+import {
+  customerBillingByContact, effectiveSettings, INVOICING_DEFAULTS, readCustomerBilling, readInvoicingSettings, ruleBlockers,
+  saveCustomerBilling, saveInvoicingSettings,
+} from '../core/invoicing-rules.js';
+import { draftInvoiceForObligation, listObligations, setReady } from '../core/ledger.js';
 import {
   billingObligations, contacts, invoices, INVOICE_STATUSES, organisations, priceItems, TAX_CODES,
 } from '../db/schema.js';
@@ -22,7 +27,16 @@ import {
 //   POST  /invoices/:id/void          owner or admin
 //   GET   /contacts?q=&limit=         customers, by name
 //   GET   /price-items?q=             the price list, by code
-//   GET   /jobs?view=&limit=          billable jobs (the obligation ledger), with counts by view
+//   GET   /jobs?view=&limit=          billable jobs (the obligation ledger), with counts by view;
+//                                     a job with no invoice lists the invoicing rules it waits on
+//   GET   /settings                   the invoicing rules (server/core/invoicing-rules.js)
+//   PUT   /settings                   owner or admin: change some of them
+//   GET   /automations?place=         Flow's routines, each on or off (server/core/automations.js)
+//   PUT   /automations/:key           owner or admin: { enabled, config }
+//   GET   /work-statuses              the work system's job statuses, with job counts
+//   GET   /contacts/:id/billing       one customer's own invoicing settings
+//   PUT   /contacts/:id/billing       owner or admin: change them (null takes the organisation's)
+//   POST  /jobs/:id/ready             { ready }: mark a job ready to invoice, or back in work
 //   POST  /jobs/:id/draft             owner or admin: a job's draft invoice, after a live
 //                                     check that the accounting system holds none
 //
@@ -34,7 +48,7 @@ import {
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
-const VIEWS = ['ready', 'pending', 'drafted', 'invoiced', 'paid', 'held', 'review_required'];
+const VIEWS = ['in_work', 'ready', 'pending', 'drafted', 'invoiced', 'paid', 'held', 'review_required'];
 const MAX_LINES = 200;
 const MAX_TEXT = 500;
 // Each line's amount must fit the database's integer columns with room for
@@ -320,7 +334,7 @@ export function createInvoicingRouter({ db, personAuth, log = console, liveCheck
     const view = text(req.query.view);
     if (view && !VIEWS.includes(view)) throw invalid(`view must be one of ${VIEWS.join(', ')}`);
     const limit = limitOf(req.query.limit, 200, 500);
-    const all = await listObligations(db, organisationId);
+    const all = await listObligations(db, organisationId, { accounting: Boolean(liveCheckFor(organisationId)) });
     const counts = Object.fromEntries(VIEWS.map((v) => [v, 0]));
     for (const entry of all) counts[entry.view] += 1;
     const listed = (view ? all.filter((entry) => entry.view === view) : all).slice(0, limit);
@@ -338,6 +352,12 @@ export function createInvoicingRouter({ db, personAuth, log = console, liveCheck
     ]);
     const nameOf = new Map(names.map((c) => [c.id, c.name]));
     const invoiceOf = new Map(numbers.map((i) => [i.id, i]));
+    const settings = await readInvoicingSettings(db, organisationId);
+    const customers = await customerBillingByContact(db, organisationId, contactIds);
+    // The invoicing rules a job with no invoice waits on, for every view a
+    // draft can still come from.
+    const waitingFor = (o, v) => (o.invoiceId || !['in_work', 'ready', 'pending', 'held'].includes(v)
+      ? [] : ruleBlockers(o, effectiveSettings(settings, customers.get(o.contactId))));
     res.json({
       ok: true,
       jobs: listed.map(({ obligation: { lineFingerprint: _fingerprint, organisationId: _org, ...o }, view: v, reasons }) => ({
@@ -347,6 +367,7 @@ export function createInvoicingRouter({ db, personAuth, log = console, liveCheck
         invoiceStatus: invoiceOf.get(o.invoiceId)?.status ?? null,
         view: v,
         reasons,
+        waitingFor: waitingFor(o, v),
       })),
       counts,
     });
@@ -355,13 +376,69 @@ export function createInvoicingRouter({ db, personAuth, log = console, liveCheck
   router.post('/jobs/:id/draft', ...manager, handle(log, async (req, res) => {
     const obligationId = pathId(req.params.id, 'job');
     const organisationId = await organisationOf(req);
-    const liveCheck = liveCheckFor(organisationId);
-    if (typeof liveCheck !== 'function') {
-      throw new FlowError('live_check_unavailable', 'Flow drafts a job\'s invoice only after checking that the accounting system holds none for it. Turn on and connect Xero first.');
-    }
+    // With no accounting system connected, Flow's own records are the check.
+    const liveCheck = liveCheckFor(organisationId) ?? null;
     const { invoice } = await draftInvoiceForObligation(db, organisationId, obligationId, { liveCheck, actor: `person:${req.person.id}` });
     log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} drafted invoice ${invoice.id} from job ${obligationId}`);
     res.status(201).json({ ok: true, invoice: await invoiceDetail(db, organisationId, invoice.id) });
+  }));
+
+  router.post('/jobs/:id/ready', ...signedIn, handle(log, async (req, res) => {
+    const obligationId = pathId(req.params.id, 'job');
+    const organisationId = await organisationOf(req);
+    const ready = req.body?.ready ?? true;
+    if (typeof ready !== 'boolean') throw invalid('ready must be true or false');
+    const job = await setReady(db, organisationId, obligationId, { ready, actor: `person:${req.person.id}` });
+    res.json({ ok: true, job: { id: job.id, readyAt: job.readyAt, readyBy: job.readyBy } });
+  }));
+
+  router.get('/automations', ...signedIn, handle(log, async (req, res) => {
+    const organisationId = await organisationOf(req);
+    const place = typeof req.query.place === 'string' ? req.query.place : null;
+    const list = await listAutomations(db, organisationId);
+    res.json({ ok: true, automations: place ? list.filter((a) => a.place === place) : list });
+  }));
+
+  router.get('/work-statuses', ...signedIn, handle(log, async (req, res) => {
+    const organisationId = await organisationOf(req);
+    res.json({ ok: true, statuses: await workStatuses(db, organisationId) });
+  }));
+
+  router.put('/automations/:key', ...manager, handle(log, async (req, res) => {
+    const organisationId = await organisationOf(req);
+    const { organisationId: _named, ...changes } = req.body ?? {};
+    const automation = await saveAutomation(db, organisationId, String(req.params.key), changes, { personId: req.person.id });
+    log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} changed automation ${automation.key}`);
+    res.json({ ok: true, automation });
+  }));
+
+  router.get('/settings', ...signedIn, handle(log, async (req, res) => {
+    const organisationId = await organisationOf(req);
+    res.json({ ok: true, settings: await readInvoicingSettings(db, organisationId), defaults: INVOICING_DEFAULTS });
+  }));
+
+  router.put('/settings', ...manager, handle(log, async (req, res) => {
+    const organisationId = await organisationOf(req);
+    const { organisationId: _named, ...changes } = req.body ?? {};
+    const settings = await saveInvoicingSettings(db, organisationId, changes, { personId: req.person.id });
+    log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} changed invoicing settings ${Object.keys(changes).join(', ')}`);
+    res.json({ ok: true, settings, defaults: INVOICING_DEFAULTS });
+  }));
+
+  router.get('/contacts/:id/billing', ...signedIn, handle(log, async (req, res) => {
+    const contactId = pathId(req.params.id, 'customer');
+    const organisationId = await organisationOf(req);
+    const [billing, settings] = await Promise.all([readCustomerBilling(db, organisationId, contactId), readInvoicingSettings(db, organisationId)]);
+    res.json({ ok: true, billing, effective: effectiveSettings(settings, billing) });
+  }));
+
+  router.put('/contacts/:id/billing', ...manager, handle(log, async (req, res) => {
+    const contactId = pathId(req.params.id, 'customer');
+    const organisationId = await organisationOf(req);
+    const { organisationId: _named, ...changes } = req.body ?? {};
+    const billing = await saveCustomerBilling(db, organisationId, contactId, changes, { personId: req.person.id });
+    log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} changed billing settings of customer ${contactId}`);
+    res.json({ ok: true, billing, effective: effectiveSettings(await readInvoicingSettings(db, organisationId), billing) });
   }));
 
   // A body that is not JSON, or too large, answers like every other refusal.
