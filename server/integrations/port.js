@@ -14,6 +14,7 @@ export const CAPABILITIES = Object.freeze([
   'pushInvoice', // send an issued invoice; the Flow record id is the idempotency key
   'pushBill', // send an approved bill; the Flow record id is the idempotency key
   'pullPayments', // payments since a cursor, matched to invoices and bills
+  'checkInvoice', // does the accounting system hold an invoice for a billable job? (the ledger's liveCheck)
   'health', // connection state for Settings
 ]);
 

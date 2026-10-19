@@ -2,7 +2,7 @@ import { fileURLToPath } from 'node:url';
 import { sql } from 'drizzle-orm';
 import { pushInvoice } from './drafts.js';
 import { createImportWorker } from './import.js';
-import { readPayments } from './ledger.js';
+import { readPayments, xeroLiveCheck } from './ledger.js';
 import { createXeroRouter } from './routes.js';
 import { createXeroRuntime, requireXeroSettings } from './runtime.js';
 import { writesAllowed } from './settings.js';
@@ -88,6 +88,9 @@ export function createXeroAdapter({ runtime: given = null } = {}) {
       // Sales invoice payments changed since `since` (ledger.js). The answer's
       // cursor is the next `since`.
       pullPayments: ({ organisationId, since }) => readPayments(database, current(), organisationId, { since: new Date(since) }),
+      // Xero's invoice for one billable job, looked up live (ledger.js): the
+      // `liveCheck` for draftInvoiceForObligation.
+      checkInvoice: ({ organisationId, obligation }) => xeroLiveCheck(database, current(), organisationId)(obligation),
     },
     routes: ({ db, personAuth, log, messagePage }) => createXeroRouter({ db, personAuth, runtime: current(), log, messagePage }),
   };

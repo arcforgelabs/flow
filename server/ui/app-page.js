@@ -12,11 +12,6 @@ const BODY = `<div class="fx-app">
     <div class="fx-auth__brand">
       <span class="fx-brand fx-brand--large">${FLOW_MARK}<span>Flow</span></span>
       <h1 class="fx-auth__title" id="auth-title">Every job billed, every invoice paid.</h1>
-      <ul class="fx-auth__points">
-        <li>Jobs come in from the lab system.</li>
-        <li>Invoices go out to Xero.</li>
-        <li>Payments come back and close the job.</li>
-      </ul>
     </div>
     <div class="fx-auth__form">
       <p class="fx-auth__note" id="sign-in-note"></p>
@@ -40,20 +35,20 @@ const BODY = `<div class="fx-app">
   </section>
 
   <div class="fx-state-signed-in fx-shell">
-    <header class="fx-top">
+    <aside class="fx-side">
       <a class="fx-brand" href="/">${FLOW_MARK}<span>Flow</span></a>
       <nav class="fx-nav" id="nav" aria-label="Flow"></nav>
-      <div class="fx-top__end">
+      <div class="fx-side__end">
+        <div id="user-button" class="fx-side__user"></div>
         <button type="button" class="fx-btn fx-btn--ghost fx-btn--icon fx-mode-toggle" data-mode-toggle>Light or dark</button>
-        <div id="user-button" class="fx-top__user"></div>
       </div>
-    </header>
+    </aside>
     <main id="main" class="fx-main" tabindex="-1"></main>
   </div>
   <div id="toasts" class="fx-toasts" aria-live="polite"></div>
 </div>`;
 
-export const APP_PATHS = ['/sign-in', '/people', '/integrations', '/account', '/appearance'];
+export const APP_PATHS = ['/sign-in', '/jobs', '/invoices', '/invoices/:id', '/people', '/integrations', '/account', '/appearance'];
 
 export function appPage({ defaultFamily }) {
   return renderPage({

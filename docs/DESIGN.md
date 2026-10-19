@@ -6,8 +6,13 @@ design system looks the same in both apps.
 
 ## Appearance
 
-Appearance is three choices, per browser, on the Appearance page
-(`/appearance`):
+Appearance is three choices, per person, on the Appearance page
+(`/appearance`). Each person's choice is saved with their account
+(`people.appearance`, `PUT /api/me/appearance`) and applied when they sign
+in, so people who share a browser, or move between devices, each see their
+own. The browser keeps a copy (localStorage `flow_appearance`) so a page
+paints in it before Flow knows who is signed in. An account with no choice
+yet takes the browser's current one at its first sign-in.
 
 - **Mode**: Light, Dark or Auto (follow the device, the default). The top bar
   and the sign-in screen have a quick light or dark switch.
@@ -36,7 +41,7 @@ Appearance is three choices, per browser, on the Appearance page
 
 An installation picks the design system every browser starts on with
 `FLOW_THEME` (any family id; unset means `harbour`; an unknown id stops the
-server). A person's own choice on the Appearance page wins in their browser.
+server). A person's own choice on the Appearance page wins wherever they sign in.
 
 ## How it works
 

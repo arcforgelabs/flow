@@ -7,8 +7,10 @@ import {
   invitePerson,
   listPeople,
   normaliseEmail,
+  normaliseAppearance,
   publicPerson,
   removePerson,
+  setPersonAppearance,
   updatePerson,
 } from './people.js';
 import { isPlainEmail } from './settings.js';
@@ -96,7 +98,18 @@ export function createSignInRouter({ settings, db, clerk, personAuth, defaultFam
       const check = await ownerVerification(req.person, req.clerkAuth);
       body.ownerActions = { allowed: Boolean(check.verified), by: check.by ?? null };
     }
+    body.appearance = req.person.appearance ? normaliseAppearance(req.person.appearance) : null;
     res.json(body);
+  });
+
+  // Each person sets their own appearance; it follows their account.
+  router.put('/api/me/appearance', requireSession, express.json({ limit: '4kb' }), async (req, res) => {
+    try {
+      const appearance = await setPersonAppearance(db, { id: req.person.id, appearance: req.body });
+      res.json({ ok: true, appearance });
+    } catch (error) {
+      sendError(res, error, log);
+    }
   });
 
   // Only an owner manages people.

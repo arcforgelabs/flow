@@ -152,6 +152,24 @@ describe('Clerk sign-in', { skip: skipWithoutDatabase }, () => {
     assert.ok(list.body.people.some((person) => person.email === 'staff@example.test' && !person.invited));
   });
 
+  test('each person keeps their own appearance with their account', async () => {
+    assert.equal((await request(app, '/api/me', { token: ownerToken })).body.appearance, null, 'none until they choose');
+    const staffToken = clerk.signIn(await clerk.findUserIdByEmail('staff@example.test'));
+
+    const saved = await request(app, '/api/me/appearance', { token: ownerToken, method: 'PUT', body: { colorMode: 'dark', themeFamily: 'meridian', accent: 'Amber' } });
+    assert.equal(saved.status, 200);
+    assert.deepEqual(saved.body.appearance, { colorMode: 'dark', themeFamily: 'meridian', accent: 'amber' });
+    await request(app, '/api/me/appearance', { token: staffToken, method: 'PUT', body: { colorMode: 'light', themeFamily: 'tide' } });
+
+    assert.deepEqual((await request(app, '/api/me', { token: ownerToken })).body.appearance, { colorMode: 'dark', themeFamily: 'meridian', accent: 'amber' });
+    assert.deepEqual((await request(app, '/api/me', { token: staffToken })).body.appearance, { colorMode: 'light', themeFamily: 'tide' });
+
+    // Unknown values are dropped, so the page falls back to the installation's default.
+    const odd = await request(app, '/api/me/appearance', { token: staffToken, method: 'PUT', body: { colorMode: 'purple', themeFamily: 'nope', accent: 'not-a-colour', extra: 'x' } });
+    assert.deepEqual(odd.body.appearance, { colorMode: 'system' });
+    assert.equal((await request(app, '/api/me/appearance', { method: 'PUT', body: { colorMode: 'dark' } })).status, 401);
+  });
+
   test('only an owner manages people', async () => {
     await request(app, '/api/people', { token: ownerToken, method: 'POST', body: { email: 'admin@example.test', role: 'admin' } });
     const adminToken = clerk.signIn(await clerk.findUserIdByEmail('admin@example.test'));

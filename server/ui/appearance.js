@@ -1,7 +1,8 @@
 // Appearance in the browser: which design system (theme family), light or
 // dark, and an optional accent colour. The families and their tokens live in
-// server/theme/themes.js. The choice is per browser and is a convenience, so
-// it lives in localStorage. server/ui/page.js runs the same family and mode
+// server/theme/themes.js. The choice belongs to the person's account
+// (server/ui/app.js saves it); localStorage keeps this browser's copy so a
+// page paints in it before sign-in is known. server/ui/page.js runs the same family and mode
 // resolution inline before first paint so there is no flash; keep the two in
 // step. Ported from Arc Forge Labs' Field (client/src/lib/color-mode.ts).
 import { accentOverrides, normalizeAccent, normalizeFamily, tokensFor } from '/assets/theme/themes.js';

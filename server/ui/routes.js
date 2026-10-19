@@ -18,7 +18,7 @@ const require = createRequire(import.meta.url);
 const here = dirname(fileURLToPath(import.meta.url));
 const themeDir = join(here, '..', 'theme');
 const THEME_FILES = new Set(['themes.js', 'color-contrast.js', 'openclaw-palettes.js', 'font-families.js']);
-const UI_FILES = new Set(['flow.css', 'appearance.js', 'clerk-appearance.js', 'app.js', 'flow-mark.svg']);
+const UI_FILES = new Set(['flow.css', 'appearance.js', 'clerk-appearance.js', 'app.js', 'invoicing.js', 'jobs.js', 'flow-mark.svg']);
 const MAX_AGE = '1h';
 
 // Send one named file from dir. Passing dir as root limits the dotfile check

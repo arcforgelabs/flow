@@ -9,6 +9,8 @@
 import { getAppearance, onAppearanceChange, setAppearance, loadFonts } from '/assets/ui/appearance.js';
 import { flowClerkAppearance } from '/assets/ui/clerk-appearance.js';
 import { ACCENT_PRESETS, normalizeAccent, THEME_FAMILIES, tokensFor } from '/assets/theme/themes.js';
+import { renderInvoice, renderInvoiceList } from '/assets/ui/invoicing.js';
+import { renderJobs } from '/assets/ui/jobs.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -109,7 +111,7 @@ async function flow(path, options = {}) {
     headers: { Authorization: `Bearer ${token}`, ...(options.body ? { 'Content-Type': 'application/json' } : {}) },
   });
   const body = await res.json().catch(() => ({ ok: false, error: `HTTP ${res.status}` }));
-  if (!res.ok) throw Object.assign(new Error(body.error || `HTTP ${res.status}`), { status: res.status, code: body.code });
+  if (!res.ok) throw Object.assign(new Error(body.error || `HTTP ${res.status}`), { status: res.status, code: body.code, details: body.details });
   return body;
 }
 
@@ -180,41 +182,74 @@ function roleSelect(value, attrs = {}) {
 
 let me = null;
 
+// The sidebar lists the views in this order, under their group's heading.
 const VIEWS = {
-  people: { label: 'People', ownerOnly: true, render: renderPeople },
-  integrations: { label: 'Integrations', ownerOnly: true, render: renderIntegrations },
-  account: { label: 'Account', render: renderAccount },
-  appearance: { label: 'Appearance', render: renderAppearance },
+  jobs: { label: 'Jobs', icon: 'jobs', group: 'Work', render: (main) => renderJobs(main, ui()) },
+  invoices: { label: 'Invoices', icon: 'invoices', group: 'Work', render: (main, id) => (id ? renderInvoice(main, ui(), id) : renderInvoiceList(main, ui())) },
+  people: { label: 'People', icon: 'people', group: 'Settings', ownerOnly: true, render: renderPeople },
+  integrations: { label: 'Integrations', icon: 'plug', group: 'Settings', ownerOnly: true, render: renderIntegrations },
+  account: { label: 'Account', icon: 'person', group: 'Settings', render: renderAccount },
+  appearance: { label: 'Appearance', icon: 'palette', group: 'Settings', render: renderAppearance },
 };
 
+// Line icons for the sidebar, drawn on a 24-unit grid in the text colour.
+const ICON_PATHS = {
+  jobs: '<rect x="3" y="4" width="5" height="16" rx="1"/><rect x="10" y="4" width="5" height="11" rx="1"/><rect x="17" y="4" width="4" height="14" rx="1"/>',
+  invoices: '<path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 13h7M9 17h5"/>',
+  people: '<circle cx="9" cy="8" r="3"/><path d="M3 20c0-3.5 2.7-6 6-6s6 2.5 6 6"/><path d="M16 5a3 3 0 010 6M21 20c0-3-1.6-5-4-5.7"/>',
+  plug: '<path d="M9 3v5M15 3v5M6 8h12v3a6 6 0 01-12 0zM12 17v4"/>',
+  person: '<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-7 8-7s8 3 8 7"/>',
+  palette: '<path d="M12 3a9 9 0 100 18c1.1 0 1.5-.8 1.5-1.6 0-1-.8-1.4-.8-2.4 0-.9.7-1.5 1.6-1.5H17a4 4 0 004-4c0-4.7-4-8.5-9-8.5z"/><circle cx="7.5" cy="11" r="1"/><circle cx="10" cy="7" r="1"/><circle cx="15" cy="7" r="1"/>',
+};
+
+function icon(name) {
+  const node = h('span', { class: 'fx-ico', 'aria-hidden': 'true' });
+  node.innerHTML = `<svg viewBox="0 0 24 24">${ICON_PATHS[name] ?? ''}</svg>`;
+  return node;
+}
+
+// The view and, for one record, its id: /invoices/<id> is ['invoices', '<id>'].
 function currentView() {
-  const name = location.pathname.replace(/^\/+|\/+$/g, '');
-  if (VIEWS[name] && (!VIEWS[name].ownerOnly || me?.person.role === 'owner')) return name;
-  return me?.person.role === 'owner' ? 'people' : 'account';
+  const [name, id = null] = location.pathname.replace(/^\/+|\/+$/g, '').split('/');
+  if (VIEWS[name] && (!VIEWS[name].ownerOnly || me?.person.role === 'owner')) return [name, id];
+  return ['jobs', null];
 }
 
 async function route() {
   const main = $('main');
   unmountAllIn(main);
-  const view = currentView();
-  if (location.pathname !== `/${view}`) history.replaceState(null, '', `/${view}`);
+  const [view, id] = currentView();
+  const path = id ? `/${view}/${id}` : `/${view}`;
+  if (location.pathname !== path) history.replaceState(null, '', path);
   for (const link of document.querySelectorAll('[data-nav]')) {
     link.setAttribute('aria-current', link.dataset.nav === view ? 'page' : 'false');
   }
   main.replaceChildren();
+  main.className = 'fx-main';
   document.title = `${VIEWS[view].label} · Flow`;
-  await VIEWS[view].render(main);
+  await VIEWS[view].render(main, id);
   main.focus({ preventScroll: true });
 }
 
-// A view's link opens it in place; the address changes, the page stays.
+// Opens a path in place; the address changes, the page stays.
+function go(path, { replace = false } = {}) {
+  if (path !== location.pathname) history[replace ? 'replaceState' : 'pushState'](null, '', path);
+  route();
+}
+
+// A link's click opens it in place (a new tab still works).
 function navigate(event) {
   if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return;
   event.preventDefault();
-  const href = event.currentTarget.getAttribute('href');
-  if (href !== location.pathname) history.pushState(null, '', href);
-  route();
+  go(event.currentTarget.getAttribute('href'));
 }
+
+// The shared pieces a view module (invoicing.js) builds with. Its `go`
+// takes a path, or a link's click event.
+const ui = () => ({
+  h, flow, toast, notice, pageHeader, dialog, me,
+  go: (target, options) => (typeof target === 'string' ? go(target, options) : navigate(target)),
+});
 
 function renderSignedOut() {
   document.body.dataset.state = 'signed-out';
@@ -236,9 +271,15 @@ function renderSignedOut() {
 function renderShell() {
   document.body.dataset.state = 'signed-in';
   const nav = $('nav');
-  nav.replaceChildren(...Object.entries(VIEWS)
-    .filter(([, view]) => !view.ownerOnly || me?.person.role === 'owner')
-    .map(([name, view]) => h('a', { href: `/${name}`, 'data-nav': name, onclick: navigate }, view.label)));
+  const items = [];
+  let group = null;
+  for (const [name, view] of Object.entries(VIEWS)) {
+    if (view.ownerOnly && me?.person.role !== 'owner') continue;
+    if (view.group && view.group !== group) items.push(h('span', { class: 'fx-nav__group' }, view.group));
+    group = view.group;
+    items.push(h('a', { href: `/${name}`, 'data-nav': name, onclick: navigate }, icon(view.icon), h('span', {}, view.label)));
+  }
+  nav.replaceChildren(...items);
   mountClerk('userButton', $('user-button'), { afterSignOutUrl: '/sign-in', showName: false });
   window.addEventListener('popstate', route);
   return route();
@@ -352,12 +393,12 @@ function personRow(person, host) {
 // here. Credentials are write-only: the server says whether each is set,
 // never its value (server/integrations/setup.js).
 const STATE_LABEL = { ready: 'On', disabled: 'Off', failed: 'Needs attention', restart_needed: 'Restart needed', not_started: 'Starting' };
-const STATE_TONE = { ready: 'success', disabled: 'info', failed: 'danger', restart_needed: 'warn', not_started: 'info' };
+const STATE_TONE = { ready: 'success', disabled: 'mute', failed: 'danger', restart_needed: 'warn', not_started: 'info' };
 
 async function renderIntegrations(main) {
-  const host = h('div', { class: 'fx-fields' }, h('div', { class: 'fx-skeleton' }));
+  const host = h('div', { class: 'fx-int-list' }, h('div', { class: 'fx-skeleton' }));
   main.append(
-    pageHeader('Integrations', { subtitle: 'Connect Flow to your accounting and lab systems. Each one uses an app you create in that system.' }),
+    pageHeader('Integrations', { subtitle: 'Connect Flow to your lab system and your accounting system.' }),
     host);
   let body;
   try {
@@ -374,13 +415,27 @@ async function renderIntegrations(main) {
   ].filter(Boolean));
 }
 
+// One line under each name: what the integration brings into Flow.
+const INTEGRATION_HINT = {
+  seazona: 'Lab orders and cases come in from Seazona.',
+  xero: 'Invoices go out to Xero. Payments come back.',
+};
+
 function integrationCard(integration, { canChange, organisations }) {
-  const card = h('section', { class: 'fx-panel', 'aria-label': integration.name });
+  const card = h('section', { class: 'fx-panel fx-int', 'aria-label': integration.name });
   const draw = (current) => {
     const inputs = new Map();
-    const fields = current.fields.map((field) => {
-      const fromHost = field.source === 'host';
-      const disabled = !canChange || fromHost;
+    const editable = [];
+    const fromHost = [];
+    for (const field of current.fields) {
+      if (field.source === 'host') {
+        // The host sets it: a value to read, not a box to type in.
+        fromHost.push(h('div', { class: 'fx-int__fact' },
+          h('dt', { class: 'fx-label' }, field.label),
+          h('dd', {}, field.secret ? h('span', { class: 'fx-dim' }, 'Set') : h('code', {}, field.value))));
+        continue;
+      }
+      const disabled = !canChange;
       let input;
       if (field.kind === 'choice' || field.kind === 'onoff') {
         const choices = field.kind === 'onoff' ? [{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }] : field.choices;
@@ -388,28 +443,26 @@ function integrationCard(integration, { canChange, organisations }) {
           field.kind === 'choice' ? h('option', { value: '' }, 'Choose…') : null,
           choices.map((c) => h('option', { value: c.value, selected: (field.value ?? (field.kind === 'onoff' ? 'off' : '')) === c.value }, c.label)));
       } else if (field.secret) {
-        input = h('input', { class: 'fx-input', type: 'password', autocomplete: 'off', disabled, placeholder: field.set ? 'Set. Type a new one to replace it.' : 'Paste it here' });
+        input = h('input', { class: 'fx-input', type: 'password', autocomplete: 'off', disabled, placeholder: field.set ? 'Saved. Type a new one to replace it.' : 'Paste it here' });
       } else {
         input = h('input', { class: 'fx-input', type: field.kind === 'url' ? 'url' : 'text', autocomplete: 'off', disabled, value: field.value ?? '' });
       }
       inputs.set(field.name, { field, input });
       const suggestion = field.suggest === 'callback' ? `${location.origin}/api/${current.id}/oauth/callback` : null;
-      return h('label', { class: 'fx-field' },
+      editable.push(h('label', { class: `fx-field${suggestion ? ' fx-field--wide' : ''}` },
         h('span', { class: 'fx-label' }, field.label),
         input,
-        fromHost ? h('span', { class: 'fx-dim' }, 'Set by the host. Change it there.') : null,
         field.unreadable ? h('span', { class: 'fx-dim' }, 'Stored with another key. Enter it again.') : null,
-        field.help ? h('span', { class: 'fx-dim' }, field.help) : null,
-        suggestion && !disabled ? h('div', { class: 'fx-row' },
+        field.help && !suggestion ? h('span', { class: 'fx-dim' }, field.help) : null,
+        suggestion && !disabled ? h('span', { class: 'fx-int__suggest' },
           h('code', {}, suggestion),
           h('button', { class: 'fx-btn fx-btn--ghost fx-btn--sm', type: 'button', onclick: () => { navigator.clipboard?.writeText(suggestion); toast('Copied.', 'success'); } }, 'Copy'),
-          h('button', { class: 'fx-btn fx-btn--ghost fx-btn--sm', type: 'button', onclick: () => { input.value = suggestion; } }, 'Use this')) : null);
-    });
+          h('button', { class: 'fx-btn fx-btn--ghost fx-btn--sm', type: 'button', onclick: (event) => { event.preventDefault(); input.value = suggestion; } }, 'Use this')) : null));
+    }
 
     const values = () => {
       const out = {};
       for (const [name, { field, input }] of inputs) {
-        if (field.source === 'host') continue;
         const value = input.value.trim();
         if (field.secret) { if (value) out[name] = value; continue; }
         if (value !== (field.value ?? (field.kind === 'onoff' ? 'off' : ''))) out[name] = value || null;
@@ -429,23 +482,33 @@ function integrationCard(integration, { canChange, organisations }) {
 
     const on = current.enabled;
     const guide = current.guide;
+    const hostOwned = current.enabledBy === 'host';
+    const action = !canChange || hostOwned ? null : on
+      ? h('button', { class: 'fx-btn fx-btn--sm', type: 'button', onclick: () => save(false) }, 'Turn off')
+      : h('button', { class: 'fx-btn fx-btn--primary fx-btn--sm', type: 'button', onclick: () => save(true) }, 'Turn on');
     card.replaceChildren(...[
-      h('div', { class: 'fx-row' },
-        h('h2', { class: 'fx-title' }, current.name),
-        h('span', { class: 'fx-tag', 'data-tone': STATE_TONE[current.state] ?? 'info' }, STATE_LABEL[current.state] ?? current.state),
-        current.enabledBy === 'host' ? h('span', { class: 'fx-dim' }, 'Turned on by the host.') : null),
-      current.state === 'failed' && current.error ? notice(current.error, 'danger', 'It could not start.') : null,
-      guide ? h('details', { open: !on },
-        h('summary', {}, guide.title),
-        h('ol', {}, guide.steps.map((step) => h('li', {}, step))),
-        guide.link ? h('p', {}, h('a', { href: guide.link, target: '_blank', rel: 'noopener' }, guide.link)) : null) : null,
-      h('div', { class: 'fx-fields' }, fields),
-      canChange ? h('div', { class: 'fx-row fx-row--end' },
-        h('button', { class: 'fx-btn fx-btn--ghost', type: 'button', onclick: () => save(undefined) }, 'Save'),
-        current.enabledBy === 'host' ? null : on
-          ? h('button', { class: 'fx-btn fx-btn--danger', type: 'button', onclick: () => save(false) }, `Turn ${current.name} off`)
-          : h('button', { class: 'fx-btn fx-btn--primary', type: 'button', onclick: () => save(true) }, `Save and turn ${current.name} on`)) : null,
-      current.id === 'xero' && current.state === 'ready' ? xeroConnection(organisations, canChange) : null,
+      h('header', { class: 'fx-int__head' },
+        h('span', { class: 'fx-int__logo', 'aria-hidden': 'true' }, current.name.slice(0, 1)),
+        h('div', { class: 'fx-int__name' },
+          h('h2', {}, current.name),
+          h('p', { class: 'fx-dim' }, INTEGRATION_HINT[current.id] ?? '')),
+        h('span', { class: 'fx-status', 'data-tone': STATE_TONE[current.state] ?? 'mute' }, STATE_LABEL[current.state] ?? current.state),
+        action),
+      h('div', { class: 'fx-int__body' }, ...[
+        hostOwned ? h('p', { class: 'fx-dim' }, 'Turned on by the host.') : null,
+        current.state === 'failed' && current.error ? notice(current.error, 'danger', 'It could not start.') : null,
+        guide ? h('details', { class: 'fx-int__guide' },
+          h('summary', {}, 'How to set up'),
+          h('ol', {}, guide.steps.map((step) => h('li', {}, step))),
+          guide.link ? h('a', { href: guide.link, target: '_blank', rel: 'noopener' }, 'Open the developer site') : null) : null,
+        editable.length ? h('div', { class: 'fx-int__fields' }, editable) : null,
+        fromHost.length ? h('div', { class: 'fx-int__host' },
+          h('p', { class: 'fx-dim' }, 'Set by the host. Change these there.'),
+          h('dl', {}, fromHost)) : null,
+        current.id === 'xero' && current.state === 'ready' ? xeroConnection(organisations, canChange) : null,
+      ].filter(Boolean)),
+      canChange && editable.length ? h('footer', { class: 'fx-int__foot' },
+        h('button', { class: 'fx-btn', type: 'button', onclick: () => save(undefined) }, 'Save changes')) : null,
     ].filter(Boolean));
   };
   draw(integration);
@@ -486,7 +549,7 @@ function xeroConnection(organisations, canChange) {
       }
     })();
   }
-  return h('div', {}, h('h3', { class: 'fx-label' }, 'Connection'), host);
+  return h('div', { class: 'fx-int__conn' }, h('h3', { class: 'fx-label' }, 'Connection'), host);
 }
 
 async function invitePerson() {
@@ -524,11 +587,13 @@ function renderAccount(main) {
   mountClerk('profile', host, { routing: 'virtual' });
 }
 
-// Appearance: light or dark, the design system and an accent colour, for
-// this browser.
+// Appearance: light or dark, the design system and an accent colour. Each
+// person's choice is saved with their account (PUT /api/me/appearance) and
+// applied when they sign in; the browser keeps a copy so the next page paints
+// in it at once.
 function renderAppearance(main) {
   main.append(
-    pageHeader('Appearance', { subtitle: 'For this browser. Clerk\'s sign-in and account screens follow it too.' }),
+    pageHeader('Appearance', { subtitle: 'Saved with your account, so it follows you to any device. Clerk\'s sign-in and account screens follow it too.' }),
     h('div', { class: 'fx-appearance', id: 'appearance' }));
   drawAppearance();
 }
@@ -564,13 +629,13 @@ function drawAppearance() {
 
   const modes = [{ value: 'light', label: 'Light' }, { value: 'dark', label: 'Dark' }, { value: 'system', label: 'Auto' }];
   const modeGroup = radioGroup('Mode', modes, modes.findIndex((m) => m.value === colorMode),
-    (m) => setAppearance({ colorMode: m.value }),
+    (m) => chooseAppearance({ colorMode: m.value }),
     (m) => h('button', { type: 'button', class: 'fx-seg__item' }, m.label));
   modeGroup.classList.add('fx-seg');
 
   const familyIndex = THEME_FAMILIES.findIndex((f) => f.id === family);
   const families = radioGroup('Design system', THEME_FAMILIES, familyIndex,
-    (f) => setAppearance({ family: f.id }),
+    (f) => chooseAppearance({ family: f.id }),
     (f) => {
       // The card shows the family as it is, not the active theme.
       const t = tokensFor(f.id, mode);
@@ -591,14 +656,14 @@ function drawAppearance() {
   const presetIndex = accent ? ACCENT_PRESETS.findIndex((p) => p.id === accent) : 0;
   const customHex = accent && presetIndex < 0 ? normalizeAccent(accent) : null;
   const accents = radioGroup('Accent colour', ACCENT_PRESETS, presetIndex,
-    (p) => setAppearance({ accent: p.hex ? p.id : null }),
+    (p) => chooseAppearance({ accent: p.hex ? p.id : null }),
     (p) => p.hex
       ? h('button', { type: 'button', class: 'fx-swatch', title: p.label, 'aria-label': p.label, style: { background: p.hex } })
       : h('button', { type: 'button', class: 'fx-swatch fx-swatch--default', title: `${active.label}'s own`, 'aria-label': `${active.label}'s own accent` },
         h('span', { 'aria-hidden': 'true', style: { background: `linear-gradient(135deg, ${active.swatches[mode].primary} 50%, ${active.swatches[mode].accent} 50%)` } })));
   accents.classList.add('fx-swatches');
   const custom = h('label', { class: 'fx-swatch-custom' },
-    h('input', { type: 'color', 'aria-label': 'Custom accent colour', value: customHex ?? '#0d4e5f', onchange: (event) => setAppearance({ accent: event.target.value }) }),
+    h('input', { type: 'color', 'aria-label': 'Custom accent colour', value: customHex ?? '#0d4e5f', onchange: (event) => chooseAppearance({ accent: event.target.value }) }),
     'Custom');
   const accentLabel = customHex ? `Custom ${customHex}` : presetIndex > 0 ? ACCENT_PRESETS[presetIndex].label : `${active.label}'s own`;
 
@@ -610,11 +675,41 @@ function drawAppearance() {
     h('section', { class: 'fx-group' },
       h('h2', { class: 'fx-label' }, 'Design system'),
       families,
-      h('p', { class: 'fx-dim' }, 'Each design system brings its own colours, type and corners, in light and dark. Harbour is Flow\'s own; the rest are OpenClaw\'s themes.')),
+      h('p', { class: 'fx-dim' }, 'Each design system brings its own colours, type and corners, in light and dark. Harbour and Meridian are Flow\'s own; the rest are OpenClaw\'s themes.')),
     h('section', { class: 'fx-group' },
       h('h2', { class: 'fx-label' }, 'Accent colour'),
       h('div', { class: 'fx-row' }, accents, custom),
       h('p', { class: 'fx-dim', 'aria-live': 'polite' }, `Using ${accentLabel}. Buttons, highlights and focus rings take the accent; text in the accent is adjusted until it reads clearly.`)));
+}
+
+// A person's own change: show it, then save it to their account once they
+// are signed in. Signed out (the sign-in screen's switch) it stays in this
+// browser.
+let savingAppearance = null;
+function chooseAppearance(update) {
+  setAppearance(update);
+  saveAccountAppearance();
+}
+
+function accountAppearance() {
+  const { colorMode, family, accent } = getAppearance();
+  return { colorMode, themeFamily: family, ...(accent ? { accent } : {}) };
+}
+
+function saveAccountAppearance() {
+  if (!me) return;
+  clearTimeout(savingAppearance);
+  savingAppearance = setTimeout(() => {
+    flow('/api/me/appearance', { method: 'PUT', body: JSON.stringify(accountAppearance()) })
+      .catch(() => toast('Flow could not save your appearance to your account. It stays in this browser for now.', 'danger'));
+  }, 300);
+}
+
+// On sign-in: the account's appearance wins. An account with none yet takes
+// this browser's current choice.
+function adoptAccountAppearance(saved) {
+  if (!saved) return saveAccountAppearance();
+  setAppearance({ colorMode: saved.colorMode, family: saved.themeFamily, accent: saved.accent ?? null });
 }
 
 onAppearanceChange(() => {
@@ -639,7 +734,7 @@ function drawModeToggles() {
 }
 
 for (const button of document.querySelectorAll('[data-mode-toggle]')) {
-  button.addEventListener('click', () => setAppearance({ colorMode: getAppearance().mode === 'dark' ? 'light' : 'dark' }));
+  button.addEventListener('click', () => chooseAppearance({ colorMode: getAppearance().mode === 'dark' ? 'light' : 'dark' }));
 }
 onAppearanceChange(drawModeToggles);
 drawModeToggles();
@@ -687,6 +782,7 @@ async function start() {
   }
   try {
     me = await flow('/api/me');
+    adoptAccountAppearance(me.appearance);
   } catch (error) {
     renderNoAccess(error);
     return;

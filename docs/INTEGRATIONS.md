@@ -30,7 +30,10 @@ export const exampleAdapter = {
 ```
 
 The capabilities are `pullWorkItems`, `pushInvoice`, `pushBill`,
-`pullPayments` and `health`. An adapter declares only the ones it has, and
+`pullPayments`, `checkInvoice` and `health`. `checkInvoice({ organisationId,
+obligation })` answers whether the accounting system holds an invoice for a
+billable job, in the ledger's evidence shape; it is the live check before
+Flow drafts a job's invoice (`POST /api/invoicing/jobs/:id/draft`). An adapter declares only the ones it has, and
 must declare `health`.
 
 An adapter may also declare `routes(context)`: a function that returns an

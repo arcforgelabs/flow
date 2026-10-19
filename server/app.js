@@ -1,5 +1,6 @@
 import express from 'express';
 import { createConnectorApi } from './api/connector.js';
+import { createInvoicingRouter } from './api/invoicing.js';
 import { createSignInRouter } from './auth/routes.js';
 import { deployedBuildStatus } from './deployed-build.js';
 import { integrationsHealth } from './integrations/health.js';
@@ -99,6 +100,16 @@ export function createApp({
   // settings (server/integrations/setup.js).
   if (integrations && database && auth?.personAuth) {
     app.use('/api/integrations', createSetupRouter({ db: database.db, registry: integrations, personAuth: auth.personAuth, secrets, log }));
+  }
+  // Invoicing for signed-in people (server/api/invoicing.js). A job's draft
+  // invoice needs a live check in the accounting system: the first enabled
+  // integration that offers `checkInvoice` (Xero) answers it.
+  if (database && auth?.personAuth) {
+    const liveCheckFor = (organisationId) => {
+      const [adapter] = integrations?.with('checkInvoice') ?? [];
+      return adapter ? (obligation) => adapter.capabilities.checkInvoice({ organisationId, obligation }) : null;
+    };
+    app.use('/api/invoicing', createInvoicingRouter({ db: database.db, personAuth: auth.personAuth, log, liveCheckFor }));
   }
   for (const { path, handler } of integrations?.routes({ db: database?.db ?? null, personAuth: auth?.personAuth ?? null, log, messagePage: page }) ?? []) {
     app.use(path, handler);
