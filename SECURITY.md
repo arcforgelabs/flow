@@ -31,6 +31,10 @@ paste a credential, in full or in part.
 - **Integrations.** Seazona, Xero and every later adapter reach the core only
   through the integration port. Their credentials are stored per
   organisation, encrypted, and are write-only in Settings.
+- **Records and files.** Every record is in the installation's PostgreSQL.
+  Files reach the core only through the object storage port; PostgreSQL
+  holds each file's key, owner, size and hash, and the hash is checked on
+  read. Download links are signed.
 - **Issued documents are records.** An invoice a customer has been sent is
   never changed in place; a change produces a new version.
 
@@ -53,6 +57,8 @@ paste a credential, in full or in part.
 - Session cookies are `Secure`, `HttpOnly` and `SameSite`.
 - Flow stores no clinical notes, images or scans, and keeps a patient
   reference only where an invoice must print one.
+- Object keys and file names carry a case number at most, never a patient
+  name or other patient data.
 - CI runs gitleaks on every push and pull request
   (`.github/workflows/secret-scan.yml`).
 
