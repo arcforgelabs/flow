@@ -172,6 +172,13 @@ Flow always keeps one active owner, and nobody changes or removes themself.
 With `FLOW_PUBLIC_SIGN_UP=on`, anyone with a verified email can sign up and
 waits as `pending`, with no access, until an owner approves them.
 
+`FLOW_SIGN_UP_DOMAINS` opens that only to your own domains, for example
+`FLOW_SIGN_UP_DOMAINS=example.com`. Someone with a verified email on a listed
+domain can sign in without an invitation and waits as `pending` until an owner
+approves them. Anyone else still needs an invitation (`403 not_invited`), and
+Flow stores nothing about them. Invite people outside those domains by email,
+as above.
+
 The first owner comes from `FLOW_FIRST_OWNER_EMAIL`. At boot, while the
 installation has no owner, Flow invites that address as owner. Once an owner
 exists, the setting does nothing.
@@ -187,10 +194,11 @@ Keep these in the installation's secret store, never in a repository.
 | `CLERK_PUBLISHABLE_KEY` | secret | Set by the Clerk integration (`pk_test_…` or `pk_live_…`; `VITE_CLERK_PUBLISHABLE_KEY` also works). Flow gives it to the browser at runtime from `GET /api/auth/config`. |
 | `CLERK_PROXY_URL` | set by Replit | On a published Replit app. Flow serves Clerk's Frontend API on that path. |
 | `FLOW_PUBLIC_SIGN_UP` | configuration | `on` lets strangers ask for access. Unset or `off`: invitation only. |
+| `FLOW_SIGN_UP_DOMAINS` | configuration | Comma-separated email domains whose people may ask for access without an invitation (they wait for an owner's approval). Everyone else needs an invitation. Unset: none. |
 | `FLOW_FIRST_OWNER_EMAIL` | configuration | The first owner's email. Used only while there is no owner. |
 | `FLOW_OWNER_GOOGLE_DOMAINS` | configuration | Your Google Workspace domain, for example `example.com`. Comma-separated. Required on Replit's managed Clerk: unset, no owner can manage people. No default. |
 | `FLOW_OWNER_MFA_MAX_AGE` | configuration | How long a Clerk second factor counts for owner actions. Default `12h`. |
-| `FLOW_PUBLIC_ORIGIN` | configuration | The published app's `https://` origin: its `*.replit.app` address, or a custom domain if it has one. Clerk then accepts only sessions minted for it. Leave unset in a development workspace. |
+| `FLOW_PUBLIC_ORIGIN` | configuration | The published app's `https://` origin: its `*.replit.app` address, or a custom domain if it has one. Clerk then accepts only sessions minted for it. In a Replit workspace its development address is accepted too, because the workspace and the published app share secrets. Elsewhere, leave it unset in development. |
 
 Boot stops if a setting is malformed or a key is missing. Error messages name
 the variable, never its value.
@@ -290,3 +298,30 @@ against a real Clerk instance:
 - the sign-in widget with `transferable: false` on Replit's managed instance;
 - how many proxies Replit puts in front of a published app (Flow trusts one);
 - sign-in through `CLERK_PROXY_URL` on a published `*.replit.app` address.
+
+## Move from the earlier codebase
+
+An installation that ran the earlier Flow codebase moves its records into a
+new, empty Flow database with `server/import-earlier-flow.js`
+(`server/import/earlier-flow.js` says what moves and why).
+
+| Moves | Source in the earlier database |
+| --- | --- |
+| Customers and suppliers | Its copy of the accounting system's contacts. Archived contacts stay behind. |
+| The price list | Its copy of the accounting system's sold items, with their price and tax type. |
+| Invoice prefix and next number | The highest sales invoice number, so Flow never issues a number the accounting system already holds. |
+
+Patient and case details, sync state and logins never move. Each integration
+reads its own records again from its source when it is turned on, and people
+sign in with Clerk ("Sign-in (Clerk)").
+
+1. Make a copy of the earlier database and use the copy as the source.
+2. Run a dry run. It reads the source in a read-only transaction and prints
+   counts and the reasons rows stay behind, never names or amounts:
+   `EARLIER_FLOW_DATABASE_URL=… node server/import-earlier-flow.js --dry-run`.
+3. Run it against the new Flow database:
+   `EARLIER_FLOW_DATABASE_URL=… DATABASE_URL=… node server/import-earlier-flow.js --organisation "<lab name>"`.
+   It runs Flow's migrations, refuses a database that already has an
+   organisation, writes in one transaction and checks the row counts.
+
+Keep both connection strings out of chat and shell history.

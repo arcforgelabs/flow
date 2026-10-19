@@ -60,7 +60,7 @@ if (!config || config.mode !== 'clerk') {
 } else {
   await loadClerk(config.clerk);
   const Clerk = window.Clerk;
-  await Clerk.load();
+  await Clerk.load({ ui: { ClerkUI: window.__internal_ClerkUICtor } });
   Clerk.addListener(({ user }) => { if (user && $('signed-in').hidden) showSignedIn(); });
   if (Clerk.user) {
     await showSignedIn();
@@ -78,15 +78,26 @@ if (!config || config.mode !== 'clerk') {
   }
 }
 
-function loadClerk({ publishableKey, proxyUrl, scriptUrl }) {
+// clerk-js, then its prebuilt components (@clerk/ui), which set
+// window.__internal_ClerkUICtor for Clerk.load().
+function loadClerk({ publishableKey, proxyUrl, scriptUrl, uiScriptUrl }) {
+  return Promise.all([
+    loadScript(scriptUrl, (script) => {
+      script.dataset.clerkPublishableKey = publishableKey;
+      if (proxyUrl) script.dataset.clerkProxyUrl = proxyUrl;
+    }),
+    loadScript(uiScriptUrl),
+  ]);
+}
+
+function loadScript(src, prepare = () => {}) {
   return new Promise((resolve, reject) => {
     const script = document.createElement('script');
-    script.src = scriptUrl;
+    script.src = src;
     script.crossOrigin = 'anonymous';
-    script.dataset.clerkPublishableKey = publishableKey;
-    if (proxyUrl) script.dataset.clerkProxyUrl = proxyUrl;
+    prepare(script);
     script.onload = resolve;
-    script.onerror = () => { status('Could not load sign-in. Try again shortly.', true); reject(new Error('clerk-js')); };
+    script.onerror = () => { status('Could not load sign-in. Try again shortly.', true); reject(new Error(src)); };
     document.head.append(script);
   });
 }

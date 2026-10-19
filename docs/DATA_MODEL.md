@@ -61,6 +61,28 @@ stateDiagram-v2
   each payment (date, amount, reference, reconciled or not). A failed
   write-back stays and is tried again. It never changes the accounting record.
 
+## Storage
+
+Flow has two places for data, and only two:
+
+| Data | Where | Why |
+| --- | --- | --- |
+| Records: every row, setting, event and piece of evidence | PostgreSQL | One database to back up, migrate and restore. Data with a loose shape (a sent document, an integration's raw answer, evidence) is a `jsonb` column, not a second database. |
+| Files: photos of lab forms, bill and invoice PDFs, exports | An object storage adapter | Files are large and never change after upload. PostgreSQL keeps the file's key, size, type and checksum; the bytes stay out of it. |
+
+The object storage adapter has one interface (put, get, delete, signed link)
+with one implementation per host: a local folder for a single machine or
+tests, S3-compatible storage, and Replit Object Storage. A published Replit
+app keeps no files between publishes, so it never uses the local folder. The
+first feature that stores a file adds the adapter (#42); until then Flow
+stores no files.
+
+Flow uses no other database: no document store, key-value store or cache
+server. A change that seems to need one says why in its pull request, and
+shows that PostgreSQL (`jsonb`, an index, a materialized view, `LISTEN`/
+`NOTIFY`) cannot do the job. Fewer moving parts keep a self-hosted
+installation low maintenance.
+
 ## Rules
 
 | Rule | Where it is held |

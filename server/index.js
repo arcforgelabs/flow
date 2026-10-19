@@ -61,7 +61,7 @@ if (settings.mode === 'clerk') {
     ...(settings.ownerGoogleDomains.length ? [`Google Workspace sign-in on ${settings.ownerGoogleDomains.join(', ')} with no password`] : []),
     `a Clerk second factor within ${settings.ownerMfaMaxAgeMinutes} min`,
   ];
-  console.log(`[auth] Clerk sign-in on (CLERK_SECRET_KEY, ${keys.publishableSource}); public sign-up ${settings.publicSignUp ? 'on' : 'off'}; owner actions: ${ownerPaths.join(', or ')}${proxyPath ? `; Clerk proxied at ${proxyPath}` : ''}`);
+  console.log(`[auth] Clerk sign-in on (CLERK_SECRET_KEY, ${keys.publishableSource}); public sign-up ${settings.publicSignUp ? 'on' : settings.signUpDomains.length ? `only ${settings.signUpDomains.join(', ')}` : 'off'}; owner actions: ${ownerPaths.join(', or ')}${proxyPath ? `; Clerk proxied at ${proxyPath}` : ''}`);
   // Replit's managed Clerk has no MFA, so there the Google Workspace path is
   // the only way an owner can manage people.
   if (!settings.ownerGoogleDomains.length && (process.env.REPL_ID || process.env.REPLIT_DEPLOYMENT)) {
