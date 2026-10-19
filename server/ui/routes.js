@@ -21,6 +21,13 @@ const THEME_FILES = new Set(['themes.js', 'color-contrast.js', 'openclaw-palette
 const UI_FILES = new Set(['flow.css', 'appearance.js', 'clerk-appearance.js', 'app.js', 'flow-mark.svg']);
 const MAX_AGE = '1h';
 
+// Send one named file from dir. Passing dir as root limits the dotfile check
+// to the file name, so an install under a dot directory (such as
+// .flow-deploy/) still serves its assets. A missing file falls through to the
+// app's own 404.
+const sendNamed = (res, next, dir, file) =>
+  res.sendFile(file, { root: dir, maxAge: MAX_AGE }, (err) => err && !res.headersSent && next());
+
 export function createUiAssetsRouter({ rateLimitPerMinute = 600 } = {}) {
   const router = express.Router();
   const css = themeStylesheet();
@@ -33,14 +40,14 @@ export function createUiAssetsRouter({ rateLimitPerMinute = 600 } = {}) {
 
   const sendFrom = (dir, allowed) => (req, res, next) => {
     if (!allowed.has(req.params.file)) return next();
-    res.sendFile(join(dir, req.params.file), { maxAge: MAX_AGE });
+    sendNamed(res, next, dir, req.params.file);
   };
   router.get('/assets/theme/:file', sendFrom(themeDir, THEME_FILES));
   router.get('/assets/ui/:file', sendFrom(here, UI_FILES));
 
   for (const name of FONT_PACKAGES) {
     const dir = dirname(require.resolve(`@fontsource-variable/${name}/LICENSE`));
-    router.get(`/assets/fonts/${name}/index.css`, (_req, res) => res.sendFile(join(dir, 'index.css'), { maxAge: MAX_AGE }));
+    router.get(`/assets/fonts/${name}/index.css`, (_req, res, next) => sendNamed(res, next, dir, 'index.css'));
     router.use(`/assets/fonts/${name}/files`, express.static(join(dir, 'files'), { maxAge: MAX_AGE, index: false, fallthrough: false }));
   }
 
