@@ -4,7 +4,7 @@ import { checkDrafts, pushInvoice, pushInvoices } from './drafts.js';
 import { readConnection } from './connections.js';
 import { createImportWorker } from './import.js';
 import { readPayments, xeroLiveCheck } from './ledger.js';
-import { findInvoices, listCustomers } from './lookup.js';
+import { findInvoices, listCustomers, listPriceItems } from './lookup.js';
 import { createXeroRouter } from './routes.js';
 import { createXeroRuntime, requireXeroSettings, XERO_CALL_GUARD } from './runtime.js';
 import { writesAllowed } from './settings.js';
@@ -115,6 +115,8 @@ export function createXeroAdapter({ runtime: given = null } = {}) {
       listCustomers: ({ organisationId }) => listCustomers(database, organisationId),
       // Sales invoices from the mirror, with the mirror's state (lookup.js).
       findInvoices: ({ organisationId, ...query }) => findInvoices(database, organisationId, query),
+      // Xero items, from Flow's copy, for the price list (lookup.js).
+      listPriceItems: ({ organisationId }) => listPriceItems(database, organisationId, { taxTypes: current().settings.taxTypes }),
     },
     routes: ({ db, personAuth, log, messagePage }) => createXeroRouter({ db, personAuth, runtime: current(), log, messagePage }),
   };

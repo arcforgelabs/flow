@@ -1,5 +1,5 @@
 import { createSeazonaClient } from './client.js';
-import { listClients, listWork, readBillableWork } from './feed.js';
+import { listClients, listProducts, listWork, readBillableWork } from './feed.js';
 import { readSeazonaSyncHealth, runSeazonaSync } from './lanes.js';
 import { createSeazonaScheduler } from './scheduler.js';
 import { resetFailedLanes, resetStoppedLanes } from './store.js';
@@ -123,6 +123,12 @@ export function createSeazonaAdapter({ env = null, fetchImpl = null, now = Date.
       // Jobs board. Reads Flow's copy only.
       async listWork() {
         return listWork(current().db, { now: now() });
+      },
+
+      // Seazona's products, for the price list (server/core/price-list.js).
+      // Reads Flow's copy only.
+      async listPriceItems() {
+        return listProducts(current().db);
       },
     },
   };

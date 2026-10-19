@@ -28,8 +28,9 @@ export function lineMappingSection(ui) {
       return;
     }
     const waiting = labels.filter((l) => l.unmapped > 0);
+    const listLink = row('Price list', 'Your codes and prices, and their links.', h('a', { class: 'fx-btn fx-btn--ghost fx-btn--sm', href: '/price-list', onclick: (event) => ui.go(event) }, 'Open'));
     if (!waiting.length) {
-      body.replaceChildren(row('Every line has a price code', 'Lines from Seazona find their price item by themselves.', h('span', { class: 'fx-dim' }, '')));
+      body.replaceChildren(row('Every line has a price code', 'Lines from Seazona find their price item by themselves.', h('span', { class: 'fx-dim' }, '')), listLink);
       return;
     }
     const options = [h('option', { value: '' }, 'Choose a price item…'),
@@ -53,7 +54,7 @@ export function lineMappingSection(ui) {
       });
       const lines = label.unmapped === 1 ? '1 line waits' : `${label.unmapped} lines wait`;
       return row(label.sample, `${money(label.unitAmountCents)} · ${lines}`, select);
-    }));
+    }), listLink);
   }
   load();
   return section;
