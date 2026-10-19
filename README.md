@@ -16,7 +16,8 @@ from an earlier private codebase one module at a time (`CONTRIBUTING.md`,
 "Porting from the earlier codebase"). Today it holds the repository's rules,
 CI, the release track (npm, container image and GitHub Release, on a beta and
 a stable channel), the integration port, a health check, Clerk sign-in with
-roles kept in Flow, and the first part of the core: the PostgreSQL data model
+roles kept in Flow, a People page for owners, the design systems Arc Forge
+Labs' Field uses, and the first part of the core: the PostgreSQL data model
 for organisations, contacts, the price list and invoices. It is not ready to
 run a lab.
 
@@ -29,6 +30,7 @@ run a lab.
 | `CONTRIBUTING.md` | How to file issues and pull requests, porting rules, merging |
 | `SECURITY.md` | How to report a security problem, the trust model, and the rules held hard |
 | `LICENSE` | MIT licence |
+| `docs/DESIGN.md` | The design systems (theme families), how pages and Clerk's components take them, and the screens |
 | `docs/DATA_MODEL.md` | The PostgreSQL records, the rules the database holds, and how to change the schema |
 | `docs/RELEASING.md` | Versions and channels, the release workflows, how to cut and roll back a release, and the one-time setup |
 | `docs/SELF_HOSTING.md` | Running a Flow release with Docker, Node or Replit, the update notice, and Clerk sign-in |

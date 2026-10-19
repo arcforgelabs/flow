@@ -1,0 +1,48 @@
+import { dirname, join } from 'node:path';
+import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
+import express from 'express';
+import { rateLimit } from '../rate-limit.js';
+import { FONT_PACKAGES } from '../theme/font-families.js';
+import { themeStylesheet } from '../theme/themes.js';
+
+// The files every page loads (server/ui/page.js), under /assets:
+//   /assets/themes.css       every design system as [data-theme][data-mode] rules
+//   /assets/theme/<file>.js  the theme engine itself, as browser modules
+//   /assets/ui/<file>        Flow's components (flow.css) and page scripts
+//   /assets/fonts/<pkg>/…    the families' faces (server/theme/font-families.js)
+// Only the files named here are served. They change only with a release, so
+// browsers may keep them for an hour.
+
+const require = createRequire(import.meta.url);
+const here = dirname(fileURLToPath(import.meta.url));
+const themeDir = join(here, '..', 'theme');
+const THEME_FILES = new Set(['themes.js', 'color-contrast.js', 'openclaw-palettes.js', 'font-families.js']);
+const UI_FILES = new Set(['flow.css', 'appearance.js', 'clerk-appearance.js', 'app.js', 'flow-mark.svg']);
+const MAX_AGE = '1h';
+
+export function createUiAssetsRouter({ rateLimitPerMinute = 600 } = {}) {
+  const router = express.Router();
+  const css = themeStylesheet();
+  router.use('/assets', rateLimit({ limit: rateLimitPerMinute, windowMs: 60_000 }));
+
+  router.get('/assets/themes.css', (_req, res) => {
+    res.set('Cache-Control', 'public, max-age=3600');
+    res.type('css').send(css);
+  });
+
+  const sendFrom = (dir, allowed) => (req, res, next) => {
+    if (!allowed.has(req.params.file)) return next();
+    res.sendFile(join(dir, req.params.file), { maxAge: MAX_AGE });
+  };
+  router.get('/assets/theme/:file', sendFrom(themeDir, THEME_FILES));
+  router.get('/assets/ui/:file', sendFrom(here, UI_FILES));
+
+  for (const name of FONT_PACKAGES) {
+    const dir = dirname(require.resolve(`@fontsource-variable/${name}/LICENSE`));
+    router.get(`/assets/fonts/${name}/index.css`, (_req, res) => res.sendFile(join(dir, 'index.css'), { maxAge: MAX_AGE }));
+    router.use(`/assets/fonts/${name}/files`, express.static(join(dir, 'files'), { maxAge: MAX_AGE, index: false, fallthrough: false }));
+  }
+
+  return router;
+}

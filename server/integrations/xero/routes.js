@@ -9,6 +9,8 @@ import { recordXeroEvidence, recordXeroPayments } from './ledger.js';
 import { decryptToken, deleteConnection, describeConnection, readConnection, saveConnection } from './connections.js';
 import { authorizeUrl, exchangeCode, fetchConnections, revokeToken, selectConnection } from './oauth.js';
 import { writesAllowed } from './settings.js';
+import { DEFAULT_FAMILY } from '../../theme/themes.js';
+import { messagePage as themedMessagePage } from '../../ui/page.js';
 
 // The Xero adapter's routes, mounted at /api/xero (server/integrations/port.js).
 //
@@ -33,14 +35,6 @@ import { writesAllowed } from './settings.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-function escapeHtml(value) {
-  return String(value ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
-}
-
-function page(title, text) {
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escapeHtml(title)}</title></head>`
-    + `<body style="font-family: system-ui, sans-serif; max-width: 36rem; margin: 3rem auto; padding: 0 1rem; line-height: 1.5"><h1>${escapeHtml(title)}</h1><p>${escapeHtml(text)}</p></body></html>`;
-}
 
 export function sendError(res, error, log) {
   const status = error instanceof FlowError ? (error.status ?? 400) : 500;
@@ -75,7 +69,10 @@ export const handle = (log, fn) => async (req, res) => {
   }
 };
 
-export function createXeroRouter({ db, personAuth, runtime, log = console }) {
+// `messagePage` draws the callback's answer in the installation's design
+// system (server/ui/page.js); the server's app passes it.
+export function createXeroRouter({ db, personAuth, runtime, log = console, messagePage = (options) => themedMessagePage({ ...options, defaultFamily: DEFAULT_FAMILY }) }) {
+  const page = (title, text, tone) => messagePage({ title, text, tone });
   const { settings } = runtime;
   const router = express.Router();
   router.use(express.json({ limit: '256kb' }));
@@ -116,10 +113,10 @@ export function createXeroRouter({ db, personAuth, runtime, log = console }) {
     res.set('Cache-Control', 'no-store');
     const entry = runtime.states.consume(req.query.state);
     if (!entry) {
-      return res.status(400).type('html').send(page('Xero was not connected', 'This approval link has expired or was already used. Start again from Flow.'));
+      return res.status(400).type('html').send(page('Xero was not connected', 'This approval link has expired or was already used. Start again from Flow.', 'danger'));
     }
     if (req.query.error) {
-      return res.status(400).type('html').send(page('Xero was not connected', 'The approval was cancelled in Xero. Start again from Flow if you meant to connect.'));
+      return res.status(400).type('html').send(page('Xero was not connected', 'The approval was cancelled in Xero. Start again from Flow if you meant to connect.', 'danger'));
     }
     try {
       const tokens = await exchangeCode(settings, runtime.transport, typeof req.query.code === 'string' ? req.query.code : '');
@@ -153,11 +150,11 @@ export function createXeroRouter({ db, personAuth, runtime, log = console }) {
       });
       runtime.remember(entry.organisationId, tokens);
       log.info?.(`[xero] organisation ${entry.organisationId} connected to Xero tenant ${connection.tenantId} (${settings.mode}) by person ${entry.personId}`);
-      return res.type('html').send(page('Xero is connected', `Flow is connected to ${connection.tenantName || 'your Xero organisation'} (${settings.mode}). You can close this tab.`));
+      return res.type('html').send(page('Xero is connected', `Flow is connected to ${connection.tenantName || 'your Xero organisation'} (${settings.mode}). You can close this tab.`, 'success'));
     } catch (error) {
       log.error?.(`[xero] connect failed: ${error.code ?? 'error'}: ${error.message}`);
       const message = error instanceof FlowError ? error.message : 'Something went wrong talking to Xero. Try again.';
-      return res.status(error.status && error.status < 500 ? error.status : 502).type('html').send(page('Xero was not connected', message));
+      return res.status(error.status && error.status < 500 ? error.status : 502).type('html').send(page('Xero was not connected', message, 'danger'));
     }
   });
 

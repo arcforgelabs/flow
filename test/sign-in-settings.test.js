@@ -105,7 +105,10 @@ describe('sign-in routes without a database', () => {
     assert.ok(!config.text.includes('sk_'), 'the secret key is never served');
     const page = await request(app, '/sign-in');
     assert.equal(page.status, 200);
-    assert.match(page.text, /transferable: config\.publicSignUp/);
+    assert.match(page.text, /<script type="module" src="\/assets\/ui\/app\.js">/);
+    const script = await request(app, '/assets/ui/app.js');
+    assert.equal(script.status, 200);
+    assert.match(script.text, /transferable: config\.publicSignUp/);
   });
 
   test('requests are rate limited per client', async () => {

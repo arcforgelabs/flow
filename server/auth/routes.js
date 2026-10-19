@@ -1,4 +1,3 @@
-import { fileURLToPath } from 'node:url';
 import express from 'express';
 import { FlowError } from '../core/errors.js';
 import { rateLimit } from '../rate-limit.js';
@@ -13,8 +12,7 @@ import {
   updatePerson,
 } from './people.js';
 import { isPlainEmail } from './settings.js';
-
-const signInPage = fileURLToPath(new URL('./sign-in.html', import.meta.url));
+import { APP_PATHS, appPage } from '../ui/app-page.js';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const ERROR_STATUS = { invalid: 400, forbidden: 403, not_found: 404, conflict: 409 };
 
@@ -49,8 +47,10 @@ function sendError(res, error, log) {
 // off, person routes answer 503 and nothing else is mounted. The sign-in page
 // and its config have their own limit per client (`rateLimitPerMinute`);
 // /api/me and /api/people sit under the app's /api limit as well.
-export function createSignInRouter({ settings, db, clerk, personAuth, rateLimitPerMinute = 30, log = console }) {
+// `defaultFamily` is the installation's design system (FLOW_THEME).
+export function createSignInRouter({ settings, db, clerk, personAuth, defaultFamily, rateLimitPerMinute = 30, log = console }) {
   const router = express.Router();
+  const page = appPage({ defaultFamily });
   const signInOn = settings.mode === 'clerk';
   const signInLimit = rateLimit({ limit: rateLimitPerMinute, windowMs: 60_000 });
 
@@ -72,10 +72,11 @@ export function createSignInRouter({ settings, db, clerk, personAuth, rateLimitP
   });
 
   router.get('/', signInLimit, (_req, res) => res.redirect(302, '/sign-in'));
-  router.get('/sign-in', signInLimit, (_req, res) => {
+  // Signed out, every one of these shows sign-in.
+  router.get(APP_PATHS, signInLimit, (_req, res) => {
     res.set('Cache-Control', 'no-store');
     res.set('X-Frame-Options', 'DENY');
-    res.sendFile(signInPage);
+    res.type('html').send(page);
   });
 
   if (!signInOn) {
