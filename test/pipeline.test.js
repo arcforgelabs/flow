@@ -256,10 +256,12 @@ describe('the Xero copy the matcher reads', { skip: skipWithoutDatabase }, () =>
     assert.deepEqual((await listCustomers(handle.db, organisationId)).map((c) => c.id), ['x1']);
   });
 
-  test('the copy counts as complete only after every resource finished a pass', async () => {
-    for (const resource of ['invoices', 'credit_notes', 'payments']) {
-      await handle.db.execute(sql`insert into xero_mirror_cursors (organisation_id, resource, passes, last_pass_finished_at) values (${organisationId}, ${resource}, 1, now())`);
-    }
+  test('the copy counts as complete once invoices and credit notes finished a pass, without payments', async () => {
+    await handle.db.execute(sql`insert into xero_mirror_cursors (organisation_id, resource, passes, last_pass_finished_at) values (${organisationId}, 'invoices', 1, now())`);
+    assert.equal((await mirrorState(handle.db, organisationId)).complete, false);
+    await handle.db.execute(sql`insert into xero_mirror_cursors (organisation_id, resource, passes, last_pass_finished_at) values (${organisationId}, 'credit_notes', 1, now())`);
+    // A connection without a payments scope: Xero refuses the payments read.
+    await handle.db.execute(sql`insert into xero_mirror_cursors (organisation_id, resource, passes, last_error) values (${organisationId}, 'payments', 0, 'xero_unauthorized: AuthorizationUnsuccessful')`);
     const state = await mirrorState(handle.db, organisationId);
     assert.equal(state.complete, true);
     assert.equal(state.fresh, true);
