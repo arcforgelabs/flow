@@ -426,6 +426,17 @@ moves a job into drafting. The Jobs board and `GET /api/invoicing/jobs`
 leave held history jobs out; `/jobs?history=include` shows them, and its
 `counts.history` gives how many there are.
 
+### Issues on job cards
+
+A history job a person must decide (outcome `needs_person`, or `changed`
+with no decision) is an issue on the card of the job it belongs to: the
+order with that id on the Jobs board. The adapter's `jobIssues` gives each
+issue as one short phrase (for example "Seazona client is unclear") and a
+link to the Seazona integration's reconciliation,
+`/integrations/seazona?batch=<id>&job=<job key>`. A person's decision there
+clears the issue: the board reads issues again each time. `health()` shows
+`history.waitingForPerson`, the count for the integration's card.
+
 ## Health
 
 `health()` reads Flow's database only; it never calls Seazona. `GET /health`

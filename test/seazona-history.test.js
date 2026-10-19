@@ -11,10 +11,14 @@ import { parseCsv } from '../server/integrations/seazona/history/csv.js';
 import {
   applyBatch,
   cancelBatch,
+  createApiBatch,
   decideJobs,
+  historyJobIssues,
+  historySummary,
   listBatches,
   readBatch,
   readHistoryWork,
+  stageApiJobs,
   stageBatch,
 } from '../server/integrations/seazona/history/index.js';
 import { detectColumns, groupJobs, moneyCents, readRow } from '../server/integrations/seazona/history/read.js';
@@ -26,7 +30,7 @@ import { createSeazonaClient } from '../server/integrations/seazona/client.js';
 import { runSeazonaSync } from '../server/integrations/seazona/lanes.js';
 import { createReplayFetch } from '../server/integrations/seazona/replay.js';
 import { resolveSeazonaSettings } from '../server/integrations/seazona/settings.js';
-import { readBackfill, startBackfill } from '../server/integrations/seazona/history/backfill.js';
+import { orderToHistoryJob, readBackfill, startBackfill } from '../server/integrations/seazona/history/backfill.js';
 
 // Synthetic data only (CONTRIBUTING.md): no real lab, practice, dentist or patient.
 
@@ -313,5 +317,25 @@ describe('Seazona history backfill from the API', { skip: skipWithoutDatabase },
     assert.equal(result.backfill.reachedDay, '2020-01-03');
     const history = await db.select().from(seazonaHistoryJobs);
     assert.deepEqual(history.map((h) => h.jobKey).sort(), ['case:H-1', 'case:H-2', 'case:H-3'], 'an order after the last day is not read');
+  });
+
+  test('a job a person must decide is an issue on its job card, until a person decides it', async () => {
+    const at = new Date(clock.now());
+    const mirrored = { recordHash: 'h', firstSeenAt: at, lastSyncedAt: at, lastChangedAt: at };
+    await db.insert(seazonaClients).values([{ id: 'C2', company: 'Twin Practice', ...mirrored }, { id: 'C3', company: 'Twin Practice Pty Ltd', ...mirrored }]);
+    const batch = await createApiBatch(db, { createdBy: 'person:test', from: '2020-01-01', through: '2020-01-31', at });
+    const job = { ...orderToHistoryJob({ ...order('H-9', 'S-9'), id: 'H-9', lines: [], subtotalCents: 20000 }), company: 'Twin Practice' };
+    const staged = await stageApiJobs(db, batch.id, [{ jobKey: 'case:H-9', job }], { at });
+    assert.equal(staged.waiting, 1);
+
+    const issues = await historyJobIssues(db, ['H-9', 'H-0']);
+    assert.deepEqual(Object.keys(issues), ['H-9']);
+    assert.equal(issues['H-9'][0].phrase, 'Seazona client is unclear');
+    assert.equal(issues['H-9'][0].href, `/integrations/seazona?batch=${batch.id}&job=case%3AH-9`);
+    assert.equal((await historySummary(db)).waitingForPerson, 1);
+
+    await decideJobs(db, batch.id, [{ jobKey: 'case:H-9', decision: 'import', clientId: 'C2' }], { by: 'person:test', now: clock.now });
+    assert.deepEqual(await historyJobIssues(db, ['H-9']), {});
+    assert.equal((await historySummary(db)).waitingForPerson, 0);
   });
 });

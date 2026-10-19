@@ -1,6 +1,6 @@
 import { createSeazonaClient } from './client.js';
 import { listClients, listWork, readBillableWork } from './feed.js';
-import { historySummary, readHistoryWork } from './history/index.js';
+import { historyJobIssues, historySummary, readHistoryWork } from './history/index.js';
 import { readSeazonaSyncHealth, runSeazonaSync } from './lanes.js';
 import { createSeazonaRouter } from './routes.js';
 import { createSeazonaScheduler } from './scheduler.js';
@@ -134,6 +134,12 @@ export function createSeazonaAdapter({ env = null, fetchImpl = null, now = Date.
       // Jobs board. Reads Flow's copy only.
       async listWork() {
         return listWork(current().db, { now: now() });
+      },
+
+      // History jobs a person must decide, as issues on their job cards,
+      // each with a link to the reconciliation. Reads Flow's copy only.
+      async jobIssues({ refs = [] } = {}) {
+        return historyJobIssues(current().db, refs);
       },
     },
   };

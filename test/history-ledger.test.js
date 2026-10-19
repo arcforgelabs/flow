@@ -3,6 +3,7 @@ import { after, before, beforeEach, describe, test } from 'node:test';
 import { and, eq, sql } from 'drizzle-orm';
 import { createContact, createOrganisation, createPriceItem } from '../server/core/directory.js';
 import { HISTORY_HOLD_REASON, listHistoryJobs, releaseHistoryJob } from '../server/core/history.js';
+import { boardJobs } from '../server/core/job-board.js';
 import { runPipelineOnce } from '../server/core/pipeline.js';
 import { billingObligations } from '../server/db/schema.js';
 import { freshDatabase, skipWithoutDatabase } from './support/db.js';
@@ -130,4 +131,25 @@ describe('history jobs in the ledger', { skip: skipWithoutDatabase }, () => {
     assert.equal(row.holdReason, HISTORY_HOLD_REASON);
     assert.equal(row.invoiceId, null);
   });
+
+  test('the board leaves held history jobs out, and shows each job\'s integration issues', async () => {
+    const work = fakeWork();
+    work.state.live = [ledgerJob('L-2')];
+    work.state.history = [ledgerJob('H-5')];
+    await runPipelineOnce(db, integrationsOf([work.adapter]), { now: NOW });
+    const board = {
+      id: 'seazona',
+      capabilities: {
+        listWork: async () => ({ statuses: [], items: [{ sourceSystem: 'seazona', sourceJobRef: 'L-2', status: 'Shipped' }, { sourceSystem: 'seazona', sourceJobRef: 'L-3', status: 'In Production' }] }),
+        jobIssues: async ({ refs }) => (refs.includes('L-2') ? { 'L-2': [{ integration: 'seazona', phrase: 'Seazona history differs', href: '/integrations/seazona?batch=1&job=case%3AL-2' }] } : {}),
+      },
+    };
+    const { jobs } = await boardJobs(db, organisationId, { work: [board] });
+    assert.deepEqual(jobs.map((j) => j.sourceJobRef), ['L-2', 'L-3']);
+    assert.equal(jobs[0].issues[0].phrase, 'Seazona history differs');
+    assert.deepEqual(jobs[1].issues, []);
+    const ledgerOnly = await boardJobs(db, organisationId);
+    assert.ok(!ledgerOnly.jobs.some((j) => j.sourceJobRef === 'H-5'), 'a held history job is not on the board');
+  });
 });
+

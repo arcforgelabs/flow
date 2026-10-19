@@ -537,11 +537,48 @@ export async function readHistoryWork(db, { cursor = null, limit = 200 } = {}) {
   };
 }
 
+// One short phrase for each finding, for the issue on a job card.
+const ISSUE_PHRASE = {
+  client_ambiguous: 'Seazona client is unclear',
+  api_copy_ambiguous: 'Matches several Seazona orders',
+  differs_from_earlier_import: 'Seazona history changed',
+  differs_from_api_copy: 'Seazona history differs',
+  invoice_has_several_orders: 'Invoice number is on several orders',
+  client_unknown: 'Seazona client not found',
+};
+const waitingJobs = sql`${seazonaHistoryBatchJobs.decision} is null and ${seazonaHistoryBatchJobs.outcome} in ('needs_person', 'changed')
+  and ${seazonaHistoryBatchJobs.batchId} in (select id from seazona_history_batches where status in ('staged', 'reconciled', 'running'))`;
+
+// The history jobs a person must decide, as issues on the jobs they belong
+// to (the port's jobIssues): { [order id]: [{ phrase, href }] }. Each opens
+// the job in the Seazona integration's reconciliation; a decision there
+// clears the issue, since it is read again for each board.
+export async function historyJobIssues(db, refs) {
+  const ids = [...new Set((refs ?? []).filter(Boolean).map(String))];
+  if (!ids.length) return {};
+  const rows = await db.select().from(seazonaHistoryBatchJobs).where(and(
+    waitingJobs,
+    sql`(${seazonaHistoryBatchJobs.mirrorOrderId} in ${ids} or ${seazonaHistoryBatchJobs.job}->>'caseRef' in ${ids})`,
+  ));
+  const issues = {};
+  for (const row of rows) {
+    const ref = ids.includes(row.mirrorOrderId) ? row.mirrorOrderId : row.job.caseRef;
+    const code = (row.findings ?? []).find((f) => f.blocking)?.code ?? row.findings?.[0]?.code;
+    (issues[ref] ??= []).push({
+      integration: 'seazona',
+      phrase: ISSUE_PHRASE[code] ?? 'Seazona history needs a check',
+      href: `/integrations/seazona?batch=${row.batchId}&job=${encodeURIComponent(row.jobKey)}`,
+    });
+  }
+  return issues;
+}
+
 // Totals for health and Settings.
 export async function historySummary(db) {
   const [jobs] = await db.select({ jobs: sql`count(*)::int`, linked: sql`count(${seazonaHistoryJobs.mirrorOrderId})::int`, first: sql`min(coalesce(${seazonaHistoryJobs.jobDate}, ${seazonaHistoryJobs.dueDate}, ${seazonaHistoryJobs.shippedDate}))`, last: sql`max(coalesce(${seazonaHistoryJobs.jobDate}, ${seazonaHistoryJobs.dueDate}, ${seazonaHistoryJobs.shippedDate}))` })
     .from(seazonaHistoryJobs);
   const [batches] = await db.select({ open: sql`count(*) filter (where ${seazonaHistoryBatches.status} in ('staged', 'reconciled'))::int`, applied: sql`count(*) filter (where ${seazonaHistoryBatches.status} = 'applied')::int` })
     .from(seazonaHistoryBatches).where(gt(seazonaHistoryBatches.id, 0));
-  return { jobs: jobs.jobs, alsoInApiCopy: jobs.linked, firstJobDate: jobs.first, lastJobDate: jobs.last, openBatches: batches.open, appliedBatches: batches.applied };
+  const [waiting] = await db.select({ n: sql`count(*)::int` }).from(seazonaHistoryBatchJobs).where(waitingJobs);
+  return { jobs: jobs.jobs, alsoInApiCopy: jobs.linked, firstJobDate: jobs.first, lastJobDate: jobs.last, openBatches: batches.open, appliedBatches: batches.applied, waitingForPerson: waiting.n };
 }

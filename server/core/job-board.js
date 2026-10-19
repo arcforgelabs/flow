@@ -96,7 +96,7 @@ export async function boardJobs(db, organisationId, { work = [], accounting = nu
         totalCents: o.totalCents, lines: ledgerLines(o.lines), obligation: o,
       };
     });
-    return { jobs, statuses: [...statuses.values()] };
+    return { jobs: await withIssues(jobs, work, log), statuses: [...statuses.values()] };
   }
 
   const codes = new Set((await db.select({ code: priceItems.code }).from(priceItems)
@@ -129,5 +129,24 @@ export async function boardJobs(db, organisationId, { work = [], accounting = nu
       });
     }
   }
-  return { jobs, statuses };
+  return { jobs: await withIssues(jobs, work, log), statuses };
+}
+
+// Each job's open issues from its integration (the port's jobIssues): a
+// short phrase and the page where a person fixes it. A failed read leaves
+// the board as it is.
+async function withIssues(jobs, adapters, log) {
+  const issues = new Map();
+  for (const adapter of adapters) {
+    if (typeof adapter.capabilities.jobIssues !== 'function') continue;
+    const refs = jobs.filter((j) => j.sourceSystem === adapter.id).map((j) => j.sourceJobRef);
+    if (!refs.length) continue;
+    try {
+      const found = await adapter.capabilities.jobIssues({ refs });
+      for (const [ref, list] of Object.entries(found ?? {})) issues.set(keyOf(adapter.id, ref), list);
+    } catch (error) {
+      log.error?.(`[jobs] ${adapter.id} jobIssues: ${error.message}`);
+    }
+  }
+  return jobs.map((j) => ({ ...j, issues: issues.get(keyOf(j.sourceSystem, j.sourceJobRef)) ?? [] }));
 }

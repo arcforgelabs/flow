@@ -31,12 +31,15 @@ export const exampleAdapter = {
 
 The capabilities are `pullWorkItems`, `pullHistoryJobs`, `pushInvoice`, `pushBill`,
 `pullPayments`, `checkInvoice`, `listCustomers`, `findInvoices`, `listWork`,
-`captureError`, `browserMonitoring` and `health`. `listWork({ organisationId })`
+`jobIssues`, `captureError`, `browserMonitoring` and `health`. `listWork({ organisationId })`
 answers the work system's jobs for the Jobs board from the adapter's own copy,
 never a live call: `{ items, statuses }`, each item with its `sourceSystem`,
 `sourceJobRef`, `status`, `clientName`, `practitioner`, dates, lines and
 total (Seazona: open orders and orders finished in the last 30 days, never
-one deleted in Seazona). `captureError({ message,
+one deleted in Seazona). `jobIssues({ refs })` answers the integration's
+open issues for those job refs, `{ [ref]: [{ integration, phrase, href }] }`:
+one short phrase and the page where a person fixes it; the Jobs board shows
+them on each job (Seazona: history jobs a person must decide). `captureError({ message,
 source, error })` takes each error Flow logs, and `browserMonitoring()`
 answers the public settings a browser needs; the Sentry adapter has both
 (`docs/SENTRY.md`).
