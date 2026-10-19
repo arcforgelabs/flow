@@ -1,11 +1,12 @@
 # Flow — Vision
 
-Flow is invoicing, bill entry and a financial dashboard for a lab that makes
-work to order, first for dental labs.
+Flow is invoicing, bill approval and a financial dashboard for a lab that
+makes work to order, first for dental labs. It is a complete application with
+its own database. It is not a sync engine between other products.
 
 It is for the person who bills the work and pays the suppliers. Finished feels
 like this: completed cases become invoices they check and send, supplier bills
-go in once and get approved, and one dashboard shows cash, what is owed to the
+are reviewed and approved, and one dashboard shows cash, what is owed to the
 lab, what the lab owes, and the GST for the BAS period. Every invoice a
 customer was sent can be found again, exactly as it was sent.
 
@@ -13,8 +14,10 @@ Flow is open source so any lab can run its own installation.
 
 ## The core and its integrations
 
-The core is invoices, bills, payments, contacts, the price list and the
-dashboard. It works with no integration connected.
+The core is invoices, bills, payments, credit notes, contacts, the price list,
+the jobs it bills, approvals and the dashboard. The core holds its own copy of
+every record it shows, so it works with no integration connected and an owner
+can build reports and features on its data.
 
 Everything outside the core is an integration behind one contract (the
 integration port):
@@ -25,15 +28,43 @@ integration port):
 - **Xero** is optional. Its adapter sends issued invoices and approved bills
   to the owner's own Xero organisation and reads payments back.
 
-Adding an integration never changes the core.
+Adding an integration never changes the core. Every integration uses the same
+data spine (`docs/DATA_SPINE.md`): its records come into a mirror, get a Flow
+identity, and become core records; Flow's writes leave through an outbox; a
+conflict goes to one review queue; one job queue runs the work.
 
 ## Standing decisions
 
 ### Why does Flow keep its own records?
 
-Flow is the store of record for the invoices and bills it issues. Xero gets a
-copy and owns bank reconciliation. A lab without Xero still has complete,
-correct records.
+Flow is the store of record for the invoices it issues. Xero gets a copy and
+owns bank reconciliation. A lab without Xero still has complete, correct
+records.
+
+Flow also keeps a read-only copy of the accounting history from before it
+was installed (#54), so its reports and its dashboard cover years, not only
+the days since install.
+
+### Why does Flow hold its data instead of passing it through?
+
+An app that only passes records from one system to another cannot answer
+questions about them, cannot show history, and breaks when one side is down.
+Flow stores what each integration reports, links it to its own records, and
+acts from its own database. Sync is how the data arrives and leaves. It is
+not the product.
+
+### Who wins when two systems disagree?
+
+The case system, Flow and the accounting system each own their own records,
+and the data moves both ways. Flow records which system each change came
+from. When two systems disagree, Flow never overwrites one silently: it opens
+an item in the review queue for a person.
+
+### Why are approvals in Flow?
+
+The person who bills checks work before it leaves Flow. Writes to the
+accounting system are drafts, and a person approves them. An approval is a
+record in Flow with who, when and what they saw.
 
 ### Why is a sent invoice never changed?
 

@@ -1,6 +1,6 @@
 # Flow
 
-Flow is invoicing, bill entry and a financial dashboard for labs that make
+Flow is invoicing, bill approval and a financial dashboard for labs that make
 work to order, first for dental labs. Seazona (the lab's case system) is a
 bundled integration, and Xero is an optional one. See `VISION.md`.
 
