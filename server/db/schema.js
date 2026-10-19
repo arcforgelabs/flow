@@ -59,6 +59,9 @@ export const priceItems = pgTable('price_items', {
   organisationId: organisationId().references(() => organisations.id),
   code: text('code').notNull(),
   name: text('name').notNull(),
+  // The accounting system's longer text for the item, when it has one. Line
+  // mapping (server/core/line-mapping.js) compares a work line with it too.
+  description: text('description'),
   unitAmountCents: integer('unit_amount_cents').notNull(),
   taxCode: text('tax_code').notNull().default('GST'),
   archivedAt: timestamp('archived_at', { withTimezone: true }),
@@ -120,6 +123,9 @@ export const invoiceLines = pgTable('invoice_lines', {
   quantity: integer('quantity').notNull(),
   unitAmountCents: integer('unit_amount_cents').notNull(),
   taxCode: text('tax_code').notNull(),
+  // A line with no price item may name the accounting account it books to,
+  // for example a surcharge (server/core/line-mapping.js).
+  accountCode: text('account_code'),
   lineAmountCents: integer('line_amount_cents').notNull(),
   taxCents: integer('tax_cents').notNull(),
 }, (t) => [
@@ -673,4 +679,41 @@ export const automations = pgTable('automations', {
   updatedAt: updatedAt(),
 }, (t) => [
   primaryKey({ name: 'automations_pk', columns: [t.organisationId, t.key] }),
+]);
+
+// Line mappings (docs/LINE_MAPPING.md): how a work system's line label finds
+// the lab's price item, as rows the lab edits. `kind` says which step of the
+// line mapping routine uses the row:
+//   alias        label (exact, or the start of it) -> price item code
+//   price_alias  label and unit price -> price item code
+//   saved        label and unit price -> price item code, chosen by a person
+//   account      label -> a line with no price item, booked to an account
+// `label` is stored in the lookup form (lineLookupText), so it matches in any
+// case, spacing or punctuation.
+export const LINE_MAPPING_KINDS = ['alias', 'price_alias', 'saved', 'account'];
+export const lineMappings = pgTable('line_mappings', {
+  id: id(),
+  organisationId: organisationId().references(() => organisations.id),
+  kind: text('kind').notNull(),
+  match: text('match').notNull().default('exact'),
+  label: text('label').notNull(),
+  unitAmountCents: integer('unit_amount_cents'),
+  itemCode: text('item_code'),
+  accountCode: text('account_code'),
+  taxCode: text('tax_code'),
+  description: text('description'),
+  enabled: boolean('enabled').notNull().default(true),
+  // Who made it: a person, a setup profile, or the earlier codebase's rules.
+  origin: text('origin').notNull().default('person'),
+  updatedBy: uuid('updated_by').references(() => people.id, { onDelete: 'set null' }),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, (t) => [
+  uniqueIndex('line_mappings_unique').on(t.organisationId, t.kind, t.match, t.label, sql`coalesce(${t.unitAmountCents}, -1)`),
+  check('line_mappings_kind_valid', sql`${t.kind} in ('alias', 'price_alias', 'saved', 'account')`),
+  check('line_mappings_match_valid', sql`${t.match} in ('exact', 'starts_with')`),
+  check('line_mappings_tax_code_valid', sql`${t.taxCode} is null or ${t.taxCode} in ('GST', 'GST_FREE')`),
+  check('line_mappings_target', sql`(${t.kind} = 'account' and ${t.accountCode} is not null) or (${t.kind} <> 'account' and ${t.itemCode} is not null)`),
+  check('line_mappings_price', sql`${t.kind} not in ('price_alias', 'saved') or ${t.unitAmountCents} is not null`),
+  check('line_mappings_label_valid', sql`length(${t.label}) between 1 and 200`),
 ]);

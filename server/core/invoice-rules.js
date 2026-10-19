@@ -21,7 +21,9 @@ const invalid = (message) => new FlowError('invalid', message);
 
 const day = (date) => new Date(`${String(date).slice(0, 10)}T00:00:00Z`);
 const norm = (value) => String(value ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
-const code = (line) => norm(line.itemCode);
+// A line's key: its price item code, else the label line mapping gave it (a
+// line booked to an account, such as a surcharge, has no code).
+const code = (line) => norm(line.itemCode || line.label);
 const cents = (lines) => lines.reduce((sum, l) => sum + (l.lineAmountCents ?? 0), 0);
 
 // The share of the item's lines in the job's other lines, as the charged and
@@ -41,7 +43,7 @@ export const FIELDS = Object.freeze({
   practitioner: { label: 'Practitioner', kind: 'text', read: (j, { customer }) => j.practitioner || customer.defaultPractitioner || null },
   customer: { label: 'Customer', kind: 'choice', options: 'customers', read: (j) => j.contactId },
   customer_billable: { label: 'Customer is billable', kind: 'boolean', read: (j, { customer }) => customer.billable !== false },
-  line_item: { label: 'Line item', kind: 'items', options: 'items', read: (j) => (j.lines ?? []).map(code) },
+  line_item: { label: 'Line item', kind: 'items', options: 'items', read: (j) => (j.lines ?? []).flatMap((l) => [norm(l.itemCode), norm(l.label)].filter(Boolean)) },
   line_share: { label: 'Line share of other lines (%)', kind: 'share', options: 'items', read: (j) => j.lines ?? [] },
 });
 

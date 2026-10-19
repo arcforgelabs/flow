@@ -39,9 +39,11 @@ async function resolveLines(tx, organisationId, lines) {
     } catch (error) {
       throw new FlowError('invalid', `line ${index + 1}: ${error.message}`);
     }
+    const accountCode = line.priceItemId ? null : (typeof line.accountCode === 'string' && line.accountCode.trim() ? line.accountCode.trim().slice(0, 20) : null);
     resolved.push({
       position: index + 1,
       priceItemId: line.priceItemId ?? null,
+      accountCode,
       description: description.trim(),
       quantity,
       unitAmountCents,
@@ -141,8 +143,8 @@ export async function issueInvoice(db, organisationId, invoiceId, { issuedBy, is
       reference: invoice.reference,
       currency: invoice.currency,
       contact: { id: contact.id, name: contact.name, email: contact.email },
-      lines: lines.map(({ line: { position, description, quantity, unitAmountCents, taxCode, lineAmountCents, taxCents }, itemCode }) => (
-        { position, itemCode: itemCode ?? null, description, quantity, unitAmountCents, taxCode, lineAmountCents, taxCents }
+      lines: lines.map(({ line: { position, description, quantity, unitAmountCents, taxCode, lineAmountCents, taxCents, accountCode }, itemCode }) => (
+        { position, itemCode: itemCode ?? null, ...(accountCode ? { accountCode } : {}), description, quantity, unitAmountCents, taxCode, lineAmountCents, taxCents }
       )),
       subtotalCents: invoice.subtotalCents,
       taxCents: invoice.taxCents,

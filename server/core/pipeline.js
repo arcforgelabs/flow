@@ -4,9 +4,10 @@ import {
   billingObligations, contacts, externalLinks, linkRejections, linkSuggestions, obligationEvents, organisations, pipelineCursors,
 } from '../db/schema.js';
 import { FlowError } from './errors.js';
-import { runAutomations } from './automations.js';
+import { listAutomations, runAutomations } from './automations.js';
 import { readInvoicingSettings } from './invoicing-rules.js';
 import { observeJob, recordAccountingEvidence, setHold } from './ledger.js';
+import { loadMappingContext, mapLines } from './line-mapping.js';
 import { linkRecord, priorLinkFor } from './links.js';
 import { enqueueJob, runNextJob } from './queue.js';
 
@@ -134,13 +135,18 @@ export async function ingestWork(db, organisationId, { adapter, restart = false,
   let cursor = restart ? null : await readCursor(db, organisationId, name);
   const links = await activeLinks(db, organisationId, { system: adapter.id, entity: 'contact' });
   const contactOf = new Map(links.map((l) => [l.externalId, l.flowId]));
-  const result = { observed: 0, withoutCustomer: 0, skipped: 0, sentToReview: 0, more: false };
+  const result = { observed: 0, withoutCustomer: 0, skipped: 0, sentToReview: 0, unmappedLines: 0, more: false };
+  // Line mapping (line-mapping.js): each line finds its price item first.
+  const mapping = (await listAutomations(db, organisationId)).find((a) => a.key === 'map_lines');
+  const context = mapping?.enabled ? await loadMappingContext(db, organisationId, mapping.config) : null;
   for (let page = 0; page < pages; page += 1) {
     const { items, withdrawn, cursor: next, more } = await adapter.capabilities.pullWorkItems(cursor, { limit: 200 });
     for (const item of items) {
       const contactId = contactOf.get(String(item.clientId ?? '')) ?? null;
+      const job = context ? { ...item.ledgerJob, lines: mapLines(item.ledgerJob.lines ?? [], context) } : item.ledgerJob;
+      if (context) result.unmappedLines += job.lines.filter((l) => !l.itemCode && !l.accountCode).length;
       try {
-        await observeJob(db, organisationId, { ...item.ledgerJob, contactId });
+        await observeJob(db, organisationId, { ...job, contactId });
         result.observed += 1;
         if (!contactId) result.withoutCustomer += 1;
       } catch (error) {

@@ -5,7 +5,9 @@ import { seedFirstOwner } from './auth/people.js';
 import { createPersonAuth } from './auth/session.js';
 import { resolveSignInSettings } from './auth/settings.js';
 import { migrateDatabase, openDatabase } from './db/index.js';
-import { importEarlierAtStart, importEarlierLinksAtStart, resolveImportAtStart } from './import/at-start.js';
+import {
+  importEarlierAtStart, importEarlierLinksAtStart, importEarlierMappingsAtStart, resolveImportAtStart,
+} from './import/at-start.js';
 import { createMonitoredLog } from './core/monitoring.js';
 import { createPipelineWorker } from './core/pipeline.js';
 import { createSendWorker } from './core/sending.js';
@@ -65,6 +67,8 @@ try {
 // The earlier links are evidence to add, not records Flow needs to open, so a
 // failure is logged and the start goes on.
 await importEarlierLinksAtStart({ db: database.db, pool: database.pool, settings: importAtStart })
+  .catch((error) => console.error(`[import] ${error.message}`));
+await importEarlierMappingsAtStart({ db: database.db, pool: database.pool, settings: importAtStart })
   .catch((error) => console.error(`[import] ${error.message}`));
 // What an owner set in Settings, Integrations, with the host's own
 // environment over it (server/integrations/setup.js).

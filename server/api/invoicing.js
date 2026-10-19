@@ -9,6 +9,9 @@ import {
   ACTIONS, createRule, deleteRule, FIELDS, listRules, TESTS, updateRule,
 } from '../core/invoice-rules.js';
 import {
+  createMapping, deleteMapping, listMappings, STEP_LABELS, STEPS, updateMapping,
+} from '../core/line-mapping.js';
+import {
   customerBillingByContact, effectiveSettings, INVOICING_DEFAULTS, readCustomerBilling, readInvoicingSettings, ruleBlockers,
   saveCustomerBilling, saveInvoicingSettings,
 } from '../core/invoicing-rules.js';
@@ -46,6 +49,11 @@ import {
 //   POST  /rules                      owner or admin: a new rule { name, enabled, conditions, action }
 //   PUT   /rules/:id                  owner or admin: change some of a rule
 //   DELETE /rules/:id                 owner or admin
+//   GET   /line-mappings              the lab's line mappings and the mapping steps (server/core/line-mapping.js)
+//   GET   /line-labels                the line labels on jobs, with counts and how each mapped
+//   POST  /line-mappings              owner or admin: a new mapping
+//   PUT   /line-mappings/:id          owner or admin: change some of a mapping
+//   DELETE /line-mappings/:id         owner or admin
 //   GET   /automations?place=         Flow's routines, each on or off (server/core/automations.js)
 //   PUT   /automations/:key           owner or admin: { enabled, config }
 //   GET   /work-statuses              the work system's job statuses, with job counts
@@ -75,7 +83,7 @@ const MAX_UNIT_CENTS = 100_000_000;
 
 const ERROR_STATUS = {
   invalid: 400, organisation_required: 400, not_found: 404, not_draft: 409, not_issued: 409,
-  never_issued: 409, not_ready: 409, live_check_unavailable: 409,
+  never_issued: 409, not_ready: 409, live_check_unavailable: 409, conflict: 409,
   accounting_not_connected: 409, accounting_writes_off: 409,
 };
 
@@ -516,7 +524,11 @@ export function createInvoicingRouter({ db, personAuth, log = console, liveCheck
       options: {
         statuses: statuses.map((s) => ({ value: s.value, label: s.label })),
         customers,
-        items: items.map((i) => ({ value: i.value, label: `${i.value} · ${i.label}` })),
+        items: [
+          ...items.map((i) => ({ value: i.value, label: `${i.value} · ${i.label}` })),
+          ...(await listMappings(db, organisationId)).filter((m) => m.kind === 'account')
+            .map((m) => ({ value: m.label, label: `${m.label} · ${m.description ?? `account ${m.accountCode}`}` })),
+        ],
       },
     });
   }));
@@ -543,6 +555,51 @@ export function createInvoicingRouter({ db, personAuth, log = console, liveCheck
     const organisationId = await organisationOf(req);
     await deleteRule(db, organisationId, ruleId);
     log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} deleted invoice rule ${ruleId}`);
+    res.json({ ok: true });
+  }));
+
+  router.get('/line-mappings', ...signedIn, handle(log, async (req, res) => {
+    const organisationId = await organisationOf(req);
+    res.json({ ok: true, mappings: await listMappings(db, organisationId), steps: STEPS.map((key) => ({ key, label: STEP_LABELS[key] })) });
+  }));
+
+  // Each label the line mapping saw on jobs, how many lines carry it, a
+  // sample of the work system's text and price, and whether it mapped.
+  router.get('/line-labels', ...signedIn, handle(log, async (req, res) => {
+    const organisationId = await organisationOf(req);
+    const rows = (await db.execute(sql`
+      select l->>'label' as label, count(*)::int as lines,
+        count(*) filter (where l->>'itemCode' is null and l->>'accountCode' is null)::int as unmapped,
+        min(l->>'description') as sample, min((l->>'unitAmountCents')::int) as "unitAmountCents",
+        min(l->>'mappedBy') as "mappedBy", min(l->>'itemCode') as "itemCode"
+      from billing_obligations o, jsonb_array_elements(o.lines) l
+      where o.organisation_id = ${organisationId} and l->>'label' is not null
+      group by 1 order by 3 desc, 2 desc, 1 limit 1000`)).rows ?? [];
+    res.json({ ok: true, labels: rows });
+  }));
+
+  router.post('/line-mappings', ...manager, handle(log, async (req, res) => {
+    const organisationId = await organisationOf(req);
+    const { organisationId: _named, ...raw } = req.body ?? {};
+    const mapping = await createMapping(db, organisationId, raw, { personId: req.person.id });
+    log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} added line mapping ${mapping.id}`);
+    res.status(201).json({ ok: true, mapping });
+  }));
+
+  router.put('/line-mappings/:id', ...manager, handle(log, async (req, res) => {
+    const mappingId = pathId(req.params.id, 'mapping');
+    const organisationId = await organisationOf(req);
+    const { organisationId: _named, ...changes } = req.body ?? {};
+    const mapping = await updateMapping(db, organisationId, mappingId, changes, { personId: req.person.id });
+    log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} changed line mapping ${mapping.id}`);
+    res.json({ ok: true, mapping });
+  }));
+
+  router.delete('/line-mappings/:id', ...manager, handle(log, async (req, res) => {
+    const mappingId = pathId(req.params.id, 'mapping');
+    const organisationId = await organisationOf(req);
+    await deleteMapping(db, organisationId, mappingId);
+    log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} deleted line mapping ${mappingId}`);
     res.json({ ok: true });
   }));
 

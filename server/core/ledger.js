@@ -85,14 +85,21 @@ async function normaliseLines(tx, organisationId, lines) {
     } catch (error) {
       throw new FlowError('invalid', `line ${index + 1}: ${error.message}`);
     }
-    normalised.push({ itemCode, priceItemId, description, quantity, unitAmountCents, taxCode, ...totals });
+    // A line mapped to an account (line-mapping.js) needs no price item.
+    const accountCode = priceItemId ? null : (line.accountCode?.trim() || null);
+    const extra = {
+      ...(accountCode ? { accountCode } : {}),
+      ...(line.label ? { label: line.label } : {}),
+      ...(line.mappedBy ? { mappedBy: line.mappedBy } : {}),
+    };
+    normalised.push({ itemCode, priceItemId, description, quantity, unitAmountCents, taxCode, ...extra, ...totals });
   }
   return normalised;
 }
 
 function fingerprint(lines) {
   const keys = lines
-    .map((l) => [l.itemCode ?? l.description.toLowerCase(), l.quantity, l.unitAmountCents, l.taxCode])
+    .map((l) => [l.itemCode ?? l.accountCode ?? l.description.toLowerCase(), l.quantity, l.unitAmountCents, l.taxCode])
     .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
   return createHash('sha256').update(JSON.stringify(keys)).digest('hex');
 }
@@ -117,7 +124,7 @@ export async function observeJob(db, organisationId, job) {
       lines,
       lineFingerprint: fingerprint(lines),
       ...invoiceTotals(lines),
-      mappingComplete: lines.every((l) => l.priceItemId),
+      mappingComplete: lines.every((l) => l.priceItemId || l.accountCode),
     };
     const [existing] = await tx.select().from(billingObligations)
       .where(and(
@@ -418,8 +425,8 @@ export async function draftInvoiceForObligation(db, organisationId, obligationId
       contactId: obligation.contactId,
       reference: obligation.caseRef ?? obligation.sourceJobRef,
       dueDate,
-      lines: obligation.lines.map(({ priceItemId, description, quantity, unitAmountCents, taxCode }) => (
-        { priceItemId, description, quantity, unitAmountCents, taxCode }
+      lines: obligation.lines.map(({ priceItemId, accountCode, description, quantity, unitAmountCents, taxCode }) => (
+        { priceItemId, accountCode, description, quantity, unitAmountCents, taxCode }
       )),
     });
     // Drafting the invoice says the job is ready, whoever asked.

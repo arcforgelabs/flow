@@ -2,6 +2,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import { automations, billingObligations } from '../db/schema.js';
 import { FlowError, notFound } from './errors.js';
 import { autoDraftJobs } from './invoicing-rules.js';
+import { MAPPING_DEFAULTS, readMappingConfig, remapJobs } from './line-mapping.js';
 import { setReady } from './ledger.js';
 
 // Automations (docs/AUTOMATIONS.md): Flow's routines. Each one watches Flow's
@@ -55,6 +56,17 @@ function readStatuses(value) {
 
 export const AUTOMATIONS = Object.freeze([
   {
+    // Runs inside the pipeline's read of the work system (pipeline.js,
+    // ingestWork), so every job reaches the ledger already mapped.
+    key: 'map_lines',
+    place: 'seazona',
+    name: 'Map lines to price items',
+    hint: 'Each Seazona line finds its price item.',
+    defaults: { enabled: true, config: { ...MAPPING_DEFAULTS } },
+    readConfig: (config) => readMappingConfig(config),
+    remap: true,
+  },
+  {
     key: 'mark_ready_from_work_status',
     place: 'seazona',
     name: 'Mark ready to invoice',
@@ -97,6 +109,8 @@ export async function saveAutomation(db, organisationId, key, changes, { personI
   await db.insert(automations)
     .values({ organisationId, key, enabled, config, updatedBy: personId })
     .onConflictDoUpdate({ target: [automations.organisationId, automations.key], set: { enabled, config, updatedBy: personId, updatedAt: sql`now()` } });
+  // A routine that shapes jobs as they come in applies to the jobs already read.
+  if (automation.remap) await remapJobs(db, organisationId);
   return (await listAutomations(db, organisationId)).find((a) => a.key === key);
 }
 
