@@ -1,6 +1,6 @@
 # Flow
 
-Flow is invoicing, bill entry and a financial dashboard for labs that make
+Flow is invoicing, bill approval and a financial dashboard for labs that make
 work to order, first for dental labs. Seazona (the lab's case system) is a
 bundled integration, and Xero is an optional one. See `VISION.md`.
 
@@ -32,6 +32,7 @@ run a lab.
 | `LICENSE` | MIT licence |
 | `docs/DESIGN.md` | The design systems (theme families), how pages and Clerk's components take them, and the screens |
 | `docs/DATA_MODEL.md` | The PostgreSQL records, the rules the database holds, and how to change the schema |
+| `docs/DATA_SPINE.md` | The design of the tables and jobs every integration shares: mirror, identity map, job queue, outbox, review queue |
 | `docs/RELEASING.md` | Versions and channels, the release workflows, how to cut and roll back a release, and the one-time setup |
 | `docs/SELF_HOSTING.md` | Running a Flow release with Docker, Node or Replit, the update notice, and Clerk sign-in |
 | `docs/REPLIT.md` | A Replit workspace of this repository that follows a release channel (`FLOW_DEPLOY_REF`) |

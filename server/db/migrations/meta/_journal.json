@@ -36,6 +36,13 @@
       "when": 1792329649575,
       "tag": "0004_ledger_events_append_only",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1792388648997,
+      "tag": "0005_data_spine",
+      "breakpoints": true
     }
   ]
 }
