@@ -110,7 +110,7 @@ while the installation has exactly one. Money is integer cents. Answers are
 | `GET /contacts?q=&limit=` | anyone | Customers, by name |
 | `GET /price-items?q=` | anyone | The price list, by code |
 | `GET /jobs?view=&limit=` | anyone | Billable jobs with `contactName`, `view` and `reasons`; `counts` by view |
-| `POST /jobs/:id/draft` | owner or admin | The job's draft invoice, made only after a live check in the accounting system (`checkInvoice`, `docs/INTEGRATIONS.md`) finds none; with no accounting integration it is refused (`live_check_unavailable`) |
+| `POST /jobs/:id/draft` | owner or admin | The job's draft invoice. With an accounting integration it is made only after a live check there (`checkInvoice`, `docs/INTEGRATIONS.md`) finds none. With none connected, Flow's own records are the check: one invoice for each job |
 
 A line is `{ priceItemId?, description?, quantity?, unitAmountCents?,
 taxCode? }`; a price item fills what the line leaves out.

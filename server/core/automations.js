@@ -125,14 +125,14 @@ async function markReadyFromWorkStatus(db, organisationId, { statuses }) {
 }
 
 // Runs every routine that is on. `accounting` is the integration whose copy
-// the draft routine checks; without one, the draft routine waits.
+// the draft routine checks; without one, Flow's own records are the check.
 export async function runAutomations(db, organisationId, { accounting = null, now = new Date() } = {}) {
   const summary = {};
   for (const automation of await listAutomations(db, organisationId)) {
     if (!automation.enabled) continue;
     if (automation.key === 'mark_ready_from_work_status') {
       summary[automation.key] = await markReadyFromWorkStatus(db, organisationId, automation.config);
-    } else if (automation.key === 'draft_when_ready' && accounting) {
+    } else if (automation.key === 'draft_when_ready') {
       summary[automation.key] = await autoDraftJobs(db, organisationId, { accounting, now, actor: actorOf(automation.key) });
     }
   }

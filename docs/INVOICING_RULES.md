@@ -2,7 +2,9 @@
 
 Flow drafts the invoice of each billable job that is ready to invoice, by
 rules, and sends checked invoices to the accounting system (Xero) in one of
-two ways. This page
+two ways. Invoicing is part of Flow and needs no integration. With no
+accounting system connected, Flow's own records are the only check: each job
+gets at most one invoice. The send mode is on the Xero integration page. This page
 describes the rules and the send modes. The code is in
 `server/core/invoicing-rules.js`. The settings are in Flow under Settings,
 Invoicing, and at `/api/invoicing/settings`.
@@ -66,8 +68,12 @@ A draft gets the invoice date when it is issued, and a due date
 `paymentTermsDays` after the day Flow drafted it (default 30).
 
 The automation "Draft when ready" turns the drafts on or off. It is on by
-default. A customer's `autoDraft` turns them off for that customer. With no
-integrations on, the pipeline does not run, so nothing is drafted.
+default. A customer's `autoDraft` turns them off for that customer. It runs
+with or without an accounting integration. With no integrations on at all,
+the pipeline does not run, and a person drafts from the Jobs board.
+
+The lab-specific rules in the table above become invoice rules that a lab
+builds (When, If, Then), in a later change.
 
 ### The duplicate check
 

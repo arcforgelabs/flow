@@ -4,7 +4,7 @@ import { createApp } from '../server/app.js';
 import { invitePerson, seedFirstOwner } from '../server/auth/people.js';
 import { createPersonAuth } from '../server/auth/session.js';
 import { createContact, createOrganisation, createPriceItem } from '../server/core/directory.js';
-import { observeJob, recordAccountingEvidence } from '../server/core/ledger.js';
+import { observeJob, recordAccountingEvidence, setReady } from '../server/core/ledger.js';
 import { createRegistry } from '../server/integrations/port.js';
 import { createXeroAdapter } from '../server/integrations/xero/index.js';
 import { fakeClerk, request, TEST_PUBLISHABLE_KEY } from './support/clerk.js';
@@ -249,9 +249,18 @@ describe('invoicing API', { skip: skipWithoutDatabase }, () => {
     const staffDraft = await call(`/jobs/${job.id}/draft`, { method: 'POST', token: staffToken, body: {} });
     assert.equal(staffDraft.status, 403);
 
-    const noCheck = await request(appWithoutCheck, `/api/invoicing/jobs/${job.id}/draft`, { token: ownerToken, method: 'POST', body: {} });
-    assert.equal(noCheck.status, 409);
-    assert.equal(noCheck.body.code, 'live_check_unavailable');
+    // With no accounting system connected, Flow's own records are the check:
+    // a ready job that no accounting system checked drafts.
+    const local = await observeJob(handle.db, lab.id, {
+      sourceSystem: 'worksystem', sourceJobRef: 'JOB-LOCAL', contactId: practice.id, lines: [{ itemCode: 'CRN' }],
+    });
+    await setReady(handle.db, lab.id, local.id, { actor: 'person:test' });
+    const withXero = await call(`/jobs/${local.id}/draft`, { method: 'POST', body: {} });
+    assert.equal(withXero.status, 409);
+    assert.ok(withXero.body.details.reasons.includes('the accounting system was not checked'));
+    const noCheck = await request(appWithoutCheck, `/api/invoicing/jobs/${local.id}/draft`, { token: ownerToken, method: 'POST', body: {} });
+    assert.equal(noCheck.status, 201, JSON.stringify(noCheck.body));
+    assert.deepEqual(checked, []);
 
     const drafted = await call(`/jobs/${job.id}/draft`, { method: 'POST', body: {} });
     assert.equal(drafted.status, 201);
@@ -263,7 +272,7 @@ describe('invoicing API', { skip: skipWithoutDatabase }, () => {
     const inList = (await call('/invoices?q=CASE-JOB-1')).body.invoices;
     assert.equal(inList[0].job.sourceJobRef, 'JOB-1');
     const after = await call('/jobs?view=drafted');
-    assert.equal(after.body.jobs[0].invoiceId, drafted.body.invoice.id);
+    assert.equal(after.body.jobs.find((j) => j.id === job.id).invoiceId, drafted.body.invoice.id);
 
     const again = await call(`/jobs/${job.id}/draft`, { method: 'POST', body: {} });
     assert.equal(again.status, 409);

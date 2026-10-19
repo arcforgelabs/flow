@@ -150,6 +150,18 @@ describe('drafts by rule', { skip: skipWithoutDatabase }, () => {
     assert.equal((await reload(row)).invoiceId, null);
   });
 
+  test('with no accounting system, a ready job nobody checked drafts from Flow\'s own records', async () => {
+    const row = await observeJob(handle.db, lab.id, {
+      sourceSystem: 'seazona', sourceJobRef: `job-${++counter}`, caseRef: `CASE-${counter}`,
+      contactId: practice.id, sourceStatus: 'Shipped', jobDate: '2026-10-15', lines: [{ itemCode: 'CROWN', description: 'Crown' }], observedAt: NOW,
+    });
+    await setReady(handle.db, lab.id, row.id, { actor: 'person:test' });
+    assert.equal((await explainObligation(handle.db, lab.id, row.id, { now: NOW, accounting: false })).view, 'ready');
+    assert.equal((await autoDraftJobs(handle.db, lab.id, { accounting, now: NOW })).drafted, 0);
+    assert.ok((await autoDraftJobs(handle.db, lab.id, { now: NOW })).drafted >= 1);
+    assert.ok((await reload(row)).invoiceId);
+  });
+
   test('a copy that is not fresh drafts nothing; a copy invoice with the job\'s number refuses the draft', async () => {
     const row = await cleared({ invoiceRef: 'SZ-77' });
     copy = { state: { complete: true, fresh: false, changedAt: null }, invoices: [] };
@@ -199,10 +211,13 @@ describe('drafts by rule', { skip: skipWithoutDatabase }, () => {
     assert.ok((await reload(shipped)).invoiceId);
     assert.equal((await reload(keptBack)).invoiceId, null);
 
-    // Without an accounting copy the draft routine waits.
+    // With no accounting system connected, the draft routine still drafts:
+    // Flow's own records are the check.
     const saved = await saveAutomation(handle.db, lab.id, 'mark_ready_from_work_status', { config: { statuses: ['In production'] } });
     assert.deepEqual(saved.config.statuses, ['in production']);
-    assert.deepEqual(await runAutomations(handle.db, lab.id, { now: NOW }), { mark_ready_from_work_status: { marked: 1 } });
+    const local = await runAutomations(handle.db, lab.id, { now: NOW });
+    assert.deepEqual(local.mark_ready_from_work_status, { marked: 1 });
     assert.ok((await reload(inLab)).readyAt);
+    assert.ok((await reload(inLab)).invoiceId);
   });
 });

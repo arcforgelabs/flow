@@ -1,6 +1,7 @@
 // Settings, Invoicing (/invoicing-settings): the checks a ready job passes
-// before Flow drafts its invoice, and how a checked invoice goes to the
-// accounting system (server/core/invoicing-rules.js, /api/invoicing/settings).
+// before Flow drafts its invoice (server/core/invoicing-rules.js,
+// /api/invoicing/settings). Invoicing needs no integration: how an invoice
+// goes to Xero is on the Xero integration page (sendModeSection).
 // Draft when ready is an automation (server/core/automations.js); the
 // Seazona integration page holds the rule that marks a job ready.
 // One row for each setting: its name, one short line, and its control. A
@@ -20,7 +21,7 @@ const SEND_MODES = [
 export async function renderInvoicingSettings(main, ui) {
   const { h, flow, toast, notice, pageHeader, me } = ui;
   const host = h('div', { class: 'fx-card', style: { padding: '8px 20px 16px' } }, h('div', { class: 'fx-skeleton' }));
-  main.append(pageHeader('Invoicing', { subtitle: 'Checks before a draft, and how invoices go to Xero.' }), host);
+  main.append(pageHeader('Invoicing', { subtitle: 'How Flow drafts invoices. No integration needed.' }), host);
   let body;
   try {
     body = await flow('/api/invoicing/settings');
@@ -68,12 +69,6 @@ export async function renderInvoicingSettings(main, ui) {
   };
   const days = (key, label) => box(key, label, { type: 'number', read: Number });
 
-  const sendMode = h('select', { class: 'fx-select', 'aria-label': 'Send to Xero as', disabled },
-    SEND_MODES.map((m) => h('option', { value: m.value, selected: saved.sendMode === m.value }, m.label)));
-  sendMode.addEventListener('change', async () => {
-    if (!(await save({ sendMode: sendMode.value }, sendMode))) sendMode.value = saved.sendMode;
-  });
-
   const section = (title, ...rows) => h('section', { class: 'fx-set' }, h('h2', { class: 'fx-set__title' }, title), ...rows);
   host.replaceChildren(...[
     disabled ? notice('Only an owner or admin can change these.', 'info') : null,
@@ -84,8 +79,42 @@ export async function renderInvoicingSettings(main, ui) {
       row('Rush item code', 'Price item code of a rush charge.', box('rushItemCode', 'Rush item code', { read: (v) => v.trim() || null, placeholder: 'None' })),
       row('Rush share', 'Rush line as % of the other lines.', days('rushPercent', 'Rush share in percent'))),
     automationSection(ui, 'invoicing', 'Automations'),
-    section('Sending',
-      row('Send to Xero as', 'Draft: approve in Xero. Approved: Xero emails it.', sendMode)),
     h('p', { class: 'fx-dim', style: { margin: '12px 0 0' } }, h('a', { href: DOCS, target: '_blank', rel: 'noopener' }, 'How the rules work')),
   ].filter(Boolean));
+}
+
+// The Xero integration page's "Sending" section: how a checked invoice goes to
+// Xero. A customer can have its own mode (/api/invoicing/contacts/:id/billing).
+export function sendModeSection(ui) {
+  const { h, flow, toast, notice, me } = ui;
+  const disabled = !['owner', 'admin'].includes(me?.person.role);
+  const select = h('select', { class: 'fx-select', 'aria-label': 'Send to Xero as', disabled },
+    SEND_MODES.map((m) => h('option', { value: m.value }, m.label)));
+  const section = h('section', { class: 'fx-set' }, h('h2', { class: 'fx-set__title' }, 'Sending'),
+    h('div', { class: 'fx-set__row' },
+      h('div', { class: 'fx-set__text' }, h('span', { class: 'fx-set__name' }, 'Send to Xero as'), h('span', { class: 'fx-set__hint' }, 'Draft: approve in Xero. Approved: Xero emails it.')),
+      h('div', { class: 'fx-set__control' }, select)),
+    h('p', { class: 'fx-dim', style: { margin: '8px 0 0' } }, h('a', { href: DOCS, target: '_blank', rel: 'noopener' }, 'How sending works')));
+  let saved = null;
+  (async () => {
+    try {
+      saved = (await flow('/api/invoicing/settings')).settings;
+      select.value = saved.sendMode;
+    } catch (error) {
+      section.append(notice(error.message, 'danger'));
+    }
+  })();
+  select.addEventListener('change', async () => {
+    select.disabled = true;
+    try {
+      saved = (await flow('/api/invoicing/settings', { method: 'PUT', body: JSON.stringify({ sendMode: select.value }) })).settings;
+      toast('Saved.', 'success');
+    } catch (error) {
+      toast(error.message, 'danger');
+      if (saved) select.value = saved.sendMode;
+    } finally {
+      select.disabled = disabled;
+    }
+  });
+  return section;
 }

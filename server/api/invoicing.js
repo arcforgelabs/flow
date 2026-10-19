@@ -334,7 +334,7 @@ export function createInvoicingRouter({ db, personAuth, log = console, liveCheck
     const view = text(req.query.view);
     if (view && !VIEWS.includes(view)) throw invalid(`view must be one of ${VIEWS.join(', ')}`);
     const limit = limitOf(req.query.limit, 200, 500);
-    const all = await listObligations(db, organisationId);
+    const all = await listObligations(db, organisationId, { accounting: Boolean(liveCheckFor(organisationId)) });
     const counts = Object.fromEntries(VIEWS.map((v) => [v, 0]));
     for (const entry of all) counts[entry.view] += 1;
     const listed = (view ? all.filter((entry) => entry.view === view) : all).slice(0, limit);
@@ -376,10 +376,8 @@ export function createInvoicingRouter({ db, personAuth, log = console, liveCheck
   router.post('/jobs/:id/draft', ...manager, handle(log, async (req, res) => {
     const obligationId = pathId(req.params.id, 'job');
     const organisationId = await organisationOf(req);
-    const liveCheck = liveCheckFor(organisationId);
-    if (typeof liveCheck !== 'function') {
-      throw new FlowError('live_check_unavailable', 'Flow drafts a job\'s invoice only after checking that the accounting system holds none for it. Turn on and connect Xero first.');
-    }
+    // With no accounting system connected, Flow's own records are the check.
+    const liveCheck = liveCheckFor(organisationId) ?? null;
     const { invoice } = await draftInvoiceForObligation(db, organisationId, obligationId, { liveCheck, actor: `person:${req.person.id}` });
     log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} drafted invoice ${invoice.id} from job ${obligationId}`);
     res.status(201).json({ ok: true, invoice: await invoiceDetail(db, organisationId, invoice.id) });

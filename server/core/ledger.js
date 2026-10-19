@@ -349,7 +349,9 @@ export async function setHold(db, organisationId, obligationId, { holdState, rea
 }
 
 // The obligation's view and the reasons for it, from its stored evidence only.
-export function ledgerView(obligation, { now = new Date(), sourceMaxAgeMs = SOURCE_MAX_AGE_MS } = {}) {
+// `accounting` is false while no accounting system is connected: Flow's own
+// records are then the only check, so a job nobody checked in one can draft.
+export function ledgerView(obligation, { now = new Date(), sourceMaxAgeMs = SOURCE_MAX_AGE_MS, accounting = true } = {}) {
   const o = obligation;
   if (o.holdState === 'review') return { view: 'review_required', reasons: [o.holdReason ?? 'sent to review'] };
   if (['ambiguous', 'conflict'].includes(o.accountingState)) {
@@ -364,18 +366,20 @@ export function ledgerView(obligation, { now = new Date(), sourceMaxAgeMs = SOUR
     return { view: 'invoiced', reasons: [`invoice ${o.accountingRef} is ${o.accountingState.replace('_', ' ')}`] };
   }
   if (o.invoiceId || o.accountingState === 'drafted') return { view: 'drafted', reasons: ['a draft invoice exists'] };
-  const reasons = draftBlockers(o, { now, sourceMaxAgeMs });
+  const reasons = draftBlockers(o, { now, sourceMaxAgeMs, accounting });
   // Flow's own stage: a job is in work until a person or an automation marks
   // it ready to invoice (setReady).
   if (!o.readyAt) return { view: 'in_work', reasons: ['the job is not marked ready to invoice', ...reasons] };
   return reasons.length ? { view: 'pending', reasons } : { view: 'ready', reasons: ['all checks pass'] };
 }
 
-function draftBlockers(o, { now, sourceMaxAgeMs }) {
+function draftBlockers(o, { now, sourceMaxAgeMs, accounting = true }) {
   const reasons = [];
   if (o.holdState !== 'none') reasons.push(`the job is ${o.holdState}`);
   if (o.invoiceId) reasons.push('the job already has an invoice');
-  if (o.accountingState === 'unknown') reasons.push('the accounting system was not checked');
+  if (o.accountingState === 'unknown') {
+    if (accounting) reasons.push('the accounting system was not checked');
+  }
   else if (o.accountingState !== 'not_found') reasons.push(`the accounting system reports ${o.accountingState}`);
   if (!o.mappingComplete) reasons.push('a line does not map to a price item');
   if (!o.contactId) reasons.push('the job has no customer contact');
@@ -391,12 +395,14 @@ export async function draftInvoiceForObligation(db, organisationId, obligationId
   liveCheck, actor, now = new Date(), sourceMaxAgeMs = SOURCE_MAX_AGE_MS, dueDate = null,
 }) {
   requireActor(actor);
-  if (typeof liveCheck !== 'function') throw new FlowError('invalid', 'liveCheck is required');
+  // A null liveCheck says no accounting system is connected (ledgerView).
+  if (liveCheck !== null && typeof liveCheck !== 'function') throw new FlowError('invalid', 'liveCheck must be a function, or null with no accounting system');
+  const accounting = liveCheck !== null;
   const outcome = await db.transaction(async (tx) => {
     const obligation = await loadObligation(tx, organisationId, obligationId, { lock: true });
-    const reasons = draftBlockers(obligation, { now, sourceMaxAgeMs });
+    const reasons = draftBlockers(obligation, { now, sourceMaxAgeMs, accounting });
     let live = null;
-    if (!reasons.length) {
+    if (!reasons.length && accounting) {
       try {
         live = await liveCheck(obligation);
       } catch (error) {

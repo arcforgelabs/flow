@@ -222,24 +222,30 @@ export function copyCheck(accounting, organisationId) {
 // ledger's checks and every rule, except for customers whose drafting is off.
 // It writes only Flow's own records: the drafts wait in Flow for a person.
 // The draft automation (automations.js) runs it. Answers counts.
-export async function autoDraftJobs(db, organisationId, { accounting, now = new Date(), limit = DRAFT_BATCH, actor = ACTOR }) {
+// With `accounting` null no accounting system is connected: Flow's own records
+// are the only check, as for a person's draft (ledger.js, ledgerView).
+export async function autoDraftJobs(db, organisationId, { accounting = null, now = new Date(), limit = DRAFT_BATCH, actor = ACTOR }) {
   const result = { drafted: 0, waiting: 0, off: 0, refused: 0 };
   const settings = await readInvoicingSettings(db, organisationId);
-  const mirror = await accounting.capabilities.findInvoices({ organisationId });
-  if (!mirror.complete || !mirror.fresh) return { ...result, skipped: 'the accounting copy is not complete or not fresh' };
+  if (accounting) {
+    const mirror = await accounting.capabilities.findInvoices({ organisationId });
+    if (!mirror.complete || !mirror.fresh) return { ...result, skipped: 'the accounting copy is not complete or not fresh' };
+  }
 
   const candidates = await db.select().from(billingObligations).where(and(
     eq(billingObligations.organisationId, organisationId),
     isNull(billingObligations.invoiceId),
     sql`${billingObligations.readyAt} is not null`,
     eq(billingObligations.holdState, 'none'),
-    eq(billingObligations.accountingState, 'not_found'),
+    accounting
+      ? eq(billingObligations.accountingState, 'not_found')
+      : inArray(billingObligations.accountingState, ['not_found', 'unknown']),
     eq(billingObligations.mappingComplete, true),
     sql`${billingObligations.contactId} is not null`,
     // Newest first: a backlog of jobs that wait on a rule never hides new work.
   )).orderBy(sql`${billingObligations.jobDate} desc nulls last`, billingObligations.id).limit(limit);
   const customers = await customerBillingByContact(db, organisationId, candidates.map((o) => o.contactId));
-  const liveCheck = copyCheck(accounting, organisationId);
+  const liveCheck = accounting ? copyCheck(accounting, organisationId) : null;
   const invoiceDate = isoDay(now);
 
   for (const obligation of candidates) {

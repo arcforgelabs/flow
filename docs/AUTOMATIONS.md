@@ -20,7 +20,7 @@ after it reads the integrations and runs the matcher, every two minutes.
 | Automation | Key | Shown on | Default | Does |
 | --- | --- | --- | --- | --- |
 | Mark ready to invoice | `mark_ready_from_work_status` | The Seazona integration page | On; statuses shipped, delivered | Marks a job in work ready to invoice when its work system status is one of the chosen statuses, in any case |
-| Draft when ready | `draft_when_ready` | Settings, Invoicing | On | Drafts the invoice of each ready job that passes the invoicing rules. It waits while no accounting integration is on |
+| Draft when ready | `draft_when_ready` | Settings, Invoicing | On | Drafts the invoice of each ready job that passes the invoicing rules. With no accounting integration, Flow's own records are the check |
 
 Each automation shows on the screen of the data that triggers it (`place`).
 
