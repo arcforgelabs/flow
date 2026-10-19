@@ -552,6 +552,22 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
 .fx-set__control .fx-input[type="number"] { width: 96px; }
 .fx-set__control .fx-select { min-width: 220px; }
 .fx-set + .fx-set { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--fx-line); }
+/* Invoice rules (invoice-rules.js): a row's Edit button and switch, and the
+   rule dialog's condition lines. */
+.fx-rule__controls { align-items: center; gap: 10px; }
+.fx-rule__footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 8px; }
+.fx-dialog:has(.fx-rule__dialog) { width: min(680px, calc(100vw - 32px)); }
+.fx-rule__dialog .fx-btn--sm { justify-self: start; }
+.fx-rule__conditions { display: grid; gap: 8px; }
+.fx-rule__condition { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1.4fr) auto; gap: 8px; align-items: start; }
+.fx-rule__condition + .fx-rule__condition { padding-top: 8px; border-top: 1px solid var(--fx-line); }
+.fx-rule__condition .fx-select, .fx-rule__condition .fx-input { width: 100%; min-width: 0; }
+.fx-rule__value { display: flex; gap: 6px; align-items: center; min-width: 0; }
+.fx-rule__many { display: grid; gap: 2px; max-height: 160px; overflow: auto; padding: 4px 8px; border: 1px solid var(--fx-line); border-radius: 8px; width: 100%; }
+.fx-rule__delete { justify-self: start; color: var(--t-danger); }
+@media (max-width: 640px) {
+  .fx-rule__condition { grid-template-columns: minmax(0, 1fr); }
+}
 @media (max-width: 560px) {
   .fx-set__row { gap: 12px; }
   .fx-set__control .fx-input { width: 140px; }

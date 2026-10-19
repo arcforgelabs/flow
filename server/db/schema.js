@@ -589,6 +589,9 @@ export const invoicingSettings = pgTable('invoicing_settings', {
   // The price item code of a rush charge, and its share of the other lines.
   rushItemCode: text('rush_item_code'),
   rushPercent: integer('rush_percent').notNull().default(20),
+  // The fixed checks above became invoice rules (invoice_rules). True once
+  // this organisation's starter rules were made from them.
+  rulesSeeded: boolean('rules_seeded').notNull().default(false),
   updatedBy: uuid('updated_by').references(() => people.id, { onDelete: 'set null' }),
   updatedAt: updatedAt(),
 }, (t) => [
@@ -621,6 +624,30 @@ export const customerBillingSettings = pgTable('customer_billing_settings', {
   }),
   check('customer_billing_settings_send_mode_valid', sql`${t.sendMode} is null or ${t.sendMode} in ('accounting_draft', 'approve_and_email')`),
   check('customer_billing_settings_terms_valid', sql`${t.paymentTermsDays} is null or ${t.paymentTermsDays} between 0 and 365`),
+]);
+
+// Invoice rules (server/core/invoice-rules.js, docs/INVOICE_RULES.md): a lab's
+// own checks on a job before Flow drafts its invoice. Each rule is When, If and
+// Then: `conditions` is a list of { field, test, value, item? } that must all
+// match, and `action` is { kind: 'wait' | 'skip' }. `starter_key` marks a rule
+// Flow made from the earlier fixed settings, once per organisation.
+export const invoiceRules = pgTable('invoice_rules', {
+  id: id(),
+  organisationId: organisationId().references(() => organisations.id),
+  name: text('name').notNull(),
+  position: integer('position').notNull(),
+  enabled: boolean('enabled').notNull().default(true),
+  trigger: text('trigger').notNull().default('job_ready'),
+  conditions: jsonb('conditions').notNull().default(sql`'[]'::jsonb`),
+  action: jsonb('action').notNull(),
+  starterKey: text('starter_key'),
+  updatedBy: uuid('updated_by').references(() => people.id, { onDelete: 'set null' }),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, (t) => [
+  uniqueIndex('invoice_rules_starter_key').on(t.organisationId, t.starterKey),
+  check('invoice_rules_trigger_valid', sql`${t.trigger} in ('job_ready')`),
+  check('invoice_rules_name_valid', sql`length(${t.name}) between 1 and 120`),
 ]);
 
 // Automations (server/core/automations.js): Flow's routines, each on or off,

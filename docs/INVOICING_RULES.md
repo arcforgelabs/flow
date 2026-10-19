@@ -14,9 +14,9 @@ Invoicing, and at `/api/invoicing/settings`.
 ```mermaid
 flowchart LR
   work[Job in work] -- a person, or the work system's ready statuses --> job[Ready to invoice]
-  job --> rules{Every rule passes?}
-  rules -- no --> wait[Waits: the job lists the rules]
-  rules -- yes --> draft[Flow draft invoice]
+  job --> rules{Does an invoice rule match?}
+  rules -- yes --> wait[Waits: the job lists the rules]
+  rules -- no --> draft[Flow draft invoice]
   draft --> check[A person checks it in Flow]
   check --> mode{Send mode}
   mode -- accounting_draft --> xdraft[Xero draft]
@@ -33,7 +33,7 @@ flowchart LR
    (`docs/AUTOMATIONS.md`).
 2. **Draft.** The pipeline (`docs/JOB_INVOICE_LINKS.md`) runs every two
    minutes. The automation "Draft when ready" drafts the invoice of each
-   ready job that has no invoice and passes every rule. The draft waits in
+   ready job that has no invoice and that no invoice rule stops. The draft waits in
    Flow. Nothing goes to Xero by itself.
 3. **Check.** A person checks the draft in Flow and issues it. Issuing gives
    it its number and keeps the document as sent.
@@ -49,20 +49,28 @@ flowchart LR
 The ledger's own checks guard every draft (`server/core/ledger.js`): the job
 is not held, every line maps to a price item, it has a customer, the
 accounting copy holds no invoice for it, and the work system's report is less
-than a day old. These rules come on top.
+than a day old. Then the job must be marked ready to invoice.
 
-| Rule | Setting | Default | The job waits when |
+Every other check is an invoice rule that the lab builds: When, If, Then
+(`docs/INVOICE_RULES.md`). Flow makes starter rules from the earlier settings
+once, for each organisation:
+
+| Starter rule | If | Then | From the setting |
 | --- | --- | --- | --- |
-| Ready | Flow's own stage | | It is not marked ready to invoice |
-| Billable customer | customer `billable` | billable | The customer is not billable |
-| Total | | | The total is zero or less |
-| Practitioner | `requirePractitioner` | off | It names no practitioner, and the customer has no default one |
-| Rush charge | `rushItemCode`, `rushPercent` | no rule, 20% | The rush line is not that share of the other lines, to the cent |
-| Old jobs | `staleDays` | 90 | Its date is more than that many days ago |
+| Customer not billable | Customer is billable is no | Never draft | customer `billable` |
+| No amount | Job total is at most 0 | Wait for a person | |
+| Old job | Job age (days) is more than 90 | Wait for a person | `staleDays` |
+| Practitioner required | Practitioner is empty | Wait for a person (off until turned on) | `requirePractitioner` |
+| Rush charge share | Rush line share is not 20% | Wait for a person | `rushItemCode`, `rushPercent` (only when a code is set) |
 
-The earlier lab app held these rules in its code. In Flow they are settings.
-`GET /api/invoicing/jobs` lists the rules each job without an invoice waits
-on (`waitingFor`).
+The earlier lab app held these checks in its code. In Flow they are rows the
+lab edits under Settings, Invoicing, Rules. `GET /api/invoicing/jobs` lists the
+rules each job without an invoice waits on (`waitingFor`).
+
+`staleDays` still sets the matcher's hold on an old job that has no
+accounting invoice (`docs/JOB_INVOICE_LINKS.md`). The settings
+`requirePractitioner`, `rushItemCode` and `rushPercent` only seed the starter
+rules.
 
 A draft gets the invoice date when it is issued, and a due date
 `paymentTermsDays` after the day Flow drafted it (default 30).
@@ -71,9 +79,6 @@ The automation "Draft when ready" turns the drafts on or off. It is on by
 default. A customer's `autoDraft` turns them off for that customer. It runs
 with or without an accounting integration. With no integrations on at all,
 the pipeline does not run, and a person drafts from the Jobs board.
-
-The lab-specific rules in the table above become invoice rules that a lab
-builds (When, If, Then), in a later change.
 
 ### The duplicate check
 

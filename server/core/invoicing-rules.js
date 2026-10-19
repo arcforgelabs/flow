@@ -3,6 +3,7 @@ import {
   billingObligations, contacts, customerBillingSettings, invoicingSettings, SEND_MODES,
 } from '../db/schema.js';
 import { FlowError, notFound } from './errors.js';
+import { listRules, ruleReasons } from './invoice-rules.js';
 import { draftInvoiceForObligation } from './ledger.js';
 
 // Invoicing rules (docs/INVOICING_RULES.md). They are the checks a job that
@@ -16,7 +17,8 @@ import { draftInvoiceForObligation } from './ledger.js';
 // The ledger's own checks (ledger.js, draftBlockers) still guard every draft:
 // the job is not held, every line maps to a price item, it has a customer, the
 // accounting copy holds no invoice for it, and the work system's report is
-// recent. These rules come on top.
+// recent. The lab's own checks are invoice rules it builds (invoice-rules.js);
+// the old job limit, practitioner and rush settings here only seed them.
 
 export const ACTOR = 'system:rules';
 const DRAFT_BATCH = 200;
@@ -156,37 +158,14 @@ export async function sendModeFor(db, organisationId, contactId) {
   return effectiveSettings(settings, customers.get(contactId)).sendMode;
 }
 
-// The rush line must be the set share of the other lines, to the cent.
-function rushProblem(lines, { rushItemCode, rushPercent }) {
-  if (!rushItemCode) return null;
-  const code = rushItemCode.toLowerCase();
-  const rush = lines.filter((l) => (l.itemCode ?? '').toLowerCase() === code);
-  if (!rush.length) return null;
-  const others = lines.filter((l) => (l.itemCode ?? '').toLowerCase() !== code)
-    .reduce((sum, l) => sum + (l.lineAmountCents ?? 0), 0);
-  const expected = Math.round((others * rushPercent) / 100);
-  const charged = rush.reduce((sum, l) => sum + (l.lineAmountCents ?? 0), 0);
-  if (Math.abs(charged - expected) <= 1) return null;
-  return `the rush charge is ${(charged / 100).toFixed(2)}, not ${rushPercent}% of the other lines (${(expected / 100).toFixed(2)})`;
-}
-
-// The rules a job does not pass yet, as reasons a person can read. An empty
-// list means the rules allow its draft.
-export function ruleBlockers(obligation, effective, { now = new Date() } = {}) {
-  const o = obligation;
+// What a job still waits on before Flow drafts it, as reasons a person can
+// read: Flow's own ready stage, then the lab's invoice rules (invoice-rules.js)
+// in their order. An empty list means the job may be drafted. `rules` is the
+// organisation's rules, read once per run with listRules.
+export function ruleBlockers(obligation, effective, { now = new Date(), rules = [] } = {}) {
   const reasons = [];
-  if (!o.readyAt) reasons.push('the job is not marked ready to invoice');
-  if (!effective.billable) reasons.push('the customer is not billable');
-  if (!(o.totalCents > 0)) reasons.push('the job\'s total is zero or less');
-  if (effective.requirePractitioner && !o.practitioner && !effective.defaultPractitioner) {
-    reasons.push('the job names no practitioner, and the customer has no default one');
-  }
-  const rush = rushProblem(o.lines ?? [], effective);
-  if (rush) reasons.push(rush);
-  if (o.jobDate && now - new Date(`${o.jobDate}T00:00:00Z`) > effective.staleDays * 86_400_000) {
-    reasons.push(`the job is more than ${effective.staleDays} days old`);
-  }
-  return reasons;
+  if (!obligation.readyAt) reasons.push('the job is not marked ready to invoice');
+  return [...reasons, ...ruleReasons(rules, obligation, { customer: effective, now })];
 }
 
 function addDays(date, days) {
@@ -227,6 +206,7 @@ export function copyCheck(accounting, organisationId) {
 export async function autoDraftJobs(db, organisationId, { accounting = null, now = new Date(), limit = DRAFT_BATCH, actor = ACTOR }) {
   const result = { drafted: 0, waiting: 0, off: 0, refused: 0 };
   const settings = await readInvoicingSettings(db, organisationId);
+  const rules = await listRules(db, organisationId);
   if (accounting) {
     const mirror = await accounting.capabilities.findInvoices({ organisationId });
     if (!mirror.complete || !mirror.fresh) return { ...result, skipped: 'the accounting copy is not complete or not fresh' };
@@ -254,7 +234,7 @@ export async function autoDraftJobs(db, organisationId, { accounting = null, now
       result.off += 1;
       continue;
     }
-    if (ruleBlockers(obligation, effective, { now }).length) {
+    if (ruleBlockers(obligation, effective, { now, rules }).length) {
       result.waiting += 1;
       continue;
     }

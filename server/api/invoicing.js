@@ -6,6 +6,9 @@ import {
 } from '../core/invoices.js';
 import { listAutomations, saveAutomation, workStatuses } from '../core/automations.js';
 import {
+  ACTIONS, createRule, deleteRule, FIELDS, listRules, TESTS, updateRule,
+} from '../core/invoice-rules.js';
+import {
   customerBillingByContact, effectiveSettings, INVOICING_DEFAULTS, readCustomerBilling, readInvoicingSettings, ruleBlockers,
   saveCustomerBilling, saveInvoicingSettings,
 } from '../core/invoicing-rules.js';
@@ -29,8 +32,13 @@ import {
 //   GET   /price-items?q=             the price list, by code
 //   GET   /jobs?view=&limit=          billable jobs (the obligation ledger), with counts by view;
 //                                     a job with no invoice lists the invoicing rules it waits on
-//   GET   /settings                   the invoicing rules (server/core/invoicing-rules.js)
+//   GET   /settings                   the invoicing settings (server/core/invoicing-rules.js)
 //   PUT   /settings                   owner or admin: change some of them
+//   GET   /rules                      the lab's invoice rules, in order (server/core/invoice-rules.js)
+//   GET   /rule-fields                what a rule can name, and the menus of values
+//   POST  /rules                      owner or admin: a new rule { name, enabled, conditions, action }
+//   PUT   /rules/:id                  owner or admin: change some of a rule
+//   DELETE /rules/:id                 owner or admin
 //   GET   /automations?place=         Flow's routines, each on or off (server/core/automations.js)
 //   PUT   /automations/:key           owner or admin: { enabled, config }
 //   GET   /work-statuses              the work system's job statuses, with job counts
@@ -354,10 +362,11 @@ export function createInvoicingRouter({ db, personAuth, log = console, liveCheck
     const invoiceOf = new Map(numbers.map((i) => [i.id, i]));
     const settings = await readInvoicingSettings(db, organisationId);
     const customers = await customerBillingByContact(db, organisationId, contactIds);
+    const rules = await listRules(db, organisationId);
     // The invoicing rules a job with no invoice waits on, for every view a
     // draft can still come from.
     const waitingFor = (o, v) => (o.invoiceId || !['in_work', 'ready', 'pending', 'held'].includes(v)
-      ? [] : ruleBlockers(o, effectiveSettings(settings, customers.get(o.contactId))));
+      ? [] : ruleBlockers(o, effectiveSettings(settings, customers.get(o.contactId)), { rules }));
     res.json({
       ok: true,
       jobs: listed.map(({ obligation: { lineFingerprint: _fingerprint, organisationId: _org, ...o }, view: v, reasons }) => ({
@@ -410,6 +419,62 @@ export function createInvoicingRouter({ db, personAuth, log = console, liveCheck
     const automation = await saveAutomation(db, organisationId, String(req.params.key), changes, { personId: req.person.id });
     log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} changed automation ${automation.key}`);
     res.json({ ok: true, automation });
+  }));
+
+  // The lab's invoice rules (docs/INVOICE_RULES.md).
+  router.get('/rules', ...signedIn, handle(log, async (req, res) => {
+    const organisationId = await organisationOf(req);
+    res.json({ ok: true, rules: await listRules(db, organisationId) });
+  }));
+
+  // What a rule can name, so people pick every value from a menu: the fields
+  // with their tests, and the values Flow already holds for each kind of menu.
+  router.get('/rule-fields', ...signedIn, handle(log, async (req, res) => {
+    const organisationId = await organisationOf(req);
+    const [statuses, customers, items] = await Promise.all([
+      workStatuses(db, organisationId),
+      db.select({ value: contacts.id, label: contacts.name }).from(contacts)
+        .where(and(eq(contacts.organisationId, organisationId), eq(contacts.kind, 'customer')))
+        .orderBy(asc(contacts.name)).limit(1000),
+      db.select({ value: priceItems.code, label: priceItems.name }).from(priceItems)
+        .where(and(eq(priceItems.organisationId, organisationId), isNull(priceItems.archivedAt)))
+        .orderBy(asc(priceItems.code)).limit(1000),
+    ]);
+    res.json({
+      ok: true,
+      fields: Object.entries(FIELDS).map(([key, f]) => ({ key, label: f.label, kind: f.kind, options: f.options ?? null, tests: TESTS[f.kind] })),
+      actions: ACTIONS,
+      options: {
+        statuses: statuses.map((s) => ({ value: s.value, label: s.label })),
+        customers,
+        items: items.map((i) => ({ value: i.value, label: `${i.value} · ${i.label}` })),
+      },
+    });
+  }));
+
+  router.post('/rules', ...manager, handle(log, async (req, res) => {
+    const organisationId = await organisationOf(req);
+    const { organisationId: _named, ...raw } = req.body ?? {};
+    const rule = await createRule(db, organisationId, raw, { personId: req.person.id });
+    log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} added invoice rule ${rule.id}`);
+    res.status(201).json({ ok: true, rule });
+  }));
+
+  router.put('/rules/:id', ...manager, handle(log, async (req, res) => {
+    const ruleId = pathId(req.params.id, 'rule');
+    const organisationId = await organisationOf(req);
+    const { organisationId: _named, ...changes } = req.body ?? {};
+    const rule = await updateRule(db, organisationId, ruleId, changes, { personId: req.person.id });
+    log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} changed invoice rule ${rule.id}`);
+    res.json({ ok: true, rule });
+  }));
+
+  router.delete('/rules/:id', ...manager, handle(log, async (req, res) => {
+    const ruleId = pathId(req.params.id, 'rule');
+    const organisationId = await organisationOf(req);
+    await deleteRule(db, organisationId, ruleId);
+    log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} deleted invoice rule ${ruleId}`);
+    res.json({ ok: true });
   }));
 
   router.get('/settings', ...signedIn, handle(log, async (req, res) => {

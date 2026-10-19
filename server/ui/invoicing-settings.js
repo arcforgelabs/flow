@@ -1,6 +1,6 @@
-// Settings, Invoicing (/invoicing-settings): the checks a ready job passes
-// before Flow drafts its invoice (server/core/invoicing-rules.js,
-// /api/invoicing/settings). Invoicing needs no integration: how an invoice
+// Settings, Invoicing (/invoicing-settings): payment terms, the draft
+// automation, and the lab's own rules a ready job passes before Flow drafts
+// its invoice (invoice-rules.js, docs/INVOICE_RULES.md). Invoicing needs no integration: how an invoice
 // goes to Xero is on the Xero integration page (sendModeSection).
 // Draft when ready is an automation (server/core/automations.js); the
 // Seazona integration page holds the rule that marks a job ready.
@@ -10,6 +10,7 @@
 // shared pieces as `ui`.
 
 import { automationSection } from '/assets/ui/automations.js';
+import { rulesSection } from '/assets/ui/invoice-rules.js';
 
 const DOCS = 'https://github.com/arcforgelabs/flow/blob/main/docs/INVOICING_RULES.md';
 
@@ -50,15 +51,6 @@ export async function renderInvoicingSettings(main, ui) {
     h('div', { class: 'fx-set__text' }, h('span', { class: 'fx-set__name' }, name), h('span', { class: 'fx-set__hint' }, hint)),
     h('div', { class: 'fx-set__control' }, control));
 
-  const toggle = (key, label) => {
-    const button = h('button', { class: 'fx-switch', type: 'button', role: 'switch', 'aria-label': label, 'aria-checked': String(saved[key]), disabled });
-    button.addEventListener('click', async () => {
-      const next = button.getAttribute('aria-checked') !== 'true';
-      if (await save({ [key]: next }, button)) button.setAttribute('aria-checked', String(next));
-    });
-    return button;
-  };
-
   // A text or number box saves when it loses focus with a new value.
   const box = (key, label, { type = 'text', read = (v) => v, show = (v) => v ?? '', placeholder } = {}) => {
     const input = h('input', { class: 'fx-input', type, value: show(saved[key]), 'aria-label': label, disabled, placeholder });
@@ -73,13 +65,9 @@ export async function renderInvoicingSettings(main, ui) {
   host.replaceChildren(...[
     disabled ? notice('Only an owner or admin can change these.', 'info') : null,
     section('Drafts',
-      row('Payment terms', 'Days from invoice to due date.', days('paymentTermsDays', 'Payment terms in days')),
-      row('Old job limit', 'Older jobs wait for a person (days).', days('staleDays', 'Old job limit in days')),
-      row('Practitioner required', 'The job or its customer names one.', toggle('requirePractitioner', 'Practitioner required')),
-      row('Rush item code', 'Price item code of a rush charge.', box('rushItemCode', 'Rush item code', { read: (v) => v.trim() || null, placeholder: 'None' })),
-      row('Rush share', 'Rush line as % of the other lines.', days('rushPercent', 'Rush share in percent'))),
+      row('Payment terms', 'Days from invoice to due date.', days('paymentTermsDays', 'Payment terms in days'))),
     automationSection(ui, 'invoicing', 'Automations'),
-    h('p', { class: 'fx-dim', style: { margin: '12px 0 0' } }, h('a', { href: DOCS, target: '_blank', rel: 'noopener' }, 'How the rules work')),
+    rulesSection(ui),
   ].filter(Boolean));
 }
 

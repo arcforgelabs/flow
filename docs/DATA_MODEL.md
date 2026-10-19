@@ -29,6 +29,7 @@ erDiagram
   billing_obligations ||--o{ link_rejections : "is never billed by"
   organisations ||--o{ pipeline_cursors : "reads on from"
   organisations ||--o| invoicing_settings : "drafts and sends by"
+  organisations ||--o{ invoice_rules : "checks ready jobs by"
   contacts ||--o| customer_billing_settings : "overrides rules by"
   organisations ||--o{ automations : "runs"
 ```
@@ -49,6 +50,8 @@ and `ready_by` record Flow's own "ready to invoice" stage: when, and which
 person or automation. `billing_obligations.source_status` is the work
 system's status. `automations` holds each organisation's choices for Flow's
 routines, such as marking a job ready from that status (`docs/AUTOMATIONS.md`).
+`invoice_rules` holds the checks each lab builds on a ready job: When, If,
+Then (`docs/INVOICE_RULES.md`).
 
 `people` lists who may sign in and their role (`owner`, `admin`, `staff`).
 One installation serves one lab, so it is installation-wide.

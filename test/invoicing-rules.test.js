@@ -7,6 +7,7 @@ import {
   autoDraftJobs, effectiveSettings, INVOICING_DEFAULTS, readCustomerBilling, readInvoicingSettings, ruleBlockers,
   saveCustomerBilling, saveInvoicingSettings,
 } from '../server/core/invoicing-rules.js';
+import { starterRules } from '../server/core/invoice-rules.js';
 import { listAutomations, runAutomations, saveAutomation, statusMatches, workStatuses } from '../server/core/automations.js';
 import { explainObligation, observeJob, recordAccountingEvidence, setReady } from '../server/core/ledger.js';
 import { billingObligations } from '../server/db/schema.js';
@@ -33,28 +34,38 @@ describe('the rules for one job', () => {
     assert.equal(statusMatches(null, ['shipped']), false);
   });
 
-  test('a ready job with a total passes; each rule it fails gives a reason', () => {
-    assert.deepEqual(ruleBlockers(job(), settings, { now: NOW }), []);
-    assert.deepEqual(ruleBlockers(job({ readyAt: null }), settings, { now: NOW }), ['the job is not marked ready to invoice']);
-    assert.deepEqual(ruleBlockers(job({ totalCents: 0 }), settings, { now: NOW }), ['the job\'s total is zero or less']);
-    assert.deepEqual(ruleBlockers(job(), { ...settings, billable: false }, { now: NOW }), ['the customer is not billable']);
-    assert.deepEqual(ruleBlockers(job({ jobDate: '2026-06-01' }), settings, { now: NOW }), ['the job is more than 90 days old']);
+  // The lab's checks are invoice rules (invoice-rules.js); these are the
+  // starter rules made from the earlier fixed settings.
+  const rules = (overrides = {}) => starterRules({ ...INVOICING_DEFAULTS, ...overrides });
+
+  test('a ready job with a total passes; each rule it matches gives a reason', () => {
+    const check = (o, effective = settings) => ruleBlockers(o, effective, { now: NOW, rules: rules() });
+    assert.deepEqual(check(job()), []);
+    assert.deepEqual(check(job({ readyAt: null })), ['the job is not marked ready to invoice']);
+    assert.deepEqual(check(job({ totalCents: 0 })), ['rule "No amount": waits for a person']);
+    assert.deepEqual(check(job(), { ...settings, billable: false }), ['rule "Customer not billable": not drafted by rule']);
+    assert.deepEqual(check(job({ jobDate: '2026-06-01' })), ['rule "Old job": waits for a person']);
+    // With no rules, only Flow's ready stage counts.
+    assert.deepEqual(ruleBlockers(job({ totalCents: 0 }), settings, { now: NOW }), []);
   });
 
   test('a practitioner, when required, is the job\'s own or the customer\'s default', () => {
-    const strict = { ...settings, requirePractitioner: true };
-    assert.deepEqual(ruleBlockers(job(), strict, { now: NOW }), ['the job names no practitioner, and the customer has no default one']);
-    assert.deepEqual(ruleBlockers(job({ practitioner: 'Dr Example' }), strict, { now: NOW }), []);
-    assert.deepEqual(ruleBlockers(job(), { ...strict, defaultPractitioner: 'Dr Default' }, { now: NOW }), []);
+    const strict = rules({ requirePractitioner: true });
+    const reason = ['rule "Practitioner required": waits for a person'];
+    assert.deepEqual(ruleBlockers(job(), settings, { now: NOW, rules: strict }), reason);
+    assert.deepEqual(ruleBlockers(job({ practitioner: 'Dr Example' }), settings, { now: NOW, rules: strict }), []);
+    assert.deepEqual(ruleBlockers(job(), { ...settings, defaultPractitioner: 'Dr Default' }, { now: NOW, rules: strict }), []);
+    // Off in the starter set until the lab turns it on.
+    assert.deepEqual(ruleBlockers(job(), settings, { now: NOW, rules: rules() }), []);
   });
 
   test('a rush line must be the set share of the other lines, to the cent', () => {
-    const rush = { ...settings, rushItemCode: 'RUSH', rushPercent: 20 };
+    const rush = rules({ rushItemCode: 'RUSH', rushPercent: 20 });
     const lines = (cents) => [{ itemCode: 'CROWN', lineAmountCents: 20000 }, { itemCode: 'rush', lineAmountCents: cents }];
-    assert.deepEqual(ruleBlockers(job({ lines: lines(4000) }), rush, { now: NOW }), []);
-    assert.deepEqual(ruleBlockers(job({ lines: lines(5000) }), rush, { now: NOW }),
-      ['the rush charge is 50.00, not 20% of the other lines (40.00)']);
-    assert.deepEqual(ruleBlockers(job({ lines: lines(5000) }), settings, { now: NOW }), []);
+    assert.deepEqual(ruleBlockers(job({ lines: lines(4000) }), settings, { now: NOW, rules: rush }), []);
+    assert.deepEqual(ruleBlockers(job({ lines: lines(4001) }), settings, { now: NOW, rules: rush }), []);
+    assert.deepEqual(ruleBlockers(job({ lines: lines(5000) }), settings, { now: NOW, rules: rush }), ['rule "Rush charge share": waits for a person']);
+    assert.deepEqual(ruleBlockers(job({ lines: lines(5000) }), settings, { now: NOW, rules: rules() }), []);
   });
 
   test('a customer\'s own setting wins; a null takes the organisation\'s', () => {
