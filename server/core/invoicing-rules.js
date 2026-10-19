@@ -1,0 +1,288 @@
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
+import {
+  billingObligations, contacts, customerBillingSettings, invoicingSettings, SEND_MODES,
+} from '../db/schema.js';
+import { FlowError, notFound } from './errors.js';
+import { draftInvoiceForObligation } from './ledger.js';
+
+// Invoicing rules (docs/INVOICING_RULES.md). They decide when Flow drafts a
+// job's invoice by itself, and how a checked draft goes to the accounting
+// system. Each rule is a setting of the organisation; a customer can override
+// some of them. The rules come from the earlier lab app, where they were
+// fixed in its code.
+//
+// The ledger's own checks (ledger.js, draftBlockers) still guard every draft:
+// the job is not held, every line maps to a price item, it has a customer, the
+// accounting copy holds no invoice for it, and the work system's report is
+// recent. These rules come on top.
+
+export const ACTOR = 'system:rules';
+const DRAFT_BATCH = 200;
+
+export const INVOICING_DEFAULTS = Object.freeze({
+  autoDraft: true,
+  sendMode: 'accounting_draft',
+  readyStatuses: ['shipped', 'delivered'],
+  staleDays: 90,
+  paymentTermsDays: 30,
+  requirePractitioner: false,
+  rushItemCode: null,
+  rushPercent: 20,
+});
+
+const CUSTOMER_DEFAULTS = Object.freeze({
+  billable: true, defaultPractitioner: null, autoDraft: null, sendMode: null, paymentTermsDays: null,
+});
+
+const pick = (row, keys) => Object.fromEntries(keys.map((k) => [k, row[k]]));
+const SETTING_KEYS = Object.keys(INVOICING_DEFAULTS);
+const CUSTOMER_KEYS = Object.keys(CUSTOMER_DEFAULTS);
+
+const invalid = (message) => new FlowError('invalid', message);
+
+function wholeNumber(value, name, min, max) {
+  if (!Number.isInteger(value) || value < min || value > max) throw invalid(`${name} must be a whole number from ${min} to ${max}`);
+  return value;
+}
+
+function flag(value, name) {
+  if (typeof value !== 'boolean') throw invalid(`${name} must be true or false`);
+  return value;
+}
+
+function shortText(value, name) {
+  if (value === null || value === '') return null;
+  if (typeof value !== 'string' || value.length > 200) throw invalid(`${name} must be text of 200 characters at most`);
+  return value.trim() || null;
+}
+
+function sendMode(value, name) {
+  if (!SEND_MODES.includes(value)) throw invalid(`${name} must be one of ${SEND_MODES.join(', ')}`);
+  return value;
+}
+
+// The organisation's settings as stored, or the defaults.
+export async function readInvoicingSettings(db, organisationId) {
+  const [row] = await db.select().from(invoicingSettings).where(eq(invoicingSettings.organisationId, organisationId));
+  return row ? pick(row, SETTING_KEYS) : { ...INVOICING_DEFAULTS, readyStatuses: [...INVOICING_DEFAULTS.readyStatuses] };
+}
+
+function readSettingChanges(changes) {
+  if (!changes || typeof changes !== 'object' || Array.isArray(changes)) throw invalid('the settings must be an object');
+  const out = {};
+  for (const [key, value] of Object.entries(changes)) {
+    if (key === 'autoDraft' || key === 'requirePractitioner') out[key] = flag(value, key);
+    else if (key === 'sendMode') out[key] = sendMode(value, key);
+    else if (key === 'staleDays') out[key] = wholeNumber(value, key, 1, 3650);
+    else if (key === 'paymentTermsDays') out[key] = wholeNumber(value, key, 0, 365);
+    else if (key === 'rushPercent') out[key] = wholeNumber(value, key, 0, 100);
+    else if (key === 'rushItemCode') out[key] = shortText(value, key);
+    else if (key === 'readyStatuses') {
+      if (!Array.isArray(value) || !value.length || value.length > 20) throw invalid('readyStatuses must list 1 to 20 statuses');
+      out[key] = [...new Set(value.map((s) => shortText(s, 'a ready status')?.toLowerCase()).filter(Boolean))];
+      if (!out[key].length) throw invalid('readyStatuses must list at least one status');
+    } else throw invalid(`unknown setting: ${key}`);
+  }
+  return out;
+}
+
+export async function saveInvoicingSettings(db, organisationId, changes, { personId = null } = {}) {
+  const fields = readSettingChanges(changes);
+  await db.insert(invoicingSettings)
+    .values({ organisationId, ...fields, updatedBy: personId })
+    .onConflictDoUpdate({ target: invoicingSettings.organisationId, set: { ...fields, updatedBy: personId, updatedAt: sql`now()` } });
+  return readInvoicingSettings(db, organisationId);
+}
+
+async function requireCustomer(db, organisationId, contactId) {
+  const [contact] = await db.select({ id: contacts.id, kind: contacts.kind }).from(contacts)
+    .where(and(eq(contacts.organisationId, organisationId), eq(contacts.id, contactId)));
+  if (!contact) throw notFound('customer');
+  if (contact.kind !== 'customer') throw invalid('invoicing settings are for a customer contact');
+}
+
+// One customer's own settings. A null value takes the organisation's setting.
+export async function readCustomerBilling(db, organisationId, contactId) {
+  await requireCustomer(db, organisationId, contactId);
+  const [row] = await db.select().from(customerBillingSettings)
+    .where(and(eq(customerBillingSettings.organisationId, organisationId), eq(customerBillingSettings.contactId, contactId)));
+  return row ? pick(row, CUSTOMER_KEYS) : { ...CUSTOMER_DEFAULTS };
+}
+
+export async function saveCustomerBilling(db, organisationId, contactId, changes, { personId = null } = {}) {
+  if (!changes || typeof changes !== 'object' || Array.isArray(changes)) throw invalid('the settings must be an object');
+  await requireCustomer(db, organisationId, contactId);
+  const fields = {};
+  for (const [key, value] of Object.entries(changes)) {
+    if (key === 'billable') fields[key] = flag(value, key);
+    else if (key === 'defaultPractitioner') fields[key] = shortText(value, key);
+    else if (key === 'autoDraft') fields[key] = value === null ? null : flag(value, key);
+    else if (key === 'sendMode') fields[key] = value === null ? null : sendMode(value, key);
+    else if (key === 'paymentTermsDays') fields[key] = value === null ? null : wholeNumber(value, key, 0, 365);
+    else throw invalid(`unknown setting: ${key}`);
+  }
+  await db.insert(customerBillingSettings)
+    .values({ organisationId, contactId, ...fields, updatedBy: personId })
+    .onConflictDoUpdate({
+      target: [customerBillingSettings.organisationId, customerBillingSettings.contactId],
+      set: { ...fields, updatedBy: personId, updatedAt: sql`now()` },
+    });
+  return readCustomerBilling(db, organisationId, contactId);
+}
+
+// The customers' own settings, by contact id.
+export async function customerBillingByContact(db, organisationId, contactIds) {
+  const ids = [...new Set(contactIds.filter(Boolean))];
+  if (!ids.length) return new Map();
+  const rows = await db.select().from(customerBillingSettings)
+    .where(and(eq(customerBillingSettings.organisationId, organisationId), inArray(customerBillingSettings.contactId, ids)));
+  return new Map(rows.map((r) => [r.contactId, pick(r, CUSTOMER_KEYS)]));
+}
+
+// The settings that apply to one customer: its own, else the organisation's.
+export function effectiveSettings(settings, customer = CUSTOMER_DEFAULTS) {
+  const own = { ...CUSTOMER_DEFAULTS, ...customer };
+  return {
+    ...settings,
+    billable: own.billable,
+    defaultPractitioner: own.defaultPractitioner,
+    autoDraft: own.autoDraft ?? settings.autoDraft,
+    sendMode: own.sendMode ?? settings.sendMode,
+    paymentTermsDays: own.paymentTermsDays ?? settings.paymentTermsDays,
+  };
+}
+
+// How one customer's checked drafts go to the accounting system.
+export async function sendModeFor(db, organisationId, contactId) {
+  const settings = await readInvoicingSettings(db, organisationId);
+  const customers = await customerBillingByContact(db, organisationId, [contactId]);
+  return effectiveSettings(settings, customers.get(contactId)).sendMode;
+}
+
+const words = (value) => String(value ?? '').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+
+// A status is ready when it holds one of the ready statuses as whole words,
+// in any case: "Shipped" and "Order shipped" match "shipped".
+export function statusIsReady(status, readyStatuses) {
+  const have = words(status).join(' ');
+  return readyStatuses.some((ready) => {
+    const want = words(ready).join(' ');
+    return want && ` ${have} `.includes(` ${want} `);
+  });
+}
+
+// The rush line must be the set share of the other lines, to the cent.
+function rushProblem(lines, { rushItemCode, rushPercent }) {
+  if (!rushItemCode) return null;
+  const code = rushItemCode.toLowerCase();
+  const rush = lines.filter((l) => (l.itemCode ?? '').toLowerCase() === code);
+  if (!rush.length) return null;
+  const others = lines.filter((l) => (l.itemCode ?? '').toLowerCase() !== code)
+    .reduce((sum, l) => sum + (l.lineAmountCents ?? 0), 0);
+  const expected = Math.round((others * rushPercent) / 100);
+  const charged = rush.reduce((sum, l) => sum + (l.lineAmountCents ?? 0), 0);
+  if (Math.abs(charged - expected) <= 1) return null;
+  return `the rush charge is ${(charged / 100).toFixed(2)}, not ${rushPercent}% of the other lines (${(expected / 100).toFixed(2)})`;
+}
+
+// The rules a job does not pass yet, as reasons a person can read. An empty
+// list means the rules allow its draft.
+export function ruleBlockers(obligation, effective, { now = new Date() } = {}) {
+  const o = obligation;
+  const reasons = [];
+  if (!effective.billable) reasons.push('the customer is not billable');
+  if (!o.sourceStatus) reasons.push('the work system has not reported the job\'s status yet');
+  else if (!statusIsReady(o.sourceStatus, effective.readyStatuses)) {
+    reasons.push(`the job's status "${o.sourceStatus}" is not one of ${effective.readyStatuses.join(', ')}`);
+  }
+  if (!(o.totalCents > 0)) reasons.push('the job\'s total is zero or less');
+  if (effective.requirePractitioner && !o.practitioner && !effective.defaultPractitioner) {
+    reasons.push('the job names no practitioner, and the customer has no default one');
+  }
+  const rush = rushProblem(o.lines ?? [], effective);
+  if (rush) reasons.push(rush);
+  if (o.jobDate && now - new Date(`${o.jobDate}T00:00:00Z`) > effective.staleDays * 86_400_000) {
+    reasons.push(`the job is more than ${effective.staleDays} days old`);
+  }
+  return reasons;
+}
+
+function addDays(date, days) {
+  const at = new Date(`${date}T00:00:00Z`);
+  at.setUTCDate(at.getUTCDate() + days);
+  return at.toISOString().slice(0, 10);
+}
+
+const isoDay = (at) => `${at.getFullYear()}-${String(at.getMonth() + 1).padStart(2, '0')}-${String(at.getDate()).padStart(2, '0')}`;
+
+// The ledger's live check, answered from the accounting system's copy in Flow
+// instead of a call for each job: the copy is complete and was read lately,
+// the matcher checked the job after the copy last changed, and the copy holds
+// no invoice with the job's own invoice number.
+export function copyCheck(accounting, organisationId) {
+  return async (obligation) => {
+    const { complete, fresh, changedAt, invoices } = await accounting.capabilities.findInvoices({
+      organisationId,
+      numbers: obligation.sourceInvoiceRef ? [obligation.sourceInvoiceRef] : [],
+    });
+    if (!complete || !fresh) throw new Error('the accounting copy is not complete or not fresh');
+    if (obligation.accountingState !== 'not_found') return { state: obligation.accountingState, matchedBy: 'copy' };
+    if (changedAt && (!obligation.accountingCheckedAt || new Date(obligation.accountingCheckedAt) < changedAt)) {
+      throw new Error('the accounting copy changed after the job was last matched');
+    }
+    const sales = invoices.filter((i) => !['voided', 'deleted'].includes(i.state));
+    if (sales.length) return { state: sales[0].state, accountingRef: sales[0].id, matchedBy: 'copy' };
+    return { state: 'not_found', matchedBy: 'copy' };
+  };
+}
+
+// Drafts the invoice of each job that passes the ledger's checks and every
+// rule, for the customers whose drafting is on. It writes only Flow's own
+// records: the drafts wait in Flow for a person. Answers counts.
+export async function autoDraftJobs(db, organisationId, { accounting, now = new Date(), limit = DRAFT_BATCH }) {
+  const result = { drafted: 0, waiting: 0, off: 0, refused: 0 };
+  const settings = await readInvoicingSettings(db, organisationId);
+  const anyOn = settings.autoDraft || (await db.select({ id: customerBillingSettings.contactId }).from(customerBillingSettings)
+    .where(and(eq(customerBillingSettings.organisationId, organisationId), eq(customerBillingSettings.autoDraft, true))).limit(1)).length;
+  if (!anyOn) return { ...result, skipped: 'automatic drafts are off' };
+  const mirror = await accounting.capabilities.findInvoices({ organisationId });
+  if (!mirror.complete || !mirror.fresh) return { ...result, skipped: 'the accounting copy is not complete or not fresh' };
+
+  const candidates = await db.select().from(billingObligations).where(and(
+    eq(billingObligations.organisationId, organisationId),
+    isNull(billingObligations.invoiceId),
+    eq(billingObligations.holdState, 'none'),
+    eq(billingObligations.accountingState, 'not_found'),
+    eq(billingObligations.mappingComplete, true),
+    sql`${billingObligations.contactId} is not null`,
+    // Newest first: a backlog of jobs that wait on a rule never hides new work.
+  )).orderBy(sql`${billingObligations.jobDate} desc nulls last`, billingObligations.id).limit(limit);
+  const customers = await customerBillingByContact(db, organisationId, candidates.map((o) => o.contactId));
+  const liveCheck = copyCheck(accounting, organisationId);
+  const invoiceDate = isoDay(now);
+
+  for (const obligation of candidates) {
+    const effective = effectiveSettings(settings, customers.get(obligation.contactId));
+    if (!effective.autoDraft) {
+      result.off += 1;
+      continue;
+    }
+    if (ruleBlockers(obligation, effective, { now }).length) {
+      result.waiting += 1;
+      continue;
+    }
+    try {
+      await draftInvoiceForObligation(db, organisationId, obligation.id, {
+        liveCheck,
+        actor: ACTOR,
+        now,
+        dueDate: addDays(invoiceDate, effective.paymentTermsDays),
+      });
+      result.drafted += 1;
+    } catch (error) {
+      if (error.code !== 'not_ready') throw error;
+      result.refused += 1;
+    }
+  }
+  return result;
+}

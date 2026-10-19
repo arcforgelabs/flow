@@ -110,6 +110,7 @@ export async function observeJob(db, organisationId, job) {
       practitioner: job.practitioner ?? null,
       shippedOn: job.shippedOn ?? null,
       jobDate: job.jobDate ?? null,
+      sourceStatus: job.sourceStatus ?? null,
       lines,
       lineFingerprint: fingerprint(lines),
       ...invoiceTotals(lines),
@@ -138,7 +139,9 @@ export async function observeJob(db, organisationId, job) {
     const changed = ['sourceInvoiceRef', 'caseRef', 'contactId', 'practitioner', 'shippedOn', 'lineFingerprint', 'totalCents']
       .filter((key) => String(existing[key] ?? '') !== String(facts[key] ?? ''));
     if (!changed.length) {
-      return update(tx, existing, { sourceSeenAt: seenAt, mappingComplete: facts.mappingComplete, lines, jobDate: facts.jobDate });
+      return update(tx, existing, {
+        sourceSeenAt: seenAt, mappingComplete: facts.mappingComplete, lines, jobDate: facts.jobDate, sourceStatus: facts.sourceStatus,
+      });
     }
     const fields = { ...facts, sourceSeenAt: seenAt };
     if (existing.invoiceId && changed.some((key) => ['lineFingerprint', 'totalCents', 'contactId'].includes(key))) {
@@ -365,7 +368,7 @@ function draftBlockers(o, { now, sourceMaxAgeMs }) {
 // the write, finds no invoice for the job. Any doubt refuses the draft, and
 // the refusal is recorded.
 export async function draftInvoiceForObligation(db, organisationId, obligationId, {
-  liveCheck, actor, now = new Date(), sourceMaxAgeMs = SOURCE_MAX_AGE_MS,
+  liveCheck, actor, now = new Date(), sourceMaxAgeMs = SOURCE_MAX_AGE_MS, dueDate = null,
 }) {
   requireActor(actor);
   if (typeof liveCheck !== 'function') throw new FlowError('invalid', 'liveCheck is required');
@@ -388,6 +391,7 @@ export async function draftInvoiceForObligation(db, organisationId, obligationId
     const invoice = await createDraftInvoice(tx, organisationId, {
       contactId: obligation.contactId,
       reference: obligation.caseRef ?? obligation.sourceJobRef,
+      dueDate,
       lines: obligation.lines.map(({ priceItemId, description, quantity, unitAmountCents, taxCode }) => (
         { priceItemId, description, quantity, unitAmountCents, taxCode }
       )),

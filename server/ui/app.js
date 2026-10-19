@@ -10,6 +10,7 @@ import { getAppearance, onAppearanceChange, setAppearance, loadFonts } from '/as
 import { flowClerkAppearance } from '/assets/ui/clerk-appearance.js';
 import { ACCENT_PRESETS, normalizeAccent, THEME_FAMILIES, tokensFor } from '/assets/theme/themes.js';
 import { renderInvoice, renderInvoiceList } from '/assets/ui/invoicing.js';
+import { renderInvoicingSettings } from '/assets/ui/invoicing-settings.js';
 import { renderJobs } from '/assets/ui/jobs.js';
 
 const $ = (id) => document.getElementById(id);
@@ -186,6 +187,7 @@ let me = null;
 const VIEWS = {
   jobs: { label: 'Jobs', icon: 'jobs', group: 'Work', render: (main) => renderJobs(main, ui()) },
   invoices: { label: 'Invoices', icon: 'invoices', group: 'Work', render: (main, id) => (id ? renderInvoice(main, ui(), id) : renderInvoiceList(main, ui())) },
+  'invoicing-settings': { label: 'Invoicing', icon: 'invoices', group: 'Settings', render: (main) => renderInvoicingSettings(main, ui()) },
   people: { label: 'People', icon: 'people', group: 'Settings', ownerOnly: true, render: renderPeople },
   integrations: { label: 'Integrations', icon: 'plug', group: 'Settings', ownerOnly: true, render: (main, id) => (id ? renderIntegration(main, id) : renderIntegrations(main)) },
   account: { label: 'Account', icon: 'person', group: 'Settings', render: renderAccount },

@@ -4,6 +4,10 @@ import { FlowError } from '../core/errors.js';
 import {
   createDraftInvoice, getInvoice, issueInvoice, listInvoiceVersions, reviseInvoice, updateDraftInvoice, voidInvoice,
 } from '../core/invoices.js';
+import {
+  customerBillingByContact, effectiveSettings, INVOICING_DEFAULTS, readCustomerBilling, readInvoicingSettings, ruleBlockers,
+  saveCustomerBilling, saveInvoicingSettings,
+} from '../core/invoicing-rules.js';
 import { draftInvoiceForObligation, listObligations } from '../core/ledger.js';
 import {
   billingObligations, contacts, invoices, INVOICE_STATUSES, organisations, priceItems, TAX_CODES,
@@ -22,7 +26,12 @@ import {
 //   POST  /invoices/:id/void          owner or admin
 //   GET   /contacts?q=&limit=         customers, by name
 //   GET   /price-items?q=             the price list, by code
-//   GET   /jobs?view=&limit=          billable jobs (the obligation ledger), with counts by view
+//   GET   /jobs?view=&limit=          billable jobs (the obligation ledger), with counts by view;
+//                                     a job with no invoice lists the invoicing rules it waits on
+//   GET   /settings                   the invoicing rules (server/core/invoicing-rules.js)
+//   PUT   /settings                   owner or admin: change some of them
+//   GET   /contacts/:id/billing       one customer's own invoicing settings
+//   PUT   /contacts/:id/billing       owner or admin: change them (null takes the organisation's)
 //   POST  /jobs/:id/draft             owner or admin: a job's draft invoice, after a live
 //                                     check that the accounting system holds none
 //
@@ -338,6 +347,12 @@ export function createInvoicingRouter({ db, personAuth, log = console, liveCheck
     ]);
     const nameOf = new Map(names.map((c) => [c.id, c.name]));
     const invoiceOf = new Map(numbers.map((i) => [i.id, i]));
+    const settings = await readInvoicingSettings(db, organisationId);
+    const customers = await customerBillingByContact(db, organisationId, contactIds);
+    // The invoicing rules a job with no invoice waits on, for every view a
+    // draft can still come from.
+    const waitingFor = (o, v) => (o.invoiceId || !['ready', 'pending', 'held'].includes(v)
+      ? [] : ruleBlockers(o, effectiveSettings(settings, customers.get(o.contactId))));
     res.json({
       ok: true,
       jobs: listed.map(({ obligation: { lineFingerprint: _fingerprint, organisationId: _org, ...o }, view: v, reasons }) => ({
@@ -347,6 +362,7 @@ export function createInvoicingRouter({ db, personAuth, log = console, liveCheck
         invoiceStatus: invoiceOf.get(o.invoiceId)?.status ?? null,
         view: v,
         reasons,
+        waitingFor: waitingFor(o, v),
       })),
       counts,
     });
@@ -362,6 +378,35 @@ export function createInvoicingRouter({ db, personAuth, log = console, liveCheck
     const { invoice } = await draftInvoiceForObligation(db, organisationId, obligationId, { liveCheck, actor: `person:${req.person.id}` });
     log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} drafted invoice ${invoice.id} from job ${obligationId}`);
     res.status(201).json({ ok: true, invoice: await invoiceDetail(db, organisationId, invoice.id) });
+  }));
+
+  router.get('/settings', ...signedIn, handle(log, async (req, res) => {
+    const organisationId = await organisationOf(req);
+    res.json({ ok: true, settings: await readInvoicingSettings(db, organisationId), defaults: INVOICING_DEFAULTS });
+  }));
+
+  router.put('/settings', ...manager, handle(log, async (req, res) => {
+    const organisationId = await organisationOf(req);
+    const { organisationId: _named, ...changes } = req.body ?? {};
+    const settings = await saveInvoicingSettings(db, organisationId, changes, { personId: req.person.id });
+    log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} changed invoicing settings ${Object.keys(changes).join(', ')}`);
+    res.json({ ok: true, settings, defaults: INVOICING_DEFAULTS });
+  }));
+
+  router.get('/contacts/:id/billing', ...signedIn, handle(log, async (req, res) => {
+    const contactId = pathId(req.params.id, 'customer');
+    const organisationId = await organisationOf(req);
+    const [billing, settings] = await Promise.all([readCustomerBilling(db, organisationId, contactId), readInvoicingSettings(db, organisationId)]);
+    res.json({ ok: true, billing, effective: effectiveSettings(settings, billing) });
+  }));
+
+  router.put('/contacts/:id/billing', ...manager, handle(log, async (req, res) => {
+    const contactId = pathId(req.params.id, 'customer');
+    const organisationId = await organisationOf(req);
+    const { organisationId: _named, ...changes } = req.body ?? {};
+    const billing = await saveCustomerBilling(db, organisationId, contactId, changes, { personId: req.person.id });
+    log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} changed billing settings of customer ${contactId}`);
+    res.json({ ok: true, billing, effective: effectiveSettings(await readInvoicingSettings(db, organisationId), billing) });
   }));
 
   // A body that is not JSON, or too large, answers like every other refusal.

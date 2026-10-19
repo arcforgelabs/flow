@@ -28,6 +28,8 @@ erDiagram
   billing_obligations ||--o{ link_suggestions : "may be billed by"
   billing_obligations ||--o{ link_rejections : "is never billed by"
   organisations ||--o{ pipeline_cursors : "reads on from"
+  organisations ||--o| invoicing_settings : "drafts and sends by"
+  contacts ||--o| customer_billing_settings : "overrides rules by"
 ```
 
 `external_links`, `background_jobs`, `outbox` and `review_items` are the data
@@ -39,6 +41,10 @@ system, until the job becomes an obligation.
 pipeline that links each job to its accounting invoice
 (`docs/JOB_INVOICE_LINKS.md`). `billing_obligations.job_date` is the day of
 the work that the matcher compares with invoice dates.
+
+`invoicing_settings` and `customer_billing_settings` hold the invoicing rules
+and send modes (`docs/INVOICING_RULES.md`). `billing_obligations.source_status`
+is the work system's status, which the ready-status rule reads.
 
 `people` lists who may sign in and their role (`owner`, `admin`, `staff`).
 One installation serves one lab, so it is installation-wide.

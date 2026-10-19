@@ -4,6 +4,7 @@ import {
   billingObligations, contacts, externalLinks, linkRejections, linkSuggestions, obligationEvents, organisations, pipelineCursors,
 } from '../db/schema.js';
 import { FlowError } from './errors.js';
+import { autoDraftJobs, readInvoicingSettings } from './invoicing-rules.js';
 import { observeJob, recordAccountingEvidence, setHold } from './ledger.js';
 import { linkRecord, priorLinkFor } from './links.js';
 import { enqueueJob, runNextJob } from './queue.js';
@@ -20,6 +21,9 @@ import { enqueueJob, runNextJob } from './queue.js';
 //    sales invoices. Exact evidence links the job. A likely invoice is a
 //    suggestion for a person. When the copy is complete and fresh and holds no
 //    invoice that could bill the job, the job has none.
+// 4. Drafts: each job with no invoice that passes every invoicing rule
+//    (invoicing-rules.js) gets a draft Flow invoice, which waits in Flow for a
+//    person.
 //
 // The matcher reads only Flow's copies, so matching years of history costs no
 // API calls (docs/JOB_INVOICE_LINKS.md).
@@ -425,7 +429,9 @@ export async function runPipelineOnce(db, integrations, { now = new Date() } = {
         system: accounting.id, customers: await accounting.capabilities.listCustomers({ organisationId }),
       });
     }
-    summary.matching = await matchJobs(db, organisationId, { accounting, now });
+    const settings = await readInvoicingSettings(db, organisationId);
+    summary.matching = await matchJobs(db, organisationId, { accounting, now, staleDays: settings.staleDays });
+    summary.drafting = await autoDraftJobs(db, organisationId, { accounting, now });
   }
   return summary;
 }

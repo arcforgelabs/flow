@@ -48,6 +48,8 @@ export function toLedgerJob(item) {
     shippedOn: null,
     // The day of the work, for matching it to its accounting invoice.
     jobDate: item.invoice?.invoiceDate ?? item.dueOn ?? item.orderedOn ?? null,
+    // The draft rules bill only the statuses the lab chose (for example Shipped).
+    sourceStatus: item.status ?? null,
     lines: ledgerLinesFor(item).lines,
     observedAt: item.syncedAt,
     actor: SEAZONA_SOURCE_SYSTEM,

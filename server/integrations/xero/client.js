@@ -243,6 +243,11 @@ export function createXeroClient({
       });
       return payload[path] ?? [];
     },
+    // Xero emails one approved invoice to its contact, with the organisation's
+    // own template, and marks it sent. Not idempotent: a repeat sends again.
+    async emailInvoice(invoiceId) {
+      await request('POST', `Invoices/${encodeURIComponent(invoiceId)}/Email`, { body: {} });
+    },
     // One invoice. `idempotencyKey` makes a retry within Xero's window
     // return the first result instead of a second invoice.
     async createInvoice(invoice, { idempotencyKey }) {

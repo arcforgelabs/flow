@@ -209,6 +209,9 @@ export const billingObligations = pgTable('billing_obligations', {
   // The day of the work, for matching it to an accounting invoice: the work
   // system's invoice date, else its due date, else its order date.
   jobDate: date('job_date'),
+  // The work system's status for the job, as it reported it (for example
+  // "Shipped"). The draft rules read it.
+  sourceStatus: text('source_status'),
   // The lines as the work system reported them, normalised.
   lines: jsonb('lines').notNull().default(sql`'[]'::jsonb`),
   lineFingerprint: text('line_fingerprint').notNull(),
@@ -558,4 +561,62 @@ export const linkRejections = pgTable('link_rejections', {
     columns: [t.organisationId, t.obligationId],
     foreignColumns: [billingObligations.organisationId, billingObligations.id],
   }),
+]);
+
+// Invoicing rules (server/core/invoicing-rules.js). One row for each
+// organisation: when Flow drafts a job's invoice by itself, and how a checked
+// draft goes to the accounting system. No row means the defaults.
+export const SEND_MODES = ['accounting_draft', 'approve_and_email'];
+
+export const invoicingSettings = pgTable('invoicing_settings', {
+  organisationId: uuid('organisation_id').primaryKey().references(() => organisations.id),
+  // Flow drafts the invoice of each job that passes every rule.
+  autoDraft: boolean('auto_draft').notNull().default(true),
+  // accounting_draft: a person checks the draft in Flow, Flow sends it as an
+  // accounting draft, and a person approves and sends it there.
+  // approve_and_email: a person approves the draft in Flow, Flow sends it
+  // approved, and the accounting system emails it to the customer.
+  sendMode: text('send_mode').notNull().default('accounting_draft'),
+  // The work system statuses that make a job ready to bill.
+  readyStatuses: text('ready_statuses').array().notNull().default(sql`'{shipped,delivered}'::text[]`),
+  // A job whose date is more than this many days ago waits for a person.
+  staleDays: integer('stale_days').notNull().default(90),
+  // The days from the invoice date to its due date.
+  paymentTermsDays: integer('payment_terms_days').notNull().default(30),
+  // A job needs a practitioner, its own or its customer's default one.
+  requirePractitioner: boolean('require_practitioner').notNull().default(false),
+  // The price item code of a rush charge, and its share of the other lines.
+  rushItemCode: text('rush_item_code'),
+  rushPercent: integer('rush_percent').notNull().default(20),
+  updatedBy: uuid('updated_by').references(() => people.id, { onDelete: 'set null' }),
+  updatedAt: updatedAt(),
+}, (t) => [
+  check('invoicing_settings_send_mode_valid', inList('send_mode', SEND_MODES)),
+  check('invoicing_settings_stale_days_valid', sql`${t.staleDays} between 1 and 3650`),
+  check('invoicing_settings_terms_valid', sql`${t.paymentTermsDays} between 0 and 365`),
+  check('invoicing_settings_rush_valid', sql`${t.rushPercent} between 0 and 100`),
+]);
+
+// One customer's own invoicing settings. A null value takes the
+// organisation's setting.
+export const customerBillingSettings = pgTable('customer_billing_settings', {
+  organisationId: organisationId().references(() => organisations.id),
+  contactId: uuid('contact_id').notNull(),
+  // A customer that is not billable never gets an invoice from a rule.
+  billable: boolean('billable').notNull().default(true),
+  defaultPractitioner: text('default_practitioner'),
+  autoDraft: boolean('auto_draft'),
+  sendMode: text('send_mode'),
+  paymentTermsDays: integer('payment_terms_days'),
+  updatedBy: uuid('updated_by').references(() => people.id, { onDelete: 'set null' }),
+  updatedAt: updatedAt(),
+}, (t) => [
+  primaryKey({ name: 'customer_billing_settings_pk', columns: [t.organisationId, t.contactId] }),
+  foreignKey({
+    name: 'customer_billing_settings_contact_same_org',
+    columns: [t.organisationId, t.contactId],
+    foreignColumns: [contacts.organisationId, contacts.id],
+  }),
+  check('customer_billing_settings_send_mode_valid', sql`${t.sendMode} is null or ${t.sendMode} in ('accounting_draft', 'approve_and_email')`),
+  check('customer_billing_settings_terms_valid', sql`${t.paymentTermsDays} is null or ${t.paymentTermsDays} between 0 and 365`),
 ]);

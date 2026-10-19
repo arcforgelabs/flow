@@ -28,7 +28,8 @@ flowchart LR
   m -- nothing, copy complete --> none[No invoice]
 ```
 
-Each run has three steps.
+Each run has three steps, and then drafts invoices by rule
+(`docs/INVOICING_RULES.md`).
 
 1. **Customers.** A Seazona client and a Xero contact link to the Flow
    customer with the same name. Case, spacing, punctuation and a "Pty Ltd"
@@ -107,4 +108,4 @@ it has decided, and the matcher does not hold it again.
 - A screen and an API to accept a suggestion, reject one, and find an invoice
   by hand (step 2 of the plan).
 - Credit notes and payments on the linked job (step 3).
-- Draft rules that prepare invoices for ready jobs (step 4).
+- Draft rules and send modes are built: `docs/INVOICING_RULES.md`.

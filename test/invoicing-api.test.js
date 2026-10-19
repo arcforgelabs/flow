@@ -275,4 +275,27 @@ describe('invoicing API', { skip: skipWithoutDatabase }, () => {
     const mine = (await call(`/invoices?organisationId=${lab.id}&limit=1`)).body.invoices[0];
     assert.equal((await call(`/invoices/${mine.id}?organisationId=${other.id}`)).status, 404);
   });
+
+  test('invoicing settings: everyone reads them, an owner or admin changes them, a customer can override them', async () => {
+    const read = await call(`/settings?organisationId=${lab.id}`, { token: staffToken });
+    assert.equal(read.status, 200);
+    assert.equal(read.body.settings.sendMode, 'accounting_draft');
+    assert.equal(read.body.settings.autoDraft, true);
+    assert.equal((await call('/settings', { method: 'PUT', token: staffToken, body: { organisationId: lab.id, paymentTermsDays: 7 } })).status, 403);
+    const changed = await call('/settings', { method: 'PUT', body: { organisationId: lab.id, sendMode: 'approve_and_email', paymentTermsDays: 7 } });
+    assert.equal(changed.status, 200, JSON.stringify(changed.body));
+    assert.equal(changed.body.settings.sendMode, 'approve_and_email');
+    assert.equal((await call('/settings', { method: 'PUT', body: { organisationId: lab.id, sendMode: 'fax' } })).status, 400);
+
+    const own = await call(`/contacts/${practice.id}/billing`, { method: 'PUT', body: { organisationId: lab.id, sendMode: 'accounting_draft', billable: false } });
+    assert.equal(own.status, 200, JSON.stringify(own.body));
+    assert.equal(own.body.effective.sendMode, 'accounting_draft');
+    assert.equal(own.body.effective.paymentTermsDays, 7);
+    assert.equal((await call(`/contacts/${supplier.id}/billing`, { method: 'PUT', body: { organisationId: lab.id, billable: false } })).status, 400);
+    assert.equal((await call(`/contacts/${MISSING}/billing?organisationId=${lab.id}`)).status, 404);
+
+    // A job with no invoice lists the rules it waits on.
+    const jobs = await call(`/jobs?organisationId=${lab.id}&view=pending`);
+    assert.ok(jobs.body.jobs.every((j) => j.waitingFor.includes('the customer is not billable')), JSON.stringify(jobs.body.jobs.map((j) => j.waitingFor)));
+  });
 });
