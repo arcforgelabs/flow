@@ -198,7 +198,7 @@ Keep these in the installation's secret store, never in a repository.
 | `FLOW_FIRST_OWNER_EMAIL` | configuration | The first owner's email. Used only while there is no owner. |
 | `FLOW_OWNER_GOOGLE_DOMAINS` | configuration | Your Google Workspace domain, for example `example.com`. Comma-separated. Required on Replit's managed Clerk: unset, no owner can manage people. No default. |
 | `FLOW_OWNER_MFA_MAX_AGE` | configuration | How long a Clerk second factor counts for owner actions. Default `12h`. |
-| `FLOW_PUBLIC_ORIGIN` | configuration | The published app's `https://` origin: its `*.replit.app` address, or a custom domain if it has one. Clerk then accepts only sessions minted for it. Leave unset in a development workspace. |
+| `FLOW_PUBLIC_ORIGIN` | configuration | The published app's `https://` origin: its `*.replit.app` address, or a custom domain if it has one. Clerk then accepts only sessions minted for it. In a Replit workspace its development address is accepted too, because the workspace and the published app share secrets. Elsewhere, leave it unset in development. |
 
 Boot stops if a setting is malformed or a key is missing. Error messages name
 the variable, never its value.

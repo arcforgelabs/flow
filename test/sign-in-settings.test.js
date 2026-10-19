@@ -46,6 +46,9 @@ describe('sign-in settings', () => {
     assert.equal(settings.firstOwnerEmail, 'owner@example.test');
     assert.deepEqual(settings.authorizedParties, ['https://flow.example.test']);
     assert.equal(settings.keys.publishableSource, 'VITE_CLERK_PUBLISHABLE_KEY');
+    const keys = { FLOW_AUTH: 'clerk', CLERK_SECRET_KEY: SECRET, CLERK_PUBLISHABLE_KEY: TEST_PUBLISHABLE_KEY, FLOW_PUBLIC_ORIGIN: 'https://flow.example.test' };
+    assert.deepEqual(resolveSignInSettings({ ...keys, REPLIT_DEV_DOMAIN: 'abc.dev.example.test' }).authorizedParties, ['https://flow.example.test', 'https://abc.dev.example.test']);
+    assert.deepEqual(resolveSignInSettings({ ...keys, REPLIT_DEV_DOMAIN: 'abc.dev.example.test', REPLIT_DEPLOYMENT: '1' }).authorizedParties, ['https://flow.example.test']);
     assert.throws(() => resolveSignInSettings({ FLOW_AUTH: 'clerk', CLERK_SECRET_KEY: SECRET, CLERK_PUBLISHABLE_KEY: TEST_PUBLISHABLE_KEY, FLOW_FIRST_OWNER_EMAIL: 'ówner@example.test' }), /plain/);
   });
 });

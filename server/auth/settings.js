@@ -89,10 +89,17 @@ export function parseSignUpDomains(raw) {
 }
 
 // FLOW_PUBLIC_ORIGIN: the published app's origin. Clerk then accepts only
-// session tokens minted for it. Unset: Clerk's default.
+// session tokens minted for it. Unset: Clerk's default. A Replit workspace
+// shares its secrets with the published app, so there its own development
+// address (REPLIT_DEV_DOMAIN, never set on the published app) is accepted too.
 export function resolveAuthorizedParties(env = process.env) {
   const raw = readEnv(env, 'FLOW_PUBLIC_ORIGIN');
   if (!raw) return [];
+  const devDomain = readEnv(env, 'REPLIT_DEPLOYMENT') ? '' : readEnv(env, 'REPLIT_DEV_DOMAIN');
+  return [publicOrigin(raw), ...(devDomain ? [`https://${devDomain}`] : [])];
+}
+
+function publicOrigin(raw) {
   let url;
   try {
     url = new URL(raw);
@@ -102,7 +109,7 @@ export function resolveAuthorizedParties(env = process.env) {
   if (url.protocol !== 'https:' && url.protocol !== 'http:') {
     throw new Error('FLOW_PUBLIC_ORIGIN must be an http(s) URL');
   }
-  return [url.origin];
+  return url.origin;
 }
 
 // FLOW_FIRST_OWNER_EMAIL: while the installation has no owner, Flow invites
