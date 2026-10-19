@@ -105,6 +105,15 @@ body:is([data-state="off"], [data-state="error"], [data-state="no-access"]) .fx-
   border-radius: var(--t-radius-lg); box-shadow: var(--t-shadow);
 }
 .fx-panel { overflow: hidden; }
+/* A list that is loading: a thin moving line on top. A list from another
+   tab, shown until the new one comes, is dimmed and cannot be clicked. */
+.fx-panel[aria-busy="true"] { position: relative; }
+.fx-panel[aria-busy="true"]::before {
+  content: ""; position: absolute; inset: 0 0 auto; height: 2px; z-index: 1;
+  background: linear-gradient(90deg, transparent, var(--t-accent), transparent) 0 0 / 200% 100%;
+  animation: fx-shimmer 1s linear infinite;
+}
+.fx-panel[data-stale] { opacity: .5; pointer-events: none; transition: opacity .15s; }
 
 /* The signed-in app: a standard left sidebar, then the view. */
 .fx-shell { min-height: 100vh; }

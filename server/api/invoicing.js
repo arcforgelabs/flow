@@ -276,25 +276,36 @@ export function createInvoicingRouter({
     }
     const q = text(req.query.q);
     const limit = limitOf(req.query.limit, 200, 500);
-    const views = await invoiceViews(db, organisationId, { accounting: accounting() });
-    const where = [eq(invoices.organisationId, organisationId)];
-    const only = (ids) => (ids.length ? inArray(invoices.id, ids) : sql`false`);
-    if (status === 'to_check') where.push(only(views.toCheck));
-    else if (status === 'ready') where.push(only(views.ready));
-    else if (status === 'problem') where.push(only([...views.problems.keys()]));
-    else if (status) where.push(eq(invoices.status, status));
-    if (q) {
-      const pattern = containing(q);
-      where.push(or(ilike(invoices.number, pattern), ilike(invoices.reference, pattern), ilike(contacts.name, pattern)));
-    }
-    const rows = await db.select({ invoice: invoices, contactName: contacts.name }).from(invoices)
-      .leftJoin(contacts, eq(contacts.id, invoices.contactId))
-      .where(and(...where))
-      .orderBy(desc(invoices.createdAt), desc(invoices.id))
-      .limit(limit);
-    const jobs = await jobsByInvoice(db, organisationId, rows.map((r) => r.invoice.id));
-    const counted = await db.select({ status: invoices.status, n: sql`count(*)::int` }).from(invoices)
+    // Each tab switch runs this, so the independent reads run side by side;
+    // only the to-check, ready and problem lists wait on the draft checks.
+    const system = accounting();
+    const checking = invoiceViews(db, organisationId, { accounting: system });
+    const counting = db.select({ status: invoices.status, n: sql`count(*)::int` }).from(invoices)
       .where(eq(invoices.organisationId, organisationId)).groupBy(invoices.status);
+    const sendMode = system
+      ? Promise.all([sendModeSummary(db, organisationId), system.capabilities.sendStatus({ organisationId })])
+        .then(([summary, sendStatus]) => ({ ...summary, ...sendStatus }))
+      : null;
+    const listing = (async () => {
+      const views = VIEWS_OF_INVOICES.includes(status) ? await checking : null;
+      const where = [eq(invoices.organisationId, organisationId)];
+      const only = (ids) => (ids.length ? inArray(invoices.id, ids) : sql`false`);
+      if (status === 'to_check') where.push(only(views.toCheck));
+      else if (status === 'ready') where.push(only(views.ready));
+      else if (status === 'problem') where.push(only([...views.problems.keys()]));
+      else if (status) where.push(eq(invoices.status, status));
+      if (q) {
+        const pattern = containing(q);
+        where.push(or(ilike(invoices.number, pattern), ilike(invoices.reference, pattern), ilike(contacts.name, pattern)));
+      }
+      const rows = await db.select({ invoice: invoices, contactName: contacts.name }).from(invoices)
+        .leftJoin(contacts, eq(contacts.id, invoices.contactId))
+        .where(and(...where))
+        .orderBy(desc(invoices.createdAt), desc(invoices.id))
+        .limit(limit);
+      return { rows, jobs: await jobsByInvoice(db, organisationId, rows.map((r) => r.invoice.id)) };
+    })();
+    const [views, counted, { rows, jobs }, mode] = await Promise.all([checking, counting, listing, sendMode]);
     const counts = Object.fromEntries(INVOICE_STATUSES.map((s) => [s, 0]));
     for (const { status: s, n } of counted) counts[s] = n;
     counts.to_check = views.toCheck.length;
@@ -313,8 +324,8 @@ export function createInvoicingRouter({
         problems: views.problems.get(invoice.id) ?? [],
       })),
       counts,
-      sendsTo: accounting()?.name ?? null,
-      sendMode: accounting() ? { ...(await sendModeSummary(db, organisationId)), ...(await accounting().capabilities.sendStatus({ organisationId })) } : null,
+      sendsTo: system?.name ?? null,
+      sendMode: mode,
     });
   }));
 
