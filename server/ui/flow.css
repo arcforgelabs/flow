@@ -90,6 +90,7 @@ body:is([data-state="off"], [data-state="error"], [data-state="no-access"]) .fx-
 }
 .fx-input:hover, .fx-select:hover { border-color: var(--t-text); }
 .fx-input:focus, .fx-select:focus { outline: none; border-color: var(--t-text); box-shadow: var(--fx-focus); }
+textarea.fx-input { min-height: 96px; padding: 8px 10px; line-height: 1.5; resize: vertical; }
 .fx-select {
   width: auto; min-width: 112px; padding-right: 30px; appearance: none; cursor: pointer;
   background-image: linear-gradient(45deg, transparent 50%, var(--t-dim) 50%), linear-gradient(135deg, var(--t-dim) 50%, transparent 50%);

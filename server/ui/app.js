@@ -11,6 +11,7 @@ import { flowClerkAppearance } from '/assets/ui/clerk-appearance.js';
 import { ACCENT_PRESETS, normalizeAccent, THEME_FAMILIES, tokensFor } from '/assets/theme/themes.js';
 import { renderInvoice, renderInvoiceList } from '/assets/ui/invoicing.js';
 import { renderJobs } from '/assets/ui/jobs.js';
+import { openReportDialog, renderProblems } from '/assets/ui/problems.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -156,7 +157,7 @@ function dialog({ title, body, confirm, tone = 'primary' }) {
     });
     document.body.append(element);
     element.showModal();
-    element.querySelector('input, select, button[value="ok"]')?.focus();
+    element.querySelector('input, select, textarea, button[value="ok"]')?.focus();
   });
 }
 
@@ -188,6 +189,7 @@ const VIEWS = {
   invoices: { label: 'Invoices', icon: 'invoices', group: 'Work', render: (main, id) => (id ? renderInvoice(main, ui(), id) : renderInvoiceList(main, ui())) },
   people: { label: 'People', icon: 'people', group: 'Settings', ownerOnly: true, render: renderPeople },
   integrations: { label: 'Integrations', icon: 'plug', group: 'Settings', ownerOnly: true, render: (main, id) => (id ? renderIntegration(main, id) : renderIntegrations(main)) },
+  problems: { label: 'Problems', icon: 'flag', group: 'Settings', roles: ['owner', 'admin'], render: (main) => renderProblems(main, ui()) },
   account: { label: 'Account', icon: 'person', group: 'Settings', render: renderAccount },
   appearance: { label: 'Appearance', icon: 'palette', group: 'Settings', render: renderAppearance },
 };
@@ -199,6 +201,7 @@ const ICON_PATHS = {
   people: '<circle cx="9" cy="8" r="3"/><path d="M3 20c0-3.5 2.7-6 6-6s6 2.5 6 6"/><path d="M16 5a3 3 0 010 6M21 20c0-3-1.6-5-4-5.7"/>',
   plug: '<path d="M9 3v5M15 3v5M6 8h12v3a6 6 0 01-12 0zM12 17v4"/>',
   person: '<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-7 8-7s8 3 8 7"/>',
+  flag: '<path d="M5 21V4M5 4h11l-2 4 2 4H5"/>',
   palette: '<path d="M12 3a9 9 0 100 18c1.1 0 1.5-.8 1.5-1.6 0-1-.8-1.4-.8-2.4 0-.9.7-1.5 1.6-1.5H17a4 4 0 004-4c0-4.7-4-8.5-9-8.5z"/><circle cx="7.5" cy="11" r="1"/><circle cx="10" cy="7" r="1"/><circle cx="15" cy="7" r="1"/>',
 };
 
@@ -208,10 +211,17 @@ function icon(name) {
   return node;
 }
 
+// Whether this person's role opens a view.
+function mayOpen(view) {
+  const role = me?.person.role;
+  if (view.ownerOnly) return role === 'owner';
+  return !view.roles || view.roles.includes(role);
+}
+
 // The view and, for one record, its id: /invoices/<id> is ['invoices', '<id>'].
 function currentView() {
   const [name, id = null] = location.pathname.replace(/^\/+|\/+$/g, '').split('/');
-  if (VIEWS[name] && (!VIEWS[name].ownerOnly || me?.person.role === 'owner')) return [name, id];
+  if (VIEWS[name] && mayOpen(VIEWS[name])) return [name, id];
   return ['jobs', null];
 }
 
@@ -274,13 +284,16 @@ function renderShell() {
   const items = [];
   let group = null;
   for (const [name, view] of Object.entries(VIEWS)) {
-    if (view.ownerOnly && me?.person.role !== 'owner') continue;
+    if (!mayOpen(view)) continue;
     if (view.group && view.group !== group) items.push(h('span', { class: 'fx-nav__group' }, view.group));
     group = view.group;
     items.push(h('a', { href: `/${name}`, 'data-nav': name, onclick: navigate }, icon(view.icon), h('span', {}, view.label)));
   }
   nav.replaceChildren(...items);
   mountClerk('userButton', $('user-button'), { afterSignOutUrl: '/sign-in', showName: false });
+  // Anyone signed in can report a problem from any view.
+  $('report-problem').replaceChildren(icon('flag'));
+  $('report-problem').onclick = () => openReportDialog(ui());
   window.addEventListener('popstate', route);
   return route();
 }

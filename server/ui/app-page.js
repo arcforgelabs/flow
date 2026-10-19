@@ -40,6 +40,7 @@ const BODY = `<div class="fx-app">
       <nav class="fx-nav" id="nav" aria-label="Flow"></nav>
       <div class="fx-side__end">
         <div id="user-button" class="fx-side__user"></div>
+        <button type="button" class="fx-btn fx-btn--ghost fx-btn--icon" id="report-problem" title="Report a problem" aria-label="Report a problem"></button>
         <button type="button" class="fx-btn fx-btn--ghost fx-btn--icon fx-mode-toggle" data-mode-toggle>Light or dark</button>
       </div>
     </aside>
@@ -48,7 +49,7 @@ const BODY = `<div class="fx-app">
   <div id="toasts" class="fx-toasts" aria-live="polite"></div>
 </div>`;
 
-export const APP_PATHS = ['/sign-in', '/jobs', '/invoices', '/invoices/:id', '/people', '/integrations', '/integrations/:id', '/account', '/appearance'];
+export const APP_PATHS = ['/sign-in', '/jobs', '/invoices', '/invoices/:id', '/people', '/integrations', '/integrations/:id', '/problems', '/account', '/appearance'];
 
 export function appPage({ defaultFamily }) {
   return renderPage({

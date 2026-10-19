@@ -559,3 +559,48 @@ export const linkRejections = pgTable('link_rejections', {
     foreignColumns: [billingObligations.organisationId, billingObligations.id],
   }),
 ]);
+
+// Problems: what people report and what the server logs as an error, kept in
+// this installation's own database for its owners and admins
+// (docs/PROBLEMS.md). Installation-wide, like `people`. Nothing here leaves
+// the installation.
+export const PROBLEM_STATES = ['new', 'seen', 'closed'];
+
+export const problemReports = pgTable('problem_reports', {
+  id: id(),
+  reportedBy: uuid('reported_by').references(() => people.id, { onDelete: 'set null' }),
+  // The reporter's email when they reported, so the report keeps its author
+  // after the person is removed.
+  reporterEmail: text('reporter_email'),
+  message: text('message').notNull(),
+  page: text('page'),
+  userAgent: text('user_agent'),
+  // The release or commit that was running (server/deployed-build.js).
+  build: text('build'),
+  status: text('status').notNull().default('new'),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, (t) => [
+  index('problem_reports_status_created').on(t.status, t.createdAt),
+  check('problem_reports_status_valid', inList('status', PROBLEM_STATES)),
+  check('problem_reports_message_length', sql`char_length(${t.message}) between 1 and 4000`),
+]);
+
+// One row per kind of error: a repeat adds to `count` and moves
+// `last_seen_at`, and reopens a closed row.
+export const errorEvents = pgTable('error_events', {
+  id: id(),
+  fingerprint: text('fingerprint').notNull(),
+  source: text('source').notNull(),
+  message: text('message').notNull(),
+  build: text('build'),
+  count: integer('count').notNull().default(1),
+  status: text('status').notNull().default('new'),
+  firstSeenAt: timestamp('first_seen_at', { withTimezone: true }).notNull().defaultNow(),
+  lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  unique('error_events_fingerprint').on(t.fingerprint),
+  index('error_events_status_last_seen').on(t.status, t.lastSeenAt),
+  check('error_events_status_valid', inList('status', PROBLEM_STATES)),
+  check('error_events_count_positive', sql`${t.count} > 0`),
+]);

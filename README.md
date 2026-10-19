@@ -40,6 +40,7 @@ run a lab.
 | `docs/INTEGRATIONS.md` | How an integration adapter is built, turned on and off, and owns its tables |
 | `docs/XERO.md` | The Xero adapter: modes, settings, rate limits, connecting Xero and draft invoices |
 | `docs/SEAZONA.md` | The Seazona adapter: modes, settings, the rate governor, replay files and its tables |
+| `docs/PROBLEMS.md` | Problem reports from people and the server's error log, kept in the installation's own database |
 | `server/integrations/port.js` | The integration port every adapter implements |
 
 ## Getting started

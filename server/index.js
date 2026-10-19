@@ -7,7 +7,9 @@ import { resolveSignInSettings } from './auth/settings.js';
 import { migrateDatabase, openDatabase } from './db/index.js';
 import { importEarlierAtStart, importEarlierLinksAtStart, resolveImportAtStart } from './import/at-start.js';
 import { createPipelineWorker } from './core/pipeline.js';
+import { createErrorRecorder } from './core/problems.js';
 import { resolveSecretsKey } from './core/secrets.js';
+import { deployedBuildStatus } from './deployed-build.js';
 import { adapters as shippedAdapters } from './integrations/adapters.js';
 import { createIntegrations, resolveEnabledIntegrations } from './integrations/index.js';
 import { readStoredSettings, settingsEnvironment, storedEnabled } from './integrations/setup.js';
@@ -53,6 +55,11 @@ try {
 // integration's own tables, and no others (docs/INTEGRATIONS.md).
 const database = openDatabase();
 await migrateDatabase(database.db);
+// From here on, each error Flow logs is also kept in the installation's own
+// error log, for its owners and admins (docs/PROBLEMS.md). It goes nowhere
+// else.
+const build = deployedBuildStatus();
+const log = createErrorRecorder({ db: database.db, log: console, build });
 // A failed import stops the start, so Flow never opens with half its records.
 try {
   await importEarlierAtStart({ db: database.db, pool: database.pool, settings: importAtStart });
@@ -71,7 +78,7 @@ try {
   const stored = await readStoredSettings(database.db);
   const { env: settingsEnv, unreadable } = settingsEnvironment({ env: process.env, stored, adapters: shippedAdapters, secrets });
   if (unreadable.length) console.warn(`[integrations] stored credentials Flow cannot read with this secrets key: ${unreadable.join(', ')}. An owner enters them again in Settings.`);
-  integrations = createIntegrations({ turnedOnInFlow: storedEnabled(stored, process.env), settingsEnv });
+  integrations = createIntegrations({ turnedOnInFlow: storedEnabled(stored, process.env), settingsEnv, log });
   await integrations.start(database.db);
 } catch (error) {
   console.error(`[integrations] ${error.message}`);
@@ -85,14 +92,14 @@ console.log(`[integrations] on: ${integrationsOn.join(', ') || 'none'}; secrets 
 // only while an integration that feeds it is on, and writes to no other
 // system. FLOW_PIPELINE=off stops it.
 if (process.env.FLOW_PIPELINE !== 'off') {
-  createPipelineWorker({ db: database.db, integrations }).start();
+  createPipelineWorker({ db: database.db, integrations, log }).start();
 }
 
 let auth = null;
 if (settings.mode === 'clerk') {
   const { keys } = settings;
   const clerk = await loadClerkAdapter({ ...keys, authorizedParties: settings.authorizedParties });
-  const personAuth = createPersonAuth({ db: database.db, clerk, ...settings });
+  const personAuth = createPersonAuth({ db: database.db, clerk, ...settings, log });
   let clerkProxy = null;
   const proxyPath = resolveClerkProxyPath(keys.proxyUrl);
   if (proxyPath) {
@@ -129,7 +136,7 @@ const trustProxy = process.env.REPL_ID || process.env.REPLIT_DEPLOYMENT ? 1 : fa
 
 const updates = createUpdateChecker();
 
-createApp({ database, auth, trustProxy, updates, integrations, secrets, defaultFamily }).listen(port, () => {
+createApp({ build, database, auth, trustProxy, updates, integrations, secrets, defaultFamily, log }).listen(port, () => {
   console.log(`[flow] listening on ${port}; design system ${defaultFamily} (FLOW_THEME)`);
 });
 

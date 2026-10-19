@@ -1,6 +1,7 @@
 import express from 'express';
 import { createConnectorApi } from './api/connector.js';
 import { createInvoicingRouter } from './api/invoicing.js';
+import { createProblemsRouter } from './api/problems.js';
 import { createSignInRouter } from './auth/routes.js';
 import { deployedBuildStatus } from './deployed-build.js';
 import { integrationsHealth } from './integrations/health.js';
@@ -25,7 +26,9 @@ import { createUiAssetsRouter } from './ui/routes.js';
 // `integrations` is the started registry (server/integrations/index.js); each
 // adapter's own routes are mounted under /api/<id>, and GET /health reports
 // each one (server/integrations/health.js). `defaultFamily` is the design
-// system every page starts on (FLOW_THEME, server/theme/themes.js).
+// system every page starts on (FLOW_THEME, server/theme/themes.js). `log`
+// is the console, or the error recorder (server/core/problems.js) that also
+// keeps each error in the installation's error log.
 export function createApp({
   build = deployedBuildStatus(),
   database = null,
@@ -110,6 +113,9 @@ export function createApp({
       return adapter ? (obligation) => adapter.capabilities.checkInvoice({ organisationId, obligation }) : null;
     };
     app.use('/api/invoicing', createInvoicingRouter({ db: database.db, personAuth: auth.personAuth, log, liveCheckFor }));
+    // Problems (server/api/problems.js): anyone signed in reports one; owners
+    // and admins read the reports and the error log.
+    app.use('/api/problems', createProblemsRouter({ db: database.db, personAuth: auth.personAuth, build, log }));
   }
   for (const { path, handler } of integrations?.routes({ db: database?.db ?? null, personAuth: auth?.personAuth ?? null, log, messagePage: page }) ?? []) {
     app.use(path, handler);
@@ -124,6 +130,16 @@ export function createApp({
     rateLimitPerMinute: signInRateLimitPerMinute,
     log,
   }));
+
+  // An error no route answered. A server fault goes to `log` (so the error
+  // log keeps it, docs/PROBLEMS.md) and the answer carries no detail; any
+  // other error keeps Express's own answer.
+  app.use((error, _req, res, next) => {
+    const status = error?.status ?? error?.statusCode ?? 500;
+    if (status < 500 || res.headersSent) return next(error);
+    log.error?.(`[http] ${error?.message ?? error}`);
+    return res.status(500).json({ ok: false, code: 'internal', error: 'Something went wrong.' });
+  });
 
   return app;
 }

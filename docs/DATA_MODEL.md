@@ -43,6 +43,10 @@ the work that the matcher compares with invoice dates.
 `people` lists who may sign in and their role (`owner`, `admin`, `staff`).
 One installation serves one lab, so it is installation-wide.
 
+`problem_reports` and `error_events` hold what people report and the errors
+the server logs (`docs/PROBLEMS.md`). They are installation-wide, like
+`people`.
+
 Each integration adapter owns its own tables, named after it (`seazona_…`).
 They exist only once the adapter has been on at a start, and they are not in
 `server/db/schema.js` (`docs/INTEGRATIONS.md`).
