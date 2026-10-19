@@ -1,6 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import { sql } from 'drizzle-orm';
-import { pushInvoice } from './drafts.js';
+import { checkDrafts, pushInvoice, pushInvoices } from './drafts.js';
+import { readConnection } from './connections.js';
 import { createImportWorker } from './import.js';
 import { readPayments, xeroLiveCheck } from './ledger.js';
 import { findInvoices, listCustomers } from './lookup.js';
@@ -86,6 +87,15 @@ export function createXeroAdapter({ runtime: given = null } = {}) {
       // One issued invoice to a Xero draft (drafts.js). The Flow invoice id
       // and version are the idempotency key.
       pushInvoice: ({ organisationId, invoiceId, pushedBy = null }) => pushInvoice(database, current(), { organisationId, invoiceId, pushedBy }),
+      // Several issued invoices, in batches of MAX_BATCH (drafts.js).
+      pushInvoices: ({ organisationId, invoiceIds, pushedBy = null }) => pushInvoices(database, current(), { organisationId, invoiceIds, pushedBy }),
+      // What would stop each Flow draft in Xero, from Flow's copy (no calls).
+      checkDrafts: ({ organisationId, invoiceIds }) => checkDrafts(database, current(), { organisationId, invoiceIds }),
+      sendStatus: async ({ organisationId }) => {
+        const { settings } = current();
+        const connection = await readConnection(database, organisationId);
+        return { connected: Boolean(connection && connection.mode === settings.mode), writesAllowed: writesAllowed(settings) };
+      },
       // Sales invoice payments changed since `since` (ledger.js). The answer's
       // cursor is the next `since`.
       pullPayments: ({ organisationId, since }) => readPayments(database, current(), organisationId, { since: new Date(since) }),

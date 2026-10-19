@@ -2,7 +2,8 @@ import { createHash } from 'node:crypto';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { getInvoice, listInvoiceVersions } from '../../core/invoices.js';
 import { sendModeFor } from '../../core/invoicing-rules.js';
-import { contacts as flowContacts, priceItems } from '../../db/schema.js';
+import { contacts as flowContacts, invoices as flowInvoices, priceItems } from '../../db/schema.js';
+import { readConnection } from './connections.js';
 import { itemsByCode, lastSuccessfulSyncAt, matchContact, normaliseName } from './catalogue.js';
 import { xeroError } from './client.js';
 import { withXeroLane } from './governor.js';
@@ -318,8 +319,44 @@ export async function pushDrafts(db, runtime, organisationId, invoiceIds, { push
         results.push(failed(invoiceId, error));
       }
     }
+    await keepSendState(db, organisationId, results);
     return summarise(results);
   }));
+}
+
+// Flow's Problem view (server/core/sending.js) shows an issued invoice that
+// failed to send. Once Xero holds it, by any path, that problem is gone.
+async function keepSendState(db, organisationId, results) {
+  const held = results.filter((r) => ['created', 'reconciled', 'existing', 'already_in_xero'].includes(r.outcome)).map((r) => r.invoiceId);
+  if (!held.length) return;
+  await db.update(flowInvoices).set({ sendState: 'sent', sendError: null, sendUpdatedAt: sql`now()` })
+    .where(and(eq(flowInvoices.organisationId, organisationId), inArray(flowInvoices.id, held), sql`${flowInvoices.sendState} is not null`));
+}
+
+// Send all ready (server/core/sending.js): issued invoices in batches.
+export async function pushInvoices(db, runtime, { organisationId, invoiceIds, pushedBy = null }) {
+  const invoices = [];
+  for (let at = 0; at < invoiceIds.length; at += MAX_BATCH) {
+    invoices.push(...(await pushDrafts(db, runtime, organisationId, invoiceIds.slice(at, at + MAX_BATCH), { pushedBy })).invoices);
+  }
+  return { invoices };
+}
+
+// What would stop each Flow draft in Xero, from Flow's copy of Xero (no
+// calls). Null while Xero is not connected: then Flow's own checks decide.
+export async function checkDrafts(db, runtime, { organisationId, invoiceIds }) {
+  const connection = await readConnection(db, organisationId);
+  if (!connection || connection.mode !== runtime.settings.mode) return null;
+  const found = new Map();
+  for (let at = 0; at < invoiceIds.length; at += MAX_BATCH) {
+    const { invoices } = await previewDrafts(db, runtime, organisationId, invoiceIds.slice(at, at + MAX_BATCH));
+    for (const preview of invoices) {
+      found.set(preview.invoiceId, preview.problems
+        .filter((p) => p.blocking !== false && p.code !== 'invoice_not_issued')
+        .map(({ code, message }) => ({ code, message })));
+    }
+  }
+  return found;
 }
 
 function failed(invoiceId, error, outcome = 'failed') {

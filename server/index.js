@@ -8,6 +8,7 @@ import { migrateDatabase, openDatabase } from './db/index.js';
 import { importEarlierAtStart, importEarlierLinksAtStart, resolveImportAtStart } from './import/at-start.js';
 import { createMonitoredLog } from './core/monitoring.js';
 import { createPipelineWorker } from './core/pipeline.js';
+import { createSendWorker } from './core/sending.js';
 import { resolveSecretsKey } from './core/secrets.js';
 import { adapters as shippedAdapters } from './integrations/adapters.js';
 import { createIntegrations, resolveEnabledIntegrations } from './integrations/index.js';
@@ -91,6 +92,9 @@ console.log(`[integrations] on: ${integrationsOn.join(', ') || 'none'}; secrets 
 if (process.env.FLOW_PIPELINE !== 'off') {
   createPipelineWorker({ db: database.db, integrations, log }).start();
 }
+// The send worker (server/core/sending.js) sends only what a person queued
+// with Send all ready, to the accounting integration that is on.
+createSendWorker({ db: database.db, integrations, log }).start();
 
 let auth = null;
 if (settings.mode === 'clerk') {

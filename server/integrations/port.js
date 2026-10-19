@@ -12,6 +12,9 @@ import { isMissingTable, migrateAdapterSchema } from './schema.js';
 export const CAPABILITIES = Object.freeze([
   'pullWorkItems', // billable work since a cursor (Seazona: completed cases)
   'pushInvoice', // send an issued invoice; the Flow record id is the idempotency key
+  'pushInvoices', // send several issued invoices in one pass (Send all ready, server/core/sending.js)
+  'checkDrafts', // the accounting system's problems with Flow drafts, from its copy; null while not connected
+  'sendStatus', // { connected, writesAllowed }: may Flow send invoices now?
   'pushBill', // send an approved bill; the Flow record id is the idempotency key
   'pullPayments', // payments since a cursor, matched to invoices and bills
   'checkInvoice', // does the accounting system hold an invoice for a billable job? (the ledger's liveCheck)

@@ -13,6 +13,7 @@ import {
   saveCustomerBilling, saveInvoicingSettings,
 } from '../core/invoicing-rules.js';
 import { draftInvoiceForObligation, listObligations, setReady } from '../core/ledger.js';
+import { invoiceView, invoiceViews, markNotReady, markReady, sendAgain, sendAllReady } from '../core/sending.js';
 import {
   billingObligations, contacts, invoices, INVOICE_STATUSES, organisations, priceItems, TAX_CODES,
 } from '../db/schema.js';
@@ -21,7 +22,13 @@ import {
 // UI's invoices, customers, price list and jobs pages read and write here.
 //
 //   GET   /context                    the organisations, and whether this person may issue
-//   GET   /invoices?organisationId=&status=&q=&limit=   newest first, with counts by status
+//   GET   /invoices?organisationId=&status=&q=&limit=   newest first, with counts by status;
+//                                     status to_check, ready or problem lists those views (server/core/sending.js)
+//   POST  /invoices/mark-ready        { invoiceIds }: a person checked these drafts; one with a problem stays
+//   POST  /invoices/mark-not-ready    { invoiceIds }: back to To check
+//   POST  /invoices/send-ready        owner or admin: issue every ready draft and queue it for the
+//                                     accounting system { issueDate }
+//   POST  /invoices/send-again        owner or admin: queue failed sends again { invoiceIds? }
 //   GET   /invoices/:id               one invoice: lines, contact, job, issued versions
 //   POST  /invoices                   a new draft
 //   PATCH /invoices/:id               change a draft
@@ -53,9 +60,11 @@ import {
 // may be left out while the installation has exactly one. Money is integer
 // cents. `liveCheckFor(organisationId)` returns the ledger's live check for
 // that organisation, or null when no accounting integration offers one.
+// `accounting()` is the accounting adapter that sends invoices, or null.
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
+const VIEWS_OF_INVOICES = ['to_check', 'ready', 'problem'];
 const VIEWS = ['in_work', 'ready', 'pending', 'drafted', 'invoiced', 'paid', 'held', 'review_required'];
 const MAX_LINES = 200;
 const MAX_TEXT = 500;
@@ -67,6 +76,7 @@ const MAX_UNIT_CENTS = 100_000_000;
 const ERROR_STATUS = {
   invalid: 400, organisation_required: 400, not_found: 404, not_draft: 409, not_issued: 409,
   never_issued: 409, not_ready: 409, live_check_unavailable: 409,
+  accounting_not_connected: 409, accounting_writes_off: 409,
 };
 
 function sendError(res, error, log) {
@@ -198,7 +208,7 @@ async function jobsByInvoice(db, organisationId, invoiceIds) {
   return new Map(rows.map((o) => [o.invoiceId, jobOf(o)]));
 }
 
-async function invoiceDetail(db, organisationId, invoiceId) {
+async function invoiceDetail(db, organisationId, invoiceId, accounting = null) {
   const invoice = await getInvoice(db, organisationId, invoiceId);
   const [[contact], versions, jobs] = await Promise.all([
     db.select({ id: contacts.id, name: contacts.name, email: contacts.email }).from(contacts)
@@ -208,13 +218,14 @@ async function invoiceDetail(db, organisationId, invoiceId) {
   ]);
   return {
     ...invoice,
+    ...(await invoiceView(db, organisationId, invoice, { accounting })),
     contact: contact ?? null,
     job: jobs.get(invoiceId) ?? null,
     versions: versions.map(({ version, issuedAt, issuedBy }) => ({ version, issuedAt, issuedBy })),
   };
 }
 
-export function createInvoicingRouter({ db, personAuth, log = console, liveCheckFor = () => null }) {
+export function createInvoicingRouter({ db, personAuth, log = console, liveCheckFor = () => null, accounting = () => null }) {
   const router = express.Router();
   router.use(express.json({ limit: '64kb' }));
 
@@ -232,11 +243,18 @@ export function createInvoicingRouter({ db, personAuth, log = console, liveCheck
   router.get('/invoices', ...signedIn, handle(log, async (req, res) => {
     const organisationId = await organisationOf(req);
     const status = text(req.query.status);
-    if (status && !INVOICE_STATUSES.includes(status)) throw invalid(`status must be one of ${INVOICE_STATUSES.join(', ')}`);
+    if (status && ![...INVOICE_STATUSES, ...VIEWS_OF_INVOICES].includes(status)) {
+      throw invalid(`status must be one of ${[...INVOICE_STATUSES, ...VIEWS_OF_INVOICES].join(', ')}`);
+    }
     const q = text(req.query.q);
     const limit = limitOf(req.query.limit, 200, 500);
+    const views = await invoiceViews(db, organisationId, { accounting: accounting() });
     const where = [eq(invoices.organisationId, organisationId)];
-    if (status) where.push(eq(invoices.status, status));
+    const only = (ids) => (ids.length ? inArray(invoices.id, ids) : sql`false`);
+    if (status === 'to_check') where.push(only(views.toCheck));
+    else if (status === 'ready') where.push(only(views.ready));
+    else if (status === 'problem') where.push(only([...views.problems.keys()]));
+    else if (status) where.push(eq(invoices.status, status));
     if (q) {
       const pattern = containing(q);
       where.push(or(ilike(invoices.number, pattern), ilike(invoices.reference, pattern), ilike(contacts.name, pattern)));
@@ -251,17 +269,68 @@ export function createInvoicingRouter({ db, personAuth, log = console, liveCheck
       .where(eq(invoices.organisationId, organisationId)).groupBy(invoices.status);
     const counts = Object.fromEntries(INVOICE_STATUSES.map((s) => [s, 0]));
     for (const { status: s, n } of counted) counts[s] = n;
+    counts.to_check = views.toCheck.length;
+    counts.ready = views.ready.length;
+    counts.problem = views.problems.size;
+    const ready = new Set(views.ready);
+    const toCheck = new Set(views.toCheck);
     res.json({
       ok: true,
-      invoices: rows.map(({ invoice, contactName }) => ({ ...invoice, contactName, job: jobs.get(invoice.id) ?? null })),
+      invoices: rows.map(({ invoice, contactName }) => ({
+        ...invoice,
+        contactName,
+        job: jobs.get(invoice.id) ?? null,
+        view: views.problems.has(invoice.id) ? 'problem' : ready.has(invoice.id) ? 'ready' : toCheck.has(invoice.id) ? 'to_check'
+          : views.sending.has(invoice.id) ? 'sending' : null,
+        problems: views.problems.get(invoice.id) ?? [],
+      })),
       counts,
+      sendsTo: accounting()?.name ?? null,
     });
+  }));
+
+  const invoiceIdsOf = (body) => {
+    const ids = body?.invoiceIds;
+    if (!Array.isArray(ids) || !ids.length || ids.length > 500 || !ids.every((id) => UUID.test(String(id)))) {
+      throw invalid('invoiceIds must list 1 to 500 invoice ids');
+    }
+    return [...new Set(ids)];
+  };
+
+  // Anyone who drafts may say a draft is checked; issuing and sending stay
+  // with an owner or admin.
+  router.post('/invoices/mark-ready', ...signedIn, handle(log, async (req, res) => {
+    const organisationId = await organisationOf(req);
+    const result = await markReady(db, organisationId, invoiceIdsOf(req.body), { personId: req.person.id, accounting: accounting() });
+    log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} marked ${result.marked} invoice(s) ready`);
+    res.json({ ok: true, ...result });
+  }));
+
+  router.post('/invoices/mark-not-ready', ...signedIn, handle(log, async (req, res) => {
+    const organisationId = await organisationOf(req);
+    res.json({ ok: true, ...(await markNotReady(db, organisationId, invoiceIdsOf(req.body))) });
+  }));
+
+  router.post('/invoices/send-ready', ...manager, handle(log, async (req, res) => {
+    const organisationId = await organisationOf(req);
+    const issueDate = optionalDate(req.body?.issueDate, 'issueDate') ?? today();
+    const result = await sendAllReady(db, organisationId, { accounting: accounting(), personId: req.person.id, issueDate });
+    log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} sent all ready: ${JSON.stringify(result)}`);
+    res.json({ ok: true, ...result });
+  }));
+
+  router.post('/invoices/send-again', ...manager, handle(log, async (req, res) => {
+    const organisationId = await organisationOf(req);
+    const ids = req.body?.invoiceIds === undefined ? null : invoiceIdsOf(req.body);
+    const result = await sendAgain(db, organisationId, { accounting: accounting(), personId: req.person.id, invoiceIds: ids });
+    log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} sent again: ${JSON.stringify(result)}`);
+    res.json({ ok: true, ...result });
   }));
 
   router.get('/invoices/:id', ...signedIn, handle(log, async (req, res) => {
     const invoiceId = pathId(req.params.id, 'invoice');
     const organisationId = await organisationOf(req);
-    res.json({ ok: true, invoice: await invoiceDetail(db, organisationId, invoiceId) });
+    res.json({ ok: true, invoice: await invoiceDetail(db, organisationId, invoiceId, accounting()) });
   }));
 
   router.post('/invoices', ...signedIn, handle(log, async (req, res) => {
@@ -274,7 +343,7 @@ export function createInvoicingRouter({ db, personAuth, log = console, liveCheck
       lines: body.lines === undefined ? [] : readLines(body.lines),
     });
     log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} made draft invoice ${draft.id}`);
-    res.status(201).json({ ok: true, invoice: await invoiceDetail(db, organisationId, draft.id) });
+    res.status(201).json({ ok: true, invoice: await invoiceDetail(db, organisationId, draft.id, accounting()) });
   }));
 
   router.patch('/invoices/:id', ...signedIn, handle(log, async (req, res) => {
@@ -288,7 +357,7 @@ export function createInvoicingRouter({ db, personAuth, log = console, liveCheck
     if (body.lines !== undefined) changes.lines = readLines(body.lines);
     if (!Object.keys(changes).length) throw invalid('nothing to change: send contactId, reference, dueDate or lines');
     await updateDraftInvoice(db, organisationId, invoiceId, changes);
-    res.json({ ok: true, invoice: await invoiceDetail(db, organisationId, invoiceId) });
+    res.json({ ok: true, invoice: await invoiceDetail(db, organisationId, invoiceId, accounting()) });
   }));
 
   router.post('/invoices/:id/issue', ...manager, handle(log, async (req, res) => {
@@ -297,7 +366,7 @@ export function createInvoicingRouter({ db, personAuth, log = console, liveCheck
     const issueDate = optionalDate(req.body?.issueDate, 'issueDate') ?? today();
     const issued = await issueInvoice(db, organisationId, invoiceId, { issuedBy: `person:${req.person.id}`, issueDate });
     log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} issued invoice ${issued.number} (version ${issued.issuedVersion})`);
-    res.json({ ok: true, invoice: await invoiceDetail(db, organisationId, invoiceId) });
+    res.json({ ok: true, invoice: await invoiceDetail(db, organisationId, invoiceId, accounting()) });
   }));
 
   router.post('/invoices/:id/revise', ...manager, handle(log, async (req, res) => {
@@ -305,7 +374,7 @@ export function createInvoicingRouter({ db, personAuth, log = console, liveCheck
     const organisationId = await organisationOf(req);
     await reviseInvoice(db, organisationId, invoiceId);
     log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} opened invoice ${invoiceId} for revision`);
-    res.json({ ok: true, invoice: await invoiceDetail(db, organisationId, invoiceId) });
+    res.json({ ok: true, invoice: await invoiceDetail(db, organisationId, invoiceId, accounting()) });
   }));
 
   router.post('/invoices/:id/void', ...manager, handle(log, async (req, res) => {
@@ -313,7 +382,7 @@ export function createInvoicingRouter({ db, personAuth, log = console, liveCheck
     const organisationId = await organisationOf(req);
     await voidInvoice(db, organisationId, invoiceId);
     log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} voided invoice ${invoiceId}`);
-    res.json({ ok: true, invoice: await invoiceDetail(db, organisationId, invoiceId) });
+    res.json({ ok: true, invoice: await invoiceDetail(db, organisationId, invoiceId, accounting()) });
   }));
 
   router.get('/contacts', ...signedIn, handle(log, async (req, res) => {

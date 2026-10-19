@@ -36,6 +36,7 @@ run a lab.
 | `docs/JOB_INVOICE_LINKS.md` | The pipeline: how each job links to its customer and to the accounting invoice that bills it |
 | `docs/INVOICING_RULES.md` | The invoicing rules that draft a job's invoice, and the two ways an invoice goes to Xero |
 | `docs/INVOICE_RULES.md` | Invoice rules a lab builds (When, If, Then) that make a ready job wait or never draft |
+| `docs/INVOICE_SENDING.md` | Drafts, Problem and Ready invoices, Mark ready, and Send all ready to the accounting system |
 | `docs/AUTOMATIONS.md` | Automations: Flow routines that mark jobs ready to invoice and draft them, each on or off |
 | `docs/RELEASING.md` | Versions and channels, the release workflows, how to cut and roll back a release, and the one-time setup |
 | `docs/SELF_HOSTING.md` | Running a Flow release with Docker, Node or Replit, the update notice, and Clerk sign-in |

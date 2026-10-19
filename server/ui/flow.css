@@ -295,6 +295,8 @@ a.fx-strong { text-decoration: none; }
 a.fx-strong:hover { text-decoration: underline; }
 .fx-toolbar { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--fx-line); }
 .fx-tabs { display: flex; gap: 2px; }
+.fx-tabs button { flex: none; }
+@media (max-width: 640px) { .fx-tabs { max-width: 100%; overflow-x: auto; scrollbar-width: none; } }
 .fx-tabs button {
   display: inline-flex; align-items: center; gap: 8px; padding: 10px 14px; margin-bottom: -1px;
   border: 0; border-bottom: 2px solid transparent; background: transparent; cursor: pointer;
@@ -303,6 +305,15 @@ a.fx-strong:hover { text-decoration: underline; }
 .fx-tabs button:hover { color: var(--t-strong); }
 .fx-tabs button[aria-selected="true"] { color: var(--t-strong); border-bottom-color: var(--t-brand); }
 .fx-tabs__count { padding: 0 7px; border-radius: 999px; background: var(--fx-hover); color: var(--t-dim); font-size: 12px; line-height: 20px; }
+.fx-tabs button[data-tone="danger"] .fx-tabs__count { background: var(--t-danger-bg); color: var(--t-danger); }
+/* Invoices: the Send all ready bar above the Ready list. */
+.fx-sendbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin: 0 0 12px; padding: 12px 16px; border: 1px solid var(--fx-line); border-radius: 8px; background: var(--t-paper); margin-top: 12px; }
+.fx-sendbar[hidden] { display: none; }
+.fx-sendbar p { margin: 0; }
+.fx-problem { color: var(--t-danger); }
+.fx-sendbar__actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.fx-tick-cell { width: 40px; }
+.fx-tick { width: 16px; height: 16px; accent-color: var(--t-brand); cursor: pointer; }
 .fx-search { width: min(320px, 100%); margin-bottom: 8px; }
 .fx-table--rows tbody tr { cursor: pointer; }
 .fx-table th.fx-num { text-align: right; }
