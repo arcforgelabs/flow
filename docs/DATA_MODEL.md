@@ -105,7 +105,7 @@ while the installation has exactly one. Money is integer cents. Answers are
 | `GET /context` | anyone | `organisations` (`id`, `name`, `invoicePrefix`, `nextInvoiceNumber`) and `canIssue` |
 | `GET /invoices?status=&q=&limit=` | anyone | Newest first, each with `contactName` and its `job`; `q` matches number, reference or customer; `counts` by status |
 | `GET /invoices/:id` | anyone | The invoice with `lines`, `contact`, `job` and issued `versions` |
-| `GET /invoices/:id/pdf?version=` | anyone | The invoice as an A4 PDF drawn by Flow, with no accounting system calls. A draft shows its lines now, with a DRAFT mark. An issued or void invoice shows its stored version; `version` picks an earlier one (`server/core/invoice-pdf.js`) |
+| `GET /invoices/:id/pdf?version=` | anyone | The invoice as an A4 PDF drawn by Flow, with no accounting system calls. Every page carries an EXAMPLE mark. A draft shows its lines now. An issued or void invoice shows its stored version; `version` picks an earlier one (`server/core/invoice-pdf.js`) |
 | `POST /invoices` `{ contactId, reference?, dueDate?, lines }` | anyone | A new draft (201) |
 | `PATCH /invoices/:id` `{ contactId?, reference?, dueDate?, lines? }` | anyone | Changes a draft |
 | `POST /invoices/:id/issue` `{ issueDate? }` | owner or admin | Numbers it and keeps the document as sent; the date defaults to the server's today |

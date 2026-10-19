@@ -6,8 +6,9 @@ import { getInvoice } from './invoices.js';
 
 // An invoice as a PDF, drawn from Flow's own data: it needs no accounting
 // system and makes no calls to one. A draft is drawn from its lines as they
-// are now, with a DRAFT mark. An issued or void invoice is drawn from the
-// version Flow stored when it was issued, so the PDF shows what was sent.
+// are now. An issued or void invoice is drawn from the version Flow stored
+// when it was issued, so the PDF shows what was sent. Every page carries an
+// EXAMPLE mark: the customer's copy is the one the accounting system sends.
 
 // The document for one invoice: the stored version for an issued or void
 // invoice (or the version asked for), else the draft's lines now.
@@ -20,12 +21,7 @@ export async function invoicePdfDocument(db, organisationId, invoiceId, { versio
     const [row] = await db.select().from(invoiceVersions)
       .where(and(eq(invoiceVersions.organisationId, organisationId), eq(invoiceVersions.invoiceId, invoiceId), eq(invoiceVersions.version, wanted)));
     if (!row) throw notFound('invoice version');
-    const latest = wanted === invoice.issuedVersion;
-    return {
-      seller: organisation?.name ?? null,
-      mark: invoice.status === 'void' && latest ? 'void' : latest ? null : 'superseded',
-      document: row.document,
-    };
+    return { seller: organisation?.name ?? null, document: row.document };
   }
   const [contact] = await db.select({ id: contacts.id, name: contacts.name, email: contacts.email }).from(contacts)
     .where(eq(contacts.id, invoice.contactId));
@@ -34,7 +30,6 @@ export async function invoicePdfDocument(db, organisationId, invoiceId, { versio
     .where(eq(invoiceLines.invoiceId, invoice.id)).orderBy(asc(invoiceLines.position));
   return {
     seller: organisation?.name ?? null,
-    mark: 'draft',
     document: {
       number: invoice.number,
       version: null,
@@ -71,8 +66,6 @@ export function pdfFilename(document) {
   return `${name}.pdf`;
 }
 
-const MARKS = { draft: 'DRAFT', void: 'VOID', superseded: 'SUPERSEDED' };
-
 const C = { ink: '#000000', body: '#333333', muted: '#666666', rule: '#bbbbbb', mark: '#e6e6e6' };
 
 function money(cents) {
@@ -90,7 +83,7 @@ function showDate(value) {
 // so the customer's copy looks much the same: title and customer on the
 // left, dates and numbers in the middle, the seller on the right, then the
 // lines, the totals and the due date. The payment advice slip is left out.
-export function renderInvoicePdf({ seller, mark, document: doc }) {
+export function renderInvoicePdf({ seller, document: doc }) {
   if (!doc || !Array.isArray(doc.lines)) throw new FlowError('invalid', 'nothing to draw');
   return new Promise((resolve, reject) => {
     const pdf = new PDFDocument({
@@ -111,11 +104,10 @@ export function renderInvoicePdf({ seller, mark, document: doc }) {
     const bold = 'Helvetica-Bold';
 
     const drawMark = () => {
-      if (!mark) return;
       pdf.save();
       pdf.rotate(-30, { origin: [pdf.page.width / 2, pdf.page.height / 2] });
-      pdf.font(bold).fontSize(110).fillColor(C.mark)
-        .text(MARKS[mark], 0, pdf.page.height / 2 - 60, { width: pdf.page.width, align: 'center', lineBreak: false });
+      pdf.font(bold).fontSize(96).fillColor(C.mark)
+        .text('EXAMPLE', 0, pdf.page.height / 2 - 60, { width: pdf.page.width, align: 'center', lineBreak: false });
       pdf.restore();
     };
     drawMark();

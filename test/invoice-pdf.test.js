@@ -35,10 +35,10 @@ function document(lineCount) {
 }
 
 test('an invoice draws as a PDF, on more pages when it has many lines', async () => {
-  const one = await renderInvoicePdf({ seller: 'Example Lab', mark: null, document: document(1) });
+  const one = await renderInvoicePdf({ seller: 'Example Lab', document: document(1) });
   assert.equal(one.subarray(0, 5).toString(), '%PDF-');
   assert.equal(pages(one), 1);
-  const many = await renderInvoicePdf({ seller: 'Example Lab', mark: 'draft', document: document(80) });
+  const many = await renderInvoicePdf({ seller: 'Example Lab', document: document(80) });
   assert.ok(pages(many) > 1);
 });
 
@@ -92,14 +92,12 @@ describe('invoice PDF with PostgreSQL', { skip: skipWithoutDatabase }, () => {
   test('a draft shows its lines now; an issued invoice shows the version it was sent as', async () => {
     const draft = await createDraftInvoice(handle.db, lab.id, { contactId: practice.id, reference: 'Dr Example - Sample Patient', lines: [{ priceItemId: crown.id }] });
     const asDraft = await invoicePdfDocument(handle.db, lab.id, draft.id);
-    assert.equal(asDraft.mark, 'draft');
     assert.equal(asDraft.seller, 'Example Lab');
     assert.equal(asDraft.document.number, null);
     assert.deepEqual(asDraft.document.lines.map((l) => [l.itemCode, l.description]), [['CRN', 'Crown']]);
 
     await issueInvoice(handle.db, lab.id, draft.id, { issuedBy: 'test', issueDate: '2026-10-19' });
     const asIssued = await invoicePdfDocument(handle.db, lab.id, draft.id);
-    assert.equal(asIssued.mark, null);
     assert.equal(asIssued.document.number, 'INV-0001');
     assert.equal(asIssued.document.reference, 'Dr Example - Sample Patient');
 
@@ -111,9 +109,9 @@ describe('invoice PDF with PostgreSQL', { skip: skipWithoutDatabase }, () => {
     assert.equal(first.document.lines[0].quantity, 1);
 
     await issueInvoice(handle.db, lab.id, draft.id, { issuedBy: 'test', issueDate: '2026-10-20' });
-    assert.equal((await invoicePdfDocument(handle.db, lab.id, draft.id, { version: 1 })).mark, 'superseded');
+    assert.equal((await invoicePdfDocument(handle.db, lab.id, draft.id)).document.version, 2);
     await voidInvoice(handle.db, lab.id, draft.id);
-    assert.equal((await invoicePdfDocument(handle.db, lab.id, draft.id)).mark, 'void');
+    assert.equal((await invoicePdfDocument(handle.db, lab.id, draft.id)).document.version, 2, 'a void invoice shows the version it was sent as');
   });
 
   test('GET /invoices/:id/pdf answers a PDF to a signed-in person', async () => {
