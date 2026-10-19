@@ -98,8 +98,8 @@ export async function updateDraftInvoice(db, organisationId, invoiceId, changes)
     }
     if ('reference' in changes) fields.reference = changes.reference;
     if ('dueDate' in changes) fields.dueDate = changes.dueDate;
-    // A changed draft needs a person to check it again.
-    if (Object.keys(fields).length || 'lines' in changes) Object.assign(fields, { readyAt: null, readyBy: null });
+    // A saved change keeps the draft where it is. Flow's checks still run on
+    // it, so a change that breaks one puts the draft in Problem.
     let row = invoice;
     if (Object.keys(fields).length) {
       [row] = await tx.update(invoices).set({ ...fields, updatedAt: sql`now()` })

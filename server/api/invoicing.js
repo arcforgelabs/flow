@@ -13,7 +13,7 @@ import {
 } from '../core/line-mapping.js';
 import {
   effectiveSettings, INVOICING_DEFAULTS, readCustomerBilling, readInvoicingSettings,
-  saveCustomerBilling, saveInvoicingSettings, sendModeSummary,
+  saveCustomerBilling, saveInvoicingSettings, sendModeFor, sendModeSummary,
 } from '../core/invoicing-rules.js';
 import { boardJobs, describeObligations } from '../core/job-board.js';
 import { draftInvoiceForObligation, explainObligation, listObligations, setReady } from '../core/ledger.js';
@@ -31,9 +31,9 @@ import {
 //   POST  /invoices/mark-ready        { invoiceIds }: a person checked these drafts; one with a problem stays
 //   POST  /invoices/mark-not-ready    { invoiceIds }: back to To check
 //   POST  /invoices/send-ready        owner or admin: issue every ready draft and queue it for the
-//                                     accounting system { issueDate }
+//                                     accounting system { issueDate, invoiceIds? (only these, each ready) }
 //   POST  /invoices/send-again        owner or admin: queue failed sends again { invoiceIds? }
-//   GET   /invoices/:id               one invoice: lines, contact, job, issued versions
+//   GET   /invoices/:id               one invoice: lines, contact, job, issued versions, and where it sends
 //   POST  /invoices                   a new draft
 //   PATCH /invoices/:id               change a draft
 //   POST  /invoices/:id/issue         owner or admin: number it and keep the document as sent
@@ -233,6 +233,11 @@ async function invoiceDetail(db, organisationId, invoiceId, accounting = null) {
   return {
     ...invoice,
     ...(await invoiceView(db, organisationId, invoice, { accounting })),
+    // Where a draft goes when it is sent, and how: this customer's send mode.
+    sendsTo: accounting?.name ?? null,
+    sendMode: accounting && invoice.status === 'draft'
+      ? { mode: await sendModeFor(db, organisationId, invoice.contactId), otherCustomers: 0, ...(await accounting.capabilities.sendStatus({ organisationId })) }
+      : null,
     contact: contact ?? null,
     job: jobs.get(invoiceId) ?? null,
     versions: versions.map(({ version, issuedAt, issuedBy }) => ({ version, issuedAt, issuedBy })),
@@ -331,7 +336,8 @@ export function createInvoicingRouter({
   router.post('/invoices/send-ready', ...manager, handle(log, async (req, res) => {
     const organisationId = await organisationOf(req);
     const issueDate = optionalDate(req.body?.issueDate, 'issueDate') ?? today();
-    const result = await sendAllReady(db, organisationId, { accounting: accounting(), personId: req.person.id, issueDate });
+    const ids = req.body?.invoiceIds === undefined ? null : invoiceIdsOf(req.body);
+    const result = await sendAllReady(db, organisationId, { accounting: accounting(), personId: req.person.id, issueDate, invoiceIds: ids });
     log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} sent all ready: ${JSON.stringify(result)}`);
     res.json({ ok: true, ...result });
   }));

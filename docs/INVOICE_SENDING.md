@@ -14,8 +14,9 @@ one of them. Code: `server/core/sending.js`.
 
 A person checks a draft, then presses **Mark ready** on the invoice, or ticks
 drafts in the list and presses **Mark N ready**. Anyone who may draft may mark
-ready. A draft with a problem is not marked; it shows in Problem. Any change
-to a ready draft, and **Back to drafts**, send it back to Drafts.
+ready. A draft with a problem is not marked; it shows in Problem. A saved
+change keeps a draft ready; Flow's checks still run on it. **Move to Drafts**,
+on the invoice's Status card or for ticked rows in the list, takes it back.
 `invoices.ready_at` and `ready_by` record who marked it and when.
 
 ## Checks
@@ -52,6 +53,12 @@ One press, on the Ready tab, by an owner or admin:
 
 With no accounting system on, the button issues the ready drafts only.
 
+One ready invoice has its own **Send to Xero** button (**Send to Xero and
+email** when the customer's send mode is approve and email). It does the same
+steps for that invoice only. A draft that is not ready has no send button:
+mark it ready first. With no accounting system on, the invoice page shows
+**Issue invoice** instead.
+
 ## Records
 
 `invoices.send_state` is `queued`, `sent` or `failed` (null when the invoice
@@ -63,9 +70,12 @@ Revising an issued invoice clears both.
 - `GET /api/invoicing/invoices?status=to_check|ready|problem` lists a view.
   Each invoice carries `view` (`to_check`, `ready`, `problem` or `sending`)
   and `problems`. `counts` includes `to_check`, `ready` and `problem`. One
-  invoice (`GET /invoices/:id`) carries the same `view` and `problems`.
+  invoice (`GET /invoices/:id`) carries the same `view` and `problems`, and,
+  for a draft, `sendsTo` and `sendMode` (this customer's mode, and whether
+  the accounting system is connected and takes writes).
 - `POST /api/invoicing/invoices/mark-ready` `{ invoiceIds }`: answers
   `{ marked, refused: [{ invoiceId, problems }] }`.
 - `POST /api/invoicing/invoices/mark-not-ready` `{ invoiceIds }`.
-- `POST /api/invoicing/invoices/send-ready` `{ issueDate }`.
+- `POST /api/invoicing/invoices/send-ready` `{ issueDate, invoiceIds? }`:
+  with `invoiceIds`, only those drafts, and each must be ready (`not_ready`).
 - `POST /api/invoicing/invoices/send-again` `{ invoiceIds? }`.
