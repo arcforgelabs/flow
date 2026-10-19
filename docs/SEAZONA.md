@@ -78,7 +78,7 @@ workspace live credentials.
 | `SEAZONA_CIRCUIT_FAILURES`, `SEAZONA_CIRCUIT_WINDOW_MS` | Failed calls inside the window that open the circuit. Defaults 5 and 10 minutes. |
 | `SEAZONA_CIRCUIT_PAUSE_MS` | The first pause when the circuit opens. It doubles after each failed probe, to at most 6 hours. Default 5 minutes. |
 | `SEAZONA_DAILY_FAILURE_BUDGET` | Failed calls allowed in one UTC day. When they are spent, calls stop until the next day. Default 50. |
-| `SEAZONA_HISTORY_CALLS_PER_RUN`, `SEAZONA_HISTORY_CADENCE_MS` | Calls the history backfill makes per run, and how often it runs. Defaults 10 and 2 minutes. It calls Seazona only while a person has started one. |
+| `SEAZONA_HISTORY_CALLS_PER_RUN`, `SEAZONA_HISTORY_CADENCE_MS`, `SEAZONA_HISTORY_PAGE_SIZE` | Calls the history backfill makes per run, how often it runs, and orders per list page. Defaults 10, 2 minutes and 500. It calls Seazona only while a person has started one. |
 
 The code holds no Seazona host or account. Every address and credential is
 configuration.
@@ -288,8 +288,12 @@ An owner or admin starts it: `POST /api/seazona/history/backfill` with
 `{ "from": "2019-01-01" }` (and `through`, by default the day before the
 recent-order lane's window). The `history` lane then:
 
-1. lists one UTC day of orders (`GET orders/?ordered=<day>`, with `page`
-   and `pageSize`; Seazona answers the orders placed on that day);
+1. lists orders from the next day (`GET orders/?ordered=<day>`, with `page`
+   and `pageSize` up to 500). Seazona's guide says the list answers the
+   orders placed on or after that time, oldest first, in stable pages; the
+   recent-order lane was built when it answered one day. The walk works
+   either way: a full page goes on to the next page, a short page to the
+   next day, and an order placed after `through` ends the walk unread;
 2. leaves out the orders the live copy already holds;
 3. reads each other order (`GET orders/<id>`), maps it as the live lanes do,
    and stages it as job `case:<order id>` in the backfill's batch;
@@ -306,8 +310,8 @@ the lane as it stops the others. The lane keeps its place (day, page and
 orders still to read) in its cursor, so it resumes after a restart. When
 the last day is done, the batch waits like an upload for a person to decide
 what is left. `POST /api/seazona/history/backfill/stop` ends it early.
-`GET /api/seazona/history` shows `backfill`: the next day, days done,
-orders read and orders still to read.
+`GET /api/seazona/history` shows `backfill`: the next day, days done, the
+latest order day reached, orders read and orders still to read.
 
 ### CSV upload
 

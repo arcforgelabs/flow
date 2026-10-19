@@ -6,9 +6,9 @@ import { recordRecordFailure } from '../store.js';
 import { createApiBatch, finishApiBatch, stageApiJobs } from './index.js';
 
 // The history backfill (docs/SEAZONA.md, "History import"). A person starts
-// it with a first day; the `history` lane then walks every UTC day from that
-// day on with GET orders/?ordered=<day> (Seazona answers the orders placed on
-// that one day), and reads each order's detail. It makes at most
+// it with a first day; the `history` lane then walks the orders from that day
+// on with GET orders/?ordered=<day> and its pages, and reads each order's
+// detail. It makes at most
 // `historyCallsPerRun` calls a run, through the same rate governor and call
 // guards as the live lanes, and keeps its place in the lane's cursor, so it
 // resumes after a restart. Orders the live copy already holds are not read
@@ -91,6 +91,7 @@ export function describeBackfill(cursor) {
     through: cursor.through,
     nextDay: cursor.done ? null : cursor.nextDay,
     daysDone: cursor.days ?? 0,
+    reachedDay: cursor.reached ?? null,
     ordersRead: cursor.read ?? 0,
     waitingToRead: cursor.pending?.length ?? 0,
     running: !cursor.done,
@@ -111,6 +112,7 @@ export async function runHistoryBackfill(ctx, { isLaneLevel, describeReadFailure
   if (!start.batchId || start.done) return { idle: true, cursor: start, cursorTime: state?.cursorTime ?? null };
   const cursor = { ...start, pending: [...(start.pending ?? [])] };
   const budget = sync.historyCallsPerRun;
+  const pageSize = sync.historyPageSize ?? PAGE_SIZE;
   const jobs = [];
   const failures = [];
   let calls = 0;
@@ -132,17 +134,26 @@ export async function runHistoryBackfill(ctx, { isLaneLevel, describeReadFailure
           break;
         }
         calls += 1;
-        const list = await client.get('orders/', { ordered: orderedParam(cursor.nextDay), page: cursor.page, pageSize: PAGE_SIZE });
+        const list = await client.get('orders/', { ordered: orderedParam(cursor.nextDay), page: cursor.page, pageSize });
         if (!Array.isArray(list)) throw new LaneError(`Seazona order list for ${cursor.nextDay} answer was not a list`, { code: 'seazona_list_invalid' });
-        const ids = [...new Set(list.map((item) => text(item?.id)).filter(Boolean))];
+        // The guide says the list answers orders placed on or after `ordered`,
+        // oldest first, in stable pages; the live lane was built when it
+        // answered one day. Both work here: orders after `through` end the walk,
+        // a full page goes on to the next page, and a short page to the next day.
+        const placed = (item) => (typeof item?.ordered === 'string' ? item.ordered.slice(0, 10) : null);
+        const inRange = list.filter((item) => !(placed(item) > cursor.through));
+        const beyond = inRange.length < list.length;
+        for (const item of inRange) if (placed(item) > (cursor.reached ?? '')) cursor.reached = placed(item);
+        const ids = [...new Set(inRange.map((item) => text(item?.id)).filter(Boolean))];
         // The live copy holds these already; a read again costs a call for nothing.
         const live = ids.length
           ? new Set((await db.select({ id: seazonaOrders.id }).from(seazonaOrders).where(inArray(seazonaOrders.id, ids))).map((r) => r.id))
           : new Set();
         const seen = await inBatch(ids);
         cursor.pending = ids.filter((id) => !live.has(id) && !seen.has(id));
-        // A full page may have more behind it; a page with nothing new ends the day.
-        if (list.length >= Math.min(PAGE_SIZE, sync.listCap) && (cursor.pending.length || seen.size + live.size < ids.length)) {
+        if (beyond) {
+          cursor.nextDay = dayOf(Date.parse(cursor.through) + DAY_MS);
+        } else if (list.length >= pageSize) {
           cursor.page += 1;
         } else {
           cursor.page = 1;

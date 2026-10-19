@@ -293,4 +293,25 @@ describe('Seazona history backfill from the API', { skip: skipWithoutDatabase },
     assert.equal(summary.profile, 'api_orders');
     assert.equal(summary.status, 'reconciled');
   });
+
+  test('pages through a list that answers orders on or after the day, and stops after the last day', async () => {
+    const paged = resolveSeazonaSettings({ SEAZONA_MODE: 'replay', SEAZONA_REPLAY_FILE: 'unused.json', SEAZONA_HISTORY_CALLS_PER_RUN: '25', SEAZONA_HISTORY_PAGE_SIZE: '2' });
+    const fetchImpl = createReplayFetch({
+      responses: [
+        { path: 'orders/', query: { ordered: '2020-01-02T00:00:00', page: '1' }, body: [{ id: 'H-1', ordered: '2020-01-02T09:00:00' }, { id: 'H-2', ordered: '2020-01-03T10:00:00' }] },
+        { path: 'orders/', query: { ordered: '2020-01-02T00:00:00', page: '2' }, body: [{ id: 'H-3', ordered: '2020-01-03T11:00:00' }, { id: 'H-4', ordered: '2020-01-09T08:00:00' }] },
+        { path: 'orders/H-1', body: order('H-1', 'S-1') },
+        { path: 'orders/H-2', body: order('H-2', 'S-2') },
+        { path: 'orders/H-3', body: order('H-3', 'S-3') },
+      ],
+    });
+    await startBackfill(db, { from: '2020-01-02', through: '2020-01-03', createdBy: 'person:test', settings: paged, now: clock.now });
+    const client = createSeazonaClient({ settings: paged, db, fetchImpl, now: clock.now, sleepFn: clock.sleep, random: () => 0 });
+    const result = (await runSeazonaSync(db, client, { settings: paged, now: clock.now, only: ['history'] })).results.history;
+    assert.deepEqual(fetchImpl.calls.map((c) => c.path), ['orders/', 'orders/H-1', 'orders/H-2', 'orders/', 'orders/H-3']);
+    assert.equal(result.backfill.running, false);
+    assert.equal(result.backfill.reachedDay, '2020-01-03');
+    const history = await db.select().from(seazonaHistoryJobs);
+    assert.deepEqual(history.map((h) => h.jobKey).sort(), ['case:H-1', 'case:H-2', 'case:H-3'], 'an order after the last day is not read');
+  });
 });

@@ -106,6 +106,7 @@ export function resolveSeazonaSettings(env = process.env) {
     // Calls the history backfill makes per run, at most: a small share of
     // the rate limit, so the live lanes always have room.
     historyCallsPerRun: clampInt(env.SEAZONA_HISTORY_CALLS_PER_RUN, 10, 1, 25),
+    historyPageSize: clampInt(env.SEAZONA_HISTORY_PAGE_SIZE, 500, 1, 500),
     // Re-read this much before a lastModified cursor, so a change written
     // while the last run was reading is not missed.
     cursorOverlapMs: 5 * MINUTE,
