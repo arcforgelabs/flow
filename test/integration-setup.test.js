@@ -3,6 +3,7 @@ import { after, before, describe, test } from 'node:test';
 import { createApp } from '../server/app.js';
 import { createPersonAuth } from '../server/auth/session.js';
 import { openSecret, resolveSecretsKey, sealSecret } from '../server/core/secrets.js';
+import { adapters as shippedAdapters } from '../server/integrations/adapters.js';
 import { createIntegrations } from '../server/integrations/index.js';
 import { createSeazonaAdapter } from '../server/integrations/seazona/index.js';
 import { readStoredSettings, settingsEnvironment } from '../server/integrations/setup.js';
@@ -46,6 +47,15 @@ describe('the secrets key', () => {
     const without = settingsEnvironment({ env: {}, stored, adapters: [adapter], secrets: null });
     assert.equal(without.env.XERO_TOKEN_KEY, undefined);
     assert.deepEqual(without.unreadable, ['xero:XERO_CLIENT_SECRET']);
+  });
+
+  test('the shipped adapters merge with a secrets key and nothing stored, as at a first start', () => {
+    // Seazona's setup names no derived keys. With a secrets key this once
+    // stopped boot: "adapter.setup.derivedKeys is not iterable".
+    const secrets = resolveSecretsKey({ SESSION_SECRET: 'x'.repeat(40) });
+    const { env, unreadable } = settingsEnvironment({ env: {}, stored: new Map(), adapters: shippedAdapters, secrets });
+    assert.match(env.XERO_TOKEN_KEY, /^[0-9a-f]{64}$/);
+    assert.deepEqual(unreadable, []);
   });
 });
 
