@@ -1,7 +1,7 @@
 import { and, desc, eq, gte, isNull, or, sql } from 'drizzle-orm';
 import { ledgerLinesFor, toLedgerHold, toLedgerJob } from './ledger.js';
 import { isFinalStatus, orderStatusLabel, parseSeazonaDate } from './map.js';
-import { seazonaClients, seazonaInvoices, seazonaOrders } from './schema.js';
+import { seazonaClients, seazonaInvoices, seazonaOrders, seazonaReference } from './schema.js';
 
 // The billing feed behind the port's pullWorkItems: every order that changed
 // since a cursor, oldest change first. A complete or shipped order is an
@@ -123,6 +123,28 @@ export async function listClients(db) {
     ...listed,
     ...fromOrders.filter((r) => !known.has(r.id)).map((r) => ({ id: r.id, name: r.company.trim() })),
   ];
+}
+
+// Seazona's products, from Flow's copy (the products lane reads them daily),
+// for the price list's links and price check (server/core/price-list.js).
+// Seazona says only whether a product is taxable: taxable reads as GST.
+export async function listProducts(db) {
+  const rows = await db.select({
+    id: seazonaReference.id, code: seazonaReference.code, name: seazonaReference.name,
+    priceCents: seazonaReference.priceCents, taxable: seazonaReference.taxable, syncedAt: seazonaReference.lastSyncedAt,
+  }).from(seazonaReference).where(eq(seazonaReference.resource, 'products'));
+  return {
+    kind: 'work',
+    syncedAt: rows.reduce((at, r) => (!at || r.syncedAt > at ? r.syncedAt : at), null),
+    items: rows.map((r) => ({
+      id: r.id,
+      code: r.code,
+      name: r.name,
+      unitAmountCents: r.priceCents === null ? null : Number(r.priceCents),
+      taxCode: r.taxable === null ? null : (r.taxable ? 'GST' : 'GST_FREE'),
+      sold: true,
+    })),
+  };
 }
 
 // A final order (shipped, delivered, cancelled; map.js isFinalStatus) stays on

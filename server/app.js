@@ -116,7 +116,10 @@ export function createApp({
     const accounting = () => integrations?.with('pushInvoices')[0] ?? null;
     // The Jobs board: every enabled integration that lists its jobs (Seazona).
     const work = () => integrations?.with('listWork') ?? [];
-    app.use('/api/invoicing', createInvoicingRouter({ db: database.db, personAuth: auth.personAuth, log, liveCheckFor, accounting, work }));
+    // The price list: every enabled integration that keeps its own (Xero
+    // items, Seazona products).
+    const priceSystems = () => integrations?.with('listPriceItems') ?? [];
+    app.use('/api/invoicing', createInvoicingRouter({ db: database.db, personAuth: auth.personAuth, log, liveCheckFor, accounting, work, priceSystems }));
   }
   // What a signed-in browser needs to report its errors and problems to the
   // installation's own error service (docs/SENTRY.md): the first integration

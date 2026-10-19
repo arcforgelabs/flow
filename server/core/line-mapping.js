@@ -1,5 +1,5 @@
 import { and, asc, eq, isNull, sql } from 'drizzle-orm';
-import { LINE_MAPPING_KINDS, lineMappings, pipelineCursors, priceItems } from '../db/schema.js';
+import { LINE_MAPPING_KINDS, lineMappings, pipelineCursors, priceItemLinks, priceItems } from '../db/schema.js';
 import { FlowError, notFound } from './errors.js';
 
 // Line mapping (docs/LINE_MAPPING.md): how each line a work system reports
@@ -7,6 +7,10 @@ import { FlowError, notFound } from './errors.js';
 // a list of steps, tried in order; the first step that answers wins. Every
 // step reads either the lab's price list or the lab's own mapping rows, so no
 // lab's labels or codes are fixed in Flow's code.
+//
+// Before the steps, a line whose code is a linked product of its work system
+// (the price list's links, server/core/price-list.js) takes that price item.
+// A link is a person's or an exact code's choice, so it always goes first.
 //
 //   same_code           the line's own code is a price item code
 //   account             an account row: a line with no price item (a surcharge)
@@ -20,7 +24,8 @@ import { FlowError, notFound } from './errors.js';
 //
 // A mapped line keeps the work system's amount and tax flag; the price item
 // gives its code, its text and, when the work system gave none, its price and
-// tax. A line no step answers keeps no code, so the ledger holds the job.
+// tax. With `linePrice: 'list'` the price item's price wins instead. A line
+// no step answers keeps no code, so the ledger holds the job.
 
 export const STEPS = Object.freeze([
   'same_code', 'account', 'saved', 'catalog_name', 'price_alias', 'catalog_name_price', 'catalog_score', 'alias',
@@ -36,7 +41,10 @@ export const STEP_LABELS = Object.freeze({
   alias: 'Label',
 });
 export const ZERO_LINES = Object.freeze(['keep', 'drop']);
-export const MAPPING_DEFAULTS = Object.freeze({ steps: [...STEPS], zeroLines: 'keep' });
+// Where a mapped line's price comes from: the work system's amount (as the
+// earlier app did), or the lab's own price list.
+export const LINE_PRICES = Object.freeze(['work', 'list']);
+export const MAPPING_DEFAULTS = Object.freeze({ steps: [...STEPS], zeroLines: 'keep', linePrice: 'work' });
 
 const SCORE_MIN = 16;
 const SCORE_GAP = 8;
@@ -96,8 +104,16 @@ export function nameScore(item, { exact, lookup, original }) {
 }
 
 // The lab's price list and mapping rows, indexed once for a run.
-export function mappingContext({ items = [], mappings = [], config = MAPPING_DEFAULTS } = {}) {
+export function mappingContext({ items = [], mappings = [], links = [], config = MAPPING_DEFAULTS } = {}) {
   const live = items.filter((i) => !i.archivedAt);
+  // A linked work system code: its price item, by the code in lookup form.
+  const byId = new Map(live.map((i) => [i.id, i]));
+  const byLinkedCode = new Map();
+  for (const link of links) {
+    const item = byId.get(link.priceItemId);
+    const code = lineText(link.externalCode);
+    if (item && code && !byLinkedCode.has(code)) byLinkedCode.set(code, item);
+  }
   const byCode = new Map(live.map((i) => [i.code, i]));
   const byCodeText = new Map(live.map((i) => [lineText(i.code), i]));
   const byText = new Map();
@@ -113,7 +129,7 @@ export function mappingContext({ items = [], mappings = [], config = MAPPING_DEF
   }
   const rows = mappings.filter((m) => m.enabled !== false);
   const rowsOf = (kind) => rows.filter((m) => m.kind === kind);
-  return { byCode, byCodeText, byText, byPrice, rowsOf, config: { ...MAPPING_DEFAULTS, ...config } };
+  return { byCode, byCodeText, byText, byPrice, byLinkedCode, rowsOf, config: { ...MAPPING_DEFAULTS, ...config } };
 }
 
 const rowMatches = (row, lookup) => (row.match === 'starts_with' ? lookup === row.label || lookup.startsWith(`${row.label} `) : lookup === row.label);
@@ -139,7 +155,7 @@ export function mapLine(line, context) {
     accountCode: null,
     description: (item.description || item.name || original).trim(),
     quantity,
-    unitAmountCents: price ?? item.unitAmountCents,
+    unitAmountCents: config.linePrice === 'list' ? item.unitAmountCents : (price ?? item.unitAmountCents),
     taxCode: taxCode ?? line.taxCode ?? item.taxCode,
     mappedBy: step,
   });
@@ -148,6 +164,9 @@ export function mapLine(line, context) {
     return item ? toItem(item, step, row.taxCode) : null;
   };
   const unmapped = (reason) => ({ ...base, itemCode: null, accountCode: null, mappedBy: null, unmapped: reason });
+
+  const linked = line.itemCode ? context.byLinkedCode?.get(lineText(line.itemCode)) : null;
+  if (linked) return toItem(linked, 'linked');
 
   for (const step of config.steps) {
     switch (step) {
@@ -228,6 +247,10 @@ function readConfig(raw = {}) {
   if ('zeroLines' in raw) {
     if (!ZERO_LINES.includes(raw.zeroLines)) throw invalid(`zeroLines must be one of ${ZERO_LINES.join(', ')}`);
     out.zeroLines = raw.zeroLines;
+  }
+  if ('linePrice' in raw) {
+    if (!LINE_PRICES.includes(raw.linePrice)) throw invalid(`linePrice must be one of ${LINE_PRICES.join(', ')}`);
+    out.linePrice = raw.linePrice;
   }
   return out;
 }
@@ -327,11 +350,14 @@ export async function deleteMapping(db, organisationId, id) {
   await remapJobs(db, organisationId);
 }
 
-// The price list and mapping rows for a pipeline run.
-export async function loadMappingContext(db, organisationId, config) {
-  const [items, mappings] = await Promise.all([
+// The price list, mapping rows and `system`'s product links for a pipeline run.
+export async function loadMappingContext(db, organisationId, config, { system = null } = {}) {
+  const [items, mappings, links] = await Promise.all([
     db.select().from(priceItems).where(and(eq(priceItems.organisationId, organisationId), isNull(priceItems.archivedAt))),
     db.select().from(lineMappings).where(eq(lineMappings.organisationId, organisationId)),
+    system
+      ? db.select().from(priceItemLinks).where(and(eq(priceItemLinks.organisationId, organisationId), eq(priceItemLinks.system, system)))
+      : [],
   ]);
-  return mappingContext({ items, mappings, config });
+  return mappingContext({ items, mappings, links, config });
 }

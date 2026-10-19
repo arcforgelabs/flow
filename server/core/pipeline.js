@@ -8,6 +8,7 @@ import { listAutomations, runAutomations } from './automations.js';
 import { readInvoicingSettings } from './invoicing-rules.js';
 import { observeJob, recordAccountingEvidence, setHold } from './ledger.js';
 import { loadMappingContext, mapLines } from './line-mapping.js';
+import { checkPrices, readCatalogues } from './price-list.js';
 import { linkRecord, priorLinkFor } from './links.js';
 import { enqueueJob, runNextJob } from './queue.js';
 
@@ -138,7 +139,7 @@ export async function ingestWork(db, organisationId, { adapter, restart = false,
   const result = { observed: 0, withoutCustomer: 0, skipped: 0, sentToReview: 0, unmappedLines: 0, more: false };
   // Line mapping (line-mapping.js): each line finds its price item first.
   const mapping = (await listAutomations(db, organisationId)).find((a) => a.key === 'map_lines');
-  const context = mapping?.enabled ? await loadMappingContext(db, organisationId, mapping.config) : null;
+  const context = mapping?.enabled ? await loadMappingContext(db, organisationId, mapping.config, { system: adapter.id }) : null;
   for (let page = 0; page < pages; page += 1) {
     const { items, withdrawn, cursor: next, more } = await adapter.capabilities.pullWorkItems(cursor, { limit: 200 });
     for (const item of items) {
@@ -421,12 +422,18 @@ export async function runPipelineOnce(db, integrations, { now = new Date() } = {
   const summary = { organisationId };
   const [work] = integrations.with('pullWorkItems');
   const [accounting] = integrations.with('findInvoices');
+  // The price check (price-list.js) links price lists by code first, so a
+  // new product link maps the jobs read before it.
+  const priceSystems = integrations.with('listPriceItems');
+  if (priceSystems.length) {
+    summary.prices = await checkPrices(db, organisationId, { catalogues: await readCatalogues(organisationId, priceSystems) });
+  }
   if (work) {
-    let restart = false;
+    let restart = (summary.prices?.linked ?? 0) > 0;
     if (typeof work.capabilities.listCustomers === 'function') {
       summary.workCustomers = await linkCustomers(db, organisationId, { system: work.id, customers: await work.capabilities.listCustomers({ organisationId }) });
       // New customer links reach jobs read before them.
-      restart = summary.workCustomers.linked > 0;
+      restart ||= summary.workCustomers.linked > 0;
     }
     summary.work = await ingestWork(db, organisationId, { adapter: work, restart });
   }
