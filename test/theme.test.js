@@ -23,10 +23,11 @@ import { request } from './support/clerk.js';
 // (server/ui/routes.js). docs/DESIGN.md is the contract.
 
 describe('design systems', () => {
-  test('Harbour leads the picker and is the default', () => {
+  test('Harbour leads the picker and is the default, Meridian follows', () => {
     assert.equal(DEFAULT_FAMILY, 'harbour');
     assert.equal(THEME_FAMILIES[0].id, 'harbour');
-    assert.deepEqual(THEME_FAMILIES.slice(1, 6).map((f) => f.id), ['beacon', 'tide', 'claw', 'knot', 'dash']);
+    assert.equal(THEME_FAMILIES[1].id, 'meridian');
+    assert.deepEqual(THEME_FAMILIES.slice(2, 7).map((f) => f.id), ['beacon', 'tide', 'claw', 'knot', 'dash']);
     assert.equal(normalizeFamily('nope'), 'harbour');
     assert.equal(normalizeFamily('nope', 'tide'), 'tide');
   });
@@ -64,7 +65,7 @@ describe('design systems', () => {
   test('FLOW_THEME picks the installation default, and a typo stops the server', () => {
     assert.equal(resolveDefaultFamily({}), 'harbour');
     assert.equal(resolveDefaultFamily({ FLOW_THEME: ' Tide ' }), 'tide');
-    assert.throws(() => resolveDefaultFamily({ FLOW_THEME: 'tidee' }), /FLOW_THEME must be one of harbour, beacon/);
+    assert.throws(() => resolveDefaultFamily({ FLOW_THEME: 'tidee' }), /FLOW_THEME must be one of harbour, meridian, beacon/);
   });
 
   test('the stylesheet has a rule for every family and mode', () => {

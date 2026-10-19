@@ -6,6 +6,7 @@ export const MONO_FONT = 'jetbrains-mono';
 
 export const FAMILY_FONTS = {
   harbour: ['nunito-sans', 'playfair-display'],
+  meridian: ['plus-jakarta-sans', 'playfair-display'],
   beacon: ['atkinson-hyperlegible-next'],
   tide: ['ibm-plex-sans'],
   claw: ['instrument-sans'],
