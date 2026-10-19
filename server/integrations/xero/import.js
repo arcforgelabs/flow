@@ -5,6 +5,7 @@ import { isCallsStopped } from '../call-guard.js';
 import { lastSync, syncCatalogue } from './catalogue.js';
 import { mirrorState } from './lookup.js';
 import { MIRROR_RESOURCES, mirrorXero } from './mirror.js';
+import { checkSentInvoices } from './reconcile.js';
 
 // The history import, then the reads of changes. When an owner connects Xero,
 // Flow copies the organisation's invoices, credit notes and payments into the
@@ -73,7 +74,13 @@ export async function runImportSlice(db, runtime, job, { maxPages = SLICE_PAGES 
   }
   // A refused resource waits for a person; it never queues another slice.
   const stopped = results.find((r) => !['done', 'refused'].includes(r.stopped))?.stopped ?? null;
-  return { results, more: stopped };
+  // Each invoice Flow sent, against what the copy now holds (issue #132):
+  // an edit, void or delete in Xero opens a review item. No Xero calls.
+  const invoices = results.find((r) => r.resource === 'invoices');
+  const sent = invoices && (invoices.inserted || invoices.changed || job.payload?.reason !== 'changes')
+    ? await checkSentInvoices(db, runtime, job.organisationId)
+    : null;
+  return { results, more: stopped, ...(sent ? { sent } : {}) };
 }
 
 // Claims and runs one due import job, then queues the next slice when one is

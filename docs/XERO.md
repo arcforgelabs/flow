@@ -332,6 +332,35 @@ flowchart LR
 - **No patient text by default.** References and line descriptions are kept
   only with `XERO_KEEP_REFERENCE=on`.
 
+## Sent invoices against the copy
+
+People change invoices in both places after Flow sends them
+(`server/integrations/xero/reconcile.js`, issue #132). The version Flow sent
+is the merge base: the document both sides agreed on. After each read of the
+copy that changed an invoice, Flow compares every invoice it sent with
+Xero's copy of it. No Xero calls.
+
+| Finding | When |
+| --- | --- |
+| `differs` | Xero's copy no longer matches the version Flow sent: client, subtotal, GST, total, line count, item codes or date |
+| `voided_in_xero` | Xero voided or deleted the invoice; the Flow invoice is still issued |
+| `voided_in_flow` | Flow voided the invoice; Xero still holds it live |
+
+- Each finding is one review item (`invoice.accounting_differs`) with both
+  sides. A repeat refreshes it. It only alerts: Flow never writes to Xero or
+  to the Flow invoice to fix it. A person fixes it where they choose.
+- The item closes when a later check finds no difference.
+- **Mark resolved** (`POST /api/xero/invoices/<id>/recheck`, owner or admin)
+  reads Xero's invoice changes first, then checks that one invoice again.
+- `POST /api/xero/invoices/status` (anyone signed in) answers each invoice's
+  Xero status from the copy: `not_sent`, `sending`, `not_copied`, `draft`,
+  `approved`, `part_paid`, `paid`, `voided` or `deleted`, with any finding.
+  The Invoices page shows it as a tag on issued and void invoices, and the
+  invoice shows the differences, **Open in Xero** and **Mark resolved**.
+- Voiding a sent invoice in Flow warns while Xero still holds it live.
+- References and line descriptions are not compared: the copy keeps them only
+  with `XERO_KEEP_REFERENCE=on`.
+
 ## The billing ledger
 
 `server/integrations/xero/ledger.js` answers the billing obligation ledger
