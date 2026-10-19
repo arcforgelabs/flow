@@ -1,28 +1,22 @@
 // Settings, Invoicing (/invoicing-settings): the rules that decide when Flow
 // drafts a job's invoice by itself, and how a checked invoice goes to the
 // accounting system (server/core/invoicing-rules.js, /api/invoicing/settings).
-// Everyone can read them; an owner or admin changes them. app.js passes in
-// its shared pieces as `ui`.
+// One row for each setting: its name, one short line, and its control. A
+// change saves at once. Everyone can read them; an owner or admin changes
+// them. The full rules are in docs/INVOICING_RULES.md. app.js passes in its
+// shared pieces as `ui`.
+
+const DOCS = 'https://github.com/arcforgelabs/flow/blob/main/docs/INVOICING_RULES.md';
 
 const SEND_MODES = [
-  {
-    value: 'accounting_draft',
-    label: 'Check in Flow, approve in Xero',
-    help: 'A person checks the draft in Flow and sends it. It arrives in Xero as a draft. A person approves it and sends it to the customer in Xero.',
-  },
-  {
-    value: 'approve_and_email',
-    label: 'Approve in Flow, Xero emails it',
-    help: 'A person approves the draft in Flow. It arrives in Xero approved, and Xero emails it to the customer with your Xero template. The Xero contact needs an email address.',
-  },
+  { value: 'accounting_draft', label: 'Xero draft' },
+  { value: 'approve_and_email', label: 'Approved and emailed' },
 ];
 
 export async function renderInvoicingSettings(main, ui) {
   const { h, flow, toast, notice, pageHeader, me } = ui;
-  const host = h('div', { class: 'fx-fields' }, h('div', { class: 'fx-skeleton' }));
-  main.append(
-    pageHeader('Invoicing', { subtitle: 'When Flow drafts invoices from jobs, and how they go to Xero.' }),
-    host);
+  const host = h('div', { class: 'fx-card', style: { padding: '8px 20px 16px' } }, h('div', { class: 'fx-skeleton' }));
+  main.append(pageHeader('Invoicing', { subtitle: 'Drafts from jobs, and how they go to Xero.' }), host);
   let body;
   try {
     body = await flow('/api/invoicing/settings');
@@ -30,69 +24,67 @@ export async function renderInvoicingSettings(main, ui) {
     host.replaceChildren(notice(error.message, 'danger'));
     return;
   }
-  const canChange = ['owner', 'admin'].includes(me?.person.role);
-  const s = body.settings;
-  const disabled = !canChange;
+  const disabled = !['owner', 'admin'].includes(me?.person.role);
+  let saved = body.settings;
 
-  const field = (label, input, help) => h('label', { class: 'fx-field' },
-    h('span', { class: 'fx-label' }, label), input, help ? h('span', { class: 'fx-dim' }, help) : null);
-  const onOff = (value) => h('select', { class: 'fx-select', disabled },
-    h('option', { value: 'on', selected: value }, 'On'), h('option', { value: 'off', selected: !value }, 'Off'));
-  const number = (value, min, max) => h('input', { class: 'fx-input', type: 'number', min, max, step: 1, value, disabled });
-
-  const autoDraft = onOff(s.autoDraft);
-  const sendMode = h('select', { class: 'fx-select', disabled },
-    SEND_MODES.map((m) => h('option', { value: m.value, selected: s.sendMode === m.value }, m.label)));
-  const sendHelp = h('span', { class: 'fx-dim' });
-  const showSendHelp = () => { sendHelp.textContent = SEND_MODES.find((m) => m.value === sendMode.value)?.help ?? ''; };
-  sendMode.addEventListener('change', showSendHelp);
-  showSendHelp();
-  const readyStatuses = h('input', { class: 'fx-input', type: 'text', value: s.readyStatuses.join(', '), disabled });
-  const paymentTermsDays = number(s.paymentTermsDays, 0, 365);
-  const staleDays = number(s.staleDays, 1, 3650);
-  const requirePractitioner = onOff(s.requirePractitioner);
-  const rushItemCode = h('input', { class: 'fx-input', type: 'text', value: s.rushItemCode ?? '', disabled, placeholder: 'No rush rule' });
-  const rushPercent = number(s.rushPercent, 0, 100);
-
-  const save = h('button', { class: 'fx-btn fx-btn--primary', type: 'button', disabled }, 'Save');
-  save.addEventListener('click', async () => {
-    save.disabled = true;
+  async function save(changes, control) {
+    control.disabled = true;
     try {
-      const changes = {
-        autoDraft: autoDraft.value === 'on',
-        sendMode: sendMode.value,
-        readyStatuses: readyStatuses.value.split(',').map((x) => x.trim()).filter(Boolean),
-        paymentTermsDays: Number(paymentTermsDays.value),
-        staleDays: Number(staleDays.value),
-        requirePractitioner: requirePractitioner.value === 'on',
-        rushItemCode: rushItemCode.value.trim() || null,
-        rushPercent: Number(rushPercent.value),
-      };
-      await flow('/api/invoicing/settings', { method: 'PUT', body: JSON.stringify(changes) });
-      toast('Invoicing settings saved.', 'success');
+      saved = (await flow('/api/invoicing/settings', { method: 'PUT', body: JSON.stringify(changes) })).settings;
+      toast('Saved.', 'success');
+      return true;
     } catch (error) {
       toast(error.message, 'danger');
+      return false;
     } finally {
-      save.disabled = false;
+      control.disabled = false;
     }
+  }
+
+  const row = (name, hint, control) => h('div', { class: 'fx-set__row' },
+    h('div', { class: 'fx-set__text' }, h('span', { class: 'fx-set__name' }, name), h('span', { class: 'fx-set__hint' }, hint)),
+    h('div', { class: 'fx-set__control' }, control));
+
+  const toggle = (key, label) => {
+    const button = h('button', { class: 'fx-switch', type: 'button', role: 'switch', 'aria-label': label, 'aria-checked': String(saved[key]), disabled });
+    button.addEventListener('click', async () => {
+      const next = button.getAttribute('aria-checked') !== 'true';
+      if (await save({ [key]: next }, button)) button.setAttribute('aria-checked', String(next));
+    });
+    return button;
+  };
+
+  // A text or number box saves when it loses focus with a new value.
+  const box = (key, label, { type = 'text', read = (v) => v, show = (v) => v ?? '', placeholder } = {}) => {
+    const input = h('input', { class: 'fx-input', type, value: show(saved[key]), 'aria-label': label, disabled, placeholder });
+    input.addEventListener('change', async () => {
+      if (!(await save({ [key]: read(input.value) }, input))) input.value = show(saved[key]);
+    });
+    return input;
+  };
+  const days = (key, label) => box(key, label, { type: 'number', read: Number });
+
+  const sendMode = h('select', { class: 'fx-select', 'aria-label': 'Send to Xero as', disabled },
+    SEND_MODES.map((m) => h('option', { value: m.value, selected: saved.sendMode === m.value }, m.label)));
+  sendMode.addEventListener('change', async () => {
+    if (!(await save({ sendMode: sendMode.value }, sendMode))) sendMode.value = saved.sendMode;
   });
 
-  const card = (title, ...children) => h('section', { class: 'fx-card', style: { padding: '18px' } },
-    h('h2', { class: 'fx-strong', style: { margin: '0 0 14px' } }, title),
-    h('div', { class: 'fx-fields', style: { gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', alignItems: 'start' } }, ...children));
+  const section = (title, ...rows) => h('section', { class: 'fx-set' }, h('h2', { class: 'fx-set__title' }, title), ...rows);
   host.replaceChildren(...[
-    canChange ? null : notice('An owner or admin can change these settings.', 'info'),
-    card('Drafts',
-        field('Draft invoices by rule', autoDraft, 'Flow drafts the invoice of each job that passes every rule. The draft waits in Flow for a person.'),
-        field('Ready statuses', readyStatuses, 'The work system statuses that make a job ready to bill, separated by commas.'),
-        field('Payment terms (days)', paymentTermsDays, 'The due date is this many days after the invoice date.'),
-        field('Old job limit (days)', staleDays, 'A job older than this waits for a person.'),
-        field('Practitioner required', requirePractitioner, 'A job needs a practitioner, its own or the customer\'s default.'),
-        field('Rush item code', rushItemCode, 'The price item of a rush charge. Leave it empty for no rush rule.'),
-        field('Rush share (%)', rushPercent, 'A rush line must be this share of the other lines.')),
-    card('Sending',
-        h('label', { class: 'fx-field' }, h('span', { class: 'fx-label' }, 'How invoices go to Xero'), sendMode, sendHelp),
-        h('p', { class: 'fx-dim' }, 'Flow reads each invoice back from Xero, so approvals, payments, voids and credit notes made in Xero show on the job.')),
-    h('div', { class: 'fx-row fx-row--end' }, save),
+    disabled ? notice('Only an owner or admin can change these.', 'info') : null,
+    section('Drafts',
+      row('Draft invoices by rule', 'Draft each ready job. A person checks it.', toggle('autoDraft', 'Draft invoices by rule')),
+      row('Ready statuses', 'Job statuses that are ready to bill.', box('readyStatuses', 'Ready statuses', {
+        read: (v) => v.split(',').map((x) => x.trim()).filter(Boolean), show: (v) => v.join(', '),
+      })),
+      row('Payment terms', 'Days from invoice to due date.', days('paymentTermsDays', 'Payment terms in days')),
+      row('Old job limit', 'Older jobs wait for a person (days).', days('staleDays', 'Old job limit in days')),
+      row('Practitioner required', 'The job or its customer names one.', toggle('requirePractitioner', 'Practitioner required')),
+      row('Rush item code', 'Price item code of a rush charge.', box('rushItemCode', 'Rush item code', { read: (v) => v.trim() || null, placeholder: 'None' })),
+      row('Rush share', 'Rush line as % of the other lines.', days('rushPercent', 'Rush share in percent'))),
+    section('Sending',
+      row('Send to Xero as', 'Draft: approve in Xero. Approved: Xero emails it.', sendMode)),
+    h('p', { class: 'fx-dim', style: { margin: '12px 0 0' } }, h('a', { href: DOCS, target: '_blank', rel: 'noopener' }, 'How the rules work')),
   ].filter(Boolean));
 }
