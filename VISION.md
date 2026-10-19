@@ -38,6 +38,17 @@ conflict goes to one review queue; one job queue runs the work.
 
 ## Job management
 
+Flow links each job to its client and its invoice. That link is the heart
+of the product: a job card shows what was ordered, who it is for, and how it
+was billed and paid.
+
+Flow does a few parts of job management well now, and more later. It does
+not try to replace the lab's case system.
+
+- **Now:** update job cards and process a job's information for invoicing,
+  and update jobs from paper forms.
+- **Later:** full job management.
+
 The job board is Flow's main view: a standard board of jobs by stage (a
 column per stage, a card per job), with a list view of the same jobs. It
 shows every job from the case system and from Flow, with its practice, due
@@ -123,9 +134,9 @@ its own data, configuration and secrets.
 
 ## Out of scope
 
-- Replacing the case system. The case system owns the case record; Flow's
-  job board shows and moves the work, and does not do clinical case
-  management or production scheduling.
+- Replacing the case system, for now. The case system owns the case record.
+  Flow's job board shows and updates the work, and does not do clinical
+  case management or production scheduling.
 - Patient records, clinical notes, scans and images.
 - Acting as the general ledger. Accounting software owns the ledger and the
   bank feed.
