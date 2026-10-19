@@ -30,7 +30,11 @@ export const exampleAdapter = {
 ```
 
 The capabilities are `pullWorkItems`, `pushInvoice`, `pushBill`,
-`pullPayments`, `checkInvoice`, `listCustomers`, `findInvoices` and `health`.
+`pullPayments`, `checkInvoice`, `listCustomers`, `findInvoices`,
+`captureError`, `browserMonitoring` and `health`. `captureError({ message,
+source, error })` takes each error Flow logs, and `browserMonitoring()`
+answers the public settings a browser needs; the Sentry adapter has both
+(`docs/SENTRY.md`).
 `listCustomers({ organisationId })` answers the system's customers as
 `{ id, name }`. `findInvoices({ organisationId, invoiceIds, numbers,
 flowInvoiceIds, contactId, from, to })` answers sales invoices from the

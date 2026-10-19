@@ -18,6 +18,8 @@ export const CAPABILITIES = Object.freeze([
   'listCustomers', // the system's customers, by id and name, for the identity map (Seazona: clients; Xero: contacts)
   'findInvoices', // sales invoices in the accounting system's copy, for the matcher; never a live call
   'health', // connection state for Settings
+  'captureError', // an error Flow logged, sent to the installation's own error service (Sentry)
+  'browserMonitoring', // the public settings a browser needs to report errors and problems to that service
 ]);
 
 const ID_PATTERN = /^[a-z][a-z0-9-]{1,31}$/;

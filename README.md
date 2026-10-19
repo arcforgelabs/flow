@@ -42,6 +42,7 @@ run a lab.
 | `docs/INTEGRATIONS.md` | How an integration adapter is built, turned on and off, and owns its tables |
 | `docs/XERO.md` | The Xero adapter: modes, settings, rate limits, connecting Xero and draft invoices |
 | `docs/SEAZONA.md` | The Seazona adapter: modes, settings, the rate governor, replay files and its tables |
+| `docs/SENTRY.md` | The Sentry adapter: errors and problem reports to the installation's own Sentry project |
 | `server/integrations/port.js` | The integration port every adapter implements |
 
 ## Getting started

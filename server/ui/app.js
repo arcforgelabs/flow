@@ -13,6 +13,7 @@ import { renderInvoice, renderInvoiceList } from '/assets/ui/invoicing.js';
 import { automationSection } from '/assets/ui/automations.js';
 import { renderInvoicingSettings, sendModeSection } from '/assets/ui/invoicing-settings.js';
 import { renderJobs } from '/assets/ui/jobs.js';
+import { startMonitoring } from '/assets/ui/monitoring.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -206,6 +207,7 @@ const ICON_PATHS = {
   people: '<circle cx="9" cy="8" r="3"/><path d="M3 20c0-3.5 2.7-6 6-6s6 2.5 6 6"/><path d="M16 5a3 3 0 010 6M21 20c0-3-1.6-5-4-5.7"/>',
   plug: '<path d="M9 3v5M15 3v5M6 8h12v3a6 6 0 01-12 0zM12 17v4"/>',
   person: '<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-7 8-7s8 3 8 7"/>',
+  flag: '<path d="M5 21V4M5 4h11l-2 4 2 4H5"/>',
   palette: '<path d="M12 3a9 9 0 100 18c1.1 0 1.5-.8 1.5-1.6 0-1-.8-1.4-.8-2.4 0-.9.7-1.5 1.6-1.5H17a4 4 0 004-4c0-4.7-4-8.5-9-8.5z"/><circle cx="7.5" cy="11" r="1"/><circle cx="10" cy="7" r="1"/><circle cx="15" cy="7" r="1"/>',
 };
 
@@ -288,6 +290,11 @@ function renderShell() {
   }
   nav.replaceChildren(...items);
   mountClerk('userButton', $('user-button'), { afterSignOutUrl: '/sign-in', showName: false });
+  // Errors and problem reports go to the installation's own Sentry, when the
+  // Sentry integration is on (monitoring.js). Flow works the same without it.
+  $('report-problem').replaceChildren(icon('flag'));
+  startMonitoring({ flow, person: me.person, button: $('report-problem') })
+    .catch((error) => console.warn(`[monitoring] ${error.message}`));
   window.addEventListener('popstate', route);
   return route();
 }
@@ -408,8 +415,9 @@ const STATE_TONE = { ready: 'success', disabled: 'mute', failed: 'danger', resta
 const CATALOGUE = {
   xero: { maker: 'Xero', category: 'accounting', blurb: 'Send invoices to Xero as drafts and bring payments back.', logo: 'xero.svg' },
   seazona: { maker: 'Seazona', category: 'lab', blurb: 'Bring lab cases and orders into Flow as jobs.', logo: 'seazona.svg' },
+  sentry: { maker: 'Sentry', category: 'monitoring', blurb: 'Send errors and problem reports to your own Sentry project.', logo: 'sentry.svg' },
 };
-const CATEGORIES = [['all', 'All'], ['accounting', 'Accounting'], ['lab', 'Lab software']];
+const CATEGORIES = [['all', 'All'], ['accounting', 'Accounting'], ['lab', 'Lab software'], ['monitoring', 'Monitoring']];
 const CATEGORY_LABEL = Object.fromEntries(CATEGORIES);
 
 function integrationLogo(integration, size = '') {
