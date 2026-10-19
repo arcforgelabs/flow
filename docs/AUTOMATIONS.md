@@ -19,10 +19,16 @@ after it reads the integrations and runs the matcher, every two minutes.
 
 | Automation | Key | Shown on | Default | Does |
 | --- | --- | --- | --- | --- |
-| Mark ready to invoice | `mark_ready_from_work_status` | The Seazona integration page | On; statuses shipped, delivered | Marks a job in work ready to invoice when its work system status holds one of the statuses, as whole words in any case |
+| Mark ready to invoice | `mark_ready_from_work_status` | The Seazona integration page | On; statuses shipped, delivered | Marks a job in work ready to invoice when its work system status is one of the chosen statuses, in any case |
 | Draft when ready | `draft_when_ready` | Settings, Invoicing | On | Drafts the invoice of each ready job that passes the invoicing rules. It waits while no accounting integration is on |
 
 Each automation shows on the screen of the data that triggers it (`place`).
+
+The ready statuses are picked from a menu, not typed. The menu lists each
+status the work system has reported for the lab's jobs, with the number of
+jobs at each (`GET /api/invoicing/work-statuses`). Each lab's Seazona can use
+its own statuses, so the menu follows the lab's data. A status picked earlier
+stays in the menu when no job has it now.
 
 ## People decide first
 

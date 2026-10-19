@@ -31,6 +31,47 @@ export function automationSection(ui, place, title) {
     h('div', { class: 'fx-set__text' }, h('span', { class: 'fx-set__name' }, name), h('span', { class: 'fx-set__hint' }, hint)),
     h('div', { class: 'fx-set__control' }, control));
 
+  // A menu of the statuses the work system reported, each with its job count.
+  // A status saved earlier stays in the menu even when no job has it now.
+  const statusPicker = (automation) => {
+    const summary = h('summary', { class: 'fx-select fx-multi__summary' });
+    const list = h('div', { class: 'fx-multi__list', role: 'group', 'aria-label': 'Ready statuses' }, h('div', { class: 'fx-skeleton' }));
+    const picker = h('details', { class: 'fx-multi' }, summary, list);
+    let options = [];
+    const show = () => {
+      const chosen = new Set(automation.config.statuses);
+      const names = options.filter((o) => chosen.has(o.value)).map((o) => o.label);
+      summary.textContent = names.length ? names.join(', ') : 'None';
+      list.replaceChildren(...(options.length ? options.map((o) => {
+        const box = h('input', { type: 'checkbox', checked: chosen.has(o.value), disabled });
+        box.addEventListener('change', async () => {
+          const next = options.map((x) => x.value).filter((v) => (v === o.value ? box.checked : chosen.has(v)));
+          if (!next.length) {
+            box.checked = true;
+            toast('Pick at least one status. To stop it, turn the automation off.', 'danger');
+            return;
+          }
+          const saved = await save(automation.key, { config: { statuses: next } }, box);
+          if (saved) automation.config = saved.config;
+          show();
+        });
+        return h('label', { class: 'fx-multi__option' }, box, h('span', {}, o.label), h('span', { class: 'fx-dim' }, String(o.jobs)));
+      }) : [h('p', { class: 'fx-dim', style: { margin: 0 } }, 'Seazona has reported no statuses yet.')]));
+    };
+    (async () => {
+      try {
+        ({ statuses: options } = await flow('/api/invoicing/work-statuses'));
+      } catch (error) {
+        options = [];
+        toast(error.message, 'danger');
+      }
+      const known = new Set(options.map((o) => o.value));
+      for (const value of automation.config.statuses) if (!known.has(value)) options.push({ value, label: value, jobs: 0 });
+      show();
+    })();
+    return picker;
+  };
+
   const rowsOf = (automation) => {
     const button = h('button', { class: 'fx-switch', type: 'button', role: 'switch', 'aria-label': automation.name, 'aria-checked': String(automation.enabled), disabled });
     button.addEventListener('click', async () => {
@@ -38,16 +79,7 @@ export function automationSection(ui, place, title) {
       if (saved) button.setAttribute('aria-checked', String(saved.enabled));
     });
     const out = [row(automation.name, automation.hint, button)];
-    if (automation.config.statuses) {
-      const input = h('input', { class: 'fx-input', type: 'text', value: automation.config.statuses.join(', '), 'aria-label': 'Ready statuses', disabled });
-      input.addEventListener('change', async () => {
-        const statuses = input.value.split(',').map((x) => x.trim()).filter(Boolean);
-        const saved = await save(automation.key, { config: { statuses } }, input);
-        input.value = (saved ?? automation).config.statuses.join(', ');
-        if (saved) automation.config = saved.config;
-      });
-      out.push(row('Ready statuses', 'Statuses that mean ready. Comma between.', input));
-    }
+    if (automation.config.statuses) out.push(row('Ready statuses', 'Picked from the statuses Seazona reports.', statusPicker(automation)));
     return out;
   };
 

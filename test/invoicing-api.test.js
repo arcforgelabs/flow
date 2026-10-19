@@ -305,6 +305,9 @@ describe('invoicing API', { skip: skipWithoutDatabase }, () => {
     // owner or admin changes them.
     const seazona = await call(`/automations?organisationId=${lab.id}&place=seazona`, { token: staffToken });
     assert.deepEqual(seazona.body.automations.map((a) => [a.key, a.config]), [['mark_ready_from_work_status', { statuses: ['shipped', 'delivered'] }]]);
+    const statuses = await call(`/work-statuses?organisationId=${lab.id}`, { token: staffToken });
+    assert.equal(statuses.status, 200);
+    assert.ok(Array.isArray(statuses.body.statuses));
     assert.equal((await call('/automations/draft_when_ready', { method: 'PUT', token: staffToken, body: { organisationId: lab.id, enabled: false } })).status, 403);
     const off = await call('/automations/draft_when_ready', { method: 'PUT', body: { organisationId: lab.id, enabled: false } });
     assert.equal(off.status, 200, JSON.stringify(off.body));

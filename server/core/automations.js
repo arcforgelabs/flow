@@ -12,27 +12,43 @@ import { setReady } from './ledger.js';
 // pipeline (pipeline.js) runs them after it reads the integrations' copies.
 //
 //   mark_ready_from_work_status: a job whose work system status is one of the
-//     chosen statuses becomes ready to invoice (Flow's stage).
+//     chosen statuses becomes ready to invoice (Flow's stage). The statuses
+//     are picked from those the work system reported (workStatuses).
 //   draft_when_ready: a job that is ready to invoice and passes the invoicing
 //     rules (invoicing-rules.js) gets a draft invoice in Flow.
 
 const BATCH = 500;
 
-const words = (value) => String(value ?? '').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+const norm = (value) => String(value ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
 
-// A status matches when it holds one of the chosen statuses as whole words,
-// in any case: "Shipped" and "Order shipped" match "shipped".
+// A status matches when it is one of the chosen statuses, in any case.
 export function statusMatches(status, statuses) {
-  const have = ` ${words(status).join(' ')} `;
-  return statuses.some((wanted) => {
-    const want = words(wanted).join(' ');
-    return want && have.includes(` ${want} `);
-  });
+  const have = norm(status);
+  return Boolean(have) && statuses.some((wanted) => norm(wanted) === have);
+}
+
+// The statuses the work system has reported for this organisation's jobs, with
+// the number of jobs at each, most jobs first. People pick the ready statuses
+// from this list, so it follows each lab's own work system.
+export async function workStatuses(db, organisationId) {
+  const rows = await db.select({ status: billingObligations.sourceStatus, jobs: sql`count(*)::int` })
+    .from(billingObligations)
+    .where(and(eq(billingObligations.organisationId, organisationId), sql`${billingObligations.sourceStatus} is not null`))
+    .groupBy(billingObligations.sourceStatus);
+  const byName = new Map();
+  for (const { status, jobs } of rows) {
+    const key = norm(status);
+    if (!key) continue;
+    const seen = byName.get(key);
+    if (seen) seen.jobs += jobs;
+    else byName.set(key, { value: key, label: status.trim(), jobs });
+  }
+  return [...byName.values()].sort((a, b) => b.jobs - a.jobs || a.label.localeCompare(b.label));
 }
 
 function readStatuses(value) {
   if (!Array.isArray(value) || !value.length || value.length > 20) throw new FlowError('invalid', 'statuses must list 1 to 20 statuses');
-  const statuses = [...new Set(value.map((s) => (typeof s === 'string' ? s.trim().toLowerCase() : '')).filter(Boolean))];
+  const statuses = [...new Set(value.map((s) => (typeof s === 'string' ? norm(s) : '')).filter(Boolean))];
   if (!statuses.length || statuses.some((s) => s.length > 100)) throw new FlowError('invalid', 'statuses must be short text');
   return statuses;
 }

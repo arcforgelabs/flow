@@ -4,7 +4,7 @@ import { FlowError } from '../core/errors.js';
 import {
   createDraftInvoice, getInvoice, issueInvoice, listInvoiceVersions, reviseInvoice, updateDraftInvoice, voidInvoice,
 } from '../core/invoices.js';
-import { listAutomations, saveAutomation } from '../core/automations.js';
+import { listAutomations, saveAutomation, workStatuses } from '../core/automations.js';
 import {
   customerBillingByContact, effectiveSettings, INVOICING_DEFAULTS, readCustomerBilling, readInvoicingSettings, ruleBlockers,
   saveCustomerBilling, saveInvoicingSettings,
@@ -33,6 +33,7 @@ import {
 //   PUT   /settings                   owner or admin: change some of them
 //   GET   /automations?place=         Flow's routines, each on or off (server/core/automations.js)
 //   PUT   /automations/:key           owner or admin: { enabled, config }
+//   GET   /work-statuses              the work system's job statuses, with job counts
 //   GET   /contacts/:id/billing       one customer's own invoicing settings
 //   PUT   /contacts/:id/billing       owner or admin: change them (null takes the organisation's)
 //   POST  /jobs/:id/ready             { ready }: mark a job ready to invoice, or back in work
@@ -398,6 +399,11 @@ export function createInvoicingRouter({ db, personAuth, log = console, liveCheck
     const place = typeof req.query.place === 'string' ? req.query.place : null;
     const list = await listAutomations(db, organisationId);
     res.json({ ok: true, automations: place ? list.filter((a) => a.place === place) : list });
+  }));
+
+  router.get('/work-statuses', ...signedIn, handle(log, async (req, res) => {
+    const organisationId = await organisationOf(req);
+    res.json({ ok: true, statuses: await workStatuses(db, organisationId) });
   }));
 
   router.put('/automations/:key', ...manager, handle(log, async (req, res) => {

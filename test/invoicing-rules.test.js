@@ -7,7 +7,7 @@ import {
   autoDraftJobs, effectiveSettings, INVOICING_DEFAULTS, readCustomerBilling, readInvoicingSettings, ruleBlockers,
   saveCustomerBilling, saveInvoicingSettings,
 } from '../server/core/invoicing-rules.js';
-import { listAutomations, runAutomations, saveAutomation, statusMatches } from '../server/core/automations.js';
+import { listAutomations, runAutomations, saveAutomation, statusMatches, workStatuses } from '../server/core/automations.js';
 import { explainObligation, observeJob, recordAccountingEvidence, setReady } from '../server/core/ledger.js';
 import { billingObligations } from '../server/db/schema.js';
 import { freshDatabase, skipWithoutDatabase } from './support/db.js';
@@ -24,12 +24,13 @@ const job = (overrides = {}) => ({
 });
 
 describe('the rules for one job', () => {
-  test('a ready status is one of the chosen statuses, as whole words in any case', () => {
+  test('a ready status is one of the chosen statuses, in any case', () => {
     assert.equal(statusMatches('Shipped', ['shipped']), true);
-    assert.equal(statusMatches('Order SHIPPED', ['shipped']), true);
+    assert.equal(statusMatches(' SHIPPED ', ['shipped']), true);
+    assert.equal(statusMatches('Order shipped', ['shipped']), false);
     assert.equal(statusMatches('Complete', ['shipped', 'delivered']), false);
-    assert.equal(statusMatches('Complete and await return', ['complete and await return']), true);
-    assert.equal(statusMatches('Unshipped', ['shipped']), false);
+    assert.equal(statusMatches('Complete and  await return', ['complete and await return']), true);
+    assert.equal(statusMatches(null, ['shipped']), false);
   });
 
   test('a ready job with a total passes; each rule it fails gives a reason', () => {
@@ -173,6 +174,10 @@ describe('drafts by rule', { skip: skipWithoutDatabase }, () => {
 
     const shipped = await cleared({ ready: false });
     const inLab = await cleared({ status: 'In production', ready: false });
+    // The menu lists each status the work system reported, most jobs first.
+    const statuses = await workStatuses(handle.db, lab.id);
+    assert.equal(statuses[0].label, 'Shipped');
+    assert.deepEqual(statuses.find((s) => s.value === 'in production'), { value: 'in production', label: 'In production', jobs: 1 });
     const keptBack = await cleared({ ready: false });
     // A person put this one back in work: the routine leaves it to people.
     await setReady(handle.db, lab.id, keptBack.id, { actor: 'person:test' });
