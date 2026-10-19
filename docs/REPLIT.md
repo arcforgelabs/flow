@@ -203,3 +203,49 @@ from the workspace: a fine-grained token scoped to this repository only, with
 Contents and Pull requests read/write. An installation that only follows
 releases needs none. Replit Agent reads `replit.md`, and its GitHub
 instructions are in `.agents/skills/github-sync/SKILL.md`.
+
+### A production installation: fetch only
+
+A workspace that runs a production installation should only follow
+releases. It reads from GitHub and never writes to it. Development happens
+elsewhere and reaches the installation as a release.
+
+To make the workspace fetch-only:
+
+1. Delete the `GITHUB_TOKEN` secret (Secrets). Revoke the token on GitHub
+   too (Settings > Developer settings > Personal access tokens).
+2. In the Shell:
+
+   ```sh
+   git remote set-url --push origin no-push--this-workspace-is-fetch-only
+   git config --unset credential.helper
+   printf '#!/bin/sh\ncase "$2" in *github.com*|no-push*) echo "push refused: this install is fetch-only" >&2; exit 1;; esac\n' > .git/hooks/pre-push
+   chmod +x .git/hooks/pre-push
+   ```
+
+   `git remote -v` then shows the GitHub URL for fetch and
+   `no-push--this-workspace-is-fetch-only` for push. A push from the Shell
+   or the Git pane fails. The hook refuses only GitHub, so Replit's own
+   backup remote keeps working.
+3. Do not press Push or Sync Changes in the Git pane. Pull is safe.
+
+Publishing is not affected: the build fetches from GitHub without a token.
+Replit's "Published your App" commits stay local. They change only `.replit`
+(for example a port Replit detected), and `scripts/github-sync.sh pull`
+drops them when together they change no files.
+
+### Where an installation's settings go
+
+Nothing specific to one installation goes in git. The repository is shared
+by every installation.
+
+| Setting | Where |
+| --- | --- |
+| Secrets: keys, tokens, client secrets | Replit Secrets (workspace) and Publishing > Adjust settings > Secrets (published app) |
+| Start-up settings: `FLOW_AUTH`, `FLOW_DEPLOY_REF`, `FLOW_THEME`, `FLOW_SIGN_UP_DOMAINS`, integration modes | Replit Secrets, as above. A deployment Configuration value is written into `.replit`, so use a secret. |
+| Business data and in-app settings: people and roles, organisation, prices, integration connections | Flow's database (PostgreSQL), changed in Flow's own screens |
+| Code, migrations, defaults for every installation | This repository, through a pull request |
+
+When an installation needs a setting that does not exist, add it to Flow as a
+generic option (an environment variable or an in-app setting) by a pull
+request, and set its value in the installation.
