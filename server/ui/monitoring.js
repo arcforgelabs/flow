@@ -2,7 +2,7 @@
 // Sentry project (docs/SENTRY.md). Only while the Sentry integration is on:
 // GET /api/monitoring says so and gives the project's public DSN. The SDK
 // comes from Sentry's CDN, pinned and checked against its integrity hash.
-// With the integration off, nothing loads and the report button stays hidden.
+// With the integration off, nothing loads and there is no "Report a problem".
 
 function loadScript({ src, integrity }) {
   return new Promise((resolve, reject) => {
@@ -16,9 +16,10 @@ function loadScript({ src, integrity }) {
   });
 }
 
-export async function startMonitoring({ flow, person, button }) {
+/** Resolves to a function that opens the "Report a problem" form, or null. */
+export async function startMonitoring({ flow, person }) {
   const config = await flow('/api/monitoring');
-  if (!config.on || config.service !== 'sentry') return;
+  if (!config.on || config.service !== 'sentry') return null;
   await loadScript(config.script);
   const Sentry = window.Sentry;
   const integrations = config.feedback ? [Sentry.feedbackIntegration({
@@ -46,8 +47,15 @@ export async function startMonitoring({ flow, person, button }) {
   });
   // Who reported or met the error, so the lab can follow up.
   Sentry.setUser({ id: person.id, email: person.email });
-  if (config.feedback) {
-    Sentry.getFeedback()?.attachTo(button);
-    button.hidden = false;
-  }
+  const feedback = config.feedback ? Sentry.getFeedback() : null;
+  if (!feedback) return null;
+  // One form, made on first use and opened again after that.
+  let form = null;
+  return async () => {
+    if (!form) {
+      form = await feedback.createForm();
+      form.appendToDom();
+    }
+    form.open();
+  };
 }

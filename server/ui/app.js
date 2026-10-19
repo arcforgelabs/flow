@@ -14,6 +14,7 @@ import { automationSection } from '/assets/ui/automations.js';
 import { renderInvoicingSettings, sendModeSection } from '/assets/ui/invoicing-settings.js';
 import { renderJobs } from '/assets/ui/jobs.js';
 import { startMonitoring } from '/assets/ui/monitoring.js';
+import { openSearch } from '/assets/ui/search.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -208,6 +209,7 @@ const ICON_PATHS = {
   plug: '<path d="M9 3v5M15 3v5M6 8h12v3a6 6 0 01-12 0zM12 17v4"/>',
   person: '<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-7 8-7s8 3 8 7"/>',
   flag: '<path d="M5 21V4M5 4h11l-2 4 2 4H5"/>',
+  search: '<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/>',
   palette: '<path d="M12 3a9 9 0 100 18c1.1 0 1.5-.8 1.5-1.6 0-1-.8-1.4-.8-2.4 0-.9.7-1.5 1.6-1.5H17a4 4 0 004-4c0-4.7-4-8.5-9-8.5z"/><circle cx="7.5" cy="11" r="1"/><circle cx="10" cy="7" r="1"/><circle cx="15" cy="7" r="1"/>',
 };
 
@@ -215,6 +217,33 @@ function icon(name) {
   const node = h('span', { class: 'fx-ico', 'aria-hidden': 'true' });
   node.innerHTML = `<svg viewBox="0 0 24 24">${ICON_PATHS[name] ?? ''}</svg>`;
   return node;
+}
+
+// Search, from the sidebar foot or Ctrl+K (⌘K): the pages this person may
+// open, invoices and jobs (search.js).
+function search() {
+  const views = Object.entries(VIEWS)
+    .filter(([, view]) => !view.ownerOnly || me?.person.role === 'owner')
+    .map(([name, view]) => ({ name, label: view.label, icon: view.icon }));
+  openSearch({ h, flow, go, icon, views });
+}
+
+document.addEventListener('keydown', (event) => {
+  if (event.key.toLowerCase() !== 'k' || !(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey) return;
+  if (document.body.dataset.state !== 'signed-in') return;
+  event.preventDefault();
+  search();
+});
+
+// "Report a problem" in Clerk's account menu, between "Manage account" and
+// "Sign out". Clerk mounts and unmounts the icon itself.
+function reportMenuItem(openReport) {
+  return {
+    label: 'Report a problem',
+    onClick: () => { openReport().catch((error) => toast(error.message, 'danger')); },
+    mountIcon: (element) => element.replaceChildren(icon('flag')),
+    unmountIcon: (element) => element.replaceChildren(),
+  };
 }
 
 // The view and, for one record, its id: /invoices/<id> is ['invoices', '<id>'].
@@ -242,7 +271,7 @@ async function route() {
 
 // Opens a path in place; the address changes, the page stays.
 function go(path, { replace = false } = {}) {
-  if (path !== location.pathname) history[replace ? 'replaceState' : 'pushState'](null, '', path);
+  if (path !== location.pathname + location.search) history[replace ? 'replaceState' : 'pushState'](null, '', path);
   route();
 }
 
@@ -289,11 +318,21 @@ function renderShell() {
     items.push(h('a', { href: `/${name}`, 'data-nav': name, onclick: navigate }, icon(view.icon), h('span', {}, view.label)));
   }
   nav.replaceChildren(...items);
-  mountClerk('userButton', $('user-button'), { afterSignOutUrl: '/sign-in', showName: false });
+  // The sidebar foot shows who is signed in: photo or initial, then the name
+  // (the email when the account has no name). It opens the account menu.
+  const userButton = { afterSignOutUrl: '/sign-in', showName: true };
+  $('search').replaceChildren(icon('search'));
+  $('search').onclick = search;
+  mountClerk('userButton', $('user-button'), userButton);
   // Errors and problem reports go to the installation's own Sentry, when the
-  // Sentry integration is on (monitoring.js). Flow works the same without it.
-  $('report-problem').replaceChildren(icon('flag'));
-  startMonitoring({ flow, person: me.person, button: $('report-problem') })
+  // Sentry integration is on (monitoring.js). Then the account menu has
+  // "Report a problem". Flow works the same without it.
+  startMonitoring({ flow, person: me.person })
+    .then((openReport) => {
+      if (!openReport) return;
+      unmountClerk($('user-button'));
+      mountClerk('userButton', $('user-button'), { ...userButton, customMenuItems: [reportMenuItem(openReport)] });
+    })
     .catch((error) => console.warn(`[monitoring] ${error.message}`));
   window.addEventListener('popstate', route);
   return route();

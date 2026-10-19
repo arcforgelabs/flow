@@ -31,9 +31,11 @@ function saveLayout(layout) {
 
 export async function renderJobs(main, ui) {
   const { h, flow, pageHeader, notice } = ui;
-  const state = { layout: readLayout(), q: '', jobs: [], canDraft: false };
+  // Search (search.js) opens a job with no invoice as /jobs?q=<case>.
+  const asked = new URLSearchParams(location.search).get('q') ?? '';
+  const state = { layout: readLayout(), q: asked.trim().toLowerCase(), jobs: [], canDraft: false };
   const toggle = h('div', { class: 'fx-seg', role: 'radiogroup', 'aria-label': 'Layout' });
-  const search = h('input', { class: 'fx-input fx-search', type: 'search', placeholder: 'Find a case, client or practitioner', 'aria-label': 'Find a job' });
+  const search = h('input', { class: 'fx-input fx-search', type: 'search', placeholder: 'Find a case, client or practitioner', 'aria-label': 'Find a job', value: asked });
   const host = h('div', { class: 'fx-jobs' }, h('div', { class: 'fx-skeleton' }));
   main.classList.add('fx-main--wide');
   main.append(
