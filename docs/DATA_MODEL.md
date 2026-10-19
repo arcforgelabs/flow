@@ -71,6 +71,32 @@ stateDiagram-v2
   each payment (date, amount, reference, reconciled or not). A failed
   write-back stays and is tried again. It never changes the accounting record.
 
+## Invoicing API
+
+The web UI reads and changes invoices through `/api/invoicing`
+(`server/api/invoicing.js`). Every route needs a signed-in, active person.
+`organisationId` (query or body) names the organisation; it may be left out
+while the installation has exactly one. Money is integer cents. Answers are
+`{ ok: true, … }`, or `{ ok: false, code, error }` with 400, 403, 404 or 409.
+
+| Route | Who | What |
+| --- | --- | --- |
+| `GET /context` | anyone | `organisations` (`id`, `name`, `invoicePrefix`, `nextInvoiceNumber`) and `canIssue` |
+| `GET /invoices?status=&q=&limit=` | anyone | Newest first, each with `contactName` and its `job`; `q` matches number, reference or customer; `counts` by status |
+| `GET /invoices/:id` | anyone | The invoice with `lines`, `contact`, `job` and issued `versions` |
+| `POST /invoices` `{ contactId, reference?, dueDate?, lines }` | anyone | A new draft (201) |
+| `PATCH /invoices/:id` `{ contactId?, reference?, dueDate?, lines? }` | anyone | Changes a draft |
+| `POST /invoices/:id/issue` `{ issueDate? }` | owner or admin | Numbers it and keeps the document as sent; the date defaults to the server's today |
+| `POST /invoices/:id/revise` | owner or admin | An issued invoice back to a draft; the number stays |
+| `POST /invoices/:id/void` | owner or admin | Voids an invoice that was issued |
+| `GET /contacts?q=&limit=` | anyone | Customers, by name |
+| `GET /price-items?q=` | anyone | The price list, by code |
+| `GET /jobs?view=&limit=` | anyone | Billable jobs with `contactName`, `view` and `reasons`; `counts` by view |
+| `POST /jobs/:id/draft` | owner or admin | The job's draft invoice, made only after a live check in the accounting system (`checkInvoice`, `docs/INTEGRATIONS.md`) finds none; with no accounting integration it is refused (`live_check_unavailable`) |
+
+A line is `{ priceItemId?, description?, quantity?, unitAmountCents?,
+taxCode? }`; a price item fills what the line leaves out.
+
 ## Storage
 
 Flow has two places for data, and only two:

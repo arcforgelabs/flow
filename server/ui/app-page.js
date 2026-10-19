@@ -35,20 +35,20 @@ const BODY = `<div class="fx-app">
   </section>
 
   <div class="fx-state-signed-in fx-shell">
-    <header class="fx-top">
+    <aside class="fx-side">
       <a class="fx-brand" href="/">${FLOW_MARK}<span>Flow</span></a>
       <nav class="fx-nav" id="nav" aria-label="Flow"></nav>
-      <div class="fx-top__end">
+      <div class="fx-side__end">
+        <div id="user-button" class="fx-side__user"></div>
         <button type="button" class="fx-btn fx-btn--ghost fx-btn--icon fx-mode-toggle" data-mode-toggle>Light or dark</button>
-        <div id="user-button" class="fx-top__user"></div>
       </div>
-    </header>
+    </aside>
     <main id="main" class="fx-main" tabindex="-1"></main>
   </div>
   <div id="toasts" class="fx-toasts" aria-live="polite"></div>
 </div>`;
 
-export const APP_PATHS = ['/sign-in', '/people', '/integrations', '/account', '/appearance'];
+export const APP_PATHS = ['/sign-in', '/invoices', '/invoices/:id', '/people', '/integrations', '/account', '/appearance'];
 
 export function appPage({ defaultFamily }) {
   return renderPage({

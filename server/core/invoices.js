@@ -87,6 +87,13 @@ export async function updateDraftInvoice(db, organisationId, invoiceId, changes)
     const invoice = await loadInvoice(tx, organisationId, invoiceId, { lock: true });
     if (invoice.status !== 'draft') throw new FlowError('not_draft', 'only a draft invoice can change; revise it first');
     const fields = {};
+    if ('contactId' in changes && changes.contactId !== invoice.contactId) {
+      const [contact] = await tx.select().from(contacts)
+        .where(and(eq(contacts.organisationId, organisationId), eq(contacts.id, changes.contactId)));
+      if (!contact) throw new FlowError('invalid', 'contact not found');
+      if (contact.kind !== 'customer') throw new FlowError('invalid', 'an invoice goes to a customer contact');
+      fields.contactId = changes.contactId;
+    }
     if ('reference' in changes) fields.reference = changes.reference;
     if ('dueDate' in changes) fields.dueDate = changes.dueDate;
     let row = invoice;
