@@ -53,6 +53,7 @@ export function turnedOff(adapter, reason = 'disabled') {
     disabled: `${adapter.name} is turned off on this installation.`,
     restart_needed: `${adapter.name} was turned on after Flow started. Restart Flow to finish turning it on.`,
     tables_missing: `${adapter.name} has no tables on this installation. Restart Flow to create them.`,
+    failed: `${adapter.name} could not start. An owner can check its settings in Settings, Integrations.`,
   }[reason];
   return { ok: false, code: 'integration_off', integration: adapter.id, reason, error };
 }
@@ -61,7 +62,7 @@ export function defineAdapter(adapter) {
   if (!adapter || typeof adapter !== 'object') {
     throw new TypeError('An adapter must be an object');
   }
-  const { id, name, bundled = false, capabilities, schema, start, stop, routes } = adapter;
+  const { id, name, bundled = false, capabilities, schema, start, stop, routes, setup } = adapter;
   if (typeof id !== 'string' || !ID_PATTERN.test(id)) {
     throw new TypeError(`Adapter id must match ${ID_PATTERN}`);
   }
@@ -90,6 +91,14 @@ export function defineAdapter(adapter) {
   if (routes !== undefined && typeof routes !== 'function') {
     throw new TypeError(`Adapter ${id} routes must be a function that returns a router`);
   }
+  if (setup !== undefined && (!setup || !Array.isArray(setup.fields))) {
+    throw new TypeError(`Adapter ${id} setup must list its fields`);
+  }
+  for (const field of setup?.fields ?? []) {
+    if (!/^[A-Z][A-Z0-9_]{1,63}$/.test(field?.name ?? '') || !field.label) {
+      throw new TypeError(`Adapter ${id} setup field ${field?.name} needs an upper-case setting name and a label`);
+    }
+  }
   return Object.freeze({
     id,
     name,
@@ -105,12 +114,24 @@ export function defineAdapter(adapter) {
     // Optional HTTP routes: routes({ db, personAuth, log, messagePage }) returns a router
     // mounted at /api/<id> (registry.routes).
     routes: routes ?? null,
+    // Optional: the settings an owner may enter in Settings, Integrations
+    // (server/integrations/setup.js). `fields` name environment settings;
+    // `derivedKeys` name key settings Flow derives from its secrets key.
+    setup: setup ? Object.freeze({ fields: Object.freeze(setup.fields.map((f) => Object.freeze({ ...f }))), derivedKeys: Object.freeze([...(setup.derivedKeys ?? [])]), guide: setup.guide ?? null }) : null,
   });
 }
 
-export function createRegistry({ log = console } = {}) {
+export function createRegistry({ log = console, env = process.env } = {}) {
   const adapters = new Map();
   const enabled = new Set();
+  // Adapters turned on in Settings, not by the host: one that cannot start
+  // is reported, and Flow starts without it.
+  const optional = new Set();
+  const failures = new Map(); // id -> message
+  const generation = new Map(); // id -> count of (re)starts, for its router
+  const routers = new Map(); // id -> { generation, router }
+  let settingsEnv = env;
+  let database = null;
   // Adapters whose tables this process created or found at start. An adapter
   // without a schema needs none, so it is ready as soon as it is enabled.
   const tablesReady = new Set();
@@ -119,6 +140,7 @@ export function createRegistry({ log = console } = {}) {
 
   const state = (adapter) => {
     if (!enabled.has(adapter.id)) return 'disabled';
+    if (failures.has(adapter.id)) return 'failed';
     if (!adapter.schema || tablesReady.has(adapter.id)) return 'ready';
     return started ? 'restart_needed' : 'not_started';
   };
@@ -133,9 +155,11 @@ export function createRegistry({ log = console } = {}) {
       adapters.set(defined.id, defined);
       return defined;
     },
-    enable(id) {
+    enable(id, { optional: isOptional = false } = {}) {
       if (!adapters.has(id)) throw new Error(`No adapter ${id}`);
       enabled.add(id);
+      if (isOptional) optional.add(id);
+      else optional.delete(id);
     },
     // Turning an adapter off never drops its tables. Removing them is a
     // separate step (removeAdapterTables in server/integrations/schema.js).
@@ -149,6 +173,7 @@ export function createRegistry({ log = console } = {}) {
     async start(db) {
       if (started) throw new Error('The integration registry has already started');
       started = true;
+      database = db;
       const migrated = [];
       for (const id of enabled) {
         const adapter = adapters.get(id);
@@ -160,10 +185,65 @@ export function createRegistry({ log = console } = {}) {
       for (const id of enabled) {
         const adapter = adapters.get(id);
         if (!adapter.start) continue;
-        await adapter.start({ db, log });
+        try {
+          await adapter.start({ db, log, env: settingsEnv });
+        } catch (error) {
+          if (!optional.has(id)) throw error;
+          failures.set(id, error.message);
+          log.error?.(`[integrations] ${id} could not start: ${error.message}`);
+          continue;
+        }
         running.push(adapter);
       }
       return migrated;
+    },
+    // Applies new settings to one adapter while Flow runs: stops it, then,
+    // when it stays on, creates its tables and starts it with `env`. Its
+    // routes are built again on the next request. A start that fails leaves
+    // it `failed` with the reason, and the rest of Flow running.
+    async reconfigure(id, { enabled: on, env: next }) {
+      const adapter = adapters.get(id);
+      if (!adapter) throw new Error(`No adapter ${id}`);
+      if (!started) throw new Error('The integration registry has not started');
+      if (next) settingsEnv = next;
+      const index = running.indexOf(adapter);
+      if (index >= 0) {
+        running.splice(index, 1);
+        await adapter.stop?.();
+      }
+      failures.delete(id);
+      generation.set(id, (generation.get(id) ?? 0) + 1);
+      if (!on) {
+        enabled.delete(id);
+        return state(adapter);
+      }
+      enabled.add(id);
+      optional.add(id);
+      try {
+        if (adapter.schema && !tablesReady.has(id)) {
+          await migrateAdapterSchema(database, adapter);
+          tablesReady.add(id);
+        }
+        if (adapter.start) {
+          await adapter.start({ db: database, log, env: settingsEnv });
+          running.push(adapter);
+        }
+      } catch (error) {
+        failures.set(id, error.message);
+        log.error?.(`[integrations] ${id} could not start: ${error.message}`);
+      }
+      return state(adapter);
+    },
+    get(id) {
+      return adapters.get(id) ?? null;
+    },
+    // Why an enabled adapter is not running, or null. The message names
+    // settings, never their values.
+    failure(id) {
+      return failures.get(id) ?? null;
+    },
+    env() {
+      return settingsEnv;
     },
     // Calls stop() on every adapter whose start() ran, newest first.
     async stop() {
@@ -180,6 +260,7 @@ export function createRegistry({ log = console } = {}) {
         enabled: enabled.has(a.id),
         state: state(a),
         tables: a.schema ? [...a.schema.tables] : [],
+        ...(failures.has(a.id) ? { error: failures.get(a.id) } : {}),
         capabilities: Object.keys(a.capabilities),
       }));
     },
@@ -202,10 +283,21 @@ export function createRegistry({ log = console } = {}) {
     routes(context) {
       return [...adapters.values()].filter((a) => a.routes).map((adapter) => {
         const path = `/api/${adapter.id}`;
-        if (!ready(adapter)) {
-          return { path, handler: (_req, res) => res.status(503).json(turnedOff(adapter, state(adapter) === 'disabled' ? 'disabled' : 'restart_needed')) };
-        }
-        return { path, handler: adapter.routes(context) };
+        const handler = (req, res, next) => {
+          const now = state(adapter);
+          if (now !== 'ready') {
+            const reason = now === 'disabled' || now === 'failed' ? now : 'restart_needed';
+            return res.status(503).json(turnedOff(adapter, reason));
+          }
+          const current = generation.get(adapter.id) ?? 0;
+          let built = routers.get(adapter.id);
+          if (!built || built.generation !== current) {
+            built = { generation: current, router: adapter.routes(context) };
+            routers.set(adapter.id, built);
+          }
+          return built.router(req, res, next);
+        };
+        return { path, handler };
       });
     },
     // The one way to read or write an adapter's tables: runs fn(adapter) when
@@ -216,7 +308,7 @@ export function createRegistry({ log = console } = {}) {
       const adapter = adapters.get(id);
       if (!adapter) throw new Error(`No adapter ${id}`);
       const now = state(adapter);
-      if (now === 'disabled') return turnedOff(adapter, 'disabled');
+      if (now === 'disabled' || now === 'failed') return turnedOff(adapter, now);
       if (now !== 'ready') return turnedOff(adapter, 'restart_needed');
       try {
         return await fn(adapter);

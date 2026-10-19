@@ -16,7 +16,8 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 
-// Every table except `organisations` carries `organisation_id`. Child rows
+// Every table except `organisations` and the installation-wide tables (people,
+// integration settings) carries `organisation_id`. Child rows
 // point at their parent through (organisation_id, id), so the database itself
 // refuses a row that joins two organisations. Money is integer cents.
 
@@ -458,4 +459,34 @@ export const reviewItems = pgTable('review_items', {
   check('review_items_state_valid', inList('state', REVIEW_STATES)),
   check('review_items_money_not_negative', sql`${t.moneyAtRiskCents} >= 0`),
   check('review_items_closed_has_resolution', sql`${t.state} = 'open' or (${t.resolution} is not null and ${t.resolvedBy} is not null and ${t.resolvedAt} is not null)`),
+]);
+
+// Integration settings an owner enters in Settings (server/integrations/setup.js).
+// One row per adapter for the installation. `config` holds plain settings by
+// their environment name; `secrets` holds credentials sealed with Flow's
+// secrets key (server/core/secrets.js), never in clear. A host's own
+// environment setting wins over a value here.
+export const integrationSettings = pgTable('integration_settings', {
+  adapterId: text('adapter_id').primaryKey(),
+  enabled: boolean('enabled').notNull().default(false),
+  config: jsonb('config').notNull().default(sql`'{}'::jsonb`),
+  secrets: jsonb('secrets').notNull().default(sql`'{}'::jsonb`),
+  updatedBy: uuid('updated_by').references(() => people.id, { onDelete: 'set null' }),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+});
+
+// Who changed which integration setting, and when. Names only, never a value.
+export const INTEGRATION_SETTING_EVENTS = ['turned_on', 'turned_off', 'setting_changed', 'secret_set', 'secret_removed'];
+
+export const integrationSettingEvents = pgTable('integration_setting_events', {
+  id: id(),
+  adapterId: text('adapter_id').notNull(),
+  kind: text('kind').notNull(),
+  settings: text('settings').array().notNull().default(sql`'{}'::text[]`),
+  actor: uuid('actor').references(() => people.id, { onDelete: 'set null' }),
+  createdAt: createdAt(),
+}, (t) => [
+  index('integration_setting_events_adapter').on(t.adapterId, t.createdAt),
+  check('integration_setting_events_kind_valid', inList('kind', INTEGRATION_SETTING_EVENTS)),
 ]);

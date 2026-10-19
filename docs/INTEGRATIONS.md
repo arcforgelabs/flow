@@ -54,9 +54,49 @@ Core code never imports an adapter; it asks the registry.
 
 ## Turn an integration on or off
 
-`FLOW_INTEGRATIONS` lists the adapter ids that are on, separated by commas
-(`seazona,xero`). Unset or empty: none. An unknown id stops boot, so a typo
-never leaves an integration silently off. Flow reads it once, at start.
+An owner turns an integration on in Flow, in **Integrations** (below). A
+host can also turn one on with `FLOW_INTEGRATIONS`: the adapter ids,
+separated by commas (`seazona,xero`). Unset or empty: none. An unknown id
+stops boot, so a typo never leaves an integration silently off.
+
+### Set up in Flow
+
+```mermaid
+flowchart LR
+  owner[Owner: Integrations] -- settings and credentials --> api[PUT /api/integrations/:id]
+  api -- seal credentials<br/>with the secrets key --> db[(integration_settings)]
+  api --> apply[Stop the adapter<br/>create its tables<br/>start it with the new settings]
+  boot[Flow starts] --> read[Read integration_settings] --> merge[Host environment over<br/>stored settings] --> start[Start each adapter that is on]
+```
+
+- An adapter declares `setup`: the settings an owner may enter (`fields`,
+  each named by its environment setting), a short guide, and `derivedKeys`.
+  Xero and Seazona declare theirs in their `index.js`.
+- Only an owner sees the settings (`GET /api/integrations`). A change needs
+  a verified owner sign-in (`PUT /api/integrations/:id`). It applies at once:
+  no restart and no host secret to edit.
+- A credential is write-only. Flow seals it with AES-256-GCM under its
+  secrets key, bound to the integration and the setting's name, and stores
+  only the sealed value. The screen shows whether it is set, never the value.
+  Every change writes an `integration_setting_events` row with the setting
+  names and who changed them, never a value.
+- The host's own environment wins: a setting set there shows as "Set by the
+  host" and cannot be changed in Flow.
+- An integration turned on in Flow that cannot start (a setting is missing)
+  shows the reason and Flow keeps running. One turned on by the host stops
+  boot, as before.
+- `derivedKeys` (Xero's `XERO_TOKEN_KEY`) come from the secrets key, so no
+  one makes them by hand.
+
+### The secrets key
+
+`FLOW_SECRETS_KEY` is the key: 32 bytes, as 64 hex characters or base64
+(`openssl rand -hex 32`). When it is unset, Flow derives the key from
+`SESSION_SECRET` when that is at least 32 characters. With neither, Flow
+stores no credential and the screen says so. Changing the key, or its
+source, makes stored credentials and Xero's stored sign-in unreadable: an
+owner enters the credentials again and connects Xero again. A copy of the
+database alone opens no credential, because the key is never stored there.
 
 ## Tables
 
