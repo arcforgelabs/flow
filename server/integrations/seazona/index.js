@@ -1,6 +1,7 @@
 import { createSeazonaClient } from './client.js';
 import { listClients, listProducts, listWork, readBillableWork } from './feed.js';
 import { readSeazonaSyncHealth, runSeazonaSync } from './lanes.js';
+import { SEAZONA_CALL_GUARD } from './governor.js';
 import { createSeazonaScheduler } from './scheduler.js';
 import { resetFailedLanes, resetStoppedLanes } from './store.js';
 import { describeSeazonaSettings, resolveSeazonaSettings } from './settings.js';
@@ -58,6 +59,9 @@ export function createSeazonaAdapter({ env = null, fetchImpl = null, now = Date.
     bundled: true,
     schema: seazonaSchema,
     setup: SEAZONA_SETUP,
+    // Every Seazona call goes through this call guard, inside the rate
+    // governor (governor.js; docs/INTEGRATIONS.md, "Outbound calls").
+    callGuard: SEAZONA_CALL_GUARD,
 
     // `reconfigured` is true when a person saved the settings or turned
     // Seazona on (issue #101): that clears a halt after a refused API client,

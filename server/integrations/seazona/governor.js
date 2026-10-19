@@ -1,6 +1,9 @@
 import { and, count, desc, eq, gte, lt, sql } from 'drizzle-orm';
+import { CallsStopped, countsAsFailure, createCallGuard, normaliseRequestPath } from '../call-guard.js';
 import { seazonaApiGovernor, seazonaApiRequests } from './schema.js';
 import { MAX_REQUESTS_PER_MINUTE } from './settings.js';
+
+export { countsAsFailure, normaliseRequestPath };
 
 // The Seazona rate governor. Seazona sees every process that holds the same
 // API client as one client, so the limit is kept in PostgreSQL, not in
@@ -12,7 +15,8 @@ import { MAX_REQUESTS_PER_MINUTE } from './settings.js';
 // advisory lock per client, so two processes never admit the same slot.
 //
 // Issue #101: a vendor can cut off API access after many failed calls, even
-// inside the rate limit. So the governor also stops calls outright:
+// inside the rate limit. So the governor also stops calls outright, through
+// the shared call guard (../call-guard.js, issue #111) on these same tables:
 //   - a 401 or 403 halts every call until a person acts (the adapter restarts
 //     with new or saved settings, which calls resume());
 //   - `circuitFailures` failed calls inside `circuitWindowMs` open the circuit:
@@ -20,37 +24,24 @@ import { MAX_REQUESTS_PER_MINUTE } from './settings.js';
 //     it again for twice as long, to at most 6 hours, and a success closes it;
 //   - `dailyFailureBudget` failed calls in one UTC day stop calls until the
 //     next day.
-// A stopped call fails at once with SeazonaCallsStopped; it never waits.
+// A stopped call fails at once with SeazonaCallsStopped; it never waits. The
+// lanes report each held failure once (lanes.js), so the guard does not.
+
+// The call guard's tables and policy. The adapter declares it (index.js), and
+// the shared contract suite runs on it (test/integration-call-guard.test.js).
+export const SEAZONA_CALL_GUARD = Object.freeze({
+  integration: 'seazona',
+  name: 'Seazona',
+  tables: Object.freeze({ state: 'seazona_api_governor', calls: 'seazona_api_requests' }),
+  columns: Object.freeze({ key: 'client_key', at: 'admitted_at' }),
+  callDefaults: Object.freeze({ workflow: 'seazona' }),
+  lockName: 'seazona-governor',
+  policy: Object.freeze({ authStops: 'all' }),
+});
 
 const WINDOW_MS = 60_000;
 const MAX_COOLDOWN_MS = 60_000;
-const MAX_CIRCUIT_PAUSE_MS = 6 * 60 * 60_000;
-const DAY_MS = 24 * 60 * 60_000;
-const EPOCH = new Date(0);
-
-// A call that failed in a way the vendor sees as a fault: no answer, a 5xx, a
-// 429, or a 4xx other than 404 (a 404 on one record means it was deleted).
-export function countsAsFailure({ statusCode = null, failureKind = null } = {}) {
-  if (failureKind) return true;
-  if (!Number.isInteger(statusCode)) return false;
-  return statusCode >= 500 || (statusCode >= 400 && statusCode !== 404);
-}
-
-const failedCall = sql`(${seazonaApiRequests.failureKind} is not null or ${seazonaApiRequests.statusCode} >= 500
-  or (${seazonaApiRequests.statusCode} >= 400 and ${seazonaApiRequests.statusCode} <> 404))`;
-
-const startOfUtcDay = (ms) => {
-  const date = new Date(ms);
-  return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
-};
-
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)));
-
-// Path only: drop any host and query, and keep a safe character set.
-export function normaliseRequestPath(value) {
-  const path = String(value || '').split(/[?#]/)[0].replace(/^[a-z]+:\/\/[^/]+/i, '');
-  return path.replace(/[^A-Za-z0-9/_.:-]+/g, '').slice(0, 160) || null;
-}
 
 function normaliseWorkflow(value) {
   return String(value || 'seazona').trim().toLowerCase().replace(/[^a-z0-9:_-]+/g, '-').slice(0, 80) || 'seazona';
@@ -68,19 +59,12 @@ export class SeazonaGovernorTimeout extends Error {
 
 // Calls are stopped: halted for a person, circuit open, or the day's failed
 // calls are spent. `retryAfterMs` is null for a halt, which no wait clears.
-export class SeazonaCallsStopped extends Error {
+// The shared CallsStopped, with Seazona's own words.
+export class SeazonaCallsStopped extends CallsStopped {
   constructor(reason, retryAfterMs = null) {
-    const what = {
-      halted: 'Seazona calls are stopped until a person checks the API client (it was refused)',
-      circuit_open: 'Seazona calls are paused after repeated failures',
-      budget_spent: "Seazona calls are stopped for today: the day's failed calls are spent",
-    }[reason];
-    super(what);
+    super({ integration: 'seazona', name: 'Seazona', reason, retryAfterMs });
+    if (reason === 'halted') this.message = 'Seazona calls are stopped until a person checks the API client (it was refused)';
     this.name = 'SeazonaCallsStopped';
-    this.code = { halted: 'seazona_api_halted', circuit_open: 'seazona_api_circuit_open', budget_spent: 'seazona_api_failure_budget_spent' }[reason];
-    this.kind = 'calls_stopped';
-    this.reason = reason;
-    this.retryAfterMs = retryAfterMs;
   }
 }
 
@@ -102,7 +86,14 @@ export function createSeazonaGovernor({
   if (!key) throw new TypeError('clientKey is required');
   const limit = Math.min(MAX_REQUESTS_PER_MINUTE, Math.max(1, Math.trunc(requestsPerMinute) || MAX_REQUESTS_PER_MINUTE));
   const minIntervalMs = Math.ceil(WINDOW_MS / limit);
-  const lockKey = `seazona-governor:${key}`;
+  const lockKey = `${SEAZONA_CALL_GUARD.lockName}:${key}`;
+  const guard = createCallGuard({
+    db,
+    ...SEAZONA_CALL_GUARD,
+    policy: { ...SEAZONA_CALL_GUARD.policy, circuitFailures, circuitWindowMs, circuitPauseMs, dailyFailureBudget, telemetryRetentionMs },
+    report: false,
+    now,
+  });
 
   async function tryAdmit(workflow, isRetry) {
     return db.transaction(async (tx) => {
@@ -111,7 +102,7 @@ export function createSeazonaGovernor({
       const nowAt = new Date(nowMs);
       await tx.insert(seazonaApiGovernor).values({ clientKey: key }).onConflictDoNothing();
       const [state] = await tx.select().from(seazonaApiGovernor).where(eq(seazonaApiGovernor.clientKey, key));
-      const stopped = await stoppedReason(tx, state, nowMs);
+      const stopped = await guard.stoppedNow(tx, key);
       if (stopped) return { admitted: false, stopped };
       const windowStart = new Date(nowMs - WINDOW_MS);
       const [{ admitted, oldestMs }] = await tx
@@ -138,24 +129,6 @@ export function createSeazonaGovernor({
     });
   }
 
-  async function failuresSince(tx, fromMs) {
-    const [{ failed }] = await tx.select({ failed: count() }).from(seazonaApiRequests)
-      .where(and(eq(seazonaApiRequests.clientKey, key), gte(seazonaApiRequests.admittedAt, new Date(fromMs)), failedCall));
-    return Number(failed);
-  }
-
-  // Why no call may go now, or null.
-  async function stoppedReason(tx, state, nowMs) {
-    if (state.haltedReason) return { reason: 'halted', retryAfterMs: null };
-    const openUntil = state.circuitOpenUntil.getTime();
-    if (openUntil > nowMs) return { reason: 'circuit_open', retryAfterMs: openUntil - nowMs };
-    const dayStart = startOfUtcDay(nowMs);
-    if (await failuresSince(tx, dayStart) >= dailyFailureBudget) {
-      return { reason: 'budget_spent', retryAfterMs: dayStart + DAY_MS - nowMs };
-    }
-    return null;
-  }
-
   // Waits for a slot and records the admission. Returns { requestId }.
   async function reserve({ workflow = 'seazona', isRetry = false } = {}) {
     let waitedMs = 0;
@@ -171,91 +144,46 @@ export function createSeazonaGovernor({
   }
 
   // Records how a request ended, any cooldown a 429 asked for, and what the
-  // ending does to the circuit. Answers { halted, opened } when this response
-  // stopped calls, so the caller can report it once.
+  // ending does to the circuit (the shared guard). Answers { halted, opened }
+  // when this response stopped calls.
   async function recordResponse({ requestId, path = null, statusCode = null, failureKind = null, durationMs = null, retryAfterMs = null } = {}) {
-    const nowMs = Number(now());
-    const nowAt = new Date(nowMs);
-    const outcome = await db.transaction(async (tx) => {
-      await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`);
-      await tx.update(seazonaApiRequests).set({
-        requestPath: normaliseRequestPath(path),
-        statusCode: Number.isInteger(statusCode) ? statusCode : null,
-        failureKind: failureKind ? String(failureKind).slice(0, 40) : null,
-        durationMs: Number.isFinite(durationMs) ? Math.max(0, Math.round(durationMs)) : null,
-      }).where(and(eq(seazonaApiRequests.id, requestId), eq(seazonaApiRequests.clientKey, key)));
-      if (Number.isFinite(retryAfterMs) && retryAfterMs > 0) {
-        const until = new Date(nowMs + Math.min(retryAfterMs, MAX_COOLDOWN_MS));
-        await tx.update(seazonaApiGovernor)
-          .set({ cooldownUntil: sql`greatest(${seazonaApiGovernor.cooldownUntil}, ${until})`, updatedAt: nowAt })
-          .where(eq(seazonaApiGovernor.clientKey, key));
-      }
-      const [state] = await tx.select().from(seazonaApiGovernor).where(eq(seazonaApiGovernor.clientKey, key));
-      if (!state) return {};
-      if (!countsAsFailure({ statusCode, failureKind })) {
-        if (state.circuitOpens > 0) {
-          await tx.update(seazonaApiGovernor).set({ circuitOpens: 0, updatedAt: nowAt }).where(eq(seazonaApiGovernor.clientKey, key));
-        }
-        return {};
-      }
-      if (statusCode === 401 || statusCode === 403) {
-        if (state.haltedReason) return {};
-        await tx.update(seazonaApiGovernor).set({ haltedReason: 'auth', haltedAt: nowAt, updatedAt: nowAt })
-          .where(eq(seazonaApiGovernor.clientKey, key));
-        return { halted: 'auth' };
-      }
-      const openUntil = state.circuitOpenUntil.getTime();
-      // After a pause the next call is a probe: if it fails, open again at once.
-      const probeFailed = state.circuitOpens > 0 && openUntil <= nowMs;
-      const counted = probeFailed ? 0 : await failuresSince(tx, Math.max(nowMs - circuitWindowMs, openUntil));
-      if (!probeFailed && counted < circuitFailures) return {};
-      if (!probeFailed && openUntil > nowMs) return {};
-      const pauseMs = Math.min(MAX_CIRCUIT_PAUSE_MS, circuitPauseMs * 2 ** Math.min(state.circuitOpens, 10));
-      const until = new Date(nowMs + pauseMs);
-      await tx.update(seazonaApiGovernor)
-        .set({ circuitOpenUntil: until, circuitOpens: state.circuitOpens + 1, updatedAt: nowAt })
+    if (Number.isFinite(retryAfterMs) && retryAfterMs > 0) {
+      const nowMs = Number(now());
+      const until = new Date(nowMs + Math.min(retryAfterMs, MAX_COOLDOWN_MS));
+      await db.update(seazonaApiGovernor)
+        .set({ cooldownUntil: sql`greatest(${seazonaApiGovernor.cooldownUntil}, ${until})`, updatedAt: new Date(nowMs) })
         .where(eq(seazonaApiGovernor.clientKey, key));
-      return { opened: { until: until.toISOString(), pauseMs, opens: state.circuitOpens + 1 } };
-    });
-    await db.delete(seazonaApiRequests).where(and(
-      eq(seazonaApiRequests.clientKey, key),
-      lt(seazonaApiRequests.admittedAt, new Date(nowMs - telemetryRetentionMs)),
-    ));
-    return outcome;
+    }
+    const { halted, opened } = await guard.record(key, { callId: requestId, path, statusCode, failureKind, durationMs });
+    return { ...(halted ? { halted } : {}), ...(opened ? { opened } : {}) };
   }
 
   // A person acted (new or saved settings, or the adapter turned on again):
   // clear a halt and close the circuit. The day's failure budget stays.
   async function resume() {
-    await db.insert(seazonaApiGovernor).values({ clientKey: key }).onConflictDoNothing();
-    await db.update(seazonaApiGovernor)
-      .set({ haltedReason: null, haltedAt: null, circuitOpenUntil: EPOCH, circuitOpens: 0, updatedAt: new Date(Number(now())) })
-      .where(eq(seazonaApiGovernor.clientKey, key));
+    await guard.resume(key);
   }
 
   // Counts for /health: the last minute, and the last day by status.
   async function status() {
     const nowMs = Number(now());
     const [state] = await db.select().from(seazonaApiGovernor).where(eq(seazonaApiGovernor.clientKey, key));
+    const calls = await guard.status(key);
     const [{ lastMinute }] = await db.select({ lastMinute: count() }).from(seazonaApiRequests)
       .where(and(eq(seazonaApiRequests.clientKey, key), gte(seazonaApiRequests.admittedAt, new Date(nowMs - WINDOW_MS))));
     const day = await summarise({ from: new Date(nowMs - 24 * 60 * 60_000), to: new Date(nowMs) });
     const cooldownUntil = state && state.cooldownUntil.getTime() > nowMs ? state.cooldownUntil.toISOString() : null;
-    const openUntil = state?.circuitOpenUntil?.getTime() ?? 0;
-    const circuit = state?.haltedReason ? 'halted'
-      : openUntil > nowMs ? 'open'
-        : state?.circuitOpens > 0 ? 'half_open' : 'closed';
     return {
       limitPerMinute: limit,
       minIntervalMs,
       lastMinute: Number(lastMinute),
       cooldownUntil,
-      circuit,
-      circuitOpenUntil: openUntil > nowMs ? state.circuitOpenUntil.toISOString() : null,
-      haltedReason: state?.haltedReason ?? null,
-      haltedAt: state?.haltedAt?.toISOString() ?? null,
-      failedToday: await failuresSince(db, startOfUtcDay(nowMs)),
-      dailyFailureBudget,
+      circuit: calls.circuit,
+      circuitOpenUntil: calls.circuitOpenUntil,
+      haltedReason: calls.haltedReason,
+      haltedAt: calls.haltedAt,
+      failedToday: calls.failedToday,
+      dailyFailureBudget: calls.dailyFailureBudget,
       lastDay: { requests: day.requests, failed: day.failed, rateLimited: day.rateLimited, retries: day.retries },
     };
   }

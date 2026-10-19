@@ -10,7 +10,6 @@ import { callGuardContract } from './support/call-guard-contract.js';
 // contract suite. An adapter that does not is listed here, with the reason.
 const EXEMPT = {
   sentry: 'error reports go out through the Sentry SDK, which follows Sentry\'s own rate limits and drops reports while Sentry is down',
-  seazona: 'its rate governor has the same guards (#104); it moves onto the shared guard in the second change for #111',
 };
 
 test('every shipped adapter declares a call guard, or is listed as exempt with a reason', () => {
