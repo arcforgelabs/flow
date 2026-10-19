@@ -35,6 +35,11 @@ keep the two identical (see "After any pull" for what a publish deploys).
 - Replit auto-commits ("Published your App", checkpoints) land on the current
   branch. Do feature work on a branch so `<default>` stays fast-forwardable.
 - Never print, echo, log, or commit the token value.
+- If `git remote get-url --push origin` starts with `no-push`, this workspace
+  is a fetch-only production installation (`docs/REPLIT.md`, "A production
+  installation: fetch only"). Never push, open a pull request, or change that
+  setting from here; pull only, and tell the user that changes are made in the
+  repository's development copy, not this installation.
 
 ## Decide which path
 

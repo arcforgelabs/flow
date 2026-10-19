@@ -3,6 +3,14 @@
 // --t-* tokens at render time, so Clerk changes with the theme and mode.
 // Ported from Arc Forge Labs' Field (client/src/lib/clerk-appearance.ts).
 
+// Clerk's "Manage account" cog has no hub, so at 16px it reads as a blob.
+// This gear has the same 1.5 stroke as Clerk's sign-out icon beside it.
+const GEAR = `url("data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="#000" stroke-width="1.5" stroke-linejoin="round"><path d="M7.06 3.45L7.20 2.05L8.80 2.05L8.94 3.45L10.55 4.11L11.64 3.23L12.77 4.36L11.89 5.45L12.55 7.06L13.95 7.20L13.95 8.80L12.55 8.94L11.89 10.55L12.77 11.64L11.64 12.77L10.55 11.89L8.94 12.55L8.80 13.95L7.20 13.95L7.06 12.55L5.45 11.89L4.36 12.77L3.23 11.64L4.11 10.55L3.45 8.94L2.05 8.80L2.05 7.20L3.45 7.06L4.11 5.45L3.23 4.36L4.36 3.23L5.45 4.11Z"/><circle cx="8" cy="8" r="2"/></svg>')}")`;
+const gearIcon = {
+  '&&': { background: 'currentColor', mask: `${GEAR} center / contain no-repeat`, WebkitMask: `${GEAR} center / contain no-repeat` },
+  '&& > *': { visibility: 'hidden' },
+};
+
 function token(name, fallback) {
   const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   return value || fallback;
@@ -77,6 +85,7 @@ export function flowClerkAppearance({ embedded = false, publicSignUp = false } =
       formButtonPrimary: { boxShadow: 'none', textTransform: 'none', fontWeight: 650 },
       socialButtonsBlockButton: controlEdge,
       userButtonPopoverCard: { border: `1px solid ${line}`, boxShadow: shadow },
+      userButtonPopoverActionButtonIcon__manageAccount: gearIcon,
       footer: embedded ? { display: 'none' } : undefined,
     },
   };

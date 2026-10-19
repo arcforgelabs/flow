@@ -51,6 +51,8 @@ function clerkAppearance(kind) {
 function mountClerk(kind, element, options = {}) {
   const Clerk = window.Clerk;
   const props = { ...options, appearance: clerkAppearance(kind) };
+  // The "Manage account" modal does not inherit the button's appearance.
+  if (kind === 'userButton') props.userProfileProps = { ...options.userProfileProps, appearance: clerkAppearance('modal') };
   if (kind === 'signIn') Clerk.mountSignIn(element, props);
   else if (kind === 'userButton') Clerk.mountUserButton(element, props);
   else if (kind === 'profile') Clerk.mountUserProfile(element, props);
@@ -74,8 +76,10 @@ function unmountAllIn(container) {
 }
 
 // Clerk reads its appearance when a component mounts, so a new appearance
-// remounts each one (after the tokens have changed on <html>).
+// remounts each one (after the tokens have changed on <html>). Modals Clerk
+// opens itself use the appearance from Clerk.load(), so update that too.
 onAppearanceChange(() => {
+  window.Clerk?.__internal_updateProps?.({ appearance: clerkAppearance('modal') });
   for (const [element, { kind, options }] of [...mounted]) {
     unmountClerk(element);
     mountClerk(kind, element, options);
@@ -511,14 +515,15 @@ async function renderIntegration(main, id) {
 
   const draw = (current, progress = null) => {
     const inputs = new Map();
-    const editable = [];
-    const fromHost = [];
+    const rows = [];
     for (const field of current.fields) {
       if (field.source === 'host') {
         // The host sets it: a value to read, not a box to type in.
-        fromHost.push(h('div', { class: 'fx-int__fact' },
-          h('dt', { class: 'fx-label' }, field.label),
-          h('dd', {}, field.secret ? h('span', { class: 'fx-dim' }, 'Set') : h('code', {}, field.value))));
+        rows.push(settingRow({
+          label: field.label,
+          hint: 'Set by whoever hosts Flow.',
+          control: field.secret ? h('span', { class: 'fx-dim' }, 'Set') : h('code', { class: 'fx-setting__value' }, field.value),
+        }));
         continue;
       }
       const disabled = !canChange;
@@ -529,21 +534,20 @@ async function renderIntegration(main, id) {
           field.kind === 'choice' ? h('option', { value: '' }, 'Choose…') : null,
           choices.map((c) => h('option', { value: c.value, selected: (field.value ?? (field.kind === 'onoff' ? 'off' : '')) === c.value }, c.label)));
       } else if (field.secret) {
-        input = h('input', { class: 'fx-input', type: 'password', autocomplete: 'off', disabled, placeholder: field.set ? 'Saved. Type a new one to replace it.' : 'Paste it here' });
+        input = h('input', { class: 'fx-input', type: 'password', autocomplete: 'off', disabled, placeholder: field.set ? 'Saved' : 'Paste it here' });
       } else {
         input = h('input', { class: 'fx-input', type: field.kind === 'url' ? 'url' : 'text', autocomplete: 'off', disabled, value: field.value ?? '' });
       }
       inputs.set(field.name, { field, input });
       const suggestion = field.suggest === 'callback' ? `${location.origin}/api/${current.id}/oauth/callback` : null;
-      editable.push(h('label', { class: `fx-field${suggestion ? ' fx-field--wide' : ''}` },
-        h('span', { class: 'fx-label' }, field.label),
-        input,
-        field.unreadable ? h('span', { class: 'fx-dim' }, 'Stored with another key. Enter it again.') : null,
-        field.help && !suggestion ? h('span', { class: 'fx-dim' }, field.help) : null,
-        suggestion && !disabled ? h('span', { class: 'fx-int__suggest' },
-          h('code', {}, suggestion),
-          h('button', { class: 'fx-btn fx-btn--ghost fx-btn--sm', type: 'button', onclick: () => { navigator.clipboard?.writeText(suggestion); toast('Copied.', 'success'); } }, 'Copy'),
-          h('button', { class: 'fx-btn fx-btn--ghost fx-btn--sm', type: 'button', onclick: (event) => { event.preventDefault(); input.value = suggestion; } }, 'Use this')) : null));
+      rows.push(settingRow({
+        label: field.label,
+        hint: field.unreadable ? 'Stored with another key. Enter it again.' : field.help,
+        control: suggestion && !disabled
+          ? h('div', { class: 'fx-setting__stack' }, input,
+            h('button', { class: 'fx-btn fx-btn--ghost fx-btn--sm', type: 'button', title: suggestion, onclick: () => { input.value = suggestion; navigator.clipboard?.writeText(suggestion); toast('Address filled in and copied.', 'success'); } }, 'Use this installation\'s address'))
+          : input,
+      }));
     }
 
     const values = () => {
@@ -630,14 +634,10 @@ async function renderIntegration(main, id) {
             h('h2', { class: 'fx-int-section__title' }, 'Set up'),
             h('ol', { class: 'fx-steps' }, guide.steps.map((step) => h('li', {}, step))),
             guide.link ? h('a', { class: 'fx-btn fx-btn--sm', href: guide.link, target: '_blank', rel: 'noopener' }, `Open ${current.name} developer site ↗`) : null) : null,
-          editable.length ? h('section', { class: 'fx-int-section' },
+          rows.length ? h('section', { class: 'fx-int-section' },
             h('h2', { class: 'fx-int-section__title' }, 'Settings'),
-            h('div', { class: 'fx-int__fields' }, editable),
-            canChange && on ? h('div', { class: 'fx-row fx-row--end' }, h('button', { class: 'fx-btn', type: 'button', onclick: () => save(undefined) }, 'Save changes')) : null) : null,
-          fromHost.length ? h('section', { class: 'fx-int-section' },
-            h('h2', { class: 'fx-int-section__title' }, 'Set by the host'),
-            h('p', { class: 'fx-dim' }, 'Whoever hosts Flow sets these. Change them there.'),
-            h('dl', { class: 'fx-int__host' }, fromHost)) : null,
+            h('div', { class: 'fx-settings' }, rows),
+            canChange && on && inputs.size ? h('div', { class: 'fx-row fx-row--end' }, h('button', { class: 'fx-btn', type: 'button', onclick: () => save(undefined) }, 'Save changes')) : null) : null,
         ].filter(Boolean)),
         h('aside', { class: 'fx-int-page__meta' },
           h('dl', { class: 'fx-meta' }, ...[
@@ -653,6 +653,21 @@ async function renderIntegration(main, id) {
   draw(found);
 }
 
+// One setting, laid out the same on every settings screen: a short name, one
+// line of smaller text under it, and the control on the right. Longer help
+// lives behind a link, not here. A wide control (a grid of choices) sits on
+// its own line under the name.
+function settingRow({ label, hint, control, wide = false }) {
+  const target = control?.matches?.('input, select, textarea') ? control : control?.querySelector?.('input:not([type=color]), select, textarea');
+  const id = target ? (target.id ||= `fx-set-${++settingRow.next}`) : null;
+  return h('div', { class: `fx-setting${wide ? ' fx-setting--wide' : ''}` },
+    h('div', { class: 'fx-setting__text' },
+      id ? h('label', { class: 'fx-setting__name', for: id }, label) : h('span', { class: 'fx-setting__name' }, label),
+      hint ? h('p', { class: 'fx-setting__hint' }, hint) : null),
+    h('div', { class: 'fx-setting__control' }, control));
+}
+settingRow.next = 0;
+
 // The steps of a Connect, each ticked, running or crossed, with the time taken.
 function connectProgress({ steps, started }) {
   const seconds = Math.max(0, Math.round((Date.now() - started) / 1000));
@@ -666,38 +681,38 @@ function connectProgress({ steps, started }) {
 // Once Xero is on: each organisation's connection, the history copy, and
 // Connect, which goes to Xero and comes back.
 function xeroConnection(organisations, canChange) {
-  const host = h('div', { class: 'fx-fields' });
+  const host = h('div', { class: 'fx-settings' });
   for (const organisation of organisations) {
-    const row = h('div', { class: 'fx-row' }, h('span', {}, organisation.name), h('span', { class: 'fx-dim' }, 'Checking…'));
+    const row = settingRow({ label: organisation.name, hint: 'Checking…' });
     host.append(row);
     (async () => {
+      let hint;
+      let control = null;
       try {
         const status = await flow(`/api/xero/status?organisationId=${organisation.id}`);
-        const parts = [h('span', {}, organisation.name)];
         if (status.connected) {
-          parts.push(h('span', { class: 'fx-tag', 'data-tone': 'success' }, `Connected to ${status.connection?.tenantName ?? 'Xero'}`));
           const mirror = await flow(`/api/xero/mirror?organisationId=${organisation.id}`).catch(() => null);
-          if (mirror) parts.push(h('span', { class: 'fx-dim' }, `History copied: ${mirror.counts.invoices} invoices, ${mirror.counts.credit_notes} credit notes, ${mirror.counts.payments} payments.`));
+          hint = `Connected to ${status.connection?.tenantName ?? 'Xero'}.${mirror ? ` ${mirror.counts.invoices} invoices copied.` : ''}`;
         } else {
-          parts.push(h('span', { class: 'fx-dim' }, 'Not connected.'));
+          hint = 'Not connected.';
         }
         if (canChange) {
-          parts.push(h('button', { class: 'fx-btn fx-btn--primary fx-btn--sm', type: 'button', onclick: async () => {
+          control = h('button', { class: `fx-btn fx-btn--sm${status.connected ? '' : ' fx-btn--primary'}`, type: 'button', onclick: async () => {
             try {
               const { authorizeUrl } = await flow('/api/xero/connect', { method: 'POST', body: JSON.stringify({ organisationId: organisation.id }) });
               location.assign(authorizeUrl);
             } catch (error) {
               toast(error.message, 'danger');
             }
-          } }, status.connected ? 'Connect again' : 'Connect to Xero'));
+          } }, status.connected ? 'Connect again' : 'Connect to Xero');
         }
-        row.replaceChildren(...parts);
       } catch (error) {
-        row.replaceChildren(h('span', {}, organisation.name), notice(error.message, 'danger'));
+        hint = error.message;
       }
+      row.replaceWith(settingRow({ label: organisation.name, hint, control }));
     })();
   }
-  return h('div', { class: 'fx-int__conn' }, h('h3', { class: 'fx-label' }, 'Xero organisation'), host);
+  return h('div', {}, h('h2', { class: 'fx-int-section__title' }, 'Xero organisation'), host);
 }
 
 async function invitePerson() {
@@ -741,7 +756,7 @@ function renderAccount(main) {
 // in it at once.
 function renderAppearance(main) {
   main.append(
-    pageHeader('Appearance', { subtitle: 'Saved with your account, so it follows you to any device. Clerk\'s sign-in and account screens follow it too.' }),
+    pageHeader('Appearance', { subtitle: 'Saved with your account, on every device.' }),
     h('div', { class: 'fx-appearance', id: 'appearance' }));
   drawAppearance();
 }
@@ -815,19 +830,10 @@ function drawAppearance() {
     'Custom');
   const accentLabel = customHex ? `Custom ${customHex}` : presetIndex > 0 ? ACCENT_PRESETS[presetIndex].label : `${active.label}'s own`;
 
-  host.replaceChildren(
-    h('section', { class: 'fx-group' },
-      h('h2', { class: 'fx-label' }, 'Mode'),
-      modeGroup,
-      h('p', { class: 'fx-dim' }, 'Auto follows this device\'s light or dark setting.')),
-    h('section', { class: 'fx-group' },
-      h('h2', { class: 'fx-label' }, 'Design system'),
-      families,
-      h('p', { class: 'fx-dim' }, 'Each design system brings its own colours, type and corners, in light and dark. Harbour and Meridian are Flow\'s own; the rest are OpenClaw\'s themes.')),
-    h('section', { class: 'fx-group' },
-      h('h2', { class: 'fx-label' }, 'Accent colour'),
-      h('div', { class: 'fx-row' }, accents, custom),
-      h('p', { class: 'fx-dim', 'aria-live': 'polite' }, `Using ${accentLabel}. Buttons, highlights and focus rings take the accent; text in the accent is adjusted until it reads clearly.`)));
+  host.replaceChildren(h('div', { class: 'fx-settings' },
+    settingRow({ label: 'Mode', hint: 'Auto follows this device.', control: modeGroup }),
+    settingRow({ label: 'Accent colour', hint: `Using ${accentLabel}.`, control: h('div', { class: 'fx-row' }, accents, custom) }),
+    settingRow({ label: 'Design system', hint: 'Colours, type and corners.', control: families, wide: true })));
 }
 
 // A person's own change: show it, then save it to their account once they
