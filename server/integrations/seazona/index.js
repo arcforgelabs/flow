@@ -22,7 +22,27 @@ export function requireSeazonaSettings(env = process.env) {
 
 // `env`, `fetchImpl`, `now` and `timers` are for tests. Otherwise start()
 // reads the environment, so a turned-off adapter never reads its settings.
-export function createSeazonaAdapter({ env = process.env, fetchImpl = null, now = Date.now, timers } = {}) {
+// What an owner enters in Settings, Integrations (server/integrations/setup.js).
+export const SEAZONA_SETUP = {
+  guide: {
+    title: 'Get a Seazona API client',
+    link: null,
+    steps: [
+      'In Seazona, create an API client for Flow. If you cannot find the option, ask Seazona support for API access.',
+      'Copy the API address, the client id and the client secret.',
+      'Paste them below, choose the mode, and turn Seazona on.',
+      'Live mode starts the background sync. Flow only reads from Seazona.',
+    ],
+  },
+  fields: [
+    { name: 'SEAZONA_MODE', label: 'Mode', kind: 'choice', choices: [{ value: 'live', label: 'Live: your Seazona account' }, { value: 'sandbox', label: 'Sandbox: a Seazona test account' }] },
+    { name: 'SEAZONA_API_BASE_URL', label: 'API address', kind: 'url', help: 'The API root of your account, https://…' },
+    { name: 'SEAZONA_API_CLIENT_ID', label: 'Client id' },
+    { name: 'SEAZONA_API_CLIENT_SECRET', label: 'Client secret', secret: true, help: 'Stored encrypted. Flow never shows it again.' },
+  ],
+};
+
+export function createSeazonaAdapter({ env = null, fetchImpl = null, now = Date.now, timers } = {}) {
   let runtime = null; // { settings, db, client, scheduler }
 
   function current() {
@@ -36,9 +56,10 @@ export function createSeazonaAdapter({ env = process.env, fetchImpl = null, now 
     // VISION.md: Seazona is bundled and on in the dental preset.
     bundled: true,
     schema: seazonaSchema,
+    setup: SEAZONA_SETUP,
 
-    async start({ db, log = console }) {
-      const settings = requireSeazonaSettings(env);
+    async start({ db, log = console, env: settingsEnv }) {
+      const settings = requireSeazonaSettings(env ?? settingsEnv ?? process.env);
       const client = createSeazonaClient({ settings, db, fetchImpl: fetchImpl ?? undefined, workflow: 'seazona-sync', now });
       const run = (options = {}) => runSeazonaSync(db, client, { settings, now, ...options });
       // The background sync starts in live mode only. A sandbox or replay
@@ -51,6 +72,7 @@ export function createSeazonaAdapter({ env = process.env, fetchImpl = null, now 
 
     async stop() {
       await runtime?.scheduler?.stop();
+      runtime = null;
     },
 
     capabilities: {

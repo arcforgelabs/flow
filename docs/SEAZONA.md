@@ -12,6 +12,14 @@ billing feed. Invoice preparation itself is not built yet.
 
 ## Turn it on
 
+In Flow, an owner opens **Integrations**, then Seazona: choose the mode,
+paste the API address, client id and client secret, and press **Save and
+turn Seazona on**. Seazona starts at once; live mode starts the background
+sync. The secret is stored sealed (`docs/INTEGRATIONS.md`, "Set up in
+Flow").
+
+A host can instead turn it on with environment settings:
+
 1. Add `seazona` to `FLOW_INTEGRATIONS` (`docs/INTEGRATIONS.md`). Its tables
    are created at the next start.
 2. Set `SEAZONA_MODE` and the settings for that mode (below). With Seazona on

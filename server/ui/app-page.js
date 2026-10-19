@@ -53,7 +53,7 @@ const BODY = `<div class="fx-app">
   <div id="toasts" class="fx-toasts" aria-live="polite"></div>
 </div>`;
 
-export const APP_PATHS = ['/sign-in', '/people', '/account', '/appearance'];
+export const APP_PATHS = ['/sign-in', '/people', '/integrations', '/account', '/appearance'];
 
 export function appPage({ defaultFamily }) {
   return renderPage({

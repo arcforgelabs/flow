@@ -3,6 +3,7 @@ import { createConnectorApi } from './api/connector.js';
 import { createSignInRouter } from './auth/routes.js';
 import { deployedBuildStatus } from './deployed-build.js';
 import { integrationsHealth } from './integrations/health.js';
+import { createSetupRouter } from './integrations/setup.js';
 import { rateLimit } from './rate-limit.js';
 import { DEFAULT_FAMILY } from './theme/themes.js';
 import { messagePage } from './ui/page.js';
@@ -30,6 +31,7 @@ export function createApp({
   auth = null,
   updates = null,
   integrations = null,
+  secrets = null,
   trustProxy = false,
   rateLimitPerMinute = 120,
   signInRateLimitPerMinute = 30,
@@ -93,6 +95,11 @@ export function createApp({
   // An adapter's own pages (such as the end of connecting Xero) use
   // `messagePage` so they look like the rest of Flow.
   const page = (options) => messagePage({ ...options, defaultFamily });
+  // Settings, Integrations: an owner turns integrations on and enters their
+  // settings (server/integrations/setup.js).
+  if (integrations && database && auth?.personAuth) {
+    app.use('/api/integrations', createSetupRouter({ db: database.db, registry: integrations, personAuth: auth.personAuth, secrets, log }));
+  }
   for (const { path, handler } of integrations?.routes({ db: database?.db ?? null, personAuth: auth?.personAuth ?? null, log, messagePage: page }) ?? []) {
     app.use(path, handler);
   }

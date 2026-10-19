@@ -19,7 +19,7 @@ flowchart LR
   outbox -- adapter, through its governor --> api
   core -- conflict --> review[Review queue]
   mirror -- conflict --> review
-  review -- resolution --> outbox
+  review -. recheck .-> mirror
   queue[Job queue] -. runs .-> inbox & mirror & idmap & outbox
 ```
 
@@ -132,7 +132,11 @@ creates them at start (#40).
 
 - One open item per `(organisation_id, kind, entity, flow_id)`: a partial
   unique index. A repeat finding updates the evidence.
-- A resolution that changes another system writes an outbox row.
+- A review item only alerts. It shows the difference (for example the
+  Seazona price and the Xero price) and never writes to any system. The
+  person fixes it where they choose: in Xero, Seazona, Flow, or any of them.
+  **Mark resolved** rechecks that one finding: if the difference is gone the
+  item closes; if not, it stays open with the new evidence.
 
 ### What the code guarantees
 

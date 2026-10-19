@@ -182,6 +182,7 @@ let me = null;
 
 const VIEWS = {
   people: { label: 'People', ownerOnly: true, render: renderPeople },
+  integrations: { label: 'Integrations', ownerOnly: true, render: renderIntegrations },
   account: { label: 'Account', render: renderAccount },
   appearance: { label: 'Appearance', render: renderAppearance },
 };
@@ -345,6 +346,147 @@ function personRow(person, host) {
     h('td', {}, role),
     h('td', {}, statusPill(person)),
     h('td', { class: 'fx-table__actions' }, h('div', { class: 'fx-row fx-row--end' }, actions)));
+}
+
+// Integrations: an owner turns Xero and Seazona on and enters their settings
+// here. Credentials are write-only: the server says whether each is set,
+// never its value (server/integrations/setup.js).
+const STATE_LABEL = { ready: 'On', disabled: 'Off', failed: 'Needs attention', restart_needed: 'Restart needed', not_started: 'Starting' };
+const STATE_TONE = { ready: 'success', disabled: 'info', failed: 'danger', restart_needed: 'warn', not_started: 'info' };
+
+async function renderIntegrations(main) {
+  const host = h('div', { class: 'fx-fields' }, h('div', { class: 'fx-skeleton' }));
+  main.append(
+    pageHeader('Integrations', { subtitle: 'Connect Flow to your accounting and lab systems. Each one uses an app you create in that system.' }),
+    host);
+  let body;
+  try {
+    body = await flow('/api/integrations');
+  } catch (error) {
+    host.replaceChildren(notice(error.message, 'danger'));
+    return;
+  }
+  const canChange = Boolean(me.ownerActions?.allowed);
+  host.replaceChildren(...[
+    canChange ? null : notice('Changing integrations needs a verified owner sign-in: Google Workspace on the owner domain with no password, or a second factor.', 'warn', 'Read only.'),
+    body.secretsKey ? null : notice('Flow has no secrets key, so it cannot store a client secret. Ask whoever hosts Flow to set FLOW_SECRETS_KEY (64 hex characters), then restart Flow.', 'warn', 'No secrets key.'),
+    ...body.integrations.map((integration) => integrationCard(integration, { canChange, organisations: body.organisations })),
+  ].filter(Boolean));
+}
+
+function integrationCard(integration, { canChange, organisations }) {
+  const card = h('section', { class: 'fx-panel', 'aria-label': integration.name });
+  const draw = (current) => {
+    const inputs = new Map();
+    const fields = current.fields.map((field) => {
+      const fromHost = field.source === 'host';
+      const disabled = !canChange || fromHost;
+      let input;
+      if (field.kind === 'choice' || field.kind === 'onoff') {
+        const choices = field.kind === 'onoff' ? [{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }] : field.choices;
+        input = h('select', { class: 'fx-select', disabled },
+          field.kind === 'choice' ? h('option', { value: '' }, 'Choose…') : null,
+          choices.map((c) => h('option', { value: c.value, selected: (field.value ?? (field.kind === 'onoff' ? 'off' : '')) === c.value }, c.label)));
+      } else if (field.secret) {
+        input = h('input', { class: 'fx-input', type: 'password', autocomplete: 'off', disabled, placeholder: field.set ? 'Set. Type a new one to replace it.' : 'Paste it here' });
+      } else {
+        input = h('input', { class: 'fx-input', type: field.kind === 'url' ? 'url' : 'text', autocomplete: 'off', disabled, value: field.value ?? '' });
+      }
+      inputs.set(field.name, { field, input });
+      const suggestion = field.suggest === 'callback' ? `${location.origin}/api/${current.id}/oauth/callback` : null;
+      return h('label', { class: 'fx-field' },
+        h('span', { class: 'fx-label' }, field.label),
+        input,
+        fromHost ? h('span', { class: 'fx-dim' }, 'Set by the host. Change it there.') : null,
+        field.unreadable ? h('span', { class: 'fx-dim' }, 'Stored with another key. Enter it again.') : null,
+        field.help ? h('span', { class: 'fx-dim' }, field.help) : null,
+        suggestion && !disabled ? h('div', { class: 'fx-row' },
+          h('code', {}, suggestion),
+          h('button', { class: 'fx-btn fx-btn--ghost fx-btn--sm', type: 'button', onclick: () => { navigator.clipboard?.writeText(suggestion); toast('Copied.', 'success'); } }, 'Copy'),
+          h('button', { class: 'fx-btn fx-btn--ghost fx-btn--sm', type: 'button', onclick: () => { input.value = suggestion; } }, 'Use this')) : null);
+    });
+
+    const values = () => {
+      const out = {};
+      for (const [name, { field, input }] of inputs) {
+        if (field.source === 'host') continue;
+        const value = input.value.trim();
+        if (field.secret) { if (value) out[name] = value; continue; }
+        if (value !== (field.value ?? (field.kind === 'onoff' ? 'off' : ''))) out[name] = value || null;
+      }
+      return out;
+    };
+    const save = async (enabled) => {
+      try {
+        const res = await flow(`/api/integrations/${current.id}`, { method: 'PUT', body: JSON.stringify({ values: values(), ...(enabled === undefined ? {} : { enabled }) }) });
+        const next = res.integration;
+        toast(next.state === 'ready' ? `${next.name} is on.` : next.state === 'disabled' ? `${next.name} settings saved. It is off.` : `${next.name} needs attention.`, next.state === 'failed' ? 'danger' : 'success');
+        draw(next);
+      } catch (error) {
+        toast(error.message, 'danger');
+      }
+    };
+
+    const on = current.enabled;
+    const guide = current.guide;
+    card.replaceChildren(...[
+      h('div', { class: 'fx-row' },
+        h('h2', { class: 'fx-title' }, current.name),
+        h('span', { class: 'fx-tag', 'data-tone': STATE_TONE[current.state] ?? 'info' }, STATE_LABEL[current.state] ?? current.state),
+        current.enabledBy === 'host' ? h('span', { class: 'fx-dim' }, 'Turned on by the host.') : null),
+      current.state === 'failed' && current.error ? notice(current.error, 'danger', 'It could not start.') : null,
+      guide ? h('details', { open: !on },
+        h('summary', {}, guide.title),
+        h('ol', {}, guide.steps.map((step) => h('li', {}, step))),
+        guide.link ? h('p', {}, h('a', { href: guide.link, target: '_blank', rel: 'noopener' }, guide.link)) : null) : null,
+      h('div', { class: 'fx-fields' }, fields),
+      canChange ? h('div', { class: 'fx-row fx-row--end' },
+        h('button', { class: 'fx-btn fx-btn--ghost', type: 'button', onclick: () => save(undefined) }, 'Save'),
+        current.enabledBy === 'host' ? null : on
+          ? h('button', { class: 'fx-btn fx-btn--danger', type: 'button', onclick: () => save(false) }, `Turn ${current.name} off`)
+          : h('button', { class: 'fx-btn fx-btn--primary', type: 'button', onclick: () => save(true) }, `Save and turn ${current.name} on`)) : null,
+      current.id === 'xero' && current.state === 'ready' ? xeroConnection(organisations, canChange) : null,
+    ].filter(Boolean));
+  };
+  draw(integration);
+  return card;
+}
+
+// Once Xero is on: each organisation's connection, the history copy, and
+// Connect, which goes to Xero and comes back.
+function xeroConnection(organisations, canChange) {
+  const host = h('div', { class: 'fx-fields' });
+  for (const organisation of organisations) {
+    const row = h('div', { class: 'fx-row' }, h('span', {}, organisation.name), h('span', { class: 'fx-dim' }, 'Checking…'));
+    host.append(row);
+    (async () => {
+      try {
+        const status = await flow(`/api/xero/status?organisationId=${organisation.id}`);
+        const parts = [h('span', {}, organisation.name)];
+        if (status.connected) {
+          parts.push(h('span', { class: 'fx-tag', 'data-tone': 'success' }, `Connected to ${status.connection?.tenantName ?? 'Xero'}`));
+          const mirror = await flow(`/api/xero/mirror?organisationId=${organisation.id}`).catch(() => null);
+          if (mirror) parts.push(h('span', { class: 'fx-dim' }, `History copied: ${mirror.counts.invoices} invoices, ${mirror.counts.credit_notes} credit notes, ${mirror.counts.payments} payments.`));
+        } else {
+          parts.push(h('span', { class: 'fx-dim' }, 'Not connected.'));
+        }
+        if (canChange) {
+          parts.push(h('button', { class: 'fx-btn fx-btn--primary fx-btn--sm', type: 'button', onclick: async () => {
+            try {
+              const { authorizeUrl } = await flow('/api/xero/connect', { method: 'POST', body: JSON.stringify({ organisationId: organisation.id }) });
+              location.assign(authorizeUrl);
+            } catch (error) {
+              toast(error.message, 'danger');
+            }
+          } }, status.connected ? 'Connect again' : 'Connect to Xero'));
+        }
+        row.replaceChildren(...parts);
+      } catch (error) {
+        row.replaceChildren(h('span', {}, organisation.name), notice(error.message, 'danger'));
+      }
+    })();
+  }
+  return h('div', {}, h('h3', { class: 'fx-label' }, 'Connection'), host);
 }
 
 async function invitePerson() {
