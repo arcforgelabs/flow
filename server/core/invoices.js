@@ -160,7 +160,8 @@ export async function reviseInvoice(db, organisationId, invoiceId) {
   return db.transaction(async (tx) => {
     const invoice = await loadInvoice(tx, organisationId, invoiceId, { lock: true });
     if (invoice.status !== 'issued') throw new FlowError('not_issued', 'only an issued invoice can be revised');
-    const [row] = await tx.update(invoices).set({ status: 'draft', updatedAt: sql`now()` })
+    // A revision is a new version: what happened to the last send no longer applies.
+    const [row] = await tx.update(invoices).set({ status: 'draft', sendState: null, sendError: null, updatedAt: sql`now()` })
       .where(eq(invoices.id, invoice.id)).returning();
     return row;
   });

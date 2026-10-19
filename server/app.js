@@ -111,7 +111,10 @@ export function createApp({
       const [adapter] = integrations?.with('checkInvoice') ?? [];
       return adapter ? (obligation) => adapter.capabilities.checkInvoice({ organisationId, obligation }) : null;
     };
-    app.use('/api/invoicing', createInvoicingRouter({ db: database.db, personAuth: auth.personAuth, log, liveCheckFor }));
+    // Send all ready (server/core/sending.js): the first enabled integration
+    // that sends invoices (Xero).
+    const accounting = () => integrations?.with('pushInvoices')[0] ?? null;
+    app.use('/api/invoicing', createInvoicingRouter({ db: database.db, personAuth: auth.personAuth, log, liveCheckFor, accounting }));
   }
   // What a signed-in browser needs to report its errors and problems to the
   // installation's own error service (docs/SENTRY.md): the first integration

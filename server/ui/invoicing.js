@@ -8,7 +8,16 @@
 
 const STATUS_LABEL = { draft: 'Draft', issued: 'Issued', void: 'Void' };
 const STATUS_TONE = { draft: 'info', issued: 'success', void: 'mute' };
-const TABS = [['draft', 'Drafts'], ['issued', 'Issued'], ['void', 'Void']];
+// Problem and Ready are views (server/core/sending.js): every draft is one or
+// the other, and an issued invoice that failed to send is a problem.
+const TABS = [['draft', 'Drafts'], ['problem', 'Problem'], ['ready', 'Ready'], ['issued', 'Issued'], ['void', 'Void']];
+const VIEW_LABEL = { problem: 'Problem', ready: 'Ready', sending: 'Sending' };
+const VIEW_TONE = { problem: 'danger', ready: 'success', sending: 'info' };
+const EMPTY = {
+  draft: 'No drafts. Press New invoice to start one.',
+  problem: 'No problems. Every draft is ready.',
+  ready: 'Nothing is ready to send.',
+};
 
 const money = new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' });
 export const formatCents = (cents) => money.format((cents ?? 0) / 100);
@@ -38,16 +47,20 @@ const showDate = (iso) => (iso ? new Date(`${iso}T00:00:00`).toLocaleDateString(
 // ── The list ───────────────────────────────────────────────────────────────
 
 export async function renderInvoiceList(main, ui) {
-  const { h, flow, pageHeader, notice, go } = ui;
-  const state = { status: sessionStorage.getItem('flow_invoice_tab') || 'draft', q: '' };
+  const { h, flow, pageHeader, notice, go, toast } = ui;
+  const saved = sessionStorage.getItem('flow_invoice_tab');
+  const state = { status: TABS.some(([id]) => id === saved) ? saved : 'draft', q: '' };
   const tabs = h('div', { class: 'fx-tabs', role: 'tablist' });
   const search = h('input', { class: 'fx-input fx-search', type: 'search', placeholder: 'Find a number, client or reference', 'aria-label': 'Find an invoice' });
+  const bar = h('div', { class: 'fx-sendbar', hidden: true });
   const host = h('div', { class: 'fx-panel' }, h('div', { class: 'fx-skeleton' }));
+  const context = await flow('/api/invoicing/context').catch(() => ({ canIssue: false }));
   main.append(
     pageHeader('Invoices', {
       actions: [h('a', { class: 'fx-btn fx-btn--primary', href: '/invoices/new', onclick: go }, 'New invoice')],
     }),
     h('div', { class: 'fx-toolbar' }, tabs, search),
+    bar,
     host);
 
   let timer;
@@ -55,6 +68,47 @@ export async function renderInvoiceList(main, ui) {
     clearTimeout(timer);
     timer = setTimeout(() => { state.q = search.value.trim(); load(); }, 200);
   });
+
+  // One press sends every ready invoice: each is issued, then goes to the
+  // accounting system (as a draft by default) in the background.
+  function sendBar(body) {
+    const failed = body.invoices.filter((i) => i.view === 'problem' && i.status === 'issued').length;
+    const button = (label, path, done) => {
+      const el = h('button', {
+        class: 'fx-btn fx-btn--primary', type: 'button',
+        onclick: async () => {
+          el.disabled = true;
+          try {
+            const res = await flow(`/api/invoicing/invoices/${path}`, { method: 'POST', body: JSON.stringify(path === 'send-ready' ? { issueDate: localDate() } : {}) });
+            toast(done(res), 'success');
+            await load();
+          } catch (error) {
+            toast(error.message, 'danger');
+            el.disabled = false;
+          }
+        },
+      }, label);
+      return el;
+    };
+    const to = body.sendsTo;
+    if (state.status === 'ready' && context.canIssue && body.counts.ready > 0) {
+      bar.replaceChildren(
+        h('p', { class: 'fx-dim' }, to
+          ? `Each invoice is issued, then goes to ${to}.`
+          : 'Each invoice is issued. No accounting system is on.'),
+        button(to ? `Send all ${body.counts.ready} ready to ${to}` : `Issue all ${body.counts.ready} ready`, 'send-ready', (res) => (to
+          ? `${res.issued} issued. They are on the way to ${to}.${res.remaining ? ` ${res.remaining} more are ready: press again.` : ''}`
+          : `${res.issued} issued.${res.remaining ? ` ${res.remaining} more are ready: press again.` : ''}`)));
+      bar.hidden = false;
+    } else if (state.status === 'problem' && context.canIssue && to && failed > 0) {
+      bar.replaceChildren(
+        h('p', { class: 'fx-dim' }, `${failed} issued ${failed === 1 ? 'invoice' : 'invoices'} did not reach ${to}. Fix the cause, then send again.`),
+        button('Send again', 'send-again', (res) => `${res.queued} on the way to ${to} again.`));
+      bar.hidden = false;
+    } else {
+      bar.hidden = true;
+    }
+  }
 
   async function load() {
     let body;
@@ -69,27 +123,37 @@ export async function renderInvoiceList(main, ui) {
       type: 'button',
       role: 'tab',
       'aria-selected': String(state.status === id),
+      ...(id === 'problem' && body.counts?.problem ? { 'data-tone': 'danger' } : {}),
       onclick: () => { state.status = id; sessionStorage.setItem('flow_invoice_tab', id); load(); },
     }, label, h('span', { class: 'fx-tabs__count' }, String(body.counts?.[id] ?? 0)))));
+    sendBar(body);
     if (!body.invoices.length) {
       host.replaceChildren(h('p', { class: 'fx-empty' }, state.q
         ? 'No invoice matches that search.'
-        : state.status === 'draft' ? 'No drafts. Press New invoice to start one.' : `No ${STATUS_LABEL[state.status].toLowerCase()} invoices yet.`));
+        : EMPTY[state.status] ?? `No ${STATUS_LABEL[state.status].toLowerCase()} invoices yet.`));
       return;
     }
+    const showProblem = state.status === 'problem';
+    const created = ['draft', 'problem', 'ready'].includes(state.status);
     host.replaceChildren(h('table', { class: 'fx-table fx-table--rows' },
       h('thead', {}, h('tr', {},
-        h('th', {}, 'Number'), h('th', {}, 'Client'), h('th', {}, 'Reference'),
-        h('th', {}, state.status === 'draft' ? 'Created' : 'Issued'), h('th', { class: 'fx-num' }, 'Total'), h('th', {}, 'Status'))),
+        h('th', {}, 'Number'), h('th', {}, 'Client'), h('th', {}, showProblem ? 'Problem' : 'Reference'),
+        h('th', {}, created ? 'Created' : 'Issued'), h('th', { class: 'fx-num' }, 'Total'), h('th', {}, 'Status'))),
       h('tbody', {}, body.invoices.map((invoice) => {
         const href = `/invoices/${invoice.id}`;
+        const first = invoice.problems?.[0];
+        const view = invoice.status === 'void' ? null : invoice.view;
         return h('tr', { tabindex: '0', onclick: () => go(href), onkeydown: (event) => { if (event.key === 'Enter') go(href); } },
           h('td', {}, h('a', { class: 'fx-strong', href, onclick: go }, invoice.number ?? 'Draft')),
           h('td', {}, invoice.contactName ?? '—'),
-          h('td', { class: 'fx-dim' }, invoice.job?.caseRef ?? invoice.reference ?? '—'),
+          showProblem
+            ? h('td', { class: 'fx-problem' }, first?.message ?? '—', invoice.problems.length > 1 ? h('span', { class: 'fx-dim' }, ` +${invoice.problems.length - 1} more`) : null)
+            : h('td', { class: 'fx-dim' }, invoice.job?.caseRef ?? invoice.reference ?? '—'),
           h('td', { class: 'fx-dim' }, showDate(invoice.issueDate ?? invoice.createdAt?.slice(0, 10))),
           h('td', { class: 'fx-num fx-strong' }, formatCents(invoice.totalCents)),
-          h('td', {}, h('span', { class: 'fx-status', 'data-tone': STATUS_TONE[invoice.status] }, STATUS_LABEL[invoice.status])));
+          h('td', {}, view
+            ? h('span', { class: 'fx-status', 'data-tone': VIEW_TONE[view] }, VIEW_LABEL[view])
+            : h('span', { class: 'fx-status', 'data-tone': STATUS_TONE[invoice.status] }, STATUS_LABEL[invoice.status])));
       }))));
   }
   await load();

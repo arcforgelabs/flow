@@ -13,6 +13,7 @@ import {
   saveCustomerBilling, saveInvoicingSettings,
 } from '../core/invoicing-rules.js';
 import { draftInvoiceForObligation, listObligations, setReady } from '../core/ledger.js';
+import { invoiceViews, sendAgain, sendAllReady } from '../core/sending.js';
 import {
   billingObligations, contacts, invoices, INVOICE_STATUSES, organisations, priceItems, TAX_CODES,
 } from '../db/schema.js';
@@ -21,7 +22,11 @@ import {
 // UI's invoices, customers, price list and jobs pages read and write here.
 //
 //   GET   /context                    the organisations, and whether this person may issue
-//   GET   /invoices?organisationId=&status=&q=&limit=   newest first, with counts by status
+//   GET   /invoices?organisationId=&status=&q=&limit=   newest first, with counts by status;
+//                                     status ready or problem lists those views (server/core/sending.js)
+//   POST  /invoices/send-ready        owner or admin: issue every ready draft and queue it for the
+//                                     accounting system { issueDate }
+//   POST  /invoices/send-again        owner or admin: queue failed sends again { invoiceIds? }
 //   GET   /invoices/:id               one invoice: lines, contact, job, issued versions
 //   POST  /invoices                   a new draft
 //   PATCH /invoices/:id               change a draft
@@ -53,9 +58,11 @@ import {
 // may be left out while the installation has exactly one. Money is integer
 // cents. `liveCheckFor(organisationId)` returns the ledger's live check for
 // that organisation, or null when no accounting integration offers one.
+// `accounting()` is the accounting adapter that sends invoices, or null.
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
+const VIEWS_OF_INVOICES = ['ready', 'problem'];
 const VIEWS = ['in_work', 'ready', 'pending', 'drafted', 'invoiced', 'paid', 'held', 'review_required'];
 const MAX_LINES = 200;
 const MAX_TEXT = 500;
@@ -67,6 +74,7 @@ const MAX_UNIT_CENTS = 100_000_000;
 const ERROR_STATUS = {
   invalid: 400, organisation_required: 400, not_found: 404, not_draft: 409, not_issued: 409,
   never_issued: 409, not_ready: 409, live_check_unavailable: 409,
+  accounting_not_connected: 409, accounting_writes_off: 409,
 };
 
 function sendError(res, error, log) {
@@ -214,7 +222,7 @@ async function invoiceDetail(db, organisationId, invoiceId) {
   };
 }
 
-export function createInvoicingRouter({ db, personAuth, log = console, liveCheckFor = () => null }) {
+export function createInvoicingRouter({ db, personAuth, log = console, liveCheckFor = () => null, accounting = () => null }) {
   const router = express.Router();
   router.use(express.json({ limit: '64kb' }));
 
@@ -232,11 +240,16 @@ export function createInvoicingRouter({ db, personAuth, log = console, liveCheck
   router.get('/invoices', ...signedIn, handle(log, async (req, res) => {
     const organisationId = await organisationOf(req);
     const status = text(req.query.status);
-    if (status && !INVOICE_STATUSES.includes(status)) throw invalid(`status must be one of ${INVOICE_STATUSES.join(', ')}`);
+    if (status && ![...INVOICE_STATUSES, ...VIEWS_OF_INVOICES].includes(status)) {
+      throw invalid(`status must be one of ${[...INVOICE_STATUSES, ...VIEWS_OF_INVOICES].join(', ')}`);
+    }
     const q = text(req.query.q);
     const limit = limitOf(req.query.limit, 200, 500);
+    const views = await invoiceViews(db, organisationId, { accounting: accounting() });
     const where = [eq(invoices.organisationId, organisationId)];
-    if (status) where.push(eq(invoices.status, status));
+    if (status === 'ready') where.push(views.ready.length ? inArray(invoices.id, views.ready) : sql`false`);
+    else if (status === 'problem') where.push(views.problems.size ? inArray(invoices.id, [...views.problems.keys()]) : sql`false`);
+    else if (status) where.push(eq(invoices.status, status));
     if (q) {
       const pattern = containing(q);
       where.push(or(ilike(invoices.number, pattern), ilike(invoices.reference, pattern), ilike(contacts.name, pattern)));
@@ -251,11 +264,40 @@ export function createInvoicingRouter({ db, personAuth, log = console, liveCheck
       .where(eq(invoices.organisationId, organisationId)).groupBy(invoices.status);
     const counts = Object.fromEntries(INVOICE_STATUSES.map((s) => [s, 0]));
     for (const { status: s, n } of counted) counts[s] = n;
+    counts.ready = views.ready.length;
+    counts.problem = views.problems.size;
+    const ready = new Set(views.ready);
     res.json({
       ok: true,
-      invoices: rows.map(({ invoice, contactName }) => ({ ...invoice, contactName, job: jobs.get(invoice.id) ?? null })),
+      invoices: rows.map(({ invoice, contactName }) => ({
+        ...invoice,
+        contactName,
+        job: jobs.get(invoice.id) ?? null,
+        view: views.problems.has(invoice.id) ? 'problem' : ready.has(invoice.id) ? 'ready' : views.sending.has(invoice.id) ? 'sending' : null,
+        problems: views.problems.get(invoice.id) ?? [],
+      })),
       counts,
+      sendsTo: accounting()?.name ?? null,
     });
+  }));
+
+  router.post('/invoices/send-ready', ...manager, handle(log, async (req, res) => {
+    const organisationId = await organisationOf(req);
+    const issueDate = optionalDate(req.body?.issueDate, 'issueDate') ?? today();
+    const result = await sendAllReady(db, organisationId, { accounting: accounting(), personId: req.person.id, issueDate });
+    log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} sent all ready: ${JSON.stringify(result)}`);
+    res.json({ ok: true, ...result });
+  }));
+
+  router.post('/invoices/send-again', ...manager, handle(log, async (req, res) => {
+    const organisationId = await organisationOf(req);
+    const ids = req.body?.invoiceIds;
+    if (ids !== undefined && (!Array.isArray(ids) || !ids.length || ids.length > 500 || !ids.every((id) => UUID.test(String(id))))) {
+      throw invalid('invoiceIds must list 1 to 500 invoice ids');
+    }
+    const result = await sendAgain(db, organisationId, { accounting: accounting(), personId: req.person.id, invoiceIds: ids ?? null });
+    log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} sent again: ${JSON.stringify(result)}`);
+    res.json({ ok: true, ...result });
   }));
 
   router.get('/invoices/:id', ...signedIn, handle(log, async (req, res) => {

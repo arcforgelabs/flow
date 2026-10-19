@@ -85,6 +85,12 @@ export const invoices = pgTable('invoices', {
   subtotalCents: integer('subtotal_cents').notNull().default(0),
   taxCents: integer('tax_cents').notNull().default(0),
   totalCents: integer('total_cents').notNull().default(0),
+  // Sending to the accounting system (server/core/sending.js): queued by a
+  // person, then sent or failed. `sendError` is { code, message } while failed.
+  sendState: text('send_state'),
+  sendError: jsonb('send_error'),
+  sendRequestedBy: uuid('send_requested_by').references(() => people.id, { onDelete: 'set null' }),
+  sendUpdatedAt: timestamp('send_updated_at', { withTimezone: true }),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 }, (t) => [
@@ -97,6 +103,7 @@ export const invoices = pgTable('invoices', {
   }),
   check('invoices_status_valid', sql`${t.status} in ('draft', 'issued', 'void')`),
   check('invoices_issued_has_number', sql`${t.status} = 'draft' or ${t.number} is not null`),
+  check('invoices_send_state_valid', sql`${t.sendState} is null or ${t.sendState} in ('queued', 'sent', 'failed')`),
 ]);
 
 export const invoiceLines = pgTable('invoice_lines', {
