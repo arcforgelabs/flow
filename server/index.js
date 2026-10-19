@@ -4,6 +4,7 @@ import { createClerkProxy, ensureClerkAccount, loadClerkAdapter, resolveClerkPro
 import { seedFirstOwner } from './auth/people.js';
 import { createPersonAuth } from './auth/session.js';
 import { resolveSignInSettings } from './auth/settings.js';
+import { expectedSchema } from './db/doctor.js';
 import { migrateDatabase, openDatabase } from './db/index.js';
 import {
   importEarlierAtStart, importEarlierLinksAtStart, importEarlierMappingsAtStart, resolveImportAtStart,
@@ -141,7 +142,7 @@ const trustProxy = process.env.REPL_ID || process.env.REPLIT_DEPLOYMENT ? 1 : fa
 
 const updates = createUpdateChecker();
 
-createApp({ database, auth, trustProxy, updates, integrations, secrets, defaultFamily, log }).listen(port, () => {
+createApp({ database, schemaJournals: expectedSchema({ adapters: shippedAdapters }).journals, auth, trustProxy, updates, integrations, secrets, defaultFamily, log }).listen(port, () => {
   console.log(`[flow] listening on ${port}; design system ${defaultFamily} (FLOW_THEME)`);
 });
 

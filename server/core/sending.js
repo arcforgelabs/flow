@@ -124,9 +124,10 @@ export async function markReady(db, organisationId, invoiceIds, { personId, acco
   return { marked: good.length, refused: [...problems].map(([invoiceId, found]) => ({ invoiceId, problems: found })) };
 }
 
-// Back to drafts: the drafts need another look before they go.
+// Back to drafts: the drafts need another look before they go. The new
+// updatedAt keeps "Ready when drafted" (automations.js) off them.
 export async function markNotReady(db, organisationId, invoiceIds) {
-  const rows = await db.update(invoices).set({ readyAt: null, readyBy: null })
+  const rows = await db.update(invoices).set({ readyAt: null, readyBy: null, updatedAt: sql`now()` })
     .where(and(eq(invoices.organisationId, organisationId), eq(invoices.status, 'draft'), inArray(invoices.id, invoiceIds)))
     .returning({ id: invoices.id });
   return { moved: rows.length };

@@ -1,5 +1,5 @@
 import { and, eq, sql } from 'drizzle-orm';
-import { automations, billingObligations } from '../db/schema.js';
+import { automations, billingObligations, invoices } from '../db/schema.js';
 import { FlowError, notFound } from './errors.js';
 import { autoDraftJobs } from './invoicing-rules.js';
 import { MAPPING_DEFAULTS, readMappingConfig, remapJobs } from './line-mapping.js';
@@ -17,6 +17,8 @@ import { setReady } from './ledger.js';
 //     are picked from those the work system reported (workStatuses).
 //   draft_when_ready: a job that is ready to invoice and passes the invoicing
 //     rules (invoicing-rules.js) gets a draft invoice in Flow.
+//   ready_when_drafted: a draft the draft routine made goes straight to Ready
+//     on the Invoices page, until a person changes it or moves it back.
 
 const BATCH = 500;
 
@@ -82,6 +84,14 @@ export const AUTOMATIONS = Object.freeze([
     defaults: { enabled: true, config: {} },
     readConfig: () => ({}),
   },
+  {
+    key: 'ready_when_drafted',
+    place: 'invoicing',
+    name: 'Ready when drafted',
+    hint: 'An automatic draft goes straight to Ready. A draft a person changed stays in Drafts.',
+    defaults: { enabled: true, config: {} },
+    readConfig: () => ({}),
+  },
 ]);
 
 const byKey = new Map(AUTOMATIONS.map((a) => [a.key, a]));
@@ -138,6 +148,25 @@ async function markReadyFromWorkStatus(db, organisationId, { statuses }) {
   return { marked };
 }
 
+// Marks ready each draft the draft routine made that no person has touched.
+// A person's edit or "back to drafts" moves the draft's updatedAt on from its
+// createdAt, so the routine leaves it to people from then on. A draft with a
+// problem shows in Problem whatever its ready mark (sending.js, invoiceViews).
+async function readyWhenDrafted(db, organisationId) {
+  const rows = await db.update(invoices).set({ readyAt: sql`now()`, readyBy: null })
+    .where(and(
+      eq(invoices.organisationId, organisationId),
+      eq(invoices.status, 'draft'),
+      sql`${invoices.readyAt} is null`,
+      sql`${invoices.updatedAt} = ${invoices.createdAt}`,
+      sql`exists (select 1 from billing_obligations o join obligation_events e on e.obligation_id = o.id
+        where o.organisation_id = ${invoices.organisationId} and o.invoice_id = ${invoices.id}
+          and e.kind = 'drafted' and e.actor = ${actorOf('draft_when_ready')})`,
+    ))
+    .returning({ id: invoices.id });
+  return { marked: rows.length };
+}
+
 // Runs every routine that is on. `accounting` is the integration whose copy
 // the draft routine checks; without one, Flow's own records are the check.
 export async function runAutomations(db, organisationId, { accounting = null, now = new Date() } = {}) {
@@ -148,6 +177,8 @@ export async function runAutomations(db, organisationId, { accounting = null, no
       summary[automation.key] = await markReadyFromWorkStatus(db, organisationId, automation.config);
     } else if (automation.key === 'draft_when_ready') {
       summary[automation.key] = await autoDraftJobs(db, organisationId, { accounting, now, actor: actorOf(automation.key) });
+    } else if (automation.key === 'ready_when_drafted') {
+      summary[automation.key] = await readyWhenDrafted(db, organisationId);
     }
   }
   return summary;

@@ -11,6 +11,9 @@ Every installation needs the same things, whatever runs it:
 
 - **PostgreSQL**: `DATABASE_URL`. The server runs its migrations when it
   starts (`docs/DATA_MODEL.md`), so the first start creates the tables.
+  After an upgrade, `flow-server doctor` checks the database against the
+  release, and `flow-server migrate` brings it up to the release without
+  starting Flow.
 - **Sign-in**: `FLOW_AUTH=clerk` and the settings in "Sign-in (Clerk)"
   below. Without it, every person route answers 503.
 - **Integrations**: `FLOW_INTEGRATIONS`, the integrations to turn on,

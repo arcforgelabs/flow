@@ -11,6 +11,9 @@ const gearIcon = {
   '&& > *': { visibility: 'hidden' },
 };
 
+// A small down chevron after the name, as in other apps' account buttons.
+const CHEVRON = `url("data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 12" fill="none" stroke="#000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4.5L6 7.5L9 4.5"/></svg>')}")`;
+
 // Matches the narrow-screen rule in flow.css, where the sidebar becomes a bar.
 const NARROW = '@media (max-width: 820px)';
 
@@ -88,18 +91,30 @@ export function flowClerkAppearance({ embedded = false, publicSignUp = false } =
       badge: { '&&': { color: dim, background: `color-mix(in srgb, ${text} 5%, transparent)`, borderColor: line } },
       formButtonPrimary: { boxShadow: 'none', textTransform: 'none', fontWeight: 650 },
       socialButtonsBlockButton: controlEdge,
-      // The account button in the sidebar foot is a chip: photo or initial,
-      // then the name (Clerk shows the email when there is no name), clipped
-      // with an ellipsis to fit. The top bar on narrow screens has no room for
-      // the name, so there it is the photo or initial alone.
+      // The account button in the sidebar foot: photo or initial, then the
+      // name (Clerk shows the email when there is no name), clipped with an
+      // ellipsis to fit, then a small chevron. At rest it is plain; on hover,
+      // keyboard focus or while its menu is open it is an outlined pill. The
+      // top bar on narrow screens has no room for the name, so there it is the
+      // photo or initial alone.
       userButtonTrigger: {
         '&&': {
-          width: '100%', minWidth: 0, justifyContent: 'flex-start', padding: '4px 10px 4px 4px', borderRadius: token('--t-radius-lg', '10px'), background: paper, boxShadow: `inset 0 0 0 1px ${line}`,
-          '&:hover': { background: `color-mix(in srgb, ${text} 6%, ${paper})` },
-          [NARROW]: { width: 'auto', padding: 0, borderRadius: '50%', background: 'transparent', boxShadow: 'none', '&:hover': { background: 'transparent' } },
+          width: 'auto', maxWidth: '100%', minWidth: 0, justifyContent: 'flex-start', padding: '4px 8px 4px 4px',
+          borderRadius: token('--t-radius-lg', '10px'), background: 'transparent', boxShadow: 'none',
+          '&:hover, &:focus-visible, &[aria-expanded="true"]': { background: `color-mix(in srgb, ${text} 5%, transparent)`, boxShadow: `inset 0 0 0 1px ${line}` },
+          '&:focus-visible': { boxShadow: `inset 0 0 0 1px ${line}, ${focus}` },
+          [NARROW]: { padding: 0, borderRadius: '50%', '&:hover, &[aria-expanded="true"]': { background: 'transparent', boxShadow: 'none' } },
         },
       },
-      userButtonBox: { flexDirection: 'row-reverse', justifyContent: 'flex-end', minWidth: 0, gap: '8px' },
+      userButtonBox: {
+        flexDirection: 'row-reverse', justifyContent: 'flex-end', minWidth: 0, gap: '6px',
+        // The box lays out right to left, so ::before lands after the name.
+        '&::before': {
+          content: '""', flex: 'none', width: '10px', height: '10px', background: dim,
+          mask: `${CHEVRON} center / contain no-repeat`, WebkitMask: `${CHEVRON} center / contain no-repeat`,
+        },
+        [NARROW]: { '&::before': { display: 'none' } },
+      },
       userButtonOuterIdentifier: {
         minWidth: 0, paddingInlineStart: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
         color: token('--t-strong', text), fontSize: '14px', fontWeight: 600,

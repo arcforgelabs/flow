@@ -13,7 +13,9 @@ workspace of this repository.
 
 - The workspace's Run button updates the workspace's database to the build
   the next publish will deploy (`scripts/replit-deploy.sh update-workspace`,
-  "Updates go to the workspace first"). It starts no server. The published
+  "Updates go to the workspace first"). It starts no server. The workspace
+  updater does the same by itself whenever the release changes ("The
+  workspace updater"). The published
   app is built and started by `scripts/replit-deploy.sh` from a release or
   commit fetched from GitHub ("Publishing").
 - Runtime: Node 24 (`.replit` module `nodejs-24`), as in CI and the
@@ -80,8 +82,10 @@ It never treats an unreadable answer as a pass.
 
 To publish:
 
-1. Press Run in the workspace, and wait for `[deploy] the workspace database
-   is at <release>` ("Updates go to the workspace first").
+1. Check that the workspace updater has caught up: the last lines of
+   `.flow-workspace/updater.log` say `[deploy] the workspace database is at
+   <release>` and a `verdict` ("The workspace updater"). Without the
+   updater, or to be sure, press Run and wait for the same line.
 2. Publishing > Republish. Nothing needs pulling first. If Replit stops at
    "Development database changes detected", read its list:
    - **Only additions** (`CREATE TABLE`, `ADD COLUMN`, `CREATE INDEX`,
@@ -94,13 +98,17 @@ To publish:
    one), `source` (`github`, or `workspace` for an emergency build) and
    `checks` (`passed`, or `unchecked` when an emergency override built it).
    Check that `revision` and `release` are what you meant to deploy, and that
-   `checks` is `passed`.
+   `checks` is `passed`. Its `schema.migrations` counts the migrations the
+   production database has applied, per journal.
 
 `.replit`, `scripts/replit-deploy.sh`, `scripts/deploy-checks.js`,
 `scripts/deploy-release.js` and `server/release-channel.js` are the only files
-a publish takes from the workspace. When a commit changes them, the build log
-says `note: ... differs from <ref>`; pull `main` into the workspace before
-the next publish so the new ones take effect.
+a publish takes from the workspace. Of `scripts/replit-deploy.sh`, only the
+fetch and its checks run from the workspace: once they pass, the fetched
+commit's own copy builds and migrates ("Each release brings its own build
+steps"). When a commit changes one of these files, the build log says
+`note: ... differs from <ref>`; pull `main` into the workspace when you can,
+so the new fetch steps take effect.
 
 ### Updates go to the workspace first
 
@@ -108,25 +116,97 @@ The workspace and the published app have separate databases. Before each
 publish, Replit compares the workspace's tables with production's and offers
 to make production's match. Flow uses that check:
 
-1. **Run** builds the release the next publish will deploy (the same
-   `FLOW_DEPLOY_REF`, with the same CI check), then runs its migrations on
-   the workspace's database: Flow's own tables and the tables of every
-   integration it ships, on or off. A failed migration stops here, before
-   production.
+1. **The workspace updater** (or **Run**) builds the release the next
+   publish will deploy (the same `FLOW_DEPLOY_REF`, with the same CI check),
+   then runs its migrations on the workspace's database: Flow's own tables
+   and the tables of every integration it ships, on or off. A failed
+   migration stops here, before production.
 2. **Publish**: the workspace is now at the new release and production at the
    old one, so Replit can only offer to add tables and columns. Approve that.
 3. **Start**: Flow runs the same migrations on production. Every migration
    skips what already exists (`docs/DATA_MODEL.md`, "Change the schema"), so
    it finds Replit's additions in place and carries on.
 
-If Run was skipped, the two databases are the same, Replit shows nothing, and
-Flow migrates production itself when it starts. Production then moves ahead,
-so press Run before the next publish. A `DROP` in Replit's list always means
-the workspace is behind: Cancel, Run, publish again. Cancel also stops the
-build, and the old build stays live.
+If the workspace was not updated, the two databases are the same, Replit
+shows nothing, and Flow migrates production itself when it starts.
+Production then moves ahead, so the workspace must catch up before the next
+publish; the workspace updater does that by itself. A `DROP` in Replit's list
+always means the workspace is behind: Cancel, Run, publish again. Cancel also
+stops the build, and the old build stays live.
 
 Set `FLOW_DEPLOY_REF` in the workspace's Secrets as well as the deployment's,
-to the same value, so Run and Publish build the same release.
+to the same value, so the workspace and the publish build the same release.
+
+### The workspace updater
+
+The workspace updater does what Run does, by itself, so no person has to
+remember Run before a publish (issue #100).
+
+- `.replit` `onBoot` starts it (`scripts/replit-deploy.sh boot`) each time
+  the workspace starts, in the background. It runs until the workspace stops.
+- At start, and then every `FLOW_WORKSPACE_UPDATE_SECONDS` (600, at least
+  60), it asks which commit `FLOW_DEPLOY_REF` names now: for `stable` or
+  `beta`, the channel's release, as a publish resolves it. It fetches
+  nothing for that.
+- When the workspace's database is not at that commit, it runs
+  `update-workspace`. Otherwise it only runs the doctor, so a reset database
+  is caught too.
+- One at a time: a lock keeps it and Run from updating together, and a
+  second updater does not start.
+- A failed step is logged, and the next one tries again. It never drops
+  anything and never touches the workspace's own files: it writes only
+  `.flow-deploy/` and `.flow-workspace/` (gitignored), where
+  `updater.log` is its log and `workspace-db` the commit the workspace's
+  database is at.
+- `FLOW_WORKSPACE_UPDATER=off` in the workspace's Secrets stops it starting.
+  Run still works.
+
+After each migration it runs the doctor (`flow-server doctor`,
+`server/db/doctor.js`). It checks the workspace's database against the
+build: every migration applied, every table and column the build declares
+present. With `FLOW_PUBLIC_ORIGIN` set (the workspace shares the deployment's
+Secrets), it also reads the live app's `GET /health` and says what the
+publish step will offer:
+
+| Verdict | Meaning | At Publish |
+| --- | --- | --- |
+| `same` | The workspace and production are at the same migrations | No list |
+| `adds` | The workspace is ahead | Approve the additions |
+| `behind` | Production has migrations the workspace lacks | Do not publish; update the workspace first |
+| `unknown` | The live app did not report its migrations (a release from before this) | Approve additions; Cancel any `DROP` |
+| `broken` | The workspace's database is not at the build | Do not publish |
+
+The doctor also names tables in `public` that the build does not know.
+Replit offers to copy those to production too.
+
+The updater arrives with a `git pull` of a release that has it, once. A
+workspace is fetch-only ("A production installation: fetch only"): pull, never
+push.
+
+### Each release brings its own build steps
+
+`scripts/replit-deploy.sh` in the workspace fetches the commit and checks it
+(release manifest, commit, CI). It then hands the build and the workspace
+migration to the fetched commit's own copy of the script, when that copy
+says it can (`# FLOW_DEPLOY_DRIVER=2`). So a fix to those steps reaches an
+installation with the next release, without a pull. A release from before
+this builds the old way. As in OpenClaw's updater, the part that cannot
+update itself (the fetch and its checks) stays small.
+
+### Later: removing a table or column
+
+Migrations only add today ("Change the schema" in `docs/DATA_MODEL.md`).
+Removal is planned in two releases, so a rollback stays safe and the publish
+step can name each `DROP` in advance:
+
+1. **Expand**: one release stops reading and writing the column. The column
+   stays.
+2. **Contract**: a later release drops it, in a migration that names the
+   release that stopped using it. The doctor then reports the `DROP` as
+   expected, and Flow refuses it while production is older than the expand
+   release.
+
+This is not built yet; the migration guard still refuses every drop.
 
 ### Following stable releases
 

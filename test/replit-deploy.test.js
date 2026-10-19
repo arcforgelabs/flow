@@ -81,7 +81,7 @@ function fixture(t) {
   const upstream = join(dir, "upstream");
   mkdirSync(upstream);
   git(upstream, "init", "-q", "-b", "main");
-  write(join(upstream, ".gitignore"), "data/\n.flow-deploy/\n.flow-revision\n");
+  write(join(upstream, ".gitignore"), "data/\n.flow-deploy/\n.flow-workspace/\n.flow-revision\n");
   write(join(upstream, "scripts/replit-build.sh"), FIXTURE_BUILD);
   write(join(upstream, "scripts/replit-start.sh"), FIXTURE_START);
   copyFileSync(HELPER, join(upstream, "scripts/replit-deploy.sh"));
@@ -122,7 +122,7 @@ function fixture(t) {
   write(join(workspace, "version.txt"), "workspace-edit\n");
   write(join(workspace, "new-file.txt"), "untracked\n");
   write(join(workspace, "data/flow.db"), "workspace state\n");
-  return { dir, workspace, remote: `file://${remote}`, v1, v2, untested };
+  return { dir, upstream, workspace, remote: `file://${remote}`, bare: remote, v1, v2, untested };
 }
 
 const passing = (names = REQUIRED) => names.map((name, i) => ({ id: i + 1, name, status: "completed", conclusion: "success", app: { id: 15368 } }));
@@ -183,7 +183,8 @@ async function checksApi(t, { runs = {}, respond = {}, releases } = {}) {
   return { url: `http://127.0.0.1:${server.address().port}`, requests };
 }
 
-// Every file in the workspace outside .flow-deploy/, with its content hash,
+// Every file in the workspace outside .flow-deploy/ and .flow-workspace/ (the
+// workspace updater's log, locks and record), with its content hash,
 // plus HEAD and status: proof the helper never touched the workspace's files.
 function snapshot(workspace) {
   const files = {};
@@ -191,7 +192,7 @@ function snapshot(workspace) {
     for (const entry of readdirSync(path)) {
       const full = join(path, entry);
       const rel = relative(workspace, full);
-      if (rel === ".flow-deploy") continue;
+      if (rel === ".flow-deploy" || rel === ".flow-workspace") continue;
       if (statSync(full).isDirectory()) walk(full);
       else files[rel] = createHash("sha256").update(readFileSync(full)).digest("hex");
     }
@@ -521,4 +522,102 @@ test("update-workspace needs DATABASE_URL and stops on a failed migration", asyn
   assert.match(failed.output, /column already exists/);
   assert.match(failed.output, /FAILED: the migration of the workspace database to main failed\. Do not publish/);
   assert.equal(existsSync(join(workspace, ".flow-deploy/migrated.txt")), false);
+});
+
+test("update-workspace records the commit the workspace database is at", async (t) => {
+  const { workspace, remote, v2 } = fixture(t);
+  const api = await checksApi(t);
+  const result = await deploy(workspace, "update-workspace", { DATABASE_URL: "postgres://workspace-db" }, { remote, api });
+  assert.equal(result.status, 0, result.output);
+  assert.equal(readFileSync(join(workspace, ".flow-workspace/workspace-db"), "utf8").trim(), v2);
+});
+
+// A branch on the stand-in GitHub whose deploy helper differs: `edit` gets
+// the helper's text and returns the new one.
+function branchWithHelper({ upstream, bare }, name, edit) {
+  git(upstream, "switch", "-q", "-c", name, "main");
+  const path = join(upstream, "scripts/replit-deploy.sh");
+  writeFileSync(path, edit(readFileSync(path, "utf8")));
+  git(upstream, "commit", "-q", "-am", name);
+  git(upstream, "push", "-q", bare, name);
+  git(upstream, "switch", "-q", "main");
+  return git(upstream, "rev-parse", name);
+}
+
+test("the fetched commit's own deploy helper builds and migrates, so its fixes need no git pull", async (t) => {
+  const fx = fixture(t);
+  const api = await checksApi(t);
+  const newer = branchWithHelper(fx, "newer-helper", (text) =>
+    text.replace('log "building $source $ref', 'log "the newer helper builds"; log "building $source $ref')
+      .replace('log "migrating the workspace database to $built"', 'log "the newer helper migrates"; log "migrating the workspace database to $built"'));
+  const result = await deploy(fx.workspace, "update-workspace", { FLOW_DEPLOY_REF: newer, DATABASE_URL: "postgres://workspace-db" }, { remote: fx.remote, api });
+  assert.equal(result.status, 0, result.output);
+  assert.match(result.output, /builds itself/);
+  assert.match(result.output, /the newer helper builds/);
+  assert.match(result.output, /the newer helper migrates/);
+  assert.equal(out(fx.workspace, ".flow-revision"), newer);
+  assert.equal(readFileSync(join(fx.workspace, ".flow-workspace/workspace-db"), "utf8").trim(), newer);
+});
+
+test("a fetched commit whose helper cannot take over is built by the workspace's helper, as before", async (t) => {
+  const fx = fixture(t);
+  const api = await checksApi(t);
+  const older = branchWithHelper(fx, "older-helper", (text) =>
+    text.replace("# FLOW_DEPLOY_DRIVER=2\n", "").replace('log "building $source $ref', 'log "the older helper builds"; log "building $source $ref'));
+  const result = await deploy(fx.workspace, "build", { FLOW_DEPLOY_REF: older }, { remote: fx.remote, api });
+  assert.equal(result.status, 0, result.output);
+  assert.doesNotMatch(result.output, /builds itself/);
+  assert.doesNotMatch(result.output, /the older helper builds/);
+  assert.equal(out(fx.workspace, ".flow-revision"), older);
+});
+
+test("the workspace updater updates the workspace database when the ref moves, and only then", async (t) => {
+  const { workspace, remote, v2 } = fixture(t);
+  const api = await checksApi(t);
+  const env = { DATABASE_URL: "postgres://workspace-db", FLOW_WORKSPACE_UPDATE_ONCE: "1" };
+  const first = await deploy(workspace, "follow", env, { remote, api });
+  assert.equal(first.status, 0, first.output);
+  assert.match(first.output, new RegExp(`main is at ${v2}; the workspace database is at an unknown commit\\. Updating it`));
+  assert.equal(out(workspace, "migrated.txt"), "v2 postgres://workspace-db");
+
+  rmSync(join(workspace, ".flow-deploy/migrated.txt"));
+  const second = await deploy(workspace, "follow", env, { remote, api });
+  assert.equal(second.status, 0, second.output);
+  assert.match(second.output, new RegExp(`the workspace database is at main \\(${v2}\\)`));
+  assert.equal(existsSync(join(workspace, ".flow-deploy/migrated.txt")), false, "nothing was migrated again");
+
+  // A failed check is logged; the updater carries on.
+  const failed = await deploy(workspace, "follow", { ...env, FLOW_DEPLOY_REF: "no-such-branch" }, { remote, api });
+  assert.equal(failed.status, 0, failed.output);
+  assert.match(failed.output, /could not tell which commit no-such-branch names now/);
+  assert.match(failed.output, /this check failed/);
+});
+
+test("the workspace updater follows the stable channel's release", async (t) => {
+  const { workspace, remote, v1, v2 } = fixture(t);
+  const api = await checksApi(t, { releases: releaseWorld({ v1, v2 }) });
+  const result = await deploy(workspace, "follow", { FLOW_DEPLOY_REF: "stable", DATABASE_URL: "postgres://workspace-db", FLOW_WORKSPACE_UPDATE_ONCE: "1" }, { remote, api });
+  assert.equal(result.status, 0, result.output);
+  assert.match(result.output, new RegExp(`stable is at ${v1}`));
+  assert.equal(out(workspace, "migrated.txt"), "v1 postgres://workspace-db");
+  assert.equal(out(workspace, ".flow-deploy-release"), "v2026.10.15");
+});
+
+test("boot starts the workspace updater in the background, unless it is turned off", async (t) => {
+  const { workspace, remote } = fixture(t);
+  const api = await checksApi(t);
+  const off = await deploy(workspace, "boot", { FLOW_WORKSPACE_UPDATER: "off" }, { remote, api });
+  assert.equal(off.status, 0, off.output);
+  assert.match(off.output, /does not start/);
+  assert.equal(existsSync(join(workspace, ".flow-workspace")), false);
+
+  const started = await deploy(workspace, "boot", { DATABASE_URL: "postgres://workspace-db", FLOW_WORKSPACE_UPDATE_ONCE: "1" }, { remote, api });
+  assert.equal(started.status, 0, started.output);
+  assert.match(started.output, /the workspace updater started/);
+  const migrated = join(workspace, ".flow-deploy/migrated.txt");
+  for (let i = 0; i < 100 && !existsSync(join(workspace, ".flow-workspace/workspace-db")); i++) {
+    await new Promise((wait) => setTimeout(wait, 200));
+  }
+  assert.equal(readFileSync(migrated, "utf8").trim(), "v2 postgres://workspace-db");
+  assert.match(readFileSync(join(workspace, ".flow-workspace/updater.log"), "utf8"), /checking main/);
 });
