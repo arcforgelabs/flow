@@ -17,3 +17,13 @@ test('search.js is served with the other page scripts', () => {
   assert.match(read('../server/ui/routes.js'), /'search\.js'/);
   assert.match(read('../server/ui/app.js'), /import \{ openSearch \} from '\/assets\/ui\/search\.js';/);
 });
+
+test('the menu button folds the sidebar on wide screens and opens it on narrow ones', () => {
+  const page = read('../server/ui/app-page.js');
+  assert.match(page, /<div class="fx-side__head">[\s\S]*id="menu-toggle"[^>]*aria-controls="nav"/);
+  const css = read('../server/ui/flow.css');
+  assert.match(css, /@media \(min-width: 821px\) \{\n  \.fx-shell\[data-folded\] \.fx-side \{ width: 64px;/);
+  assert.match(css, /\.fx-shell\[data-menu-open\] \.fx-nav \{ display: flex; \}/);
+  // Folded, the page names stay for screen readers.
+  assert.match(css, /\.fx-shell\[data-folded\] \.fx-nav__label \{ position: absolute; width: 1px;/);
+});

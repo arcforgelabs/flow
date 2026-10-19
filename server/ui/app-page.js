@@ -34,9 +34,12 @@ const BODY = `<div class="fx-app">
     <div class="fx-card fx-message__card fx-state-no-access" id="no-access"></div>
   </section>
 
-  <div class="fx-state-signed-in fx-shell">
+  <div class="fx-state-signed-in fx-shell" id="shell">
     <aside class="fx-side">
-      <a class="fx-brand" href="/">${FLOW_MARK}<span>Flow</span></a>
+      <div class="fx-side__head">
+        <a class="fx-brand" href="/">${FLOW_MARK}<span>Flow</span></a>
+        <button type="button" class="fx-btn fx-btn--ghost fx-btn--icon" id="menu-toggle" aria-controls="nav" aria-label="Menu"></button>
+      </div>
       <nav class="fx-nav" id="nav" aria-label="Flow"></nav>
       <div class="fx-side__end">
         <div id="user-button" class="fx-side__user"></div>

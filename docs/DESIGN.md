@@ -111,8 +111,11 @@ The page at `/sign-in`, `/people`, `/account` and `/appearance`
   initial, then the name, or the email when there is no name, clipped to fit)
   that opens the account menu (Manage account, Report a problem when Sentry
   is on, Sign out), and Search (also Ctrl+K or ⌘K) for pages, invoices and
-  jobs. On narrow screens the sidebar is a bar across the top, and the chip is
-  the photo or initial alone.
+  jobs. While Sentry's report form is on, "Report a problem" sits at the
+  foot of the menu, above the chip (an icon when folded). The menu button at the top folds the sidebar to its icons and back;
+  the choice stays in the browser. On narrow screens the sidebar is a bar
+  across the top (menu button, Flow mark, account photo, Search), and the menu
+  button opens the pages as a panel below the bar.
 - **People** (owners): page header with one primary action, Invite someone
   (a dialog: email and role). A table of people with initials, the role as a
   select, access as a status pill (Active, Invited, Waiting for approval,

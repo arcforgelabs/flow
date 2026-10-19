@@ -210,6 +210,7 @@ const ICON_PATHS = {
   person: '<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-7 8-7s8 3 8 7"/>',
   flag: '<path d="M5 21V4M5 4h11l-2 4 2 4H5"/>',
   search: '<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/>',
+  menu: '<path d="M4 6h16M4 12h16M4 18h16"/>',
   palette: '<path d="M12 3a9 9 0 100 18c1.1 0 1.5-.8 1.5-1.6 0-1-.8-1.4-.8-2.4 0-.9.7-1.5 1.6-1.5H17a4 4 0 004-4c0-4.7-4-8.5-9-8.5z"/><circle cx="7.5" cy="11" r="1"/><circle cx="10" cy="7" r="1"/><circle cx="15" cy="7" r="1"/>',
 };
 
@@ -218,6 +219,60 @@ function icon(name) {
   node.innerHTML = `<svg viewBox="0 0 24 24">${ICON_PATHS[name] ?? ''}</svg>`;
   return node;
 }
+
+// The menu button at the top of the sidebar. On a wide screen it folds the
+// sidebar to its icons and back, and the choice stays in this browser. On a
+// narrow screen the sidebar is a bar across the top, and the button opens
+// the menu below it; choosing a page, Escape or a click outside closes it.
+const NARROW = window.matchMedia('(max-width: 820px)');
+const FOLDED_KEY = 'flow_sidebar_folded';
+
+function readFolded() {
+  try { return localStorage.getItem(FOLDED_KEY) === '1'; } catch { return false; }
+}
+
+function drawMenu() {
+  const shell = $('shell');
+  const folded = readFolded();
+  shell.toggleAttribute('data-folded', folded);
+  const open = NARROW.matches ? shell.hasAttribute('data-menu-open') : !folded;
+  const toggle = $('menu-toggle');
+  const label = NARROW.matches ? (open ? 'Close the menu' : 'Open the menu') : (folded ? 'Show the menu' : 'Fold the menu');
+  toggle.setAttribute('aria-expanded', String(open));
+  toggle.setAttribute('aria-label', label);
+  toggle.title = label;
+  // Folded, a page's name shows when the pointer rests on its icon.
+  for (const link of document.querySelectorAll('[data-nav]')) {
+    if (folded && !NARROW.matches) link.title = link.dataset.label;
+    else link.removeAttribute('title');
+  }
+}
+
+function closeMenu() {
+  if (!$('shell').hasAttribute('data-menu-open')) return;
+  $('shell').removeAttribute('data-menu-open');
+  drawMenu();
+}
+
+function toggleMenu() {
+  if (NARROW.matches) {
+    $('shell').toggleAttribute('data-menu-open');
+  } else {
+    try { localStorage.setItem(FOLDED_KEY, readFolded() ? '0' : '1'); } catch { /* the choice is only a convenience */ }
+  }
+  drawMenu();
+}
+
+NARROW.addEventListener('change', () => { $('shell').removeAttribute('data-menu-open'); drawMenu(); });
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && $('shell')?.hasAttribute('data-menu-open')) {
+    closeMenu();
+    $('menu-toggle').focus();
+  }
+});
+document.addEventListener('click', (event) => {
+  if (!event.target.closest?.('.fx-side') || event.target.closest?.('[data-nav]')) closeMenu();
+});
 
 // Search, from the sidebar foot or Ctrl+K (⌘K): the pages this person may
 // open, invoices and jobs (search.js).
@@ -259,7 +314,7 @@ async function route() {
   const [view, id] = currentView();
   const path = id ? `/${view}/${id}` : `/${view}`;
   if (location.pathname !== path) history.replaceState(null, '', path);
-  for (const link of document.querySelectorAll('[data-nav]')) {
+  for (const link of document.querySelectorAll('a[data-nav]')) {
     link.setAttribute('aria-current', link.dataset.nav === view ? 'page' : 'false');
   }
   main.replaceChildren();
@@ -315,9 +370,16 @@ function renderShell() {
     if (view.ownerOnly && me?.person.role !== 'owner') continue;
     if (view.group && view.group !== group) items.push(h('span', { class: 'fx-nav__group' }, view.group));
     group = view.group;
-    items.push(h('a', { href: `/${name}`, 'data-nav': name, onclick: navigate }, icon(view.icon), h('span', {}, view.label)));
+    items.push(h('a', { href: `/${name}`, 'data-nav': name, 'data-label': view.label, onclick: navigate }, icon(view.icon), h('span', { class: 'fx-nav__label' }, view.label)));
   }
-  nav.replaceChildren(...items);
+  // "Report a problem" sits at the foot of the menu, above the account chip,
+  // while Sentry and its report form are on (monitoring.js).
+  const report = h('button', { type: 'button', class: 'fx-nav__report', 'data-nav': 'report', 'data-label': 'Report a problem', hidden: true },
+    icon('flag'), h('span', { class: 'fx-nav__label' }, 'Report a problem'));
+  nav.replaceChildren(...items, report);
+  $('menu-toggle').replaceChildren(icon('menu'));
+  $('menu-toggle').onclick = toggleMenu;
+  drawMenu();
   // The sidebar foot shows who is signed in: photo or initial, then the name
   // (the email when the account has no name). It opens the account menu.
   const userButton = { afterSignOutUrl: '/sign-in', showName: true };
@@ -325,11 +387,13 @@ function renderShell() {
   $('search').onclick = search;
   mountClerk('userButton', $('user-button'), userButton);
   // Errors and problem reports go to the installation's own Sentry, when the
-  // Sentry integration is on (monitoring.js). Then the account menu has
-  // "Report a problem". Flow works the same without it.
+  // Sentry integration is on (monitoring.js). Then "Report a problem" shows
+  // in the menu and in the account menu. Flow works the same without it.
   startMonitoring({ flow, person: me.person })
     .then((openReport) => {
       if (!openReport) return;
+      report.hidden = false;
+      report.onclick = () => { openReport().catch((error) => toast(error.message, 'danger')); };
       unmountClerk($('user-button'));
       mountClerk('userButton', $('user-button'), { ...userButton, customMenuItems: [reportMenuItem(openReport)] });
     })
