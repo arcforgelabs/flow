@@ -23,14 +23,12 @@ export async function startMonitoring({ flow, person, button }) {
   const Sentry = window.Sentry;
   const integrations = config.feedback ? [Sentry.feedbackIntegration({
     autoInject: false,
-    colorScheme: document.documentElement.dataset.mode === 'dark' ? 'dark' : 'light',
+    // The form's colours and font come from flow.css (#sentry-feedback), so
+    // it follows each person's theme and mode, even when they change it.
+    colorScheme: 'light',
     showBranding: false,
     // Flow already knows who is signed in (setUser below).
     showName: false,
-    // The form takes the installation's brand colour (CSS variables reach
-    // into the form's shadow DOM).
-    themeLight: { accentBackground: 'var(--t-brand)' },
-    themeDark: { accentBackground: 'var(--t-brand)' },
     enableScreenshot: true,
     triggerLabel: 'Report a problem',
     formTitle: 'Report a problem',
