@@ -1,15 +1,19 @@
 import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
-import { enqueueJob, runNextJob } from '../../core/queue.js';
+import { deadHoldSince, deadSince, enqueueJob, runNextJob } from '../../core/queue.js';
 import { isCallsStopped } from '../call-guard.js';
 import { lastSync, syncCatalogue } from './catalogue.js';
+import { mirrorState } from './lookup.js';
 import { MIRROR_RESOURCES, mirrorXero } from './mirror.js';
 
-// The history import. When an owner connects Xero, Flow copies the
-// organisation's invoices, credit notes and payments into the mirror
-// (mirror.js) as a background job, so nobody runs a script by hand. The job
-// reads in slices; a slice that stops at the day's budget or its page limit
-// queues the next slice. It only reads from Xero.
+// The history import, then the reads of changes. When an owner connects Xero,
+// Flow copies the organisation's invoices, credit notes and payments into the
+// mirror (mirror.js) as a background job, so nobody runs a script by hand. The
+// job reads in slices; a slice that stops at the day's budget or its page
+// limit queues the next slice. When every resource is read to its end, the
+// same job is queued again for REFRESH_MS later and reads only what changed
+// since its cursor (issue #131), so the copy stays fresh (lookup.js). It only
+// reads from Xero.
 
 export const IMPORT_KIND = 'xero.import';
 const IMPORT_KEY = 'history';
@@ -19,6 +23,10 @@ const LEASE_MS = 30 * 60 * 1000;
 // Xero's day limit resets on a rolling day; an hour is a cheap re-check.
 const BUDGET_WAIT_MS = 60 * 60 * 1000;
 const IDLE_MS = 30 * 1000;
+// How often a finished copy reads Xero's changes again. Each read costs about
+// one call per resource when little changed: 96 a day for each of invoices and
+// credit notes, inside the reserve the mirror leaves (XERO_MIRROR_RESERVE_FRACTION).
+export const REFRESH_MS = 15 * 60 * 1000;
 // Contacts and items are read again once a day, so the matcher can link each
 // customer (server/core/pipeline.js) without a person pressing Sync.
 const CATALOGUE_EVERY_MS = 24 * 60 * 60 * 1000;
@@ -43,6 +51,11 @@ export async function organisationsToImport(db, mode) {
       and (select count(*) from xero_mirror_cursors m
            where m.organisation_id = c.organisation_id and m.passes > 0) < ${MIRROR_RESOURCES.length}`);
   return rows.map((r) => r.organisation_id);
+}
+
+// The next read for one organisation: queued now unless one is open already.
+export async function queueChangesRead(db, organisationId, { runAfter = null } = {}) {
+  return queueHistoryImport(db, organisationId, { reason: 'changes', runAfter });
 }
 
 // One slice of the import for one job. Answers what it read and whether more
@@ -75,6 +88,10 @@ export async function runImportOnce(db, runtime, { workerId = `xero-import-${ran
     const { more, retryAfterMs } = ran.job.result;
     const wait = more === 'budget' ? BUDGET_WAIT_MS : more === 'stopped' ? Math.max(IDLE_MS, Number(retryAfterMs) || BUDGET_WAIT_MS) : 0;
     await queueHistoryImport(db, ran.job.organisationId, { reason: ran.job.result.more, runAfter: new Date(Number(now()) + wait) });
+  } else if (ran?.outcome === 'succeeded' && !ran.job.result?.stoppedBy) {
+    // Read to the end: read the changes again later. A stop only a person
+    // clears queues nothing; connecting or saving the settings queues it.
+    await queueChangesRead(db, ran.job.organisationId, { runAfter: new Date(Number(now()) + REFRESH_MS) });
   }
   return ran;
 }
@@ -128,10 +145,46 @@ export async function refreshStaleCatalogues(db, runtime, { now = Date.now, log 
   }
 }
 
+// Keeps a read queued for each connected organisation. A read that gave up
+// (dead) waits for a person, a restart or the next day (issue #101), and
+// while the call guard stops Xero calls no read is queued.
+export async function keepReadsQueued(db, runtime, { startedAtMs = Date.now(), now = Date.now } = {}) {
+  const { rows } = await db.execute(sql`select organisation_id, tenant_id from xero_connections where mode = ${runtime.settings.mode}`);
+  for (const { organisation_id: organisationId, tenant_id: tenantId } of rows) {
+    if (await deadSince(db, organisationId, { kind: IMPORT_KIND, dedupeKey: IMPORT_KEY, since: deadHoldSince(startedAtMs, Number(now())) })) continue;
+    try {
+      await runtime.guardFor(db).check(tenantId);
+    } catch (error) {
+      if (isCallsStopped(error)) continue;
+      throw error;
+    }
+    await queueChangesRead(db, organisationId);
+  }
+}
+
+// Reports a copy that went stale once with log.error, and its recovery with
+// log.info. `stale` is the set of organisations already reported.
+export async function reportStaleCopies(db, runtime, { stale = new Set(), now = Date.now, log = console } = {}) {
+  const { rows } = await db.execute(sql`select organisation_id from xero_connections where mode = ${runtime.settings.mode}`);
+  for (const { organisation_id: organisationId } of rows) {
+    const state = await mirrorState(db, organisationId, { now: new Date(Number(now())) });
+    if (!state.complete) continue;
+    if (!state.fresh && !stale.has(organisationId)) {
+      stale.add(organisationId);
+      log.error?.(`[xero] the copy of Xero for organisation ${organisationId} is out of date (last full read ${state.lastPassAt?.toISOString() ?? 'never'}); drafts by rule wait until it is read again`);
+    } else if (state.fresh && stale.delete(organisationId)) {
+      log.info?.(`[xero] the copy of Xero for organisation ${organisationId} is up to date again`);
+    }
+  }
+  return stale;
+}
+
 // The background worker: runs due slices one at a time, then waits. Started
 // by the adapter outside replay mode; stop() waits for a slice in flight.
 export function createImportWorker({ db, runtime, log = console, timers = { setTimeout, clearTimeout }, firstDelayMs = 10_000 }) {
   const workerId = `xero-import-${randomUUID()}`;
+  const startedAtMs = Date.now();
+  const stale = new Set();
   let timer = null;
   let running = null;
   let stopped = true;
@@ -149,12 +202,14 @@ export function createImportWorker({ db, runtime, log = console, timers = { setT
     running = (async () => {
       try {
         await refreshStaleCatalogues(db, runtime, { log });
+        await keepReadsQueued(db, runtime, { startedAtMs });
+        await reportStaleCopies(db, runtime, { stale, log });
         const ran = await runImportOnce(db, runtime, { workerId });
         if (ran) {
           busy = true;
           const read = (ran.job.result?.results ?? []).map((r) => `${r.resource} ${r.read}`).join(', ');
-          if (ran.outcome === 'dead') log.error?.('[xero] the history import gave up after its last attempt');
-          log.info?.(`[xero] import ${ran.outcome} for organisation ${ran.job.organisationId}${read ? `: ${read}` : ''}${ran.job.result?.more ? `; more (${ran.job.result.more})` : ''}`);
+          if (ran.outcome === 'dead') log.error?.('[xero] reading Xero gave up after its last attempt');
+          log.info?.(`[xero] read ${ran.outcome} for organisation ${ran.job.organisationId}${read ? `: ${read}` : ''}${ran.job.result?.more ? `; more (${ran.job.result.more})` : ''}`);
         }
       } catch (error) {
         log.error?.(`[xero] import worker: ${error?.code ?? 'error'}: ${error?.message ?? error}`);
@@ -171,6 +226,8 @@ export function createImportWorker({ db, runtime, log = console, timers = { setT
       for (const organisationId of await organisationsToImport(db, runtime.settings.mode)) {
         await queueHistoryImport(db, organisationId, { reason: 'start' });
       }
+      // A finished copy reads its changes again from the first tick on
+      // (keepReadsQueued), so an upgrade or a restart needs no step.
       schedule(firstDelayMs);
     },
     async stop() {

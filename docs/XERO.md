@@ -269,6 +269,7 @@ flowchart LR
   later --> slice
   next --> slice
   slice -- all resources done --> done[History complete]
+  done -- 15 minutes later --> slice
 ```
 
 - The import is a job on the core queue (`server/integrations/xero/import.js`).
@@ -281,6 +282,26 @@ flowchart LR
   reserve share of the day's calls (`XERO_MIRROR_RESERVE_FRACTION`).
 - A failed slice retries with the queue's back-off. After its last attempt
   it opens a review item (`job.dead`).
+
+### Reading the changes
+
+The copy is fresh only while its last full read of invoices is less than a
+day old (`mirrorState` in `lookup.js`). A copy that is not fresh proves
+nothing, so drafts by rule wait and the matcher does not say "no invoice"
+(issue #131). So the import never ends:
+
+- When every resource is read to its end, the same job is queued again for
+  15 minutes later (`REFRESH_MS`). It reads only what changed since each
+  cursor: with few changes, one call per resource.
+- The worker keeps one read queued for each connected organisation, so a
+  restart or an upgrade needs no step. While the call guard stops Xero calls,
+  no read is queued. A read that gave up waits for a person (its review
+  item), a restart or the next day.
+- A copy that goes out of date is reported once with `log.error`, and again
+  when it is fresh. `health()` shows each copy under `copies` and is not `ok`
+  while a complete copy is out of date.
+- About 192 calls a day (invoices and credit notes, every 15 minutes), inside
+  the reserve the mirror leaves for drafts and people.
 
 `POST /api/xero/mirror` with `{ "organisationId": "…", "resources"?: [...] }`
 (owner or admin) reads each resource from its cursor now. `GET /api/xero/mirror`
