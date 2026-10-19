@@ -24,10 +24,13 @@ erDiagram
   organisations ||--o{ background_jobs : runs
   organisations ||--o{ outbox : "writes out through"
   organisations ||--o{ review_items : "asks a person through"
+  organisations ||--o{ prior_links : "carries over from an earlier app"
 ```
 
 `external_links`, `background_jobs`, `outbox` and `review_items` are the data
-spine every integration shares (`docs/DATA_SPINE.md`).
+spine every integration shares (`docs/DATA_SPINE.md`). `prior_links` holds
+job to accounting record links from an earlier installation, one per job and
+system, until the job becomes an obligation.
 
 `people` lists who may sign in and their role (`owner`, `admin`, `staff`).
 One installation serves one lab, so it is installation-wide.

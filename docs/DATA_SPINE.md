@@ -149,6 +149,16 @@ creates them at start (#40).
 
 Tests: `test/data-spine.test.js`, against PostgreSQL, synthetic data.
 
+### Links from an earlier installation (phase 2)
+
+`prior_links` holds the earlier app's Seazona order to Xero invoice links
+(`server/import/at-start.js`). Each start adds the ones Flow does not hold,
+while `FLOW_IMPORT_EARLIER_SCHEMA` is set. A link a person made there is
+`person`; one the earlier app matched by itself is `imported`. When the
+pipeline (#58) first makes the job's obligation, it reads the link with
+`priorLinkFor` and checks it against the Xero mirror before it counts as
+evidence. So history links cost no Xero calls.
+
 ### Organisation on adapter tables (phase 2)
 
 The Seazona tables are installation-wide today. Phase 2 adds
@@ -170,7 +180,7 @@ row is dropped.
 
 | Phase | What | Issues |
 | --- | --- | --- |
-| 2 | Xero mirror of invoices, credit notes and payments with history, imported as a job when Xero is connected (built: `docs/XERO.md`, "The mirror"); seed links from an earlier installation's job ledger with exact ids | #54, #45 |
+| 2 | Xero mirror of invoices, credit notes and payments with history, imported as a job when Xero is connected (built: `docs/XERO.md`, "The mirror"); links from an earlier installation imported at start (built: `prior_links`) | #54, #45 |
 | 3 | The pipeline on the job queue, with no writes | #58 |
 | 4 | Writes through the outbox, each behind its own switch | #39 |
 | 5 | Screens: review queue, accounting usage, price differences, duplicates | #2, #46, #47 |

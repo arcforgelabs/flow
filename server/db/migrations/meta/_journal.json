@@ -43,6 +43,13 @@
       "when": 1792388648997,
       "tag": "0005_data_spine",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1792390491235,
+      "tag": "0006_prior_links",
+      "breakpoints": true
     }
   ]
 }

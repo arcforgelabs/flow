@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { after, before, describe, test } from 'node:test';
 import { migrateDatabase } from '../server/db/index.js';
-import { importEarlierAtStart, resolveImportAtStart } from '../server/import/at-start.js';
+import { priorLinkFor } from '../server/core/links.js';
+import { importEarlierAtStart, importEarlierLinksAtStart, resolveImportAtStart } from '../server/import/at-start.js';
 import { freshDatabase, skipWithoutDatabase } from './support/db.js';
 
 const quiet = { info() {} };
@@ -32,6 +33,12 @@ describe('import from the earlier codebase at start', { skip: skipWithoutDatabas
       INSERT INTO earlier.xero_catalog_contacts VALUES ('c1', 'Example Practice', NULL, 'ACTIVE', '{"IsCustomer":true}');
       INSERT INTO earlier.xero_catalog_items VALUES ('CRN', 'Crown', NULL, '{"unitPrice":220,"taxType":"OUTPUT"}', 1);
       INSERT INTO earlier.xero_catalog_invoices VALUES ('INV-0041', 'ACCREC');
+      CREATE TABLE earlier.seazona_order_xero_match_overrides (seazona_order_id TEXT PRIMARY KEY, xero_invoice_id TEXT, xero_invoice_number TEXT,
+        match_source TEXT NOT NULL, match_rule TEXT NOT NULL DEFAULT '', matched_at TEXT NOT NULL, matched_by TEXT, notes TEXT NOT NULL DEFAULT '');
+      INSERT INTO earlier.seazona_order_xero_match_overrides VALUES
+        ('9001', 'x-1', 'INV-0040', 'operator_link', '', '2026-05-01T02:03:04.000Z', 'someone@example.test', 'Example Patient'),
+        ('9002', 'x-2', 'INV-0041', 'backfill_sweep', 'patient_doctor_surname_total', 'not a date', NULL, ''),
+        ('9003', NULL, NULL, 'operator_link', '', '2026-05-01T00:00:00Z', NULL, 'pinned no match');
     `);
   });
 
@@ -51,7 +58,27 @@ describe('import from the earlier codebase at start', { skip: skipWithoutDatabas
     assert.equal(count, 1);
   });
 
+  test('carries the earlier order to invoice links over at each start, adding only new ones and no free text', async () => {
+    const settings = { schema: 'earlier', organisationName: 'Example Lab' };
+    assert.deepEqual(await importEarlierLinksAtStart({ db: handle.db, pool: handle.pool, settings, log: quiet }), { read: 2, added: 2 });
+    assert.deepEqual(await importEarlierLinksAtStart({ db: handle.db, pool: handle.pool, settings, log: quiet }), { read: 2, added: 0 });
+    const { rows: [lab] } = await handle.pool.query('select id from organisations');
+    const person = await priorLinkFor(handle.db, lab.id, { sourceSystem: 'seazona', sourceJobRef: '9001', system: 'xero' });
+    assert.equal(person.externalId, 'x-1');
+    assert.equal(person.externalNumber, 'INV-0040');
+    assert.equal(person.matchedBy, 'person');
+    assert.equal(person.matchedAt.toISOString(), '2026-05-01T02:03:04.000Z');
+    const sweep = await priorLinkFor(handle.db, lab.id, { sourceSystem: 'seazona', sourceJobRef: '9002', system: 'xero' });
+    assert.equal(sweep.matchedBy, 'imported');
+    assert.equal(sweep.matchedAt, null);
+    assert.equal(await priorLinkFor(handle.db, lab.id, { sourceSystem: 'seazona', sourceJobRef: '9003', system: 'xero' }), null);
+    const { rows } = await handle.pool.query('select * from prior_links');
+    assert.doesNotMatch(JSON.stringify(rows), /Example Patient|someone@example/);
+    assert.equal(await importEarlierLinksAtStart({ db: handle.db, pool: handle.pool, settings: null, log: quiet }), null);
+  });
+
   test('a schema without the earlier tables is an error, and writes nothing', async () => {
+    await handle.pool.query('DELETE FROM prior_links');
     await handle.pool.query('DELETE FROM contacts; DELETE FROM price_items; DELETE FROM organisations');
     await assert.rejects(
       importEarlierAtStart({ db: handle.db, pool: handle.pool, settings: { schema: 'missing', organisationName: 'Example Lab' }, log: quiet }),

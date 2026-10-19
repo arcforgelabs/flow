@@ -203,7 +203,7 @@ Keep these in the installation's secret store, never in a repository.
 | `FLOW_OWNER_GOOGLE_DOMAINS` | configuration | Your Google Workspace domain, for example `example.com`. Comma-separated. Required on Replit's managed Clerk: unset, no owner can manage people. No default. |
 | `FLOW_OWNER_MFA_MAX_AGE` | configuration | How long a Clerk second factor counts for owner actions. Default `12h`. |
 | `FLOW_PUBLIC_ORIGIN` | configuration | The published app's `https://` origin: its `*.replit.app` address, or a custom domain if it has one. Clerk then accepts only sessions minted for it. In a Replit workspace its development address is accepted too, because the workspace and the published app share secrets. Elsewhere, leave it unset in development. |
-| `FLOW_IMPORT_EARLIER_SCHEMA` | configuration | The schema that holds the earlier codebase's tables. While the database has no organisation, Flow imports from it at start ("Move from the earlier codebase"). Unset: no import. |
+| `FLOW_IMPORT_EARLIER_SCHEMA` | configuration | The schema that holds the earlier codebase's tables. While the database has no organisation, Flow imports from it at start; while it is set, each start also adds the earlier order to invoice links ("Move from the earlier codebase"). Unset: no import. |
 | `FLOW_IMPORT_ORGANISATION` | configuration | The lab's name for that import. Required with `FLOW_IMPORT_EARLIER_SCHEMA`. |
 
 Boot stops if a setting is malformed or a key is missing. Error messages name
@@ -369,5 +369,10 @@ imports at its own start:
 4. While the database has no organisation, the start reads that schema in a
    read-only transaction and writes the records. A failed import stops the
    start, so Flow never opens with half its records. The log shows the counts
-   (`[import]`). Once an organisation exists, the start does nothing; unset
-   both settings.
+   (`[import]`). Once an organisation exists, the start imports no more
+   records.
+5. While both settings stay set, each start also carries over the earlier
+   app's order to invoice links (`seazona_order_xero_match_overrides`) into
+   `prior_links`. It adds only links Flow does not hold, copies ids only (no
+   notes, no names), and logs `[import] links`. A failure here is logged and
+   the start goes on. Unset both settings when the links are in.

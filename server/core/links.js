@@ -1,5 +1,5 @@
 import { and, eq, sql } from 'drizzle-orm';
-import { externalLinks, LINK_ENTITIES, LINK_MATCHES } from '../db/schema.js';
+import { externalLinks, LINK_ENTITIES, LINK_MATCHES, priorLinks } from '../db/schema.js';
 import { FlowError, notFound } from './errors.js';
 import { openReview, resolveReviewFor } from './review.js';
 
@@ -150,4 +150,17 @@ export async function flowIdFor(db, organisationId, { system, entity, externalId
 export async function externalIdFor(db, organisationId, { system, entity, flowId }) {
   const row = await activeBy(db, organisationId, { system, entity }, externalLinks.flowId, flowId);
   return row?.externalId ?? null;
+}
+
+// The link an earlier installation held for a work system's job, if any
+// (`prior_links`). The pipeline reads it when the job first becomes an
+// obligation (#58).
+export async function priorLinkFor(db, organisationId, { sourceSystem, sourceJobRef, system }) {
+  const [row] = await db.select().from(priorLinks).where(and(
+    eq(priorLinks.organisationId, organisationId),
+    eq(priorLinks.sourceSystem, sourceSystem),
+    eq(priorLinks.sourceJobRef, sourceJobRef),
+    eq(priorLinks.system, system),
+  ));
+  return row ?? null;
 }

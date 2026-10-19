@@ -344,6 +344,31 @@ export const externalLinks = pgTable('external_links', {
   check('external_links_name_needs_person', sql`${t.matchedBy} <> 'name' or ${t.state} <> 'active' or ${t.confirmedAt} is not null`),
 ]);
 
+// Links between a work system's job and an accounting record, carried over
+// from an earlier installation (server/import/at-start.js). They wait here
+// until the job becomes an obligation; then they are evidence for its link.
+// `person` means a person made the link there; `imported` means the earlier
+// app matched it by itself.
+export const PRIOR_LINK_MATCHES = ['person', 'imported'];
+
+export const priorLinks = pgTable('prior_links', {
+  id: id(),
+  organisationId: organisationId().references(() => organisations.id),
+  sourceSystem: text('source_system').notNull(),
+  sourceJobRef: text('source_job_ref').notNull(),
+  system: text('system').notNull(),
+  externalId: text('external_id').notNull(),
+  externalNumber: text('external_number'),
+  matchedBy: text('matched_by').notNull(),
+  matchedAt: timestamp('matched_at', { withTimezone: true }),
+  origin: text('origin').notNull(),
+  createdAt: createdAt(),
+}, (t) => [
+  uniqueIndex('prior_links_job').on(t.organisationId, t.sourceSystem, t.sourceJobRef, t.system),
+  index('prior_links_external').on(t.organisationId, t.system, t.externalId),
+  check('prior_links_matched_by_valid', inList('matched_by', PRIOR_LINK_MATCHES)),
+]);
+
 // Background job queue (issue 6). Workers claim with FOR UPDATE SKIP LOCKED and
 // hold a lease; a lease that runs out makes the job claimable again. One queued
 // or running job per (organisation, kind, dedupe key).
