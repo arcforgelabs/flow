@@ -52,7 +52,7 @@ export function settingsEnvironment({ env, stored, adapters, secrets }) {
       }
     }
     if (secrets) {
-      for (const name of adapter.setup.derivedKeys) merged[name] = deriveKey(secrets, name).toString('hex');
+      for (const name of adapter.setup.derivedKeys ?? []) merged[name] = deriveKey(secrets, name).toString('hex');
     }
   }
   for (const [name, value] of Object.entries(env)) {
