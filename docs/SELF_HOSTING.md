@@ -17,6 +17,10 @@ Every installation needs the same things, whatever runs it:
   separated by commas (for example `seazona,xero`). Unset: none. An unknown
   name stops boot. An integration's tables are created at the first start
   with it on, and turning it off never drops them (`docs/INTEGRATIONS.md`).
+- **Design system** (optional): `FLOW_THEME`, the theme family every browser
+  starts on, for example `tide`. Unset: `harbour`. An unknown name stops
+  boot. A person can still choose another on the Appearance page
+  (`docs/DESIGN.md`).
 
 Keep every secret in your platform's secret store. Never put one in a file in
 a repository, including your own deploy repository.
@@ -164,7 +168,7 @@ Flow always keeps one active owner, and nobody changes or removes themself.
   for an unknown email is not turned into a new Clerk account.
 - Someone with a Clerk account made elsewhere still gets no access, and Flow
   stores nothing about them (`403 not_invited`).
-- An owner invites people by email and role, on the sign-in page or with
+- An owner invites people by email and role, on the People page or with
   `POST /api/people`. Flow makes the invitee's Clerk account (no password)
   through Clerk's Backend API. The invitee signs in with Google on that
   address, and Flow links them by their verified email.

@@ -4,6 +4,9 @@ import { createSignInRouter } from './auth/routes.js';
 import { deployedBuildStatus } from './deployed-build.js';
 import { integrationsHealth } from './integrations/health.js';
 import { rateLimit } from './rate-limit.js';
+import { DEFAULT_FAMILY } from './theme/themes.js';
+import { messagePage } from './ui/page.js';
+import { createUiAssetsRouter } from './ui/routes.js';
 
 // The Flow HTTP app. Routes are added per module (invoices, bills, payments,
 // dashboard).
@@ -19,7 +22,8 @@ import { rateLimit } from './rate-limit.js';
 // (server/deployed-build.js); `updates` is a server/update-check.js checker.
 // `integrations` is the started registry (server/integrations/index.js); each
 // adapter's own routes are mounted under /api/<id>, and GET /health reports
-// each one (server/integrations/health.js).
+// each one (server/integrations/health.js). `defaultFamily` is the design
+// system every page starts on (FLOW_THEME, server/theme/themes.js).
 export function createApp({
   build = deployedBuildStatus(),
   database = null,
@@ -30,6 +34,7 @@ export function createApp({
   rateLimitPerMinute = 120,
   signInRateLimitPerMinute = 30,
   clerkProxyRateLimitPerMinute = 300,
+  defaultFamily = DEFAULT_FAMILY,
   log = console,
 } = {}) {
   const app = express();
@@ -59,6 +64,9 @@ export function createApp({
     app.use(auth.clerkProxy.path, rateLimit({ limit: clerkProxyRateLimitPerMinute, windowMs: 60_000 }), auth.clerkProxy.handler);
   }
 
+  // The design systems, Flow's components and the faces every page loads.
+  app.use(createUiAssetsRouter());
+
   app.use('/api', rateLimit({ limit: rateLimitPerMinute, windowMs: 60_000 }));
 
   // Machine access first, with its own authentication (issue #9). A Clerk
@@ -82,7 +90,10 @@ export function createApp({
     }
   }
 
-  for (const { path, handler } of integrations?.routes({ db: database?.db ?? null, personAuth: auth?.personAuth ?? null, log }) ?? []) {
+  // An adapter's own pages (such as the end of connecting Xero) use
+  // `messagePage` so they look like the rest of Flow.
+  const page = (options) => messagePage({ ...options, defaultFamily });
+  for (const { path, handler } of integrations?.routes({ db: database?.db ?? null, personAuth: auth?.personAuth ?? null, log, messagePage: page }) ?? []) {
     app.use(path, handler);
   }
 
@@ -91,6 +102,7 @@ export function createApp({
     db: database?.db ?? null,
     clerk: auth?.clerk ?? null,
     personAuth: auth?.personAuth ?? null,
+    defaultFamily,
     rateLimitPerMinute: signInRateLimitPerMinute,
     log,
   }));

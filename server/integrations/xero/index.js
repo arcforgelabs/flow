@@ -49,7 +49,7 @@ export function createXeroAdapter({ runtime: given = null } = {}) {
       // cursor is the next `since`.
       pullPayments: ({ organisationId, since }) => readPayments(database, current(), organisationId, { since: new Date(since) }),
     },
-    routes: ({ db, personAuth, log }) => createXeroRouter({ db, personAuth, runtime: current(), log }),
+    routes: ({ db, personAuth, log, messagePage }) => createXeroRouter({ db, personAuth, runtime: current(), log, messagePage }),
   };
 }
 

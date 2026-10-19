@@ -102,7 +102,7 @@ export function defineAdapter(adapter) {
     // stop() ends that work (tests, shutdown).
     start: start ?? null,
     stop: stop ?? null,
-    // Optional HTTP routes: routes({ db, personAuth, log }) returns a router
+    // Optional HTTP routes: routes({ db, personAuth, log, messagePage }) returns a router
     // mounted at /api/<id> (registry.routes).
     routes: routes ?? null,
   });
@@ -195,7 +195,7 @@ export function createRegistry({ log = console } = {}) {
         .filter((a) => ready(a) && typeof a.capabilities[capability] === 'function');
     },
     // The adapters' own HTTP routes, each under /api/<id>. `context` is
-    // { db, personAuth, log }. An enabled, ready adapter's router is built
+    // { db, personAuth, log, messagePage }. An enabled, ready adapter's router is built
     // once, here; a request to an adapter that is off gets its turned-off
     // answer (503), so a turned-off adapter never reads its settings or
     // tables.

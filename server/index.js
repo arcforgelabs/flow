@@ -6,6 +6,7 @@ import { createPersonAuth } from './auth/session.js';
 import { resolveSignInSettings } from './auth/settings.js';
 import { migrateDatabase, openDatabase } from './db/index.js';
 import { createIntegrations } from './integrations/index.js';
+import { resolveDefaultFamily } from './theme/themes.js';
 import { createUpdateChecker, UPDATE_CHECK_INTERVAL_MS } from './update-check.js';
 
 const port = Number(process.env.FLOW_PORT || process.env.PORT || 19300);
@@ -16,6 +17,13 @@ try {
   settings = resolveSignInSettings();
 } catch (error) {
   console.error(`[auth] ${error.message}`);
+  process.exit(1);
+}
+let defaultFamily;
+try {
+  defaultFamily = resolveDefaultFamily();
+} catch (error) {
+  console.error(`[ui] ${error.message}`);
   process.exit(1);
 }
 let integrations;
@@ -76,8 +84,8 @@ const trustProxy = process.env.REPL_ID || process.env.REPLIT_DEPLOYMENT ? 1 : fa
 
 const updates = createUpdateChecker();
 
-createApp({ database, auth, trustProxy, updates, integrations }).listen(port, () => {
-  console.log(`[flow] listening on ${port}`);
+createApp({ database, auth, trustProxy, updates, integrations, defaultFamily }).listen(port, () => {
+  console.log(`[flow] listening on ${port}; design system ${defaultFamily} (FLOW_THEME)`);
 });
 
 // The update notice: a release build logs when a newer release is out on its
