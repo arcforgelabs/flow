@@ -12,7 +12,8 @@ const STATUS_TONE = { draft: 'info', issued: 'success', void: 'mute' };
 // every draft is in one of them. A person marks a checked draft ready; any
 // later change sends it back. An issued invoice that failed to send is a
 // problem.
-const TABS = [['to_check', 'Drafts'], ['problem', 'Problem'], ['ready', 'Ready'], ['issued', 'Issued'], ['void', 'Void']];
+// Ready first: it opens by default, as the drafts most often wait there to send.
+const TABS = [['ready', 'Ready'], ['to_check', 'Drafts'], ['problem', 'Problem'], ['issued', 'Issued'], ['void', 'Void']];
 const VIEW_LABEL = { problem: 'Problem', ready: 'Ready', sending: 'Sending', to_check: 'Draft' };
 const VIEW_TONE = { problem: 'danger', ready: 'success', sending: 'info', to_check: 'info' };
 const EMPTY = {
@@ -53,7 +54,7 @@ const showDate = (iso) => (iso ? new Date(`${iso}T00:00:00`).toLocaleDateString(
 export async function renderInvoiceList(main, ui) {
   const { h, flow, pageHeader, notice, go, toast } = ui;
   const saved = sessionStorage.getItem('flow_invoice_tab');
-  const state = { status: TABS.some(([id]) => id === saved) ? saved : 'to_check', q: '', ticked: new Set() };
+  const state = { status: TABS.some(([id]) => id === saved) ? saved : 'ready', q: '', ticked: new Set() };
   const tabs = h('div', { class: 'fx-tabs', role: 'tablist' });
   const search = h('input', { class: 'fx-input fx-search', type: 'search', placeholder: 'Find a number, client or reference', 'aria-label': 'Find an invoice' });
   const bar = h('div', { class: 'fx-sendbar', hidden: true });
@@ -107,7 +108,6 @@ export async function renderInvoiceList(main, ui) {
           : [`${plural(res.marked, 'draft', 'drafts')} ready.`, 'success'])));
       }
     } else if (state.status === 'ready') {
-      parts.push(h('p', { class: 'fx-dim' }, to ? `Each invoice is issued, then goes to ${to}.` : 'Each invoice is issued. No accounting system is on.'));
       const buttons = [];
       if (ticked.length) {
         buttons.push(action(`Back to drafts (${ticked.length})`, 'mark-not-ready', () => ({ invoiceIds: ticked }),
