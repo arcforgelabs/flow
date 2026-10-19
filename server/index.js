@@ -5,6 +5,7 @@ import { seedFirstOwner } from './auth/people.js';
 import { createPersonAuth } from './auth/session.js';
 import { resolveSignInSettings } from './auth/settings.js';
 import { migrateDatabase, openDatabase } from './db/index.js';
+import { importEarlierAtStart, resolveImportAtStart } from './import/at-start.js';
 import { createIntegrations } from './integrations/index.js';
 import { resolveDefaultFamily } from './theme/themes.js';
 import { createUpdateChecker, UPDATE_CHECK_INTERVAL_MS } from './update-check.js';
@@ -34,11 +35,26 @@ try {
   process.exit(1);
 }
 
+let importAtStart;
+try {
+  importAtStart = resolveImportAtStart();
+} catch (error) {
+  console.error(`[import] ${error.message}`);
+  process.exit(1);
+}
+
 // Flow's records live in PostgreSQL. Migrations run before the server accepts
 // requests, so a release never serves an older schema. Then each enabled
 // integration's own tables, and no others (docs/INTEGRATIONS.md).
 const database = openDatabase();
 await migrateDatabase(database.db);
+// A failed import stops the start, so Flow never opens with half its records.
+try {
+  await importEarlierAtStart({ db: database.db, pool: database.pool, settings: importAtStart });
+} catch (error) {
+  console.error(`[import] ${error.message}`);
+  process.exit(1);
+}
 await integrations.start(database.db);
 const integrationsOn = integrations.list().filter((a) => a.enabled).map((a) => a.id);
 console.log(`[integrations] on: ${integrationsOn.join(', ') || 'none'} (FLOW_INTEGRATIONS)`);
