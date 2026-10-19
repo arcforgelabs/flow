@@ -1,5 +1,9 @@
 import assert from 'node:assert/strict';
+import { cpSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, test } from 'node:test';
+import express from 'express';
 import { createApp } from '../server/app.js';
 import { FAMILY_FONTS, fontStylesheets } from '../server/theme/font-families.js';
 import {
@@ -104,6 +108,25 @@ describe('pages and assets', () => {
     assert.equal((await request(app, `/assets/fonts/nunito-sans/files/${file}`)).status, 200);
     for (const path of ['/assets/theme/../app.js', '/assets/ui/page.js', '/assets/ui/routes.js', '/assets/fonts/nunito-sans/package.json', '/assets/fonts/left-pad/index.css']) {
       assert.equal((await request(app, path)).status, 404, path);
+    }
+  });
+
+  test('the components are served when Flow is installed under a dot directory', async () => {
+    // A Replit deployment installs Flow under /home/runner/workspace/.flow-deploy/.
+    // send's dotfile rule must not turn every component into a 404 there.
+    const base = mkdtempSync(join(tmpdir(), 'flow-'));
+    const install = join(base, '.flow-deploy');
+    try {
+      cpSync(new URL('../server', import.meta.url), join(install, 'server'), { recursive: true });
+      symlinkSync(new URL('../node_modules', import.meta.url), join(install, 'node_modules'), 'dir');
+      const { createUiAssetsRouter } = await import(join(install, 'server', 'ui', 'routes.js'));
+      const app = express().use(createUiAssetsRouter());
+      for (const path of ['/assets/ui/flow.css', '/assets/ui/app.js', '/assets/ui/flow-mark.svg', '/assets/theme/themes.js']) {
+        assert.equal((await request(app, path)).status, 200, path);
+      }
+      assert.equal((await request(app, '/assets/ui/page.js')).status, 404);
+    } finally {
+      rmSync(base, { recursive: true, force: true });
     }
   });
 });
