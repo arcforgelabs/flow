@@ -1,4 +1,4 @@
-CREATE TABLE "line_mappings" (
+CREATE TABLE IF NOT EXISTS "line_mappings" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"organisation_id" uuid NOT NULL,
 	"kind" text NOT NULL,
@@ -22,8 +22,14 @@ CREATE TABLE "line_mappings" (
 	CONSTRAINT "line_mappings_label_valid" CHECK (length("line_mappings"."label") between 1 and 200)
 );
 --> statement-breakpoint
-ALTER TABLE "invoice_lines" ADD COLUMN "account_code" text;--> statement-breakpoint
-ALTER TABLE "price_items" ADD COLUMN "description" text;--> statement-breakpoint
-ALTER TABLE "line_mappings" ADD CONSTRAINT "line_mappings_organisation_id_organisations_id_fk" FOREIGN KEY ("organisation_id") REFERENCES "public"."organisations"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "line_mappings" ADD CONSTRAINT "line_mappings_updated_by_people_id_fk" FOREIGN KEY ("updated_by") REFERENCES "public"."people"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
-CREATE UNIQUE INDEX "line_mappings_unique" ON "line_mappings" USING btree ("organisation_id","kind","match","label",coalesce("unit_amount_cents", -1));
+ALTER TABLE "invoice_lines" ADD COLUMN IF NOT EXISTS "account_code" text;--> statement-breakpoint
+ALTER TABLE "price_items" ADD COLUMN IF NOT EXISTS "description" text;--> statement-breakpoint
+DO $flow_guard$ BEGIN
+	ALTER TABLE "line_mappings" ADD CONSTRAINT "line_mappings_organisation_id_organisations_id_fk" FOREIGN KEY ("organisation_id") REFERENCES "public"."organisations"("id") ON DELETE no action ON UPDATE no action;
+EXCEPTION WHEN duplicate_object OR duplicate_table OR invalid_table_definition THEN NULL;
+END $flow_guard$;--> statement-breakpoint
+DO $flow_guard$ BEGIN
+	ALTER TABLE "line_mappings" ADD CONSTRAINT "line_mappings_updated_by_people_id_fk" FOREIGN KEY ("updated_by") REFERENCES "public"."people"("id") ON DELETE set null ON UPDATE no action;
+EXCEPTION WHEN duplicate_object OR duplicate_table OR invalid_table_definition THEN NULL;
+END $flow_guard$;--> statement-breakpoint
+CREATE UNIQUE INDEX IF NOT EXISTS "line_mappings_unique" ON "line_mappings" USING btree ("organisation_id","kind","match","label",coalesce("unit_amount_cents", -1));
