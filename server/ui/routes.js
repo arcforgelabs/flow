@@ -17,6 +17,8 @@ import { themeStylesheet } from '../theme/themes.js';
 const require = createRequire(import.meta.url);
 const here = dirname(fileURLToPath(import.meta.url));
 const themeDir = join(here, '..', 'theme');
+const logoDir = join(here, 'logos');
+const LOGO_FILES = new Set(['xero.svg', 'seazona.svg']);
 const THEME_FILES = new Set(['themes.js', 'color-contrast.js', 'openclaw-palettes.js', 'font-families.js']);
 const UI_FILES = new Set(['flow.css', 'appearance.js', 'clerk-appearance.js', 'app.js', 'invoicing.js', 'jobs.js', 'flow-mark.svg']);
 const MAX_AGE = '1h';
@@ -44,6 +46,8 @@ export function createUiAssetsRouter({ rateLimitPerMinute = 600 } = {}) {
   };
   router.get('/assets/theme/:file', sendFrom(themeDir, THEME_FILES));
   router.get('/assets/ui/:file', sendFrom(here, UI_FILES));
+  // Each integration's logo, the maker's own mark (Integrations).
+  router.get('/assets/ui/logos/:file', sendFrom(logoDir, LOGO_FILES));
 
   for (const name of FONT_PACKAGES) {
     const dir = dirname(require.resolve(`@fontsource-variable/${name}/LICENSE`));
