@@ -274,8 +274,9 @@ table:
 - **The API backfill** (the main source, below). It reads every past order
   from the Seazona API. Each order it reads is a batch row: the record of
   what the API confirmed.
-- **A CSV export** (a fallback). Seazona's help pages document no export
-  format, so this path is only for a file a person has.
+- **A CSV export** (parked). Seazona's help pages document no export
+  format, so this path is only for a file a person has. It is not built
+  out further unless the API backfill cannot do the job.
 
 The earlier app's own links from orders to Xero invoices are already in
 `prior_links` (imported at start); the matcher uses them as evidence for
