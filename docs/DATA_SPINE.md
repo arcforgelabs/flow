@@ -1,6 +1,8 @@
 # Data spine
 
-Status: design, phase 1. Nothing here is built yet. Issue #56 tracks it.
+Status: phase 1 is built: the four tables and the core code that keeps their
+rules (`server/core/links.js`, `queue.js`, `outbox.js`, `review.js`). No
+integration uses them yet. Issue #56 tracks the rest.
 
 The data spine is the set of tables and jobs that every integration uses.
 Records come in from an integration, get a Flow identity, and go out from
@@ -34,9 +36,10 @@ flowchart LR
 
 ## Phase 1: the tables
 
-Phase 1 adds four core tables and one column. It changes no behaviour: no
-code path uses them until phase 3 (#58). All are in `server/db/schema.js`, so
-every installation creates them at start (#40).
+Phase 1 adds four core tables (migration `0005_data_spine`) and the core code
+that keeps their rules. It changes no behaviour: no integration uses them
+until phase 3 (#58). All are in `server/db/schema.js`, so every installation
+creates them at start (#40).
 
 ### `external_links` (identity map, #57)
 
@@ -60,19 +63,20 @@ every installation creates them at start (#40).
   A proposed link opens a review item.
 - A link is never deleted. A replaced link is `superseded`, so history stays.
 
-### `jobs` (job queue, #6)
+### `background_jobs` (job queue, #6)
 
 | Column | Type | Meaning |
 | --- | --- | --- |
-| `id` | bigserial | |
+| `id` | uuid | |
 | `organisation_id` | uuid | |
 | `kind` | text | For example `seazona.feed`, `xero.payments`, `outbox.send` |
-| `dedupe_key` | text | One queued or running job per `(kind, dedupe_key)` |
+| `dedupe_key` | text | One queued or running job per `(organisation_id, kind, dedupe_key)` |
 | `payload` | jsonb | |
 | `state` | text | `queued`, `running`, `succeeded`, `failed`, `dead` |
 | `run_after` | timestamptz | Not before this time |
 | `attempts`, `max_attempts` | integer | |
 | `locked_by`, `locked_until` | text, timestamptz | The worker and its lease |
+| `result` | jsonb | What the last successful run reported |
 | `last_error` | text | Never a credential or a raw response |
 | `created_at`, `updated_at` | timestamptz | |
 
@@ -100,6 +104,7 @@ every installation creates them at start (#40).
 | `state` | text | `pending`, `sending`, `ambiguous`, `sent`, `failed`, `cancelled` |
 | `external_id` | text | The id the system gave the new record |
 | `attempts`, `last_error`, `sent_at` | | |
+| `created_by` | text | Who or what asked for the write |
 
 - A core action writes its outbox row in the same transaction as the core
   change, so a write is never lost and never made without its record.
@@ -122,15 +127,31 @@ every installation creates them at start (#40).
 | `evidence` | jsonb | Both sides, the field that differs, how Flow found it |
 | `money_at_risk_cents` | bigint | Sort order |
 | `state` | text | `open`, `resolved`, `dismissed` |
-| `resolution`, `resolved_by`, `resolved_at`, `note` | | |
+| `seen_count` | integer | How many times the finding was made |
+| `resolution`, `resolved_by`, `resolved_at`, `note` | | A closed item must have the first three |
 
 - One open item per `(organisation_id, kind, entity, flow_id)`: a partial
   unique index. A repeat finding updates the evidence.
 - A resolution that changes another system writes an outbox row.
 
-### Organisation on adapter tables
+### What the code guarantees
 
-The Seazona tables are installation-wide today. Phase 1 adds
+| Rule | Where |
+| --- | --- |
+| Two callers that link the same record at once make one link; the other gets `conflict` | `linkRecord`, an advisory lock per side, and the partial unique indexes |
+| A name match is never active without a person | `linkRecord`, and the check `external_links_name_needs_person` |
+| A worker whose lease ran out cannot finish the job another worker took over | `completeJob` and `failJob` match the worker and the attempt |
+| A job that uses every attempt, or fails with `retry: false`, is `dead` and opens a review item | `failJob`, `claimJobs` |
+| A write rolls back with the Flow change it belongs to | `queueWrite` takes the caller's transaction |
+| A send that did not finish is `ambiguous`, never sent again blind | `claimWrites` |
+| A sent write links the Flow record to the new external record | `markSent` |
+| A write moves only from the states its step allows | `move` in `outbox.js` |
+
+Tests: `test/data-spine.test.js`, against PostgreSQL, synthetic data.
+
+### Organisation on adapter tables (phase 2)
+
+The Seazona tables are installation-wide today. Phase 2 adds
 `organisation_id` to each, filled from the installation's one organisation,
 so the identity map can join them. An adapter migration adds the column; no
 row is dropped.

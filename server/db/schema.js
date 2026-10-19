@@ -1,15 +1,18 @@
 import { sql } from 'drizzle-orm';
 import {
+  bigint,
   boolean,
   check,
   date,
   foreignKey,
+  index,
   integer,
   jsonb,
   pgTable,
   text,
   timestamp,
   unique,
+  uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core';
 
@@ -303,4 +306,131 @@ export const obligationWritebacks = pgTable('obligation_writebacks', {
     foreignColumns: [billingObligations.organisationId, billingObligations.id],
   }),
   check('obligation_writebacks_state_valid', inList('state', WRITEBACK_STATES)),
+]);
+
+// The data spine (docs/DATA_SPINE.md, issue 56): the tables every integration
+// shares. Each row changes state; the spine never deletes one.
+
+// Identity map (issue 57). Which external record is each Flow record. At most
+// one active link per external record and per Flow record, in each system. A
+// link that is not exact stays `proposed` until a person confirms it.
+export const LINK_ENTITIES = ['contact', 'price_item', 'obligation', 'invoice', 'payment', 'credit_note'];
+export const LINK_MATCHES = ['created_by_flow', 'exact_id', 'imported', 'name', 'person'];
+export const LINK_STATES = ['active', 'proposed', 'superseded'];
+
+export const externalLinks = pgTable('external_links', {
+  id: id(),
+  organisationId: organisationId().references(() => organisations.id),
+  entity: text('entity').notNull(),
+  flowId: uuid('flow_id').notNull(),
+  system: text('system').notNull(),
+  externalId: text('external_id').notNull(),
+  matchedBy: text('matched_by').notNull(),
+  state: text('state').notNull(),
+  confirmedBy: uuid('confirmed_by').references(() => people.id, { onDelete: 'set null' }),
+  confirmedAt: timestamp('confirmed_at', { withTimezone: true }),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, (t) => [
+  unique('external_links_org_id').on(t.organisationId, t.id),
+  uniqueIndex('external_links_active_external')
+    .on(t.organisationId, t.system, t.entity, t.externalId).where(sql`state = 'active'`),
+  uniqueIndex('external_links_active_flow')
+    .on(t.organisationId, t.system, t.entity, t.flowId).where(sql`state = 'active'`),
+  index('external_links_flow').on(t.organisationId, t.entity, t.flowId),
+  check('external_links_entity_valid', inList('entity', LINK_ENTITIES)),
+  check('external_links_matched_by_valid', inList('matched_by', LINK_MATCHES)),
+  check('external_links_state_valid', inList('state', LINK_STATES)),
+  check('external_links_name_needs_person', sql`${t.matchedBy} <> 'name' or ${t.state} <> 'active' or ${t.confirmedAt} is not null`),
+]);
+
+// Background job queue (issue 6). Workers claim with FOR UPDATE SKIP LOCKED and
+// hold a lease; a lease that runs out makes the job claimable again. One queued
+// or running job per (organisation, kind, dedupe key).
+export const BACKGROUND_JOB_STATES = ['queued', 'running', 'succeeded', 'failed', 'dead'];
+
+export const backgroundJobs = pgTable('background_jobs', {
+  id: id(),
+  organisationId: organisationId().references(() => organisations.id),
+  kind: text('kind').notNull(),
+  dedupeKey: text('dedupe_key').notNull().default(''),
+  payload: jsonb('payload').notNull().default(sql`'{}'::jsonb`),
+  state: text('state').notNull().default('queued'),
+  runAfter: timestamp('run_after', { withTimezone: true }).notNull().defaultNow(),
+  attempts: integer('attempts').notNull().default(0),
+  maxAttempts: integer('max_attempts').notNull().default(8),
+  lockedBy: text('locked_by'),
+  lockedUntil: timestamp('locked_until', { withTimezone: true }),
+  result: jsonb('result'),
+  lastError: text('last_error'),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, (t) => [
+  uniqueIndex('background_jobs_one_open')
+    .on(t.organisationId, t.kind, t.dedupeKey).where(sql`state in ('queued', 'running')`),
+  index('background_jobs_due').on(t.state, t.runAfter),
+  check('background_jobs_state_valid', inList('state', BACKGROUND_JOB_STATES)),
+  check('background_jobs_attempts_valid', sql`${t.attempts} >= 0 and ${t.maxAttempts} > 0`),
+]);
+
+// Outbox. Every write to another system is a row here before the call
+// leaves, written in the same transaction as the Flow change it reports. The
+// idempotency key is unique, so a retry never makes a second record.
+export const OUTBOX_STATES = ['pending', 'sending', 'ambiguous', 'sent', 'failed', 'cancelled'];
+
+export const outbox = pgTable('outbox', {
+  id: id(),
+  organisationId: organisationId().references(() => organisations.id),
+  system: text('system').notNull(),
+  action: text('action').notNull(),
+  entity: text('entity').notNull(),
+  flowId: uuid('flow_id').notNull(),
+  idempotencyKey: text('idempotency_key').notNull(),
+  request: jsonb('request').notNull(),
+  state: text('state').notNull().default('pending'),
+  externalId: text('external_id'),
+  attempts: integer('attempts').notNull().default(0),
+  lastError: text('last_error'),
+  createdBy: text('created_by').notNull(),
+  sentAt: timestamp('sent_at', { withTimezone: true }),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, (t) => [
+  unique('outbox_org_id').on(t.organisationId, t.id),
+  unique('outbox_idempotency_key').on(t.idempotencyKey),
+  index('outbox_pending').on(t.system, t.state, t.createdAt),
+  check('outbox_state_valid', inList('state', OUTBOX_STATES)),
+  check('outbox_sent_has_id', sql`${t.state} <> 'sent' or ${t.externalId} is not null`),
+]);
+
+// Review queue (issue 59). One list of everything a person must decide. One
+// open item per (organisation, kind, entity, Flow id); a repeat finding
+// updates its evidence.
+export const REVIEW_STATES = ['open', 'resolved', 'dismissed'];
+
+export const reviewItems = pgTable('review_items', {
+  id: id(),
+  organisationId: organisationId().references(() => organisations.id),
+  kind: text('kind').notNull(),
+  entity: text('entity').notNull(),
+  flowId: uuid('flow_id').notNull(),
+  systems: text('systems').array().notNull().default(sql`'{}'::text[]`),
+  evidence: jsonb('evidence').notNull().default(sql`'{}'::jsonb`),
+  moneyAtRiskCents: bigint('money_at_risk_cents', { mode: 'number' }).notNull().default(0),
+  state: text('state').notNull().default('open'),
+  seenCount: integer('seen_count').notNull().default(1),
+  resolution: text('resolution'),
+  note: text('note'),
+  resolvedBy: text('resolved_by'),
+  resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, (t) => [
+  unique('review_items_org_id').on(t.organisationId, t.id),
+  uniqueIndex('review_items_one_open')
+    .on(t.organisationId, t.kind, t.entity, t.flowId).where(sql`state = 'open'`),
+  index('review_items_queue').on(t.organisationId, t.state, t.moneyAtRiskCents),
+  check('review_items_state_valid', inList('state', REVIEW_STATES)),
+  check('review_items_money_not_negative', sql`${t.moneyAtRiskCents} >= 0`),
+  check('review_items_closed_has_resolution', sql`${t.state} = 'open' or (${t.resolution} is not null and ${t.resolvedBy} is not null and ${t.resolvedAt} is not null)`),
 ]);

@@ -20,7 +20,14 @@ erDiagram
   billing_obligations ||--o{ obligation_events : "is explained by"
   billing_obligations ||--o{ obligation_payments : "is paid by"
   billing_obligations ||--o{ obligation_writebacks : "reports back by"
+  organisations ||--o{ external_links : "links its records by"
+  organisations ||--o{ background_jobs : runs
+  organisations ||--o{ outbox : "writes out through"
+  organisations ||--o{ review_items : "asks a person through"
 ```
+
+`external_links`, `background_jobs`, `outbox` and `review_items` are the data
+spine every integration shares (`docs/DATA_SPINE.md`).
 
 `people` lists who may sign in and their role (`owner`, `admin`, `staff`).
 One installation serves one lab, so it is installation-wide.
@@ -96,6 +103,10 @@ installation low maintenance.
 | One job gives one obligation. Its view comes only from stored evidence. A draft invoice is made only when the evidence allows it and a live accounting check just before the write finds no invoice; any doubt refuses it and records why. | `server/core/ledger.js` |
 | `obligation_events` rows cannot be updated or deleted. | Trigger in `0004_ledger_events_append_only.sql` |
 | To change an issued invoice, revise it to a draft and issue it again. It keeps its number and gets the next version. | `reviseInvoice` |
+| One active link per external record and per Flow record in each system. A name match stays proposed until a person confirms it. | Partial unique indexes and a check on `external_links`; `server/core/links.js` |
+| One queued or running job per kind and key; a job is finished only by the worker that holds its lease. | A partial unique index on `background_jobs`; `server/core/queue.js` |
+| Every write to another system has an outbox row first, with a unique idempotency key. | `outbox`; `server/core/outbox.js` |
+| One open review item per kind and record; a closed one records who chose what. | A partial unique index and a check on `review_items`; `server/core/review.js` |
 
 ## Change the schema
 
