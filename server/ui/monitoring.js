@@ -16,6 +16,16 @@ function loadScript({ src, integrity }) {
   });
 }
 
+// "Notify me": the form's email field (Sentry's own words) starts empty and
+// is optional. A person who types an address there asks to hear back; Flow
+// tags the report notify=yes, so the support desk sees it on the task.
+// Sentry's form has no tick box of its own; this keeps to its stock options.
+export function tagNotify(event) {
+  if (event?.type !== 'feedback') return;
+  const email = String(event.contexts?.feedback?.contact_email ?? '').trim();
+  event.tags = { ...event.tags, notify: email ? 'yes' : 'no' };
+}
+
 /** Resolves to a function that opens the "Report a problem" form, or null. */
 export async function startMonitoring({ flow, person }) {
   const config = await flow('/api/monitoring');
@@ -30,6 +40,9 @@ export async function startMonitoring({ flow, person }) {
     showBranding: false,
     // Flow already knows who is signed in (setUser below).
     showName: false,
+    // The email field is the opt-in (tagNotify), so it is not filled from
+    // the signed-in person: a key setUser never sets.
+    useSentryUser: { name: 'username', email: 'notify_email' },
     enableScreenshot: true,
     triggerLabel: 'Report a problem',
     formTitle: 'Report a problem',
@@ -45,6 +58,7 @@ export async function startMonitoring({ flow, person }) {
     sendDefaultPii: false,
     integrations,
   });
+  Sentry.getClient()?.on('beforeSendFeedback', tagNotify);
   // Who reported or met the error, so the lab can follow up.
   Sentry.setUser({ id: person.id, email: person.email });
   const feedback = config.feedback ? Sentry.getFeedback() : null;
