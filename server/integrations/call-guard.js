@@ -124,6 +124,32 @@ export class CallsStopped extends Error {
 
 export const isCallsStopped = (error) => error?.kind === 'calls_stopped';
 
+// The quiet alerts a guard's status() makes (server/core/alerts.js): only the
+// stops a person must clear. A paused circuit or a spent day ends by itself,
+// so it is no alert. `name` is what a person reads; `fix` says how a person
+// clears the stop.
+export function guardAlerts(name, status, { fix = 'Check the connection, then connect again.' } = {}) {
+  const alerts = [];
+  if (status?.haltedReason) {
+    alerts.push({
+      id: 'calls-stopped',
+      tone: 'danger',
+      title: `${name} refused Flow. Flow stopped all ${name} calls. ${fix}`,
+      members: [`halted:${status.haltedAt ?? ''}`],
+    });
+  }
+  const resources = status?.stoppedResources ?? [];
+  if (resources.length) {
+    alerts.push({
+      id: 'resources-stopped',
+      tone: 'danger',
+      title: `${name} refused Flow for ${resources.map((r) => r.resource).join(', ')}. Flow stopped those calls. ${fix}`,
+      members: resources.map((r) => `${r.resource}:${r.at ?? ''}`),
+    });
+  }
+  return alerts;
+}
+
 // Path only: drop any host and query, and keep a safe character set.
 export function normaliseRequestPath(value) {
   const path = String(value || '').split(/[?#]/)[0].replace(/^[a-z]+:\/\/[^/]+/i, '');

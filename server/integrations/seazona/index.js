@@ -1,3 +1,4 @@
+import { guardAlerts } from '../call-guard.js';
 import { createSeazonaClient } from './client.js';
 import { listClients, listProducts, listWork, readBillableWork } from './feed.js';
 import { readSeazonaSyncHealth, runSeazonaSync } from './lanes.js';
@@ -103,6 +104,14 @@ export function createSeazonaAdapter({ env = null, fetchImpl = null, now = Date.
           governor: await client.governor.status(),
           ...sync,
         };
+      },
+
+      // What only a person can clear, for the Integrations page
+      // (server/core/alerts.js): a refused API client halts every call until
+      // a person saves the settings. Reads Flow's database only.
+      async alerts() {
+        if (!runtime?.client.governor) return [];
+        return guardAlerts('Seazona', await runtime.client.governor.status(), { fix: 'Check the API client in the Seazona settings, then save them.' });
       },
 
       // Billable work since a cursor: complete and shipped orders that

@@ -1,5 +1,6 @@
 import { fileURLToPath } from 'node:url';
 import { sql } from 'drizzle-orm';
+import { guardAlerts } from '../call-guard.js';
 import { checkDrafts, pushInvoice, pushInvoices } from './drafts.js';
 import { readConnection } from './connections.js';
 import { createImportWorker } from './import.js';
@@ -92,6 +93,13 @@ export function createXeroAdapter({ runtime: given = null } = {}) {
         const calls = await Promise.all(rows.map(async (r) => ({ tenantId: r.tenant_id, ...await guard.status(r.tenant_id) })));
         const stopped = calls.some((c) => c.circuit !== 'closed' || c.stoppedResources.length || c.failedToday >= c.dailyFailureBudget);
         return { ok: !stopped, mode: settings.mode, writesAllowed: writesAllowed(settings), connected: rows.length, calls };
+      },
+      // What only a person can clear, for the Integrations page
+      // (server/core/alerts.js): a refused connection stops calls.
+      async alerts({ organisationId }) {
+        const connection = await readConnection(database, organisationId);
+        if (!connection || connection.mode !== current().settings.mode) return [];
+        return guardAlerts('Xero', await current().guardFor(database).status(connection.tenantId));
       },
       // One issued invoice to a Xero draft (drafts.js). The Flow invoice id
       // and version are the idempotency key.

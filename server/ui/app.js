@@ -16,6 +16,7 @@ import { renderPriceList } from '/assets/ui/price-list.js';
 import { renderJobs } from '/assets/ui/jobs.js';
 import { startMonitoring } from '/assets/ui/monitoring.js';
 import { openSearch } from '/assets/ui/search.js';
+import { alertStrip } from '/assets/ui/alerts.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -542,6 +543,7 @@ async function renderIntegrations(main) {
   const content = h('div', { class: 'fx-int-sections' }, h('div', { class: 'fx-skeleton' }));
   main.append(
     h('header', { class: 'fx-ph' }, h('div', { class: 'fx-ph__text' }, h('h1', { class: 'fx-title' }, 'Integrations'))),
+    alertStrip(ui(), 'integrations').element,
     h('div', { class: 'fx-int-bar' }, tabs, search),
     notices, content);
   let body;
