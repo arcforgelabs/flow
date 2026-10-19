@@ -3,6 +3,9 @@
 #
 #   scripts/replit-deploy.sh build   # fetch the deploy ref from GitHub into .flow-deploy/ and build it there
 #   scripts/replit-deploy.sh start   # start Flow from .flow-deploy/
+#   scripts/replit-deploy.sh update-workspace
+#                                    # build as above, then bring the workspace's
+#                                    # database up to that build (the Run button)
 #
 # Replit publishes a snapshot of the workspace files. This makes the deployment
 # run a commit from GitHub instead: by default the tip of main, or the ref that
@@ -199,8 +202,34 @@ cmd_start() {
   exec bash "$OUT/scripts/replit-start.sh"
 }
 
+# The workspace's Run button (.replit run). It builds what the next publish
+# will build, then runs that build's migrations on the workspace's database
+# and stops; it starts no server. Publishing compares the workspace's tables
+# with production's, so afterwards it can only offer to add what the release
+# adds (docs/REPLIT.md, "Updates go to the workspace first").
+cmd_update_workspace() {
+  [ -n "${DATABASE_URL:-}" ] || die "DATABASE_URL is not set; add the workspace's Replit PostgreSQL database"
+  cmd_build
+  local built
+  built="$(cat "$OUT/.flow-deploy-release" 2>/dev/null || cat "$OUT/.flow-deploy-ref")"
+  log "migrating the workspace database to $built"
+  # server/db/migrate-all.js also creates every shipped adapter's tables; a
+  # release from before it has only the core migrations.
+  (cd "$OUT" && if [ -f server/db/migrate-all.js ]; then
+    node server/db/migrate-all.js
+  else
+    node --input-type=module -e "
+      const { openDatabase, migrateDatabase } = await import('./server/db/index.js');
+      const handle = openDatabase({ max: 1 });
+      try { await migrateDatabase(handle.db); } finally { await handle.close(); }
+    "
+  fi) || die "the migration of the workspace database to $built failed. Do not publish; production would fail the same way"
+  log "the workspace database is at $built. Publish now: Replit may offer to add tables and columns, and must never offer to drop one"
+}
+
 case "${1:-}" in
   build) cmd_build ;;
   start) cmd_start ;;
-  *) echo "usage: $0 build|start" >&2; exit 2 ;;
+  update-workspace) cmd_update_workspace ;;
+  *) echo "usage: $0 build|start|update-workspace" >&2; exit 2 ;;
 esac

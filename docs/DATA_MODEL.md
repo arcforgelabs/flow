@@ -112,7 +112,9 @@ while the installation has exactly one. Money is integer cents. Answers are
 | `POST /invoices/:id/void` | owner or admin | Voids an invoice that was issued |
 | `GET /contacts?q=&limit=` | anyone | Customers, by name |
 | `GET /price-items?q=` | anyone | The price list, by code |
-| `GET /jobs?view=&limit=` | anyone | Billable jobs with `contactName`, `view` and `reasons`; `counts` by view |
+| `GET /jobs?view=&limit=` | anyone | Billable jobs with `contactName`, `view` and `reasons`, and for a job with an invoice its `invoiceView` and `invoiceProblems`; `counts` by view |
+| `GET /board` | anyone | The Jobs board: the work system's jobs from its copy in Flow (`listWork`), with their own `status`, the client name (the Flow customer once linked, else the work system's), lines, and the job's billing `obligation` or null; `statuses` for the columns |
+| `GET /jobs/:id/activity` | anyone | What happened to a job, newest first: `kind`, `by` (a person, an automation or a system) and `createdAt` |
 | `POST /jobs/:id/draft` | owner or admin | The job's draft invoice. With an accounting integration it is made only after a live check there (`checkInvoice`, `docs/INTEGRATIONS.md`) finds none. With none connected, Flow's own records are the check: one invoice for each job |
 
 A line is `{ priceItemId?, description?, quantity?, unitAmountCents?,
@@ -165,6 +167,15 @@ installation low maintenance.
 3. Put rules Drizzle cannot express (triggers, functions) in a custom
    migration: `npx drizzle-kit generate --custom --name <what>`.
 4. Never edit a migration that is on `main`. Add a new one.
+5. A migration only adds: no drop, no rename. `npm run db:generate` then
+   guards it (`scripts/db-guard-migrations.js`): `IF NOT EXISTS` on each new
+   table, column and index, and an "already exists" catch on each constraint,
+   so it also runs on a database that already has them. A hand-written
+   migration needs the same; `test/migrations-guarded.test.js` fails without
+   it. The guard was added to migrations `0010` on and to every adapter's
+   migrations after they shipped; it changes nothing for a database that ran
+   them before. On Replit, publishing can add a release's tables before Flow
+   starts (`docs/REPLIT.md`, "Updates go to the workspace first").
 
 ## Tests
 

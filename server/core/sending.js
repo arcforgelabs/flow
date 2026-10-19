@@ -9,7 +9,8 @@ import { enqueueJob, runNextJob } from './queue.js';
 // Drafts, Problem, Ready and Send all ready (docs/INVOICE_SENDING.md).
 //
 // Flow checks every draft. It checks its own data first: the draft has lines,
-// a total above zero, and a price item on every line. When an accounting
+// a total above zero, and a price item (or, for a line such as a rush
+// charge, an account) on every line. When an accounting
 // system is connected, its own checks are added (for Xero: the customer
 // matches one Xero contact, every item is in Xero). A draft with a problem is
 // in Problem. A person marks a draft without one ready; any later change to
@@ -41,7 +42,7 @@ export function draftProblems(invoice, lines) {
   if (!lines.length) problems.push(problem('no_lines', 'The invoice has no lines.'));
   else if (invoice.totalCents <= 0) problems.push(problem('no_amount', 'The total is $0.00 or less.'));
   for (const line of lines) {
-    if (!line.priceItemId) problems.push(problem('line_no_item', `Line ${line.position} has no price item.`));
+    if (!line.priceItemId && !line.accountCode) problems.push(problem('line_no_item', `Line ${line.position} has no price item.`));
   }
   return problems;
 }
@@ -52,7 +53,7 @@ async function checkDrafts(db, organisationId, drafts, accounting) {
   const ids = drafts.map((d) => d.id);
   const problems = new Map();
   if (!ids.length) return problems;
-  const lines = await db.select({ invoiceId: invoiceLines.invoiceId, position: invoiceLines.position, priceItemId: invoiceLines.priceItemId })
+  const lines = await db.select({ invoiceId: invoiceLines.invoiceId, position: invoiceLines.position, priceItemId: invoiceLines.priceItemId, accountCode: invoiceLines.accountCode })
     .from(invoiceLines).where(inArray(invoiceLines.invoiceId, ids)).orderBy(asc(invoiceLines.position));
   const linesOf = Map.groupBy(lines, (l) => l.invoiceId);
   for (const draft of drafts) {

@@ -2,7 +2,9 @@ import assert from 'node:assert/strict';
 import { after, before, describe, test } from 'node:test';
 import { migrateDatabase } from '../server/db/index.js';
 import { priorLinkFor } from '../server/core/links.js';
-import { importEarlierAtStart, importEarlierLinksAtStart, resolveImportAtStart } from '../server/import/at-start.js';
+import {
+  importEarlierAtStart, importEarlierLinksAtStart, importEarlierMappingsAtStart, resolveImportAtStart,
+} from '../server/import/at-start.js';
 import { freshDatabase, skipWithoutDatabase } from './support/db.js';
 
 const quiet = { info() {} };
@@ -39,6 +41,8 @@ describe('import from the earlier codebase at start', { skip: skipWithoutDatabas
         ('9001', 'x-1', 'INV-0040', 'operator_link', '', '2026-05-01T02:03:04.000Z', 'someone@example.test', 'Example Patient'),
         ('9002', 'x-2', 'INV-0041', 'backfill_sweep', 'patient_doctor_surname_total', 'not a date', NULL, ''),
         ('9003', NULL, NULL, 'operator_link', '', '2026-05-01T00:00:00Z', NULL, 'pinned no match');
+      CREATE TABLE earlier.xero_item_match_rules (source_lookup_text TEXT NOT NULL, unit_amount_cents INTEGER NOT NULL, xero_item_code TEXT NOT NULL);
+      INSERT INTO earlier.xero_item_match_rules VALUES ('Crown - Upper 4', 22000, 'CRN'), ('', 100, 'CRN'), ('Bad price', -5, 'CRN');
     `);
   });
 
@@ -77,8 +81,17 @@ describe('import from the earlier codebase at start', { skip: skipWithoutDatabas
     assert.equal(await importEarlierLinksAtStart({ db: handle.db, pool: handle.pool, settings: null, log: quiet }), null);
   });
 
+  test('carries the earlier line mapping choices over as saved mappings, adding only new ones', async () => {
+    const settings = { schema: 'earlier', organisationName: 'Example Lab' };
+    assert.deepEqual(await importEarlierMappingsAtStart({ db: handle.db, pool: handle.pool, settings, log: quiet }), { rules: 1, added: 1, described: 0 });
+    assert.deepEqual(await importEarlierMappingsAtStart({ db: handle.db, pool: handle.pool, settings, log: quiet }), { rules: 1, added: 0, described: 0 });
+    const { rows } = await handle.pool.query('select kind, label, unit_amount_cents, item_code, origin from line_mappings');
+    assert.deepEqual(rows, [{ kind: 'saved', label: 'crown', unit_amount_cents: 22000, item_code: 'CRN', origin: 'earlier:xero_item_match_rules' }]);
+    assert.equal(await importEarlierMappingsAtStart({ db: handle.db, pool: handle.pool, settings: null, log: quiet }), null);
+  });
+
   test('a schema without the earlier tables is an error, and writes nothing', async () => {
-    await handle.pool.query('DELETE FROM prior_links');
+    await handle.pool.query('DELETE FROM prior_links; DELETE FROM line_mappings');
     await handle.pool.query('DELETE FROM contacts; DELETE FROM price_items; DELETE FROM organisations');
     await assert.rejects(
       importEarlierAtStart({ db: handle.db, pool: handle.pool, settings: { schema: 'missing', organisationName: 'Example Lab' }, log: quiet }),

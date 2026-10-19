@@ -1,6 +1,6 @@
-import { eq, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, isNull, or, sql } from 'drizzle-orm';
 import { ledgerLinesFor, toLedgerHold, toLedgerJob } from './ledger.js';
-import { orderStatusLabel, parseSeazonaDate } from './map.js';
+import { isFinalStatus, orderStatusLabel, parseSeazonaDate } from './map.js';
 import { seazonaClients, seazonaInvoices, seazonaOrders } from './schema.js';
 
 // The billing feed behind the port's pullWorkItems: every order that changed
@@ -104,12 +104,70 @@ export async function readBillableWork(db, { cursor = null, limit = 200 } = {}) 
 }
 
 // Seazona clients, by id and the company name an invoice bills. A client
-// with no company name is listed by its full name.
+// with no company name is listed by its full name. A client the client list
+// never gave (the list can be closed to an API client) is listed by the
+// company name its orders carry, so its jobs still find their customer.
 export async function listClients(db) {
   const rows = await db.select({ id: seazonaClients.id, company: seazonaClients.company, fullName: seazonaClients.fullName, active: seazonaClients.active })
     .from(seazonaClients);
-  return rows
+  const listed = rows
     .filter((r) => r.active !== false)
     .map((r) => ({ id: r.id, name: (r.company || r.fullName || '').trim() }))
     .filter((r) => r.name);
+  const known = new Set(rows.map((r) => r.id));
+  const fromOrders = await db.selectDistinctOn([seazonaOrders.clientId], { id: seazonaOrders.clientId, company: seazonaOrders.company })
+    .from(seazonaOrders)
+    .where(sql`${seazonaOrders.clientId} is not null and coalesce(${seazonaOrders.company}, '') <> '' and ${seazonaOrders.deletedInSourceAt} is null`)
+    .orderBy(seazonaOrders.clientId, sql`${seazonaOrders.lastChangedAt} desc`);
+  return [
+    ...listed,
+    ...fromOrders.filter((r) => !known.has(r.id)).map((r) => ({ id: r.id, name: r.company.trim() })),
+  ];
+}
+
+// A final order (shipped, delivered, cancelled; map.js isFinalStatus) stays on
+// the Jobs board this long after it last changed.
+export const WORK_FINISHED_DAYS = 30;
+const WORK_LIMIT = 2000;
+const FINAL_SQL = sql`coalesce(${seazonaOrders.status}, '') ~* '(shipped|delivered|cancelled|canceled|void|closed|archived|deleted)'`;
+
+// The orders behind the port's listWork, for the Jobs board: every open
+// order, and each final order that changed in the last WORK_FINISHED_DAYS
+// days, newest change first. An order deleted in Seazona is never listed.
+// The client name is the Seazona client's company (or full name), else the
+// order's own company. `statuses` lists each status once, with the first time
+// Flow saw an order in it, so the board can order its columns.
+export async function listWork(db, { now = Date.now(), finishedDays = WORK_FINISHED_DAYS, limit = WORK_LIMIT } = {}) {
+  const since = new Date(now - finishedDays * 86_400_000);
+  const rows = await db.select({ order: seazonaOrders, company: seazonaClients.company, fullName: seazonaClients.fullName })
+    .from(seazonaOrders)
+    .leftJoin(seazonaClients, eq(seazonaClients.id, seazonaOrders.clientId))
+    .where(and(isNull(seazonaOrders.deletedInSourceAt), or(sql`not (${FINAL_SQL})`, gte(seazonaOrders.lastChangedAt, since))))
+    .orderBy(desc(seazonaOrders.lastChangedAt), seazonaOrders.id)
+    .limit(limit);
+  const firstSeen = new Map();
+  const items = rows.map(({ order, company, fullName }) => {
+    const status = orderStatusLabel(order) || null;
+    const seen = firstSeen.get(status);
+    if (status && (!seen || order.firstSeenAt < seen)) firstSeen.set(status, order.firstSeenAt);
+    return {
+      sourceSystem: 'seazona',
+      sourceJobRef: order.id,
+      // The Seazona order id is the case number. Never patient data.
+      caseRef: order.id,
+      status,
+      clientId: order.clientId,
+      clientName: (company || order.company || fullName || '').trim() || null,
+      practitioner: order.doctorName,
+      department: order.department,
+      orderedOn: parseSeazonaDate(order.orderedText),
+      dueOn: parseSeazonaDate(order.dueText),
+      lines: (order.lines ?? []).map((l) => ({ code: l.code ?? null, description: l.description, amountCents: l.amountCents ?? null })),
+      totalCents: order.subtotalCents,
+    };
+  });
+  return {
+    items,
+    statuses: [...firstSeen].map(([label, at]) => ({ label, final: isFinalStatus(label), firstSeenAt: at.toISOString() })),
+  };
 }

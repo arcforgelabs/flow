@@ -9,10 +9,14 @@ import {
   ACTIONS, createRule, deleteRule, FIELDS, listRules, TESTS, updateRule,
 } from '../core/invoice-rules.js';
 import {
-  customerBillingByContact, effectiveSettings, INVOICING_DEFAULTS, readCustomerBilling, readInvoicingSettings, ruleBlockers,
+  createMapping, deleteMapping, listMappings, STEP_LABELS, STEPS, updateMapping,
+} from '../core/line-mapping.js';
+import {
+  effectiveSettings, INVOICING_DEFAULTS, readCustomerBilling, readInvoicingSettings,
   saveCustomerBilling, saveInvoicingSettings,
 } from '../core/invoicing-rules.js';
-import { draftInvoiceForObligation, listObligations, setReady } from '../core/ledger.js';
+import { boardJobs, describeObligations } from '../core/job-board.js';
+import { draftInvoiceForObligation, explainObligation, listObligations, setReady } from '../core/ledger.js';
 import { invoiceView, invoiceViews, markNotReady, markReady, sendAgain, sendAllReady } from '../core/sending.js';
 import {
   billingObligations, contacts, invoices, INVOICE_STATUSES, organisations, priceItems, TAX_CODES,
@@ -38,20 +42,29 @@ import {
 //   GET   /contacts?q=&limit=         customers, by name
 //   GET   /price-items?q=             the price list, by code
 //   GET   /jobs?view=&limit=          billable jobs (the obligation ledger), with counts by view;
-//                                     a job with no invoice lists the invoicing rules it waits on
-//   GET   /settings                   the invoicing settings (server/core/invoicing-rules.js)
+//                                     a job with no invoice lists the invoicing rules it waits on;
+//                                     a job with an invoice has its Invoices page view and problems
+//   GET   /board                      the Jobs board: the work system's jobs by its own statuses,
+//                                     each with its billing obligation (server/core/job-board.js)
+//   GET   /settings                  the invoicing settings (server/core/invoicing-rules.js)
 //   PUT   /settings                   owner or admin: change some of them
 //   GET   /rules                      the lab's invoice rules, in order (server/core/invoice-rules.js)
 //   GET   /rule-fields                what a rule can name, and the menus of values
 //   POST  /rules                      owner or admin: a new rule { name, enabled, conditions, action }
 //   PUT   /rules/:id                  owner or admin: change some of a rule
 //   DELETE /rules/:id                 owner or admin
+//   GET   /line-mappings              the lab's line mappings and the mapping steps (server/core/line-mapping.js)
+//   GET   /line-labels                the line labels on jobs, with counts and how each mapped
+//   POST  /line-mappings              owner or admin: a new mapping
+//   PUT   /line-mappings/:id          owner or admin: change some of a mapping
+//   DELETE /line-mappings/:id         owner or admin
 //   GET   /automations?place=         Flow's routines, each on or off (server/core/automations.js)
 //   PUT   /automations/:key           owner or admin: { enabled, config }
 //   GET   /work-statuses              the work system's job statuses, with job counts
 //   GET   /contacts/:id/billing       one customer's own invoicing settings
 //   PUT   /contacts/:id/billing       owner or admin: change them (null takes the organisation's)
 //   POST  /jobs/:id/ready             { ready }: mark a job ready to invoice, or back in work
+//   GET   /jobs/:id/activity          what happened to a job, newest first
 //   POST  /jobs/:id/draft             owner or admin: a job's draft invoice, after a live
 //                                     check that the accounting system holds none
 //
@@ -61,6 +74,7 @@ import {
 // cents. `liveCheckFor(organisationId)` returns the ledger's live check for
 // that organisation, or null when no accounting integration offers one.
 // `accounting()` is the accounting adapter that sends invoices, or null.
+// `work()` is the work system adapters that offer listWork (the Jobs board).
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -75,7 +89,7 @@ const MAX_UNIT_CENTS = 100_000_000;
 
 const ERROR_STATUS = {
   invalid: 400, organisation_required: 400, not_found: 404, not_draft: 409, not_issued: 409,
-  never_issued: 409, not_ready: 409, live_check_unavailable: 409,
+  never_issued: 409, not_ready: 409, live_check_unavailable: 409, conflict: 409,
   accounting_not_connected: 409, accounting_writes_off: 409,
 };
 
@@ -225,7 +239,9 @@ async function invoiceDetail(db, organisationId, invoiceId, accounting = null) {
   };
 }
 
-export function createInvoicingRouter({ db, personAuth, log = console, liveCheckFor = () => null, accounting = () => null }) {
+export function createInvoicingRouter({
+  db, personAuth, log = console, liveCheckFor = () => null, accounting = () => null, work = () => [],
+}) {
   const router = express.Router();
   router.use(express.json({ limit: '64kb' }));
 
@@ -415,40 +431,17 @@ export function createInvoicingRouter({ db, personAuth, log = console, liveCheck
     const counts = Object.fromEntries(VIEWS.map((v) => [v, 0]));
     for (const entry of all) counts[entry.view] += 1;
     const listed = (view ? all.filter((entry) => entry.view === view) : all).slice(0, limit);
-    const contactIds = [...new Set(listed.map((e) => e.obligation.contactId).filter(Boolean))];
-    const invoiceIds = [...new Set(listed.map((e) => e.obligation.invoiceId).filter(Boolean))];
-    const [names, numbers] = await Promise.all([
-      contactIds.length
-        ? db.select({ id: contacts.id, name: contacts.name }).from(contacts)
-          .where(and(eq(contacts.organisationId, organisationId), inArray(contacts.id, contactIds)))
-        : [],
-      invoiceIds.length
-        ? db.select({ id: invoices.id, number: invoices.number, status: invoices.status }).from(invoices)
-          .where(and(eq(invoices.organisationId, organisationId), inArray(invoices.id, invoiceIds)))
-        : [],
-    ]);
-    const nameOf = new Map(names.map((c) => [c.id, c.name]));
-    const invoiceOf = new Map(numbers.map((i) => [i.id, i]));
-    const settings = await readInvoicingSettings(db, organisationId);
-    const customers = await customerBillingByContact(db, organisationId, contactIds);
-    const rules = await listRules(db, organisationId);
-    // The invoicing rules a job with no invoice waits on, for every view a
-    // draft can still come from.
-    const waitingFor = (o, v) => (o.invoiceId || !['in_work', 'ready', 'pending', 'held'].includes(v)
-      ? [] : ruleBlockers(o, effectiveSettings(settings, customers.get(o.contactId)), { rules }));
-    res.json({
-      ok: true,
-      jobs: listed.map(({ obligation: { lineFingerprint: _fingerprint, organisationId: _org, ...o }, view: v, reasons }) => ({
-        ...o,
-        contactName: nameOf.get(o.contactId) ?? null,
-        invoiceNumber: invoiceOf.get(o.invoiceId)?.number ?? null,
-        invoiceStatus: invoiceOf.get(o.invoiceId)?.status ?? null,
-        view: v,
-        reasons,
-        waitingFor: waitingFor(o, v),
-      })),
-      counts,
+    res.json({ ok: true, jobs: await describeObligations(db, organisationId, listed, { accounting: accounting() }), counts });
+  }));
+
+  // The Jobs board: the work system's jobs, by its own statuses, each with
+  // its billing obligation when it has one (server/core/job-board.js).
+  router.get('/board', ...signedIn, handle(log, async (req, res) => {
+    const organisationId = await organisationOf(req);
+    const { jobs, statuses } = await boardJobs(db, organisationId, {
+      work: work(), accounting: accounting(), live: Boolean(liveCheckFor(organisationId)), log,
     });
+    res.json({ ok: true, jobs, statuses, accountingName: accounting()?.name ?? null });
   }));
 
   router.post('/jobs/:id/draft', ...manager, handle(log, async (req, res) => {
@@ -468,6 +461,20 @@ export function createInvoicingRouter({ db, personAuth, log = console, liveCheck
     if (typeof ready !== 'boolean') throw invalid('ready must be true or false');
     const job = await setReady(db, organisationId, obligationId, { ready, actor: `person:${req.person.id}` });
     res.json({ ok: true, job: { id: job.id, readyAt: job.readyAt, readyBy: job.readyBy } });
+  }));
+
+  // A job's activity for its detail panel: what happened to it, newest
+  // first, without the evidence each event keeps.
+  router.get('/jobs/:id/activity', ...signedIn, handle(log, async (req, res) => {
+    const obligationId = pathId(req.params.id, 'job');
+    const organisationId = await organisationOf(req);
+    const { events } = await explainObligation(db, organisationId, obligationId);
+    res.json({
+      ok: true,
+      events: events.slice(-50).reverse().map(({ kind, actor, createdAt }) => ({
+        kind, by: actor.startsWith('person:') ? 'person' : actor.startsWith('automation:') ? 'automation' : actor.replace(/^system:/, ''), createdAt,
+      })),
+    });
   }));
 
   router.get('/automations', ...signedIn, handle(log, async (req, res) => {
@@ -516,7 +523,11 @@ export function createInvoicingRouter({ db, personAuth, log = console, liveCheck
       options: {
         statuses: statuses.map((s) => ({ value: s.value, label: s.label })),
         customers,
-        items: items.map((i) => ({ value: i.value, label: `${i.value} · ${i.label}` })),
+        items: [
+          ...items.map((i) => ({ value: i.value, label: `${i.value} · ${i.label}` })),
+          ...(await listMappings(db, organisationId)).filter((m) => m.kind === 'account')
+            .map((m) => ({ value: m.label, label: `${m.label} · ${m.description ?? `account ${m.accountCode}`}` })),
+        ],
       },
     });
   }));
@@ -543,6 +554,51 @@ export function createInvoicingRouter({ db, personAuth, log = console, liveCheck
     const organisationId = await organisationOf(req);
     await deleteRule(db, organisationId, ruleId);
     log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} deleted invoice rule ${ruleId}`);
+    res.json({ ok: true });
+  }));
+
+  router.get('/line-mappings', ...signedIn, handle(log, async (req, res) => {
+    const organisationId = await organisationOf(req);
+    res.json({ ok: true, mappings: await listMappings(db, organisationId), steps: STEPS.map((key) => ({ key, label: STEP_LABELS[key] })) });
+  }));
+
+  // Each label the line mapping saw on jobs, how many lines carry it, a
+  // sample of the work system's text and price, and whether it mapped.
+  router.get('/line-labels', ...signedIn, handle(log, async (req, res) => {
+    const organisationId = await organisationOf(req);
+    const rows = (await db.execute(sql`
+      select l->>'label' as label, count(*)::int as lines,
+        count(*) filter (where l->>'priceItemId' is null and l->>'accountCode' is null)::int as unmapped,
+        min(l->>'description') as sample, min((l->>'unitAmountCents')::int) as "unitAmountCents",
+        min(l->>'mappedBy') as "mappedBy", min(l->>'itemCode') as "itemCode"
+      from billing_obligations o, jsonb_array_elements(o.lines) l
+      where o.organisation_id = ${organisationId} and l->>'label' is not null
+      group by 1 order by 3 desc, 2 desc, 1 limit 1000`)).rows ?? [];
+    res.json({ ok: true, labels: rows });
+  }));
+
+  router.post('/line-mappings', ...manager, handle(log, async (req, res) => {
+    const organisationId = await organisationOf(req);
+    const { organisationId: _named, ...raw } = req.body ?? {};
+    const mapping = await createMapping(db, organisationId, raw, { personId: req.person.id });
+    log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} added line mapping ${mapping.id}`);
+    res.status(201).json({ ok: true, mapping });
+  }));
+
+  router.put('/line-mappings/:id', ...manager, handle(log, async (req, res) => {
+    const mappingId = pathId(req.params.id, 'mapping');
+    const organisationId = await organisationOf(req);
+    const { organisationId: _named, ...changes } = req.body ?? {};
+    const mapping = await updateMapping(db, organisationId, mappingId, changes, { personId: req.person.id });
+    log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} changed line mapping ${mapping.id}`);
+    res.json({ ok: true, mapping });
+  }));
+
+  router.delete('/line-mappings/:id', ...manager, handle(log, async (req, res) => {
+    const mappingId = pathId(req.params.id, 'mapping');
+    const organisationId = await organisationOf(req);
+    await deleteMapping(db, organisationId, mappingId);
+    log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} deleted line mapping ${mappingId}`);
     res.json({ ok: true });
   }));
 

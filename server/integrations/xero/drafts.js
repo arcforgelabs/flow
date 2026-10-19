@@ -94,7 +94,7 @@ async function documentFor(db, organisationId, invoiceId) {
       currency: invoice.currency,
       contact: { id: contact.id, name: contact.name, email: contact.email },
       lines: invoice.lines.map((l) => ({
-        position: l.position, itemCode: codes.get(l.priceItemId) ?? null, description: l.description, quantity: l.quantity,
+        position: l.position, itemCode: codes.get(l.priceItemId) ?? null, ...(l.accountCode ? { accountCode: l.accountCode } : {}), description: l.description, quantity: l.quantity,
         unitAmountCents: l.unitAmountCents, taxCode: l.taxCode, lineAmountCents: l.lineAmountCents, taxCents: l.taxCents,
       })),
       subtotalCents: invoice.subtotalCents,
@@ -131,6 +131,9 @@ export function buildDraft(document, { settings, contact, items, sendMode = 'acc
     if (line.itemCode) {
       if (items.has(line.itemCode)) out.ItemCode = line.itemCode;
       else problems.push(problem('xero_item_missing', `Line ${line.position}: item ${line.itemCode} is not in Xero. Add it in Xero, then sync.`, { itemCode: line.itemCode }));
+    } else if (line.accountCode) {
+      // A line with no item books to its own account, such as a surcharge.
+      out.AccountCode = line.accountCode;
     }
     if (tracking) out.Tracking = [tracking];
     return out;

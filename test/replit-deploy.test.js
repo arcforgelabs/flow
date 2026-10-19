@@ -60,6 +60,19 @@ echo "checks=\${FLOW_DEPLOYED_CHECKS:-}"
 echo "release=\${FLOW_DEPLOYED_RELEASE:-}"
 `;
 
+// The fetched commit's database module: its migration records which build
+// migrated which database, or fails when the test asks it to.
+const FIXTURE_PACKAGE = `{ "type": "module" }\n`;
+const FIXTURE_DB = `import { readFileSync, writeFileSync } from "node:fs";
+export function openDatabase() {
+  return { db: process.env.DATABASE_URL, close: async () => {} };
+}
+export async function migrateDatabase(url) {
+  if (process.env.FIXTURE_MIGRATION_FAILS) throw new Error("column already exists");
+  writeFileSync("migrated.txt", readFileSync("version.txt", "utf8").trim() + " " + url + "\\n");
+}
+`;
+
 // A GitHub stand-in with main at v2, a tag v1 at v1, a branch whose build
 // fails, and a workspace cloned from v1 with local edits and runtime state.
 function fixture(t) {
@@ -76,6 +89,8 @@ function fixture(t) {
   copyFileSync(RELEASE_HELPER, join(upstream, "scripts/deploy-release.js"));
   mkdirSync(join(upstream, "server"), { recursive: true });
   copyFileSync(RELEASE_CHANNEL, join(upstream, "server/release-channel.js"));
+  write(join(upstream, "package.json"), FIXTURE_PACKAGE);
+  write(join(upstream, "server/db/index.js"), FIXTURE_DB);
   write(join(upstream, "version.txt"), "v1\n");
   git(upstream, "add", "-A");
   git(upstream, "commit", "-q", "-m", "v1");
@@ -478,4 +493,32 @@ test("a channel that cannot be resolved, or a manifest that does not check out, 
     assert.equal(existsSync(join(workspace, ".flow-deploy")), false, name);
     assert.equal(api.requests.some((url) => url.includes("/check-runs")), false, `${name}: no CI check before a release is established`);
   }
+});
+
+test("update-workspace builds what a publish would and migrates the workspace database to it", async (t) => {
+  const { workspace, remote, v2 } = fixture(t);
+  const api = await checksApi(t);
+  const before = snapshot(workspace);
+  const result = await deploy(workspace, "update-workspace", { DATABASE_URL: "postgres://workspace-db" }, { remote, api });
+  assert.equal(result.status, 0, result.output);
+  assert.equal(out(workspace, ".flow-revision"), v2);
+  assert.equal(out(workspace, "migrated.txt"), "v2 postgres://workspace-db");
+  assert.match(result.output, /migrating the workspace database to main/);
+  assert.match(result.output, /the workspace database is at main\. Publish now/);
+  assert.deepEqual(snapshot(workspace), before);
+});
+
+test("update-workspace needs DATABASE_URL and stops on a failed migration", async (t) => {
+  const { workspace, remote } = fixture(t);
+  const api = await checksApi(t);
+  const missing = await deploy(workspace, "update-workspace", {}, { remote, api });
+  assert.notEqual(missing.status, 0, missing.output);
+  assert.match(missing.output, /DATABASE_URL is not set/);
+  assert.equal(existsSync(join(workspace, ".flow-deploy")), false);
+
+  const failed = await deploy(workspace, "update-workspace", { DATABASE_URL: "postgres://workspace-db", FIXTURE_MIGRATION_FAILS: "1" }, { remote, api });
+  assert.notEqual(failed.status, 0, failed.output);
+  assert.match(failed.output, /column already exists/);
+  assert.match(failed.output, /FAILED: the migration of the workspace database to main failed\. Do not publish/);
+  assert.equal(existsSync(join(workspace, ".flow-deploy/migrated.txt")), false);
 });

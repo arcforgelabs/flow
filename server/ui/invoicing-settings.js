@@ -11,6 +11,7 @@
 
 import { automationSection } from '/assets/ui/automations.js';
 import { rulesSection } from '/assets/ui/invoice-rules.js';
+import { lineMappingSection } from '/assets/ui/line-mappings.js';
 
 const DOCS = 'https://github.com/arcforgelabs/flow/blob/main/docs/INVOICING_RULES.md';
 
@@ -66,6 +67,7 @@ export async function renderInvoicingSettings(main, ui) {
     disabled ? notice('Only an owner or admin can change these.', 'info') : null,
     section('Drafts',
       row('Payment terms', 'Days from invoice to due date.', days('paymentTermsDays', 'Payment terms in days'))),
+    lineMappingSection(ui),
     automationSection(ui, 'invoicing', 'Automations'),
     rulesSection(ui),
   ].filter(Boolean));

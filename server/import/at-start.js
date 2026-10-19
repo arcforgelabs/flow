@@ -1,5 +1,6 @@
-import { sql } from 'drizzle-orm';
-import { organisations, priorLinks } from '../db/schema.js';
+import { and, eq, isNull, sql } from 'drizzle-orm';
+import { lineMappings, organisations, priceItems, priorLinks } from '../db/schema.js';
+import { lineLookupText, remapJobs } from '../core/line-mapping.js';
 import { applyImport, planImport, readEarlierFlow, summarisePlan } from './earlier-flow.js';
 
 // The import from the earlier codebase, run once by the server itself. On a
@@ -116,5 +117,66 @@ export async function importEarlierLinksAtStart({ db, pool, settings, log = cons
   }
   const counts = { read: values.length, added };
   log.info?.(`[import] links from schema "${settings.schema}": ${JSON.stringify(counts)}`);
+  return counts;
+}
+
+// Carries the earlier app's line mapping knowledge into Flow, at every start
+// while the import settings are set, in the same read-only way:
+// - each label and price a person matched to an item becomes a "saved" line
+//   mapping (server/core/line-mapping.js), unless the lab already has one;
+// - each price item with no description takes the accounting item's own.
+// Answers counts, or null when there is nothing to read.
+const EARLIER_RULES = 'xero_item_match_rules';
+const EARLIER_ITEMS = 'xero_catalog_items';
+
+export async function importEarlierMappingsAtStart({ db, pool, settings, log = console }) {
+  if (!settings) return null;
+  const { rows: labs } = await db.execute(sql`select id, name from ${organisations}`);
+  const organisation = labs.find((lab) => lab.name === settings.organisationName) ?? (labs.length === 1 ? labs[0] : null);
+  if (!organisation) return null;
+
+  let rules = [];
+  let items = [];
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN TRANSACTION READ ONLY');
+    await client.query(`SET LOCAL search_path TO "${settings.schema}"`);
+    const present = async (table) => (await client.query('select to_regclass($1) is not null as present', [table])).rows[0].present;
+    if (await present(EARLIER_RULES)) {
+      ({ rows: rules } = await client.query(`select source_lookup_text, unit_amount_cents, xero_item_code from ${EARLIER_RULES}`));
+    }
+    if (await present(EARLIER_ITEMS)) {
+      ({ rows: items } = await client.query(`select item_code, description from ${EARLIER_ITEMS} where coalesce(description, '') <> ''`));
+    }
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw new Error(`could not read mappings from schema "${settings.schema}": ${error.message}`);
+  } finally {
+    client.release();
+  }
+
+  const values = rules
+    .map((row) => ({
+      organisationId: organisation.id,
+      kind: 'saved',
+      match: 'exact',
+      label: lineLookupText(row.source_lookup_text),
+      unitAmountCents: Number(row.unit_amount_cents),
+      itemCode: String(row.xero_item_code ?? '').trim(),
+      origin: `earlier:${EARLIER_RULES}`,
+    }))
+    .filter((v) => v.label && v.label.length <= 200 && v.itemCode && Number.isInteger(v.unitAmountCents) && v.unitAmountCents >= 0);
+  const added = values.length ? (await db.insert(lineMappings).values(values).onConflictDoNothing().returning({ id: lineMappings.id })).length : 0;
+  let described = 0;
+  for (const item of items) {
+    const updated = await db.update(priceItems).set({ description: String(item.description).trim().slice(0, 1000) })
+      .where(and(eq(priceItems.organisationId, organisation.id), eq(priceItems.code, String(item.item_code).trim()), isNull(priceItems.description)))
+      .returning({ id: priceItems.id });
+    described += updated.length;
+  }
+  if (added) await remapJobs(db, organisation.id);
+  const counts = { rules: values.length, added, described };
+  log.info?.(`[import] mappings from schema "${settings.schema}": ${JSON.stringify(counts)}`);
   return counts;
 }

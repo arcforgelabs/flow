@@ -68,6 +68,22 @@ describe('invoicing API', { skip: skipWithoutDatabase }, () => {
       },
     });
     integrations.enable('accounts');
+    // A work system that lists its jobs for the Jobs board (listWork).
+    integrations.register({
+      id: 'worksystem',
+      name: 'Work system',
+      capabilities: {
+        health: async () => ({ ok: true }),
+        listWork: async () => ({
+          items: [
+            { sourceSystem: 'worksystem', sourceJobRef: 'JOB-1', caseRef: 'CASE-JOB-1', status: 'Shipped', clientName: 'Example Practice Pty', practitioner: 'Dr Example', dueOn: '2026-10-20', lines: [], totalCents: 22000 },
+            { sourceSystem: 'worksystem', sourceJobRef: 'JOB-9', caseRef: 'CASE-JOB-9', status: 'In Production', clientName: 'Work System Clinic', practitioner: 'Dr Sample', dueOn: '2026-10-25', lines: [{ code: 'BRG', description: 'Bridge', amountCents: 50000 }, { code: 'ZZZ', description: 'Other', amountCents: 100 }], totalCents: 50100 },
+          ],
+          statuses: [{ label: 'Shipped', firstSeenAt: '2026-10-01T00:00:00.000Z' }, { label: 'In Production', firstSeenAt: '2026-10-02T00:00:00.000Z' }],
+        }),
+      },
+    });
+    integrations.enable('worksystem');
     await integrations.start(handle.db);
     app = invoicingApp({ integrations });
     appWithoutCheck = invoicingApp();
@@ -280,6 +296,39 @@ describe('invoicing API', { skip: skipWithoutDatabase }, () => {
     assert.ok(again.body.details.reasons.includes('the job already has an invoice'));
   });
 
+  test('the Jobs board lists the work system jobs by status, each with its invoice, and a job has its activity', async () => {
+    const board = await call('/board', { token: staffToken });
+    assert.equal(board.status, 200, JSON.stringify(board.body));
+    assert.deepEqual(board.body.statuses.map((s) => s.label), ['Shipped', 'In Production']);
+    const [shipped, inLab] = board.body.jobs;
+    // A linked client shows as the Flow customer; the work system's name stays for the panel.
+    assert.deepEqual([shipped.sourceJobRef, shipped.status, shipped.clientName, shipped.workClientName], ['JOB-1', 'Shipped', 'Example Practice', 'Example Practice Pty']);
+    assert.equal(shipped.obligation.view, 'drafted');
+    assert.equal(shipped.obligation.invoiceStatus, 'draft');
+    assert.equal(shipped.obligation.invoiceView, 'to_check');
+    assert.deepEqual(shipped.obligation.invoiceProblems, []);
+    assert.equal(shipped.totalCents, 24200, 'the ledger total wins over the work system copy');
+    assert.deepEqual(shipped.lines, [{ code: 'CRN', description: 'Crown', amountCents: 22000, mapped: true }]);
+    // A job still in the lab has no obligation; its lines map by price code.
+    assert.deepEqual([inLab.clientName, inLab.obligation], ['Work System Clinic', null]);
+    assert.deepEqual(inLab.lines.map((l) => [l.code, l.mapped]), [['BRG', true], ['ZZZ', false]]);
+
+    // With no work system that lists jobs, the board shows the ledger's jobs.
+    const ledgerOnly = await request(appWithoutCheck, '/api/invoicing/board', { token: ownerToken });
+    assert.equal(ledgerOnly.status, 200);
+    const second = ledgerOnly.body.jobs.find((j) => j.sourceJobRef === 'JOB-2');
+    assert.equal(second.obligation.view, 'ready', 'with no accounting system, Flow\'s own records are the check');
+    assert.equal(second.clientName, 'Example Practice');
+
+    const activity = await call(`/jobs/${shipped.obligation.id}/activity`, { token: staffToken });
+    assert.equal(activity.status, 200);
+    // Newest first, and only who did it: a person, an automation or a system.
+    assert.deepEqual(activity.body.events.slice(0, 2).map((e) => [e.kind, e.by]), [['draft_refused', 'person'], ['drafted', 'person']]);
+    assert.equal(activity.body.events.at(-1).kind, 'observed');
+    assert.ok(activity.body.events.every((e) => Object.keys(e).sort().join() === 'by,createdAt,kind'));
+    assert.equal((await call(`/jobs/${MISSING}/activity`)).status, 404);
+  });
+
   test('with more than one organisation, a request must name one', async () => {
     const other = await createOrganisation(handle.db, { name: 'Other Lab' });
     const unnamed = await call('/invoices');
@@ -313,7 +362,9 @@ describe('invoicing API', { skip: skipWithoutDatabase }, () => {
     // Automations: everyone reads them, by the screen that shows them; an
     // owner or admin changes them.
     const seazona = await call(`/automations?organisationId=${lab.id}&place=seazona`, { token: staffToken });
-    assert.deepEqual(seazona.body.automations.map((a) => [a.key, a.config]), [['mark_ready_from_work_status', { statuses: ['shipped', 'delivered'] }]]);
+    assert.deepEqual(seazona.body.automations.map((a) => [a.key, a.config]), [
+      ['map_lines', { steps: ['same_code', 'account', 'saved', 'catalog_name', 'price_alias', 'catalog_name_price', 'catalog_score', 'alias'], zeroLines: 'keep' }],
+      ['mark_ready_from_work_status', { statuses: ['shipped', 'delivered'] }]]);
     const statuses = await call(`/work-statuses?organisationId=${lab.id}`, { token: staffToken });
     assert.equal(statuses.status, 200);
     assert.ok(Array.isArray(statuses.body.statuses));
@@ -354,5 +405,24 @@ describe('invoicing API', { skip: skipWithoutDatabase }, () => {
     assert.equal((await call(`/rules/${made.body.rule.id}?organisationId=${lab.id}`, { method: 'DELETE', token: staffToken })).status, 403);
     assert.equal((await call(`/rules/${made.body.rule.id}?organisationId=${lab.id}`, { method: 'DELETE' })).status, 200);
     assert.ok((await call(`/rules?organisationId=${lab.id}`)).body.rules.every((r) => r.id !== made.body.rule.id));
+  });
+  test('price codes: unmapped line labels list with counts; an owner or admin saves a mapping', async () => {
+    await observeJob(handle.db, lab.id, {
+      sourceSystem: 'worksystem', sourceJobRef: 'JOB-MAP', contactId: practice.id,
+      lines: [{ itemCode: '9001', label: 'night splint', description: 'Night Splint', unitAmountCents: 15000, taxCode: 'GST_FREE' }],
+    });
+    const labels = await call(`/line-labels?organisationId=${lab.id}`, { token: staffToken });
+    assert.equal(labels.status, 200, JSON.stringify(labels.body));
+    const label = labels.body.labels.find((l) => l.label === 'night splint');
+    assert.deepEqual([label.lines, label.unmapped, label.sample, label.unitAmountCents], [1, 1, 'Night Splint', 15000]);
+
+    const mapping = { organisationId: lab.id, kind: 'saved', label: 'night splint', unitAmountCents: 15000, itemCode: 'CRN' };
+    assert.equal((await call('/line-mappings', { method: 'POST', token: staffToken, body: mapping })).status, 403);
+    const saved = await call('/line-mappings', { method: 'POST', body: mapping });
+    assert.equal(saved.status, 201, JSON.stringify(saved.body));
+    assert.equal((await call('/line-mappings', { method: 'POST', body: mapping })).status, 409);
+    const listed = await call(`/line-mappings?organisationId=${lab.id}`, { token: staffToken });
+    assert.deepEqual(listed.body.mappings.map((m) => [m.kind, m.label, m.itemCode]), [['saved', 'night splint', 'CRN']]);
+    assert.equal((await call(`/line-mappings/${saved.body.mapping.id}?organisationId=${lab.id}`, { method: 'DELETE' })).status, 200);
   });
 });

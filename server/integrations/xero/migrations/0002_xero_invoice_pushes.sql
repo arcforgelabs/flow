@@ -1,7 +1,7 @@
 -- One row for each issued Flow invoice version sent to Xero as a draft. It
 -- holds the exact request and its Idempotency-Key from before the request
 -- leaves, so an uncertain outcome is resolved without a second invoice.
-CREATE TABLE "xero_invoice_pushes" (
+CREATE TABLE IF NOT EXISTS "xero_invoice_pushes" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"organisation_id" uuid NOT NULL,
 	"invoice_id" uuid NOT NULL,
@@ -29,4 +29,4 @@ CREATE TABLE "xero_invoice_pushes" (
 	CONSTRAINT "xero_invoice_pushes_settled_has_id" CHECK ("state" in ('dispatching', 'ambiguous') or "xero_invoice_id" is not null)
 );
 --> statement-breakpoint
-CREATE INDEX "xero_invoice_pushes_org_invoice" ON "xero_invoice_pushes" ("organisation_id", "invoice_id");
+CREATE INDEX IF NOT EXISTS "xero_invoice_pushes_org_invoice" ON "xero_invoice_pushes" ("organisation_id", "invoice_id");
