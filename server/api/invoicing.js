@@ -13,7 +13,7 @@ import {
 } from '../core/line-mapping.js';
 import {
   effectiveSettings, INVOICING_DEFAULTS, readCustomerBilling, readInvoicingSettings,
-  saveCustomerBilling, saveInvoicingSettings,
+  saveCustomerBilling, saveInvoicingSettings, sendModeSummary,
 } from '../core/invoicing-rules.js';
 import { boardJobs, describeObligations } from '../core/job-board.js';
 import { draftInvoiceForObligation, explainObligation, listObligations, setReady } from '../core/ledger.js';
@@ -302,6 +302,7 @@ export function createInvoicingRouter({
       })),
       counts,
       sendsTo: accounting()?.name ?? null,
+      sendMode: accounting() ? { ...(await sendModeSummary(db, organisationId)), ...(await accounting().capabilities.sendStatus({ organisationId })) } : null,
     });
   }));
 

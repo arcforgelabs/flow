@@ -49,6 +49,21 @@ function localDate(date = new Date()) {
 
 const showDate = (iso) => (iso ? new Date(`${iso}T00:00:00`).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' }) : '—');
 
+// What happens to a ready invoice in the accounting system, one fact per
+// sentence. It follows the integration's settings: its connection, whether it
+// takes writes, and the send mode on its page.
+export function sendModeNote(to, sendMode) {
+  if (!to) return 'No accounting system is on. Flow keeps each invoice here only.';
+  if (sendMode && !sendMode.connected) return `${to} is not connected. Connect it in Integrations before you send.`;
+  if (sendMode && !sendMode.writesAllowed) return `${to} does not take invoices from Flow yet. Turn this on in Integrations, ${to}.`;
+  const text = sendMode?.mode === 'approve_and_email'
+    ? [`Flow sends each invoice to ${to} as approved.`, `${to} emails it to the customer at once.`]
+    : [`Flow sends each invoice to ${to} as a draft.`, `You approve and send it in ${to}.`];
+  const others = sendMode?.otherCustomers ?? 0;
+  if (others) text.push(`${others} ${others === 1 ? 'customer has' : 'customers have'} a different setting.`);
+  return text.join(' ');
+}
+
 // ── The list ───────────────────────────────────────────────────────────────
 
 export async function renderInvoiceList(main, ui) {
@@ -108,6 +123,7 @@ export async function renderInvoiceList(main, ui) {
           : [`${plural(res.marked, 'draft', 'drafts')} ready.`, 'success'])));
       }
     } else if (state.status === 'ready') {
+      parts.push(h('p', { class: 'fx-dim' }, sendModeNote(to, body.sendMode)));
       const buttons = [];
       if (ticked.length) {
         buttons.push(action(`Back to drafts (${ticked.length})`, 'mark-not-ready', () => ({ invoiceIds: ticked }),
