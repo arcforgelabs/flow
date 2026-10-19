@@ -1011,7 +1011,7 @@ drawModeToggles();
 // the Clerk instance is called.
 const LOCALIZATION = {
   signIn: {
-    start: { title: 'Sign in to Flow', subtitle: 'Welcome back. Choose how to sign in.' },
+    start: { title: 'Sign in to Flow', subtitle: 'Choose how to sign in.' },
     password: { subtitle: 'Enter the password for your account.' },
   },
   signUp: { start: { title: 'Ask for access to Flow', subtitle: 'Use your work email. An owner approves new people.' } },
