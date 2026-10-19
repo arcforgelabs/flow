@@ -1,5 +1,5 @@
 import { createSeazonaClient } from './client.js';
-import { listClients, readBillableWork } from './feed.js';
+import { listClients, listWork, readBillableWork } from './feed.js';
 import { readSeazonaSyncHealth, runSeazonaSync } from './lanes.js';
 import { createSeazonaScheduler } from './scheduler.js';
 import { describeSeazonaSettings, resolveSeazonaSettings } from './settings.js';
@@ -104,6 +104,12 @@ export function createSeazonaAdapter({ env = null, fetchImpl = null, now = Date.
       // Flow's copy only.
       async listCustomers() {
         return listClients(current().db);
+      },
+
+      // Open orders and orders finished lately, with their statuses, for the
+      // Jobs board. Reads Flow's copy only.
+      async listWork() {
+        return listWork(current().db, { now: now() });
       },
     },
   };

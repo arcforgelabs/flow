@@ -20,7 +20,7 @@ const themeDir = join(here, '..', 'theme');
 const logoDir = join(here, 'logos');
 const LOGO_FILES = new Set(['xero.svg', 'seazona.svg', 'sentry.svg']);
 const THEME_FILES = new Set(['themes.js', 'color-contrast.js', 'openclaw-palettes.js', 'font-families.js']);
-const UI_FILES = new Set(['flow.css', 'appearance.js', 'clerk-appearance.js', 'app.js', 'invoicing.js', 'invoicing-settings.js', 'automations.js', 'invoice-rules.js', 'jobs.js', 'monitoring.js', 'flow-mark.svg']);
+const UI_FILES = new Set(['flow.css', 'appearance.js', 'clerk-appearance.js', 'app.js', 'invoicing.js', 'invoicing-settings.js', 'automations.js', 'invoice-rules.js', 'jobs.js', 'job-board.js', 'monitoring.js', 'flow-mark.svg']);
 const MAX_AGE = '1h';
 
 // Send one named file from dir. Passing dir as root limits the dotfile check

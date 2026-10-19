@@ -112,7 +112,9 @@ while the installation has exactly one. Money is integer cents. Answers are
 | `POST /invoices/:id/void` | owner or admin | Voids an invoice that was issued |
 | `GET /contacts?q=&limit=` | anyone | Customers, by name |
 | `GET /price-items?q=` | anyone | The price list, by code |
-| `GET /jobs?view=&limit=` | anyone | Billable jobs with `contactName`, `view` and `reasons`; `counts` by view |
+| `GET /jobs?view=&limit=` | anyone | Billable jobs with `contactName`, `view` and `reasons`, and for a job with an invoice its `invoiceView` and `invoiceProblems`; `counts` by view |
+| `GET /board` | anyone | The Jobs board: the work system's jobs from its copy in Flow (`listWork`), with their own `status`, the client name (the Flow customer once linked, else the work system's), lines, and the job's billing `obligation` or null; `statuses` for the columns |
+| `GET /jobs/:id/activity` | anyone | What happened to a job, newest first: `kind`, `by` (a person, an automation or a system) and `createdAt` |
 | `POST /jobs/:id/draft` | owner or admin | The job's draft invoice. With an accounting integration it is made only after a live check there (`checkInvoice`, `docs/INTEGRATIONS.md`) finds none. With none connected, Flow's own records are the check: one invoice for each job |
 
 A line is `{ priceItemId?, description?, quantity?, unitAmountCents?,

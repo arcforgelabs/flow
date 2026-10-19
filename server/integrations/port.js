@@ -18,6 +18,7 @@ export const CAPABILITIES = Object.freeze([
   'pushBill', // send an approved bill; the Flow record id is the idempotency key
   'pullPayments', // payments since a cursor, matched to invoices and bills
   'checkInvoice', // does the accounting system hold an invoice for a billable job? (the ledger's liveCheck)
+  'listWork', // the work system's jobs from its copy in Flow, open and lately finished, for the Jobs board
   'listCustomers', // the system's customers, by id and name, for the identity map (Seazona: clients; Xero: contacts)
   'findInvoices', // sales invoices in the accounting system's copy, for the matcher; never a live call
   'health', // connection state for Settings
