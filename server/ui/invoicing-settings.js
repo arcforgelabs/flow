@@ -78,7 +78,8 @@ export async function renderInvoicingSettings(main, ui) {
   });
 
   const card = (title, ...children) => h('section', { class: 'fx-card', style: { padding: '18px' } },
-    h('h3', { class: 'fx-label' }, title), h('div', { class: 'fx-fields' }, ...children));
+    h('h2', { class: 'fx-strong', style: { margin: '0 0 14px' } }, title),
+    h('div', { class: 'fx-fields', style: { gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', alignItems: 'start' } }, ...children));
   host.replaceChildren(...[
     canChange ? null : notice('An owner or admin can change these settings.', 'info'),
     card('Drafts',
