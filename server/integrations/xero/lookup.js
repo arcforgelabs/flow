@@ -1,6 +1,5 @@
 import { sql } from 'drizzle-orm';
 import { ledgerState } from './ledger.js';
-import { MIRROR_RESOURCES } from './mirror.js';
 
 // What the core's matcher (server/core/pipeline.js) reads from Xero: the
 // customers and the sales invoices in Flow's own copy. It never calls Xero, so
@@ -9,6 +8,11 @@ import { MIRROR_RESOURCES } from './mirror.js';
 // How old the mirror's last finished pass may be before "no invoice found"
 // stops counting as proof.
 export const MIRROR_FRESH_MS = 24 * 60 * 60 * 1000;
+
+// The copies that prove whether Xero holds an invoice for a job. Payments do
+// not: a connection without a payments scope (the default) never copies them,
+// and must still match jobs.
+export const PROOF_RESOURCES = Object.freeze(['invoices', 'credit_notes']);
 
 export async function listCustomers(db, organisationId) {
   const { rows } = await db.execute(sql`
@@ -26,7 +30,7 @@ export async function mirrorState(db, organisationId, { now = new Date() } = {})
     where organisation_id = ${organisationId}`);
   const byResource = new Map(rows.map((r) => [r.resource, r]));
   const invoices = byResource.get('invoices');
-  const finished = MIRROR_RESOURCES.every((r) => (byResource.get(r)?.passes ?? 0) > 0);
+  const finished = PROOF_RESOURCES.every((r) => (byResource.get(r)?.passes ?? 0) > 0);
   const lastPass = invoices?.last_pass_finished_at ? new Date(invoices.last_pass_finished_at) : null;
   const { rows: [changed] } = await db.execute(sql`
     select max(last_changed_at) as at from xero_invoices where organisation_id = ${organisationId}`);
