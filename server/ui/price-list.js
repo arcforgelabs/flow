@@ -27,7 +27,7 @@ export async function renderPriceList(main, ui) {
   const host = h('div', { class: 'fx-card', style: { padding: '8px 20px 16px' } }, h('div', { class: 'fx-skeleton' }));
   const addButton = h('button', { class: 'fx-btn fx-btn--primary', type: 'button', disabled }, 'Add code');
   const checkButton = h('button', { class: 'fx-btn fx-btn--ghost', type: 'button', disabled }, 'Check prices');
-  main.append(pageHeader('Price list', { subtitle: 'Your codes and prices. No integration needed.', actions: [checkButton, addButton] }), host);
+  main.append(pageHeader('Price list', { subtitle: 'The codes and prices that Flow puts on invoice lines.', actions: [checkButton, addButton] }), host);
 
   let data = null;
   let query = '';
@@ -201,7 +201,7 @@ export async function renderPriceList(main, ui) {
       : h('p', { class: 'fx-dim' }, 'No integration has a price list. Flow uses this list alone.');
     const sections = [
       disabled ? notice('Only an owner or admin can change these.', 'info') : null,
-      h('section', { class: 'fx-set' }, h('h2', { class: 'fx-set__title' }, `Codes · ${data.items.filter((i) => !i.archivedAt).length}`), systems, search,
+      h('section', { class: 'fx-set' }, h('div', { class: 'fx-price__head' }, h('h2', { class: 'fx-set__title' }, `Codes · ${data.items.filter((i) => !i.archivedAt).length}`), search), systems,
         ...(live.length ? live.map(itemRow) : [h('p', { class: 'fx-dim' }, words ? 'No code matches.' : 'No codes yet. Add the first one.')])),
     ];
     for (const { system: id, records } of data.unlinked) {

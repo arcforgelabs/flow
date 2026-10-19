@@ -690,6 +690,9 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
 .fx-set + .fx-set { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--fx-line); }
 /* Price list (price-list.js): a code's price and its systems' chips. */
 .fx-price__hint { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+.fx-price__head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; }
+.fx-price__head .fx-search { margin: 0; }
+@media (max-width: 560px) { .fx-price__head .fx-search { width: 100%; } }
 .fx-price__systems { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; }
 .fx-set__control .fx-price__link { width: 260px; min-width: 0; }
 @media (max-width: 560px) { .fx-set__control .fx-price__link { width: 150px; } }

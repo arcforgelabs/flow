@@ -23,7 +23,7 @@ const SEND_MODES = [
 export async function renderInvoicingSettings(main, ui) {
   const { h, flow, toast, notice, pageHeader, me } = ui;
   const host = h('div', { class: 'fx-card', style: { padding: '8px 20px 16px' } }, h('div', { class: 'fx-skeleton' }));
-  main.append(pageHeader('Invoicing', { subtitle: 'How Flow drafts invoices. No integration needed.' }), host);
+  main.append(pageHeader('Invoicing', { subtitle: 'How Flow drafts invoices.' }), host);
   let body;
   try {
     body = await flow('/api/invoicing/settings');
