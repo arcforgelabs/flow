@@ -11,6 +11,7 @@ import { isMissingTable, migrateAdapterSchema } from './schema.js';
 
 export const CAPABILITIES = Object.freeze([
   'pullWorkItems', // billable work since a cursor (Seazona: completed cases)
+  'pullHistoryJobs', // past work from a history import, as ledger jobs marked historical (Seazona: its CSV export)
   'pushInvoice', // send an issued invoice; the Flow record id is the idempotency key
   'pushInvoices', // send several issued invoices in one pass (Send all ready, server/core/sending.js)
   'checkDrafts', // the accounting system's problems with Flow drafts, from its copy; null while not connected

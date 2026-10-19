@@ -22,6 +22,13 @@
       "when": 1792448378477,
       "tag": "0002_call_safety",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1792450474201,
+      "tag": "0003_history_import",
+      "breakpoints": true
     }
   ]
 }

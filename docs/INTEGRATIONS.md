@@ -29,7 +29,7 @@ export const exampleAdapter = {
 };
 ```
 
-The capabilities are `pullWorkItems`, `pushInvoice`, `pushBill`,
+The capabilities are `pullWorkItems`, `pullHistoryJobs`, `pushInvoice`, `pushBill`,
 `pullPayments`, `checkInvoice`, `listCustomers`, `findInvoices`, `listWork`,
 `captureError`, `browserMonitoring` and `health`. `listWork({ organisationId })`
 answers the work system's jobs for the Jobs board from the adapter's own copy,

@@ -262,6 +262,102 @@ per line. An order deleted in Seazona sends its obligation to review
 The ledger's "paid" write-back to Seazona is not built: this adapter only
 reads.
 
+## History import
+
+The API sync reads forward from the day it started. The history import brings
+in the years before that from Seazona's own CSV export, with no API call, so
+Flow holds the lab's full job history. The code is in
+`server/integrations/seazona/history/`; the routes are under
+`/api/seazona/history` (`routes.js`). There is no screen yet.
+
+```mermaid
+flowchart LR
+  file[Seazona CSV export] -- upload --> stage[Staged batch<br/>rows and jobs]
+  stage --> rec[Reconcile]
+  mirror[API copy<br/>orders, invoices, clients] --> rec
+  hist[Flow history] --> rec
+  rec -- new --> apply
+  rec -- same --> skip[Skipped]
+  rec -- needs a person or changed --> person[Person decides]
+  person -- import --> apply[Apply]
+  person -- skip --> skip
+  apply --> hist
+  hist -- pullHistoryJobs --> core[Core: ledger and matcher]
+```
+
+1. **Upload.** An owner or admin posts the file
+   (`POST /history/batches`, a `text/csv` body with `?fileName=`, or JSON
+   `{ csv, fileName, columns }`, at most 25 MB and 200,000 rows). Flow
+   guesses each column from its header (below); `columns` corrects a guess
+   (`{ "doctorName": "Client Name" }`). A file without a practice, an item,
+   an amount and a date is refused, and the answer lists the headers it has.
+   The same file uploaded again answers its first batch.
+2. **Read.** Each row is read into Flow fields. A row with a bad or missing
+   date, practice, item or amount joins no job and is listed with its
+   problems. Columns Flow does not know are listed by name; their values are
+   never stored. The patient column groups rows into jobs and is stored only
+   when `SEAZONA_KEEP_PATIENT_REFERENCE` is on.
+3. **Group.** Rows with the same invoice number are one job; with no invoice
+   number, the same case number; with neither, the same date, practice,
+   doctor and patient, as the earlier app grouped them. A job with no number
+   is keyed by its content without the patient, so no patient value or hash
+   is kept.
+4. **Reconcile.** Each job is compared with what Flow holds. It reads Flow's
+   database only.
+5. **Decide.** A person settles each job that waits:
+   `POST /history/batches/:id/decisions` with
+   `{ decisions: [{ jobKey, decision: "import" | "skip" | null, clientId? }] }`.
+6. **Apply.** `POST /history/batches/:id/apply` reconciles once more, then
+   writes each new job and each job a person chose to import into
+   `seazona_history_jobs`. A batch is applied once. Nothing in the API copy
+   changes.
+
+| Finding | Blocks | Meaning |
+| --- | --- | --- |
+| `mixed_company`, `mixed_doctorName` | Yes | One invoice number carries two practices or doctors |
+| `conflicting_totals` | Yes | The job's rows give different invoice totals |
+| `total_differs_from_lines` | No | The total is not the lines, with or without GST |
+| `differs_from_api_copy` | No | The API copy holds the same invoice or order at another amount |
+| `invoice_has_several_orders` | No | The API copy has more than one order on the invoice |
+| `api_copy_ambiguous` | Yes | With no number, more than one order in the API copy fits |
+| `client_unknown` | No | No Seazona client has the practice name; the job imports without one |
+| `client_ambiguous` | Yes | More than one Seazona client has the name; the person picks `clientId` |
+| `differs_from_earlier_import` | Yes | An applied batch holds the same job with other values (outcome `changed`) |
+
+Outcomes: `new` (apply writes it), `same` (already in Flow's history,
+skipped), `changed` and `needs_person` (wait for a decision). A difference
+is a finding, never a silent change.
+
+The headers Flow reads (`GET /history/columns`). They compare without case,
+spaces or punctuation:
+
+| Field | Headers |
+| --- | --- |
+| Invoice number | Invoice #, Invoice Number, Invoice No |
+| Case number | Case #, Case Number, Order #, Order Number, Order ID |
+| Dates | Invoice Date or Date; Due Date; Ship Date or Date Shipped |
+| Practice | Company Name, Company, Practice, Account Name |
+| Account number | Account #, Account Number |
+| Doctor | Doctor Name, Doctor, Dentist, Practitioner |
+| Patient | Patient, Patient Name |
+| Status | Status, Case Status |
+| Line | Item, Product, Description, Service; Item Code or Code; Qty or Quantity; Tooth |
+| Line amount | Item Amount, Amount, Line Amount, Line Total, Price |
+| Line taxable | Item Taxable, Taxable (Yes/No) |
+| Invoice total | Total, Invoice Total |
+
+"Client Name" is not guessed: in Seazona it can mean the doctor or the
+practice, so map it with `columns`.
+
+`pullHistoryJobs(cursor)` gives the applied jobs as ledger jobs marked
+`historical`, oldest change first. A job the API copy also holds uses the
+same order id as `sourceJobRef`, so the two are one job; others use the case
+number, else `history:<job key>`. The core does not read it yet: the next
+step records history jobs in the ledger out of drafting, so the matcher
+links each one to its Xero invoice. `health()` shows `history`: jobs held,
+how many the API copy also has, the first and last job date, and open
+batches.
+
 ## Health
 
 `health()` reads Flow's database only; it never calls Seazona. `GET /health`
@@ -329,6 +425,10 @@ installation-wide.
 | `seazona_lane_state` | Each lane's cursor, next run, status and last failure |
 | `seazona_order_read_failures` | Failed reads per order, and quarantine |
 | `seazona_record_read_failures` | Failed detail reads per invoice or client, and quarantine (issue #101) |
+| `seazona_history_batches` | Each uploaded CSV export: its columns, status and counts |
+| `seazona_history_rows` | Each row of an upload as Flow read it, and its problems |
+| `seazona_history_batch_jobs` | Each job of an upload: what reconciliation found and what a person decided |
+| `seazona_history_jobs` | Flow's own record of past work from applied uploads |
 
 To change them, edit `server/integrations/seazona/schema.js` and run:
 
