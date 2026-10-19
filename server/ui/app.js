@@ -187,7 +187,7 @@ const VIEWS = {
   jobs: { label: 'Jobs', icon: 'jobs', group: 'Work', render: (main) => renderJobs(main, ui()) },
   invoices: { label: 'Invoices', icon: 'invoices', group: 'Work', render: (main, id) => (id ? renderInvoice(main, ui(), id) : renderInvoiceList(main, ui())) },
   people: { label: 'People', icon: 'people', group: 'Settings', ownerOnly: true, render: renderPeople },
-  integrations: { label: 'Integrations', icon: 'plug', group: 'Settings', ownerOnly: true, render: renderIntegrations },
+  integrations: { label: 'Integrations', icon: 'plug', group: 'Settings', ownerOnly: true, render: (main, id) => (id ? renderIntegration(main, id) : renderIntegrations(main)) },
   account: { label: 'Account', icon: 'person', group: 'Settings', render: renderAccount },
   appearance: { label: 'Appearance', icon: 'palette', group: 'Settings', render: renderAppearance },
 };
@@ -389,17 +389,109 @@ function personRow(person, host) {
     h('td', { class: 'fx-table__actions' }, h('div', { class: 'fx-row fx-row--end' }, actions)));
 }
 
-// Integrations: an owner turns Xero and Seazona on and enters their settings
-// here. Credentials are write-only: the server says whether each is set,
+// Integrations: a classic catalogue. Each system is a card with its logo;
+// the card opens a side panel where an owner turns it on and enters its
+// settings. Credentials are write-only: the server says whether each is set,
 // never its value (server/integrations/setup.js).
-const STATE_LABEL = { ready: 'On', disabled: 'Off', failed: 'Needs attention', restart_needed: 'Restart needed', not_started: 'Starting' };
+const STATE_LABEL = { ready: 'Connected', disabled: 'Not set up', failed: 'Needs attention', restart_needed: 'Restart needed', not_started: 'Starting' };
 const STATE_TONE = { ready: 'success', disabled: 'mute', failed: 'danger', restart_needed: 'warn', not_started: 'info' };
 
+// What the catalogue shows for each adapter: its group, one line on what it
+// does, and its logo (server/ui/logos/, each maker's own mark).
+const CATALOGUE = {
+  xero: { maker: 'Xero', category: 'accounting', blurb: 'Send invoices to Xero as drafts and bring payments back.', logo: 'xero.svg' },
+  seazona: { maker: 'Seazona', category: 'lab', blurb: 'Bring lab cases and orders into Flow as jobs.', logo: 'seazona.svg' },
+};
+const CATEGORIES = [['all', 'All'], ['accounting', 'Accounting'], ['lab', 'Lab software']];
+const CATEGORY_LABEL = Object.fromEntries(CATEGORIES);
+
+function integrationLogo(integration, size = '') {
+  const file = CATALOGUE[integration.id]?.logo;
+  return h('span', { class: `fx-logo${size ? ` fx-logo--${size}` : ''}`, 'aria-hidden': 'true' },
+    file ? h('img', { src: `/assets/ui/logos/${file}`, alt: '' }) : icon('plug'));
+}
+
 async function renderIntegrations(main) {
-  const host = h('div', { class: 'fx-int-list' }, h('div', { class: 'fx-skeleton' }));
+  const state = { tab: 'all', category: 'all', q: '' };
+  const tabs = h('div', { class: 'fx-seg', role: 'tablist' });
+  const search = h('input', { class: 'fx-input fx-search', type: 'search', placeholder: 'Search integrations', 'aria-label': 'Search integrations' });
+  const category = h('select', { class: 'fx-select', 'aria-label': 'Category' },
+    CATEGORIES.map(([id, label]) => h('option', { value: id }, id === 'all' ? 'All categories' : label)));
+  const notices = h('div', { class: 'fx-fields' });
+  const content = h('div', { class: 'fx-int-sections' }, h('div', { class: 'fx-skeleton' }));
   main.append(
-    pageHeader('Integrations', { subtitle: 'Connect Flow to your lab system and your accounting system.' }),
-    host);
+    h('header', { class: 'fx-ph' }, h('div', { class: 'fx-ph__text' }, h('h1', { class: 'fx-title' }, 'Integrations'))),
+    h('div', { class: 'fx-int-bar' }, tabs, search),
+    notices, content);
+  let body;
+  try {
+    body = await flow('/api/integrations');
+  } catch (error) {
+    content.replaceChildren(notice(error.message, 'danger'));
+    return;
+  }
+  const canChange = Boolean(me.ownerActions?.allowed);
+  notices.replaceChildren(...[
+    canChange ? null : notice('Changing integrations needs a verified owner sign-in: Google Workspace on the owner domain with no password, or a second factor.', 'warn', 'Read only.'),
+    body.secretsKey ? null : notice('Flow has no secrets key, so it cannot store a client secret. Ask whoever hosts Flow to set FLOW_SECRETS_KEY (64 hex characters), then restart Flow.', 'warn', 'No secrets key.'),
+  ].filter(Boolean));
+  const list = [...body.integrations].sort((a, b) => a.name.localeCompare(b.name));
+  const connected = (i) => i.enabled;
+
+  const draw = () => {
+    tabs.replaceChildren(...[['all', 'All integrations'], ['yours', 'Your integrations']].map(([id, label]) => h('button', {
+      type: 'button', role: 'tab', class: 'fx-seg__item', 'aria-selected': String(state.tab === id), 'aria-checked': String(state.tab === id),
+      onclick: () => { state.tab = id; draw(); },
+    }, label)));
+    const q = state.q.toLowerCase();
+    const matches = (i) => !q || `${i.name} ${CATALOGUE[i.id]?.blurb ?? ''}`.toLowerCase().includes(q);
+    const sections = [];
+    if (state.tab === 'yours') {
+      const yours = list.filter(connected).filter(matches);
+      sections.push(h('section', { class: 'fx-int-section-list' },
+        yours.length ? h('div', { class: 'fx-int-grid' }, yours.map(integrationTile))
+          : h('p', { class: 'fx-empty' }, q ? 'No integration matches.' : 'Nothing is connected yet. Pick one under All integrations.')));
+    } else {
+      // Recommended: what is not connected yet, once the catalogue is long
+      // enough that a short row helps (with a few, it would repeat the grid).
+      const recommended = q || list.length < 4 ? [] : list.filter((i) => !connected(i)).slice(0, 3);
+      if (recommended.length) {
+        sections.push(h('section', { class: 'fx-int-section-list' },
+          h('h2', { class: 'fx-int-heading' }, 'Recommended for you'),
+          h('div', { class: 'fx-int-grid' }, recommended.map(integrationTile))));
+      }
+      const all = list.filter(matches).filter((i) => state.category === 'all' || CATALOGUE[i.id]?.category === state.category);
+      sections.push(h('section', { class: 'fx-int-section-list' },
+        h('div', { class: 'fx-int-heading-row' }, h('h2', { class: 'fx-int-heading' }, 'All integrations'), category),
+        all.length ? h('div', { class: 'fx-int-grid' }, all.map(integrationTile)) : h('p', { class: 'fx-empty' }, 'No integration matches.')));
+    }
+    content.replaceChildren(...sections);
+  };
+  search.addEventListener('input', () => { state.q = search.value.trim(); draw(); });
+  category.addEventListener('change', () => { state.category = category.value; draw(); });
+  draw();
+}
+
+function integrationTile(integration) {
+  const href = `/integrations/${integration.id}`;
+  const entry = CATALOGUE[integration.id];
+  const on = integration.enabled;
+  const attention = ['failed', 'restart_needed'].includes(integration.state);
+  return h('a', { class: 'fx-int-card', href, onclick: navigate },
+    h('header', { class: 'fx-int-card__head' },
+      integrationLogo(integration),
+      h('h3', {}, integration.name),
+      on ? h('span', { class: 'fx-status', 'data-tone': STATE_TONE[integration.state] ?? 'mute' }, STATE_LABEL[integration.state] ?? integration.state) : null),
+    h('p', { class: 'fx-int-card__blurb' }, entry?.blurb ?? ''),
+    h('span', { class: 'fx-int-card__btn' }, attention ? 'Fix' : on ? 'Manage' : '+ Connect'));
+}
+
+// One integration's page (/integrations/<id>): its logo and maker, Connect
+// with each step shown as it happens, the setup steps, its settings, and the
+// facts beside them.
+async function renderIntegration(main, id) {
+  const host = h('div', { class: 'fx-int-page' }, h('div', { class: 'fx-skeleton' }));
+  main.append(host);
   let body;
   try {
     body = await flow('/api/integrations');
@@ -407,23 +499,14 @@ async function renderIntegrations(main) {
     host.replaceChildren(notice(error.message, 'danger'));
     return;
   }
+  const found = body.integrations.find((i) => i.id === id);
+  if (!found) {
+    host.replaceChildren(notice('No integration by that name.', 'danger'));
+    return;
+  }
   const canChange = Boolean(me.ownerActions?.allowed);
-  host.replaceChildren(...[
-    canChange ? null : notice('Changing integrations needs a verified owner sign-in: Google Workspace on the owner domain with no password, or a second factor.', 'warn', 'Read only.'),
-    body.secretsKey ? null : notice('Flow has no secrets key, so it cannot store a client secret. Ask whoever hosts Flow to set FLOW_SECRETS_KEY (64 hex characters), then restart Flow.', 'warn', 'No secrets key.'),
-    ...body.integrations.map((integration) => integrationCard(integration, { canChange, organisations: body.organisations })),
-  ].filter(Boolean));
-}
 
-// One line under each name: what the integration brings into Flow.
-const INTEGRATION_HINT = {
-  seazona: 'Lab orders and cases come in from Seazona.',
-  xero: 'Invoices go out to Xero. Payments come back.',
-};
-
-function integrationCard(integration, { canChange, organisations }) {
-  const card = h('section', { class: 'fx-panel fx-int', 'aria-label': integration.name });
-  const draw = (current) => {
+  const draw = (current, progress = null) => {
     const inputs = new Map();
     const editable = [];
     const fromHost = [];
@@ -469,12 +552,39 @@ function integrationCard(integration, { canChange, organisations }) {
       }
       return out;
     };
+    const put = (enabled) => flow(`/api/integrations/${current.id}`, { method: 'PUT', body: JSON.stringify({ values: values(), ...(enabled === undefined ? {} : { enabled }) }) });
+
+    // Connect: each step is shown as it runs, then ticked or crossed.
+    const connect = async () => {
+      const steps = [
+        { label: 'Saving settings', state: 'running' },
+        { label: `Starting ${current.name}`, state: 'waiting' },
+      ];
+      const started = Date.now();
+      const show = () => draw(current, { steps, started });
+      show();
+      let next;
+      try {
+        next = (await put(true)).integration;
+      } catch (error) {
+        steps[0] = { label: error.message, state: 'failed' };
+        show();
+        return;
+      }
+      steps[0].state = 'done';
+      steps[1].state = next.state === 'ready' ? 'done' : 'failed';
+      if (next.state !== 'ready') steps[1].label = next.error ? `${current.name} could not start: ${next.error}` : `${current.name}: ${STATE_LABEL[next.state] ?? next.state}`;
+      if (next.state === 'ready') steps.push({ label: `${current.name} is connected`, state: 'done' });
+      current = next;
+      show();
+      setTimeout(() => { if (steps.every((step) => step.state === 'done')) draw(current); }, 2400);
+    };
     const save = async (enabled) => {
       try {
-        const res = await flow(`/api/integrations/${current.id}`, { method: 'PUT', body: JSON.stringify({ values: values(), ...(enabled === undefined ? {} : { enabled }) }) });
-        const next = res.integration;
-        toast(next.state === 'ready' ? `${next.name} is on.` : next.state === 'disabled' ? `${next.name} settings saved. It is off.` : `${next.name} needs attention.`, next.state === 'failed' ? 'danger' : 'success');
-        draw(next);
+        const next = (await put(enabled)).integration;
+        toast(enabled === false ? `${next.name} is disconnected.` : `${next.name} settings saved.`, 'success');
+        current = next;
+        draw(current);
       } catch (error) {
         toast(error.message, 'danger');
       }
@@ -483,36 +593,70 @@ function integrationCard(integration, { canChange, organisations }) {
     const on = current.enabled;
     const guide = current.guide;
     const hostOwned = current.enabledBy === 'host';
-    const action = !canChange || hostOwned ? null : on
-      ? h('button', { class: 'fx-btn fx-btn--sm', type: 'button', onclick: () => save(false) }, 'Turn off')
-      : h('button', { class: 'fx-btn fx-btn--primary fx-btn--sm', type: 'button', onclick: () => save(true) }, 'Turn on');
-    card.replaceChildren(...[
-      h('header', { class: 'fx-int__head' },
-        h('span', { class: 'fx-int__logo', 'aria-hidden': 'true' }, current.name.slice(0, 1)),
-        h('div', { class: 'fx-int__name' },
-          h('h2', {}, current.name),
-          h('p', { class: 'fx-dim' }, INTEGRATION_HINT[current.id] ?? '')),
-        h('span', { class: 'fx-status', 'data-tone': STATE_TONE[current.state] ?? 'mute' }, STATE_LABEL[current.state] ?? current.state),
-        action),
-      h('div', { class: 'fx-int__body' }, ...[
-        hostOwned ? h('p', { class: 'fx-dim' }, 'Turned on by the host.') : null,
-        current.state === 'failed' && current.error ? notice(current.error, 'danger', 'It could not start.') : null,
-        guide ? h('details', { class: 'fx-int__guide' },
-          h('summary', {}, 'How to set up'),
-          h('ol', {}, guide.steps.map((step) => h('li', {}, step))),
-          guide.link ? h('a', { href: guide.link, target: '_blank', rel: 'noopener' }, 'Open the developer site') : null) : null,
-        editable.length ? h('div', { class: 'fx-int__fields' }, editable) : null,
-        fromHost.length ? h('div', { class: 'fx-int__host' },
-          h('p', { class: 'fx-dim' }, 'Set by the host. Change these there.'),
-          h('dl', {}, fromHost)) : null,
-        current.id === 'xero' && current.state === 'ready' ? xeroConnection(organisations, canChange) : null,
-      ].filter(Boolean)),
-      canChange && editable.length ? h('footer', { class: 'fx-int__foot' },
-        h('button', { class: 'fx-btn', type: 'button', onclick: () => save(undefined) }, 'Save changes')) : null,
-    ].filter(Boolean));
+    const entry = CATALOGUE[current.id];
+    const mode = current.fields.find((f) => /_MODE$/.test(f.name));
+    const modeLabel = mode?.choices?.find((c) => c.value === mode.value)?.label ?? mode?.value;
+    const busy = progress && progress.steps.some((step) => step.state === 'running');
+
+    const primary = !canChange || hostOwned ? null : on
+      ? h('button', { class: 'fx-btn', type: 'button', onclick: () => save(false) }, 'Disconnect')
+      : h('button', { class: 'fx-btn fx-btn--primary', type: 'button', disabled: busy, onclick: connect },
+        busy ? h('span', { class: 'fx-spinner fx-spinner--sm', 'aria-hidden': 'true' }) : null, busy ? 'Connecting' : 'Connect');
+
+    host.replaceChildren(
+      h('nav', { class: 'fx-crumbs', 'aria-label': 'Breadcrumb' },
+        h('a', { href: '/integrations', onclick: navigate }, 'Integrations'), h('span', { 'aria-hidden': 'true' }, '›'), h('span', {}, current.name)),
+      h('header', { class: 'fx-int-hero' },
+        integrationLogo(current, 'xl'),
+        h('div', { class: 'fx-int-hero__text' },
+          h('h1', { class: 'fx-title' }, current.name),
+          h('p', { class: 'fx-int-hero__maker' }, entry?.maker ?? current.name, h('span', { class: 'fx-dim' }, CATEGORY_LABEL[entry?.category] ?? 'Integration')),
+          h('p', { class: 'fx-int-hero__blurb' }, entry?.blurb ?? ''),
+          h('div', { class: 'fx-int-hero__actions' },
+            primary,
+            on ? h('span', { class: 'fx-status', 'data-tone': STATE_TONE[current.state] ?? 'mute' }, STATE_LABEL[current.state] ?? current.state) : null,
+            progress ? connectProgress(progress) : null))),
+      h('div', { class: 'fx-int-page__grid' },
+        h('div', { class: 'fx-int-page__main' }, ...[
+          !canChange ? notice('Changing integrations needs a verified owner sign-in: Google Workspace on the owner domain with no password, or a second factor.', 'warn', 'Read only.') : null,
+          !body.secretsKey ? notice('Flow has no secrets key, so it cannot store a client secret. Ask whoever hosts Flow to set FLOW_SECRETS_KEY (64 hex characters), then restart Flow.', 'warn', 'No secrets key.') : null,
+          current.state === 'failed' && current.error ? notice(current.error, 'danger', 'It could not start.') : null,
+          current.id === 'xero' && current.state === 'ready' ? h('section', { class: 'fx-int-section' }, xeroConnection(body.organisations, canChange)) : null,
+          guide ? h('section', { class: 'fx-int-section' },
+            h('h2', { class: 'fx-int-section__title' }, 'Set up'),
+            h('ol', { class: 'fx-steps' }, guide.steps.map((step) => h('li', {}, step))),
+            guide.link ? h('a', { class: 'fx-btn fx-btn--sm', href: guide.link, target: '_blank', rel: 'noopener' }, `Open ${current.name} developer site ↗`) : null) : null,
+          editable.length ? h('section', { class: 'fx-int-section' },
+            h('h2', { class: 'fx-int-section__title' }, 'Settings'),
+            h('div', { class: 'fx-int__fields' }, editable),
+            canChange && on ? h('div', { class: 'fx-row fx-row--end' }, h('button', { class: 'fx-btn', type: 'button', onclick: () => save(undefined) }, 'Save changes')) : null) : null,
+          fromHost.length ? h('section', { class: 'fx-int-section' },
+            h('h2', { class: 'fx-int-section__title' }, 'Set by the host'),
+            h('p', { class: 'fx-dim' }, 'Whoever hosts Flow sets these. Change them there.'),
+            h('dl', { class: 'fx-int__host' }, fromHost)) : null,
+        ].filter(Boolean)),
+        h('aside', { class: 'fx-int-page__meta' },
+          h('dl', { class: 'fx-meta' }, ...[
+            ['Status', h('span', { class: 'fx-status', 'data-tone': STATE_TONE[current.state] ?? 'mute' }, STATE_LABEL[current.state] ?? current.state)],
+            ['Category', h('span', { class: 'fx-chip fx-chip--static' }, CATEGORY_LABEL[entry?.category] ?? 'Integration')],
+            modeLabel ? ['Mode', modeLabel] : null,
+            ['Turned on by', current.enabledBy === 'host' ? 'The host' : current.enabledBy === 'flow' ? 'An owner, here' : '—'],
+            current.updatedAt ? ['Last changed', new Date(current.updatedAt).toLocaleString('en-AU', { dateStyle: 'medium', timeStyle: 'short' })] : null,
+            guide?.link ? ['Documentation', h('a', { href: guide.link, target: '_blank', rel: 'noopener' }, 'Developer site ↗')] : null,
+          ].filter(Boolean).map(([label, value]) => h('div', {}, h('dt', {}, label), h('dd', {}, value)))))));
   };
-  draw(integration);
-  return card;
+  document.title = `${found.name} · Flow`;
+  draw(found);
+}
+
+// The steps of a Connect, each ticked, running or crossed, with the time taken.
+function connectProgress({ steps, started }) {
+  const seconds = Math.max(0, Math.round((Date.now() - started) / 1000));
+  return h('div', { class: 'fx-progress', role: 'status' },
+    h('div', { class: 'fx-progress__head' }, h('span', { class: 'fx-strong' }, 'Connecting'), h('span', { class: 'fx-dim' }, `${seconds}s`)),
+    h('ol', {}, steps.map((step) => h('li', { 'data-state': step.state },
+      h('span', { class: 'fx-progress__mark', 'aria-hidden': 'true' }, step.state === 'done' ? '✓' : step.state === 'failed' ? '!' : ''),
+      step.label))));
 }
 
 // Once Xero is on: each organisation's connection, the history copy, and
@@ -549,7 +693,7 @@ function xeroConnection(organisations, canChange) {
       }
     })();
   }
-  return h('div', { class: 'fx-int__conn' }, h('h3', { class: 'fx-label' }, 'Connection'), host);
+  return h('div', { class: 'fx-int__conn' }, h('h3', { class: 'fx-label' }, 'Xero organisation'), host);
 }
 
 async function invitePerson() {
