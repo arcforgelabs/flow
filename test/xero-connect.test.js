@@ -154,7 +154,13 @@ describe('connecting Xero', { skip: skipWithoutDatabase }, () => {
 
     test('health reports the mode and the connections', async () => {
       const health = await integrations.whenEnabled('xero', (adapter) => adapter.capabilities.health());
-      assert.deepEqual(health, { ok: true, mode: 'replay', writesAllowed: true, connected: 1 });
+      const { calls, ...rest } = health;
+      assert.deepEqual(rest, { ok: true, mode: 'replay', writesAllowed: true, connected: 1 });
+      // The call guard's state for the one connected organisation.
+      assert.equal(calls.length, 1);
+      assert.equal(calls[0].circuit, 'closed');
+      assert.deepEqual(calls[0].stoppedResources, []);
+      assert.equal(calls[0].dailyFailureBudget, 50);
     });
 
     test('only an owner can disconnect; it revokes the token and forgets the connection', async () => {

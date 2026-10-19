@@ -126,7 +126,9 @@ Each sync is recorded in `xero_sync_runs`; `GET /api/xero/status` shows the
 last one. Outside replay mode the background worker also syncs each connected
 organisation once a day (`refreshStaleCatalogues` in `import.js`), so the
 pipeline can link customers (`docs/JOB_INVOICE_LINKS.md`). A failed read is
-tried again an hour later.
+tried again an hour later, then two, four and so on, at most a day apart. The
+first failure is reported with `log.error`; the same failure again is a
+warning.
 
 `GET /api/xero/contacts?organisationId=…&q=…` and
 `GET /api/xero/items?organisationId=…` (anyone signed in) list the copy.
@@ -368,6 +370,20 @@ connected organisation:
 
 Calls count against a lane (`writes`, `sync`, `reads`, `other`) so the status
 shows where the day's budget went.
+
+Every call also goes through the call guard (`docs/INTEGRATIONS.md`,
+"Outbound calls"), keyed by the Xero organisation, with its state in
+`xero_call_guard` and one row per call in `xero_calls`:
+
+- a token refresh Xero refuses for good (`invalid_grant`) halts every call
+  until an owner connects Xero again or saves its settings;
+- a 401 or 403 that a fresh token does not clear stops only that resource
+  (for example `Payments` when the connection lacks its scope, #99). The
+  history import skips a stopped resource as `refused` and reads the rest;
+- 5 failed calls in 10 minutes open the circuit (5 minutes, doubling to 6
+  hours), and 50 failed calls stop calls until the next UTC day;
+- a first 401 (an expired access token) is not counted;
+- `health()` answers each organisation's guard state under `calls`.
 
 ## Replay fixtures
 

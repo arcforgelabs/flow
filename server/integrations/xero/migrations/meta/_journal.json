@@ -43,6 +43,13 @@
       "when": 1792406000000,
       "tag": "0005_xero_send_modes",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1792490000000,
+      "tag": "0006_xero_call_guard",
+      "breakpoints": true
     }
   ]
 }
