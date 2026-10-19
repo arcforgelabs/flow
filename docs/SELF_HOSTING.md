@@ -172,6 +172,13 @@ Flow always keeps one active owner, and nobody changes or removes themself.
 With `FLOW_PUBLIC_SIGN_UP=on`, anyone with a verified email can sign up and
 waits as `pending`, with no access, until an owner approves them.
 
+`FLOW_SIGN_UP_DOMAINS` opens that only to your own domains, for example
+`FLOW_SIGN_UP_DOMAINS=example.com`. Someone with a verified email on a listed
+domain can sign in without an invitation and waits as `pending` until an owner
+approves them. Anyone else still needs an invitation (`403 not_invited`), and
+Flow stores nothing about them. Invite people outside those domains by email,
+as above.
+
 The first owner comes from `FLOW_FIRST_OWNER_EMAIL`. At boot, while the
 installation has no owner, Flow invites that address as owner. Once an owner
 exists, the setting does nothing.
@@ -187,6 +194,7 @@ Keep these in the installation's secret store, never in a repository.
 | `CLERK_PUBLISHABLE_KEY` | secret | Set by the Clerk integration (`pk_test_…` or `pk_live_…`; `VITE_CLERK_PUBLISHABLE_KEY` also works). Flow gives it to the browser at runtime from `GET /api/auth/config`. |
 | `CLERK_PROXY_URL` | set by Replit | On a published Replit app. Flow serves Clerk's Frontend API on that path. |
 | `FLOW_PUBLIC_SIGN_UP` | configuration | `on` lets strangers ask for access. Unset or `off`: invitation only. |
+| `FLOW_SIGN_UP_DOMAINS` | configuration | Comma-separated email domains whose people may ask for access without an invitation (they wait for an owner's approval). Everyone else needs an invitation. Unset: none. |
 | `FLOW_FIRST_OWNER_EMAIL` | configuration | The first owner's email. Used only while there is no owner. |
 | `FLOW_OWNER_GOOGLE_DOMAINS` | configuration | Your Google Workspace domain, for example `example.com`. Comma-separated. Required on Replit's managed Clerk: unset, no owner can manage people. No default. |
 | `FLOW_OWNER_MFA_MAX_AGE` | configuration | How long a Clerk second factor counts for owner actions. Default `12h`. |

@@ -64,7 +64,9 @@ export function createSignInRouter({ settings, db, clerk, personAuth, rateLimitP
     return res.json({
       ok: true,
       mode: 'clerk',
-      publicSignUp: settings.publicSignUp,
+      // The widget creates Clerk accounts only when someone could ask for
+      // access; Flow still refuses an email outside FLOW_SIGN_UP_DOMAINS.
+      publicSignUp: settings.publicSignUp || Boolean(settings.signUpDomains?.length),
       clerk: { publishableKey, proxyUrl, scriptUrl: clerkScriptUrl(settings.keys), uiScriptUrl: clerkUiScriptUrl(settings.keys) },
     });
   });

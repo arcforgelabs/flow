@@ -46,6 +46,7 @@ export function createPersonAuth({
   db,
   clerk,
   publicSignUp = false,
+  signUpDomains = [],
   ownerGoogleDomains = [],
   ownerMfaMaxAgeMinutes = DEFAULT_OWNER_MFA_MAX_AGE_MINUTES,
   log = console,
@@ -81,9 +82,11 @@ export function createPersonAuth({
       return again ? { person: again } : { denial: 'email_linked_elsewhere' };
     }
 
-    // Someone Flow does not know. With public sign-up off Flow records
-    // nothing about them: they simply have no access.
-    if (!publicSignUp) {
+    // Someone Flow does not know. Unless public sign-up is on or their
+    // email's domain may sign up, Flow records nothing about them: they
+    // simply have no access.
+    const domain = email.slice(email.lastIndexOf('@') + 1);
+    if (!publicSignUp && !signUpDomains.includes(domain)) {
       log.warn?.(`[auth] Clerk user ${clerkUserId} refused: not invited`);
       return { denial: 'not_invited' };
     }

@@ -14,12 +14,13 @@ const OWNER = 'owner@example.test';
 const UPDATE_STATUS = { enabled: true, channel: 'stable', current: 'v2026.10.18', latest: 'v2026.10.19', updateAvailable: true };
 const updates = { status: async () => UPDATE_STATUS };
 
-function signInApp(handle, clerk, { publicSignUp = false } = {}) {
-  const settings = { mode: 'clerk', keys: { publishableKey: TEST_PUBLISHABLE_KEY, proxyUrl: null }, publicSignUp };
+function signInApp(handle, clerk, { publicSignUp = false, signUpDomains = [] } = {}) {
+  const settings = { mode: 'clerk', keys: { publishableKey: TEST_PUBLISHABLE_KEY, proxyUrl: null }, publicSignUp, signUpDomains };
   const personAuth = createPersonAuth({
     db: handle.db,
     clerk,
     publicSignUp,
+    signUpDomains,
     ownerGoogleDomains: ['example.test'],
     ownerMfaMaxAgeMinutes: 60,
     log: { info() {}, warn() {}, error() {} },
@@ -106,6 +107,27 @@ describe('Clerk sign-in', { skip: skipWithoutDatabase }, () => {
     const after = await request(open, '/api/me', { token });
     assert.equal(after.status, 200);
     assert.equal(after.body.person.role, 'staff');
+  });
+
+  test('with sign-up domains, only those domains may ask for access; others still need an invitation', async () => {
+    const domains = signInApp(handle, clerk, { signUpDomains: ['lab.example.test'] });
+    assert.equal((await request(domains, '/api/auth/config')).body.publicSignUp, true);
+
+    const outsider = clerk.signIn(clerk.addUser({ email: 'outsider@elsewhere.example.test' }));
+    const refused = await request(domains, '/api/me', { token: outsider });
+    assert.equal(refused.status, 403);
+    assert.equal(refused.body.code, 'not_invited');
+    assert.equal(await findPersonByEmail(handle.db, 'outsider@elsewhere.example.test'), null);
+
+    // A sub-domain is not the listed domain.
+    const lookalike = clerk.signIn(clerk.addUser({ email: 'someone@x.lab.example.test' }));
+    assert.equal((await request(domains, '/api/me', { token: lookalike })).body.code, 'not_invited');
+
+    const colleague = clerk.signIn(clerk.addUser({ email: 'colleague@lab.example.test' }));
+    const first = await request(domains, '/api/me', { token: colleague });
+    assert.equal(first.status, 403);
+    assert.equal(first.body.code, 'access_pending');
+    assert.equal((await findPersonByEmail(handle.db, 'colleague@lab.example.test')).status, 'pending');
   });
 
   test('an owner invites a user, who gets in with that role', async () => {

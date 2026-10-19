@@ -64,17 +64,28 @@ export function parseOwnerMfaMaxAge(raw) {
   return minutes;
 }
 
+function parseDomains(raw, name) {
+  const domains = String(raw ?? '').split(',').map((part) => part.trim().toLowerCase()).filter(Boolean);
+  for (const domain of domains) {
+    if (!/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$/.test(domain)) {
+      throw new Error(`${name} must be a comma-separated list of email domains (e.g. example.com)`);
+    }
+  }
+  return [...new Set(domains)];
+}
+
 // FLOW_OWNER_GOOGLE_DOMAINS: comma-separated email domains whose Google
 // Workspace sign-in counts as an owner's verified sign-in (that Workspace
 // enforces 2-Step Verification). No default: unset turns that path off.
 export function parseOwnerGoogleDomains(raw) {
-  const domains = String(raw ?? '').split(',').map((part) => part.trim().toLowerCase()).filter(Boolean);
-  for (const domain of domains) {
-    if (!/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$/.test(domain)) {
-      throw new Error('FLOW_OWNER_GOOGLE_DOMAINS must be a comma-separated list of email domains (e.g. example.com)');
-    }
-  }
-  return [...new Set(domains)];
+  return parseDomains(raw, 'FLOW_OWNER_GOOGLE_DOMAINS');
+}
+
+// FLOW_SIGN_UP_DOMAINS: comma-separated email domains whose people may ask
+// for access without an invitation. They wait as `pending` until an owner
+// approves them; everyone else still needs an invitation. Unset: none.
+export function parseSignUpDomains(raw) {
+  return parseDomains(raw, 'FLOW_SIGN_UP_DOMAINS');
 }
 
 // FLOW_PUBLIC_ORIGIN: the published app's origin. Clerk then accepts only
@@ -116,6 +127,7 @@ export function resolveSignInSettings(env = process.env) {
     mode,
     keys: resolveClerkKeys(env),
     publicSignUp: resolvePublicSignUp(env),
+    signUpDomains: parseSignUpDomains(readEnv(env, 'FLOW_SIGN_UP_DOMAINS')),
     ownerMfaMaxAgeMinutes: parseOwnerMfaMaxAge(readEnv(env, 'FLOW_OWNER_MFA_MAX_AGE')),
     ownerGoogleDomains: parseOwnerGoogleDomains(readEnv(env, 'FLOW_OWNER_GOOGLE_DOMAINS')),
     authorizedParties: resolveAuthorizedParties(env),
