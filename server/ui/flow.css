@@ -222,16 +222,12 @@ body:is([data-state="off"], [data-state="error"], [data-state="no-access"]) .fx-
 [data-mode="light"] .fx-auth__brand .fx-mark rect { fill: var(--t-on-primary); }
 [data-mode="light"] .fx-auth__brand .fx-mark path { stroke: var(--t-primary); }
 .fx-auth__title { max-width: 16ch; font: var(--t-display-weight) clamp(30px, 3.6vw, 46px)/1.08 var(--t-display); letter-spacing: -0.02em; }
-.fx-auth__points { display: grid; gap: 12px; margin: 0; padding: 0; list-style: none; font-size: 16px; opacity: .88; }
-.fx-auth__points li { display: flex; gap: 12px; align-items: baseline; }
-.fx-auth__points li::before { content: ""; flex: none; width: 18px; height: 2px; border-radius: 2px; background: currentColor; transform: translateY(-4px); opacity: .7; }
 .fx-auth__form { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; padding: 40px 16px; }
 .fx-auth__note { color: var(--t-dim); text-align: center; }
 .fx-auth__widget { display: flex; justify-content: center; min-height: 360px; width: 100%; }
 @media (max-width: 820px) {
   .fx-auth { grid-template-columns: 1fr; }
   .fx-auth__brand { gap: 16px; padding: 28px 16px; }
-  .fx-auth__points { display: none; }
   .fx-auth__title { font-size: 26px; max-width: none; }
 }
 

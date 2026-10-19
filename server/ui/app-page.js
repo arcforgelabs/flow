@@ -12,11 +12,6 @@ const BODY = `<div class="fx-app">
     <div class="fx-auth__brand">
       <span class="fx-brand fx-brand--large">${FLOW_MARK}<span>Flow</span></span>
       <h1 class="fx-auth__title" id="auth-title">Every job billed, every invoice paid.</h1>
-      <ul class="fx-auth__points">
-        <li>Jobs come in from the lab system.</li>
-        <li>Invoices go out to Xero.</li>
-        <li>Payments come back and close the job.</li>
-      </ul>
     </div>
     <div class="fx-auth__form">
       <p class="fx-auth__note" id="sign-in-note"></p>
