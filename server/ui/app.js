@@ -197,7 +197,9 @@ const VIEWS = {
   'invoicing-settings': { label: 'Invoice rules', icon: 'invoices', group: 'Settings', render: (main) => renderInvoicingSettings(main, ui()) },
   people: { label: 'People', icon: 'people', group: 'Settings', ownerOnly: true, render: renderPeople },
   integrations: { label: 'Integrations', icon: 'plug', group: 'Settings', ownerOnly: true, render: (main, id) => (id ? renderIntegration(main, id) : renderIntegrations(main)) },
-  account: { label: 'Account', icon: 'person', group: 'Settings', render: renderAccount },
+  // Not in the sidebar: "Manage account" in the account menu opens the same
+  // Clerk profile. The page stays for links and Search.
+  account: { label: 'Account', icon: 'person', group: 'Settings', sidebar: false, render: renderAccount },
   appearance: { label: 'Appearance', icon: 'palette', group: 'Settings', render: renderAppearance },
 };
 
@@ -368,6 +370,7 @@ function renderShell() {
   let group = null;
   for (const [name, view] of Object.entries(VIEWS)) {
     if (view.ownerOnly && me?.person.role !== 'owner') continue;
+    if (view.sidebar === false) continue;
     if (view.group && view.group !== group) items.push(h('span', { class: 'fx-nav__group' }, view.group));
     group = view.group;
     items.push(h('a', { href: `/${name}`, 'data-nav': name, 'data-label': view.label, onclick: navigate }, icon(view.icon), h('span', { class: 'fx-nav__label' }, view.label)));
@@ -854,9 +857,9 @@ async function invitePerson() {
 // security), with the person's Flow role above it.
 function renderAccount(main) {
   const host = h('div', { class: 'fx-clerk-profile' });
-  main.append(
-    pageHeader('Account', { subtitle: `${me.person.email} · ${ROLE_LABEL[me.person.role]}. ${ROLE_HINT[me.person.role]}` }),
-    host);
+  // Clerk's card has its own "Account" heading; Flow's page heading is for
+  // screen readers only, so the title shows once.
+  main.append(h('h1', { class: 'fx-sr' }, 'Account'), host);
   // Clerk keeps its own pages (profile, security) in memory, so the URL
   // stays Flow's.
   mountClerk('profile', host, { routing: 'virtual' });
