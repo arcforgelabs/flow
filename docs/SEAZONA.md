@@ -74,7 +74,10 @@ workspace live credentials.
 | `SEAZONA_INVOICE_LOOKBACK_DAYS` | Days before today the first invoice run reads. Default 0. |
 | `SEAZONA_ACTIVE_ORDERS_PER_RUN` | Open orders the active-order lane re-reads per run. Default 25. |
 | `SEAZONA_LIST_CAP` | A list exactly this long may be cut off, so its lane holds. Default 50. |
-| `SEAZONA_ORDER_QUARANTINE_FAILURES`, `SEAZONA_ORDER_QUARANTINE_MS` | Failed reads in a row before an order is quarantined, and for how long. Defaults 3 and 1 day. |
+| `SEAZONA_ORDER_QUARANTINE_FAILURES`, `SEAZONA_ORDER_QUARANTINE_MS` | Failed reads in a row before an order, an invoice or a client is quarantined, and for how long. Defaults 3 and 1 day. |
+| `SEAZONA_CIRCUIT_FAILURES`, `SEAZONA_CIRCUIT_WINDOW_MS` | Failed calls inside the window that open the circuit. Defaults 5 and 10 minutes. |
+| `SEAZONA_CIRCUIT_PAUSE_MS` | The first pause when the circuit opens. It doubles after each failed probe, to at most 6 hours. Default 5 minutes. |
+| `SEAZONA_DAILY_FAILURE_BUDGET` | Failed calls allowed in one UTC day. When they are spent, calls stop until the next day. Default 50. |
 
 The code holds no Seazona host or account. Every address and credential is
 configuration.
@@ -95,6 +98,44 @@ because Seazona does (`server/integrations/seazona/governor.js`):
   `seazona_api_governor_timeout`.
 - In `live` and `sandbox` the client refuses to start without the governor,
   so no code path can call Seazona ungoverned.
+
+### Failed calls (issue #101)
+
+Seazona can cut off an account's API access when it sees many failed calls,
+even inside the rate limit. So the governor also stops calls. A stopped call
+fails at once with `SeazonaCallsStopped` and makes no request.
+
+```mermaid
+flowchart LR
+  call[Call] --> ok{Answer}
+  ok -- 2xx or 404 on one record --> closed[Circuit closed]
+  ok -- 401 or 403 --> halt[Halted: no call until a person saves the settings]
+  ok -- 5xx, 429, other 4xx, timeout --> count[Count the failure]
+  count -- 5 in 10 min --> open[Open: no call for the pause]
+  open -- pause ends --> probe[One probe call]
+  probe -- fails --> open2[Open again, pause doubled, at most 6 h]
+  probe -- works --> closed
+  count -- 50 today --> day[No call until the next UTC day]
+```
+
+| Failure | What Flow does | Starts again |
+| --- | --- | --- |
+| 401 or 403 | Halts every call. Every lane is `stopped`. | A person saves the Seazona settings or turns Seazona on. New credentials are a new client, so a new start. |
+| 400 or 404 on a list | Stops that lane. | A restart (for example a new release), or a person saving the settings. |
+| 404 on one record | Marks the order deleted (issue #12). Not a failure. | |
+| 429 | Waits for `Retry-After`, as before. Counts as a failure. | |
+| 5xx, timeout, network | Retries, then the lane backs off. Counts as a failure. | |
+| The same record fails 3 times | Quarantines the order, invoice or client for a day. The lane skips it and its cursor moves on. | The quarantine ends. |
+| 5 failures in 10 minutes | Opens the circuit. | After the pause, one probe. |
+| 50 failures in a UTC day | Stops calls. | The next UTC day. |
+
+Each held failure is reported once to the error services that are on
+(`log.error`, docs/SENTRY.md): a lane that starts failing or changes its
+failure code, a stopped lane, an open circuit, a spent budget, and records
+newly quarantined. A repeat of the same failure is a warning in the host log
+only. The report text names the lane and the code, never a record, a host or
+a credential, so the error service groups repeats. With no error service on,
+the host log has the same lines.
 
 Each request leaves one row in `seazona_api_requests`: when it went, the
 request path (for example `/v1/orders/<order id>`), the status or failure
@@ -227,15 +268,18 @@ reads.
 shows it under `integrations`:
 
 - `mode`, `scheduled` and the request limit;
-- `governor`: requests in the last minute, any 429 cooldown, and the last
-  day's requests, failures, 429s and retries;
-- `lanes`: for each lane its status (`ok`, `failed`, `held`, `processing`,
-  `never_run`), whether it is fresh, its last success and error, and the
-  failing orders by id and status; `orders_active` also lists the
-  quarantined orders;
+- `governor`: requests in the last minute, any 429 cooldown, the last
+  day's requests, failures, 429s and retries, the circuit (`closed`, `open`,
+  `half_open`, `halted`) with `circuitOpenUntil` and `haltedReason`, and
+  `failedToday` against `dailyFailureBudget`;
+- `lanes`: for each lane its status (`ok`, `failed`, `held`, `stopped`,
+  `processing`, `never_run`), whether it is fresh, its last success and
+  error, and the failing orders by id and status; `orders_active` also lists
+  the quarantined orders, and `invoices` and `clients` show
+  `quarantinedRecords`;
 - `deletedOrders`: how many orders are marked deleted in Seazona.
 
-`ok` is false while a lane is failed or held. An integration problem never
+`ok` is false while a lane is failed, held or stopped. An integration problem never
 fails Flow's own health check. None of it holds a host, a credential or
 patient data.
 
@@ -276,7 +320,7 @@ installation-wide.
 
 | Table | What it holds |
 | --- | --- |
-| `seazona_api_governor` | For each API client: when the next request may go, and any 429 cooldown |
+| `seazona_api_governor` | For each API client: when the next request may go, any 429 cooldown, the circuit, and a halt that waits for a person |
 | `seazona_api_requests` | One row per request sent: the rate limit counts these, and they are the telemetry |
 | `seazona_orders` | Orders: status, lines, totals, the deleted-in-Seazona mark |
 | `seazona_invoices` | Seazona invoices, by invoice number, with lines and totals |
@@ -284,6 +328,7 @@ installation-wide.
 | `seazona_reference` | Products and users |
 | `seazona_lane_state` | Each lane's cursor, next run, status and last failure |
 | `seazona_order_read_failures` | Failed reads per order, and quarantine |
+| `seazona_record_read_failures` | Failed detail reads per invoice or client, and quarantine (issue #101) |
 
 To change them, edit `server/integrations/seazona/schema.js` and run:
 

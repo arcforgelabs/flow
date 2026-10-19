@@ -67,7 +67,10 @@ Two optional functions give an adapter a lifecycle:
 
 - `start({ db, log })` runs once at server start, only while the adapter is
   on, after its tables are in place. Keep the database handle here and start
-  background work (a scheduler, a poller).
+  background work (a scheduler, a poller). When a person saves the adapter's
+  settings or turns it on, it runs again with `reconfigured: true`, so an
+  adapter can clear a stop that waits for a person (for example after its
+  API client was refused).
 - `stop()` ends that work. `registry.stop()` calls it for every adapter that
   started, newest first. Tests call it so they end cleanly.
 

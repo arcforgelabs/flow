@@ -17,6 +17,8 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, Math.max(0, m
 // A failed Seazona request. The message names the method, the path and the
 // status or failure kind; never the host, the query or a credential.
 // kind: http, timeout, network, invalid_json, replay_miss, governor_timeout.
+// The governor's own SeazonaCallsStopped (kind calls_stopped) passes through
+// unchanged: no call was made.
 export class SeazonaApiError extends Error {
   constructor(message, { statusCode = null, kind = 'http', path = null, retryAfterMs = null } = {}) {
     super(message);
@@ -93,6 +95,10 @@ export function createSeazonaClient({
       requestsPerMinute: rate.requestsPerMinute,
       maxWaitMs: rate.maxWaitMs,
       telemetryRetentionMs: rate.telemetryRetentionMs,
+      circuitFailures: rate.circuitFailures,
+      circuitWindowMs: rate.circuitWindowMs,
+      circuitPauseMs: rate.circuitPauseMs,
+      dailyFailureBudget: rate.dailyFailureBudget,
       now,
       sleepFn,
     });

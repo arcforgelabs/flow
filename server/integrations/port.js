@@ -235,7 +235,9 @@ export function createRegistry({ log = console, env = process.env } = {}) {
           tablesReady.add(id);
         }
         if (adapter.start) {
-          await adapter.start({ db: database, log, env: settingsEnv });
+          // A person changed the settings: an adapter may clear a stop that
+          // waits for a person (issue #101).
+          await adapter.start({ db: database, log, env: settingsEnv, reconfigured: true });
           running.push(adapter);
         }
       } catch (error) {

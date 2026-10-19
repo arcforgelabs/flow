@@ -98,4 +98,70 @@ describe('Seazona rate governor', { skip: skipWithoutDatabase }, () => {
     const { rows } = await db.execute(sql`select count(*)::int as n from seazona_api_requests`);
     assert.equal(rows[0].n, 1);
   });
+
+  // Issue #101: calls stop before the vendor sees a run of failures.
+  const stopClient = (responses, env = {}) => {
+    const fetchImpl = createReplayFetch({ responses });
+    const settings = resolveSeazonaSettings({ SEAZONA_MODE: 'replay', SEAZONA_REPLAY_FILE: 'unused.json', SEAZONA_API_MAX_RETRIES: '0', ...env });
+    const client = createSeazonaClient({ settings, db, fetchImpl, now: clock.now, sleepFn: clock.sleep, random: () => 0 });
+    return { client, fetchImpl };
+  };
+
+  test('a 401 makes one call, then no call until a person resumes', async () => {
+    const { client, fetchImpl } = stopClient([{ path: 'clients/', status: 401 }]);
+    await assert.rejects(client.get('clients/'), { statusCode: 401 });
+    for (let i = 0; i < 3; i += 1) {
+      clock.advance(24 * 60 * 60_000);
+      await assert.rejects(client.get('clients/'), { code: 'seazona_api_halted', kind: 'calls_stopped' });
+    }
+    assert.equal(fetchImpl.calls.length, 1);
+    assert.equal((await client.governor.status()).circuit, 'halted');
+    await client.governor.resume();
+    await assert.rejects(client.get('clients/'), { statusCode: 401 });
+    assert.equal(fetchImpl.calls.length, 2);
+  });
+
+  test('repeated failures open the circuit; a failed probe doubles the pause; a good probe closes it', async () => {
+    const { client, fetchImpl } = stopClient([
+      { path: 'products/', sequence: [{ status: 500 }, { status: 500 }, { status: 500 }, { status: 500 }, { status: 500 }, { status: 500 }, { status: 200, body: [] }] },
+    ]);
+    for (let i = 0; i < 5; i += 1) await assert.rejects(client.get('products/'), { statusCode: 500 });
+    await assert.rejects(client.get('products/'), { code: 'seazona_api_circuit_open' });
+    assert.equal(fetchImpl.calls.length, 5);
+    assert.equal((await client.governor.status()).circuit, 'open');
+
+    clock.advance(5 * 60_000);
+    await assert.rejects(client.get('products/'), { statusCode: 500 }); // the probe
+    const reopened = await client.governor.status();
+    assert.equal(reopened.circuit, 'open');
+    assert.equal(Date.parse(reopened.circuitOpenUntil) - clock.now(), 10 * 60_000);
+    await assert.rejects(client.get('products/'), { code: 'seazona_api_circuit_open' });
+    assert.equal(fetchImpl.calls.length, 6);
+
+    clock.advance(10 * 60_000);
+    assert.deepEqual(await client.get('products/'), []);
+    assert.equal((await client.governor.status()).circuit, 'closed');
+  });
+
+  test('the day\'s failed-call budget stops calls until the next UTC day', async () => {
+    const { client, fetchImpl } = stopClient([{ path: 'users/', status: 503 }], {
+      SEAZONA_CIRCUIT_FAILURES: '100', SEAZONA_DAILY_FAILURE_BUDGET: '3',
+    });
+    for (let i = 0; i < 3; i += 1) await assert.rejects(client.get('users/'), { statusCode: 503 });
+    await assert.rejects(client.get('users/'), { code: 'seazona_api_failure_budget_spent' });
+    assert.equal(fetchImpl.calls.length, 3);
+    const status = await client.governor.status();
+    assert.equal(status.failedToday, 3);
+    assert.equal(status.dailyFailureBudget, 3);
+    clock.set('2026-10-02T00:00:01.000Z');
+    await assert.rejects(client.get('users/'), { statusCode: 503 });
+    assert.equal(fetchImpl.calls.length, 4);
+  });
+
+  test('a 404 on one record is not a failure the circuit counts', async () => {
+    const { client, fetchImpl } = stopClient([{ path: 'orders/ORD-404', status: 404 }]);
+    for (let i = 0; i < 8; i += 1) await assert.rejects(client.get('orders/ORD-404'), { statusCode: 404 });
+    assert.equal(fetchImpl.calls.length, 8);
+    assert.equal((await client.governor.status()).circuit, 'closed');
+  });
 });

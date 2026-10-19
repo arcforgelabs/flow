@@ -158,6 +158,18 @@ export async function sendModeFor(db, organisationId, contactId) {
   return effectiveSettings(settings, customers.get(contactId)).sendMode;
 }
 
+// How Flow sends invoices to the accounting system: the organisation's mode,
+// and how many customers have a mode of their own that differs from it.
+export async function sendModeSummary(db, organisationId) {
+  const settings = await readInvoicingSettings(db, organisationId);
+  const [row] = await db.select({ n: sql`count(*)::int` }).from(customerBillingSettings).where(and(
+    eq(customerBillingSettings.organisationId, organisationId),
+    sql`${customerBillingSettings.sendMode} is not null`,
+    sql`${customerBillingSettings.sendMode} <> ${settings.sendMode}`,
+  ));
+  return { mode: settings.sendMode, otherCustomers: row?.n ?? 0 };
+}
+
 // What a job still waits on before Flow drafts it, as reasons a person can
 // read: Flow's own ready stage, then the lab's invoice rules (invoice-rules.js)
 // in their order. An empty list means the job may be drafted. `rules` is the

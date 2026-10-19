@@ -172,7 +172,7 @@ describe('ready, problem and send', { skip: skipWithoutDatabase }, () => {
     assert.deepEqual(views.ready, []);
 
     const sent = await sendQueued(handle.db, lab.id, { accounting: fake.adapter });
-    assert.deepEqual(sent, { sent: 1, failed: 1, waiting: 1 });
+    assert.deepEqual(sent, { sent: 1, failed: 1, waiting: 1, refused: ['xero_contact_missing'] });
     assert.ok(fake.pushed.every(([, by]) => by === owner.id));
     assert.equal((await row(one.id)).sendState, 'sent');
     assert.equal((await row(three.id)).sendState, 'queued');

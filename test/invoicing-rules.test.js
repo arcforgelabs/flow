@@ -2,15 +2,16 @@ import assert from 'node:assert/strict';
 import { after, before, describe, test } from 'node:test';
 import { eq } from 'drizzle-orm';
 import { createContact, createOrganisation, createPriceItem } from '../server/core/directory.js';
-import { getInvoice } from '../server/core/invoices.js';
+import { createDraftInvoice, getInvoice } from '../server/core/invoices.js';
+import { invoiceViews, markNotReady } from '../server/core/sending.js';
 import {
   autoDraftJobs, effectiveSettings, INVOICING_DEFAULTS, readCustomerBilling, readInvoicingSettings, ruleBlockers,
-  saveCustomerBilling, saveInvoicingSettings,
+  saveCustomerBilling, saveInvoicingSettings, sendModeSummary,
 } from '../server/core/invoicing-rules.js';
 import { starterRules } from '../server/core/invoice-rules.js';
 import { listAutomations, runAutomations, saveAutomation, statusMatches, workStatuses } from '../server/core/automations.js';
 import { explainObligation, observeJob, recordAccountingEvidence, setReady } from '../server/core/ledger.js';
-import { billingObligations } from '../server/db/schema.js';
+import { billingObligations, invoices } from '../server/db/schema.js';
 import { freshDatabase, skipWithoutDatabase } from './support/db.js';
 
 // The invoicing rules decide when Flow drafts a ready job's invoice by itself,
@@ -131,6 +132,14 @@ describe('drafts by rule', { skip: skipWithoutDatabase }, () => {
       { billable: true, defaultPractitioner: null, autoDraft: null, sendMode: null, paymentTermsDays: null });
     const own = await saveCustomerBilling(handle.db, lab.id, quiet.id, { billable: false });
     assert.equal(own.billable, false);
+
+    // The Invoices page says how invoices go out, and how many customers differ.
+    assert.deepEqual(await sendModeSummary(handle.db, lab.id), { mode: 'accounting_draft', otherCustomers: 0 });
+    await saveCustomerBilling(handle.db, lab.id, quiet.id, { sendMode: 'approve_and_email' });
+    assert.deepEqual(await sendModeSummary(handle.db, lab.id), { mode: 'accounting_draft', otherCustomers: 1 });
+    await saveCustomerBilling(handle.db, lab.id, quiet.id, { sendMode: 'accounting_draft' });
+    assert.deepEqual(await sendModeSummary(handle.db, lab.id), { mode: 'accounting_draft', otherCustomers: 0 });
+    await saveCustomerBilling(handle.db, lab.id, quiet.id, { sendMode: null });
   });
 
   test('a cleared, ready job gets a draft in Flow with the customer\'s terms; the rest wait', async () => {
@@ -190,7 +199,8 @@ describe('drafts by rule', { skip: skipWithoutDatabase }, () => {
     copy = { state: { complete: true, fresh: true, changedAt: new Date(NOW.getTime() - 60_000) }, invoices: [] };
     const list = await listAutomations(handle.db, lab.id);
     assert.deepEqual(list.map((a) => [a.key, a.place, a.enabled]), [
-      ['map_lines', 'seazona', true], ['mark_ready_from_work_status', 'seazona', true], ['draft_when_ready', 'invoicing', true]]);
+      ['map_lines', 'seazona', true], ['mark_ready_from_work_status', 'seazona', true], ['draft_when_ready', 'invoicing', true],
+      ['ready_when_drafted', 'invoicing', true]]);
     await assert.rejects(saveAutomation(handle.db, lab.id, 'mark_ready_from_work_status', { config: { statuses: [] } }), /statuses/);
     await assert.rejects(saveAutomation(handle.db, lab.id, 'mark_ready_from_work_status', { enabled: 'yes' }), /true or false/);
     await assert.rejects(saveAutomation(handle.db, lab.id, 'nothing', { enabled: true }), { code: 'not_found' });
@@ -209,7 +219,7 @@ describe('drafts by rule', { skip: skipWithoutDatabase }, () => {
     await saveAutomation(handle.db, lab.id, 'draft_when_ready', { enabled: false });
     const first = await runAutomations(handle.db, lab.id, { accounting, now: NOW });
     // This job, and the shipped job an earlier test left in work.
-    assert.deepEqual(first, { mark_ready_from_work_status: { marked: 2 } });
+    assert.deepEqual(first, { mark_ready_from_work_status: { marked: 2 }, ready_when_drafted: { marked: 0 } });
     const marked = await explainObligation(handle.db, lab.id, shipped.id);
     assert.equal(marked.view, 'ready');
     assert.equal(marked.events.find((e) => e.kind === 'ready').actor, 'automation:mark_ready_from_work_status');
@@ -222,6 +232,22 @@ describe('drafts by rule', { skip: skipWithoutDatabase }, () => {
     assert.ok((await reload(shipped)).invoiceId);
     assert.equal((await reload(keptBack)).invoiceId, null);
 
+    // The routine's drafts go straight to Ready, with no person's name on them.
+    const invoiceOf = async (job) => (await handle.db.select().from(invoices).where(eq(invoices.id, (await reload(job)).invoiceId)))[0];
+    assert.equal(second.ready_when_drafted.marked, second.draft_when_ready.drafted);
+    const auto = await invoiceOf(shipped);
+    assert.ok(auto.readyAt);
+    assert.equal(auto.readyBy, null);
+    assert.deepEqual((await invoiceViews(handle.db, lab.id)).ready.includes(auto.id), true);
+    // A person moved it back to Drafts: the routine leaves it there.
+    await markNotReady(handle.db, lab.id, [auto.id]);
+    assert.deepEqual((await runAutomations(handle.db, lab.id, { accounting, now: NOW })).ready_when_drafted, { marked: 0 });
+    assert.equal((await invoiceOf(shipped)).readyAt, null);
+    // A person's own draft is never marked by the routine.
+    const own = await createDraftInvoice(handle.db, lab.id, { contactId: auto.contactId, lines: [] });
+    await runAutomations(handle.db, lab.id, { accounting, now: NOW });
+    assert.equal((await handle.db.select().from(invoices).where(eq(invoices.id, own.id)))[0].readyAt, null);
+
     // With no accounting system connected, the draft routine still drafts:
     // Flow's own records are the check.
     const saved = await saveAutomation(handle.db, lab.id, 'mark_ready_from_work_status', { config: { statuses: ['In production'] } });
@@ -230,5 +256,13 @@ describe('drafts by rule', { skip: skipWithoutDatabase }, () => {
     assert.deepEqual(local.mark_ready_from_work_status, { marked: 1 });
     assert.ok((await reload(inLab)).readyAt);
     assert.ok((await reload(inLab)).invoiceId);
+    assert.equal(local.ready_when_drafted.marked, 1);
+
+    // Off: a new draft stays in Drafts.
+    await saveAutomation(handle.db, lab.id, 'ready_when_drafted', { enabled: false });
+    const later = await cleared();
+    const off = await runAutomations(handle.db, lab.id, { now: NOW });
+    assert.equal(off.ready_when_drafted, undefined);
+    assert.equal((await invoiceOf(later)).readyAt, null);
   });
 });

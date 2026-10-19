@@ -8,6 +8,7 @@ import { createMonitoredLog } from '../server/core/monitoring.js';
 import { adapters } from '../server/integrations/adapters.js';
 import { createRegistry } from '../server/integrations/port.js';
 import { createSentryAdapter, readSentrySettings, SENTRY_BROWSER, sentryRelease } from '../server/integrations/sentry/index.js';
+import { tagNotify } from '../server/ui/monitoring.js';
 import { fakeClerk, request, TEST_PUBLISHABLE_KEY } from './support/clerk.js';
 import { freshDatabase, skipWithoutDatabase } from './support/db.js';
 
@@ -83,6 +84,21 @@ test('the adapter starts the SDK without personal data, and sends errors only wh
   await adapter.stop();
   assert.deepEqual(sdk.calls.at(-1), ['close']);
   assert.equal(adapter.capabilities.browserMonitoring(), null);
+});
+
+test('a problem report is tagged notify=yes only when the person typed an email', () => {
+  const report = (email) => ({ type: 'feedback', tags: { source: 'browser' }, contexts: { feedback: { message: 'It broke.', contact_email: email } } });
+  const asked = report('person@example.test');
+  tagNotify(asked);
+  assert.deepEqual(asked.tags, { source: 'browser', notify: 'yes' });
+  for (const email of [undefined, '', '  ']) {
+    const quietReport = report(email);
+    tagNotify(quietReport);
+    assert.equal(quietReport.tags.notify, 'no');
+  }
+  const error = { type: undefined, tags: {} };
+  tagNotify(error);
+  assert.deepEqual(error.tags, {});
 });
 
 test('without a DSN the adapter does not start', async () => {

@@ -8,7 +8,7 @@ import {
   cancelWrite, claimWrites, markAmbiguous, markFailed, markSent, queueWrite,
 } from '../server/core/outbox.js';
 import {
-  claimJobs, completeJob, enqueueJob, failJob, retryDelayMs, runNextJob,
+  claimJobs, completeJob, deadHoldSince, deadSince, enqueueJob, failJob, retryDelayMs, runNextJob,
 } from '../server/core/queue.js';
 import { listReview, openReview, resolveReview } from '../server/core/review.js';
 import { freshDatabase, skipWithoutDatabase } from './support/db.js';
@@ -220,6 +220,23 @@ describe('data spine', { skip: skipWithoutDatabase }, () => {
       });
       assert.equal(refused.outcome, 'dead');
       assert.equal(await runNextJob(db, { workerId: 'w', handlers: { 'test.none': async () => {} } }), null);
+    });
+
+    test('a job that gave up holds its timer until a restart or the next day (issue #101)', async () => {
+      const startedAt = Date.now() - 1000;
+      const since = () => deadHoldSince(startedAt);
+      assert.equal(await deadSince(db, lab.id, { kind: 'test.hold', dedupeKey: 'all', since: since() }), null);
+      await enqueueJob(db, lab.id, { kind: 'test.hold', dedupeKey: 'all' });
+      await runNextJob(db, {
+        workerId: 'w',
+        handlers: { 'test.hold': async () => { throw Object.assign(new Error('synthetic refusal'), { retry: false }); } },
+      });
+      assert.equal((await deadSince(db, lab.id, { kind: 'test.hold', dedupeKey: 'all', since: since() })).state, 'dead');
+      // A process started after the job gave up (a new release) may run it again.
+      assert.equal(await deadSince(db, lab.id, { kind: 'test.hold', dedupeKey: 'all', since: deadHoldSince(Date.now() + 1000) }), null);
+      // So may any process a day later.
+      const dayLater = Date.now() + 24 * 60 * 60 * 1000 + 1000;
+      assert.equal(await deadSince(db, lab.id, { kind: 'test.hold', dedupeKey: 'all', since: deadHoldSince(startedAt, dayLater) }), null);
     });
   });
 

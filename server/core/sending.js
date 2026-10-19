@@ -4,7 +4,7 @@ import { invoiceLines, invoices } from '../db/schema.js';
 import { FlowError } from './errors.js';
 import { issueInvoice } from './invoices.js';
 import { soleOrganisation } from './pipeline.js';
-import { enqueueJob, runNextJob } from './queue.js';
+import { deadHoldSince, deadSince, enqueueJob, runNextJob } from './queue.js';
 
 // Drafts, Problem, Ready and Send all ready (docs/INVOICE_SENDING.md).
 //
@@ -124,9 +124,10 @@ export async function markReady(db, organisationId, invoiceIds, { personId, acco
   return { marked: good.length, refused: [...problems].map(([invoiceId, found]) => ({ invoiceId, problems: found })) };
 }
 
-// Back to drafts: the drafts need another look before they go.
+// Back to drafts: the drafts need another look before they go. The new
+// updatedAt keeps "Ready when drafted" (automations.js) off them.
 export async function markNotReady(db, organisationId, invoiceIds) {
-  const rows = await db.update(invoices).set({ readyAt: null, readyBy: null })
+  const rows = await db.update(invoices).set({ readyAt: null, readyBy: null, updatedAt: sql`now()` })
     .where(and(eq(invoices.organisationId, organisationId), eq(invoices.status, 'draft'), inArray(invoices.id, invoiceIds)))
     .returning({ id: invoices.id });
   return { moved: rows.length };
@@ -215,6 +216,7 @@ export async function sendQueued(db, organisationId, { accounting, limit = WORKE
         const error = result.error ?? { code: `send_${result.outcome}`, message: `Sending ended as ${result.outcome}.` };
         await settle(db, organisationId, result.invoiceId, { sendState: 'failed', sendError: { code: error.code, message: error.message } });
         summary.failed += 1;
+        summary.refused = [...new Set([...(summary.refused ?? []), error.code])];
       }
     }
   }
@@ -230,6 +232,7 @@ function settle(db, organisationId, invoiceId, fields) {
 // the job queue.
 export function createSendWorker({ db, integrations, log = console, timers = { setTimeout, clearTimeout }, everyMs = WORKER_EVERY_MS }) {
   const workerId = `send-${randomUUID()}`;
+  const startedAtMs = Date.now();
   let timer = null;
   let running = null;
   let stopped = true;
@@ -252,13 +255,22 @@ export function createSendWorker({ db, integrations, log = console, timers = { s
         const [waiting] = await db.select({ id: invoices.id }).from(invoices)
           .where(and(eq(invoices.organisationId, organisationId), eq(invoices.sendState, 'queued'))).limit(1);
         if (!waiting) return;
+        // Issue #101: a send run that gave up waits for a person, a restart or
+        // the next day; the timer never starts it again by itself.
+        if (await deadSince(db, organisationId, { kind: SEND_KIND, dedupeKey: 'all', since: deadHoldSince(startedAtMs) })) return;
         await enqueueJob(db, organisationId, { kind: SEND_KIND, dedupeKey: 'all' });
         const ran = await runNextJob(db, {
           workerId,
           leaseMs: LEASE_MS,
           handlers: { [SEND_KIND]: () => sendQueued(db, organisationId, { accounting }) },
         });
-        if (ran) log.info?.(`[sending] ${ran.outcome}: ${JSON.stringify(ran.job.result ?? ran.job.lastError ?? {})}`);
+        if (!ran) return;
+        const line = `[sending] ${ran.outcome}: ${JSON.stringify(ran.job.result ?? ran.job.lastError ?? {})}`;
+        // An invoice the accounting system refused waits in Problem for a
+        // person; it is reported once, when it is refused.
+        if (ran.outcome === 'dead') log.error?.('[sending] the send run gave up after its last attempt');
+        if (ran.job.result?.failed) log.error?.('[sending] the accounting system refused an invoice');
+        (ran.outcome === 'succeeded' && !ran.job.result?.failed ? log.info : log.warn)?.(line);
       } catch (error) {
         log.error?.(`[sending] ${error?.code ?? 'error'}: ${error?.message ?? error}`);
       }
