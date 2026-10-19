@@ -9,7 +9,7 @@
  * ./openclaw-palettes.js (docs/DESIGN.md). The engine is Arc Forge Labs'
  * Field's, so a family looks the same in both apps.
  */
-import { boundaryOn, HEX, inkOn, readableOn } from './color-contrast.js';
+import { boundaryOn, contrast, HEX, inkOn, over, readableOn, readableOnEvery } from './color-contrast.js';
 import { OPENCLAW_FAMILIES } from './openclaw-palettes.js';
 
 export { boundaryOn, contrast, inkOn, readableOn } from './color-contrast.js';
@@ -125,12 +125,20 @@ const MERIDIAN = {
 const { beacon, tide, claw, knot, dash, ...otherOpenclaw } = OPENCLAW_FAMILIES;
 const FAMILIES = { harbour: HARBOUR, meridian: MERIDIAN, beacon, tide, claw, knot, dash, ...otherOpenclaw };
 
+// Every family keeps WCAG AA (test/theme-contrast.test.js). A ported palette
+// that misses it on a surface Flow uses is nudged here, just far enough:
+// secondary text on every surface, accent text on the page, cards and its own
+// tint, and the ink on the brand colour. Harbour and Meridian already pass.
 // --t-control: the edge of an input or an outlined button on --t-paper, the
 // text colour faded toward the paper only as far as it still reads at 3:1.
 for (const family of Object.values(FAMILIES)) {
   for (const mode of ['light', 'dark']) {
     const tokens = family[mode];
-    tokens['--t-control'] = boundaryOn(tokens['--t-paper'], tokens['--t-text']);
+    const { '--t-bg': bg, '--t-paper': paper, '--t-s1': s1, '--t-s2': s2 } = tokens;
+    tokens['--t-dim'] = readableOnEvery(tokens['--t-dim'], [bg, paper, s1, s2]);
+    tokens['--t-accent'] = readableOnEvery(tokens['--t-accent'], [bg, paper, over(tokens['--t-accent-bg'], paper)]);
+    if (contrast(tokens['--t-brand-ink'], tokens['--t-brand']) < 4.5) tokens['--t-brand-ink'] = inkOn(tokens['--t-brand']);
+    tokens['--t-control'] = boundaryOn(paper, tokens['--t-text']);
   }
 }
 

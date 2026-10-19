@@ -31,6 +31,7 @@
   "scripts": {
     "start": "node server/index.js",
     "test": "node --test --test-concurrency=1 test/*.test.js",
+    "theme:contrast": "node scripts/theme-contrast.mjs",
     "db:generate": "drizzle-kit generate"
   },
   "dependencies": {

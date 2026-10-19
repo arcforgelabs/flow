@@ -67,7 +67,12 @@ builds, served from `node_modules` under `/assets/fonts/<package>/`
 (`server/theme/font-families.js`); a page loads only the chosen family's
 faces. The fonts are under the SIL Open Font Licence.
 
-The rules every family keeps, checked by `test/theme.test.js` in both modes:
+The rules every family keeps, checked in both modes by `test/theme.test.js`
+and by the WCAG AA audit in `test/theme-contrast.test.js` (CI fails on any
+miss; `npm run theme:contrast` prints every pair). The audit
+(`server/theme/contrast-audit.js`) lists each text and control colour on each
+surface Flow's components and Clerk's screens put it on, and lays translucent
+tints over their surface first. A new pairing on screen gets a row there.
 
 - `--t-text` and `--t-dim` read at 4.5:1 or better on their surfaces.
 - `--t-accent` is text and reads at 4.5:1 on `--t-bg`. `--t-brand` is the
@@ -76,6 +81,8 @@ The rules every family keeps, checked by `test/theme.test.js` in both modes:
 - `--t-control` is the edge of an input or an outlined button: the text
   colour faded toward `--t-paper` only as far as it still reads at 3:1
   (WCAG 1.4.11). `themes.js` derives it for every family.
+- A ported family that misses AA on a surface Flow uses is nudged in
+  `themes.js` just far enough: `--t-dim`, `--t-accent` and `--t-brand-ink`.
 
 ## Clerk
 
@@ -83,7 +90,9 @@ Clerk's own components do the account work: `SignIn` on the sign-in screen,
 `UserButton` in the top bar (manage account, sign out) and `UserProfile` on
 the Account page. `server/ui/clerk-appearance.js` builds their appearance from
 the active tokens: colours, faces, corners, and the control edges in
-`--t-control`. Clerk draws an input's edge as a box-shadow ring on a
+`--t-control`. Clerk builds its border shades (dividers, hover edges, the
+"Primary" badge) as fractions of `colorBorder`, so that is the opaque text
+colour, and the badge text is `--t-dim`. Clerk draws an input's edge as a box-shadow ring on a
 `[data-variant]` selector, so Flow's edge rules double the class (`&&`) to win.
 A change of appearance remounts every Clerk component, so Clerk follows the
 theme and mode at once. Clerk's words that name the app say "Flow", whatever
