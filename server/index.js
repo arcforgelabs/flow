@@ -5,7 +5,7 @@ import { seedFirstOwner } from './auth/people.js';
 import { createPersonAuth } from './auth/session.js';
 import { resolveSignInSettings } from './auth/settings.js';
 import { migrateDatabase, openDatabase } from './db/index.js';
-import { importEarlierAtStart, resolveImportAtStart } from './import/at-start.js';
+import { importEarlierAtStart, importEarlierLinksAtStart, resolveImportAtStart } from './import/at-start.js';
 import { createIntegrations } from './integrations/index.js';
 import { resolveDefaultFamily } from './theme/themes.js';
 import { createUpdateChecker, UPDATE_CHECK_INTERVAL_MS } from './update-check.js';
@@ -55,6 +55,10 @@ try {
   console.error(`[import] ${error.message}`);
   process.exit(1);
 }
+// The earlier links are evidence to add, not records Flow needs to open, so a
+// failure is logged and the start goes on.
+await importEarlierLinksAtStart({ db: database.db, pool: database.pool, settings: importAtStart })
+  .catch((error) => console.error(`[import] ${error.message}`));
 await integrations.start(database.db);
 const integrationsOn = integrations.list().filter((a) => a.enabled).map((a) => a.id);
 console.log(`[integrations] on: ${integrationsOn.join(', ') || 'none'} (FLOW_INTEGRATIONS)`);

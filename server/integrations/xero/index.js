@@ -1,6 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import { sql } from 'drizzle-orm';
 import { pushInvoice } from './drafts.js';
+import { createImportWorker } from './import.js';
 import { readPayments } from './ledger.js';
 import { createXeroRouter } from './routes.js';
 import { createXeroRuntime, requireXeroSettings } from './runtime.js';
@@ -10,7 +11,7 @@ import { writesAllowed } from './settings.js';
 // XERO_MODE says which Xero it acts on. Its tables are created only while it
 // is on (docs/INTEGRATIONS.md).
 
-export const XERO_TABLES = Object.freeze(['xero_connections', 'xero_contacts', 'xero_items', 'xero_sync_runs', 'xero_invoice_pushes', 'xero_payment_cursors']);
+export const XERO_TABLES = Object.freeze(['xero_connections', 'xero_contacts', 'xero_items', 'xero_sync_runs', 'xero_invoice_pushes', 'xero_payment_cursors', 'xero_invoices', 'xero_credit_notes', 'xero_payments', 'xero_mirror_cursors']);
 
 // `runtime` is for tests. Otherwise start() builds it from the environment,
 // so a turned-off adapter never reads its settings, and a malformed setting
@@ -18,6 +19,7 @@ export const XERO_TABLES = Object.freeze(['xero_connections', 'xero_contacts', '
 export function createXeroAdapter({ runtime: given = null } = {}) {
   let runtime = given;
   let database = null;
+  let importer = null;
   const current = () => {
     runtime ??= createXeroRuntime({ settings: requireXeroSettings(process.env) });
     return runtime;
@@ -35,6 +37,16 @@ export function createXeroAdapter({ runtime: given = null } = {}) {
       database = db;
       const { settings } = current();
       log.info?.(`[xero] mode ${settings.mode}; writes ${writesAllowed(settings) ? 'on' : 'off (XERO_ALLOW_LIVE_WRITES)'}; redirect URI ${settings.redirectUri ?? 'not set (FLOW_PUBLIC_ORIGIN)'}`);
+      // The history import (import.js) runs in the background outside replay
+      // mode. Replay tests run its slices directly.
+      if (settings.mode !== 'replay') {
+        importer = createImportWorker({ db, runtime: current(), log });
+        await importer.start();
+      }
+    },
+    async stop() {
+      await importer?.stop();
+      importer = null;
     },
     capabilities: {
       async health() {

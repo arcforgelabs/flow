@@ -121,6 +121,9 @@ describe('connecting Xero', { skip: skipWithoutDatabase }, () => {
       assert.equal(rows[0].mode, 'replay');
       assert.doesNotMatch(JSON.stringify(rows[0]), /synthetic-refresh/);
       assert.equal(decryptToken(rows[0].refresh_token_enc, KEY, lab.organisation.id), 'synthetic-refresh-1');
+
+      const { rows: jobs } = await handle.db.execute(sql`select kind, state, organisation_id from background_jobs`);
+      assert.deepEqual(jobs, [{ kind: 'xero.import', state: 'queued', organisation_id: lab.organisation.id }], 'connecting queues the history import');
       assert.throws(() => decryptToken(rows[0].refresh_token_enc, KEY, '00000000-0000-4000-8000-000000000000'), /cannot be read/);
 
       const exchange = replay.fetch.calls.find((call) => call.path === '/connect/token');
