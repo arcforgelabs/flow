@@ -12,4 +12,5 @@ attached_assets/
 .local/
 # scripts/replit-deploy.sh
 .flow-deploy/
+.flow-workspace/
 .flow-revision

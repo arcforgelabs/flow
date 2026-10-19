@@ -2,6 +2,7 @@ import express from 'express';
 import { createConnectorApi } from './api/connector.js';
 import { createInvoicingRouter } from './api/invoicing.js';
 import { createSignInRouter } from './auth/routes.js';
+import { appliedMigrationCounts } from './db/doctor.js';
 import { deployedBuildStatus } from './deployed-build.js';
 import { integrationsHealth } from './integrations/health.js';
 import { createSetupRouter } from './integrations/setup.js';
@@ -27,10 +28,14 @@ import { createUiAssetsRouter } from './ui/routes.js';
 // each one (server/integrations/health.js). `defaultFamily` is the design
 // system every page starts on (FLOW_THEME, server/theme/themes.js). `log`
 // is the console, or the monitored log (server/core/monitoring.js) that also
-// sends each error to the installation's error service.
+// sends each error to the installation's error service. `schemaJournals` are
+// the migration journals this build ships (server/db/doctor.js): GET /health
+// reports how many of each the database has applied, so the workspace's
+// doctor can tell what Replit's publish step will offer (docs/REPLIT.md).
 export function createApp({
   build = deployedBuildStatus(),
   database = null,
+  schemaJournals = null,
   auth = null,
   updates = null,
   integrations = null,
@@ -59,6 +64,11 @@ export function createApp({
     // records). An integration problem does not fail the health check: Flow's
     // core works with no integration connected (VISION.md).
     const body = { ok, service: 'flow', database: databaseOk, build };
+    // Counts only: no table names and no data.
+    if (databaseOk && schemaJournals) {
+      body.schema = await appliedMigrationCounts(database.pool, schemaJournals)
+        .then((migrations) => ({ migrations }), () => null);
+    }
     if (integrations) body.integrations = await integrationsHealth(integrations);
     res.status(ok ? 200 : 503).json(body);
   });
