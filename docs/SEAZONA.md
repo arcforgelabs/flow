@@ -73,7 +73,8 @@ workspace live credentials.
 | `SEAZONA_ORDER_DAYS_PER_RUN` | Days the recent-order lane reads per run. Default 6. |
 | `SEAZONA_INVOICE_LOOKBACK_DAYS` | Days before today the first invoice run reads. Default 0. |
 | `SEAZONA_ACTIVE_ORDERS_PER_RUN` | Open orders the active-order lane re-reads per run. Default 25. |
-| `SEAZONA_LIST_CAP` | A list exactly this long may be cut off, so its lane holds. Default 50. |
+| `SEAZONA_LIST_CAP` | A list this long may be cut off, so its lane reads on (see Sync lanes). Also the order page size, at most 500. Default 50. |
+| `SEAZONA_LIST_PAGES_PER_RUN` | The most list calls one lane makes in a run; the next run goes on from where it stopped. Default 10. |
 | `SEAZONA_ORDER_QUARANTINE_FAILURES`, `SEAZONA_ORDER_QUARANTINE_MS` | Failed reads in a row before an order, an invoice or a client is quarantined, and for how long. Defaults 3 and 1 day. |
 | `SEAZONA_CIRCUIT_FAILURES`, `SEAZONA_CIRCUIT_WINDOW_MS` | Failed calls inside the window that open the circuit. Defaults 5 and 10 minutes. |
 | `SEAZONA_CIRCUIT_PAUSE_MS` | The first pause when the circuit opens. It doubles after each failed probe, to at most 6 hours. Default 5 minutes. |
@@ -163,14 +164,31 @@ another.
 | Lane | Reads | Cadence |
 | --- | --- | --- |
 | `invoices` | `GET invoices/?lastModified=` since the cursor (less 5 minutes), then each changed invoice's detail | 2 minutes |
-| `orders_recent` | `GET orders/?ordered=` for each day of the last 30 (6 days a run), then each new or changed order's detail | 5 minutes |
+| `orders_recent` | `GET orders/?ordered=&page=&pageSize=` for each day of the last 30 (6 days a run), page by page, then each new or changed order's detail | 5 minutes |
 | `orders_active` | Each open order Flow already knows, oldest first, 25 a run. "Complete" stays open until Seazona says it shipped. | 5 minutes |
 | `clients` | The whole list the first time, then changes since the cursor, then each changed client's detail | 30 minutes |
 | `products`, `users` | The whole list | Daily |
 
-A list row whose list fields did not change costs no detail read. Seazona
-documents no paging, so a list exactly `SEAZONA_LIST_CAP` long may be cut off:
-the lane holds (`held`), keeps its cursor and tries again in an hour.
+A list row whose list fields did not change costs no detail read.
+
+A list `SEAZONA_LIST_CAP` long may be cut off, so the lane reads on (issue
+#125):
+
+- **Invoices and clients** have no paging. Seazona's guide says the invoice
+  list answers changes on or after `lastModified`, oldest first. So a full
+  list is one part of the window: the next part starts at its last row's
+  `lastModified` (clients: one second before it). A run that reaches
+  `SEAZONA_LIST_PAGES_PER_RUN` stores the exact start of the next part, and
+  the next run goes on from it, with no 5-minute overlap.
+- **Orders** are paged. A full page goes on to the next page. A short page, or
+  a page whose last order is two days past the day, ends the day. A run that
+  stops inside a day goes on from that page next time.
+
+The lane holds (`held`), keeps where it got to and tries again in an hour
+only where it cannot go on: a full list whose rows are not oldest first, a
+full list inside one second, a next order page that answers the same orders
+again, or a products or users list exactly at the cap (those lists come
+whole, with no paging).
 
 A failed lane waits 1 minute, doubling to at most 6 hours, or as long as a 429
 asked. A lane that says it is running for more than 20 minutes is taken to
