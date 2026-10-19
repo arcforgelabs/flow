@@ -6,7 +6,7 @@ import { createDraftInvoice, getInvoice } from '../server/core/invoices.js';
 import { invoiceViews, markNotReady } from '../server/core/sending.js';
 import {
   autoDraftJobs, effectiveSettings, INVOICING_DEFAULTS, readCustomerBilling, readInvoicingSettings, ruleBlockers,
-  saveCustomerBilling, saveInvoicingSettings,
+  saveCustomerBilling, saveInvoicingSettings, sendModeSummary,
 } from '../server/core/invoicing-rules.js';
 import { starterRules } from '../server/core/invoice-rules.js';
 import { listAutomations, runAutomations, saveAutomation, statusMatches, workStatuses } from '../server/core/automations.js';
@@ -132,6 +132,14 @@ describe('drafts by rule', { skip: skipWithoutDatabase }, () => {
       { billable: true, defaultPractitioner: null, autoDraft: null, sendMode: null, paymentTermsDays: null });
     const own = await saveCustomerBilling(handle.db, lab.id, quiet.id, { billable: false });
     assert.equal(own.billable, false);
+
+    // The Invoices page says how invoices go out, and how many customers differ.
+    assert.deepEqual(await sendModeSummary(handle.db, lab.id), { mode: 'accounting_draft', otherCustomers: 0 });
+    await saveCustomerBilling(handle.db, lab.id, quiet.id, { sendMode: 'approve_and_email' });
+    assert.deepEqual(await sendModeSummary(handle.db, lab.id), { mode: 'accounting_draft', otherCustomers: 1 });
+    await saveCustomerBilling(handle.db, lab.id, quiet.id, { sendMode: 'accounting_draft' });
+    assert.deepEqual(await sendModeSummary(handle.db, lab.id), { mode: 'accounting_draft', otherCustomers: 0 });
+    await saveCustomerBilling(handle.db, lab.id, quiet.id, { sendMode: null });
   });
 
   test('a cleared, ready job gets a draft in Flow with the customer\'s terms; the rest wait', async () => {

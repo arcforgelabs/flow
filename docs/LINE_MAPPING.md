@@ -24,15 +24,23 @@ first step that answers wins.
 | `catalog_score` | One price item at this price has a clearly closer name than the others. |
 | `alias` | A row names a price item for this label, or for the start of it. |
 
+Before these steps, a line whose code is linked to a price item on the price
+list (`docs/PRICE_LIST.md`) takes that price item (`linked`). A link is a
+person's choice or an exact code, so it always goes first and is not a step
+in the list.
+
 The label is compared without sizes, arch ("upper", "lower 4") and "per set".
-A line keeps the work system's amount and tax flag. A line that no step
+A line keeps the work system's amount and tax flag. The routine's setting
+`linePrice` changes that: `work` (the default) keeps the work system's amount,
+`list` takes the price list's price. Settings, Price list, "Line price from"
+sets it. A line that no step
 answers keeps no price item, so the ledger holds the job ("a line does not
 map to a price item").
 
 A change to a mapping row, or to the routine, reads every job again from
 Flow's own copy of the work system. It makes no calls to the work system.
 
-## Price codes (Settings, Invoicing)
+## Price codes (Settings, Invoice rules)
 
 Each label that found no price item shows as one row, with its price and the
 number of lines it holds back. An owner or admin picks the price item. Flow

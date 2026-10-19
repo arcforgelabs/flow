@@ -53,7 +53,10 @@ async function tokenRequest(settings, fetchImpl, form, what) {
     if (body?.error === 'invalid_grant') {
       throw xeroError('xero_reconnect_needed', 'Xero no longer accepts this connection. An owner must connect Xero again.', { status: 409 });
     }
-    throw xeroError('xero_token_failed', `Xero refused ${what} (${response.status}${body?.error ? `, ${body.error}` : ''}).`, { status: 502 });
+    throw xeroError('xero_token_failed', `Xero refused ${what} (${response.status}${body?.error ? `, ${body.error}` : ''}).`, {
+      status: 502,
+      oauthError: typeof body?.error === 'string' ? body.error.slice(0, 40) : null,
+    });
   }
   if (!body?.access_token || !body?.refresh_token) {
     throw xeroError('xero_token_failed', `Xero's answer to ${what} had no tokens.`, { status: 502 });

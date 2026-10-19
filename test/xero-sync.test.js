@@ -3,6 +3,7 @@ import { after, before, describe, test } from 'node:test';
 import { sql } from 'drizzle-orm';
 import { invitePerson } from '../server/auth/people.js';
 import { lastSuccessfulSyncAt, matchContact, mapItem, parseXeroDate } from '../server/integrations/xero/catalogue.js';
+import { listPriceItems } from '../server/integrations/xero/lookup.js';
 import { request } from './support/clerk.js';
 import { freshDatabase, skipWithoutDatabase } from './support/db.js';
 import { bootFlow, connectDirectly, seedLab, xeroAnswer, xeroRuntime } from './support/xero.js';
@@ -69,6 +70,10 @@ describe('Xero contact and item sync', { skip: skipWithoutDatabase }, () => {
     assert.deepEqual(contacts.body.contacts[1].salesTracking, [{ category: 'Department', option: 'Laboratory' }]);
     const items = await request(app, `/api/xero/items?organisationId=${lab.organisation.id}`, { token: lab.staffToken });
     assert.deepEqual(items.body.items.map((i) => [i.code, i.salesUnitAmountCents, i.salesTaxType]), [['CROWN', 25000, 'OUTPUT'], ['REPAIR', 8000, 'OUTPUT']]);
+    // The price list reads the same copy (lookup.js, listPriceItems).
+    const list = await listPriceItems(handle.db, lab.organisation.id, { taxTypes: { GST: 'OUTPUT', GST_FREE: 'EXEMPTOUTPUT' } });
+    assert.equal(list.kind, 'accounting');
+    assert.deepEqual(list.items.map((i) => [i.code, i.unitAmountCents, i.taxCode]), [['CROWN', 25000, 'GST'], ['REPAIR', 8000, 'GST']]);
   });
 
   test('contacts match by exact name, ignoring case and doubled spaces', async () => {

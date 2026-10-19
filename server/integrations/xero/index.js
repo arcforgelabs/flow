@@ -4,16 +4,16 @@ import { checkDrafts, pushInvoice, pushInvoices } from './drafts.js';
 import { readConnection } from './connections.js';
 import { createImportWorker } from './import.js';
 import { readPayments, xeroLiveCheck } from './ledger.js';
-import { findInvoices, listCustomers } from './lookup.js';
+import { findInvoices, listCustomers, listPriceItems } from './lookup.js';
 import { createXeroRouter } from './routes.js';
-import { createXeroRuntime, requireXeroSettings } from './runtime.js';
+import { createXeroRuntime, requireXeroSettings, XERO_CALL_GUARD } from './runtime.js';
 import { writesAllowed } from './settings.js';
 
 // The Xero adapter (docs/XERO.md). FLOW_INTEGRATIONS=xero turns it on and
 // XERO_MODE says which Xero it acts on. Its tables are created only while it
 // is on (docs/INTEGRATIONS.md).
 
-export const XERO_TABLES = Object.freeze(['xero_connections', 'xero_contacts', 'xero_items', 'xero_sync_runs', 'xero_invoice_pushes', 'xero_payment_cursors', 'xero_invoices', 'xero_credit_notes', 'xero_payments', 'xero_mirror_cursors']);
+export const XERO_TABLES = Object.freeze(['xero_connections', 'xero_contacts', 'xero_items', 'xero_sync_runs', 'xero_invoice_pushes', 'xero_payment_cursors', 'xero_invoices', 'xero_credit_notes', 'xero_payments', 'xero_mirror_cursors', 'xero_call_guard', 'xero_calls']);
 
 // What an owner enters in Settings, Integrations (server/integrations/setup.js).
 // The refresh token's key comes from Flow's secrets key.
@@ -61,10 +61,16 @@ export function createXeroAdapter({ runtime: given = null } = {}) {
       tables: [...XERO_TABLES],
     },
     setup: XERO_SETUP,
-    async start({ db, log, env }) {
+    // Every Xero call goes through this call guard (docs/INTEGRATIONS.md,
+    // "Outbound calls").
+    callGuard: XERO_CALL_GUARD,
+    // `reconfigured` is true when a person saved the settings or turned Xero
+    // on: that clears a halt, stopped resources and an open circuit.
+    async start({ db, log, env, reconfigured = false }) {
       database = db;
       if (!given) runtime = createXeroRuntime({ settings: requireXeroSettings(env ?? process.env) });
       const { settings } = current();
+      if (reconfigured) await current().guardFor(db).resume();
       log.info?.(`[xero] mode ${settings.mode}; writes ${writesAllowed(settings) ? 'on' : 'off (XERO_ALLOW_LIVE_WRITES)'}; redirect URI ${settings.redirectUri ?? 'not set (FLOW_PUBLIC_ORIGIN)'}`);
       // The history import (import.js) runs in the background outside replay
       // mode. Replay tests run its slices directly.
@@ -81,8 +87,11 @@ export function createXeroAdapter({ runtime: given = null } = {}) {
     capabilities: {
       async health() {
         const { settings } = current();
-        const { rows } = await database.execute(sql`select count(*)::int as connected from xero_connections where mode = ${settings.mode}`);
-        return { ok: true, mode: settings.mode, writesAllowed: writesAllowed(settings), connected: rows[0].connected };
+        const { rows } = await database.execute(sql`select tenant_id from xero_connections where mode = ${settings.mode}`);
+        const guard = current().guardFor(database);
+        const calls = await Promise.all(rows.map(async (r) => ({ tenantId: r.tenant_id, ...await guard.status(r.tenant_id) })));
+        const stopped = calls.some((c) => c.circuit !== 'closed' || c.stoppedResources.length || c.failedToday >= c.dailyFailureBudget);
+        return { ok: !stopped, mode: settings.mode, writesAllowed: writesAllowed(settings), connected: rows.length, calls };
       },
       // One issued invoice to a Xero draft (drafts.js). The Flow invoice id
       // and version are the idempotency key.
@@ -106,6 +115,8 @@ export function createXeroAdapter({ runtime: given = null } = {}) {
       listCustomers: ({ organisationId }) => listCustomers(database, organisationId),
       // Sales invoices from the mirror, with the mirror's state (lookup.js).
       findInvoices: ({ organisationId, ...query }) => findInvoices(database, organisationId, query),
+      // Xero items, from Flow's copy, for the price list (lookup.js).
+      listPriceItems: ({ organisationId }) => listPriceItems(database, organisationId, { taxTypes: current().settings.taxTypes }),
     },
     routes: ({ db, personAuth, log, messagePage }) => createXeroRouter({ db, personAuth, runtime: current(), log, messagePage }),
   };

@@ -6,6 +6,21 @@
 #   scripts/replit-deploy.sh update-workspace
 #                                    # build as above, then bring the workspace's
 #                                    # database up to that build (the Run button)
+#   scripts/replit-deploy.sh boot    # start the workspace updater in the background (.replit onBoot)
+#   scripts/replit-deploy.sh follow  # the workspace updater: update-workspace whenever
+#                                    # FLOW_DEPLOY_REF names a new commit, checked every
+#                                    # FLOW_WORKSPACE_UPDATE_SECONDS (600)
+#
+# The workspace updater keeps the workspace's database at the release the
+# next publish deploys, so Replit's publish step never finds it behind
+# production (docs/REPLIT.md, "The workspace updater"). It writes only
+# .flow-deploy/ and .flow-workspace/ (its log, locks and the commit the
+# workspace's database is at). FLOW_WORKSPACE_UPDATER=off stops it starting.
+#
+# This script fetches and checks the commit. When the fetched commit's own
+# copy of this script can take over (it carries the FLOW_DEPLOY_DRIVER line
+# below), that copy builds and migrates, so a fix to those steps reaches an
+# installation with the next release, without a git pull in the workspace.
 #
 # Replit publishes a snapshot of the workspace files. This makes the deployment
 # run a commit from GitHub instead: by default the tip of main, or the ref that
@@ -41,8 +56,15 @@
 # unchecked); start passes it on, and GET /health shows it as build.checks.
 set -euo pipefail
 
+# The steps a fetched copy of this script takes over: finish-build and
+# migrate-workspace. Keep this line while they keep their arguments.
+# FLOW_DEPLOY_DRIVER=2
+
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-OUT="$ROOT/.flow-deploy"
+# A copy that took over runs from inside .flow-deploy/; it is told where that
+# is and where the workspace's state is.
+OUT="${FLOW_DEPLOY_OUT:-$ROOT/.flow-deploy}"
+STATE="${FLOW_WORKSPACE_STATE:-$ROOT/.flow-workspace}"
 DEFAULT_REPO="https://github.com/arcforgelabs/flow.git"
 
 log() { echo "[deploy] $*"; }
@@ -153,6 +175,30 @@ cmd_build() {
     check_ci "$repo" "$ref" "$revision"
   fi
 
+  if [ "$source" = github ] && takes_over; then
+    log "the fetched $ref builds itself (its scripts/replit-deploy.sh)"
+    handed_over finish-build "$source" "$ref" "$revision" "$release" "$checks" || exit $?
+  else
+    cmd_finish_build "$source" "$ref" "$revision" "$release" "$checks"
+  fi
+}
+
+# Can the fetched commit's copy of this script take over the build and the
+# migration? Only a copy that says so: an older release builds the old way.
+takes_over() {
+  [ "${FLOW_DEPLOY_HANDED_OVER:-}" != "1" ] \
+    && [ -f "$OUT/scripts/replit-deploy.sh" ] \
+    && grep -qx '# FLOW_DEPLOY_DRIVER=2' "$OUT/scripts/replit-deploy.sh"
+}
+
+handed_over() {
+  FLOW_DEPLOY_HANDED_OVER=1 FLOW_DEPLOY_OUT="$OUT" FLOW_WORKSPACE_STATE="$STATE" \
+    bash "$OUT/scripts/replit-deploy.sh" "$@"
+}
+
+# Builds the fetched commit in .flow-deploy/ and records what it is.
+cmd_finish_build() {
+  local source="$1" ref="$2" revision="$3" release="$4" checks="$5"
   [ -f "$OUT/scripts/replit-build.sh" ] || die "$ref has no scripts/replit-build.sh to build with"
   log "building $source $ref${revision:+ at $revision}"
   (cd "$OUT" && bash scripts/replit-build.sh) || die "the build of $ref failed"
@@ -202,14 +248,32 @@ cmd_start() {
   exec bash "$OUT/scripts/replit-start.sh"
 }
 
-# The workspace's Run button (.replit run). It builds what the next publish
-# will build, then runs that build's migrations on the workspace's database
-# and stops; it starts no server. Publishing compares the workspace's tables
-# with production's, so afterwards it can only offer to add what the release
-# adds (docs/REPLIT.md, "Updates go to the workspace first").
+# The workspace's Run button (.replit run), and each step of the workspace
+# updater. It builds what the next publish will build, then runs that build's
+# migrations on the workspace's database and stops; it starts no server.
+# Publishing compares the workspace's tables with production's, so afterwards
+# it can only offer to add what the release adds (docs/REPLIT.md, "Updates go
+# to the workspace first"). One at a time: a second run waits for the first.
 cmd_update_workspace() {
   [ -n "${DATABASE_URL:-}" ] || die "DATABASE_URL is not set; add the workspace's Replit PostgreSQL database"
+  mkdir -p "$STATE"
+  if command -v flock >/dev/null 2>&1; then
+    exec 9>"$STATE/update.lock"
+    flock -w 1800 9 || die "another update of the workspace is still running"
+  fi
   cmd_build
+  if takes_over; then
+    handed_over migrate-workspace || exit $?
+  else
+    cmd_migrate_workspace
+  fi
+  local revision
+  revision="$(cat "$OUT/.flow-revision" 2>/dev/null || true)"
+  if [ -n "$revision" ]; then printf '%s\n' "$revision" > "$STATE/workspace-db"; fi
+}
+
+# Runs the build's migrations on the workspace's database, then its doctor.
+cmd_migrate_workspace() {
   local built
   built="$(cat "$OUT/.flow-deploy-release" 2>/dev/null || cat "$OUT/.flow-deploy-ref")"
   log "migrating the workspace database to $built"
@@ -224,12 +288,94 @@ cmd_update_workspace() {
       try { await migrateDatabase(handle.db); } finally { await handle.close(); }
     "
   fi) || die "the migration of the workspace database to $built failed. Do not publish; production would fail the same way"
+  # The doctor (server/db/doctor.js) checks the result, and with the live
+  # app's address, says what the publish step will offer.
+  if [ -f "$OUT/server/db/commands.js" ]; then
+    local live=()
+    if [ -n "${FLOW_PUBLIC_ORIGIN:-}" ]; then live=(--live "$FLOW_PUBLIC_ORIGIN"); fi
+    (cd "$OUT" && node server/flow-server.js doctor "${live[@]}") \
+      || die "the workspace database is not at $built after its migration. Do not publish"
+  fi
   log "the workspace database is at $built. Publish now: Replit may offer to add tables and columns, and must never offer to drop one"
+}
+
+# Which commit FLOW_DEPLOY_REF names now, without fetching it.
+target_revision() {
+  local ref="${FLOW_DEPLOY_REF:-main}" repo="${FLOW_DEPLOY_REPO:-$DEFAULT_REPO}" resolved
+  valid_ref "$ref" || return 1
+  if [ "$ref" = stable ] || [ "$ref" = beta ]; then
+    resolved="$(node "$ROOT/scripts/deploy-release.js" "$repo" "$ref")" || return 1
+    printf '%s\n' "${resolved##* }"
+  elif [[ "$ref" =~ ^[0-9a-f]{40}$ ]]; then
+    printf '%s\n' "$ref"
+  else
+    # A tag's own commit (^{}) when it is annotated, else the ref's.
+    GIT_TERMINAL_PROMPT=0 git -c credential.helper= ls-remote "$repo" "$ref" "$ref^{}" 2>/dev/null \
+      | awk '{ if ($2 ~ /\^\{\}$/) peeled = $1; else if (!first) first = $1 } END { r = peeled ? peeled : first; if (!r) exit 1; print r }'
+  fi
+}
+
+# One step of the workspace updater: update the workspace when
+# FLOW_DEPLOY_REF names a commit the workspace's database is not at.
+cmd_sync_workspace() {
+  if [ -z "${DATABASE_URL:-}" ]; then log "no DATABASE_URL, so there is no workspace database to update"; return 0; fi
+  if [ "${FLOW_DEPLOY_FROM_WORKSPACE:-}" = "1" ]; then log "FLOW_DEPLOY_FROM_WORKSPACE=1: the workspace updater does nothing"; return 0; fi
+  local target at
+  target="$(target_revision)" || { log "could not tell which commit ${FLOW_DEPLOY_REF:-main} names now; trying again later"; return 1; }
+  at="$(cat "$STATE/workspace-db" 2>/dev/null || true)"
+  if [ "$at" = "$target" ] && [ -f "$OUT/.flow-revision" ] && [ "$(cat "$OUT/.flow-revision")" = "$target" ]; then
+    # Still check the database itself: someone may have reset it.
+    if [ ! -f "$OUT/server/db/commands.js" ] || (cd "$OUT" && node server/flow-server.js doctor >/dev/null 2>&1); then
+      log "the workspace database is at ${FLOW_DEPLOY_REF:-main} ($target)"
+      return 0
+    fi
+    log "the workspace database is not at $target any more; updating it again"
+  else
+    log "${FLOW_DEPLOY_REF:-main} is at $target; the workspace database is at ${at:-an unknown commit}. Updating it"
+  fi
+  cmd_update_workspace
+}
+
+# The workspace updater. One per workspace; each step runs on its own, so a
+# failed step is logged and the next one tries again.
+cmd_follow() {
+  mkdir -p "$STATE"
+  if command -v flock >/dev/null 2>&1; then
+    exec 8>"$STATE/follow.lock"
+    flock -n 8 || { log "the workspace updater is already running"; return 0; }
+  fi
+  local interval="${FLOW_WORKSPACE_UPDATE_SECONDS:-600}"
+  [[ "$interval" =~ ^[0-9]+$ ]] && [ "$interval" -ge 60 ] || interval=600
+  while :; do
+    log "$(date -u +%Y-%m-%dT%H:%M:%SZ) checking ${FLOW_DEPLOY_REF:-main}"
+    ( cmd_sync_workspace ) 8>&- || log "this check failed; the next is in ${interval}s"
+    [ "${FLOW_WORKSPACE_UPDATE_ONCE:-}" = "1" ] && break
+    sleep "$interval"
+  done
+}
+
+# .replit onBoot: starts the workspace updater in the background, so the
+# workspace opens at once. Its log is .flow-workspace/updater.log.
+cmd_boot() {
+  if [ "${FLOW_WORKSPACE_UPDATER:-on}" = "off" ]; then log "FLOW_WORKSPACE_UPDATER=off: the workspace updater does not start"; return 0; fi
+  mkdir -p "$STATE"
+  local logfile="$STATE/updater.log"
+  # Keep the log short: start it again when it passes 1 MB.
+  if [ -f "$logfile" ] && [ "$(wc -c < "$logfile")" -gt 1048576 ]; then mv -f "$logfile" "$logfile.1"; fi
+  local detach=()
+  if command -v setsid >/dev/null 2>&1; then detach=(setsid); fi
+  nohup "${detach[@]}" bash "$ROOT/scripts/replit-deploy.sh" follow >>"$logfile" 2>&1 </dev/null &
+  log "the workspace updater started; its log is .flow-workspace/updater.log"
 }
 
 case "${1:-}" in
   build) cmd_build ;;
   start) cmd_start ;;
   update-workspace) cmd_update_workspace ;;
-  *) echo "usage: $0 build|start|update-workspace" >&2; exit 2 ;;
+  boot) cmd_boot ;;
+  follow) cmd_follow ;;
+  # The steps a fetched copy takes over (takes_over above).
+  finish-build) shift; cmd_finish_build "$@" ;;
+  migrate-workspace) cmd_migrate_workspace ;;
+  *) echo "usage: $0 build|start|update-workspace|boot|follow" >&2; exit 2 ;;
 esac

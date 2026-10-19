@@ -99,6 +99,13 @@
       "when": 1792414148360,
       "tag": "0013_line_mappings",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1792448941014,
+      "tag": "0014_price_list",
+      "breakpoints": true
     }
   ]
 }

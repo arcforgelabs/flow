@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { sql } from 'drizzle-orm';
+import { isCallsStopped } from '../call-guard.js';
 import { parseXeroDate } from './catalogue.js';
 import { withXeroLane } from './governor.js';
 
@@ -257,12 +258,20 @@ export async function mirrorResource(db, runtime, organisationId, resource, { ma
 }
 
 // Reads each resource in turn, one organisation at a time with any other Xero
-// work for it (runtime.serial).
+// work for it (runtime.serial). A resource Xero refused (the call guard
+// stopped it: the connection lacks its scope) is skipped as `refused`, so
+// the others still read.
 export async function mirrorXero(db, runtime, organisationId, { resources = MIRROR_RESOURCES, maxPages } = {}) {
   return runtime.serial(organisationId, async () => {
     const results = [];
     for (const resource of resources) {
-      const result = await mirrorResource(db, runtime, organisationId, resource, { maxPages });
+      let result;
+      try {
+        result = await mirrorResource(db, runtime, organisationId, resource, { maxPages });
+      } catch (error) {
+        if (!isCallsStopped(error) || error.reason !== 'resource_stopped') throw error;
+        result = { resource, pages: 0, read: 0, inserted: 0, changed: 0, unchanged: 0, stopped: 'refused' };
+      }
       results.push(result);
       if (result.stopped === 'budget') break;
     }

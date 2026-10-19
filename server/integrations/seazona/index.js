@@ -1,7 +1,8 @@
 import { createSeazonaClient } from './client.js';
-import { listClients, listWork, readBillableWork } from './feed.js';
+import { listClients, listProducts, listWork, readBillableWork } from './feed.js';
 import { historyJobIssues, historySummary, readHistoryWork } from './history/index.js';
 import { readSeazonaSyncHealth, runSeazonaSync } from './lanes.js';
+import { SEAZONA_CALL_GUARD } from './governor.js';
 import { createSeazonaRouter } from './routes.js';
 import { createSeazonaScheduler } from './scheduler.js';
 import { resetFailedLanes, resetStoppedLanes } from './store.js';
@@ -62,6 +63,9 @@ export function createSeazonaAdapter({ env = null, fetchImpl = null, now = Date.
     setup: SEAZONA_SETUP,
     // The history import's routes (routes.js), under /api/seazona.
     routes: ({ db, personAuth, log }) => createSeazonaRouter({ db: runtime?.db ?? db, personAuth, settings: current().settings, log }),
+    // Every Seazona call goes through this call guard, inside the rate
+    // governor (governor.js; docs/INTEGRATIONS.md, "Outbound calls").
+    callGuard: SEAZONA_CALL_GUARD,
 
     // `reconfigured` is true when a person saved the settings or turned
     // Seazona on (issue #101): that clears a halt after a refused API client,
@@ -140,6 +144,12 @@ export function createSeazonaAdapter({ env = null, fetchImpl = null, now = Date.
       // each with a link to the reconciliation. Reads Flow's copy only.
       async jobIssues({ refs = [] } = {}) {
         return historyJobIssues(current().db, refs);
+      },
+
+      // Seazona's products, for the price list (server/core/price-list.js).
+      // Reads Flow's copy only.
+      async listPriceItems() {
+        return listProducts(current().db);
       },
     },
   };

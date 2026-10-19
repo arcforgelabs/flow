@@ -23,6 +23,7 @@ export const CAPABILITIES = Object.freeze([
   'jobIssues', // open issues the integration holds for jobs, by job ref: a short phrase and the page where a person fixes it
   'listCustomers', // the system's customers, by id and name, for the identity map (Seazona: clients; Xero: contacts)
   'findInvoices', // sales invoices in the accounting system's copy, for the matcher; never a live call
+  'listPriceItems', // the system's own price list from its copy in Flow, for the price list's links and check; never a live call
   'health', // connection state for Settings
   'captureError', // an error Flow logged, sent to the installation's own error service (Sentry)
   'browserMonitoring', // the public settings a browser needs to report errors and problems to that service
@@ -73,7 +74,7 @@ export function defineAdapter(adapter) {
   if (!adapter || typeof adapter !== 'object') {
     throw new TypeError('An adapter must be an object');
   }
-  const { id, name, bundled = false, capabilities, schema, start, stop, routes, setup } = adapter;
+  const { id, name, bundled = false, capabilities, schema, start, stop, routes, setup, callGuard } = adapter;
   if (typeof id !== 'string' || !ID_PATTERN.test(id)) {
     throw new TypeError(`Adapter id must match ${ID_PATTERN}`);
   }
@@ -110,6 +111,16 @@ export function defineAdapter(adapter) {
       throw new TypeError(`Adapter ${id} setup field ${field?.name} needs an upper-case setting name and a label`);
     }
   }
+  if (callGuard !== undefined && callGuard !== null) {
+    const { integration, tables } = callGuard;
+    if (integration !== id || !tables?.state || !tables?.calls) {
+      throw new TypeError(`Adapter ${id} callGuard must name integration ${id} and its tables.state and tables.calls`);
+    }
+    const owned = new Set(schema?.tables ?? []);
+    if (!owned.has(tables.state) || !owned.has(tables.calls)) {
+      throw new TypeError(`Adapter ${id} callGuard tables must be among its own schema tables`);
+    }
+  }
   return Object.freeze({
     id,
     name,
@@ -122,6 +133,10 @@ export function defineAdapter(adapter) {
     // stop() ends that work (tests, shutdown).
     start: start ?? null,
     stop: stop ?? null,
+    // The call guard (./call-guard.js) every outbound call goes through: the
+    // integration id, its two tables, and its policy. An adapter that calls
+    // an outside system declares it (docs/INTEGRATIONS.md, "Outbound calls").
+    callGuard: callGuard ? Object.freeze({ ...callGuard }) : null,
     // Optional HTTP routes: routes({ db, personAuth, log, messagePage }) returns a router
     // mounted at /api/<id> (registry.routes).
     routes: routes ?? null,
