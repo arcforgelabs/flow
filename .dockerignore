@@ -13,3 +13,4 @@ config.local.json
 .env.*
 *.log
 .flow-deploy
+.flow-workspace

@@ -4,9 +4,13 @@
 # ever offers to add tables. The deployment builds and runs a release or
 # commit fetched from GitHub:
 # FLOW_DEPLOY_REF=stable, beta, a release tag or a commit; main when unset
-# (scripts/replit-deploy.sh). Keep every secret in Replit Secrets.
+# (scripts/replit-deploy.sh). onBoot starts the workspace updater, which does
+# what Run does by itself whenever FLOW_DEPLOY_REF names a new commit, so the
+# workspace's database never falls behind production. Keep every secret in
+# Replit Secrets.
 modules = ["nodejs-24", "bash"]
 run = ["bash", "scripts/replit-deploy.sh", "update-workspace"]
+onBoot = "bash scripts/replit-deploy.sh boot"
 
 [env]
 FLOW_RUNTIME = "replit"
