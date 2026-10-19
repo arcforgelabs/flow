@@ -123,7 +123,10 @@ Flow's copy in `xero_contacts` and `xero_items` in one transaction. Records
 gone from Xero leave the copy. Items with no code are left out, because an
 invoice line names an item by code. A failed read keeps the copy as it was.
 Each sync is recorded in `xero_sync_runs`; `GET /api/xero/status` shows the
-last one.
+last one. Outside replay mode the background worker also syncs each connected
+organisation once a day (`refreshStaleCatalogues` in `import.js`), so the
+pipeline can link customers (`docs/JOB_INVOICE_LINKS.md`). A failed read is
+tried again an hour later.
 
 `GET /api/xero/contacts?organisationId=…&q=…` and
 `GET /api/xero/items?organisationId=…` (anyone signed in) list the copy.

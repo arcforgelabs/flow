@@ -46,6 +46,8 @@ export function toLedgerJob(item) {
     practitioner: item.doctorName ?? null,
     // The Seazona API gives a shipped status but no shipped date.
     shippedOn: null,
+    // The day of the work, for matching it to its accounting invoice.
+    jobDate: item.invoice?.invoiceDate ?? item.dueOn ?? item.orderedOn ?? null,
     lines: ledgerLinesFor(item).lines,
     observedAt: item.syncedAt,
     actor: SEAZONA_SOURCE_SYSTEM,

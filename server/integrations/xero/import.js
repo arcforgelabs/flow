@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import { enqueueJob, runNextJob } from '../../core/queue.js';
+import { lastSync, syncCatalogue } from './catalogue.js';
 import { MIRROR_RESOURCES, mirrorXero } from './mirror.js';
 
 // The history import. When an owner connects Xero, Flow copies the
@@ -17,6 +18,9 @@ const LEASE_MS = 30 * 60 * 1000;
 // Xero's day limit resets on a rolling day; an hour is a cheap re-check.
 const BUDGET_WAIT_MS = 60 * 60 * 1000;
 const IDLE_MS = 30 * 1000;
+// Contacts and items are read again once a day, so the matcher can link each
+// customer (server/core/pipeline.js) without a person pressing Sync.
+const CATALOGUE_EVERY_MS = 24 * 60 * 60 * 1000;
 
 export async function queueHistoryImport(db, organisationId, { reason = 'connected', runAfter = null } = {}) {
   return enqueueJob(db, organisationId, { kind: IMPORT_KIND, dedupeKey: IMPORT_KEY, payload: { reason }, runAfter });
@@ -63,6 +67,23 @@ export async function runImportOnce(db, runtime, { workerId = `xero-import-${ran
   return ran;
 }
 
+// Reads the contacts and items of each connected organisation whose last good
+// read is older than a day. A failure is logged and tried again next hour.
+export async function refreshStaleCatalogues(db, runtime, { now = Date.now, log = console } = {}) {
+  const { rows } = await db.execute(sql`select organisation_id from xero_connections where mode = ${runtime.settings.mode}`);
+  for (const { organisation_id: organisationId } of rows) {
+    const last = await lastSync(db, organisationId);
+    const at = last?.finishedAt ?? last?.startedAt;
+    if (last && at && Number(now()) - new Date(at) < (last.status === 'succeeded' ? CATALOGUE_EVERY_MS : BUDGET_WAIT_MS)) continue;
+    try {
+      const run = await syncCatalogue(db, runtime, organisationId);
+      log.info?.(`[xero] contacts and items read for organisation ${organisationId}: ${run.contactCount} contacts, ${run.itemCount} items`);
+    } catch (error) {
+      log.error?.(`[xero] reading contacts and items for organisation ${organisationId} failed: ${error?.code ?? 'error'}`);
+    }
+  }
+}
+
 // The background worker: runs due slices one at a time, then waits. Started
 // by the adapter outside replay mode; stop() waits for a slice in flight.
 export function createImportWorker({ db, runtime, log = console, timers = { setTimeout, clearTimeout }, firstDelayMs = 10_000 }) {
@@ -83,6 +104,7 @@ export function createImportWorker({ db, runtime, log = console, timers = { setT
     let busy = false;
     running = (async () => {
       try {
+        await refreshStaleCatalogues(db, runtime, { log });
         const ran = await runImportOnce(db, runtime, { workerId });
         if (ran) {
           busy = true;
