@@ -8,8 +8,8 @@ import { createDraftInvoice } from './invoices.js';
 import { invoiceTotals, lineTotals } from './money.js';
 
 // The billing obligation ledger. One billable job in a work system is one
-// obligation. Its view (Ready, Pending, Held, Drafted, Invoiced, Paid, Review
-// required) comes only from the evidence stored on it, never from a fresh
+// obligation. Its view (In work, Ready, Pending, Held, Drafted, Invoiced,
+// Paid, Review required) comes only from the evidence stored on it, never from a fresh
 // guess, and each change of evidence is an event. To make a draft invoice is a
 // guarded transition that fails closed.
 
@@ -32,8 +32,11 @@ async function loadObligation(tx, organisationId, obligationId, { lock = false }
   return row;
 }
 
+// clock_timestamp, not now(): events written in one transaction keep their
+// order when they are read back by time.
 async function addEvent(tx, obligation, kind, actor, evidence = {}) {
   await tx.insert(obligationEvents).values({
+    createdAt: sql`clock_timestamp()`,
     organisationId: obligation.organisationId,
     obligationId: obligation.id,
     kind,
@@ -316,6 +319,20 @@ export async function recordWritebackResult(db, organisationId, writebackId, { o
   });
 }
 
+// Marks a job ready to invoice, or back in work. `actor` is a person or the
+// automation that decided. A job with an invoice stays as it is.
+export async function setReady(db, organisationId, obligationId, { ready = true, actor }) {
+  requireActor(actor);
+  return db.transaction(async (tx) => {
+    const obligation = await loadObligation(tx, organisationId, obligationId, { lock: true });
+    if (Boolean(obligation.readyAt) === ready) return obligation;
+    if (!ready && obligation.invoiceId) throw new FlowError('invalid', 'the job has an invoice already');
+    const row = await update(tx, obligation, ready ? { readyAt: sql`now()`, readyBy: actor } : { readyAt: null, readyBy: null });
+    await addEvent(tx, row, ready ? 'ready' : 'in_work', actor, {});
+    return row;
+  });
+}
+
 // Puts an obligation on hold, sends it to review, or releases it.
 export async function setHold(db, organisationId, obligationId, { holdState, reason = null, actor }) {
   requireActor(actor);
@@ -348,6 +365,9 @@ export function ledgerView(obligation, { now = new Date(), sourceMaxAgeMs = SOUR
   }
   if (o.invoiceId || o.accountingState === 'drafted') return { view: 'drafted', reasons: ['a draft invoice exists'] };
   const reasons = draftBlockers(o, { now, sourceMaxAgeMs });
+  // Flow's own stage: a job is in work until a person or an automation marks
+  // it ready to invoice (setReady).
+  if (!o.readyAt) return { view: 'in_work', reasons: ['the job is not marked ready to invoice', ...reasons] };
   return reasons.length ? { view: 'pending', reasons } : { view: 'ready', reasons: ['all checks pass'] };
 }
 
@@ -396,7 +416,10 @@ export async function draftInvoiceForObligation(db, organisationId, obligationId
         { priceItemId, description, quantity, unitAmountCents, taxCode }
       )),
     });
-    const row = await update(tx, obligation, { invoiceId: invoice.id, accountingCheckedAt: now });
+    // Drafting the invoice says the job is ready, whoever asked.
+    const row = await update(tx, obligation, {
+      invoiceId: invoice.id, accountingCheckedAt: now, ...(obligation.readyAt ? {} : { readyAt: now, readyBy: actor }),
+    });
     await addEvent(tx, row, 'drafted', actor, { invoiceId: invoice.id, totalCents: invoice.totalCents, live });
     return { obligation: row, invoice };
   });

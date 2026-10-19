@@ -1,7 +1,8 @@
 # Invoicing rules
 
-Flow drafts the invoice of each billable job by rules, and sends checked
-invoices to the accounting system (Xero) in one of two ways. This page
+Flow drafts the invoice of each billable job that is ready to invoice, by
+rules, and sends checked invoices to the accounting system (Xero) in one of
+two ways. This page
 describes the rules and the send modes. The code is in
 `server/core/invoicing-rules.js`. The settings are in Flow under Settings,
 Invoicing, and at `/api/invoicing/settings`.
@@ -10,7 +11,8 @@ Invoicing, and at `/api/invoicing/settings`.
 
 ```mermaid
 flowchart LR
-  job[Job in the ledger] --> rules{Every rule passes?}
+  work[Job in work] -- a person, or the work system's ready statuses --> job[Ready to invoice]
+  job --> rules{Every rule passes?}
   rules -- no --> wait[Waits: the job lists the rules]
   rules -- yes --> draft[Flow draft invoice]
   draft --> check[A person checks it in Flow]
@@ -23,15 +25,19 @@ flowchart LR
   xemail --> back
 ```
 
-1. **Draft.** The pipeline (`docs/JOB_INVOICE_LINKS.md`) runs every two
-   minutes. After the matcher, it drafts the invoice of each job that has no
-   invoice and passes every rule. The draft waits in Flow. Nothing goes to
-   Xero by itself.
-2. **Check.** A person checks the draft in Flow and issues it. Issuing gives
+1. **Ready.** A job is in work until it is ready to invoice. Ready is Flow's
+   own stage, not a work system status. A person marks a job ready on the
+   Jobs board, or an automation does it from the work system's status
+   (`docs/AUTOMATIONS.md`).
+2. **Draft.** The pipeline (`docs/JOB_INVOICE_LINKS.md`) runs every two
+   minutes. The automation "Draft when ready" drafts the invoice of each
+   ready job that has no invoice and passes every rule. The draft waits in
+   Flow. Nothing goes to Xero by itself.
+3. **Check.** A person checks the draft in Flow and issues it. Issuing gives
    it its number and keeps the document as sent.
-3. **Send.** A person sends the issued invoice to Xero. The customer's send
+4. **Send.** A person sends the issued invoice to Xero. The customer's send
    mode decides what Xero gets (below).
-4. **Read back.** The mirror (`docs/XERO.md`, "The mirror") copies Xero's
+5. **Read back.** The mirror (`docs/XERO.md`, "The mirror") copies Xero's
    status. The matcher links the Xero invoice to the job by the Flow invoice
    that made it (`flow_invoice`). Approval, payment, void and credit notes
    then show on the job.
@@ -45,7 +51,7 @@ than a day old. These rules come on top.
 
 | Rule | Setting | Default | The job waits when |
 | --- | --- | --- | --- |
-| Ready status | `readyStatuses` | shipped, delivered | Its work system status holds none of these, as whole words |
+| Ready | Flow's own stage | | It is not marked ready to invoice |
 | Billable customer | customer `billable` | billable | The customer is not billable |
 | Total | | | The total is zero or less |
 | Practitioner | `requirePractitioner` | off | It names no practitioner, and the customer has no default one |
@@ -59,7 +65,8 @@ on (`waitingFor`).
 A draft gets the invoice date when it is issued, and a due date
 `paymentTermsDays` after the day Flow drafted it (default 30).
 
-`autoDraft` turns the drafts on or off. It is on by default. With no
+The automation "Draft when ready" turns the drafts on or off. It is on by
+default. A customer's `autoDraft` turns them off for that customer. With no
 integrations on, the pipeline does not run, so nothing is drafted.
 
 ### The duplicate check

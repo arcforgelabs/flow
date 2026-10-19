@@ -5,37 +5,36 @@ import { createContact, createOrganisation, createPriceItem } from '../server/co
 import { getInvoice } from '../server/core/invoices.js';
 import {
   autoDraftJobs, effectiveSettings, INVOICING_DEFAULTS, readCustomerBilling, readInvoicingSettings, ruleBlockers,
-  saveCustomerBilling, saveInvoicingSettings, statusIsReady,
+  saveCustomerBilling, saveInvoicingSettings,
 } from '../server/core/invoicing-rules.js';
-import { observeJob, recordAccountingEvidence } from '../server/core/ledger.js';
+import { listAutomations, runAutomations, saveAutomation, statusMatches } from '../server/core/automations.js';
+import { explainObligation, observeJob, recordAccountingEvidence, setReady } from '../server/core/ledger.js';
 import { billingObligations } from '../server/db/schema.js';
 import { freshDatabase, skipWithoutDatabase } from './support/db.js';
 
-// The invoicing rules decide when Flow drafts a job's invoice by itself. The
-// accounting system is a fake that answers from a synthetic copy.
+// The invoicing rules decide when Flow drafts a ready job's invoice by itself,
+// and the automations mark jobs ready and run the drafts. The accounting
+// system is a fake that answers from a synthetic copy.
 
 const NOW = new Date('2026-10-19T02:00:00.000Z');
 const settings = { ...INVOICING_DEFAULTS, billable: true, defaultPractitioner: null };
 const job = (overrides = {}) => ({
-  sourceStatus: 'Shipped', totalCents: 22000, practitioner: null, jobDate: '2026-10-10',
+  readyAt: NOW, totalCents: 22000, practitioner: null, jobDate: '2026-10-10',
   lines: [{ itemCode: 'CROWN', lineAmountCents: 20000 }], ...overrides,
 });
 
 describe('the rules for one job', () => {
-  test('a ready status is one of the lab\'s statuses, as whole words in any case', () => {
-    assert.equal(statusIsReady('Shipped', ['shipped']), true);
-    assert.equal(statusIsReady('Order SHIPPED', ['shipped']), true);
-    assert.equal(statusIsReady('Complete', ['shipped', 'delivered']), false);
-    assert.equal(statusIsReady('Complete and await return', ['complete and await return']), true);
-    assert.equal(statusIsReady('Unshipped', ['shipped']), false);
+  test('a ready status is one of the chosen statuses, as whole words in any case', () => {
+    assert.equal(statusMatches('Shipped', ['shipped']), true);
+    assert.equal(statusMatches('Order SHIPPED', ['shipped']), true);
+    assert.equal(statusMatches('Complete', ['shipped', 'delivered']), false);
+    assert.equal(statusMatches('Complete and await return', ['complete and await return']), true);
+    assert.equal(statusMatches('Unshipped', ['shipped']), false);
   });
 
-  test('a shipped job with a total passes; each rule it fails gives a reason', () => {
+  test('a ready job with a total passes; each rule it fails gives a reason', () => {
     assert.deepEqual(ruleBlockers(job(), settings, { now: NOW }), []);
-    assert.deepEqual(ruleBlockers(job({ sourceStatus: 'Complete' }), settings, { now: NOW }),
-      ['the job\'s status "Complete" is not one of shipped, delivered']);
-    assert.deepEqual(ruleBlockers(job({ sourceStatus: null }), settings, { now: NOW }),
-      ['the work system has not reported the job\'s status yet']);
+    assert.deepEqual(ruleBlockers(job({ readyAt: null }), settings, { now: NOW }), ['the job is not marked ready to invoice']);
     assert.deepEqual(ruleBlockers(job({ totalCents: 0 }), settings, { now: NOW }), ['the job\'s total is zero or less']);
     assert.deepEqual(ruleBlockers(job(), { ...settings, billable: false }, { now: NOW }), ['the customer is not billable']);
     assert.deepEqual(ruleBlockers(job({ jobDate: '2026-06-01' }), settings, { now: NOW }), ['the job is more than 90 days old']);
@@ -95,12 +94,14 @@ describe('drafts by rule', { skip: skipWithoutDatabase }, () => {
   });
   after(async () => handle?.close());
 
-  // A job the matcher found no invoice for, after the copy last changed.
-  async function cleared({ contact = practice, status = 'Shipped', invoiceRef = null } = {}) {
+  // A job the matcher found no invoice for, after the copy last changed. It is
+  // marked ready unless the test says not.
+  async function cleared({ contact = practice, status = 'Shipped', invoiceRef = null, ready = true } = {}) {
     const row = await observeJob(handle.db, lab.id, {
       sourceSystem: 'seazona', sourceJobRef: `job-${++counter}`, sourceInvoiceRef: invoiceRef, caseRef: `CASE-${counter}`,
       contactId: contact.id, sourceStatus: status, jobDate: '2026-10-15', lines: [{ itemCode: 'CROWN', description: 'Crown' }], observedAt: NOW,
     });
+    if (ready) await setReady(handle.db, lab.id, row.id, { actor: 'person:test' });
     await recordAccountingEvidence(handle.db, lab.id, row.id, { state: 'not_found', actor: 'test', checkedAt: NOW });
     return row;
   }
@@ -108,9 +109,9 @@ describe('drafts by rule', { skip: skipWithoutDatabase }, () => {
 
   test('settings start at the defaults, change with checks, and a customer can override them', async () => {
     assert.deepEqual(await readInvoicingSettings(handle.db, lab.id), INVOICING_DEFAULTS);
-    const saved = await saveInvoicingSettings(handle.db, lab.id, { paymentTermsDays: 14, readyStatuses: ['Shipped', ' delivered '] });
+    const saved = await saveInvoicingSettings(handle.db, lab.id, { paymentTermsDays: 14 });
     assert.equal(saved.paymentTermsDays, 14);
-    assert.deepEqual(saved.readyStatuses, ['shipped', 'delivered']);
+    await assert.rejects(saveInvoicingSettings(handle.db, lab.id, { readyStatuses: ['shipped'] }), /unknown setting/);
     await assert.rejects(saveInvoicingSettings(handle.db, lab.id, { sendMode: 'fax' }), /sendMode must be one of/);
     await assert.rejects(saveInvoicingSettings(handle.db, lab.id, { staleDays: 0 }), /staleDays/);
     await assert.rejects(saveInvoicingSettings(handle.db, lab.id, { colour: 'red' }), /unknown setting/);
@@ -120,13 +121,13 @@ describe('drafts by rule', { skip: skipWithoutDatabase }, () => {
     assert.equal(own.billable, false);
   });
 
-  test('a cleared, shipped job gets a draft in Flow with the customer\'s terms; the rest wait', async () => {
+  test('a cleared, ready job gets a draft in Flow with the customer\'s terms; the rest wait', async () => {
     copy = { state: { complete: true, fresh: true, changedAt: new Date(NOW.getTime() - 60_000) }, invoices: [] };
     const ready = await cleared();
-    const notShipped = await cleared({ status: 'Complete' });
+    const notShipped = await cleared({ ready: false });
     const notBillable = await cleared({ contact: quiet });
     const result = await autoDraftJobs(handle.db, lab.id, { accounting, now: NOW });
-    assert.deepEqual(result, { drafted: 1, waiting: 2, off: 0, refused: 0 });
+    assert.deepEqual(result, { drafted: 1, waiting: 1, off: 0, refused: 0 });
     const drafted = await reload(ready);
     const invoice = await getInvoice(handle.db, lab.id, drafted.invoiceId);
     assert.equal(invoice.status, 'draft');
@@ -139,16 +140,13 @@ describe('drafts by rule', { skip: skipWithoutDatabase }, () => {
     assert.equal((await autoDraftJobs(handle.db, lab.id, { accounting, now: NOW })).drafted, 0);
   });
 
-  test('a customer with drafts off, or an organisation with them off, gets none', async () => {
+  test('a customer with drafts off gets none', async () => {
     const other = await createContact(handle.db, lab.id, { kind: 'customer', name: 'Manual Clinic' });
     await saveCustomerBilling(handle.db, lab.id, other.id, { autoDraft: false });
     const row = await cleared({ contact: other });
     const result = await autoDraftJobs(handle.db, lab.id, { accounting, now: NOW });
     assert.equal(result.off, 1);
     assert.equal((await reload(row)).invoiceId, null);
-    await saveInvoicingSettings(handle.db, lab.id, { autoDraft: false });
-    assert.equal((await autoDraftJobs(handle.db, lab.id, { accounting, now: NOW })).skipped, 'automatic drafts are off');
-    await saveInvoicingSettings(handle.db, lab.id, { autoDraft: true });
   });
 
   test('a copy that is not fresh drafts nothing; a copy invoice with the job\'s number refuses the draft', async () => {
@@ -162,5 +160,44 @@ describe('drafts by rule', { skip: skipWithoutDatabase }, () => {
     const result = await autoDraftJobs(handle.db, lab.id, { accounting, now: NOW });
     assert.equal(result.refused, 1);
     assert.equal((await reload(row)).invoiceId, null);
+  });
+
+  test('the automations mark jobs ready from their status, then draft them; each is on or off', async () => {
+    copy = { state: { complete: true, fresh: true, changedAt: new Date(NOW.getTime() - 60_000) }, invoices: [] };
+    const list = await listAutomations(handle.db, lab.id);
+    assert.deepEqual(list.map((a) => [a.key, a.place, a.enabled]), [
+      ['mark_ready_from_work_status', 'seazona', true], ['draft_when_ready', 'invoicing', true]]);
+    await assert.rejects(saveAutomation(handle.db, lab.id, 'mark_ready_from_work_status', { config: { statuses: [] } }), /statuses/);
+    await assert.rejects(saveAutomation(handle.db, lab.id, 'mark_ready_from_work_status', { enabled: 'yes' }), /true or false/);
+    await assert.rejects(saveAutomation(handle.db, lab.id, 'nothing', { enabled: true }), { code: 'not_found' });
+
+    const shipped = await cleared({ ready: false });
+    const inLab = await cleared({ status: 'In production', ready: false });
+    const keptBack = await cleared({ ready: false });
+    // A person put this one back in work: the routine leaves it to people.
+    await setReady(handle.db, lab.id, keptBack.id, { actor: 'person:test' });
+    await setReady(handle.db, lab.id, keptBack.id, { ready: false, actor: 'person:test' });
+
+    await saveAutomation(handle.db, lab.id, 'draft_when_ready', { enabled: false });
+    const first = await runAutomations(handle.db, lab.id, { accounting, now: NOW });
+    // This job, and the shipped job an earlier test left in work.
+    assert.deepEqual(first, { mark_ready_from_work_status: { marked: 2 } });
+    const marked = await explainObligation(handle.db, lab.id, shipped.id);
+    assert.equal(marked.view, 'ready');
+    assert.equal(marked.events.find((e) => e.kind === 'ready').actor, 'automation:mark_ready_from_work_status');
+    assert.equal((await reload(inLab)).readyAt, null);
+    assert.equal((await reload(keptBack)).readyAt, null);
+
+    await saveAutomation(handle.db, lab.id, 'draft_when_ready', { enabled: true });
+    const second = await runAutomations(handle.db, lab.id, { accounting, now: NOW });
+    assert.ok(second.draft_when_ready.drafted >= 1);
+    assert.ok((await reload(shipped)).invoiceId);
+    assert.equal((await reload(keptBack)).invoiceId, null);
+
+    // Without an accounting copy the draft routine waits.
+    const saved = await saveAutomation(handle.db, lab.id, 'mark_ready_from_work_status', { config: { statuses: ['In production'] } });
+    assert.deepEqual(saved.config.statuses, ['in production']);
+    assert.deepEqual(await runAutomations(handle.db, lab.id, { now: NOW }), { mark_ready_from_work_status: { marked: 1 } });
+    assert.ok((await reload(inLab)).readyAt);
   });
 });

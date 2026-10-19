@@ -5,11 +5,13 @@ import {
 import { FlowError, notFound } from './errors.js';
 import { draftInvoiceForObligation } from './ledger.js';
 
-// Invoicing rules (docs/INVOICING_RULES.md). They decide when Flow drafts a
-// job's invoice by itself, and how a checked draft goes to the accounting
-// system. Each rule is a setting of the organisation; a customer can override
-// some of them. The rules come from the earlier lab app, where they were
-// fixed in its code.
+// Invoicing rules (docs/INVOICING_RULES.md). They are the checks a job that
+// is ready to invoice passes before Flow drafts its invoice, and how a checked
+// draft goes to the accounting system. Each rule is a setting of the
+// organisation; a customer can override some of them. The rules come from
+// the earlier lab app, where they were fixed in its code. When Flow drafts is
+// an automation (automations.js): Flow's own "ready to invoice" stage
+// triggers it, never another system's status.
 //
 // The ledger's own checks (ledger.js, draftBlockers) still guard every draft:
 // the job is not held, every line maps to a price item, it has a customer, the
@@ -20,9 +22,7 @@ export const ACTOR = 'system:rules';
 const DRAFT_BATCH = 200;
 
 export const INVOICING_DEFAULTS = Object.freeze({
-  autoDraft: true,
   sendMode: 'accounting_draft',
-  readyStatuses: ['shipped', 'delivered'],
   staleDays: 90,
   paymentTermsDays: 30,
   requirePractitioner: false,
@@ -64,24 +64,20 @@ function sendMode(value, name) {
 // The organisation's settings as stored, or the defaults.
 export async function readInvoicingSettings(db, organisationId) {
   const [row] = await db.select().from(invoicingSettings).where(eq(invoicingSettings.organisationId, organisationId));
-  return row ? pick(row, SETTING_KEYS) : { ...INVOICING_DEFAULTS, readyStatuses: [...INVOICING_DEFAULTS.readyStatuses] };
+  return row ? pick(row, SETTING_KEYS) : { ...INVOICING_DEFAULTS };
 }
 
 function readSettingChanges(changes) {
   if (!changes || typeof changes !== 'object' || Array.isArray(changes)) throw invalid('the settings must be an object');
   const out = {};
   for (const [key, value] of Object.entries(changes)) {
-    if (key === 'autoDraft' || key === 'requirePractitioner') out[key] = flag(value, key);
+    if (key === 'requirePractitioner') out[key] = flag(value, key);
     else if (key === 'sendMode') out[key] = sendMode(value, key);
     else if (key === 'staleDays') out[key] = wholeNumber(value, key, 1, 3650);
     else if (key === 'paymentTermsDays') out[key] = wholeNumber(value, key, 0, 365);
     else if (key === 'rushPercent') out[key] = wholeNumber(value, key, 0, 100);
     else if (key === 'rushItemCode') out[key] = shortText(value, key);
-    else if (key === 'readyStatuses') {
-      if (!Array.isArray(value) || !value.length || value.length > 20) throw invalid('readyStatuses must list 1 to 20 statuses');
-      out[key] = [...new Set(value.map((s) => shortText(s, 'a ready status')?.toLowerCase()).filter(Boolean))];
-      if (!out[key].length) throw invalid('readyStatuses must list at least one status');
-    } else throw invalid(`unknown setting: ${key}`);
+    else throw invalid(`unknown setting: ${key}`);
   }
   return out;
 }
@@ -140,13 +136,14 @@ export async function customerBillingByContact(db, organisationId, contactIds) {
 }
 
 // The settings that apply to one customer: its own, else the organisation's.
+// `autoDraft` is the customer's own switch for the draft automation.
 export function effectiveSettings(settings, customer = CUSTOMER_DEFAULTS) {
   const own = { ...CUSTOMER_DEFAULTS, ...customer };
   return {
     ...settings,
     billable: own.billable,
     defaultPractitioner: own.defaultPractitioner,
-    autoDraft: own.autoDraft ?? settings.autoDraft,
+    autoDraft: own.autoDraft ?? true,
     sendMode: own.sendMode ?? settings.sendMode,
     paymentTermsDays: own.paymentTermsDays ?? settings.paymentTermsDays,
   };
@@ -157,18 +154,6 @@ export async function sendModeFor(db, organisationId, contactId) {
   const settings = await readInvoicingSettings(db, organisationId);
   const customers = await customerBillingByContact(db, organisationId, [contactId]);
   return effectiveSettings(settings, customers.get(contactId)).sendMode;
-}
-
-const words = (value) => String(value ?? '').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
-
-// A status is ready when it holds one of the ready statuses as whole words,
-// in any case: "Shipped" and "Order shipped" match "shipped".
-export function statusIsReady(status, readyStatuses) {
-  const have = words(status).join(' ');
-  return readyStatuses.some((ready) => {
-    const want = words(ready).join(' ');
-    return want && ` ${have} `.includes(` ${want} `);
-  });
 }
 
 // The rush line must be the set share of the other lines, to the cent.
@@ -190,11 +175,8 @@ function rushProblem(lines, { rushItemCode, rushPercent }) {
 export function ruleBlockers(obligation, effective, { now = new Date() } = {}) {
   const o = obligation;
   const reasons = [];
+  if (!o.readyAt) reasons.push('the job is not marked ready to invoice');
   if (!effective.billable) reasons.push('the customer is not billable');
-  if (!o.sourceStatus) reasons.push('the work system has not reported the job\'s status yet');
-  else if (!statusIsReady(o.sourceStatus, effective.readyStatuses)) {
-    reasons.push(`the job's status "${o.sourceStatus}" is not one of ${effective.readyStatuses.join(', ')}`);
-  }
   if (!(o.totalCents > 0)) reasons.push('the job\'s total is zero or less');
   if (effective.requirePractitioner && !o.practitioner && !effective.defaultPractitioner) {
     reasons.push('the job names no practitioner, and the customer has no default one');
@@ -236,21 +218,20 @@ export function copyCheck(accounting, organisationId) {
   };
 }
 
-// Drafts the invoice of each job that passes the ledger's checks and every
-// rule, for the customers whose drafting is on. It writes only Flow's own
-// records: the drafts wait in Flow for a person. Answers counts.
-export async function autoDraftJobs(db, organisationId, { accounting, now = new Date(), limit = DRAFT_BATCH }) {
+// Drafts the invoice of each job that is ready to invoice and passes the
+// ledger's checks and every rule, except for customers whose drafting is off.
+// It writes only Flow's own records: the drafts wait in Flow for a person.
+// The draft automation (automations.js) runs it. Answers counts.
+export async function autoDraftJobs(db, organisationId, { accounting, now = new Date(), limit = DRAFT_BATCH, actor = ACTOR }) {
   const result = { drafted: 0, waiting: 0, off: 0, refused: 0 };
   const settings = await readInvoicingSettings(db, organisationId);
-  const anyOn = settings.autoDraft || (await db.select({ id: customerBillingSettings.contactId }).from(customerBillingSettings)
-    .where(and(eq(customerBillingSettings.organisationId, organisationId), eq(customerBillingSettings.autoDraft, true))).limit(1)).length;
-  if (!anyOn) return { ...result, skipped: 'automatic drafts are off' };
   const mirror = await accounting.capabilities.findInvoices({ organisationId });
   if (!mirror.complete || !mirror.fresh) return { ...result, skipped: 'the accounting copy is not complete or not fresh' };
 
   const candidates = await db.select().from(billingObligations).where(and(
     eq(billingObligations.organisationId, organisationId),
     isNull(billingObligations.invoiceId),
+    sql`${billingObligations.readyAt} is not null`,
     eq(billingObligations.holdState, 'none'),
     eq(billingObligations.accountingState, 'not_found'),
     eq(billingObligations.mappingComplete, true),
@@ -274,7 +255,7 @@ export async function autoDraftJobs(db, organisationId, { accounting, now = new 
     try {
       await draftInvoiceForObligation(db, organisationId, obligation.id, {
         liveCheck,
-        actor: ACTOR,
+        actor,
         now,
         dueDate: addDays(invoiceDate, effective.paymentTermsDays),
       });

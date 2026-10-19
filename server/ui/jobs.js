@@ -8,6 +8,7 @@ import { formatCents } from '/assets/ui/invoicing.js';
 
 // Board columns, left to right. Held jobs sit with the jobs that need review.
 const STAGES = [
+  { id: 'work', label: 'In work', views: ['in_work'], tone: 'mute' },
   { id: 'review', label: 'Needs review', views: ['review_required', 'held'], tone: 'warn' },
   { id: 'pending', label: 'Checking', views: ['pending'], tone: 'mute' },
   { id: 'ready', label: 'Ready to bill', views: ['ready'], tone: 'info' },
@@ -78,6 +79,24 @@ export async function renderJobs(main, ui) {
     if (job.invoiceId) {
       const href = `/invoices/${job.invoiceId}`;
       return h('a', { class: 'fx-btn fx-btn--ghost fx-btn--sm', href, onclick: ui.go }, job.invoiceNumber ?? 'Open draft');
+    }
+    // Flow's own stage: a person marks a job ready to invoice, or an
+    // automation does (Settings, Automations).
+    if (job.view === 'in_work') {
+      return h('button', {
+        class: 'fx-btn fx-btn--sm', type: 'button',
+        onclick: async (event) => {
+          event.stopPropagation();
+          event.currentTarget.disabled = true;
+          try {
+            await flow(`/api/invoicing/jobs/${job.id}/ready`, { method: 'POST', body: JSON.stringify({ ready: true }) });
+            ui.toast('Marked ready to invoice.', 'success');
+          } catch (error) {
+            ui.toast(error.message, 'danger');
+          }
+          await load();
+        },
+      }, 'Mark ready');
     }
     if (job.view !== 'ready' || !state.canDraft) return null;
     return h('button', {

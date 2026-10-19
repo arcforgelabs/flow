@@ -69,9 +69,10 @@ describe('Seazona work in the billing ledger', { skip: skipWithoutDatabase }, ()
     assert.equal(obligation.sourceSeenAt.toISOString(), crown.syncedAt);
     assert.ok(!JSON.stringify(obligation).includes('Synthetic Patient'));
 
-    // No contact and no price list yet: the ledger keeps it pending, with reasons.
+    // Not marked ready, no contact and no price list yet: the ledger keeps it
+    // in work, with every reason.
     const { view, reasons } = ledgerView(obligation, { now: new Date(clock.now()) });
-    assert.equal(view, 'pending');
+    assert.equal(view, 'in_work');
     assert.ok(reasons.includes('the job has no customer contact'));
 
     // The same report again changes nothing.

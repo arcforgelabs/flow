@@ -227,7 +227,15 @@ describe('invoicing API', { skip: skipWithoutDatabase }, () => {
       sourceSystem: 'worksystem', sourceJobRef: 'JOB-1', caseRef: 'CASE-JOB-1', contactId: practice.id, practitioner: 'Dr Example', shippedOn: '2026-10-17', lines: [{ itemCode: 'CRN' }],
     });
     await recordAccountingEvidence(handle.db, lab.id, job.id, { state: 'not_found', actor: 'user:test' });
-    await observeJob(handle.db, lab.id, { sourceSystem: 'worksystem', sourceJobRef: 'JOB-2', contactId: practice.id, lines: [{ itemCode: 'CRN' }] });
+    const second = await observeJob(handle.db, lab.id, { sourceSystem: 'worksystem', sourceJobRef: 'JOB-2', contactId: practice.id, lines: [{ itemCode: 'CRN' }] });
+
+    // Both are in work until someone marks them ready to invoice.
+    assert.equal((await call('/jobs')).body.counts.in_work, 2);
+    assert.equal((await call(`/jobs/${job.id}/ready`, { method: 'POST', token: staffToken, body: { ready: 'yes' } })).status, 400);
+    for (const id of [job.id, second.id]) {
+      const marked = await call(`/jobs/${id}/ready`, { method: 'POST', token: staffToken, body: { ready: true } });
+      assert.equal(marked.status, 200, JSON.stringify(marked.body));
+    }
 
     const listed = await call('/jobs');
     assert.equal(listed.status, 200);
@@ -280,7 +288,6 @@ describe('invoicing API', { skip: skipWithoutDatabase }, () => {
     const read = await call(`/settings?organisationId=${lab.id}`, { token: staffToken });
     assert.equal(read.status, 200);
     assert.equal(read.body.settings.sendMode, 'accounting_draft');
-    assert.equal(read.body.settings.autoDraft, true);
     assert.equal((await call('/settings', { method: 'PUT', token: staffToken, body: { organisationId: lab.id, paymentTermsDays: 7 } })).status, 403);
     const changed = await call('/settings', { method: 'PUT', body: { organisationId: lab.id, sendMode: 'approve_and_email', paymentTermsDays: 7 } });
     assert.equal(changed.status, 200, JSON.stringify(changed.body));
@@ -293,6 +300,16 @@ describe('invoicing API', { skip: skipWithoutDatabase }, () => {
     assert.equal(own.body.effective.paymentTermsDays, 7);
     assert.equal((await call(`/contacts/${supplier.id}/billing`, { method: 'PUT', body: { organisationId: lab.id, billable: false } })).status, 400);
     assert.equal((await call(`/contacts/${MISSING}/billing?organisationId=${lab.id}`)).status, 404);
+
+    // Automations: everyone reads them, by the screen that shows them; an
+    // owner or admin changes them.
+    const seazona = await call(`/automations?organisationId=${lab.id}&place=seazona`, { token: staffToken });
+    assert.deepEqual(seazona.body.automations.map((a) => [a.key, a.config]), [['mark_ready_from_work_status', { statuses: ['shipped', 'delivered'] }]]);
+    assert.equal((await call('/automations/draft_when_ready', { method: 'PUT', token: staffToken, body: { organisationId: lab.id, enabled: false } })).status, 403);
+    const off = await call('/automations/draft_when_ready', { method: 'PUT', body: { organisationId: lab.id, enabled: false } });
+    assert.equal(off.status, 200, JSON.stringify(off.body));
+    assert.equal(off.body.automation.enabled, false);
+    assert.equal((await call('/automations/nothing', { method: 'PUT', body: { organisationId: lab.id, enabled: true } })).status, 404);
 
     // A job with no invoice lists the rules it waits on.
     const jobs = await call(`/jobs?organisationId=${lab.id}&view=pending`);

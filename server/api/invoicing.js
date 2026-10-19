@@ -4,11 +4,12 @@ import { FlowError } from '../core/errors.js';
 import {
   createDraftInvoice, getInvoice, issueInvoice, listInvoiceVersions, reviseInvoice, updateDraftInvoice, voidInvoice,
 } from '../core/invoices.js';
+import { listAutomations, saveAutomation } from '../core/automations.js';
 import {
   customerBillingByContact, effectiveSettings, INVOICING_DEFAULTS, readCustomerBilling, readInvoicingSettings, ruleBlockers,
   saveCustomerBilling, saveInvoicingSettings,
 } from '../core/invoicing-rules.js';
-import { draftInvoiceForObligation, listObligations } from '../core/ledger.js';
+import { draftInvoiceForObligation, listObligations, setReady } from '../core/ledger.js';
 import {
   billingObligations, contacts, invoices, INVOICE_STATUSES, organisations, priceItems, TAX_CODES,
 } from '../db/schema.js';
@@ -30,8 +31,11 @@ import {
 //                                     a job with no invoice lists the invoicing rules it waits on
 //   GET   /settings                   the invoicing rules (server/core/invoicing-rules.js)
 //   PUT   /settings                   owner or admin: change some of them
+//   GET   /automations?place=         Flow's routines, each on or off (server/core/automations.js)
+//   PUT   /automations/:key           owner or admin: { enabled, config }
 //   GET   /contacts/:id/billing       one customer's own invoicing settings
 //   PUT   /contacts/:id/billing       owner or admin: change them (null takes the organisation's)
+//   POST  /jobs/:id/ready             { ready }: mark a job ready to invoice, or back in work
 //   POST  /jobs/:id/draft             owner or admin: a job's draft invoice, after a live
 //                                     check that the accounting system holds none
 //
@@ -43,7 +47,7 @@ import {
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
-const VIEWS = ['ready', 'pending', 'drafted', 'invoiced', 'paid', 'held', 'review_required'];
+const VIEWS = ['in_work', 'ready', 'pending', 'drafted', 'invoiced', 'paid', 'held', 'review_required'];
 const MAX_LINES = 200;
 const MAX_TEXT = 500;
 // Each line's amount must fit the database's integer columns with room for
@@ -351,7 +355,7 @@ export function createInvoicingRouter({ db, personAuth, log = console, liveCheck
     const customers = await customerBillingByContact(db, organisationId, contactIds);
     // The invoicing rules a job with no invoice waits on, for every view a
     // draft can still come from.
-    const waitingFor = (o, v) => (o.invoiceId || !['ready', 'pending', 'held'].includes(v)
+    const waitingFor = (o, v) => (o.invoiceId || !['in_work', 'ready', 'pending', 'held'].includes(v)
       ? [] : ruleBlockers(o, effectiveSettings(settings, customers.get(o.contactId))));
     res.json({
       ok: true,
@@ -378,6 +382,30 @@ export function createInvoicingRouter({ db, personAuth, log = console, liveCheck
     const { invoice } = await draftInvoiceForObligation(db, organisationId, obligationId, { liveCheck, actor: `person:${req.person.id}` });
     log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} drafted invoice ${invoice.id} from job ${obligationId}`);
     res.status(201).json({ ok: true, invoice: await invoiceDetail(db, organisationId, invoice.id) });
+  }));
+
+  router.post('/jobs/:id/ready', ...signedIn, handle(log, async (req, res) => {
+    const obligationId = pathId(req.params.id, 'job');
+    const organisationId = await organisationOf(req);
+    const ready = req.body?.ready ?? true;
+    if (typeof ready !== 'boolean') throw invalid('ready must be true or false');
+    const job = await setReady(db, organisationId, obligationId, { ready, actor: `person:${req.person.id}` });
+    res.json({ ok: true, job: { id: job.id, readyAt: job.readyAt, readyBy: job.readyBy } });
+  }));
+
+  router.get('/automations', ...signedIn, handle(log, async (req, res) => {
+    const organisationId = await organisationOf(req);
+    const place = typeof req.query.place === 'string' ? req.query.place : null;
+    const list = await listAutomations(db, organisationId);
+    res.json({ ok: true, automations: place ? list.filter((a) => a.place === place) : list });
+  }));
+
+  router.put('/automations/:key', ...manager, handle(log, async (req, res) => {
+    const organisationId = await organisationOf(req);
+    const { organisationId: _named, ...changes } = req.body ?? {};
+    const automation = await saveAutomation(db, organisationId, String(req.params.key), changes, { personId: req.person.id });
+    log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} changed automation ${automation.key}`);
+    res.json({ ok: true, automation });
   }));
 
   router.get('/settings', ...signedIn, handle(log, async (req, res) => {

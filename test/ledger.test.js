@@ -12,6 +12,7 @@ import {
   recordPayment,
   recordWritebackResult,
   setHold,
+  setReady,
 } from '../server/core/ledger.js';
 import { freshDatabase, skipWithoutDatabase } from './support/db.js';
 
@@ -49,6 +50,7 @@ describe('billing obligation ledger', { skip: skipWithoutDatabase }, () => {
 
   const readyObligation = async (overrides) => {
     const obligation = await observeJob(db, lab.id, job(overrides));
+    await setReady(db, lab.id, obligation.id, { actor });
     return recordAccountingEvidence(db, lab.id, obligation.id, { state: 'not_found', actor });
   };
 
@@ -65,9 +67,14 @@ describe('billing obligation ledger', { skip: skipWithoutDatabase }, () => {
 
   test('each view is explained by the stored evidence', async () => {
     const unchecked = await observeJob(db, lab.id, job());
+    const inWork = await explainObligation(db, lab.id, unchecked.id);
+    assert.equal(inWork.view, 'in_work');
+    assert.equal(inWork.reasons[0], 'the job is not marked ready to invoice');
+    await setReady(db, lab.id, unchecked.id, { actor });
     assert.equal((await explainObligation(db, lab.id, unchecked.id)).view, 'pending');
 
     const unmapped = await observeJob(db, lab.id, job({ lines: [{ itemCode: 'NEW', description: 'New item', unitAmountCents: 500 }] }));
+    await setReady(db, lab.id, unmapped.id, { actor });
     await recordAccountingEvidence(db, lab.id, unmapped.id, { state: 'not_found', actor });
     const pending = await explainObligation(db, lab.id, unmapped.id);
     assert.equal(pending.view, 'pending');
@@ -78,7 +85,7 @@ describe('billing obligation ledger', { skip: skipWithoutDatabase }, () => {
     await setHold(db, lab.id, ready.id, { holdState: 'held', reason: 'waiting for the practice', actor });
     const held = await explainObligation(db, lab.id, ready.id);
     assert.deepEqual([held.view, held.reasons], ['held', ['waiting for the practice']]);
-    assert.deepEqual(held.events.map((e) => e.kind), ['observed', 'accounting_checked', 'held']);
+    assert.deepEqual(held.events.map((e) => e.kind), ['observed', 'ready', 'accounting_checked', 'held']);
   });
 
   test('a draft is made only when the evidence and a live check allow it, and shows at once', async () => {

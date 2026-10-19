@@ -1,10 +1,14 @@
-// Settings, Invoicing (/invoicing-settings): the rules that decide when Flow
-// drafts a job's invoice by itself, and how a checked invoice goes to the
+// Settings, Invoicing (/invoicing-settings): the checks a ready job passes
+// before Flow drafts its invoice, and how a checked invoice goes to the
 // accounting system (server/core/invoicing-rules.js, /api/invoicing/settings).
+// Draft when ready is an automation (server/core/automations.js); the
+// Seazona integration page holds the rule that marks a job ready.
 // One row for each setting: its name, one short line, and its control. A
 // change saves at once. Everyone can read them; an owner or admin changes
 // them. The full rules are in docs/INVOICING_RULES.md. app.js passes in its
 // shared pieces as `ui`.
+
+import { automationSection } from '/assets/ui/automations.js';
 
 const DOCS = 'https://github.com/arcforgelabs/flow/blob/main/docs/INVOICING_RULES.md';
 
@@ -16,7 +20,7 @@ const SEND_MODES = [
 export async function renderInvoicingSettings(main, ui) {
   const { h, flow, toast, notice, pageHeader, me } = ui;
   const host = h('div', { class: 'fx-card', style: { padding: '8px 20px 16px' } }, h('div', { class: 'fx-skeleton' }));
-  main.append(pageHeader('Invoicing', { subtitle: 'Drafts from jobs, and how they go to Xero.' }), host);
+  main.append(pageHeader('Invoicing', { subtitle: 'Checks before a draft, and how invoices go to Xero.' }), host);
   let body;
   try {
     body = await flow('/api/invoicing/settings');
@@ -74,15 +78,12 @@ export async function renderInvoicingSettings(main, ui) {
   host.replaceChildren(...[
     disabled ? notice('Only an owner or admin can change these.', 'info') : null,
     section('Drafts',
-      row('Draft invoices by rule', 'Draft each ready job. A person checks it.', toggle('autoDraft', 'Draft invoices by rule')),
-      row('Ready statuses', 'Job statuses that are ready to bill.', box('readyStatuses', 'Ready statuses', {
-        read: (v) => v.split(',').map((x) => x.trim()).filter(Boolean), show: (v) => v.join(', '),
-      })),
       row('Payment terms', 'Days from invoice to due date.', days('paymentTermsDays', 'Payment terms in days')),
       row('Old job limit', 'Older jobs wait for a person (days).', days('staleDays', 'Old job limit in days')),
       row('Practitioner required', 'The job or its customer names one.', toggle('requirePractitioner', 'Practitioner required')),
       row('Rush item code', 'Price item code of a rush charge.', box('rushItemCode', 'Rush item code', { read: (v) => v.trim() || null, placeholder: 'None' })),
       row('Rush share', 'Rush line as % of the other lines.', days('rushPercent', 'Rush share in percent'))),
+    automationSection(ui, 'invoicing', 'Automations'),
     section('Sending',
       row('Send to Xero as', 'Draft: approve in Xero. Approved: Xero emails it.', sendMode)),
     h('p', { class: 'fx-dim', style: { margin: '12px 0 0' } }, h('a', { href: DOCS, target: '_blank', rel: 'noopener' }, 'How the rules work')),

@@ -1,3 +1,13 @@
+CREATE TABLE "automations" (
+	"organisation_id" uuid NOT NULL,
+	"key" text NOT NULL,
+	"enabled" boolean NOT NULL,
+	"config" jsonb DEFAULT '{}'::jsonb NOT NULL,
+	"updated_by" uuid,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "automations_pk" PRIMARY KEY("organisation_id","key")
+);
+--> statement-breakpoint
 CREATE TABLE "customer_billing_settings" (
 	"organisation_id" uuid NOT NULL,
 	"contact_id" uuid NOT NULL,
@@ -15,9 +25,7 @@ CREATE TABLE "customer_billing_settings" (
 --> statement-breakpoint
 CREATE TABLE "invoicing_settings" (
 	"organisation_id" uuid PRIMARY KEY NOT NULL,
-	"auto_draft" boolean DEFAULT true NOT NULL,
 	"send_mode" text DEFAULT 'accounting_draft' NOT NULL,
-	"ready_statuses" text[] DEFAULT '{shipped,delivered}'::text[] NOT NULL,
 	"stale_days" integer DEFAULT 90 NOT NULL,
 	"payment_terms_days" integer DEFAULT 30 NOT NULL,
 	"require_practitioner" boolean DEFAULT false NOT NULL,
@@ -32,6 +40,10 @@ CREATE TABLE "invoicing_settings" (
 );
 --> statement-breakpoint
 ALTER TABLE "billing_obligations" ADD COLUMN "source_status" text;--> statement-breakpoint
+ALTER TABLE "billing_obligations" ADD COLUMN "ready_at" timestamp with time zone;--> statement-breakpoint
+ALTER TABLE "billing_obligations" ADD COLUMN "ready_by" text;--> statement-breakpoint
+ALTER TABLE "automations" ADD CONSTRAINT "automations_organisation_id_organisations_id_fk" FOREIGN KEY ("organisation_id") REFERENCES "public"."organisations"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "automations" ADD CONSTRAINT "automations_updated_by_people_id_fk" FOREIGN KEY ("updated_by") REFERENCES "public"."people"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "customer_billing_settings" ADD CONSTRAINT "customer_billing_settings_organisation_id_organisations_id_fk" FOREIGN KEY ("organisation_id") REFERENCES "public"."organisations"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "customer_billing_settings" ADD CONSTRAINT "customer_billing_settings_updated_by_people_id_fk" FOREIGN KEY ("updated_by") REFERENCES "public"."people"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "customer_billing_settings" ADD CONSTRAINT "customer_billing_settings_contact_same_org" FOREIGN KEY ("organisation_id","contact_id") REFERENCES "public"."contacts"("organisation_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint

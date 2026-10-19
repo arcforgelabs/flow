@@ -1,9 +1,95 @@
 {
-  "id": "f1447fb2-13ce-48e5-8760-08e76b0d0b74",
+  "id": "706f24fe-fe15-45d7-8400-a6a5f9c66b49",
   "prevId": "55d4d56b-b3b1-4588-8879-1bb4a2a6d4a7",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
+    "public.automations": {
+      "name": "automations",
+      "schema": "",
+      "columns": {
+        "organisation_id": {
+          "name": "organisation_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "key": {
+          "name": "key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "enabled": {
+          "name": "enabled",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "config": {
+          "name": "config",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::jsonb"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "automations_organisation_id_organisations_id_fk": {
+          "name": "automations_organisation_id_organisations_id_fk",
+          "tableFrom": "automations",
+          "tableTo": "organisations",
+          "columnsFrom": [
+            "organisation_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "automations_updated_by_people_id_fk": {
+          "name": "automations_updated_by_people_id_fk",
+          "tableFrom": "automations",
+          "tableTo": "people",
+          "columnsFrom": [
+            "updated_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "automations_pk": {
+          "name": "automations_pk",
+          "columns": [
+            "organisation_id",
+            "key"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.background_jobs": {
       "name": "background_jobs",
       "schema": "",
@@ -256,6 +342,18 @@
         },
         "source_status": {
           "name": "source_status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ready_at": {
+          "name": "ready_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ready_by": {
+          "name": "ready_by",
           "type": "text",
           "primaryKey": false,
           "notNull": false
@@ -1479,26 +1577,12 @@
           "primaryKey": true,
           "notNull": true
         },
-        "auto_draft": {
-          "name": "auto_draft",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": true
-        },
         "send_mode": {
           "name": "send_mode",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
           "default": "'accounting_draft'"
-        },
-        "ready_statuses": {
-          "name": "ready_statuses",
-          "type": "text[]",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'{shipped,delivered}'::text[]"
         },
         "stale_days": {
           "name": "stale_days",

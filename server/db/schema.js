@@ -212,6 +212,10 @@ export const billingObligations = pgTable('billing_obligations', {
   // The work system's status for the job, as it reported it (for example
   // "Shipped"). The draft rules read it.
   sourceStatus: text('source_status'),
+  // Flow's own stage: the job is ready to invoice, since when and by whom (a
+  // person, or an automation such as one that reads the work system status).
+  readyAt: timestamp('ready_at', { withTimezone: true }),
+  readyBy: text('ready_by'),
   // The lines as the work system reported them, normalised.
   lines: jsonb('lines').notNull().default(sql`'[]'::jsonb`),
   lineFingerprint: text('line_fingerprint').notNull(),
@@ -564,21 +568,18 @@ export const linkRejections = pgTable('link_rejections', {
 ]);
 
 // Invoicing rules (server/core/invoicing-rules.js). One row for each
-// organisation: when Flow drafts a job's invoice by itself, and how a checked
-// draft goes to the accounting system. No row means the defaults.
+// organisation: the checks a job passes before Flow drafts its invoice, and
+// how a checked draft goes to the accounting system. No row means the
+// defaults. When Flow drafts is an automation (`automations`).
 export const SEND_MODES = ['accounting_draft', 'approve_and_email'];
 
 export const invoicingSettings = pgTable('invoicing_settings', {
   organisationId: uuid('organisation_id').primaryKey().references(() => organisations.id),
-  // Flow drafts the invoice of each job that passes every rule.
-  autoDraft: boolean('auto_draft').notNull().default(true),
   // accounting_draft: a person checks the draft in Flow, Flow sends it as an
   // accounting draft, and a person approves and sends it there.
   // approve_and_email: a person approves the draft in Flow, Flow sends it
   // approved, and the accounting system emails it to the customer.
   sendMode: text('send_mode').notNull().default('accounting_draft'),
-  // The work system statuses that make a job ready to bill.
-  readyStatuses: text('ready_statuses').array().notNull().default(sql`'{shipped,delivered}'::text[]`),
   // A job whose date is more than this many days ago waits for a person.
   staleDays: integer('stale_days').notNull().default(90),
   // The days from the invoice date to its due date.
@@ -602,7 +603,8 @@ export const invoicingSettings = pgTable('invoicing_settings', {
 export const customerBillingSettings = pgTable('customer_billing_settings', {
   organisationId: organisationId().references(() => organisations.id),
   contactId: uuid('contact_id').notNull(),
-  // A customer that is not billable never gets an invoice from a rule.
+  // A customer that is not billable never gets an invoice from a rule, and
+  // `autoDraft` false keeps the draft automation off for this customer.
   billable: boolean('billable').notNull().default(true),
   defaultPractitioner: text('default_practitioner'),
   autoDraft: boolean('auto_draft'),
@@ -619,4 +621,18 @@ export const customerBillingSettings = pgTable('customer_billing_settings', {
   }),
   check('customer_billing_settings_send_mode_valid', sql`${t.sendMode} is null or ${t.sendMode} in ('accounting_draft', 'approve_and_email')`),
   check('customer_billing_settings_terms_valid', sql`${t.paymentTermsDays} is null or ${t.paymentTermsDays} between 0 and 365`),
+]);
+
+// Automations (server/core/automations.js): Flow's routines, each on or off,
+// with its own settings. The routines are defined in code; a row holds an
+// organisation's choice. No row means the routine's default.
+export const automations = pgTable('automations', {
+  organisationId: organisationId().references(() => organisations.id),
+  key: text('key').notNull(),
+  enabled: boolean('enabled').notNull(),
+  config: jsonb('config').notNull().default(sql`'{}'::jsonb`),
+  updatedBy: uuid('updated_by').references(() => people.id, { onDelete: 'set null' }),
+  updatedAt: updatedAt(),
+}, (t) => [
+  primaryKey({ name: 'automations_pk', columns: [t.organisationId, t.key] }),
 ]);

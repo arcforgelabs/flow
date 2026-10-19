@@ -28,8 +28,9 @@ flowchart LR
   m -- nothing, copy complete --> none[No invoice]
 ```
 
-Each run has three steps, and then drafts invoices by rule
-(`docs/INVOICING_RULES.md`).
+Each run has three steps, and then runs the automations that are on
+(`docs/AUTOMATIONS.md`): they mark jobs ready to invoice and draft them by
+rule (`docs/INVOICING_RULES.md`).
 
 1. **Customers.** A Seazona client and a Xero contact link to the Flow
    customer with the same name. Case, spacing, punctuation and a "Pty Ltd"
