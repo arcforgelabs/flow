@@ -203,6 +203,8 @@ Keep these in the installation's secret store, never in a repository.
 | `FLOW_OWNER_GOOGLE_DOMAINS` | configuration | Your Google Workspace domain, for example `example.com`. Comma-separated. Required on Replit's managed Clerk: unset, no owner can manage people. No default. |
 | `FLOW_OWNER_MFA_MAX_AGE` | configuration | How long a Clerk second factor counts for owner actions. Default `12h`. |
 | `FLOW_PUBLIC_ORIGIN` | configuration | The published app's `https://` origin: its `*.replit.app` address, or a custom domain if it has one. Clerk then accepts only sessions minted for it. In a Replit workspace its development address is accepted too, because the workspace and the published app share secrets. Elsewhere, leave it unset in development. |
+| `FLOW_IMPORT_EARLIER_SCHEMA` | configuration | The schema that holds the earlier codebase's tables. While the database has no organisation, Flow imports from it at start ("Move from the earlier codebase"). Unset: no import. |
+| `FLOW_IMPORT_ORGANISATION` | configuration | The lab's name for that import. Required with `FLOW_IMPORT_EARLIER_SCHEMA`. |
 
 Boot stops if a setting is malformed or a key is missing. Error messages name
 the variable, never its value.
@@ -329,3 +331,21 @@ sign in with Clerk ("Sign-in (Clerk)").
    organisation, writes in one transaction and checks the row counts.
 
 Keep both connection strings out of chat and shell history.
+
+### When the app has no shell (a published Replit app)
+
+The earlier tables and Flow's own tables can share one database. Flow then
+imports at its own start:
+
+1. Back up the database.
+2. Move every table of the earlier codebase out of `public` into its own
+   schema, in one transaction, without dropping anything:
+   `CREATE SCHEMA earlier;` then `ALTER TABLE public.<table> SET SCHEMA earlier;`
+   for each table.
+3. Set `FLOW_IMPORT_EARLIER_SCHEMA=earlier` and
+   `FLOW_IMPORT_ORGANISATION=<lab name>`, then start (publish) Flow.
+4. While the database has no organisation, the start reads that schema in a
+   read-only transaction and writes the records. A failed import stops the
+   start, so Flow never opens with half its records. The log shows the counts
+   (`[import]`). Once an organisation exists, the start does nothing; unset
+   both settings.
