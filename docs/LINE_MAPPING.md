@@ -32,7 +32,7 @@ map to a price item").
 A change to a mapping row, or to the routine, reads every job again from
 Flow's own copy of the work system. It makes no calls to the work system.
 
-## Price codes (Settings, Invoicing)
+## Price codes (Settings, Invoice rules)
 
 Each label that found no price item shows as one row, with its price and the
 number of lines it holds back. An owner or admin picks the price item. Flow
