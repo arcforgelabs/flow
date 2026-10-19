@@ -338,10 +338,32 @@ The earlier tables and Flow's own tables can share one database. Flow then
 imports at its own start:
 
 1. Back up the database.
-2. Move every table of the earlier codebase out of `public` into its own
-   schema, in one transaction, without dropping anything:
-   `CREATE SCHEMA earlier;` then `ALTER TABLE public.<table> SET SCHEMA earlier;`
-   for each table.
+2. Move every table and view of the earlier codebase out of `public` into its
+   own schema, in one transaction, without dropping anything. Also rename a
+   `drizzle` schema that the earlier codebase left, or Flow reads its
+   migration record as its own and skips its migrations:
+
+   ```sql
+   BEGIN;
+   CREATE SCHEMA earlier;
+   DO $$
+   DECLARE t record;
+   BEGIN
+     FOR t IN SELECT tablename FROM pg_tables WHERE schemaname = 'public' LOOP
+       EXECUTE format('ALTER TABLE public.%I SET SCHEMA earlier', t.tablename);
+     END LOOP;
+     FOR t IN SELECT viewname FROM pg_views WHERE schemaname = 'public' LOOP
+       EXECUTE format('ALTER VIEW public.%I SET SCHEMA earlier', t.viewname);
+     END LOOP;
+     IF EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = 'drizzle') THEN
+       ALTER SCHEMA drizzle RENAME TO earlier_drizzle;
+     END IF;
+   END $$;
+   COMMIT;
+   ```
+
+   Sequences move with their tables. To undo before Flow starts, move the
+   tables back the same way and rename `earlier_drizzle` to `drizzle`.
 3. Set `FLOW_IMPORT_EARLIER_SCHEMA=earlier` and
    `FLOW_IMPORT_ORGANISATION=<lab name>`, then start (publish) Flow.
 4. While the database has no organisation, the start reads that schema in a
