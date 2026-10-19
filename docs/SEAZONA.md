@@ -352,11 +352,30 @@ practice, so map it with `columns`.
 `pullHistoryJobs(cursor)` gives the applied jobs as ledger jobs marked
 `historical`, oldest change first. A job the API copy also holds uses the
 same order id as `sourceJobRef`, so the two are one job; others use the case
-number, else `history:<job key>`. The core does not read it yet: the next
-step records history jobs in the ledger out of drafting, so the matcher
-links each one to its Xero invoice. `health()` shows `history`: jobs held,
+number, else `history:<job key>`. `health()` shows `history`: jobs held,
 how many the API copy also has, the first and last job date, and open
 batches.
+
+### History jobs in the ledger
+
+The pipeline reads `pullHistoryJobs` after the live feed
+(`server/core/pipeline.js`, `ingestHistory`; `server/core/history.js`):
+
+| Case | What happens |
+| --- | --- |
+| The ledger has no job with that order id | The job is made and held: `hold_state` `held`, reason `history_import`, actor `import:seazona_history`. A held job never drafts. |
+| The live feed made the job first | Nothing changes: not its lines, hold, ready mark or invoice. |
+| History made the job, then the live feed reads it | The live read updates its lines. The hold stays. |
+| A later import changes a job only history has reported | The job takes the new lines and stays held. |
+
+The matcher runs on held jobs too, so each history job gets its accounting
+state. `GET /api/seazona/history/ledger` lists the held history jobs by that
+state; `?state=needs_person` gives `not_found`, `ambiguous` and `conflict`.
+A matched job stays held: it is history and already invoiced. Only a
+person's release (`POST /api/seazona/history/ledger/:obligationId/release`)
+moves a job into drafting. The Jobs board and `GET /api/invoicing/jobs`
+leave held history jobs out; `/jobs?history=include` shows them, and its
+`counts.history` gives how many there are.
 
 ## Health
 

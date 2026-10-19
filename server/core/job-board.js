@@ -3,6 +3,7 @@ import { contacts, invoices, priceItems } from '../db/schema.js';
 import { listRules } from './invoice-rules.js';
 import { customerBillingByContact, effectiveSettings, readInvoicingSettings, ruleBlockers } from './invoicing-rules.js';
 import { listObligations } from './ledger.js';
+import { isHistoryHeld } from './history.js';
 import { invoiceViews } from './sending.js';
 
 // The Jobs board (/jobs, server/ui/jobs.js). Its columns are the work
@@ -68,7 +69,9 @@ const ledgerLines = (lines) => (lines ?? []).map((l) => ({
 // Answers { jobs, statuses }. `work` is the adapters that offer listWork;
 // `live` says an accounting system checks the ledger (ledgerView).
 export async function boardJobs(db, organisationId, { work = [], accounting = null, live = false, log = console } = {}) {
-  const listed = await listObligations(db, organisationId, { accounting: live });
+  // Held history jobs are past work, so the board leaves them out
+  // (core/history.js); the history import lists them by accounting state.
+  const listed = (await listObligations(db, organisationId, { accounting: live })).filter((entry) => !isHistoryHeld(entry.obligation));
   const obligations = await describeObligations(db, organisationId, listed, { accounting });
   const byJob = new Map(obligations.map((o) => [keyOf(o.sourceSystem, o.sourceJobRef), o]));
 

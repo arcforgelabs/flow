@@ -1,5 +1,7 @@
 import express from 'express';
 import { FlowError } from '../../core/errors.js';
+import { listHistoryJobs, releaseHistoryJob } from '../../core/history.js';
+import { soleOrganisation } from '../../core/pipeline.js';
 import {
   applyBatch,
   cancelBatch,
@@ -25,6 +27,10 @@ import {
 //   POST /history/batches/:id/decisions   owner or admin: { decisions: [{ jobKey, decision, clientId? }] }
 //   POST /history/batches/:id/apply       owner or admin: write the batch into Flow's history
 //   POST /history/batches/:id/cancel      owner or admin
+//   GET  /history/ledger?state=&limit=&offset=   any signed-in person: held
+//                                         history jobs by accounting state
+//                                         (state: one state, or needs_person)
+//   POST /history/ledger/:obligationId/release   owner or admin: the job may draft
 //
 // None of these call Seazona.
 
@@ -102,6 +108,23 @@ export function createSeazonaRouter({ db, personAuth, settings, log = console })
 
   router.post('/history/batches/:id/cancel', ...manager, handle(log, async (req, res) => {
     res.json({ ok: true, batch: await cancelBatch(db, req.params.id) });
+  }));
+
+  const organisation = async () => {
+    const id = await soleOrganisation(db);
+    if (!id) throw Object.assign(new FlowError('invalid', 'the installation needs exactly one organisation'), { status: 409 });
+    return id;
+  };
+
+  router.get('/history/ledger', ...signedIn, handle(log, async (req, res) => {
+    const { state = null, limit, offset } = req.query;
+    res.json({ ok: true, ...(await listHistoryJobs(db, await organisation(), { state: state || null, limit, offset })) });
+  }));
+
+  router.post('/history/ledger/:obligationId/release', ...manager, handle(log, async (req, res) => {
+    const row = await releaseHistoryJob(db, await organisation(), req.params.obligationId, { actor: actor(req) });
+    log.info?.(`[seazona] history import: job ${row.sourceJobRef} released by ${actor(req)}`);
+    res.json({ ok: true, job: { id: row.id, holdState: row.holdState } });
   }));
 
   return router;
