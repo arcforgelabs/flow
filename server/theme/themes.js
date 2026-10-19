@@ -66,10 +66,64 @@ const HARBOUR = {
   },
 };
 
-// Picker order: Harbour (Flow's own), then the design directions Field leads
-// with (Beacon, Tide, Claw, Knot, Dash), then the other OpenClaw families.
+// Meridian: a dental laboratory's own look. Deep navy ink and filled buttons,
+// a champagne highlight, warm stone pages and white cards. Plus Jakarta Sans
+// for reading, Playfair Display at regular weight for page titles, square
+// corners and widely tracked uppercase labels. Dark mode turns the navy into
+// the page and the champagne into the accent.
+const MERIDIAN_SHAPE = {
+  '--t-body': "'Plus Jakarta Sans Variable', 'Plus Jakarta Sans', system-ui, -apple-system, 'Segoe UI', sans-serif",
+  '--t-display': "'Playfair Display Variable', 'Playfair Display', Georgia, 'Times New Roman', serif",
+  '--t-data': "'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace",
+  '--t-radius': '0px',
+  '--t-radius-lg': '2px',
+  '--t-stroke': '1px',
+  '--t-label-size': '12px',
+  '--t-label-weight': '600',
+  '--t-label-spacing': '.16em',
+  '--t-label-case': 'uppercase',
+  '--t-display-weight': '400',
+};
+
+const MERIDIAN = {
+  label: 'Meridian',
+  description: 'Navy, champagne & stone',
+  source: 'flow',
+  light: {
+    '--t-bg': '#f6f3ef', '--t-s1': '#efe9e0', '--t-s2': '#e6ded1', '--t-paper': '#ffffff',
+    '--t-brd': '#e0dbd1', '--t-brd-hi': '#b8a685', '--t-stroke-color': '#d5cec2',
+    '--t-text': '#1d3444', '--t-strong': '#13242f', '--t-dim': '#4d6575', '--t-mute': '#526a7a',
+    '--t-accent': '#1d3444', '--t-accent-bg': '#faefdd', '--t-accent-brd': '#d4b07a',
+    '--t-brand': '#1d3444', '--t-brand-ink': '#f8dfb9',
+    '--t-primary': '#1d3444', '--t-on-primary': '#f8dfb9', '--t-ring': '#b08850',
+    '--t-warn': '#8a5a00', '--t-warn-bg': 'rgba(138, 90, 0, 0.08)', '--t-warn-brd': 'rgba(138, 90, 0, 0.32)',
+    '--t-danger': '#b42318', '--t-danger-bg': 'rgba(180, 35, 24, 0.07)', '--t-danger-brd': 'rgba(180, 35, 24, 0.40)',
+    '--t-success': '#22663f', '--t-success-bg': 'rgba(34, 102, 63, 0.08)',
+    ...MERIDIAN_SHAPE,
+    '--t-shadow': '0 1px 2px rgba(29, 52, 68, 0.06)',
+    'color-scheme': 'light',
+  },
+  dark: {
+    '--t-bg': '#14252f', '--t-s1': '#1d3444', '--t-s2': '#26404f', '--t-paper': '#192d3a',
+    '--t-brd': '#2c4555', '--t-brd-hi': '#56707f', '--t-stroke-color': '#334d5e',
+    '--t-text': '#ece5d8', '--t-strong': '#fbf4e8', '--t-dim': '#b9c3c9', '--t-mute': '#a3b2bb',
+    '--t-accent': '#f8dfb9', '--t-accent-bg': 'rgba(248, 223, 185, 0.12)', '--t-accent-brd': 'rgba(248, 223, 185, 0.45)',
+    '--t-brand': '#f8dfb9', '--t-brand-ink': '#1d3444',
+    '--t-primary': '#f8dfb9', '--t-on-primary': '#1d3444', '--t-ring': '#f8dfb9',
+    '--t-warn': '#e7b75c', '--t-warn-bg': 'rgba(231, 183, 92, 0.12)', '--t-warn-brd': 'rgba(231, 183, 92, 0.32)',
+    '--t-danger': '#f2877b', '--t-danger-bg': 'rgba(242, 135, 123, 0.12)', '--t-danger-brd': 'rgba(242, 135, 123, 0.45)',
+    '--t-success': '#86d3a1', '--t-success-bg': 'rgba(134, 211, 161, 0.12)',
+    ...MERIDIAN_SHAPE,
+    '--t-shadow': '0 1px 2px rgba(0, 0, 0, 0.30)',
+    'color-scheme': 'dark',
+  },
+};
+
+// Picker order: Flow's own (Harbour, Meridian), then the design directions
+// Field leads with (Beacon, Tide, Claw, Knot, Dash), then the other OpenClaw
+// families.
 const { beacon, tide, claw, knot, dash, ...otherOpenclaw } = OPENCLAW_FAMILIES;
-const FAMILIES = { harbour: HARBOUR, beacon, tide, claw, knot, dash, ...otherOpenclaw };
+const FAMILIES = { harbour: HARBOUR, meridian: MERIDIAN, beacon, tide, claw, knot, dash, ...otherOpenclaw };
 
 // --t-control: the edge of an input or an outlined button on --t-paper, the
 // text colour faded toward the paper only as far as it still reads at 3:1.

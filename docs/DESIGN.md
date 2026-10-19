@@ -18,6 +18,12 @@ Appearance is three choices, per browser, on the Appearance page
     Nunito Sans for reading, Playfair Display for page titles, soft corners,
     tracked uppercase labels. In dark mode the teal becomes the page and the
     mint the accent.
+  - **Meridian** (`meridian`): a dental laboratory's look. Deep navy for ink,
+    filled buttons and labels, a champagne highlight, warm stone pages and
+    white cards. Plus Jakarta Sans for reading, Playfair Display at regular
+    weight for page titles, square corners, widely tracked uppercase labels.
+    In dark mode the navy becomes the page and the champagne the accent. An
+    installation makes it the default with `FLOW_THEME=meridian`.
   - **Beacon, Tide, Claw, Knot, Dash**, then **Absolutely, Phosphor, CRT,
     Manuscript, Rosé, Miami**: ported from the
     [OpenClaw](https://github.com/openclaw/openclaw) Control UI themes (MIT
