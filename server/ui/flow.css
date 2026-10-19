@@ -302,12 +302,42 @@ a.fx-strong:hover { text-decoration: underline; }
 .fx-totals__grand { padding-top: 8px; border-top: 1px solid var(--fx-line); font-size: 17px; font-weight: 700; color: var(--t-strong) !important; }
 .fx-doc__meta { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin: 0; padding: 20px; border-bottom: 1px solid var(--fx-line-soft); }
 .fx-doc__meta dd { display: grid; margin: 4px 0 0; color: var(--t-strong); font-weight: 600; }
-@media (max-width: 960px) {
+@media (max-width: 1320px) {
   .fx-invoice__grid { grid-template-columns: minmax(0, 1fr); }
+  .fx-invoice__aside { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+}
+@media (max-width: 960px) {
   .fx-invoice__head, .fx-doc__meta { grid-template-columns: 1fr 1fr; }
   .fx-lines { overflow-x: auto; }
   .fx-lines__table { min-width: 680px; }
 }
+
+/* ── Jobs board ─────────────────────────────────────────────────────────── */
+.fx-main--wide { max-width: none; }
+.fx-main > * { min-width: 0; }
+.fx-toolbar--plain { border-bottom: 0; align-items: center; }
+.fx-toolbar--plain .fx-search { margin-bottom: 0; }
+.fx-empty .fx-btn { margin-top: 12px; }
+.fx-panel.fx-empty { display: grid; justify-items: center; }
+.fx-board { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(240px, 1fr); gap: 12px; overflow-x: auto; padding-bottom: 8px; align-items: start; }
+.fx-board__col { display: grid; gap: 8px; align-content: start; min-height: 240px; padding: 10px; border: 1px solid var(--fx-line); border-radius: var(--t-radius-lg); background: var(--t-s1); }
+.fx-board__head { display: flex; align-items: center; gap: 8px; padding: 2px 4px 4px; font-size: 14px; }
+.fx-board__dot { width: 8px; height: 8px; border-radius: 50%; background: var(--t-accent); flex: none; }
+.fx-board__dot[data-tone="warn"] { background: var(--t-warn); }
+.fx-board__dot[data-tone="success"] { background: var(--t-success); }
+.fx-board__dot[data-tone="mute"] { background: var(--t-dim); }
+.fx-board__count { padding: 0 7px; border-radius: 999px; background: var(--fx-hover); color: var(--t-dim); font-size: 12px; font-weight: 700; line-height: 20px; }
+.fx-board__sum { margin-left: auto; color: var(--t-dim); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.fx-board__cards { display: grid; gap: 8px; }
+.fx-board__none { padding: 12px 4px; color: var(--t-dim); font-size: 13px; }
+.fx-job { display: grid; gap: 4px; padding: 10px 12px; border: 1px solid var(--fx-line); border-radius: var(--t-radius); background: var(--t-paper); box-shadow: var(--t-shadow); font-size: 13.5px; }
+.fx-job--flag { border-left: 3px solid var(--t-warn); }
+.fx-job__top { display: flex; align-items: baseline; gap: 8px; }
+.fx-job__amount { margin-left: auto; color: var(--t-strong); font-weight: 600; font-family: var(--t-data, var(--t-body)); font-variant-numeric: tabular-nums; }
+.fx-job__client { color: var(--t-text); }
+.fx-job__meta { display: flex; flex-wrap: wrap; gap: 4px 10px; color: var(--t-dim); font-size: 12.5px; }
+.fx-job__why { color: var(--t-warn); font-size: 12.5px; }
+.fx-job .fx-btn { justify-self: start; margin-top: 4px; }
 
 /* ── Dialog ─────────────────────────────────────────────────────────────── */
 .fx-dialog {

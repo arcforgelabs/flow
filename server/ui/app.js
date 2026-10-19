@@ -10,6 +10,7 @@ import { getAppearance, onAppearanceChange, setAppearance, loadFonts } from '/as
 import { flowClerkAppearance } from '/assets/ui/clerk-appearance.js';
 import { ACCENT_PRESETS, normalizeAccent, THEME_FAMILIES, tokensFor } from '/assets/theme/themes.js';
 import { renderInvoice, renderInvoiceList } from '/assets/ui/invoicing.js';
+import { renderJobs } from '/assets/ui/jobs.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -110,7 +111,7 @@ async function flow(path, options = {}) {
     headers: { Authorization: `Bearer ${token}`, ...(options.body ? { 'Content-Type': 'application/json' } : {}) },
   });
   const body = await res.json().catch(() => ({ ok: false, error: `HTTP ${res.status}` }));
-  if (!res.ok) throw Object.assign(new Error(body.error || `HTTP ${res.status}`), { status: res.status, code: body.code });
+  if (!res.ok) throw Object.assign(new Error(body.error || `HTTP ${res.status}`), { status: res.status, code: body.code, details: body.details });
   return body;
 }
 
@@ -183,6 +184,7 @@ let me = null;
 
 // The sidebar lists the views in this order, under their group's heading.
 const VIEWS = {
+  jobs: { label: 'Jobs', icon: 'jobs', group: 'Work', render: (main) => renderJobs(main, ui()) },
   invoices: { label: 'Invoices', icon: 'invoices', group: 'Work', render: (main, id) => (id ? renderInvoice(main, ui(), id) : renderInvoiceList(main, ui())) },
   people: { label: 'People', icon: 'people', group: 'Settings', ownerOnly: true, render: renderPeople },
   integrations: { label: 'Integrations', icon: 'plug', group: 'Settings', ownerOnly: true, render: renderIntegrations },
@@ -210,7 +212,7 @@ function icon(name) {
 function currentView() {
   const [name, id = null] = location.pathname.replace(/^\/+|\/+$/g, '').split('/');
   if (VIEWS[name] && (!VIEWS[name].ownerOnly || me?.person.role === 'owner')) return [name, id];
-  return ['invoices', null];
+  return ['jobs', null];
 }
 
 async function route() {
@@ -223,6 +225,7 @@ async function route() {
     link.setAttribute('aria-current', link.dataset.nav === view ? 'page' : 'false');
   }
   main.replaceChildren();
+  main.className = 'fx-main';
   document.title = `${VIEWS[view].label} · Flow`;
   await VIEWS[view].render(main, id);
   main.focus({ preventScroll: true });
