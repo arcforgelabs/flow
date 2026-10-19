@@ -11,6 +11,9 @@ const gearIcon = {
   '&& > *': { visibility: 'hidden' },
 };
 
+// Matches the narrow-screen rule in flow.css, where the sidebar becomes a bar.
+const NARROW = '@media (max-width: 820px)';
+
 function token(name, fallback) {
   const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   return value || fallback;
@@ -42,6 +45,7 @@ export function flowClerkAppearance({ embedded = false, publicSignUp = false } =
   const inputEdge = { ...controlEdge, '&&[data-feedback="error"]': { boxShadow: edge(danger) } };
   const display = token('--t-display', 'ui-serif, Georgia, serif');
   const dim = token('--t-dim', '#5b6773');
+  const paper = token('--t-paper', '#ffffff');
   return {
     variables: {
       colorPrimary: token('--t-primary', '#1f6f8f'),
@@ -84,6 +88,23 @@ export function flowClerkAppearance({ embedded = false, publicSignUp = false } =
       badge: { '&&': { color: dim, background: `color-mix(in srgb, ${text} 5%, transparent)`, borderColor: line } },
       formButtonPrimary: { boxShadow: 'none', textTransform: 'none', fontWeight: 650 },
       socialButtonsBlockButton: controlEdge,
+      // The account button in the sidebar foot is a chip: photo or initial,
+      // then the name (Clerk shows the email when there is no name), clipped
+      // with an ellipsis to fit. The top bar on narrow screens has no room for
+      // the name, so there it is the photo or initial alone.
+      userButtonTrigger: {
+        '&&': {
+          width: '100%', minWidth: 0, justifyContent: 'flex-start', padding: '4px 10px 4px 4px', borderRadius: token('--t-radius-lg', '10px'), background: paper, boxShadow: `inset 0 0 0 1px ${line}`,
+          '&:hover': { background: `color-mix(in srgb, ${text} 6%, ${paper})` },
+          [NARROW]: { width: 'auto', padding: 0, borderRadius: '50%', background: 'transparent', boxShadow: 'none', '&:hover': { background: 'transparent' } },
+        },
+      },
+      userButtonBox: { flexDirection: 'row-reverse', justifyContent: 'flex-end', minWidth: 0, gap: '8px' },
+      userButtonOuterIdentifier: {
+        minWidth: 0, paddingInlineStart: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        color: token('--t-strong', text), fontSize: '14px', fontWeight: 600,
+        [NARROW]: { display: 'none' },
+      },
       userButtonPopoverCard: { border: `1px solid ${line}`, boxShadow: shadow },
       userButtonPopoverActionButtonIcon__manageAccount: gearIcon,
       footer: embedded ? { display: 'none' } : undefined,

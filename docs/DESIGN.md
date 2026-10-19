@@ -14,8 +14,8 @@ own. The browser keeps a copy (localStorage `flow_appearance`) so a page
 paints in it before Flow knows who is signed in. An account with no choice
 yet takes the browser's current one at its first sign-in.
 
-- **Mode**: Light, Dark or Auto (follow the device, the default). The top bar
-  and the sign-in screen have a quick light or dark switch.
+- **Mode**: Light, Dark or Auto (follow the device, the default), on the
+  Appearance page. The sign-in screen has a quick light or dark switch.
 - **Design system**: a theme family, each with a light and a dark palette and
   its own faces, corners and label style.
   - **Harbour** (`harbour`, the default): Flow's own. One deep teal for ink,
@@ -106,9 +106,13 @@ The page at `/sign-in`, `/people`, `/account` and `/appearance`
 - **Sign-in**: a brand panel (the primary colour in light mode, a raised
   surface in dark) beside Clerk's sign-in card. On a phone the panel is a
   band above the card.
-- **Top bar**: the Flow mark, the views the person may open (People for
-  owners, Account, Appearance), the light or dark switch and Clerk's account
-  button.
+- **Sidebar**: the Flow mark and the views the person may open (People and
+  Integrations for owners). At its foot: the account chip (Clerk's photo or
+  initial, then the name, or the email when there is no name, clipped to fit)
+  that opens the account menu (Manage account, Report a problem when Sentry
+  is on, Sign out), and Search (also Ctrl+K or ⌘K) for pages, invoices and
+  jobs. On narrow screens the sidebar is a bar across the top, and the chip is
+  the photo or initial alone.
 - **People** (owners): page header with one primary action, Invite someone
   (a dialog: email and role). A table of people with initials, the role as a
   select, access as a status pill (Active, Invited, Waiting for approval,
