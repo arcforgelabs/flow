@@ -357,4 +357,23 @@ describe('invoicing API', { skip: skipWithoutDatabase }, () => {
     assert.equal((await call(`/rules/${made.body.rule.id}?organisationId=${lab.id}`, { method: 'DELETE' })).status, 200);
     assert.ok((await call(`/rules?organisationId=${lab.id}`)).body.rules.every((r) => r.id !== made.body.rule.id));
   });
+  test('price codes: unmapped line labels list with counts; an owner or admin saves a mapping', async () => {
+    await observeJob(handle.db, lab.id, {
+      sourceSystem: 'worksystem', sourceJobRef: 'JOB-MAP', contactId: practice.id,
+      lines: [{ itemCode: '9001', label: 'night splint', description: 'Night Splint', unitAmountCents: 15000, taxCode: 'GST_FREE' }],
+    });
+    const labels = await call(`/line-labels?organisationId=${lab.id}`, { token: staffToken });
+    assert.equal(labels.status, 200, JSON.stringify(labels.body));
+    const label = labels.body.labels.find((l) => l.label === 'night splint');
+    assert.deepEqual([label.lines, label.unmapped, label.sample, label.unitAmountCents], [1, 1, 'Night Splint', 15000]);
+
+    const mapping = { organisationId: lab.id, kind: 'saved', label: 'night splint', unitAmountCents: 15000, itemCode: 'CRN' };
+    assert.equal((await call('/line-mappings', { method: 'POST', token: staffToken, body: mapping })).status, 403);
+    const saved = await call('/line-mappings', { method: 'POST', body: mapping });
+    assert.equal(saved.status, 201, JSON.stringify(saved.body));
+    assert.equal((await call('/line-mappings', { method: 'POST', body: mapping })).status, 409);
+    const listed = await call(`/line-mappings?organisationId=${lab.id}`, { token: staffToken });
+    assert.deepEqual(listed.body.mappings.map((m) => [m.kind, m.label, m.itemCode]), [['saved', 'night splint', 'CRN']]);
+    assert.equal((await call(`/line-mappings/${saved.body.mapping.id}?organisationId=${lab.id}`, { method: 'DELETE' })).status, 200);
+  });
 });

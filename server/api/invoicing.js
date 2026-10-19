@@ -569,7 +569,7 @@ export function createInvoicingRouter({ db, personAuth, log = console, liveCheck
     const organisationId = await organisationOf(req);
     const rows = (await db.execute(sql`
       select l->>'label' as label, count(*)::int as lines,
-        count(*) filter (where l->>'itemCode' is null and l->>'accountCode' is null)::int as unmapped,
+        count(*) filter (where l->>'priceItemId' is null and l->>'accountCode' is null)::int as unmapped,
         min(l->>'description') as sample, min((l->>'unitAmountCents')::int) as "unitAmountCents",
         min(l->>'mappedBy') as "mappedBy", min(l->>'itemCode') as "itemCode"
       from billing_obligations o, jsonb_array_elements(o.lines) l
