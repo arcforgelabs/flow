@@ -102,7 +102,16 @@ export function resolveSeazonaSettings(env = process.env) {
       // The history backfill (docs/SEAZONA.md, "History import"). It calls
       // Seazona only while a person has started one.
       history: { cadenceMs: ms('SEAZONA_HISTORY_CADENCE_MS', 2 * MINUTE, MINUTE, DAY_MS), freshnessMs: 30 * DAY_MS },
+      // Issue #126: the slow re-check sweep (sweep.js). A few calls a run,
+      // inside a small daily share.
+      sweep: { cadenceMs: ms('SEAZONA_SWEEP_CADENCE_MS', 15 * MINUTE, MINUTE, DAY_MS), freshnessMs: 2 * DAY_MS },
     },
+    // Issue #126: calls the sweep makes per run and per UTC day, at most. 0 a
+    // day turns the sweep off. Each kind of record (old orders, clients,
+    // invoices) is checked again at most once a cycle.
+    sweepCallsPerRun: clampInt(env.SEAZONA_SWEEP_CALLS_PER_RUN, 10, 1, 25),
+    sweepCallsPerDay: clampInt(env.SEAZONA_SWEEP_CALLS_PER_DAY, 100, 0, 1000),
+    sweepCycleMs: clampInt(env.SEAZONA_SWEEP_CYCLE_DAYS, 7, 1, 90) * DAY_MS,
     // Calls the history backfill makes per run, at most: a small share of
     // the rate limit, so the live lanes always have room.
     historyCallsPerRun: clampInt(env.SEAZONA_HISTORY_CALLS_PER_RUN, 10, 1, 25),
@@ -128,6 +137,9 @@ export function resolveSeazonaSettings(env = process.env) {
     // Issue #12: after this many failed reads in a row an order waits this long.
     orderQuarantineFailures: clampInt(env.SEAZONA_ORDER_QUARANTINE_FAILURES, 3, 1, 20),
     orderQuarantineMs: ms('SEAZONA_ORDER_QUARANTINE_MS', DAY_MS, 5 * MINUTE, 30 * DAY_MS),
+    // Issue #142: the invoice and client lanes read this many quarantined
+    // records again per run, once their wait has ended.
+    recordRereadsPerRun: clampInt(env.SEAZONA_RECORD_REREADS_PER_RUN, 5, 0, 50),
     // A failed lane waits 1 minute, doubling to at most 6 hours.
     retryBaseMs: MINUTE,
     retryMaxMs: 6 * 60 * MINUTE,

@@ -76,9 +76,11 @@ workspace live credentials.
 | `SEAZONA_LIST_CAP` | A list this long may be cut off, so its lane reads on (see Sync lanes). Also the order page size, at most 500. Default 50. |
 | `SEAZONA_LIST_PAGES_PER_RUN` | The most list calls one lane makes in a run; the next run goes on from where it stopped. Default 10. |
 | `SEAZONA_ORDER_QUARANTINE_FAILURES`, `SEAZONA_ORDER_QUARANTINE_MS` | Failed reads in a row before an order, an invoice or a client is quarantined, and for how long. Defaults 3 and 1 day. |
+| `SEAZONA_RECORD_REREADS_PER_RUN` | Quarantined invoices or clients whose wait has ended that the lane reads again by id in one run. Default 5. |
 | `SEAZONA_CIRCUIT_FAILURES`, `SEAZONA_CIRCUIT_WINDOW_MS` | Failed calls inside the window that open the circuit. Defaults 5 and 10 minutes. |
 | `SEAZONA_CIRCUIT_PAUSE_MS` | The first pause when the circuit opens. It doubles after each failed probe, to at most 6 hours. Default 5 minutes. |
 | `SEAZONA_DAILY_FAILURE_BUDGET` | Failed calls allowed in one UTC day. When they are spent, calls stop until the next day. Default 50. |
+| `SEAZONA_SWEEP_CALLS_PER_RUN`, `SEAZONA_SWEEP_CALLS_PER_DAY`, `SEAZONA_SWEEP_CYCLE_DAYS`, `SEAZONA_SWEEP_CADENCE_MS` | The sweep's calls per run and per UTC day, how often each kind of record is checked again, and how often the lane runs. Defaults 10, 100, 7 days and 15 minutes. 0 calls a day turns the sweep off. |
 | `SEAZONA_HISTORY_CALLS_PER_RUN`, `SEAZONA_HISTORY_CADENCE_MS`, `SEAZONA_HISTORY_PAGE_SIZE` | Calls the history backfill makes per run, how often it runs, and orders per list page. Defaults 10, 2 minutes and 500. It calls Seazona only while a person has started one. |
 
 The code holds no Seazona host or account. Every address and credential is
@@ -129,7 +131,7 @@ flowchart LR
 | 404 on one record | Marks the order deleted (issue #12). Not a failure. | |
 | 429 | Waits for `Retry-After`, as before. Counts as a failure. | |
 | 5xx, timeout, network | Retries, then the lane backs off. Counts as a failure. | |
-| The same record fails 3 times | Quarantines the order, invoice or client for a day. The lane skips it and its cursor moves on. | The quarantine ends. |
+| The same record fails 3 times | Quarantines the order, invoice or client for a day. The lane skips it and its cursor moves on. | The quarantine ends. An invoice or a client is then read again by id, even when no list names it (issue #142): a success clears it, a 404 lets it go, a failure waits again with no new report. |
 | 5 failures in 10 minutes | Opens the circuit. | After the pause, one probe. |
 | 50 failures in a UTC day | Stops calls. | The next UTC day. |
 
@@ -170,6 +172,7 @@ another.
 | `clients` | The whole list the first time, then changes since the cursor, then each changed client's detail | 30 minutes |
 | `products`, `users` | The whole list | Daily |
 | `history` | Past orders, one UTC day at a time, a few calls a run (History import, below) | Every 2 minutes, only while a backfill runs |
+| `sweep` | Whole lists again, slowly, for what the other lanes missed (Sweep, below) | 15 minutes, 10 calls a run, 100 a day |
 
 A list row whose list fields did not change costs no detail read.
 
@@ -195,6 +198,38 @@ whole, with no paging).
 A failed lane waits 1 minute, doubling to at most 6 hours, or as long as a 429
 asked. A lane that says it is running for more than 20 minutes is taken to
 have died, and another run may claim it.
+
+### Sweep (issue #126)
+
+The cursor lanes see only what their queries return. An edit to an order
+older than the recent-order window that has left the active rotation, a
+record deleted in Seazona, and a change behind a cursor that moved too far
+can pass them by. The `sweep` lane (`server/integrations/seazona/sweep.js`)
+reads whole lists again on a slow cycle and compares them with Flow's copy:
+
+| Kind | Reads | Finds |
+| --- | --- | --- |
+| Old orders | `GET orders/?ordered=<day>` and its pages, for each day before the recent-order window that Flow holds orders for, newest day first | A listed order whose list fields changed is read again. An order Flow holds for the day that the list leaves out is read again; a 404 marks it deleted in Seazona (Bad orders, below), so the billing feed withdraws it and its invoice goes to review. |
+| Clients | The whole list, read on from the last row while it is full | A client Flow holds that the list leaves out is read by its id. |
+| Invoices | Every change since a day before the oldest invoice Flow holds, read on the same way | An invoice Flow holds that the list leaves out is read by its id; the orders on it are read again. |
+
+- A client or invoice that answers 404 is marked `missing`. Its row is never
+  deleted. The mark clears when Seazona lists it again.
+- A change at or after where the owning lane reads next is left to that lane
+  and costs no call.
+- Each kind starts again at most once a cycle (7 days). The sweep makes at
+  most 10 calls a run and 100 a UTC day, through the same rate governor and
+  call guard as every lane, and keeps its place in the lane's cursor.
+- An order or record whose read fails is recorded as in any lane, and is not
+  read again in the same cycle.
+- What the sweep finds that the lanes missed (`changed`, `created`,
+  `deleted`, `missing`) is kept in `seazona_sweep_findings` and reported to
+  the error services once a run. A count above zero is a signal to fix a
+  lane.
+- The source high-water mark is the latest `lastModified` Flow holds for
+  invoices and for clients. `/health` shows it beside where the owning lane
+  reads next. When Seazona's time is ahead of Flow's clock by more than the
+  5-minute cursor overlap, the sweep reports it once.
 
 ### Bad orders (issue #12)
 
@@ -253,7 +288,10 @@ the feed again. A read that finds no change does too, at most once an hour,
 so the ledger's report of the order never gets older than a day while a
 lane still reads it (the ledger refuses a draft from a report over a day old).
 An order no lane reads again (shipped, and placed before the recent-order
-lookback) is not reported again. Call `registry.whenEnabled('seazona', …)` to reach it, so a
+lookback) is not reported again. Before Flow drafts or sends from such a job,
+it reads the order now (`readWorkItem`, `server/integrations/seazona/act.js`;
+`server/core/read-before-act.js`): one `GET orders/{id}` through the call
+guard, stored through the mirror, answered as the feed would answer it. Call `registry.whenEnabled('seazona', …)` to reach it, so a
 turned-off adapter answers as turned off (`docs/INTEGRATIONS.md`).
 
 ## Billing ledger
@@ -484,8 +522,16 @@ shows it under `integrations`:
   `processing`, `never_run`), whether it is fresh or `stale`, its last success and
   error, and the failing orders by id and status; `orders_active` also lists
   the quarantined orders, and `invoices` and `clients` show
-  `quarantinedRecords`;
-- `deletedOrders`: how many orders are marked deleted in Seazona.
+  `quarantinedRecords` and `rereadDue` (waits ended, re-read not yet made);
+- `deletedOrders`: how many orders are marked deleted in Seazona;
+- `readsBeforeAct`: today's reads before a draft or a send (`reads`,
+  `changed`, `withdrawn`, `unavailable`), counted in memory since the last
+  start, or null when there was none;
+- `sweep` (issue #126): its calls today against the daily share, when each
+  kind of record was last checked, what it found in the last 7 days by
+  record kind, the clients and invoices marked `missing`, and the source
+  high-water mark for invoices and clients (`sourceLastModified`,
+  `laneReadsFrom`, `gapMs`, `seazonaAhead`).
 
 `ok` is false while a lane is failed, held, stopped or stale, or a run is
 stuck. A lane is stale when it ran before and has not succeeded within its
@@ -542,11 +588,12 @@ installation-wide.
 | `seazona_reference` | Products and users |
 | `seazona_lane_state` | Each lane's cursor, next run, status and last failure |
 | `seazona_order_read_failures` | Failed reads per order, and quarantine |
-| `seazona_record_read_failures` | Failed detail reads per invoice or client, and quarantine (issue #101) |
+| `seazona_record_read_failures` | Failed detail reads per invoice or client, the id to read it again by, and quarantine (issues #101, #142) |
 | `seazona_history_batches` | Each uploaded CSV export: its columns, status and counts |
 | `seazona_history_rows` | Each row of an upload as Flow read it, and its problems |
 | `seazona_history_batch_jobs` | Each job of an upload: what reconciliation found and what a person decided |
 | `seazona_history_jobs` | Flow's own record of past work from applied uploads |
+| `seazona_sweep_findings` | What the sweep found that the lanes missed, per record and kind, and the `missing` marks (issue #126) |
 
 To change them, edit `server/integrations/seazona/schema.js` and run:
 

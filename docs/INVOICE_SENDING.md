@@ -28,6 +28,7 @@ Flow checks its own data first:
 | The draft has lines | The invoice has no lines. |
 | The total is above zero | The total is $0.00 or less. |
 | Every line has a price item | Line N has no price item. |
+| The job is not in review | The job needs a look before this invoice goes: (the review reason). |
 
 When an accounting system is on and connected, its own checks are added
 (`checkDrafts`). For Xero these come from Flow's copy of Xero, so they cost no
@@ -42,13 +43,22 @@ One press, on the Ready tab, by an owner or admin:
 
 1. Flow stops before it issues anything when the accounting system is on but
    not connected, or does not take writes (`XERO_ALLOW_LIVE_WRITES`).
-2. Each ready draft (marked by a person) is issued and gets its number. One press takes up to 100
+2. Read before act (issue #141): the job behind each ready draft whose work
+   system report is over two hours old is read again from the work system,
+   one call per job, at most 20 a press. A job that changed after its
+   draft, or that the work system deleted or no longer bills, goes to
+   review and its draft to Problem. A draft whose job could not be read
+   waits for the next press (`waiting` in the answer).
+   Then the accounting system reads its latest changes (issue #45, see
+   [XERO.md](XERO.md#read-before-draft-and-send)). When that read cannot
+   run, nothing is issued and every draft in the press waits.
+3. Each ready draft (marked by a person) is issued and gets its number. One press takes up to 100
    drafts; the rest wait for the next press.
-3. Each issued invoice is queued for the accounting system.
-4. The send worker sends the queue in the background, every 30 seconds, on the
+4. Each issued invoice is queued for the accounting system.
+5. The send worker sends the queue in the background, every 30 seconds, on the
    job queue. For Xero, each invoice goes as a Xero draft by default; the
    customer's send mode can make it an approved invoice that Xero emails.
-5. A sent invoice leaves the queue. A refused invoice moves to Problem.
+6. A sent invoice leaves the queue. A refused invoice moves to Problem.
    An invoice that waits for Xero's call limits stays queued.
 
 With no accounting system on, the button issues the ready drafts only.
@@ -57,7 +67,14 @@ One ready invoice has its own **Send to Xero** button (**Send to Xero and
 email** when the customer's send mode is approve and email). It does the same
 steps for that invoice only. A draft that is not ready has no send button:
 mark it ready first. With no accounting system on, the invoice page shows
-**Issue invoice** instead.
+**Issue invoice** instead. **Preview** sits just left of the send button.
+
+After a send, the next invoice of the list opens. The count in the bar holds
+(1 of 35, then 2 of 35): the sent invoice stays in the bar's list until the
+person goes back. Previous opens it again, issued, with a greyed **Sent to
+Xero** button: an invoice that is queued, sent, or found in Xero cannot be
+sent twice. Back reloads the list, where the sent invoice is under Issued.
+After the last invoice of the list, the list opens.
 
 ## Records
 

@@ -1,9 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
-import { invoiceLines, invoices } from '../db/schema.js';
+import { billingObligations, invoiceLines, invoices } from '../db/schema.js';
 import { FlowError } from './errors.js';
 import { issueInvoice } from './invoices.js';
 import { soleOrganisation } from './pipeline.js';
+import { needsRead, readAccountingFirst, readBeforeAct, READS_PER_PASS } from './read-before-act.js';
 import { deadHoldSince, deadSince, enqueueJob, runNextJob } from './queue.js';
 
 // Drafts, Problem, Ready and Send all ready (docs/INVOICE_SENDING.md).
@@ -59,6 +60,15 @@ async function checkDrafts(db, organisationId, drafts, accounting) {
   for (const draft of drafts) {
     const found = draftProblems(draft, linesOf.get(draft.id) ?? []);
     if (found.length) problems.set(draft.id, found);
+  }
+  // A draft whose job the ledger sent to review (the job changed after the
+  // draft was made, or the work system deleted it) waits for a person.
+  const reviewed = await db.select({ invoiceId: billingObligations.invoiceId, reason: billingObligations.holdReason })
+    .from(billingObligations)
+    .where(and(eq(billingObligations.organisationId, organisationId), inArray(billingObligations.invoiceId, ids), eq(billingObligations.holdState, 'review')));
+  for (const { invoiceId, reason } of reviewed) {
+    const found = problem('job_review', `The job needs a look before this invoice goes: ${reason ?? 'it was sent to review'}.`);
+    problems.set(invoiceId, [...(problems.get(invoiceId) ?? []), found]);
   }
   if (accounting) {
     const outside = await accounting.capabilities.checkDrafts({ organisationId, invoiceIds: ids });
@@ -146,18 +156,46 @@ async function assertCanSend(accounting, organisationId) {
   }
 }
 
+// Read before act (issue #141): the jobs behind these drafts whose work
+// system report is old are read again first. Answers the drafts that may go
+// now; a draft whose job went to review, or could not be read, waits.
+async function readJobsFirst(db, organisationId, invoiceIds, { work, now, personId }) {
+  if (!invoiceIds.length || typeof work?.capabilities?.readWorkItem !== 'function') return { go: invoiceIds, waiting: [] };
+  const jobs = await db.select().from(billingObligations)
+    .where(and(eq(billingObligations.organisationId, organisationId), inArray(billingObligations.invoiceId, invoiceIds)));
+  const old = jobs.filter((job) => needsRead(job, { work, now }));
+  const outcomes = await readBeforeAct(db, organisationId, old.slice(0, READS_PER_PASS), { work, now, actor: `person:${personId}` });
+  const held = new Set(old.slice(READS_PER_PASS).map((job) => job.invoiceId));
+  for (const { outcome, obligation } of outcomes.values()) {
+    if (outcome === 'waiting' || outcome === 'review') held.add(obligation.invoiceId);
+  }
+  return { go: invoiceIds.filter((id) => !held.has(id)), waiting: invoiceIds.filter((id) => held.has(id)) };
+}
+
 // Send all ready: issues each ready draft, then queues it for the accounting
 // system. With `invoiceIds`, only those drafts, and each must be ready (the
-// Send button on one invoice). Answers { issued, queued, remaining }.
-export async function sendAllReady(db, organisationId, { accounting = null, personId, issueDate, invoiceIds = null }) {
+// Send button on one invoice). `work` is the work integration, for the read
+// before act. Answers { issued, queued, remaining, waiting }.
+export async function sendAllReady(db, organisationId, { accounting = null, work = null, personId, issueDate, invoiceIds = null, now = new Date() }) {
   await assertCanSend(accounting, organisationId);
-  let { ready } = await invoiceViews(db, organisationId, { accounting });
+  // Issue #45: the accounting copy reads its latest changes first, so the
+  // draft checks below see an invoice someone made there meanwhile.
+  let views = await invoiceViews(db, organisationId, { accounting });
+  const accountingRead = views.ready.length ? await readAccountingFirst(db, organisationId, { accounting, now }) : { outcome: 'fresh' };
+  if (accountingRead.changed) views = await invoiceViews(db, organisationId, { accounting });
+  let { ready } = views;
   if (invoiceIds) {
     const wanted = new Set(invoiceIds);
     ready = ready.filter((id) => wanted.has(id));
     if (ready.length !== wanted.size) throw new FlowError('not_ready', 'Only a ready invoice can be sent. Mark it ready first.');
   }
-  const batch = ready.slice(0, SEND_BATCH);
+  const { go, waiting } = accountingRead.outcome === 'waiting'
+    ? { go: [], waiting: ready.slice(0, SEND_BATCH) }
+    : await readJobsFirst(db, organisationId, ready.slice(0, SEND_BATCH), { work, now, personId });
+  if (invoiceIds && waiting.length) {
+    throw new FlowError('not_ready', 'Flow could not confirm the job with the work system or the accounting system just now, or the job changed. Nothing was sent. Look at the invoice, then try again.');
+  }
+  const batch = go;
   let issued = 0;
   for (const invoiceId of batch) {
     // Queued first: the worker sends only issued invoices, so a stop between
@@ -173,7 +211,7 @@ export async function sendAllReady(db, organisationId, { accounting = null, pers
     }
     issued += 1;
   }
-  return { issued, queued: accounting ? issued : 0, remaining: ready.length - batch.length };
+  return { issued, queued: accounting ? issued : 0, remaining: Math.max(0, ready.length - SEND_BATCH), waiting: waiting.length };
 }
 
 // Send again: issued invoices that failed go back on the queue. With no ids,

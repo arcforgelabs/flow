@@ -262,6 +262,41 @@ export async function dueDailyChecks(db, runtime, { now = Date.now() } = {}) {
   return due;
 }
 
+// Read before act (issue #45, step 5): just before Flow drafts by rule or
+// sends a batch, Xero's latest changes reach the copy. The copy counts as
+// current when webhooks arrive and none waits, or when it read Xero's changes
+// in the last READ_FIRST_MS. Otherwise this reads the waiting records and the
+// invoice and credit note changes now: about two calls. Answers { state }:
+//   fresh        no call was needed
+//   read         the copy read Xero now; `changed` counts invoices that changed
+//   unavailable  the read could not run (`reason`); act on nothing
+export const READ_FIRST_MS = 10 * 60 * 1000;
+
+export async function readChangesFirst(db, runtime, organisationId, { now = Date.now } = {}) {
+  const { rows: [connection] } = await db.execute(sql`select tenant_id from xero_connections
+    where organisation_id = ${organisationId} and mode = ${runtime.settings.mode}`);
+  if (!connection) return { state: 'unavailable', reason: 'Xero is not connected' };
+  const { rows: [{ waiting }] } = await db.execute(sql`select count(*)::int as waiting from xero_webhook_events
+    where organisation_id = ${organisationId} and pending`);
+  if (!waiting && await webhooksActive(db, runtime, organisationId, { now: Number(now()) })) return { state: 'fresh' };
+  const { rows: [{ oldest }] } = await db.execute(sql`select min(last_read_at) as oldest from xero_mirror_cursors
+    where organisation_id = ${organisationId} and resource in ('invoices', 'credit_notes')`);
+  if (!waiting && oldest && Number(now()) - new Date(oldest).getTime() <= READ_FIRST_MS) return { state: 'fresh' };
+  try {
+    const inbox = await readInbox(db, runtime, organisationId, { now });
+    if (inbox.stopped) return { state: 'unavailable', reason: inbox.stopped === 'budget' ? 'the day\'s Xero calls are kept for people' : 'Xero calls are stopped' };
+    const reads = await mirrorXero(db, runtime, organisationId, { resources: ['invoices', 'credit_notes'], maxPages: 5 });
+    const short = reads.find((r) => !['done', 'refused'].includes(r.stopped));
+    if (short) return { state: 'unavailable', reason: short.stopped === 'budget' ? 'the day\'s Xero calls are kept for people' : 'Xero has more changes than one read takes' };
+    const invoices = reads.find((r) => r.resource === 'invoices');
+    const changed = inbox.invoices.inserted + inbox.invoices.changed + (invoices?.inserted ?? 0) + (invoices?.changed ?? 0);
+    if (changed && !inbox.sent) await checkSentInvoices(db, runtime, organisationId);
+    return { state: 'read', changed };
+  } catch (error) {
+    return { state: 'unavailable', reason: isCallsStopped(error) ? 'Xero calls are stopped' : `reading Xero failed (${error?.code ?? 'error'})` };
+  }
+}
+
 // After a failed read, an organisation waits 1 minute, then 2, 4 and up to an
 // hour, so a failing read is never tried every tick.
 export const RETRY_FIRST_MS = 60 * 1000;

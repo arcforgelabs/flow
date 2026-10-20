@@ -11,6 +11,7 @@ import { isMissingTable, migrateAdapterSchema } from './schema.js';
 
 export const CAPABILITIES = Object.freeze([
   'pullWorkItems', // billable work since a cursor (Seazona: completed cases)
+  'readWorkItem', // { state: read | withdrawn | unavailable }: one job read from the work system now, as pullWorkItems gives it (read before act, server/core/read-before-act.js)
   'pullHistoryJobs', // past work from a history import, as ledger jobs marked historical (Seazona: its API backfill)
   'pushInvoice', // send an issued invoice; the Flow record id is the idempotency key
   'pushInvoices', // send several issued invoices in one pass (Send all ready, server/core/sending.js)
@@ -26,6 +27,7 @@ export const CAPABILITIES = Object.freeze([
   'jobIssues', // open issues the integration holds for jobs, by job ref: a short phrase and the page where a person fixes it
   'listCustomers', // the system's customers, by id and name, for the identity map (Seazona: clients; Xero: contacts)
   'findInvoices', // sales invoices in the accounting system's copy, for the matcher; never a live call
+  'readChanges', // { state: fresh | read | unavailable }: the accounting system's latest changes into its copy now, just before Flow drafts or sends (read before act)
   'listPriceItems', // the system's own price list from its copy in Flow, for the price list's links and check; never a live call
   'health', // connection state for Settings
   'alerts', // what only a person can clear (a refused sign-in, stopped calls), for the Integrations page; reads Flow's data only

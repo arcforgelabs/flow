@@ -1,4 +1,5 @@
 import { guardAlerts } from '../call-guard.js';
+import { createActReader } from './act.js';
 import { createSeazonaClient } from './client.js';
 import { listClients, listProducts, listWork, readBillableWork } from './feed.js';
 import { historyJobIssues, historySummary, readHistoryWork } from './history/index.js';
@@ -8,6 +9,7 @@ import { SEAZONA_CALL_GUARD } from './governor.js';
 import { createSeazonaRouter } from './routes.js';
 import { orderPatient } from './patients.js';
 import { createSeazonaScheduler } from './scheduler.js';
+import { readSweepHealth } from './sweep.js';
 import { resetFailedLanes, resetStoppedLanes } from './store.js';
 import { describeSeazonaSettings, resolveSeazonaSettings } from './settings.js';
 import { seazonaSchema } from './tables.js';
@@ -64,6 +66,7 @@ const readNames = (lanes) => lanes.map((lane) => READ_NAMES[lane.lane] ?? lane.l
 
 export function createSeazonaAdapter({ env = null, fetchImpl = null, now = Date.now, timers } = {}) {
   let runtime = null; // { settings, db, client, scheduler }
+  const actReader = createActReader({ now });
 
   function current() {
     if (!runtime) throw new Error('The Seazona adapter has not started');
@@ -127,7 +130,10 @@ export function createSeazonaAdapter({ env = null, fetchImpl = null, now = Date.
           scheduler: schedulerStatus,
           governor: await client.governor.status(),
           ...sync,
+          // Issue #141: today's reads before a draft or a send.
+          readsBeforeAct: actReader.status(),
           history: await historySummary(db),
+          sweep: await readSweepHealth(db, settings, { now }),
         };
       },
 
@@ -169,6 +175,13 @@ export function createSeazonaAdapter({ env = null, fetchImpl = null, now = Date.
       // so invoice preparation can drop them (issue #12).
       async pullWorkItems(cursor = null, options = {}) {
         return readBillableWork(current().db, { cursor, ...options });
+      },
+
+      // Read before act (issue #141): reads one order from Seazona now, and
+      // answers it as the feed would (act.js). The only capability here that
+      // calls Seazona on a person's or an automation's behalf.
+      async readWorkItem({ sourceJobRef }) {
+        return actReader.read(current(), sourceJobRef);
       },
 
       // Past work from the history import (docs/SEAZONA.md, "History

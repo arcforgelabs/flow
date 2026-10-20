@@ -323,12 +323,12 @@ function navBar(ui, id) {
 }
 
 // After a send, the next invoice of the list opens; at its end, the list.
-function openNext(ui, id) {
-  const nav = readNav();
-  const ids = nav?.ids ?? [];
+// The sent invoice stays in the bar's list, so the count holds (2 of 35) and
+// Previous opens it again, now sent. Back reloads the list without it.
+export function openNext(ui, id) {
+  const ids = readNav()?.ids ?? [];
   const at = ids.indexOf(id);
-  const next = at >= 0 ? (ids[at + 1] ?? ids[at - 1]) : null;
-  if (at >= 0) saveNav({ ...nav, ids: ids.filter((other) => other !== id) });
+  const next = at >= 0 ? ids[at + 1] : null;
   if (next) ui.go(`/invoices/${next}`);
   else { sessionStorage.setItem(NAV_BACK, '1'); ui.go('/invoices'); }
 }
@@ -646,7 +646,7 @@ function draftView(invoice, ui, context, redraw) {
       h('div', { class: 'fx-ph__text' },
         h('h1', { class: 'fx-title' }, isNew ? 'New invoice' : ready ? 'Ready invoice' : 'Draft invoice'),
         h('p', { class: 'fx-ph__sub' }, draftNote(to, invoice, ready))),
-      h('div', { class: 'fx-ph__actions' }, saveButton, markReadyButton, sendButton ?? issueButton)),
+      h('div', { class: 'fx-ph__actions' }, saveButton, markReadyButton, isNew ? null : previewButton(ui, invoice.id, 'Shows the saved invoice.'), sendButton ?? issueButton)),
     problems,
     h('div', { class: 'fx-invoice__grid' },
       h('div', { class: 'fx-invoice__main' },
@@ -673,6 +673,39 @@ function draftView(invoice, ui, context, redraw) {
   });
 }
 
+// Preview: the invoice as a PDF in a new tab (GET /api/invoicing/invoices/:id/pdf).
+// The tab opens at once, because a browser blocks a tab opened after a wait,
+// and shows the PDF when it is ready. If Flow cannot make it, the tab closes
+// and a toast says why.
+function previewButton(ui, invoiceId, title = 'Shows the invoice as a PDF.') {
+  const { h, toast } = ui;
+  return h('button', {
+    class: 'fx-btn', type: 'button', title,
+    onclick: async () => {
+      const tab = window.open('', '_blank');
+      if (tab) {
+        tab.document.title = 'Preparing PDF';
+        tab.document.body.textContent = 'Preparing PDF…';
+      }
+      try {
+        const token = await window.Clerk.session?.getToken();
+        const res = await fetch(`/api/invoicing/invoices/${invoiceId}/pdf`, { headers: { Authorization: `Bearer ${token}` } });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body.error || `HTTP ${res.status}`);
+        }
+        const url = URL.createObjectURL(await res.blob());
+        if (tab) tab.location.href = url;
+        else window.location.assign(url);
+        setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      } catch (error) {
+        tab?.close();
+        toast(`The PDF could not be made. ${error.message}`, 'danger');
+      }
+    },
+  }, 'Preview');
+}
+
 // An issued or void invoice: the document as sent, and what can happen next.
 function issuedView(invoice, ui, context, redraw) {
   const { h, flow, toast } = ui;
@@ -692,10 +725,12 @@ function issuedView(invoice, ui, context, redraw) {
   const organisationId = context.organisations?.[0]?.id;
   const xeroHost = h('div');
   let xeroStatus = null;
+  const send = invoice.status === 'issued' && context.canIssue ? sendToXero(invoice, ui, context) : null;
   const loadXero = async () => {
     if (!context.xero) return;
     xeroStatus = (await xeroStatuses(ui, organisationId, [invoice.id])).get(invoice.id) ?? null;
     xeroHost.replaceChildren(xeroCard(invoice, ui, context, xeroStatus, loadXero) ?? '');
+    if (xeroStatus && xeroStatus.state !== 'not_sent') showSent(send);
   };
   loadXero();
   // Voiding in Flow never changes Xero: say so while Xero still holds it live.
@@ -711,7 +746,6 @@ function issuedView(invoice, ui, context, redraw) {
       onclick: () => act('void', `${invoice.number} is void.`, { title: `Void ${invoice.number}?`, body: voidBody(), confirm: 'Void', tone: 'danger' }),
     }, 'Void'),
     h('button', { class: 'fx-btn', type: 'button', onclick: () => act('revise', `${invoice.number} is a draft again.`) }, 'Revise'),
-    sendToXero(invoice, ui, context),
   ] : [];
   return [
     navBar(ui, invoice.id),
@@ -721,7 +755,7 @@ function issuedView(invoice, ui, context, redraw) {
           h('h1', { class: 'fx-title' }, invoice.number),
           h('span', { class: 'fx-status', 'data-tone': STATUS_TONE[invoice.status] }, STATUS_LABEL[invoice.status])),
         h('p', { class: 'fx-ph__sub' }, `${invoice.contact?.name ?? ''} · issued ${showDate(invoice.issueDate)}`)),
-      h('div', { class: 'fx-ph__actions' }, actions)),
+      h('div', { class: 'fx-ph__actions' }, actions, previewButton(ui, invoice.id), send)),
     h('div', { class: 'fx-invoice__grid' },
       h('div', { class: 'fx-invoice__main' },
         h('section', { class: 'fx-card fx-doc' },
@@ -797,6 +831,7 @@ function sendToXero(invoice, ui, context) {
     class: 'fx-btn fx-btn--primary', type: 'button',
     onclick: async () => {
       button.disabled = true;
+      let sent = false;
       try {
         const res = await flow('/api/xero/invoices/push', { method: 'POST', body: JSON.stringify({ organisationId, invoiceIds: [invoice.id] }) });
         const result = res.invoices?.[0];
@@ -806,18 +841,33 @@ function sendToXero(invoice, ui, context) {
         else if (['created', 'reconciled', 'existing'].includes(result?.outcome)) toast(`${invoice.number} is in Xero as a draft.`, 'success');
         else if (result?.outcome === 'already_in_xero') toast(`Xero already has ${invoice.number}.`, 'info');
         else toast(result?.error?.message ?? 'Xero did not take it.', 'danger');
+        sent = ['created', 'reconciled', 'existing', 'already_in_xero'].includes(result?.outcome);
       } catch (error) {
         toast(error.message, 'danger');
       } finally {
-        button.disabled = false;
+        if (sent) showSent(button);
+        else button.disabled = false;
       }
     },
   }, 'Send to Xero');
+  // Sent or on its way (Send, or Send all ready): it cannot be sent twice.
+  if (['queued', 'sent'].includes(invoice.sendState)) {
+    showSent(button);
+    return button;
+  }
   // The preview reads only Flow's copy of Xero: it costs no Xero calls.
   flow('/api/xero/invoices/preview', { method: 'POST', body: JSON.stringify({ organisationId, invoiceIds: [invoice.id] }) })
     .then((res) => {
-      if (res.invoices?.[0]?.sendMode === 'approve_and_email') button.textContent = 'Send to Xero and email';
+      if (res.invoices?.[0]?.sendMode === 'approve_and_email' && !button.disabled) button.textContent = 'Send to Xero and email';
     })
     .catch(() => {});
   return button;
+}
+
+// A sent invoice's Send button stays, greyed, and says it went.
+function showSent(button) {
+  if (!button) return;
+  button.disabled = true;
+  button.textContent = 'Sent to Xero';
+  button.title = 'Flow sent this invoice to Xero.';
 }
