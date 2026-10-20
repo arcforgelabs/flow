@@ -20,7 +20,7 @@ test("release tags are vYYYY.M.D or vYYYY.M.D-beta.N, without leading zeros", ()
   assert.deepEqual(parseTag("v2026.10.14-beta.2"), {
     tag: "v2026.10.14-beta.2", version: "2026.10.14-beta.2", base: "2026.10.14", channel: "beta", beta: 2, npmDistTag: "beta", prerelease: true,
   });
-  for (const bad of ["2026.10.14", "v2026.01.14", "v2026.10.04", "v2026.13.1", "v2026.10.32", "v2026.10.14-beta.0", "v2026.10.14-rc.1", "v2026.10.14-1", "v1999.1.1"]) {
+  for (const bad of ["2026.10.14", "v2026.01.14", "v2026.10.04", "v2026.13.1", "v2026.10.0", "v2026.10.14-beta.0", "v2026.10.14-rc.1", "v2026.10.14-1", "v1999.1.1"]) {
     assert.throws(() => parseTag(bad), /not a release tag/, bad);
   }
 });
@@ -29,6 +29,10 @@ test("calendar versions compare by date, not as text", () => {
   assert.ok(compareBase("2026.10.2", "2026.9.30") > 0);
   assert.ok(compareBase("2026.10.14", "2026.10.14") === 0);
   assert.ok(compareBase("2027.1.1", "2026.12.31") > 0);
+  // The last number is a count within the month, so it can pass 31.
+  assert.ok(compareBase("2026.10.32", "2026.10.31") > 0);
+  assert.ok(compareBase("2026.10.100", "2026.10.99") > 0);
+  assert.equal(planTag({ packageVersion: "2026.10.32", channel: "beta", tags: ["v2026.10.31"] }).tag, "v2026.10.32-beta.1");
 });
 
 test("a beta takes the next free beta number for package.json's version", () => {
