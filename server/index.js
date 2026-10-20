@@ -10,6 +10,7 @@ import {
   importEarlierAtStart, importEarlierLinksAtStart, importEarlierMappingsAtStart, resolveImportAtStart,
 } from './import/at-start.js';
 import { createMonitoredLog } from './core/monitoring.js';
+import { createTracing, traceQueries } from './core/tracing.js';
 import { createPipelineWorker } from './core/pipeline.js';
 import { createReconcileWorker } from './core/reconcile.js';
 import { createSendWorker } from './core/sending.js';
@@ -78,6 +79,10 @@ await importEarlierMappingsAtStart({ db: database.db, pool: database.pool, setti
 // own error service while one is on (docs/SENTRY.md).
 let integrations;
 const log = createMonitoredLog({ log: console, reporters: () => integrations?.with('captureError') ?? [] });
+// Performance traces, while a tracing service is on (docs/SENTRY.md, "Traces"):
+// each request, and each database query inside one.
+const tracing = createTracing({ tracers: () => integrations?.with('traceRequest') ?? [] });
+traceQueries(database.pool, tracing);
 try {
   const stored = await readStoredSettings(database.db);
   const { env: settingsEnv, unreadable } = settingsEnvironment({ env: process.env, stored, adapters: shippedAdapters, secrets });
@@ -147,7 +152,7 @@ const trustProxy = process.env.REPL_ID || process.env.REPLIT_DEPLOYMENT ? 1 : fa
 
 const updates = createUpdateChecker();
 
-createApp({ database, schemaJournals: expectedSchema({ adapters: shippedAdapters }).journals, auth, trustProxy, updates, integrations, secrets, defaultFamily, log }).listen(port, () => {
+createApp({ database, schemaJournals: expectedSchema({ adapters: shippedAdapters }).journals, auth, trustProxy, updates, integrations, secrets, defaultFamily, log, tracing }).listen(port, () => {
   console.log(`[flow] listening on ${port}; design system ${defaultFamily} (FLOW_THEME)`);
 });
 
