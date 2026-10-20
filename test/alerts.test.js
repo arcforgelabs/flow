@@ -26,7 +26,10 @@ test('a guard makes an alert only for a stop that a person must clear', () => {
   assert.match(halted[0].title, /^Books refused Flow\. Flow stopped all Books calls\. Check the connection, then connect again\.$/);
   const stopped = guardAlerts('Books', { stoppedResources: [{ resource: 'Payments', at: 't1' }] }, { fix: 'Save the settings.' });
   assert.deepEqual(stopped.map((a) => [a.id, a.members]), [['resources-stopped', ['Payments:t1']]]);
-  assert.match(stopped[0].title, /for Payments\. Flow stopped those calls\. Save the settings\.$/);
+  // One refused resource is a warning: the rest still works, and Flow tries
+  // the resource again by itself.
+  assert.equal(stopped[0].tone, 'warn');
+  assert.match(stopped[0].title, /^Books refused Flow for Payments\. Other Books calls still work\. Flow tries again by itself\./);
 });
 
 test('the Xero page says calls are stopped, and since when', () => {

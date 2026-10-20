@@ -1001,16 +1001,20 @@ function xeroConnection(organisations, canChange) {
       let hint;
       let control = null;
       let stopped = false;
+      let refused = false;
       try {
         const status = await flow(`/api/xero/status?organisationId=${organisation.id}`);
         if (status.connected && status.calls?.stopped) {
           // A refused connection stopped calls (the call guard): say so, and
           // make Connect again the main button, which starts them again.
           const at = status.calls.since ? ` at ${new Date(status.calls.since).toLocaleString('en-AU', { dateStyle: 'medium', timeStyle: 'short' })}` : '';
+          // One refused resource stops only that resource, and Flow tries it
+          // again by itself: a calm note, not a stop.
           hint = status.calls.all
             ? `Xero refused Flow${at}. Flow stopped all calls.`
-            : `Xero refused Flow for ${status.calls.resources.join(', ')}${at}. Flow stopped those calls.`;
-          stopped = true;
+            : `Connected. Xero refused Flow for ${status.calls.resources.join(', ')}${at}. Other calls still work. Flow tries again by itself.`;
+          stopped = status.calls.all;
+          refused = !status.calls.all;
         } else if (status.connected) {
           const mirror = await flow(`/api/xero/mirror?organisationId=${organisation.id}`).catch(() => null);
           hint = `Connected to ${status.connection?.tenantName ?? 'Xero'}.${mirror ? ` ${mirror.counts.invoices} invoices copied.` : ''}`;
@@ -1018,7 +1022,7 @@ function xeroConnection(organisations, canChange) {
           hint = 'Not connected.';
         }
         if (canChange) {
-          control = h('button', { class: `fx-btn fx-btn--sm${status.connected && !stopped ? '' : ' fx-btn--primary'}`, type: 'button', onclick: async () => {
+          control = h('button', { class: `fx-btn fx-btn--sm${status.connected && !stopped && !refused ? '' : ' fx-btn--primary'}`, type: 'button', onclick: async () => {
             try {
               const { authorizeUrl } = await flow('/api/xero/connect', { method: 'POST', body: JSON.stringify({ organisationId: organisation.id }) });
               location.assign(authorizeUrl);

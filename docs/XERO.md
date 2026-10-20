@@ -57,7 +57,7 @@ credentials. Tests use replay only and never call the real Xero API.
 | `XERO_TENANT_ID` / `XERO_TENANT_NAME` | configuration | The Xero organisation this installation may connect. `live` needs one of them. |
 | `XERO_ALLOW_LIVE_WRITES` | configuration | `on` lets `live` mode create draft invoices. Default off. |
 | `XERO_REDIRECT_URI` | configuration | The OAuth callback. Default: `FLOW_PUBLIC_ORIGIN` + `/api/xero/oauth/callback`. Register the same address on the Xero app. |
-| `XERO_SCOPE` | configuration | OAuth scopes. Default `offline_access accounting.contacts accounting.invoices accounting.settings.read`. |
+| `XERO_SCOPE` | configuration | OAuth scopes. Default `offline_access accounting.contacts accounting.invoices accounting.payments.read accounting.settings.read`. A connection made before a scope was added keeps its old scopes until a person connects again. |
 | `XERO_DAY_LIMIT` | configuration | The app's daily call limit per organisation until Xero reports its own: 1000 on the Starter plan (the default), 5000 on Core and above. |
 | `XERO_USAGE_WARNING_FRACTION` | configuration | Log a warning when this share of the day's calls is used. Default 0.7. |
 | `XERO_TRACKING_CATEGORY` / `XERO_TRACKING_OPTION` | configuration | A tracking category and option put on every invoice line. Set both or neither. |
@@ -494,7 +494,10 @@ Every call also goes through the call guard (`docs/INTEGRATIONS.md`,
   until an owner connects Xero again or saves its settings;
 - a 401 or 403 that a fresh token does not clear stops only that resource
   (for example `Payments` when the connection lacks its scope, #99). The
-  history import skips a stopped resource as `refused` and reads the rest;
+  history import skips a stopped resource as `refused` and reads the rest.
+  After 6 hours one probe call may go (then 12, then 24 hours); a good probe
+  starts the resource again. A connection made before `accounting.payments.read`
+  was in the default scope needs one Connect again to read payments;
 - 5 failed calls in 10 minutes open the circuit (5 minutes, doubling to 6
   hours), and 50 failed calls stop calls until the next UTC day;
 - a first 401 (an expired access token) is not counted;

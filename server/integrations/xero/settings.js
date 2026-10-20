@@ -27,7 +27,8 @@ export const XERO_ENDPOINTS = Object.freeze({
 });
 
 export const XERO_CALLBACK_PATH = '/api/xero/oauth/callback';
-export const DEFAULT_XERO_SCOPE = 'offline_access accounting.contacts accounting.invoices accounting.settings.read';
+// accounting.payments.read: Flow reads payments back (ledger.js, mirror.js).
+export const DEFAULT_XERO_SCOPE = 'offline_access accounting.contacts accounting.invoices accounting.payments.read accounting.settings.read';
 export const DEFAULT_XERO_DAY_LIMIT = 1000;
 export const DEFAULT_DUE_DAYS = 30;
 export const DEFAULT_MIRROR_PAGE_SIZE = 200;

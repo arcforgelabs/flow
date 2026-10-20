@@ -9,7 +9,10 @@ import { sql } from 'drizzle-orm';
 //   - a refused credential halts every call until a person acts (saves the
 //     settings or connects again, which calls resume());
 //   - a 401 or 403 on one resource, when the adapter's auth failures stop a
-//     resource only, stops that resource until a person acts;
+//     resource only, stops that resource; after `resourceRetryMs` one probe
+//     call may go, and a refused probe stops it again for twice as long, to
+//     at most `maxResourceRetryMs`. A good call, or a person connecting
+//     again, starts it again;
 //   - `circuitFailures` failed calls inside `circuitWindowMs` open the
 //     circuit: no call for `circuitPauseMs`, then a probe; a failed probe opens
 //     it again for twice as long, to at most `maxCircuitPauseMs`, and a
@@ -34,6 +37,8 @@ export const CALL_GUARD_POLICY = Object.freeze({
   // 'all': a 401 or 403 halts every call. 'resource': it stops only the
   // resource it came from; halt() still stops everything.
   authStops: 'all',
+  resourceRetryMs: 6 * 60 * 60_000,
+  maxResourceRetryMs: 24 * 60 * 60_000,
   telemetryRetentionMs: 35 * 24 * 60 * 60_000,
 });
 
@@ -68,12 +73,31 @@ export function circuitPauseMs(opens, policy = CALL_GUARD_POLICY) {
   return Math.min(policy.maxCircuitPauseMs, policy.circuitPauseMs * 2 ** Math.min(Math.max(0, opens), 10));
 }
 
+// The wait before the next probe of a stopped resource, after `probes`
+// refused probes.
+export function resourceRetryMs(probes, policy = CALL_GUARD_POLICY) {
+  return Math.min(policy.maxResourceRetryMs, policy.resourceRetryMs * 2 ** Math.min(Math.max(0, probes), 10));
+}
+
+// When a stopped resource may be probed again (ms). An entry written before
+// probes existed has no `retryAt`: it is due `resourceRetryMs` after `at`.
+export function resourceRetryAt(entry, policy = CALL_GUARD_POLICY) {
+  const due = entry?.retryAt ? new Date(entry.retryAt).getTime() : NaN;
+  if (Number.isFinite(due)) return due;
+  const at = entry?.at ? new Date(entry.at).getTime() : NaN;
+  return Number.isFinite(at) ? at + resourceRetryMs(0, policy) : Infinity;
+}
+
 // Why no call may go now, or null. `state` is the guard row
 // ({ haltedReason, circuitOpenUntil, stoppedResources }); `failedToday`
 // counts failed calls since the start of the UTC day.
 export function stoppedReason(state, { nowMs, failedToday, resource = null }, policy = CALL_GUARD_POLICY) {
   if (state?.haltedReason) return { reason: 'halted', retryAfterMs: null };
-  if (resource && state?.stoppedResources?.[resource]) return { reason: 'resource_stopped', retryAfterMs: null, resource };
+  const entry = resource ? state?.stoppedResources?.[resource] : null;
+  if (entry) {
+    const due = resourceRetryAt(entry, policy);
+    if (due > nowMs) return { reason: 'resource_stopped', retryAfterMs: due - nowMs, resource };
+  }
   const openUntil = state?.circuitOpenUntil ? new Date(state.circuitOpenUntil).getTime() : 0;
   if (openUntil > nowMs) return { reason: 'circuit_open', retryAfterMs: openUntil - nowMs };
   const dayStart = startOfUtcDay(nowMs);
@@ -95,7 +119,7 @@ export function circuitAfterFailure(state, { nowMs, recentFailures }, policy = C
 
 const STOP_TEXT = {
   halted: (name) => `${name} calls are stopped until a person checks the connection (it was refused)`,
-  resource_stopped: (name, resource) => `${name} calls to ${resource} are stopped until a person checks the connection (they were refused)`,
+  resource_stopped: (name, resource) => `${name} calls to ${resource} are stopped (they were refused); Flow tries again later by itself`,
   circuit_open: (name) => `${name} calls are paused after repeated failures`,
   budget_spent: (name) => `${name} calls are stopped for today: the day's failed calls are spent`,
 };
@@ -138,12 +162,14 @@ export function guardAlerts(name, status, { fix = 'Check the connection, then co
       members: [`halted:${status.haltedAt ?? ''}`],
     });
   }
+  // One refused resource is a warning, not a stop: every other call still
+  // goes, and Flow probes the resource again by itself.
   const resources = status?.stoppedResources ?? [];
   if (resources.length) {
     alerts.push({
       id: 'resources-stopped',
-      tone: 'danger',
-      title: `${name} refused Flow for ${resources.map((r) => r.resource).join(', ')}. Flow stopped those calls. ${fix}`,
+      tone: 'warn',
+      title: `${name} refused Flow for ${resources.map((r) => r.resource).join(', ')}. Other ${name} calls still work. Flow tries again by itself. To fix it now, connect again.`,
       members: resources.map((r) => `${r.resource}:${r.at ?? ''}`),
     });
   }
@@ -233,7 +259,8 @@ export function createCallGuard({
   }
 
   // Records how one call ended, and what that does to the guard. Answers
-  // what this call stopped ({ halted, resourceStopped, opened, budgetSpent }),
+  // what this call changed ({ halted, resourceStopped, resourceStillStopped,
+  // resourceResumed, opened, closed, budgetSpent }),
   // each of which was just reported once. `callId` names a call row the
   // adapter wrote when it admitted the call: that row is updated, not added.
   async function record(rawKey, { callId = null, resource = null, path = null, statusCode = null, failureKind = null, durationMs = null } = {}) {
@@ -256,22 +283,35 @@ export function createCallGuard({
       }
       const state = await readState(tx, key);
       if (!countsAsFailure({ statusCode: status, failureKind })) {
+        const result = {};
+        // A good probe: the resource is allowed again.
+        if (where && state.stoppedResources[where] && status !== null && status < 400) {
+          await tx.execute(sql`update ${T.state} set stopped_resources = stopped_resources - ${where}, updated_at = ${nowAt} where ${C.key} = ${key}`);
+          result.resourceResumed = where;
+        }
         if (state.circuitOpens > 0) {
           await tx.execute(sql`update ${T.state} set circuit_opens = 0, updated_at = ${nowAt} where ${C.key} = ${key}`);
-          return { closed: true };
+          result.closed = true;
         }
-        return {};
+        return result;
       }
       const result = {};
       const dayStart = startOfUtcDay(nowMs);
       if (await failuresSince(tx, key, dayStart) === policy.dailyFailureBudget) result.budgetSpent = { until: new Date(dayStart + DAY_MS).toISOString() };
       if (isAuthRefusal(status)) {
         if (policy.authStops === 'resource' && where) {
-          if (!state.stoppedResources[where]) {
-            await tx.execute(sql`update ${T.state} set stopped_resources = stopped_resources || ${JSON.stringify({ [where]: { statusCode: status, at: nowAt.toISOString() } })}::jsonb,
-              updated_at = ${nowAt} where ${C.key} = ${key}`);
-            result.resourceStopped = where;
-          }
+          const before = state.stoppedResources[where];
+          const probes = before ? (Number(before.probes) || 0) + 1 : 0;
+          const entry = {
+            statusCode: status,
+            at: before?.at ?? nowAt.toISOString(),
+            probes,
+            retryAt: new Date(nowMs + resourceRetryMs(probes, policy)).toISOString(),
+          };
+          await tx.execute(sql`update ${T.state} set stopped_resources = stopped_resources || ${JSON.stringify({ [where]: entry })}::jsonb,
+            updated_at = ${nowAt} where ${C.key} = ${key}`);
+          if (before) result.resourceStillStopped = { resource: where, retryAt: entry.retryAt };
+          else result.resourceStopped = where;
           return result;
         }
         if (!state.haltedReason) {
@@ -301,7 +341,9 @@ export function createCallGuard({
     if (!reports) return;
     const cause = status ? `HTTP ${status}` : failureKind;
     if (outcome.halted) log.error?.(`${tag} ${name} refused the connection (${cause}). Calls are stopped until a person checks the ${name} settings or connects again.`);
-    if (outcome.resourceStopped) log.error?.(`${tag} ${name} refused calls to ${where} (${cause}). Calls to ${where} are stopped until a person checks the connection.`);
+    if (outcome.resourceStopped) log.error?.(`${tag} ${name} refused calls to ${where} (${cause}). Calls to ${where} are stopped; Flow tries again by itself, or a person connects again.`);
+    if (outcome.resourceStillStopped) log.warn?.(`${tag} ${name} still refuses calls to ${where} (${cause}). Flow tries again at ${outcome.resourceStillStopped.retryAt}.`);
+    if (outcome.resourceResumed) log.info?.(`${tag} ${name} allows calls to ${outcome.resourceResumed} again.`);
     if (outcome.opened) {
       const line = `${tag} ${name} calls failed repeatedly (last: ${cause}${where ? ` on ${where}` : ''}). Calls pause until ${outcome.opened.until}.`;
       if (outcome.opened.opens === 1) log.error?.(line);
@@ -352,7 +394,7 @@ export function createCallGuard({
       circuitOpenUntil: openUntil > nowMs ? iso(openUntil) : null,
       haltedReason: state.haltedReason,
       haltedAt: iso(state.haltedAt),
-      stoppedResources: Object.entries(state.stoppedResources).map(([resource, entry]) => ({ resource, ...entry })),
+      stoppedResources: Object.entries(state.stoppedResources).map(([resource, entry]) => ({ resource, ...entry, retryAt: Number.isFinite(resourceRetryAt(entry, policy)) ? iso(resourceRetryAt(entry, policy)) : null })),
       failedToday: await failuresSince(db, key, startOfUtcDay(nowMs)),
       dailyFailureBudget: policy.dailyFailureBudget,
     };
