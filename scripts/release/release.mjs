@@ -15,33 +15,34 @@
 // Each prints JSON on stdout and exits 1 with a reason on stderr.
 //
 // Versions are calendar versions, named as Field (arcforgelabs/field) and
-// openclaw/openclaw name their own.
-// A stable release is vYYYY.M.D (no leading zeros) and a beta is
-// vYYYY.M.D-beta.N, where the beta number belongs to the upcoming stable
+// openclaw/openclaw name their own, except that N is a count of releases in
+// the month, not the day, so it can pass 31.
+// A stable release is vYYYY.M.N (no leading zeros) and a beta is
+// vYYYY.M.N-beta.B, where the beta number belongs to the upcoming stable
 // version: v2026.10.15-beta.1 and -beta.2 come before v2026.10.15.
 // package.json holds that upcoming stable version, and a `chore: release
-// YYYY.M.D` pull request sets it. npm dist-tags: a beta publishes to `beta`,
+// YYYY.M.N` pull request sets it. npm dist-tags: a beta publishes to `beta`,
 // a stable release to `latest`.
 import { execFileSync } from "node:child_process";
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
-const BASE = /^(20\d{2})\.([1-9]|1[0-2])\.([1-9]|[12]\d|3[01])$/;
-const TAG = /^v(20\d{2}\.(?:[1-9]|1[0-2])\.(?:[1-9]|[12]\d|3[01]))(?:-beta\.([1-9]\d*))?$/;
+const BASE = /^(20\d{2})\.([1-9]|1[0-2])\.([1-9]\d*)$/;
+const TAG = /^v(20\d{2}\.(?:[1-9]|1[0-2])\.[1-9]\d*)(?:-beta\.([1-9]\d*))?$/;
 
 export class ReleaseError extends Error {}
 
 export function parseBaseVersion(version) {
   const match = BASE.exec(String(version ?? ""));
-  if (!match) throw new ReleaseError(`"${version}" is not a calendar version YYYY.M.D (no leading zeros)`);
+  if (!match) throw new ReleaseError(`"${version}" is not a calendar version YYYY.M.N (no leading zeros)`);
   return { version: match[0], parts: [Number(match[1]), Number(match[2]), Number(match[3])] };
 }
 
 // A release tag: its version, base version, channel and beta number.
 export function parseTag(tag) {
   const match = TAG.exec(String(tag ?? ""));
-  if (!match) throw new ReleaseError(`"${tag}" is not a release tag (vYYYY.M.D or vYYYY.M.D-beta.N)`);
+  if (!match) throw new ReleaseError(`"${tag}" is not a release tag (vYYYY.M.N or vYYYY.M.N-beta.B)`);
   const base = match[1];
   const beta = match[2] ? Number(match[2]) : null;
   const channel = beta ? "beta" : "stable";

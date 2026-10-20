@@ -32,9 +32,12 @@ last release.
 
 ## Versions and channels
 
-Versions are calendar versions with no leading zeros. A stable release is
-`2026.10.18`. A beta is a pre-release of the **upcoming** stable version, so
-`2026.10.18-beta.1` and `2026.10.18-beta.2` come before `2026.10.18`. Tags
+Versions are `YYYY.M.N` with no leading zeros: the year, the month, and a
+count of releases in that month. The count is not the day, and it can pass
+31: `2026.10.31` comes before `2026.10.32`. A new month can start again at 1.
+A stable release is `2026.10.18`. A beta is a pre-release of the **upcoming**
+stable version, so `2026.10.18-beta.1` and `2026.10.18-beta.2` come before
+`2026.10.18`. Tags
 add a `v`, and each GitHub Release is titled `flow <version>`.
 `package.json` holds the upcoming stable version.
 `scripts/release/release.mjs` holds the rules, and `test/release.test.js`
@@ -60,13 +63,13 @@ step.
 
 | Action | Approvals |
 | --- | --- |
-| Beta (`vYYYY.M.D-beta.N`) | 0 |
-| Stable release (`vYYYY.M.D`) | 1: `release` |
+| Beta (`vYYYY.M.N-beta.B`) | 0 |
+| Stable release (`vYYYY.M.N`) | 1: `release` |
 | Promote or roll back a channel | 1: `npm-release` |
 | Flow NPM Release dispatched by hand | 1: `npm-release` |
 
 A beta has guards instead of a gate: it runs only from `main`, only for a
-`vYYYY.M.D-beta.N` tag on a `main` commit whose required checks passed
+`vYYYY.M.N-beta.B` tag on a `main` commit whose required checks passed
 (Flow Release Prepare), and only after every CI lane passes again on that
 commit (Flow Release Checks). Every environment accepts only runs from
 `main`, and `npm-publish`, the environment npm's trusted publisher names, has
@@ -89,7 +92,7 @@ forward with a new tag.
 ## Cut a release
 
 1. Open a pull request that sets the upcoming stable version:
-   `npm version 2026.10.18 --no-git-tag-version`, which updates
+   `npm version 2026.10.18 --no-git-tag-version` (the next count in this month), which updates
    `package.json` and `package-lock.json`. Title it
    `chore: release 2026.10.18`. Merge it when CI passes. Do this once per
    version; its betas reuse it. The version must be newer than the latest

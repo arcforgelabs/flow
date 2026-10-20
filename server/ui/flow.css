@@ -269,6 +269,7 @@ body:is([data-state="off"], [data-state="error"], [data-state="no-access"]) .fx-
 .fx-int-hero__actions { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 6px; }
 .fx-int-page__grid { display: grid; grid-template-columns: minmax(0, 1fr) 240px; gap: 32px; align-items: start; }
 .fx-int-page__main { display: grid; gap: 28px; }
+.fx-int-page__main > .fx-alerts { margin: 0; }
 .fx-int-section { display: grid; gap: 14px; padding-top: 20px; border-top: 1px solid var(--fx-line); }
 .fx-int-section__title { color: var(--t-strong); font: 650 17px/1.3 var(--t-body); }
 .fx-int-section .fx-btn { justify-self: start; }
@@ -606,6 +607,7 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
 .fx-setting__text { display: grid; gap: 3px; min-width: 0; }
 .fx-setting__name { color: var(--t-strong); font: 500 14.5px/1.35 var(--t-body); }
 .fx-setting__hint { margin: 0; color: var(--t-dim); font-size: 13px; line-height: 1.45; }
+.fx-setting[data-tone="danger"] .fx-setting__hint { color: var(--t-danger); }
 .fx-setting__control { display: flex; justify-content: flex-end; min-width: 0; }
 .fx-setting__control > .fx-input, .fx-setting__control > .fx-select, .fx-setting__stack { width: 320px; max-width: 100%; }
 .fx-setting__control .fx-swatches { flex-wrap: nowrap; }

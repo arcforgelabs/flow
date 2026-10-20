@@ -22,6 +22,7 @@ import {
 } from '../core/price-list.js';
 import { draftInvoiceForObligation, explainObligation, listObligations, setReady } from '../core/ledger.js';
 import { isHistoryHeld } from '../core/history.js';
+import { invoicePdfDocument, pdfFields, pdfFilename, renderInvoicePdf } from '../core/invoice-pdf.js';
 import { invoiceView, invoiceViews, markNotReady, markReady, sendAgain, sendAllReady } from '../core/sending.js';
 import {
   billingObligations, contacts, invoices, INVOICE_STATUSES, organisations, priceItems, TAX_CODES,
@@ -39,6 +40,9 @@ import {
 //                                     accounting system { issueDate, invoiceIds? (only these, each ready) }
 //   POST  /invoices/send-again        owner or admin: queue failed sends again { invoiceIds? }
 //   GET   /invoices/:id               one invoice: lines, contact, job, issued versions, and where it sends
+//   GET   /invoices/:id/pdf?version=  the invoice as a PDF, drawn by Flow (server/core/invoice-pdf.js),
+//                                     with the accounting system's number and dates once it holds it;
+//                                     no accounting system calls
 //   POST  /invoices                   a new draft
 //   PATCH /invoices/:id               change a draft
 //   POST  /invoices/:id/issue         owner or admin: number it and keep the document as sent
@@ -368,6 +372,22 @@ export function createInvoicingRouter({
     const invoiceId = pathId(req.params.id, 'invoice');
     const organisationId = await organisationOf(req);
     res.json({ ok: true, invoice: await invoiceDetail(db, organisationId, invoiceId, accounting()) });
+  }));
+
+  router.get('/invoices/:id/pdf', ...signedIn, handle(log, async (req, res) => {
+    const invoiceId = pathId(req.params.id, 'invoice');
+    const organisationId = await organisationOf(req);
+    const version = req.query.version === undefined ? null : Number(req.query.version);
+    if (version !== null && !(Number.isSafeInteger(version) && version > 0)) throw invalid('version must be a whole number above 0');
+    const source = await invoicePdfDocument(db, organisationId, invoiceId, { version, accounting: accounting() });
+    const bytes = await renderInvoicePdf(source);
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `inline; filename="${pdfFilename(pdfFields(source))}"`,
+      'Cache-Control': 'no-store',
+      'X-Content-Type-Options': 'nosniff',
+    });
+    res.end(bytes);
   }));
 
   router.post('/invoices', ...signedIn, handle(log, async (req, res) => {
