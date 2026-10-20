@@ -100,18 +100,42 @@ invoice whose whole total is taken is not a candidate for another job.
 
 ### A person settles it
 
-A job with no invoice whose evidence is `ambiguous` shows one line on its
-panel, "This job has no invoice.", and two buttons.
+A job with no invoice whose evidence is `ambiguous` shows a warning icon and
+"Needs invoice" on its panel, one line, "This job has no invoice.", and two
+buttons.
 
 | Button | What Flow does |
 | --- | --- |
 | Make invoice | Rejects every open suggestion, records the job as `not_found` (by a person), then drafts its invoice. The live check before the draft still runs. |
-| Link invoice | Opens the linking tool: the open suggestions, best first. The person picks one. Flow accepts it, rejects the others, and links it (`person`, an exact match). |
+| Reconcile | Opens the Reconcile page at this job. |
 
-API: `GET /api/invoicing/jobs/:id/link-options`, `POST /api/invoicing/jobs/:id/no-invoice`
-and `POST /api/invoicing/jobs/:id/link` (`{ invoiceId }`, only a suggestion).
-The two POSTs need an owner or admin. Code: `confirmNoInvoice` and
-`linkJobInvoice` in `server/core/ledger.js`.
+The Reconcile page (`/reconcile`, under Work) is the queue of these jobs,
+oldest job date first. For one job it shows the job and its possible invoices
+side by side, best match first. Each fact of an invoice has a mark against
+the job's: ✓ same, ≠ different, none when one side does not know.
+
+| Fact | Compared with the job's |
+| --- | --- |
+| Client | The invoice's contact. |
+| Reference | The Reference Flow would give the job's invoice. The accounting copy keeps references only where the install keeps them. |
+| Date | Days between the job date and the invoice date. ✓ within 3 days. |
+| Lines | Item codes and amounts, in any order. |
+| Total | Equal, or equal with tax. |
+| Other jobs | Jobs already linked to the invoice, or a closer job the matcher found. |
+| Status | The invoice's status. No mark. |
+
+"Link this invoice" accepts that suggestion, rejects the others, and links it
+(`person`, an exact match). "No invoice · Make invoice" is the panel's Make
+invoice. After either, the next job opens. Skip opens the next job and
+changes nothing. A phone shows one card per invoice instead of the table.
+
+API: `GET /api/invoicing/reconcile` (the queue), `GET
+/api/invoicing/jobs/:id/reconcile` (one job and its candidates),
+`POST /api/invoicing/jobs/:id/no-invoice` and `POST
+/api/invoicing/jobs/:id/link` (`{ invoiceId }`, only a suggestion). The two
+POSTs need an owner or admin. Code: `listUnlinkedJobs` and `jobMatchDetail`
+in `server/core/job-match.js`; `confirmNoInvoice` and `linkJobInvoice` in
+`server/core/ledger.js`.
 
 ### Old jobs
 

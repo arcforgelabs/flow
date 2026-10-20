@@ -14,8 +14,9 @@ import {
 import { linkRejections, linkSuggestions } from '../server/db/schema.js';
 import { freshDatabase, skipWithoutDatabase } from './support/db.js';
 
-// A job with no invoice whose match is unclear: "Make invoice" and "Link
-// invoice" on the job panel (server/core/ledger.js). Synthetic data only.
+// A job with no invoice whose match is unclear: "Make invoice" on the job
+// panel, and the Reconcile page (server/core/ledger.js, job-match.js).
+// Synthetic data only.
 describe('settling a job with no invoice', { skip: skipWithoutDatabase }, () => {
   let handle;
   let db;
@@ -40,7 +41,7 @@ describe('settling a job with no invoice', { skip: skipWithoutDatabase }, () => 
     jobNumber += 1;
     const obligation = await observeJob(db, lab.id, {
       sourceSystem: 'worksystem', sourceJobRef: `JOB-${jobNumber}`, caseRef: `CASE-${jobNumber}`,
-      contactId: practice.id, shippedOn: '2026-10-17', lines: [{ itemCode: 'CRN' }],
+      contactId: practice.id, shippedOn: '2026-10-17', jobDate: '2026-10-17', lines: [{ itemCode: 'CRN' }],
     });
     await setReady(db, lab.id, obligation.id, { actor });
     await recordAccountingEvidence(db, lab.id, obligation.id, { state: 'authorised', accountingRef: 'ACC-1', matchedBy: 'scored', actor });
@@ -90,8 +91,8 @@ describe('settling a job with no invoice', { skip: skipWithoutDatabase }, () => 
     const token = clerk.signIn(clerk.addUser({ email: 'owner@example.test', google: true, password: false }));
     // An accounting system whose copy holds the two suggested invoices.
     const copy = [
-      { id: 'ACC-1', number: 'INV-1', issuedOn: '2026-10-16', totalCents: 22000, state: 'authorised' },
-      { id: 'ACC-2', number: 'INV-2', issuedOn: '2026-10-17', totalCents: 22000, state: 'authorised' },
+      { id: 'ACC-1', number: 'INV-1', issuedOn: '2026-10-16', totalCents: 22000, state: 'authorised', status: 'AUTHORISED', lines: [{ itemCode: 'CRN', amountCents: 22000 }] },
+      { id: 'ACC-2', number: 'INV-2', issuedOn: '2026-10-20', totalCents: 25000, state: 'authorised', status: 'PAID', lines: [{ itemCode: 'CRN', amountCents: 25000 }] },
     ];
     const integrations = createRegistry({ log: quiet, env: {} });
     integrations.register({
@@ -111,13 +112,26 @@ describe('settling a job with no invoice', { skip: skipWithoutDatabase }, () => 
     const call = (path, options = {}) => request(app, `/api/invoicing${path}`, { token, ...options });
 
     const linked = await unclearJob();
-    const options = await call(`/jobs/${linked.id}/link-options`);
-    assert.equal(options.status, 200);
-    assert.deepEqual(options.body.invoices.map((i) => i.number), ['INV-1', 'INV-2']);
+    const queue = await call('/reconcile');
+    assert.equal(queue.status, 200);
+    const row = queue.body.jobs.find((j) => j.id === linked.id);
+    assert.equal(row.clientName, 'Example Practice');
+    assert.equal(row.possible, 2);
+    const detail = await call(`/jobs/${linked.id}/reconcile`);
+    assert.equal(detail.status, 200);
+    assert.equal(detail.body.job.open, true);
+    assert.equal(detail.body.accountingName, 'Accounts');
+    const [best, other] = detail.body.invoices;
+    assert.deepEqual([best.number, best.best, other.number, other.best], ['INV-1', true, 'INV-2', false]);
+    assert.equal(best.checks.client, 'same');
+    assert.equal(best.checks.date.days, -1, 'a day before the job shipped');
+    assert.equal(other.checks.date.days, 3);
+    assert.equal(other.checks.total, 'differs');
     assert.equal((await call(`/jobs/${linked.id}/link`, { method: 'POST', body: { invoiceId: 'ACC-9' } })).status, 400, 'only a suggestion links');
     const link = await call(`/jobs/${linked.id}/link`, { method: 'POST', body: { invoiceId: 'ACC-1' } });
     assert.equal(link.status, 200);
     assert.equal(link.body.job.accountingState, 'authorised');
+    assert.equal((await call('/reconcile')).body.jobs.some((j) => j.id === linked.id), false, 'a linked job leaves the queue');
 
     const fresh = await unclearJob();
     const none = await call(`/jobs/${fresh.id}/no-invoice`, { method: 'POST', body: {} });

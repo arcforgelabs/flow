@@ -17,6 +17,7 @@ import {
 } from '../core/invoicing-rules.js';
 import { boardJobs, describeObligations } from '../core/job-board.js';
 import { readBeforeAct } from '../core/read-before-act.js';
+import { jobMatchDetail, listUnlinkedJobs } from '../core/job-match.js';
 import { jobReference } from '../core/references.js';
 import {
   acceptFindings, archivePriceItem, checkPrices, createPriceItem, linkPriceItem, readCatalogues, readPriceList, unlinkPriceItem, updatePriceItem,
@@ -608,10 +609,28 @@ export function createInvoicingRouter({
     });
   }
 
-  router.get('/jobs/:id/link-options', ...signedIn, handle(log, async (req, res) => {
+  // The Reconcile page: the jobs to settle, and one job beside its possible
+  // invoices (core/job-match.js).
+  router.get('/reconcile', ...signedIn, handle(log, async (req, res) => {
+    const organisationId = await organisationOf(req);
+    res.json({ ok: true, jobs: await listUnlinkedJobs(db, organisationId) });
+  }));
+
+  router.get('/jobs/:id/reconcile', ...signedIn, handle(log, async (req, res) => {
     const obligationId = pathId(req.params.id, 'job');
     const organisationId = await organisationOf(req);
-    res.json({ ok: true, invoices: await suggestedInvoices(organisationId, obligationId, linkSystem()) });
+    const system = linkSystem();
+    const [obligation] = await db.select().from(billingObligations)
+      .where(and(eq(billingObligations.organisationId, organisationId), eq(billingObligations.id, obligationId)));
+    if (!obligation) throw new FlowError('not_found', 'job not found');
+    // The Reference Flow would give its invoice, from Flow's own copy only.
+    const { referenceTemplate: template } = await readInvoicingSettings(db, organisationId);
+    const source = work().find((a) => a.id === obligation.sourceSystem) ?? null;
+    const reference = await jobReference(db, organisationId, obligation, { template, work: source });
+    const detail = await jobMatchDetail(db, organisationId, obligationId, { accounting: system, reference });
+    const link = source && typeof source.capabilities.jobLink === 'function'
+      ? await Promise.resolve().then(() => source.capabilities.jobLink({ organisationId, sourceJobRef: obligation.sourceJobRef })).catch(() => null) : null;
+    res.json({ ok: true, ...detail, job: { ...detail.job, link }, accountingName: system.name });
   }));
 
   router.post('/jobs/:id/no-invoice', ...manager, handle(log, async (req, res) => {

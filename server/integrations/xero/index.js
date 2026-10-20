@@ -138,7 +138,7 @@ export function createXeroAdapter({ runtime: given = null } = {}) {
       // Active Xero contacts, from Flow's copy (lookup.js).
       listCustomers: ({ organisationId }) => listCustomers(database, organisationId),
       // Sales invoices from the mirror, with the mirror's state (lookup.js).
-      findInvoices: ({ organisationId, ...query }) => findInvoices(database, organisationId, query),
+      findInvoices: ({ organisationId, ...query }) => findInvoices(database, organisationId, query, { web: current().settings.endpoints?.web }),
       // Xero items, from Flow's copy, for the price list (lookup.js).
       listPriceItems: ({ organisationId }) => listPriceItems(database, organisationId, { taxTypes: current().settings.taxTypes }),
     },
