@@ -111,14 +111,18 @@ export function resolveSeazonaSettings(env = process.env) {
     // while the last run was reading is not missed.
     cursorOverlapMs: 5 * MINUTE,
     // The recent-order lane reads orders placed in the last N days, a few
-    // days per run (GET orders/?ordered= matches one UTC day).
+    // days per run, page by page (GET orders/?ordered=&page=&pageSize=).
     orderLookbackDays: clampInt(env.SEAZONA_ORDER_LOOKBACK_DAYS, 30, 1, 3650),
     orderDaysPerRun: clampInt(env.SEAZONA_ORDER_DAYS_PER_RUN, 6, 1, 31),
     // The first invoice run reads from the start of today (UTC) minus this.
     invoiceLookbackDays: clampInt(env.SEAZONA_INVOICE_LOOKBACK_DAYS, 0, 0, 3650),
-    // Seazona documents no paging. A list exactly this long may be cut off,
-    // so the lane holds its cursor instead of trusting it.
+    // A list this long may be cut off, so the lane reads on (issue #125):
+    // the next part of a changed list from its last row, the next order
+    // page. Also the order page size (at most 500).
     listCap: clampInt(env.SEAZONA_LIST_CAP, 50, 1, 10_000),
+    // A lane makes at most this many list calls a run; the next run goes on
+    // from where it stopped.
+    listPagesPerRun: clampInt(env.SEAZONA_LIST_PAGES_PER_RUN, 10, 1, 100),
     // The active-order lane re-reads this many open orders per run, oldest first.
     activeOrdersPerRun: clampInt(env.SEAZONA_ACTIVE_ORDERS_PER_RUN, 25, 1, 500),
     // Issue #12: after this many failed reads in a row an order waits this long.
