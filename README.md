@@ -27,7 +27,8 @@ run a lab.
 | --- | --- |
 | `VISION.md` | What Flow is for, the core and its integrations, and what it will not do |
 | `AGENTS.md` | Agent entry point (`CLAUDE.md` links to it) |
-| `CONTRIBUTING.md` | How to file issues and pull requests, porting rules, merging |
+| `CONTRIBUTING.md` | How to file issues and pull requests, porting rules, the changelog, merging |
+| `CHANGELOG.md` | What changed in each release: an index of one file per release in `CHANGELOG/` |
 | `SECURITY.md` | How to report a security problem, the trust model, and the rules held hard |
 | `LICENSE` | MIT licence |
 | `docs/DESIGN.md` | The design systems (theme families), how pages and Clerk's components take them, and the screens |
