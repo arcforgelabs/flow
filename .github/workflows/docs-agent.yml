@@ -1,0 +1,330 @@
+name: Docs Agent
+
+# Copied from openclaw/openclaw's docs-agent.yml (docs/AI_BOTS.md). After CI
+# passes on main, an AI agent refreshes docs/ and README.md and pushes the
+# result to main, at most once an hour. Its model calls go through ClawRouter,
+# which holds the provider key and the monthly budget; the job summary shows
+# what each run cost. Differences from upstream are listed in docs/AI_BOTS.md.
+
+on:
+  workflow_run: # zizmor: ignore[dangerous-triggers] main-only docs repair after trusted CI; job gates repository, event, branch, conclusion, exact current main SHA, and hourly cadence before using write token
+    workflows:
+      - CI
+    types:
+      - completed
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  verify-ci:
+    # Cheap admission: only a successful CI push run on main can start a write.
+    if: >-
+      github.repository == 'arcforgelabs/flow' &&
+      ((github.event_name == 'workflow_dispatch' && github.actor != 'github-actions[bot]') ||
+       (github.event_name == 'workflow_run' &&
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.head_branch == 'main' &&
+        github.event.workflow_run.event == 'push' &&
+        github.event.workflow_run.actor.login != 'github-actions[bot]'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      allowed: ${{ steps.verify.outputs.allowed }}
+    steps:
+      - name: Verify successful full CI for current main
+        id: verify
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
+        with:
+          script: |
+            core.setOutput("allowed", "false");
+            if (context.eventName === "workflow_dispatch") {
+              core.setOutput("allowed", "true");
+              return;
+            }
+            const expected = context.payload.workflow_run;
+            const { data: run } = await github.rest.actions.getWorkflowRun({
+              ...context.repo, run_id: expected.id,
+            });
+            const repository = `${context.repo.owner}/${context.repo.repo}`;
+            if (run.id !== expected.id || !run.actor?.login || run.actor.login === "github-actions[bot]" ||
+                run.repository.full_name !== repository || run.head_repository.full_name !== repository ||
+                run.path !== ".github/workflows/ci.yml" || run.head_branch !== "main" || run.event !== "push" ||
+                run.head_sha !== expected.head_sha || run.run_attempt !== expected.run_attempt ||
+                run.status !== "completed" || run.conclusion !== "success") {
+              core.info("CI completion does not identify a successful canonical main run.");
+              return;
+            }
+            const { data: main } = await github.rest.repos.getBranch({ ...context.repo, branch: "main" });
+            if (main.commit.sha !== run.head_sha) {
+              core.info("CI was superseded by newer main.");
+              return;
+            }
+            // Flow's gate job is `test` (the main ruleset requires it by name).
+            const jobs = await github.paginate(github.rest.actions.listJobsForWorkflowRunAttempt, {
+              ...context.repo, run_id: run.id, attempt_number: run.run_attempt, per_page: 100,
+            });
+            const gates = jobs.filter((job) => job.name === "test");
+            if (gates.length !== 1 || gates[0].head_sha !== run.head_sha || gates[0].conclusion !== "success") {
+              core.info("CI lacks a successful test job for this commit.");
+              return;
+            }
+            core.setOutput("allowed", "true");
+
+  update-docs:
+    needs: verify-ci
+    if: needs.verify-ci.outputs.allowed == 'true'
+    permissions:
+      actions: read
+      contents: write
+    # Only admitted write jobs occupy this slot; skipped events cannot replace
+    # pending documentation work.
+    concurrency:
+      group: docs-agent-main
+      cancel-in-progress: false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: flow
+          POSTGRES_PASSWORD: flow
+          POSTGRES_DB: flow_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U flow"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      CLAWROUTER_URL: ${{ vars.FLOW_CLAWROUTER_URL || 'https://clawrouter.arcforge.au' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Gate trusted main activity and hourly cadence
+        id: gate
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          GH_TOKEN: ${{ github.token }}
+          WORKFLOW_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+
+          head_sha="$(git rev-parse HEAD)"
+          if [ "$EVENT_NAME" != "workflow_run" ]; then
+            review_base="$(git rev-parse "${head_sha}^" 2>/dev/null || echo "$head_sha")"
+            printf 'run_agent=true\nbase_sha=%s\nreview_base_sha=%s\nreview_head_sha=%s\n' \
+              "$head_sha" "$review_base" "$head_sha" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ "$head_sha" != "$WORKFLOW_HEAD_SHA" ]; then
+            echo "CI run is superseded by $head_sha; skipping docs agent for $WORKFLOW_HEAD_SHA."
+            echo "run_agent=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          runs_json="$RUNNER_TEMP/docs-agent-runs.json"
+          gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/workflows/docs-agent.yml/runs" \
+            -f branch=main -f event=workflow_run -f per_page=100 > "$runs_json"
+
+          # Workflow success includes denied verification and skipped writer
+          # gates. Read each attempt's writer and agent steps before using it.
+          history_json="$RUNNER_TEMP/docs-agent-history.json"
+          jq -c --argjson current_run_id "$GITHUB_RUN_ID" \
+            '.workflow_runs[]
+              | select(.id != $current_run_id)
+              | select(.conclusion != "cancelled" and .conclusion != "skipped")' "$runs_json" |
+            while IFS= read -r run; do
+              run_id="$(jq -r '.id' <<< "$run")"
+              run_attempt="$(jq -r '.run_attempt' <<< "$run")"
+              jobs="$(gh api --paginate --slurp \
+                "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/attempts/${run_attempt}/jobs?per_page=100")"
+              jq -n --argjson run "$run" --argjson pages "$jobs" '
+                [$pages[].jobs[] | select(.name == "update-docs")] as $writers
+                | select($writers | length == 1)
+                | $writers[0] as $writer
+                | [$writer.steps[]? | select(.name == "Run Codex docs agent")] as $reviews
+                | $run + {
+                    admitted: ($writer.status == "queued" or $writer.status == "in_progress" or
+                      any($reviews[]; .status == "completed" and .conclusion != "skipped")),
+                    reviewed: ($writer.conclusion == "success" and ($reviews | length == 1) and
+                      $reviews[0].status == "completed" and $reviews[0].conclusion == "success")
+                  }'
+            done | jq -s '{workflow_runs: .}' > "$history_json"
+
+          one_hour_ago="$(date -u -d '1 hour ago' +%Y-%m-%dT%H:%M:%SZ)"
+          recent_runs="$(
+            jq -r --arg one_hour_ago "$one_hour_ago" \
+              '.workflow_runs[]
+                | select(.created_at >= $one_hour_ago)
+                | select(.admitted)
+                | [.id, .status, (.conclusion // ""), .created_at, .head_sha]
+                | @tsv' "$history_json"
+          )"
+          if [ -n "$recent_runs" ]; then
+            echo "Docs agent already ran or is running within the last hour; skipping."
+            printf '%s\n' "$recent_runs"
+            echo "run_agent=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Review everything since the last reviewed commit, so a skipped
+          # hour is covered by the next run.
+          review_base="$(
+            jq -r --arg head "$head_sha" \
+              '.workflow_runs[] | select(.reviewed) | .head_sha
+                | select(. != null and . != "" and . != $head)' "$history_json" | head -n 1
+          )"
+          if [ -z "$review_base" ] || ! git cat-file -e "${review_base}^{commit}" 2>/dev/null; then
+            review_base="$(git rev-parse "${head_sha}^" 2>/dev/null || echo "$head_sha")"
+          fi
+          printf 'run_agent=true\nbase_sha=%s\nreview_base_sha=%s\nreview_head_sha=%s\n' \
+            "$head_sha" "$review_base" "$head_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Node
+        if: steps.gate.outputs.run_agent == 'true'
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+
+      - name: Ensure docs agent key exists
+        if: steps.gate.outputs.run_agent == 'true'
+        env:
+          OPENAI_API_KEY: ${{ secrets.FLOW_DOCS_AGENT_OPENAI_API_KEY || secrets.OPENAI_API_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${OPENAI_API_KEY:-}" ]; then
+            echo "Missing FLOW_DOCS_AGENT_OPENAI_API_KEY or OPENAI_API_KEY secret (a ClawRouter key)." >&2
+            exit 1
+          fi
+
+      # The cheaper model runs once the key's monthly ClawRouter budget is
+      # mostly spent (docs/AI_BOTS.md, "Cost").
+      - name: Choose model from ClawRouter budget
+        id: model
+        if: steps.gate.outputs.run_agent == 'true'
+        env:
+          CLAWROUTER_KEY: ${{ secrets.FLOW_DOCS_AGENT_OPENAI_API_KEY || secrets.OPENAI_API_KEY }}
+          PRIMARY_MODEL: ${{ vars.FLOW_AI_MODEL || 'gpt-6-sol' }}
+          FALLBACK_MODEL: ${{ vars.FLOW_AI_FALLBACK_MODEL || 'gpt-6-luna' }}
+          THRESHOLD: ${{ vars.FLOW_AI_FALLBACK_AT || '0.8' }}
+        run: |
+          node scripts/ai/clawrouter-budget.mjs choose --label "Docs Agent" \
+            --primary "$PRIMARY_MODEL" --fallback "$FALLBACK_MODEL" --threshold "$THRESHOLD"
+
+      - name: Run Codex docs agent
+        if: steps.gate.outputs.run_agent == 'true'
+        uses: openai/codex-action@bdf19a4a223ec2549a3e2274a0cf61556bc07675 # v1.13
+        env:
+          DOCS_AGENT_BASE_SHA: ${{ steps.gate.outputs.review_base_sha }}
+          DOCS_AGENT_HEAD_SHA: ${{ steps.gate.outputs.review_head_sha }}
+        with:
+          openai-api-key: ${{ secrets.FLOW_DOCS_AGENT_OPENAI_API_KEY || secrets.OPENAI_API_KEY }}
+          responses-api-endpoint: ${{ env.CLAWROUTER_URL }}/v1/native/openai/v1/responses
+          prompt-file: .github/codex/prompts/docs-agent.md
+          model: ${{ steps.model.outputs.model }}
+          effort: medium
+          sandbox: workspace-write
+          safety-strategy: drop-sudo
+
+      - name: Report AI cost
+        if: always() && steps.model.outcome == 'success'
+        env:
+          CLAWROUTER_KEY: ${{ secrets.FLOW_DOCS_AGENT_OPENAI_API_KEY || secrets.OPENAI_API_KEY }}
+          SPENT_BEFORE: ${{ steps.model.outputs.spent_micros }}
+        run: node scripts/ai/clawrouter-budget.mjs report --label "Docs Agent" --before "$SPENT_BEFORE"
+
+      - name: Enforce existing-docs-only patch
+        if: steps.gate.outputs.run_agent == 'true'
+        run: |
+          set -euo pipefail
+
+          untracked="$(git ls-files --others --exclude-standard)"
+          if [ -n "$untracked" ]; then
+            echo "Docs agent created untracked files; forbidden:"
+            printf '%s\n' "$untracked"
+            exit 1
+          fi
+
+          added_or_deleted="$(git diff HEAD --name-status --diff-filter=AD; git diff --cached HEAD --name-status --diff-filter=AD)"
+          if [ -n "$added_or_deleted" ]; then
+            echo "Docs agent added or deleted tracked files; forbidden:"
+            printf '%s\n' "$added_or_deleted"
+            exit 1
+          fi
+
+          # A restored working copy can still hide a forbidden edit in the index.
+          bad_paths="$(
+            { git diff HEAD --name-only; git diff --cached HEAD --name-only; } | sort -u |
+              while IFS= read -r path; do
+                case "$path" in
+                  docs/*|README.md) ;;
+                  *) printf '%s\n' "$path" ;;
+                esac
+              done
+          )"
+          if [ -n "$bad_paths" ]; then
+            echo "Docs agent touched non-doc paths; forbidden:"
+            printf '%s\n' "$bad_paths"
+            exit 1
+          fi
+
+      # Flow has no separate docs check; the full test suite holds the doc
+      # rules (CHANGELOG, links in tests), so it runs before the push.
+      - name: Check docs
+        if: steps.gate.outputs.run_agent == 'true'
+        env:
+          # A throwaway database inside this job; not a secret.
+          FLOW_TEST_DATABASE_URL: postgres://flow:flow@localhost:5432/flow_test
+        run: |
+          set -euo pipefail
+          npm ci
+          npm test
+
+      - name: Commit docs updates
+        if: steps.gate.outputs.run_agent == 'true'
+        env:
+          BASE_SHA: ${{ steps.gate.outputs.base_sha }}
+          GITHUB_TOKEN: ${{ github.token }}
+          TARGET_BRANCH: main
+        run: |
+          set -euo pipefail
+
+          if git diff HEAD --quiet; then
+            echo "No docs changes."
+            exit 0
+          fi
+
+          git config user.name "flow-docs-agent[bot]"
+          git config user.email "flow-docs-agent[bot]@users.noreply.github.com"
+          git add docs README.md
+          git commit --no-verify -m "docs: refresh documentation"
+          for attempt in 1 2 3 4 5; do
+            if ! git fetch --no-tags origin "$TARGET_BRANCH"; then
+              echo "Fetch attempt $attempt failed; retrying."
+              sleep $((attempt * 2))
+              continue
+            fi
+            if git push "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:${TARGET_BRANCH}"; then
+              exit 0
+            fi
+            remote_main="$(git rev-parse "origin/${TARGET_BRANCH}")"
+            if [ "$remote_main" != "$BASE_SHA" ]; then
+              echo "main advanced from $BASE_SHA to $remote_main; skipping stale docs update."
+              exit 0
+            fi
+            echo "Docs update attempt $attempt failed; retrying."
+            sleep $((attempt * 2))
+          done
+          echo "Failed to push docs updates after retries." >&2
+          exit 1
