@@ -23,6 +23,7 @@ export const CAPABILITIES = Object.freeze([
   'checkInvoice', // does the accounting system hold an invoice for a billable job? (the ledger's liveCheck)
   'billableJobs', // billable jobs by day from the work system's copy in Flow, for the daily reconcile; never a live call
   'jobReferenceFields', // { patient }: the fields a job gives the invoice Reference (server/core/references.js)
+  'jobLink', // { url, exact } or null: the link to one job in the work system's own web app, for "Open in" on a job's problem; never a live call
   'listWork', // the work system's jobs from its copy in Flow, open and lately finished, for the Jobs board; a job may carry `pendingMove`
   'moveWork', // { sourceJobRef, toStatus, personId }: a person moved a job to another stage on the Jobs board; answers what happens (a hand-off when the system's API cannot change it)
   'cancelMove', // { sourceJobRef }: take back a move the work system has not made yet

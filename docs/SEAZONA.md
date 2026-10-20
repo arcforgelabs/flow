@@ -67,7 +67,7 @@ workspace live credentials.
 | `SEAZONA_API_TIMEOUT_MS` | Time limit for one request. Default 30000. |
 | `SEAZONA_API_MAX_WAIT_MS` | How long a request may wait for a free slot. Default 120000. |
 | `SEAZONA_API_TELEMETRY_RETENTION_DAYS` | How long request telemetry is kept. Default 35, so last month's question from Seazona can be answered. Maximum 90. |
-| `SEAZONA_ORDER_URL` | Optional. The address of one order in Seazona's own screens, with `{ref}` where the order number goes, for example `https://<your Seazona>/orders/{ref}`. A stage move on the Jobs board opens it. Must use https and hold `{ref}`; otherwise Flow ignores it and shows the order number to copy. Also on the Seazona integration screen as "Order address". |
+| `SEAZONA_ORDER_PAGE_URL` | Optional. The address of any one order in Seazona's web app, pasted from the browser. Flow finds the order id (a GUID) in it and puts each job's own order id in its place (`orderLink` in `settings.js`); the link may also hold `{order}` or `{invoice}`. "Open in Seazona" on the Jobs board and on a job's problem opens it. With no order page, a lab whose API address is `https://{lab}.seazonaapi.net` gets its Seazona home page instead. Must use https. Also on the Seazona integration screen as "Order page link". |
 | `SEAZONA_KEEP_PATIENT_REFERENCE` | `on` keeps Seazona's patient field on orders and invoices as the patient reference an invoice prints (the `{patient}` token of the Reference rule). Default off: no patient field is stored. Also on the Seazona integration screen as "Keep patient names". |
 | `SEAZONA_INVOICE_CADENCE_MS`, `SEAZONA_ORDER_CADENCE_MS`, `SEAZONA_ACTIVE_ORDER_CADENCE_MS`, `SEAZONA_CLIENT_CADENCE_MS`, `SEAZONA_REFERENCE_CADENCE_MS` | How often each lane runs in live mode. Defaults below. |
 | `SEAZONA_ORDER_LOOKBACK_DAYS` | How far back the recent-order lane reads. Default 30. |
@@ -578,8 +578,9 @@ moves a job to another Seazona stage on the Jobs board, Flow never calls
 Seazona. The move becomes a hand-off (`stage-moves.js`):
 
 1. Flow records the move in `seazona_stage_moves` as `waiting`, and answers
-   what to do: the order number, the new stage, and "Open in Seazona" when
-   `SEAZONA_ORDER_URL` is set.
+   what to do: the order number, the new stage, and a link that opens the
+   order in Seazona (`SEAZONA_ORDER_PAGE_URL`, or the lab's Seazona home
+   page).
 2. The card shows in the new lane with "Waiting for Seazona" (`listWork`
    gives it `pendingMove`).
 3. The person changes the status in Seazona. The next sync reads the order,

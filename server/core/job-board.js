@@ -138,6 +138,8 @@ export async function boardJobs(db, organisationId, { work = [], accounting = nu
           : (item.lines ?? []).map((l) => ({ code: l.code ?? null, description: l.description, amountCents: l.amountCents ?? null, mapped: Boolean(l.code && codes.has(l.code)) })),
         // A stage move the work system has not made yet (moveWork).
         pendingMove: item.pendingMove ?? null,
+        // The link to the job in the work system's own web app ({ url, exact }).
+        link: item.link ?? null,
         obligation: o,
       });
     }

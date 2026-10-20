@@ -43,8 +43,12 @@ answers the work system's jobs for the Jobs board from the adapter's own copy,
 never a live call: `{ items, statuses }`, each item with its `sourceSystem`,
 `sourceJobRef`, `status`, `clientName`, `practitioner`, dates, lines and
 total (Seazona: open orders and orders finished in the last 30 days, never
-one deleted in Seazona). An item may carry `pendingMove`, `{ to, from,
-requestedAt, expiresAt, openUrl }`: a stage move the work system has not made yet.
+one deleted in Seazona). An item may carry `link`, `{ url, exact }`, which
+opens the job in the work system's own web app (`exact` is false for only its
+home page), and `pendingMove`, `{ to, from, requestedAt, expiresAt, openUrl,
+openExact }`: a stage move the work system has not made yet.
+`jobLink({ sourceJobRef, sourceInvoiceRef })` answers that same link for one
+job, or null; it never calls the system.
 `moveWork({ sourceJobRef, toStatus, personId })` takes a person's move of a
 job to another stage on the Jobs board and answers what happens; an
 adapter whose API cannot change a stage answers a hand-off, `{ kind:

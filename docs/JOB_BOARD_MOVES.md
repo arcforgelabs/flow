@@ -39,7 +39,11 @@ dropped back in its own Seazona lane takes the waiting move back.
 the case system cannot take a change through its API, the change becomes a
 short checklist for a person.
 
-Before a stage move, the board shows what to do in Seazona. A person can
+Before a stage move, the board shows what to do in Seazona. Its first step
+links to the order in Seazona's web app: the order itself when the Seazona
+"Order page link" is set, else the lab's Seazona home page
+(`docs/SEAZONA.md`, `SEAZONA_ORDER_PAGE_URL`). The job's panel has the same
+link. A person can
 tick "Don't ask again". That is their own setting inside the Seazona
 integration ("Ask before stage moves", `GET` and `PUT /api/work/my-settings`),
 shown under Your settings on the Seazona integration screen.

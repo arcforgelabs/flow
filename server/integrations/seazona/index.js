@@ -8,13 +8,13 @@ import { readBillableJobs } from './reconcile.js';
 import { SEAZONA_CALL_GUARD } from './governor.js';
 import { createSeazonaRouter } from './routes.js';
 import {
-  cancelStageMove, expiredStageMoves, orderUrl, readPersonSettings, requestStageMove, settleStageMoves, waitingStageMoves, writePersonSetting,
+  cancelStageMove, expiredStageMoves, handOff, readPersonSettings, requestStageMove, settleStageMoves, waitingStageMoves, writePersonSetting,
 } from './stage-moves.js';
 import { orderPatient } from './patients.js';
 import { createSeazonaScheduler } from './scheduler.js';
 import { readSweepHealth } from './sweep.js';
 import { resetFailedLanes, resetStoppedLanes } from './store.js';
-import { describeSeazonaSettings, resolveSeazonaSettings } from './settings.js';
+import { describeSeazonaSettings, orderLink, resolveSeazonaSettings } from './settings.js';
 import { seazonaSchema } from './tables.js';
 
 // The Seazona adapter (docs/SEAZONA.md). FLOW_INTEGRATIONS=seazona turns it
@@ -51,7 +51,7 @@ export const SEAZONA_SETUP = {
     { name: 'SEAZONA_API_BASE_URL', label: 'API address', kind: 'url', help: 'The API root of your account, https://…' },
     { name: 'SEAZONA_API_CLIENT_ID', label: 'Client id' },
     { name: 'SEAZONA_API_CLIENT_SECRET', label: 'Client secret', secret: true, help: 'Stored encrypted. Flow never shows it again.' },
-    { name: 'SEAZONA_ORDER_URL', label: 'Order address', kind: 'url', help: 'Optional. The address of one order in Seazona, with {ref} for the order number. Stage moves on the Jobs board open it.' },
+    { name: 'SEAZONA_ORDER_PAGE_URL', label: 'Order page link', kind: 'url', help: 'Open any order in Seazona and paste its address here. Flow uses it for Open in Seazona.' },
     { name: 'SEAZONA_KEEP_PATIENT_REFERENCE', label: 'Keep patient names', kind: 'onoff', help: 'On: Flow keeps the patient name of each job for the invoice Reference.' },
   ],
 };
@@ -225,9 +225,15 @@ export function createSeazonaAdapter({ env = null, fetchImpl = null, now = Date.
         const [work, waiting] = await Promise.all([listWork(db, { now: now() }), waitingStageMoves(db)]);
         // A stage move Seazona has not made yet (stage-moves.js): the card
         // shows in its new lane, waiting for Seazona.
+        // Each card also carries the link that opens its order in Seazona.
+        const { settings } = current();
         for (const item of work.items) {
+          item.link = orderLink(settings, { sourceJobRef: item.sourceJobRef });
           const move = waiting.get(item.sourceJobRef);
-          if (move) item.pendingMove = { to: move.toStatus, from: move.fromStatus, requestedAt: move.requestedAt.toISOString(), expiresAt: move.expiresAt.toISOString(), openUrl: orderUrl(current().settings.orderUrlTemplate, move.orderId) };
+          if (move) {
+            const { to, from, requestedAt, expiresAt, openUrl, openExact } = handOff(move, { settings });
+            item.pendingMove = { to, from, requestedAt, expiresAt, openUrl, openExact };
+          }
         }
         return work;
       },
@@ -237,7 +243,7 @@ export function createSeazonaAdapter({ env = null, fetchImpl = null, now = Date.
       // records a hand-off and answers what the person does in Seazona.
       async moveWork({ sourceJobRef, toStatus, personId = null }) {
         const { db, settings } = current();
-        return requestStageMove(db, { orderId: sourceJobRef, toStatus, personId, orderUrlTemplate: settings.orderUrlTemplate, now: now() });
+        return requestStageMove(db, { orderId: sourceJobRef, toStatus, personId, settings, now: now() });
       },
 
       async cancelMove({ sourceJobRef }) {
@@ -252,6 +258,12 @@ export function createSeazonaAdapter({ env = null, fetchImpl = null, now = Date.
 
       async setPersonSetting({ personId, key, value }) {
         return writePersonSetting(current().db, personId, { key, value }, { now: now() });
+      },
+
+      // The link to one order in Seazona's web app, for "Open in Seazona" on
+      // a job's problem (settings.js, orderLink). Never calls Seazona.
+      jobLink({ sourceJobRef, sourceInvoiceRef = null }) {
+        return runtime ? orderLink(runtime.settings, { sourceJobRef, sourceInvoiceRef }) : null;
       },
 
       // The fields a job gives the invoice Reference: the patient name, when

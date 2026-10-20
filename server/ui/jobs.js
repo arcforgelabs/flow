@@ -482,7 +482,7 @@ export async function renderJobs(main, ui) {
         h('p', { class: 'fx-move__path' }, chip(job.status ?? NO_STATUS), h('span', { 'aria-hidden': 'true' }, '→'), chip(status)),
         h('p', { class: 'fx-move__note' }, `${system} cannot take this change from Flow. Make it in ${system}:`),
         h('ol', { class: 'fx-steps' },
-          h('li', {}, `Open case ${job.caseRef ?? job.sourceJobRef} in ${system}.`),
+          h('li', {}, openStep(job, system)),
           h('li', {}, `Set its status to ${status}.`),
           h('li', {}, `Flow shows the card as waiting until it reads the change. After a day it goes back.`)),
         h('label', { class: 'fx-check' }, tick, h('span', {}, "Don't ask again")));
@@ -490,11 +490,11 @@ export async function renderJobs(main, ui) {
       if (!ok) return;
       dontAsk = tick.checked;
     }
-    job.pendingMove = { to: status, from: job.status, openUrl: before?.openUrl ?? null };
+    job.pendingMove = { to: status, from: job.status, openUrl: job.link?.url ?? null, openExact: Boolean(job.link?.exact) };
     draw();
     try {
       const { move } = await flow('/api/work/moves', { method: 'POST', body: JSON.stringify({ ...ref, toStatus: status }) });
-      job.pendingMove = { to: move.to, from: move.from, requestedAt: move.requestedAt, expiresAt: move.expiresAt, openUrl: move.openUrl };
+      job.pendingMove = { to: move.to, from: move.from, requestedAt: move.requestedAt, expiresAt: move.expiresAt, openUrl: move.openUrl, openExact: move.openExact };
       ui.toast?.(`Waiting for ${system}. Set case ${move.caseRef} to ${move.to} there.`, 'success');
     } catch (error) {
       job.pendingMove = before;
@@ -506,6 +506,19 @@ export async function renderJobs(main, ui) {
         .catch(() => ui.toast?.('Flow could not save "Don\'t ask again".', 'danger'));
     }
     draw();
+  }
+
+  // The first step of a stage move: a link that opens the order in the work
+  // system's web app. An exact link opens the order itself; otherwise it
+  // opens the lab's home page there, and the person finds the case.
+  function openStep(job, system) {
+    const caseRef = job.caseRef ?? job.sourceJobRef;
+    const url = job.link?.url ?? null;
+    if (!url) return `Open case ${caseRef} in ${system}.`;
+    const out = (text) => h('a', { class: 'fx-task__link', href: url, target: '_blank', rel: 'noopener' }, text);
+    return job.link.exact
+      ? h('span', {}, out(`Open case ${caseRef} in ${system} ↗`))
+      : h('span', {}, out(`Open ${system} ↗`), ` and find case ${caseRef}.`);
   }
 
   // The job panel's custom fields: one control each, saved when it changes.
@@ -684,6 +697,7 @@ export async function renderJobs(main, ui) {
           job.dueOn ? field('Ordered', job.orderedOn ? fullDate(job.orderedOn) : null) : null,
           field('Total', job.totalCents == null ? null : formatCents(job.totalCents)),
           field('Case number', job.caseRef ?? job.sourceJobRef, { class: 'fx-mono' }),
+          job.link?.url ? field(system, link({ href: job.link.url, target: '_blank', rel: 'noopener' }, job.link.exact ? `Open case in ${system} ↗` : `Open ${system} ↗`)) : null,
           field(`${system} status`, job.status),
           field(`${system} client`, job.workClientName && job.workClientName !== job.clientName ? job.workClientName : null),
           field('Department', job.department),
