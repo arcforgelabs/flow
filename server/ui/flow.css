@@ -1026,3 +1026,60 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
 .fx-pick__row[hidden] { display: none; }
 .fx-pick__main { display: grid; gap: 2px; min-width: 0; }
 .fx-pick > .fx-dim { padding: 14px; }
+
+/* The Invoices list head (invoicing.js): tabs, search and the send bar stay
+   at the top while rows scroll up under them; a shadow shows once they do.
+   Narrow, the app bar (60px) sits above it. */
+.fx-listhead { position: sticky; top: 0; z-index: 5; margin: -12px calc(-1 * clamp(16px, 4vw, 48px)) 0; padding: 12px clamp(16px, 4vw, 48px) 0; background: var(--t-bg); transition: box-shadow .15s; }
+.fx-listhead[data-stuck] { box-shadow: 0 10px 12px -12px rgba(0, 0, 0, .45); }
+.fx-listhead .fx-sendbar { margin-bottom: 12px; }
+.fx-listhead__edge { height: 0; margin-bottom: -20px; }
+@media (max-width: 820px) { .fx-listhead { top: 60px; } }
+/* On a phone the head would hide too many rows: it scrolls away. */
+@media (max-width: 560px) { .fx-listhead { position: static; } }
+
+/* The bulk action bar (bulk-bar.js): floats at the foot while rows are
+   ticked. "N selected ×", then icon actions in groups, then More. It takes
+   the theme's own surface, line, corners and primary button, like a menu. */
+.fx-bulk {
+  position: sticky; bottom: 16px; z-index: 6; justify-self: center; display: flex; align-items: center; gap: 2px; max-width: 100%;
+  padding: 5px; border: 1px solid var(--fx-line); border-radius: var(--t-radius-lg); background: var(--t-paper); color: var(--t-text);
+  box-shadow: var(--t-shadow), 0 12px 32px rgba(0, 0, 0, .16);
+  font: 500 13.5px/1 var(--t-body); white-space: nowrap;
+}
+.fx-bulk[hidden] { display: none; }
+.fx-bulk[aria-busy="true"] { opacity: .7; pointer-events: none; }
+.fx-bulk__acts { display: flex; align-items: center; gap: 2px; min-width: 0; }
+.fx-bulk__count { display: inline-flex; align-items: center; gap: 6px; flex: none; margin-right: 6px; padding: 3px 4px 3px 10px; border: 1px solid var(--t-accent-brd, var(--fx-line)); border-radius: var(--t-radius); background: var(--t-accent-bg); color: var(--t-accent); font-weight: 600; }
+.fx-bulk__clear, .fx-bulk__act { position: relative; display: inline-flex; align-items: center; gap: 6px; padding: 7px 9px; border: 1px solid transparent; border-radius: var(--t-radius); background: none; color: inherit; font: inherit; cursor: pointer; }
+.fx-bulk__clear { padding: 3px; color: inherit; }
+.fx-bulk__act:hover, .fx-bulk__act:focus-visible, .fx-bulk__act[aria-expanded="true"] { background: var(--fx-hover); color: var(--t-strong); outline: none; }
+.fx-bulk__clear:hover, .fx-bulk__clear:focus-visible { background: color-mix(in srgb, var(--t-accent) 14%, transparent); outline: none; }
+.fx-bulk__act--primary, .fx-bulk__act--primary:hover, .fx-bulk__act--primary:focus-visible { background: var(--t-primary); border-color: var(--t-primary); color: var(--t-on-primary); font-weight: 600; }
+.fx-bulk__act--primary:hover { background: color-mix(in srgb, var(--t-primary) 86%, var(--t-text)); }
+.fx-bulk__act--icon { padding: 7px; }
+.fx-bulk__act[data-tone="danger"] { color: var(--t-danger); }
+.fx-bulk__act[data-tone="danger"]:hover { background: var(--t-danger-bg); }
+.fx-bulk__sep { flex: none; width: 1px; height: 18px; margin: 0 4px; background: var(--fx-line); }
+/* An icon-only action says its name on hover, in a tip above it. */
+.fx-bulk [data-tip]:hover::after, .fx-bulk [data-tip]:focus-visible::after {
+  content: attr(data-tip); position: absolute; bottom: calc(100% + 10px); left: 50%; transform: translateX(-50%);
+  padding: 4px 8px; border: 1px solid var(--fx-line); border-radius: var(--t-radius); background: var(--t-paper); color: var(--t-strong);
+  font: 500 12px/1.2 var(--t-body); pointer-events: none; box-shadow: var(--t-shadow), 0 4px 12px rgba(0, 0, 0, .12);
+}
+/* More: a compact list, one row per action, like a dropdown. */
+.fx-pop.fx-bulk__more { width: 248px; min-width: 0; padding: 4px; }
+.fx-bulk__search { width: 100%; height: 30px; margin-bottom: 2px; padding: 4px 8px; font-size: 13px; }
+.fx-bulk__more .fx-pop__head { padding: 6px 8px 2px; font-size: 10.5px; }
+.fx-bulk__more .fx-pop__item { gap: 8px; padding: 4px 8px; font-size: 13px; line-height: 1.25; }
+.fx-bulk__more .fx-pop__item .fx-lucide { width: 14px; height: 14px; }
+.fx-bulk__grid { display: grid; }
+.fx-bulk__grid .fx-pop__item[data-tone="danger"] { color: var(--t-danger); }
+.fx-bulk__none { margin: 8px 10px; color: var(--t-dim); font-size: 13.5px; }
+@media (max-width: 560px) {
+  .fx-bulk { bottom: 10px; padding: 4px; }
+  .fx-bulk__count { margin-right: 2px; padding-left: 8px; }
+  .fx-bulk__act { padding: 7px 6px; }
+  .fx-bulk__sep { margin: 0 2px; }
+  .fx-bulk__act:not(.fx-bulk__act--primary) .fx-bulk__word { display: none; }
+}

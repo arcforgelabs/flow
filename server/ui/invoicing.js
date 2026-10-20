@@ -6,6 +6,7 @@
 // zero, server/core/money.js). Data comes from /api/invoicing
 // (server/api/invoicing.js). app.js passes in its shared pieces as `ui`.
 import { alertStrip } from '/assets/ui/alerts.js';
+import { bulkBar } from '/assets/ui/bulk-bar.js';
 import { draftNote, sendModeNote } from '/assets/ui/invoice-notes.js';
 import { jobChangeBanner } from '/assets/ui/job-change.js';
 
@@ -22,10 +23,10 @@ const VIEW_TONE = { problem: 'danger', ready: 'success', sending: 'info', to_che
 const EMPTY = {
   to_check: 'No drafts to check. Press New invoice to start one.',
   problem: 'No problems.',
-  ready: 'Nothing is ready. Tick drafts and press Move to Ready.',
+  ready: 'Nothing is ready. In Drafts, tick drafts and press Ready.',
 };
-// Tabs whose rows can be ticked, and what the ticked rows can do.
-const TICKS = { to_check: true, ready: true };
+// Every tab's rows can be ticked; the bulk bar (bulkActions) says what the
+// ticked rows can do there.
 
 const money = new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' });
 export const formatCents = (cents) => money.format((cents ?? 0) / 100);
@@ -120,18 +121,28 @@ export async function renderInvoiceList(main, ui) {
   const search = h('input', { class: 'fx-input fx-search', type: 'search', placeholder: 'Find a number, client or reference', 'aria-label': 'Find an invoice', value: state.q });
   const bar = h('div', { class: 'fx-sendbar', hidden: true });
   const host = h('div', { class: 'fx-panel' }, h('div', { class: 'fx-skeleton' }));
+  const bulk = bulkBar(ui);
   const context = await flow('/api/invoicing/context').catch(() => ({ canIssue: false }));
   let body = null;
   const openTab = (id) => { state.status = id; state.ticked.clear(); sessionStorage.setItem('flow_invoice_tab', id); load(); };
   const alerts = alertStrip(ui, 'invoices', { onTab: openTab });
+  // The tabs, search and send bar stay at the top while the rows scroll up
+  // under them; the bulk bar floats at the foot (ClickUp's layout).
+  const head = h('div', { class: 'fx-listhead' }, h('div', { class: 'fx-toolbar' }, tabs, search), bar);
+  const edge = h('div', { class: 'fx-listhead__edge', 'aria-hidden': 'true' });
   main.append(
     pageHeader('Invoices', {
       actions: [h('a', { class: 'fx-btn fx-btn--primary', href: '/invoices/new', onclick: go }, 'New invoice')],
     }),
     alerts.element,
-    h('div', { class: 'fx-toolbar' }, tabs, search),
-    bar,
-    host);
+    edge,
+    head,
+    host,
+    bulk.element);
+  // A shadow under the head shows once rows scroll under it.
+  if (typeof IntersectionObserver === 'function') {
+    new IntersectionObserver(([entry]) => head.toggleAttribute('data-stuck', !entry.isIntersecting), { rootMargin: `-${head.offsetTop > 0 && window.matchMedia?.('(max-width: 820px)').matches ? 61 : 1}px 0px 0px 0px` }).observe(edge);
+  }
 
   let timer;
   search.addEventListener('input', () => {
@@ -167,19 +178,10 @@ export async function renderInvoiceList(main, ui) {
     const ticked = [...state.ticked];
     const parts = [];
     if (state.status === 'to_check') {
-      parts.push(h('p', { class: 'fx-dim' }, ticked.length ? `${plural(ticked.length, 'draft', 'drafts')} ticked.` : 'Check each draft, tick it, then move it to Ready.'));
-      if (ticked.length) {
-        parts.push(action(`Move ${ticked.length} to Ready`, 'mark-ready', () => ({ invoiceIds: ticked }), (res) => (res.refused.length
-          ? [`${res.marked} ready. ${plural(res.refused.length, 'draft has', 'drafts have')} a problem and moved to Problem.`, 'danger']
-          : [`${plural(res.marked, 'draft', 'drafts')} ready.`, 'success'])));
-      }
+      parts.push(h('p', { class: 'fx-dim' }, 'Check each draft, tick it, then press Ready.'));
     } else if (state.status === 'ready') {
       parts.push(h('p', { class: 'fx-dim' }, sendModeNote(to, body.sendMode)));
       const buttons = [];
-      if (ticked.length) {
-        buttons.push(action(`Move ${ticked.length} to Drafts`, 'mark-not-ready', () => ({ invoiceIds: ticked }),
-          (res) => [`${plural(res.moved, 'invoice', 'invoices')} back in Drafts.`, 'success'], 'ghost'));
-      }
       if (context.canIssue && body.counts.ready > 0) {
         buttons.push(action(to ? `Send all ${body.counts.ready} ready to ${to}` : `Finalise all ${body.counts.ready} ready`, 'send-ready', () => ({ issueDate: localDate() }),
           (res) => [`${res.issued} finalised.${to ? ` They are on the way to ${to}.` : ''}${res.remaining ? ` ${res.remaining} more are ready: press again.` : ''}`, 'success']));
@@ -194,6 +196,162 @@ export async function renderInvoiceList(main, ui) {
     }
     bar.replaceChildren(...parts);
     bar.hidden = !parts.length;
+    bulk.draw({ count: ticked.length, onClear: () => setTicks([]), ...bulkActions(ticked) });
+  }
+
+  // Ticks changed from the bar: the rows draw again with the new ticks.
+  function setTicks(ids) {
+    state.ticked = new Set(ids);
+    if (body) draw(body);
+  }
+
+  // A bulk step on the server: on success the ticks clear and the list loads
+  // again; on a failure the ticks stay, so a person can try again.
+  async function post(path, payload, done) {
+    try {
+      const res = await flow(`/api/invoicing/invoices/${path}`, { method: 'POST', body: JSON.stringify(payload) });
+      toast(...done(res));
+      state.ticked.clear();
+      seen.clear();
+      await load();
+      alerts.refresh();
+    } catch (error) {
+      toast(error.message, 'danger');
+    }
+  }
+
+  // What the ticked rows can do on this tab. The bar shows the main ones;
+  // More shows them all, with Selection steps under them.
+  function bulkActions(ticked) {
+    const to = body.sendsTo;
+    const rows = body.invoices.filter((i) => state.ticked.has(i.id));
+    const numbered = ['issued', 'void'].includes(state.status);
+    const status = [];
+    const apply = [];
+    if (state.status === 'ready' && context.canIssue) {
+      status.push({
+        icon: 'circle-check-big', label: 'Finalise', primary: true,
+        title: to ? `Finalise and send to ${to}` : 'Finalise',
+        run: async () => {
+          const ok = await ui.dialog({
+            title: `Finalise ${plural(ticked.length, 'invoice', 'invoices')}?`,
+            body: h('p', {}, `Each one gets the next number and is locked.${to ? ` ${sendModeNote(to, body.sendMode, 'each one')}` : ''}`),
+            confirm: to ? `Finalise and send ${ticked.length}` : `Finalise ${ticked.length}`,
+          });
+          if (!ok) return;
+          await post('send-ready', { issueDate: localDate(), invoiceIds: ticked },
+            (res) => [`${plural(res.issued, 'invoice', 'invoices')} finalised.${to ? ` They are on the way to ${to}.` : ''}${res.remaining ? ` ${res.remaining} more stay in Ready: tick them and press again.` : ''}`, 'success']);
+        },
+      });
+    }
+    if (state.status === 'ready') {
+      status.push({
+        icon: 'undo-2', label: 'Drafts', title: 'Move to Drafts',
+        run: () => post('mark-not-ready', { invoiceIds: ticked }, (res) => [`${plural(res.moved, 'invoice', 'invoices')} back in Drafts.`, 'success']),
+      });
+    }
+    if (state.status === 'to_check') {
+      status.push({
+        icon: 'check-check', label: 'Ready', primary: true, title: 'Move to Ready',
+        run: () => post('mark-ready', { invoiceIds: ticked }, (res) => (res.refused.length
+          ? [`${res.marked} ready. ${plural(res.refused.length, 'draft has', 'drafts have')} a problem and moved to Problem.`, 'danger']
+          : [`${plural(res.marked, 'draft', 'drafts')} ready.`, 'success'])),
+      });
+    }
+    const failed = rows.filter((i) => i.status === 'issued').map((i) => i.id);
+    if (state.status === 'problem' && context.canIssue && to && failed.length) {
+      status.push({
+        icon: 'refresh-cw', label: 'Retry', primary: true, title: `Send again to ${to}`,
+        run: () => post('send-again', { invoiceIds: failed }, (res) => [`${res.queued} on the way to ${to} again.`, 'success']),
+      });
+    }
+    apply.push({
+      icon: 'copy', label: 'Copy', iconOnly: true, title: numbered ? 'Copy numbers' : 'Copy references',
+      run: () => copyLines(rows.map((i) => (numbered ? i.number : i.reference) ?? i.contactName ?? '')),
+    });
+    apply.push({ icon: 'download', label: 'Export', iconOnly: true, title: 'Export CSV', run: () => exportCsv(rows) });
+    if (numbered) apply.push({ icon: 'file-down', label: 'PDFs', iconOnly: true, title: 'Download PDFs', run: () => downloadPdfs(rows) });
+    const danger = [];
+    const voidable = rows.filter((i) => i.status === 'issued');
+    if (state.status === 'issued' && context.canIssue && voidable.length) {
+      danger.push({
+        icon: 'ban', label: 'Void', iconOnly: true, tone: 'danger', title: 'Void',
+        run: () => voidAll(voidable),
+      });
+    }
+    const all = body.invoices.map((i) => i.id);
+    const selection = [
+      { icon: 'list-checks', label: 'Tick all shown', run: () => setTicks(all) },
+      { icon: 'square-check', label: 'Invert ticks', run: () => setTicks(all.filter((id) => !state.ticked.has(id))) },
+      { icon: 'square-x', label: 'Clear ticks', run: () => setTicks([]) },
+    ];
+    return {
+      groups: [status, apply, danger],
+      more: [
+        { head: 'Change status', actions: [...status, ...danger] },
+        { head: 'Apply an action', actions: apply },
+        { head: 'Selection', actions: selection },
+      ],
+    };
+  }
+
+  async function copyLines(lines) {
+    try {
+      await navigator.clipboard.writeText(lines.join('\n'));
+      toast(`${plural(lines.length, 'line', 'lines')} copied.`, 'success');
+    } catch {
+      toast('The browser did not allow a copy.', 'danger');
+    }
+  }
+
+  // The ticked rows as a CSV file, with the columns on the screen.
+  function exportCsv(rows) {
+    const cell = (v) => (/[",\n]/.test(String(v ?? '')) ? `"${String(v).replace(/"/g, '""')}"` : String(v ?? ''));
+    const lines = [['Number', 'Client', 'Reference', 'Date', 'Total', 'Status']]
+      .concat(rows.map((i) => [i.number ?? '', i.contactName ?? '', i.reference ?? '', i.issueDate ?? i.createdAt?.slice(0, 10) ?? '',
+        ((i.totalCents ?? 0) / 100).toFixed(2), i.status === 'void' ? 'Void' : VIEW_LABEL[i.view] ?? STATUS_LABEL[i.status]]));
+    save(new Blob([lines.map((l) => l.map(cell).join(',')).join('\r\n')], { type: 'text/csv' }), `invoices-${state.status}-${localDate()}.csv`);
+    toast(`${plural(rows.length, 'invoice', 'invoices')} exported.`, 'success');
+  }
+
+  async function downloadPdfs(rows) {
+    const token = await window.Clerk?.session?.getToken();
+    let saved = 0;
+    for (const invoice of rows) {
+      try {
+        const res = await fetch(`/api/invoicing/invoices/${invoice.id}/pdf`, { headers: { Authorization: `Bearer ${token}` } });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        save(await res.blob(), `${invoice.number ?? invoice.id}.pdf`);
+        saved += 1;
+      } catch {
+        // The toast below counts the ones that did not save.
+      }
+    }
+    toast(saved === rows.length ? `${plural(saved, 'PDF', 'PDFs')} saved.` : `${saved} of ${rows.length} PDFs saved.`, saved === rows.length ? 'success' : 'danger');
+  }
+
+  // Void, one invoice after the other, as on one invoice's page.
+  async function voidAll(rows) {
+    const ok = await ui.dialog({
+      title: `Void ${plural(rows.length, 'invoice', 'invoices')}?`,
+      body: h('div', {}, h('p', {}, 'Their numbers stay used. A void invoice cannot be finalised again.'),
+        body.sendsTo ? h('p', { class: 'fx-problem' }, `Flow does not change ${body.sendsTo}: void them in ${body.sendsTo} too.`) : null),
+      confirm: `Void ${rows.length}`, tone: 'danger',
+    });
+    if (!ok) return;
+    let done = 0;
+    let error = null;
+    for (const invoice of rows) {
+      try {
+        await flow(`/api/invoicing/invoices/${invoice.id}/void`, { method: 'POST', body: '{}' });
+        done += 1;
+      } catch (e) { error = e; }
+    }
+    toast(error ? `${done} of ${rows.length} void. ${error.message}` : `${plural(done, 'invoice', 'invoices')} void.`, error ? 'danger' : 'success');
+    state.ticked.clear();
+    seen.clear();
+    await load();
+    alerts.refresh();
   }
 
   // A tab switch shows at once: the tab is selected, the last list seen for
@@ -257,7 +415,6 @@ export async function renderInvoiceList(main, ui) {
     saveNav({ tab: state.status, q: state.q, ids: body.invoices.map((i) => i.id) });
     const open = (href) => { saveNav({ ...readNav(), scrollY: window.scrollY }); go(href); };
     const link = (href, label) => h('a', { class: 'fx-strong', href, onclick: (event) => { event.preventDefault(); event.stopPropagation(); open(href); } }, label);
-    const ticks = TICKS[state.status];
     const showProblem = state.status === 'problem';
     const created = ['to_check', 'problem', 'ready'].includes(state.status);
     // An invoice gets its number when it is sent or issued, so only the
@@ -280,6 +437,7 @@ export async function renderInvoiceList(main, ui) {
     };
     const all = h('input', {
       type: 'checkbox', class: 'fx-tick', 'aria-label': 'Tick every invoice shown',
+      ...(state.ticked.size && body.invoices.every((i) => state.ticked.has(i.id)) ? { checked: true } : {}),
       onchange: () => {
         for (const invoice of body.invoices) { if (all.checked) state.ticked.add(invoice.id); else state.ticked.delete(invoice.id); }
         for (const box of boxes) box.checked = all.checked;
@@ -289,7 +447,7 @@ export async function renderInvoiceList(main, ui) {
     const statusCells = new Map();
     host.replaceChildren(h('table', { class: 'fx-table fx-table--rows' },
       h('thead', {}, h('tr', {},
-        ticks ? h('th', { class: 'fx-tick-cell' }, all) : null,
+        h('th', { class: 'fx-tick-cell' }, all),
         numbered ? h('th', {}, 'Number') : null, h('th', {}, 'Client'), h('th', {}, showProblem ? 'Problem' : 'Reference'),
         h('th', {}, created ? 'Created' : 'Finalised'), h('th', { class: 'fx-num' }, 'Total'), h('th', {}, 'Status'),
         linked ? h('th', {}, 'Linked') : null)),
@@ -298,7 +456,7 @@ export async function renderInvoiceList(main, ui) {
         const first = invoice.problems?.[0];
         const view = invoice.status === 'void' ? null : invoice.view;
         return h('tr', { tabindex: '0', onclick: () => open(href), onkeydown: (event) => { if (event.key === 'Enter') open(href); } },
-          ticks ? h('td', { class: 'fx-tick-cell', onclick: (event) => event.stopPropagation() }, tickBox(invoice)) : null,
+          h('td', { class: 'fx-tick-cell', onclick: (event) => event.stopPropagation() }, tickBox(invoice)),
           numbered ? h('td', {}, link(href, invoice.number ?? 'Draft')) : null,
           h('td', {}, numbered ? (invoice.contactName ?? '—') : link(href, invoice.contactName ?? 'No client')),
           showProblem
@@ -334,6 +492,18 @@ export async function renderInvoiceList(main, ui) {
   }
   await load();
   if (returning && back?.scrollY) window.scrollTo(0, back.scrollY);
+}
+
+// A file the browser saves, from a blob made on this page.
+function save(blob, name) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 
 // The list an invoice was opened from: its tab, search, invoice ids in order,
