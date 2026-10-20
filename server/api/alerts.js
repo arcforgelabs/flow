@@ -5,7 +5,8 @@ import { resolveOrganisation } from './invoicing.js';
 
 // Quiet alerts for signed-in people (server/core/alerts.js, docs/ALERTS.md).
 //
-//   GET  /api/alerts?page=invoices[&organisationId=]   what needs this person on that page
+//   GET  /api/alerts?page=invoices[&scope=][&organisationId=]   what needs this person on that page;
+//        `scope` names one part of it (an integration id on page integrations)
 //   POST /api/alerts/dismiss { key[, organisationId] }  hide one alert for this person
 //
 // `sources` maps each page to the functions that find its alerts.
@@ -30,9 +31,12 @@ export function createAlertsRouter({ db, personAuth, sources, log = console }) {
     const page = typeof req.query.page === 'string' ? req.query.page : '';
     if (!ALERT_PAGES.includes(page)) throw new FlowError('invalid', `page must be one of ${ALERT_PAGES.join(', ')}`);
     const organisationId = await resolveOrganisation(db, req.query.organisationId);
-    const alerts = await alertsFor(db, organisationId, req.person, { page, sources });
+    const scope = typeof req.query.scope === 'string' && req.query.scope ? req.query.scope : null;
+    if (scope && !/^[a-z][a-z0-9-]{1,31}$/.test(scope)) throw new FlowError('invalid', 'scope must be an integration id');
+    const alerts = await alertsFor(db, organisationId, req.person, { page, scope, sources, withHidden: true });
     res.set('Cache-Control', 'no-store');
-    res.json({ ok: true, alerts: alerts.map(alertForBrowser) });
+    // `danger`: an alert of that tone is open, even one this person hid.
+    res.json({ ok: true, alerts: alerts.filter((a) => !a.hidden).map(alertForBrowser), danger: alerts.some((a) => a.tone === 'danger') });
   }));
 
   router.post('/dismiss', personAuth.requireSession, handle(async (req, res) => {

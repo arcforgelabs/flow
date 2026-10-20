@@ -9,9 +9,13 @@ const money = new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD
 const CLOSE = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
 
 // `onTab(tab)` opens a tab on the page, for an alert whose action names one.
+// `scope` narrows the page to one part (an integration's own page), and
+// `onLoad({ alerts, danger })` hears each answer (`danger`: a danger alert is
+// open, even one this person hid), so the page can show the same state
+// elsewhere. An action that links to the page already open is left out.
 // Answers { element, refresh }: put `element` on the page, and call
 // `refresh()` after a change that can fix or make an alert.
-export function alertStrip(ui, page, { onTab = () => {} } = {}) {
+export function alertStrip(ui, page, { onTab = () => {}, scope = null, onLoad = () => {} } = {}) {
   const { h, flow, go, toast } = ui;
   const element = h('div', { class: 'fx-alerts', hidden: true, role: 'status', 'aria-live': 'polite' });
   let alerts = [];
@@ -27,7 +31,7 @@ export function alertStrip(ui, page, { onTab = () => {} } = {}) {
     const close = h('button', { class: 'fx-alerts__close', type: 'button', 'aria-label': 'Dismiss', title: 'Dismiss', onclick: () => dismiss(first.key) });
     close.innerHTML = CLOSE;
     let action = null;
-    if (first.action?.href) action = h('a', { class: 'fx-alerts__action', href: first.action.href, onclick: go }, first.action.label);
+    if (first.action?.href && first.action.href !== location.pathname) action = h('a', { class: 'fx-alerts__action', href: first.action.href, onclick: go }, first.action.label);
     else if (first.action?.tab) action = h('button', { class: 'fx-alerts__action', type: 'button', onclick: () => onTab(first.action.tab) }, first.action.label);
     element.replaceChildren(...[
       h('p', { class: 'fx-alerts__text' },
@@ -51,11 +55,14 @@ export function alertStrip(ui, page, { onTab = () => {} } = {}) {
 
   // An alert that cannot load shows nothing: the page works without it.
   async function refresh() {
+    let danger = false;
     try {
-      ({ alerts } = await flow(`/api/alerts?page=${encodeURIComponent(page)}`));
+      const query = new URLSearchParams({ page, ...(scope ? { scope } : {}) });
+      ({ alerts, danger = false } = await flow(`/api/alerts?${query}`));
     } catch {
       alerts = [];
     }
+    onLoad({ alerts, danger });
     draw();
   }
 

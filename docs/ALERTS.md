@@ -23,6 +23,8 @@ Issue #117. An alert says that something on one page needs a person.
 
 A paused circuit or a spent daily budget ends by itself, so it makes no alert.
 
+An integration's own page (for example /integrations/xero) shows the same line, for that integration only (`scope`). Its status says "Calls stopped" while a danger alert is open, even after a person dismissed the line. The Xero page also turns the organisation row red and makes "Connect again" its main button. Connect again starts the calls again.
+
 ## How it works
 
 ```
@@ -36,6 +38,7 @@ integration alerts ──┘                         ▲
 - Flow works out alerts each time a page asks (`server/core/alerts.js`). It stores no copy of an alert.
 - Each alert has a `key` that starts with its page, and `members`: the things it is about. Members stay on the server.
 - `alert_dismissals` keeps one row per organisation, person and key, with the members at the time of the dismiss. The server works out the members again for a dismiss, so a browser cannot set them.
+- `GET /api/alerts?page=integrations&scope=xero` answers only that integration's alerts, and `danger`: true while a danger alert is open, hidden or not.
 - The strip loads with its page and again when the browser tab comes back into view (`server/ui/alerts.js`).
 
 ## An integration's alerts
