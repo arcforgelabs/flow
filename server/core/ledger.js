@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import {
-  billingObligations, obligationEvents, obligationPayments, obligationWritebacks, priceItems,
+  billingObligations, invoices, obligationEvents, obligationPayments, obligationWritebacks, priceItems,
 } from '../db/schema.js';
 import { FlowError, notFound } from './errors.js';
 import { createDraftInvoice, getInvoice, updateDraftInvoice } from './invoices.js';
@@ -325,9 +325,16 @@ export async function useSourceLines(db, organisationId, obligationId, { actor }
         ));
       } else changes[field] = obligation[field];
     }
-    const invoice = Object.keys(changes).length
+    let invoice = Object.keys(changes).length
       ? await updateDraftInvoice(tx, organisationId, obligation.invoiceId, changes)
       : await getInvoice(tx, organisationId, obligation.invoiceId);
+    // The draft now matches a job that is ready to invoice, so it goes to
+    // Ready on its own; Flow's checks still hold it in Problem if one fails.
+    if (obligation.readyAt && !invoice.readyAt) {
+      await tx.update(invoices).set({ readyAt: sql`now()`, readyBy: null })
+        .where(and(eq(invoices.organisationId, organisationId), eq(invoices.id, invoice.id), eq(invoices.status, 'draft')));
+      invoice = await getInvoice(tx, organisationId, invoice.id);
+    }
     const fields = { draftBasis: basisOf(obligation) };
     if (obligation.holdState === 'review' && obligation.holdReason === CHANGED_REASON) Object.assign(fields, { holdState: 'none', holdReason: null });
     const row = await update(tx, obligation, fields);

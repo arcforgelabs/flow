@@ -152,7 +152,7 @@ export async function renderInvoiceList(main, ui) {
           (res) => [`${plural(res.moved, 'invoice', 'invoices')} back in Drafts.`, 'success'], 'ghost'));
       }
       if (context.canIssue && body.counts.ready > 0) {
-        buttons.push(action(to ? `Send all ${body.counts.ready} ready to ${to}` : `Issue all ${body.counts.ready} ready`, 'send-ready', () => ({ issueDate: localDate() }),
+        buttons.push(action(to ? `Send all ${body.counts.ready} ready to ${to}` : `Finalise all ${body.counts.ready} ready`, 'send-ready', () => ({ issueDate: localDate() }),
           (res) => [`${res.issued} issued.${to ? ` They are on the way to ${to}.` : ''}${res.remaining ? ` ${res.remaining} more are ready: press again.` : ''}`, 'success']));
       }
       if (buttons.length) parts.push(h('div', { class: 'fx-sendbar__actions' }, buttons));
@@ -394,7 +394,7 @@ function draftView(invoice, ui, context, redraw) {
   const lines = (invoice?.lines ?? []).map((line) => ({ ...line }));
   if (!lines.length) lines.push({ description: '', quantity: 1, unitAmountCents: null, taxCode: 'GST', priceItemId: null });
   let contact = invoice?.contact ?? null;
-  // Issue invoice waits for a client and a due date (syncIssue, below).
+  // Finalise invoice waits for a client and a due date (syncIssue, below).
   let onContact = () => {};
 
   // Client: type to find a customer.
@@ -547,19 +547,22 @@ function draftView(invoice, ui, context, redraw) {
 
   // Save shows only when there is something to save: a new invoice, or a
   // change since the page opened. Saving keeps the invoice where it is.
+  // Save as draft: a draft that is not ready always offers it. A ready
+  // invoice offers Save changes only once something changed.
+  const keepsSave = isNew || invoice?.view !== 'ready';
   const saveButton = h('button', {
-    class: 'fx-btn', type: 'button', hidden: !isNew,
+    class: 'fx-btn', type: 'button', hidden: !keepsSave,
     onclick: async () => {
       const saved = await save();
       if (!saved) return;
-      toast(isNew ? 'Draft saved.' : 'Changes saved.', 'success');
+      toast(keepsSave ? 'Saved as a draft.' : 'Changes saved.', 'success');
       if (isNew) go(`/invoices/${saved.id}`, { replace: true });
       else redraw(saved);
     },
-  }, isNew ? 'Save draft' : 'Save changes');
+  }, keepsSave ? 'Save as draft' : 'Save changes');
   const opened = JSON.stringify(body());
   const changed = () => !isNew && JSON.stringify(body()) !== opened;
-  const watchChanges = () => { if (!isNew) saveButton.hidden = !changed(); };
+  const watchChanges = () => { if (!keepsSave) saveButton.hidden = !changed(); };
   // With an accounting system on, a ready invoice is sent there: Flow issues
   // it and queues it, the same as Send all ready. With none, Flow issues it
   // and keeps it. A draft that is not ready has no send: move it to Ready first.
@@ -587,7 +590,7 @@ function draftView(invoice, ui, context, redraw) {
       }
     },
   }, emails ? `Send to ${to} and email` : `Send to ${to}`) : null;
-  // With no accounting system, Issue invoice gives the draft its number and
+  // With no accounting system, Finalise invoice gives the draft its number and
   // locks it. A changed job blocks it, as it blocks Move to Ready.
   const issueButton = context.canIssue && !to ? h('button', {
     class: 'fx-btn fx-btn--primary', type: 'button',
@@ -595,28 +598,28 @@ function draftView(invoice, ui, context, redraw) {
       const saved = await save();
       if (!saved) return;
       const ok = await ui.dialog({
-        title: 'Issue this invoice?',
+        title: 'Finalise this invoice?',
         body: h('p', {}, `It gets the next number (${nextNumber}). Flow keeps it exactly as issued. To change it later, revise it.`),
-        confirm: 'Issue',
+        confirm: 'Finalise',
       });
       if (!ok) { if (isNew) go(`/invoices/${saved.id}`, { replace: true }); else redraw(saved); return; }
       try {
         const { invoice: issued } = await flow(`/api/invoicing/invoices/${saved.id}/issue`, { method: 'POST', body: JSON.stringify({ issueDate: localDate() }) });
-        toast(`${issued.number} issued.`, 'success');
+        toast(`${issued.number} is final.`, 'success');
         if (isNew) go(`/invoices/${issued.id}`, { replace: true });
         else redraw(issued);
       } catch (error) {
         toast(error.message, 'danger');
       }
     },
-  }, 'Issue invoice') : null;
+  }, 'Finalise') : null;
   // Issue needs a client and a due date: until both are set it is greyed.
   // A changed job greys it too, as it does Move to Ready.
   const syncIssue = () => {
     if (!issueButton) return;
     const missing = [contact ? null : 'a client', dueDate.value ? null : 'a due date'].filter(Boolean);
     issueButton.disabled = missing.length > 0 || Boolean(invoice?.jobChange);
-    issueButton.title = invoice?.jobChange ? 'Fix the problem first.' : missing.length ? `Choose ${missing.join(' and ')} first.` : '';
+    issueButton.title = invoice?.jobChange ? 'Fix the problem first.' : missing.length ? `Choose ${missing.join(' and ')} first.` : 'Gives it the next number and locks it. Nothing is sent.';
   };
   onContact = syncIssue;
   clientInput.addEventListener('input', syncIssue);
@@ -634,19 +637,21 @@ function draftView(invoice, ui, context, redraw) {
       h('span', { class: 'fx-dim' }, 'Flow fills in the details.')),
     h('button', { class: 'fx-btn', type: 'button', onclick: () => pickJob(ui) }, 'Choose a job')) : null;
 
-  // Move to Ready: the draft is saved, then Flow checks it and moves it to
-  // the Ready tab; nothing is sent. One with a problem stays a draft. Move to
-  // Drafts, on the Status card, undoes it. A changed job is fixed at its
-  // source or adopted, never by editing here, so the button waits for that.
+  // Finalise, with an accounting system on: the draft is saved, then Flow
+  // checks it and moves it to the Ready tab, for Send all ready; nothing is
+  // sent here. A draft the draft routine made from a job ready to invoice is
+  // in Ready already (automations.js), so this is for the rest. One with a
+  // problem stays a draft. Move to Drafts, on the Status card, undoes it. A
+  // changed job is fixed at its source or adopted, so the button waits.
   const jobChange = invoice?.jobChange ?? null;
-  const markReadyButton = isNew || ready ? null : h('button', {
-    class: 'fx-btn', type: 'button', disabled: Boolean(jobChange),
-    title: jobChange ? 'Fix the problem first.' : 'Saves and checks this draft, then moves it to the Ready tab. Nothing is sent.',
+  const markReadyButton = isNew || ready || !to ? null : h('button', {
+    class: 'fx-btn fx-btn--primary', type: 'button', disabled: Boolean(jobChange),
+    title: jobChange ? 'Fix the problem first.' : `Checks this draft and moves it to Ready. Send all ready sends it to ${to}.`,
     onclick: async () => {
       if (!(await save())) return;
       try {
         const res = await flow('/api/invoicing/invoices/mark-ready', { method: 'POST', body: JSON.stringify({ invoiceIds: [invoice.id] }) });
-        if (res.marked) toast('Moved to Ready. Nothing is sent yet.', 'success');
+        if (res.marked) toast(`Final. It is in Ready; Send all ready sends it to ${to}.`, 'success');
         else toast(res.refused[0]?.problems.map((p) => p.message).join(' ') ?? 'It has a problem.', 'danger');
         const { invoice: fresh } = await flow(`/api/invoicing/invoices/${invoice.id}`);
         redraw(fresh);
@@ -654,7 +659,7 @@ function draftView(invoice, ui, context, redraw) {
         toast(error.message, 'danger');
       }
     },
-  }, 'Move to Ready');
+  }, 'Finalise');
   // A ready invoice can go back to Drafts. It is a status change, so it sits
   // with the status, not with the page's main buttons.
   const statusCard = ready ? h('section', { class: 'fx-card fx-side-card' },
@@ -690,7 +695,7 @@ function draftView(invoice, ui, context, redraw) {
         if (!ok) return;
         try {
           const res = await flow(`/api/invoicing/jobs/${jobChange.jobId}/use-new-lines`, { method: 'POST', body: '{}' });
-          toast(`The invoice now matches ${system}.`, 'success');
+          toast(`The invoice now matches ${system}.${res.invoice.view === 'ready' ? ' It is in Ready.' : ''}`, 'success');
           redraw(res.invoice);
         } catch (error) {
           toast(error.message, 'danger');
@@ -706,7 +711,7 @@ function draftView(invoice, ui, context, redraw) {
       h('div', { class: 'fx-ph__text' },
         h('h1', { class: 'fx-title' }, isNew ? 'New invoice' : ready ? 'Ready invoice' : 'Draft invoice'),
         h('p', { class: 'fx-ph__sub' }, draftNote(to, invoice, ready))),
-      h('div', { class: 'fx-ph__actions' }, saveButton, markReadyButton, isNew ? null : previewButton(ui, invoice.id, 'Shows the saved invoice.'), sendButton ?? issueButton)),
+      h('div', { class: 'fx-ph__actions' }, isNew ? null : previewButton(ui, invoice.id, 'Shows the saved invoice.'), saveButton, markReadyButton, sendButton ?? issueButton)),
     ...problems,
     fromJob,
     h('div', { class: 'fx-invoice__grid' },

@@ -110,8 +110,9 @@ describe('the job change on an invoice', { skip: skipWithoutDatabase }, () => {
     assert.equal(change.canAdopt, true);
     assert.deepEqual(change.lines.map((l) => [l.change, l.fields, l.was.quantity, l.now.quantity]), [['changed', ['quantity'], 1, 2]]);
     assert.deepEqual(change.total, { was: 24200, now: 48400 });
-    await useSourceLines(db, lab.id, obligation.id, { actor });
+    const { invoice: adopted } = await useSourceLines(db, lab.id, obligation.id, { actor });
     assert.equal(await jobChangeFor(db, lab.id, invoice.id), null, 'adopted: the problem is gone');
+    assert.ok(adopted.readyAt, 'the draft matches a job ready to invoice, so it goes to Ready');
   });
 
   test('both changed: shown, but not to adopt', async () => {

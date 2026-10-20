@@ -465,7 +465,7 @@ export function createInvoicingRouter({
     // Ready and Send do.
     const { problems } = await invoiceView(db, organisationId, await getInvoice(db, organisationId, invoiceId));
     const held = problems.find((p) => p.code === 'job_review');
-    if (held) throw new FlowError('not_ready', `${held.message} Nothing was issued.`);
+    if (held) throw new FlowError('not_ready', `${held.message} Nothing was finalised.`);
     const issued = await issueInvoice(db, organisationId, invoiceId, { issuedBy: `person:${req.person.id}`, issueDate });
     log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} issued invoice ${issued.number} (version ${issued.issuedVersion})`);
     res.json({ ok: true, invoice: await invoiceDetail(db, organisationId, invoiceId, accounting(), work()) });

@@ -21,6 +21,6 @@ export function sendModeNote(to, sendMode, what = 'each invoice') {
 // The line under a draft's title, one fact per sentence.
 export function draftNote(to, invoice, ready) {
   if (!to) return ready ? 'A person checked it. A saved change keeps it ready.' : 'Flow gives it a number when you issue it.';
-  if (!ready) return `Move it to Ready, then send it to ${to}.`;
+  if (!ready) return `Finalise it, then send it to ${to}.`;
   return sendModeNote(to, invoice?.sendMode, 'this invoice');
 }

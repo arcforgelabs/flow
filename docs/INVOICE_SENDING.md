@@ -10,17 +10,21 @@ one of them. Code: `server/core/sending.js`.
 | Problem | A check failed. |
 | Ready | A person marked it ready, and no check fails. |
 
-## Move to Ready
+## Ready
 
-A person checks a draft, then presses **Move to Ready** on the invoice, or ticks
-drafts in the list and presses **Move N to Ready**. It saves the draft, checks
-it and moves it to the Ready tab; nothing is sent until **Send all ready**.
-Anyone who may draft may move a draft to Ready. While the draft's job changed
-after it was made (below), the button is off: fix the job at its source, or
-adopt the change. A draft with a problem is not marked; it shows in Problem. A saved
-change keeps a draft ready; Flow's checks still run on it. **Move to Drafts**,
-on the invoice's Status card or for ticked rows in the list, takes it back.
-`invoices.ready_at` and `ready_by` record who marked it and when.
+A draft the draft routine made from a job ready to invoice goes to Ready on
+its own while no person has changed it (server/core/automations.js), and so
+does a draft whose job change a person adopted. Any other draft waits in
+Drafts. On the invoice the buttons are, left to right, **Preview**, **Save as
+draft** and **Finalise**. With an accounting system on, **Finalise** saves the
+draft, checks it and moves it to the Ready tab; nothing is sent until **Send
+all ready**. In the list, a person ticks drafts and presses **Move N to
+Ready**. A draft with a problem stays where it is and shows in Problem. While
+the draft's job changed after it was made (below), Finalise is off: fix the
+job at its source, or adopt the change. A saved change keeps a draft ready;
+Flow's checks still run on it. **Move to Drafts**, on the invoice's Status
+card or for ticked rows in the list, takes it back. `invoices.ready_at` and
+`ready_by` record who marked it and when.
 
 ## Checks
 
@@ -69,11 +73,11 @@ With no accounting system on, the button issues the ready drafts only.
 One ready invoice has its own **Send to Xero** button (**Send to Xero and
 email** when the customer's send mode is approve and email). It does the same
 steps for that invoice only. A draft that is not ready has no send button:
-move it to Ready first. With no accounting system on, the invoice page shows
-**Issue invoice** instead. **Preview** sits just left of the send button.
-Issue invoice is greyed until the invoice has a client and a due date. A new
-invoice with an accounting system on has no Issue invoice: save the draft,
-move it to Ready, then send it.
+finalise it first. With no accounting system on, **Finalise** gives the
+invoice the next number and locks it, and sends nothing. **Preview** comes
+first, then **Save as draft**, then Finalise or the send button. With no
+accounting system, Finalise is greyed until the invoice has a client and a due
+date. Finalise is also greyed while the draft's job change is open.
 
 ## New invoice from a job
 
