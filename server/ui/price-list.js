@@ -235,11 +235,20 @@ export async function renderPriceList(main, ui) {
   }
 
   addButton.addEventListener('click', () => edit(null));
+  // The server makes a press wait after a check; the button shows the wait.
   checkButton.addEventListener('click', async () => {
     checkButton.disabled = true;
-    const body = await send('/api/invoicing/price-list/check', 'POST', {}, null);
-    if (body) toast(body.summary.differing ? `${body.summary.differing} codes differ.` : 'Every linked price agrees.', body.summary.differing ? 'info' : 'success');
+    let wait = 0;
+    try {
+      const body = await flow('/api/invoicing/price-list/check', { method: 'POST', body: '{}' });
+      toast(body.summary.differing ? `${body.summary.differing} codes differ.` : 'Every linked price agrees.', body.summary.differing ? 'info' : 'success');
+      wait = body.cooldownMs ?? 0;
+    } catch (error) {
+      toast(error.message, error.status === 429 ? 'info' : 'danger');
+      wait = error.retryAfterMs ?? 0;
+    }
     checkButton.disabled = disabled;
+    if (!disabled) ui.holdButton(checkButton, wait);
     alerts.refresh();
     await load();
   });

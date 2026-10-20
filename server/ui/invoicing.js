@@ -1138,8 +1138,9 @@ function xeroCard(invoice, ui, context, status, reload) {
         toast(res.resolved ? 'Flow and Xero agree now.' : 'Still different. Fix it in Xero or in Flow, then try again.', res.resolved ? 'success' : 'danger');
         await reload();
       } catch (error) {
-        toast(error.message, 'danger');
+        toast(error.message, error.status === 429 ? 'info' : 'danger');
         resolve.disabled = false;
+        ui.holdButton(resolve, error.retryAfterMs);
       }
     },
   }, 'Mark resolved') : null;
@@ -1179,9 +1180,10 @@ function sendToXero(invoice, ui, context) {
         sent = ['created', 'reconciled', 'existing', 'already_in_xero'].includes(result?.outcome);
       } catch (error) {
         toast(error.message, 'danger');
+        if (error.retryAfterMs) ui.holdButton(button, error.retryAfterMs);
       } finally {
         if (sent) showSent(button);
-        else button.disabled = false;
+        else if (!button.dataset.label) button.disabled = false;
       }
     },
   }, 'Send to Xero');

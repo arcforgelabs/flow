@@ -1,6 +1,7 @@
 import { and, asc, desc, eq, ilike, inArray, isNull, or, sql } from 'drizzle-orm';
 import express from 'express';
 import { FlowError } from '../core/errors.js';
+import { createActionGuard } from '../integrations/call-guard.js';
 import {
   createDraftInvoice, getInvoice, issueInvoice, listInvoiceVersions, reviseInvoice, updateDraftInvoice, voidInvoice,
 } from '../core/invoices.js';
@@ -307,10 +308,24 @@ async function invoiceDetail(db, organisationId, invoiceId, accounting = null, w
   };
 }
 
+// The buttons here that may call a connected system, and how long each waits
+// before it runs again (the action guard, server/integrations/call-guard.js).
+// Check prices reads Flow's copies only; its wait keeps a press from
+// repeating a whole check. A send or a draft is one at a time, and a draft
+// waits per job, so ticking many jobs still works.
+export const INVOICING_ACTIONS = Object.freeze({
+  priceCheck: { cooldownMs: 15_000 },
+  sendReady: { cooldownMs: 0, budget: false },
+  sendAgain: { cooldownMs: 0, budget: false },
+  draftJob: { cooldownMs: 10_000, budget: false },
+});
+
 export function createInvoicingRouter({
   db, personAuth, log = console, liveCheckFor = () => null, accounting = () => null, work = () => [], priceSystems = () => [],
+  buttonCooldowns = true, actions = createActionGuard({ integration: 'invoicing', actions: INVOICING_ACTIONS, off: !buttonCooldowns }),
 }) {
   const router = express.Router();
+  const act = (name, key) => actions.route(name, { key });
   router.use(express.json({ limit: '64kb' }));
 
   const signedIn = [personAuth.requireSession];
@@ -411,7 +426,7 @@ export function createInvoicingRouter({
     res.json({ ok: true, ...(await markNotReady(db, organisationId, invoiceIdsOf(req.body))) });
   }));
 
-  router.post('/invoices/send-ready', ...manager, handle(log, async (req, res) => {
+  router.post('/invoices/send-ready', ...manager, act('sendReady'), handle(log, async (req, res) => {
     const organisationId = await organisationOf(req);
     const issueDate = optionalDate(req.body?.issueDate, 'issueDate') ?? today();
     const ids = req.body?.invoiceIds === undefined ? null : invoiceIdsOf(req.body);
@@ -422,7 +437,7 @@ export function createInvoicingRouter({
     res.json({ ok: true, ...result });
   }));
 
-  router.post('/invoices/send-again', ...manager, handle(log, async (req, res) => {
+  router.post('/invoices/send-again', ...manager, act('sendAgain'), handle(log, async (req, res) => {
     const organisationId = await organisationOf(req);
     const ids = req.body?.invoiceIds === undefined ? null : invoiceIdsOf(req.body);
     const result = await sendAgain(db, organisationId, { accounting: accounting(), personId: req.person.id, invoiceIds: ids });
@@ -558,7 +573,7 @@ export function createInvoicingRouter({
     res.json({ ok: true, jobs, statuses, accountingName: accounting()?.name ?? null });
   }));
 
-  router.post('/jobs/:id/draft', ...manager, handle(log, async (req, res) => {
+  router.post('/jobs/:id/draft', ...manager, act('draftJob', (req) => req.params.id), handle(log, async (req, res) => {
     const obligationId = pathId(req.params.id, 'job');
     const organisationId = await organisationOf(req);
     // With no accounting system connected, Flow's own records are the check.
@@ -794,7 +809,7 @@ export function createInvoicingRouter({
     res.json({ ok: true, ...(await readPriceList(db, organisationId, { catalogues: await catalogues(organisationId) })) });
   }));
 
-  router.post('/price-list/check', ...manager, handle(log, async (req, res) => {
+  router.post('/price-list/check', ...manager, act('priceCheck'), handle(log, async (req, res) => {
     const organisationId = await organisationOf(req);
     const summary = await checkPrices(db, organisationId, { catalogues: await catalogues(organisationId), actor: `person:${req.person.id}` });
     res.json({ ok: true, summary });
