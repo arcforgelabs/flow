@@ -499,6 +499,17 @@ function personRow(person, host) {
       onchange: (event) => act(() => patch({ role: event.target.value }), `${person.email} is now ${ROLE_LABEL[event.target.value].toLowerCase()}.`),
     });
   const actions = [];
+  if (!self && person.invited && person.status === 'active') {
+    actions.push(h('button', {
+      class: 'fx-btn fx-btn--sm',
+      type: 'button',
+      title: 'Copy a sign-in message to send to them. Flow sends no email.',
+      onclick: async () => {
+        if (await copyInvite(person)) toast('Invite message copied. Paste it into an email to them.', 'success');
+        else toast(inviteMessage(person), 'info');
+      },
+    }, 'Copy invite'));
+  }
   if (!self) {
     if (person.status === 'pending') {
       actions.push(h('button', { class: 'fx-btn fx-btn--primary fx-btn--sm', type: 'button', onclick: () => act(() => patch({ status: 'active' }), `${person.email} can sign in.`) }, 'Approve'));
@@ -907,6 +918,25 @@ function xeroConnection(organisations, canChange) {
   return h('div', {}, h('h2', { class: 'fx-int-section__title' }, 'Xero organisation'), host);
 }
 
+// Flow sends no email, so the owner sends each invitee this message. It
+// names the sign-in address and the email to sign in with.
+function inviteMessage(person) {
+  return [
+    'You have access to Flow.',
+    `Sign in at ${location.origin}/sign-in with ${person.email}.`,
+    'Use Continue with Google if that address is a Google account.',
+  ].join('\n');
+}
+
+async function copyInvite(person) {
+  try {
+    await navigator.clipboard.writeText(inviteMessage(person));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function invitePerson() {
   const data = await dialog({
     title: 'Invite someone',
@@ -917,13 +947,16 @@ async function invitePerson() {
       h('label', { class: 'fx-field' },
         h('span', { class: 'fx-label' }, 'Role'),
         roleSelect('staff', { name: 'role' })),
-      h('p', { class: 'fx-dim' }, 'They sign in with this email. Flow prepares their sign-in account.')),
-    confirm: 'Send invitation',
+      h('p', { class: 'fx-dim' }, 'They sign in with this email. Flow prepares their sign-in account but sends no email: send them the invite message yourself.')),
+    confirm: 'Invite',
   });
   if (!data) return;
   try {
-    await flow('/api/people', { method: 'POST', body: JSON.stringify({ email: data.get('email'), role: data.get('role') }) });
-    toast(`${data.get('email')} is invited.`, 'success');
+    const { person } = await flow('/api/people', { method: 'POST', body: JSON.stringify({ email: data.get('email'), role: data.get('role') }) });
+    const copied = await copyInvite(person);
+    toast(copied
+      ? `${person.email} is invited. The invite message is copied: paste it into an email to them.`
+      : `${person.email} is invited. Flow sends no email: use Copy invite and send it to them.`, 'success');
   } catch (error) {
     toast(error.message, 'danger');
   }

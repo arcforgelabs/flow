@@ -175,6 +175,9 @@ Flow always keeps one active owner, and nobody changes or removes themself.
   `POST /api/people`. Flow makes the invitee's Clerk account (no password)
   through Clerk's Backend API. The invitee signs in with Google on that
   address, and Flow links them by their verified email.
+- Flow sends no invitation email. After an invite, the People page copies
+  a short sign-in message, and **Copy invite** on an invited person copies
+  it again. The owner sends that message to the invitee.
 
 With `FLOW_PUBLIC_SIGN_UP=on`, anyone with a verified email can sign up and
 waits as `pending`, with no access, until an owner approves them.
