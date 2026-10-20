@@ -235,20 +235,11 @@ export async function renderPriceList(main, ui) {
   }
 
   addButton.addEventListener('click', () => edit(null));
-  // Check prices reads Flow's copies only: no Xero or Seazona call.
   checkButton.addEventListener('click', async () => {
     checkButton.disabled = true;
-    let wait = 0;
-    try {
-      const body = await flow('/api/invoicing/price-list/check', { method: 'POST', body: '{}' });
-      toast(body.summary.differing ? `${body.summary.differing} codes differ.` : 'Every linked price agrees.', body.summary.differing ? 'info' : 'success');
-      wait = body.cooldownMs ?? 0;
-    } catch (error) {
-      toast(error.message, error.status === 429 ? 'info' : 'danger');
-      wait = error.retryAfterMs ?? 0;
-    }
+    const body = await send('/api/invoicing/price-list/check', 'POST', {}, null);
+    if (body) toast(body.summary.differing ? `${body.summary.differing} codes differ.` : 'Every linked price agrees.', body.summary.differing ? 'info' : 'success');
     checkButton.disabled = disabled;
-    if (!disabled) ui.holdButton(checkButton, wait);
     alerts.refresh();
     await load();
   });
