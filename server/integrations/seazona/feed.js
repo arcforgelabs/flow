@@ -11,9 +11,16 @@ import { seazonaClients, seazonaInvoices, seazonaOrders, seazonaReference } from
 //
 // The cursor is opaque; pass back `cursor` from the last page. A change to
 // the order or to its invoice moves the order to the end of the feed.
+//
+// A read that found no change moves the order to the end of the feed too, at
+// most once an hour (`SEEN_STEP`). Without it, an order that never changes
+// is reported once, its ledger report gets older than a day, and the ledger
+// refuses its draft as "out of date" for ever, though the lanes read the
+// order every few minutes.
 
 const BILLABLE = /\b(complete|completed|shipped|delivered)\b/i;
 const SHIPPED = /\b(shipped|delivered)\b/i;
+const SEEN_STEP = 'hour';
 
 function decodeCursor(cursor) {
   if (!cursor) return null;
@@ -31,7 +38,7 @@ function encodeCursor(at, id) {
 
 export async function readBillableWork(db, { cursor = null, limit = 200 } = {}) {
   const after = decodeCursor(cursor);
-  const changedAt = sql`greatest(${seazonaOrders.lastChangedAt}, coalesce(${seazonaInvoices.lastChangedAt}, ${seazonaOrders.lastChangedAt}))`;
+  const changedAt = sql`greatest(${seazonaOrders.lastChangedAt}, coalesce(${seazonaInvoices.lastChangedAt}, ${seazonaOrders.lastChangedAt}), date_trunc(${SEEN_STEP}, ${seazonaOrders.lastSyncedAt}))`;
   const pageSize = Math.max(1, Math.min(1000, limit));
   const rows = await db.select({
     order: seazonaOrders,
