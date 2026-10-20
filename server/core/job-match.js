@@ -97,6 +97,8 @@ export async function listReconcile(db, organisationId) {
     practitioner: billingObligations.practitioner,
     jobDate: billingObligations.jobDate,
     totalCents: billingObligations.totalCents,
+    // An unclear accounting match: "Make invoice" settles it first.
+    unclear: sql`${billingObligations.accountingState} = 'ambiguous'`.mapWith(Boolean),
     possible: sql`(select count(*) from invoices i
       where i.organisation_id = ${billingObligations.organisationId} and i.contact_id = ${billingObligations.contactId}
         and i.status <> 'void' and i.total_cents = ${billingObligations.totalCents}

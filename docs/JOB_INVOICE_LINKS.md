@@ -116,7 +116,14 @@ Flow jobs against Flow invoices. It calls no integration. Whether a Flow
 invoice matches an invoice in an accounting system is that integration's own
 work, on its own page.
 
-It has two queues, oldest first.
+It has two queues, oldest first, as tabs with their counts. Like Price list ›
+Reconcile and Xero › Import › Review, it has two views (the toggle at the
+top right):
+
+| View | Shows |
+| --- | --- |
+| One at a time | The invoice pager ("← Back" to the list, "n of N", previous and next), then one gap beside its possible other side. The default. |
+| List | Every gap in a table, with a count of possible matches. A row opens it one at a time. Ticked jobs get draft invoices from the bulk bar ("Make invoices"); a ticked job with a possible invoice is left for a person to check. |
 
 | Queue | A gap is |
 | --- | --- |
