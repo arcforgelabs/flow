@@ -34,6 +34,28 @@ Title: `type: user-facing description`, where type is one of `feat`, `fix`,
 `improve`, `refactor`, `docs` or `chore`. Use
 `.github/pull_request_template.md` and fill in every heading.
 
+## Changelog
+
+`CHANGELOG.md` is an index of one file per release in `CHANGELOG/`, the
+split layout that openclaw/openclaw uses. The release owns these files:
+
+- A normal pull request never edits `CHANGELOG.md` or `CHANGELOG/`. Put the
+  release-note text in the pull request: its title and its User Impact
+  section.
+- The release cut writes `CHANGELOG/<version>.md` from the pull requests
+  merged since the previous release, then edits the prose. The procedure is
+  `.agents/skills/flow-changelog-update/SKILL.md`.
+- A stable release covers everything since the previous stable release. A
+  beta covers everything since the previous release of either channel, in
+  its own file.
+- A release file has Highlights, Changes and Fixes, then a complete record
+  that lists every pull request in the range once. `feat`, `improve` and
+  `fix` pull requests go in the prose; `docs`, `chore`, `refactor`, `test`,
+  `ci`, `build` and `style` go only in the record, unless the title marks a
+  breaking change with `!`.
+- `npm test` runs `scripts/release/changelog.mjs check`, which holds these
+  rules. `CHANGELOG/Unreleased.md` stays empty.
+
 ## Merging to main
 
 The ruleset in `.github/rulesets/main.json` requires a pull request and the
