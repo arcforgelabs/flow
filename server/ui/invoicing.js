@@ -226,9 +226,13 @@ export async function renderInvoiceList(main, ui) {
     // The invoice page steps through this list, in this order (navBar).
     saveNav({ tab: state.status, q: state.q, ids: body.invoices.map((i) => i.id) });
     const open = (href) => { saveNav({ ...readNav(), scrollY: window.scrollY }); go(href); };
+    const link = (href, label) => h('a', { class: 'fx-strong', href, onclick: (event) => { event.preventDefault(); event.stopPropagation(); open(href); } }, label);
     const ticks = TICKS[state.status];
     const showProblem = state.status === 'problem';
     const created = ['to_check', 'problem', 'ready'].includes(state.status);
+    // An invoice gets its number when it is sent or issued, so only the
+    // Issued and Void tabs show a Number column; the others open on Client.
+    const numbered = !created;
     const boxes = [];
     const tickBox = (invoice) => {
       const box = h('input', {
@@ -252,7 +256,7 @@ export async function renderInvoiceList(main, ui) {
     host.replaceChildren(h('table', { class: 'fx-table fx-table--rows' },
       h('thead', {}, h('tr', {},
         ticks ? h('th', { class: 'fx-tick-cell' }, all) : null,
-        h('th', {}, 'Number'), h('th', {}, 'Client'), h('th', {}, showProblem ? 'Problem' : 'Reference'),
+        numbered ? h('th', {}, 'Number') : null, h('th', {}, 'Client'), h('th', {}, showProblem ? 'Problem' : 'Reference'),
         h('th', {}, created ? 'Created' : 'Issued'), h('th', { class: 'fx-num' }, 'Total'), h('th', {}, 'Status'))),
       h('tbody', {}, body.invoices.map((invoice) => {
         const href = `/invoices/${invoice.id}`;
@@ -260,8 +264,8 @@ export async function renderInvoiceList(main, ui) {
         const view = invoice.status === 'void' ? null : invoice.view;
         return h('tr', { tabindex: '0', onclick: () => open(href), onkeydown: (event) => { if (event.key === 'Enter') open(href); } },
           ticks ? h('td', { class: 'fx-tick-cell', onclick: (event) => event.stopPropagation() }, tickBox(invoice)) : null,
-          h('td', {}, h('a', { class: 'fx-strong', href, onclick: (event) => { event.preventDefault(); event.stopPropagation(); open(href); } }, invoice.number ?? 'Draft')),
-          h('td', {}, invoice.contactName ?? '—'),
+          numbered ? h('td', {}, link(href, invoice.number ?? 'Draft')) : null,
+          h('td', {}, numbered ? (invoice.contactName ?? '—') : link(href, invoice.contactName ?? 'No client')),
           showProblem
             ? h('td', { class: 'fx-problem' }, first?.message ?? '—', invoice.problems.length > 1 ? h('span', { class: 'fx-dim' }, ` +${invoice.problems.length - 1} more`) : null)
             : h('td', { class: 'fx-dim' }, invoice.reference ?? '—'),
