@@ -38,7 +38,9 @@ The Docs Agent runs `openai/codex-action` with the prompt in
    outside `docs/**` and `README.md`;
 4. runs `npm test`, then pushes the commit as `flow-docs-agent[bot]` to the
    branch `docs-agent/refresh` and opens one pull request from it, or updates
-   the one already open. A maintainer merges it like any other.
+   the one already open. The low-risk merge lane (`docs/LOW_RISK_MERGE.md`)
+   merges it once its checks are green, as long as it changes only `docs/**`
+   and `README.md`.
 
 With the Barnacle App (`BARNACLE_APP_ID`, `BARNACLE_APP_PRIVATE_KEY`) the
 pull request is opened by the App, so CI runs on it; with the workflow token
@@ -60,8 +62,8 @@ would pass the budget, so a run can never spend past it.
 | --- | --- | --- | --- |
 | `FLOW_DOCS_AGENT_OPENAI_API_KEY` | Actions secret | none | The ClawRouter key the Docs Agent uses (`OPENAI_API_KEY` is the fallback name, as upstream) |
 | `FLOW_CLAWROUTER_URL` | Actions variable | `https://clawrouter.arcforge.au` | The ClawRouter origin |
-| `FLOW_AI_MODEL` | Actions variable | `gpt-6-sol` | The primary model |
-| `FLOW_AI_FALLBACK_MODEL` | Actions variable | `gpt-6-luna` | The cheaper model |
+| `FLOW_AI_MODEL` | Actions variable | `gpt-6-luna` | The model each run uses; docs work needs no larger one |
+| `FLOW_AI_FALLBACK_MODEL` | Actions variable | `gpt-6-luna` | The model once the budget is mostly spent; set it lower than `FLOW_AI_MODEL` only if the primary is raised |
 | `FLOW_AI_FALLBACK_AT` | Actions variable | `0.8` | The spent share of the monthly budget at which the cheaper model runs |
 
 ClawSweeper's calls use the deployment's own ClawRouter key; its cheaper

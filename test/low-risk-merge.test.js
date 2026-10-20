@@ -10,6 +10,7 @@ import {
   checksState,
   classify,
   run,
+  isDocsAgentPull,
   sizeLabel,
 } from "../scripts/github/low-risk-merge.mjs";
 
@@ -190,4 +191,14 @@ test("the workflow runs only trusted default-branch code", () => {
   assert.doesNotMatch(workflow, /github\.event\.pull_request\.head/);
   assert.doesNotMatch(workflow, /workflow_run\.head_sha/);
   assert.match(workflow, /persist-credentials: false/);
+});
+
+test("the Docs Agent's docs-only pull requests count as a maintainer's", () => {
+  const docs = { ...base, title: "docs: refresh documentation", authorAssociation: "NONE", headRef: "docs-agent/refresh", authorIsBot: true, files: [file("docs/XERO.md"), file("README.md")] };
+  assert.equal(classify(docs).lowRisk, true);
+  assert.equal(classify({ ...docs, authorIsBot: false }).lowRisk, false);
+  assert.equal(classify({ ...docs, headRef: "other" }).lowRisk, false);
+  assert.equal(classify({ ...docs, sameRepo: false }).lowRisk, false);
+  assert.equal(classify({ ...docs, files: [file("docs/XERO.md"), file("server/ui/board.js")] }).lowRisk, false);
+  assert.equal(isDocsAgentPull({ ...docs, files: [] }), false);
 });

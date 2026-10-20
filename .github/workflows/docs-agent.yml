@@ -216,7 +216,7 @@ jobs:
         if: steps.gate.outputs.run_agent == 'true'
         env:
           CLAWROUTER_KEY: ${{ secrets.FLOW_DOCS_AGENT_OPENAI_API_KEY || secrets.OPENAI_API_KEY }}
-          PRIMARY_MODEL: ${{ vars.FLOW_AI_MODEL || 'gpt-6-sol' }}
+          PRIMARY_MODEL: ${{ vars.FLOW_AI_MODEL || 'gpt-6-luna' }}
           FALLBACK_MODEL: ${{ vars.FLOW_AI_FALLBACK_MODEL || 'gpt-6-luna' }}
           THRESHOLD: ${{ vars.FLOW_AI_FALLBACK_AT || '0.8' }}
         run: |
