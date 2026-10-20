@@ -309,11 +309,15 @@ function reportMenuItem(openReport) {
   };
 }
 
+// The page a person lands on after sign-in, and for / or an unknown path.
+// Invoices opens on its Ready tab. A home page can take this over later.
+const START_VIEW = 'invoices';
+
 // The view and, for one record, its id: /invoices/<id> is ['invoices', '<id>'].
 function currentView() {
   const [name, id = null] = location.pathname.replace(/^\/+|\/+$/g, '').split('/');
   if (VIEWS[name] && (!VIEWS[name].ownerOnly || me?.person.role === 'owner')) return [name, id];
-  return ['jobs', null];
+  return [START_VIEW, null];
 }
 
 async function route() {
