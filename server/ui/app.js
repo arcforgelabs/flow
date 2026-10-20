@@ -227,7 +227,7 @@ function icon(name) {
 }
 
 // The sidebar button at the top of the sidebar (a panel icon, not a
-// hamburger). On a wide screen it folds the sidebar to its icons and back,
+// hamburger; folded or narrow, the logo stands in for it). On a wide screen it folds the sidebar to its icons and back,
 // and the choice stays in this browser. On a narrow screen the sidebar is a
 // bar across the top, and the button slides the menu in from the left as a
 // drawer over a dimmed page; choosing a page, Escape or a click on the page
@@ -386,7 +386,13 @@ function renderShell() {
   const report = h('button', { type: 'button', class: 'fx-nav__report', 'data-nav': 'report', 'data-label': 'Report a problem', hidden: true },
     icon('flag'), h('span', { class: 'fx-nav__label' }, 'Report a problem'));
   nav.replaceChildren(...items, report);
-  $('menu-toggle').replaceChildren(icon('sidebar'));
+  // Folded or narrow, the logo is the sidebar button: it shows the mark and
+  // turns into the sidebar icon under the pointer or keyboard focus.
+  const mark = h('span', { class: 'fx-toggle__mark', 'aria-hidden': 'true' });
+  mark.innerHTML = document.querySelector('.fx-side__head .fx-brand svg')?.outerHTML ?? '';
+  const sidebar = icon('sidebar');
+  sidebar.classList.add('fx-toggle__icon');
+  $('menu-toggle').replaceChildren(mark, sidebar);
   $('menu-toggle').onclick = toggleMenu;
   drawMenu();
   // The sidebar foot shows who is signed in: photo or initial, then the name

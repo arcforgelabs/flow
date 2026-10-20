@@ -28,8 +28,14 @@ test('the sidebar button folds the sidebar on wide screens and opens it as a dra
   assert.match(css, /\.fx-shell\[data-menu-open\] \.fx-nav \{ transform: none; visibility: visible; \}/);
   assert.match(css, /\.fx-shell\[data-menu-open\]::after \{/);
   const app = read('../server/ui/app.js');
-  assert.match(app, /\$\('menu-toggle'\)\.replaceChildren\(icon\('sidebar'\)\)/);
+  assert.match(app, /const sidebar = icon\('sidebar'\);/);
   assert.doesNotMatch(app, /M4 6h16M4 12h16M4 18h16/, 'no hamburger icon');
+  // Folded or narrow, the logo is the button: brand hidden, mark at rest,
+  // sidebar icon on hover or focus, never both side by side.
+  assert.match(app, /\$\('menu-toggle'\)\.replaceChildren\(mark, sidebar\)/);
+  assert.match(css, /\.fx-shell\[data-folded\] \.fx-side__head \.fx-brand \{ display: none; \}/);
+  assert.match(css, /\.fx-shell\[data-folded\] #menu-toggle:is\(:hover, :focus-visible\) \.fx-toggle__icon \{ display: inline-flex; \}/);
+  assert.match(css, /#menu-toggle:is\(:hover, :focus-visible, \[aria-expanded="true"\]\) \.fx-toggle__icon \{ display: inline-flex; \}/);
   // Folded, the page names stay for screen readers.
   assert.match(css, /\.fx-shell\[data-folded\] \.fx-nav__label \{ position: absolute; width: 1px;/);
 });
