@@ -94,6 +94,19 @@ jobs:
           echo "tag=$(jq -r .tag "$RUNNER_TEMP/plan.json")" >> "$GITHUB_OUTPUT"
           echo "version=$(jq -r .version "$RUNNER_TEMP/plan.json")" >> "$GITHUB_OUTPUT"
 
+      # Every release's notes are its changelog file, and its record must list
+      # every pull request in its range with GitHub's credit: a stable release
+      # since the previous stable release, a beta since the release npm's beta
+      # tag selects (.agents/skills/flow-changelog-update).
+      - name: Require the changelog
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.plan.outputs.version }}
+          COMMIT: ${{ steps.commit.outputs.commit }}
+        run: |
+          set -euo pipefail
+          node scripts/release/changelog.mjs verify --version "$VERSION" --target "$COMMIT"
+
       - name: Create the tag
         env:
           TAG: ${{ steps.plan.outputs.tag }}
