@@ -135,7 +135,10 @@ describe('Clerk sign-in', { skip: skipWithoutDatabase }, () => {
     assert.equal(invite.status, 201);
     assert.equal(invite.body.person.email, 'staff@example.test');
     assert.equal(invite.body.person.invited, true);
-    assert.deepEqual(clerk.calls.created, ['staff@example.test'], 'Flow prepares the invitee a Clerk account');
+    assert.equal(invite.body.invite.emailed, true);
+    assert.deepEqual(clerk.calls.invited.map((call) => call.email), ['staff@example.test'], 'Clerk emails the invitation');
+    assert.match(clerk.calls.invited[0].redirectUrl, /^http:\/\/127\.0\.0\.1:\d+\/sign-in$/);
+    assert.deepEqual(clerk.calls.created, [], 'the invitee makes their account from the email');
 
     const again = await request(app, '/api/people', { token: ownerToken, method: 'POST', body: { email: 'staff@example.test', role: 'admin' } });
     assert.equal(again.status, 409);
@@ -150,6 +153,37 @@ describe('Clerk sign-in', { skip: skipWithoutDatabase }, () => {
 
     const list = await request(app, '/api/people', { token: ownerToken });
     assert.ok(list.body.people.some((person) => person.email === 'staff@example.test' && !person.invited));
+  });
+
+  test('an owner emails an invitation again, replacing an unused account Flow made', async () => {
+    // An invitee from before Flow sent email: Flow made their Clerk account.
+    const madeId = await clerk.createUser({ email: 'earlier@example.test' });
+    clerk.users.get(madeId).externalAccounts = [];
+    const invite = await request(app, '/api/people', { token: ownerToken, method: 'POST', body: { email: 'earlier@example.test', role: 'staff' } });
+    assert.equal(invite.body.invite.emailed, true, 'the unused account does not stop the email');
+    assert.ok(clerk.calls.deleted.includes(madeId));
+
+    const again = await request(app, `/api/people/${invite.body.person.id}/invite`, { token: ownerToken, method: 'POST' });
+    assert.equal(again.status, 200);
+    assert.equal(clerk.calls.invited.filter((call) => call.email === 'earlier@example.test').length, 2);
+
+    // Once they have signed in, there is no invitation to send.
+    clerk.signIn(await clerk.findUserIdByEmail('earlier@example.test'));
+    const used = await request(app, `/api/people/${invite.body.person.id}/invite`, { token: ownerToken, method: 'POST' });
+    assert.equal(used.status, 409);
+    const me = (await request(app, '/api/me', { token: ownerToken })).body.person;
+    assert.equal((await request(app, `/api/people/${me.id}/invite`, { token: ownerToken, method: 'POST' })).status, 409, 'a linked person gets no invitation');
+  });
+
+  test('when Clerk cannot email, Flow still makes the account and says so', async () => {
+    const ownerId = await clerk.findUserIdByEmail(OWNER);
+    const failing = fakeClerk({ inviteFails: true });
+    failing.addUser({ id: ownerId, email: OWNER, google: true, password: false });
+    const failingApp = signInApp(handle, failing);
+    const invite = await request(failingApp, '/api/people', { token: failing.signIn(ownerId), method: 'POST', body: { email: 'no-email@example.test', role: 'staff' } });
+    assert.equal(invite.status, 201);
+    assert.equal(invite.body.invite.emailed, false);
+    assert.deepEqual(failing.calls.created, ['no-email@example.test']);
   });
 
   test('each person keeps their own appearance with their account', async () => {

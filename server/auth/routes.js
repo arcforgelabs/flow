@@ -1,9 +1,10 @@
 import express from 'express';
 import { FlowError } from '../core/errors.js';
 import { rateLimit } from '../rate-limit.js';
-import { ensureClerkAccount } from './clerk.js';
+import { ensureClerkAccount, sendClerkInvitation } from './clerk.js';
 import {
   findPersonByEmail,
+  findPersonById,
   invitePerson,
   listPeople,
   normaliseEmail,
@@ -139,23 +140,61 @@ export function createSignInRouter({ settings, db, clerk, personAuth, defaultFam
     }
   });
 
-  // Invite someone. Flow also makes sure they have a Clerk account, because
-  // with public sign-up off the sign-in page never creates one.
+  // The invitation email's link opens this installation's sign-in page.
+  const signInUrl = (req) => `${req.protocol}://${req.get('host')}/sign-in`;
+
+  // Clerk emails the invitation. If Clerk cannot, Flow makes the invitee's
+  // Clerk account itself (with public sign-up off the sign-in page never
+  // creates one) and the owner sends the sign-in message by hand.
+  async function inviteWithClerk(req, email) {
+    try {
+      return await sendClerkInvitation(clerk, email, signInUrl(req));
+    } catch (error) {
+      log.error?.(`[people] Clerk invitation email failed: ${error.message}`);
+    }
+    await ensureClerkAccount(clerk, email);
+    return { emailed: false };
+  }
+
+  // Invite someone.
   people.post('/', async (req, res) => {
     try {
       const email = normaliseEmail(req.body?.email);
       const role = req.body?.role;
       if (!isPlainEmail(email)) throw new FlowError('invalid', 'email must be a plain (ASCII) email address');
       if (await findPersonByEmail(db, email)) throw new FlowError('conflict', 'that email address is already on the people list');
+      let invite;
       try {
-        await ensureClerkAccount(clerk, email);
+        invite = await inviteWithClerk(req, email);
       } catch (error) {
         log.error?.(`[people] Clerk account for an invitation failed: ${error.message}`);
         return res.status(503).json({ ok: false, code: 'sign_in_unavailable', error: 'Flow could not prepare the sign-in account. Try again shortly.' });
       }
       const person = await invitePerson(db, { email, name: req.body?.name ?? null, role, invitedBy: req.person.id });
-      log.info?.(`[people] ${req.person.id} invited ${person.id} as ${person.role}`);
-      res.status(201).json({ ok: true, person: publicPerson(person) });
+      log.info?.(`[people] ${req.person.id} invited ${person.id} as ${person.role} (${invite.emailed ? 'emailed' : 'not emailed'})`);
+      res.status(201).json({ ok: true, person: publicPerson(person), invite });
+    } catch (error) {
+      sendError(res, error, log);
+    }
+  });
+
+  // Email an invited person's invitation again. Only for someone who has
+  // not signed in yet.
+  people.post('/:id/invite', async (req, res) => {
+    try {
+      const person = await findPersonById(db, req.params.id);
+      if (!person) throw new FlowError('not_found', 'person not found');
+      if (person.clerkUserId || person.status !== 'active') throw new FlowError('conflict', 'only an invited person who has not signed in yet gets an invitation email');
+      let invite;
+      try {
+        invite = await sendClerkInvitation(clerk, person.email, signInUrl(req));
+      } catch (error) {
+        log.error?.(`[people] Clerk invitation email failed: ${error.message}`);
+        return res.status(503).json({ ok: false, code: 'sign_in_unavailable', error: 'Clerk could not send the invitation email. Try again shortly.' });
+      }
+      if (!invite.emailed) throw new FlowError('conflict', 'they already have a sign-in account: they can sign in now');
+      log.info?.(`[people] ${req.person.id} emailed the invitation for ${person.id} again`);
+      res.json({ ok: true, invite });
     } catch (error) {
       sendError(res, error, log);
     }
