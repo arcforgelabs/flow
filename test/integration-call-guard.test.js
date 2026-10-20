@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { circuitAfterFailure, circuitPauseMs, countsAsFailure, stoppedReason } from '../server/integrations/call-guard.js';
+import { circuitAfterFailure, circuitPauseMs, countsAsFailure, resourceRetryMs, stoppedReason } from '../server/integrations/call-guard.js';
 import { adapters } from '../server/integrations/adapters.js';
 import { defineAdapter } from '../server/integrations/port.js';
 import { callGuardContract } from './support/call-guard-contract.js';
@@ -47,6 +47,16 @@ test('the decisions are pure, so any storage can use them', () => {
   assert.equal(stoppedReason({ haltedReason: 'auth' }, { nowMs, failedToday: 0 }).reason, 'halted');
   assert.equal(stoppedReason({ stoppedResources: { Payments: {} } }, { nowMs, failedToday: 0, resource: 'Payments' }).reason, 'resource_stopped');
   assert.equal(stoppedReason({ stoppedResources: { Payments: {} } }, { nowMs, failedToday: 0, resource: 'Invoices' }), null);
+  // A stopped resource may be probed again: 6 hours after it stopped, then
+  // twice as long after each refused probe, to at most 24 hours.
+  assert.equal(resourceRetryMs(0), 6 * 60 * 60_000);
+  assert.equal(resourceRetryMs(1), 12 * 60 * 60_000);
+  assert.equal(resourceRetryMs(5), 24 * 60 * 60_000);
+  const stoppedAt = new Date(nowMs - 60 * 60_000).toISOString();
+  assert.deepEqual(stoppedReason({ stoppedResources: { Payments: { at: stoppedAt } } }, { nowMs, failedToday: 0, resource: 'Payments' }),
+    { reason: 'resource_stopped', retryAfterMs: 5 * 60 * 60_000, resource: 'Payments' });
+  assert.equal(stoppedReason({ stoppedResources: { Payments: { at: new Date(nowMs - 7 * 60 * 60_000).toISOString() } } }, { nowMs, failedToday: 0, resource: 'Payments' }), null);
+  assert.equal(stoppedReason({ stoppedResources: { Payments: { at: stoppedAt, retryAt: new Date(nowMs - 1).toISOString() } } }, { nowMs, failedToday: 0, resource: 'Payments' }), null);
   assert.equal(circuitAfterFailure({ circuitOpens: 0 }, { nowMs, recentFailures: 4 }), null);
   assert.deepEqual(circuitAfterFailure({ circuitOpens: 0 }, { nowMs, recentFailures: 5 }), { pauseMs: 5 * 60_000 });
   assert.deepEqual(circuitAfterFailure({ circuitOpens: 2, circuitOpenUntil: new Date(nowMs - 1) }, { nowMs, recentFailures: 1 }), { pauseMs: 20 * 60_000 });

@@ -238,7 +238,7 @@ The guard stops calls in four ways:
 | Stop | Starts when | Ends when |
 |---|---|---|
 | `halted` | a refused credential (401/403, or a token refresh refused for good) | a person saves the settings or connects again (`resume()`) |
-| `resource_stopped` | a 401/403 on one resource, when `authStops` is `resource` | a person acts (`resume()`) |
+| `resource_stopped` | a 401/403 on one resource, when `authStops` is `resource` | a probe call succeeds (one probe after 6 hours, doubling after each refused probe, at most 24 hours), or a person acts (`resume()`). It is a warning alert, not a stop alert: other calls still go |
 | `circuit_open` | 5 failed calls in 10 minutes | the pause passes: 5 minutes, doubling after each failed probe, at most 6 hours; a success closes it |
 | `budget_spent` | 50 failed calls in one UTC day | the next UTC day |
 
