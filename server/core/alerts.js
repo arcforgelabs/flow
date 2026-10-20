@@ -55,7 +55,7 @@ export function invoiceProblemsSource(db, { accounting = () => null } = {}) {
       page: 'invoices',
       tone: 'warn',
       title: `${plural(ids.length, 'invoice has', 'invoices have')} a problem.`,
-      action: { label: 'Open Problem', tab: 'problem' },
+      action: { label: 'Open Pending', tab: 'pending' },
       moneyAtRiskCents: Number(total),
       members: ids,
     }];

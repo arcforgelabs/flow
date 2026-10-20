@@ -87,7 +87,7 @@ describe('quiet alerts against PostgreSQL', { skip: skipWithoutDatabase }, () =>
     let res = await call('?page=invoices', ownerToken);
     assert.deepEqual(res.body.alerts, [{
       key: 'invoices:problems', tone: 'warn', title: '1 invoice has a problem.',
-      action: { label: 'Open Problem', tab: 'problem' }, moneyAtRiskCents: first.totalCents, count: 1,
+      action: { label: 'Open Pending', tab: 'pending' }, moneyAtRiskCents: first.totalCents, count: 1,
     }]);
 
     // Dismissed: hidden for the owner only.

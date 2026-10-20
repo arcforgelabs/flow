@@ -77,15 +77,19 @@ export function orderUrlTemplate(value) {
 }
 
 // The link to one order for "Open in Seazona": the order's own page when the
-// installation set SEAZONA_ORDER_URL, else the home page of the lab's
-// Seazona web app when the API address names it (https://{lab}.seazonaapi.net),
-// else null. `exact` is true only for the order's own page.
+// installation set SEAZONA_ORDER_URL; else, when the API address names the
+// lab (https://{lab}.seazonaapi.net), its order page
+// (https://{lab}.seazona.net/OrderEdit.aspx?id={order id}), or its home page
+// with no order id; else null. `exact` is true only for the order's own page.
 export function orderLink(settings, { sourceJobRef } = {}) {
   const template = settings?.orderUrlTemplate ?? null;
   if (template && sourceJobRef) return { url: template.replaceAll('{ref}', encodeURIComponent(sourceJobRef)), exact: true };
   const host = settings?.baseUrl ? new URL(settings.baseUrl).hostname : '';
   const lab = /^([a-z0-9-]+)\.seazonaapi\.net$/i.exec(host)?.[1];
-  return lab ? { url: `https://${lab}.seazona.net/`, exact: false } : null;
+  if (!lab) return null;
+  // Seazona's own order screen takes the order id (a GUID) Flow syncs.
+  if (new RegExp(`^${ORDER_ID.source}$`, 'i').test(sourceJobRef ?? '')) return { url: `https://${lab}.seazona.net/OrderEdit.aspx?id=${encodeURIComponent(sourceJobRef)}`, exact: true };
+  return { url: `https://${lab}.seazona.net/`, exact: false };
 }
 
 // Returns the resolved settings, or throws SeazonaSettingsError. `mode` is

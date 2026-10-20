@@ -96,7 +96,7 @@ export async function accountingStatus(db, runtime, organisationId, invoiceIds =
       p.version as sent_version, p.state as push_state, p.request_body, p.xero_invoice_id, p.xero_invoice_number,
       v.document, l.xero_invoice_id as linked_xero_id, l.matched_by as linked_by,
       x.status as x_status, x.invoice_number as x_number, x.xero_contact_id, x.subtotal_cents, x.tax_cents,
-      x.total_cents as x_total_cents, x.amount_paid_cents, x.amount_due_cents, x.lines, x.issued_on
+      x.total_cents as x_total_cents, x.amount_paid_cents, x.amount_due_cents, x.sent_to_contact, x.lines, x.issued_on
     from invoices i
     left join lateral (
       select * from xero_invoice_pushes
@@ -131,6 +131,7 @@ export async function accountingStatus(db, runtime, organisationId, invoiceIds =
       status: r.x_status,
       totalCents: num(r.x_total_cents),
       amountDueCents: num(r.amount_due_cents),
+      sentToContact: r.sent_to_contact ?? null,
       url: `${web}/AccountsReceivable/View.aspx?InvoiceID=${encodeURIComponent(xeroInvoiceId)}`,
     } : null;
     const status = {
@@ -151,6 +152,29 @@ export async function accountingStatus(db, runtime, organisationId, invoiceIds =
     out.set(r.id, status);
   }
   return out;
+}
+
+// The Invoices page tab of each issued Flow invoice, from Flow's copy of
+// Xero (no calls): draft (on its way, or a Xero DRAFT), approved (AUTHORISED,
+// not sent to the customer yet), sent (Xero sent it, or it is part or fully
+// paid), void (voided or deleted in Xero), or pending (out of sync: a person
+// looks). Answers Map(invoiceId -> stage).
+export async function invoiceStages(db, runtime, organisationId, invoiceIds = null) {
+  const statuses = await accountingStatus(db, runtime, organisationId, invoiceIds);
+  const out = new Map();
+  for (const status of statuses.values()) {
+    if (status.flowStatus !== 'issued') continue;
+    out.set(status.invoiceId, stageOf(status));
+  }
+  return out;
+}
+
+export function stageOf(status) {
+  if (status.finding) return 'pending';
+  if (['part_paid', 'paid'].includes(status.state)) return 'sent';
+  if (status.state === 'approved') return status.xero?.sentToContact ? 'sent' : 'approved';
+  if (['voided', 'deleted'].includes(status.state)) return 'void';
+  return 'draft';
 }
 
 // Opens or refreshes one review item for each finding, and closes the item of

@@ -3,19 +3,19 @@ import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import { billingObligations, invoiceLines, invoices } from '../db/schema.js';
 import { FlowError } from './errors.js';
 import { issueInvoice } from './invoices.js';
+import { CHANGED_REASON, diffJobLines, STATUS_BACK_REASON } from './ledger.js';
 import { soleOrganisation } from './pipeline.js';
 import { needsRead, readAccountingFirst, readBeforeAct, READS_PER_PASS } from './read-before-act.js';
 import { deadHoldSince, deadSince, enqueueJob, runNextJob } from './queue.js';
 
-// Drafts, Problem, Ready and Send all ready (docs/INVOICE_SENDING.md).
+// Pending, Ready and Send all ready (docs/INVOICE_SENDING.md).
 //
 // Flow checks every draft. It checks its own data first: the draft has lines,
 // a total above zero, and a price item (or, for a line such as a rush
 // charge, an account) on every line. When an accounting
 // system is connected, its own checks are added (for Xero: the customer
 // matches one Xero contact, every item is in Xero). A draft with a problem is
-// in Problem. A person marks a draft without one ready. A saved change keeps
-// it ready; only Move to Drafts (markNotReady) takes it back.
+// Pending (the "problem" view). A draft without one is Ready.
 //
 // Send all ready issues every ready draft (each gets its number) and, when an
 // accounting system is connected, queues it to go there. The send worker
@@ -35,17 +35,33 @@ const LEASE_MS = 15 * 60 * 1000;
 // Outcomes that mean the accounting system holds the invoice.
 const SENT = new Set(['created', 'reconciled', 'existing', 'already_in_xero']);
 
-const problem = (code, message) => ({ code, message });
+// `short` is the few words the Invoices list shows; `message` says how to fix it.
+const problem = (code, message, short = null) => ({ code, message, ...(short ? { short } : {}) });
 
 // Flow's own checks of one draft. `lines` are its invoice lines.
 export function draftProblems(invoice, lines) {
   const problems = [];
-  if (!lines.length) problems.push(problem('no_lines', 'The invoice has no lines.'));
-  else if (invoice.totalCents <= 0) problems.push(problem('no_amount', 'The total is $0.00 or less.'));
+  if (!lines.length) problems.push(problem('no_lines', 'The invoice has no lines.', 'No lines'));
+  else if (invoice.totalCents <= 0) problems.push(problem('no_amount', 'The total is $0.00 or less.', 'Total $0'));
   for (const line of lines) {
-    if (!line.priceItemId && !line.accountCode) problems.push(problem('line_no_item', `Line ${line.position} has no price item.`));
+    if (!line.priceItemId && !line.accountCode) problems.push(problem('line_no_item', `Line ${line.position} has no price item.`, `Line ${line.position}: no item`));
   }
   return problems;
+}
+
+// The few words for a job in review: what changed, for this job.
+export function reviewShort(obligation) {
+  if (obligation.holdReason === STATUS_BACK_REASON) return 'Status moved back';
+  if (obligation.holdReason !== CHANGED_REASON) return /deleted/.test(obligation.holdReason ?? '') ? 'Job deleted' : 'Job needs a look';
+  const basis = obligation.draftBasis;
+  if (!basis) return 'Job changed';
+  const changes = diffJobLines(basis.lines ?? [], obligation.lines ?? []);
+  const words = changes.map((c) => (['added', 'removed'].includes(c.change)
+    ? `Line ${c.position} ${c.change}`
+    : `Line ${c.position} ${{ item: 'item', description: 'text', quantity: 'qty', price: 'price' }[c.fields[0]] ?? 'changed'}`));
+  if ((basis.contactId ?? null) !== (obligation.contactId ?? null)) words.unshift('Client changed');
+  if (!words.length) return 'Job changed';
+  return words.length > 1 ? `${words[0]} +${words.length - 1}` : words[0];
 }
 
 // Flow's checks, and the accounting system's, for some drafts. Answers
@@ -63,11 +79,11 @@ async function checkDrafts(db, organisationId, drafts, accounting) {
   }
   // A draft whose job the ledger sent to review (the job changed after the
   // draft was made, or the work system deleted it) waits for a person.
-  const reviewed = await db.select({ invoiceId: billingObligations.invoiceId, reason: billingObligations.holdReason })
-    .from(billingObligations)
+  const reviewed = await db.select().from(billingObligations)
     .where(and(eq(billingObligations.organisationId, organisationId), inArray(billingObligations.invoiceId, ids), eq(billingObligations.holdState, 'review')));
-  for (const { invoiceId, reason } of reviewed) {
-    const found = problem('job_review', `The job needs a look before this invoice goes: ${reason ?? 'it was sent to review'}.`);
+  for (const obligation of reviewed) {
+    const { invoiceId, holdReason: reason } = obligation;
+    const found = problem('job_review', `The job needs a look before this invoice goes: ${reason ?? 'it was sent to review'}.`, reviewShort(obligation));
     problems.set(invoiceId, [...(problems.get(invoiceId) ?? []), found]);
   }
   if (accounting) {
@@ -80,8 +96,8 @@ async function checkDrafts(db, organisationId, drafts, accounting) {
 }
 
 // The views of the Invoices page. `accounting` is the accounting adapter, or
-// null. Every draft is in one view: Problem (a check failed), Ready (a person
-// marked it ready) or To check (the rest). An issued invoice is Sending while
+// null. Every draft is in one view: Problem (a check failed; the Pending tab)
+// or Ready (its checks pass). An issued invoice is Sending while
 // queued, and a Problem when the accounting system refused it. Answers
 // { toCheck: [ids], ready: [ids], problems: Map(id -> problems), sending: Set(ids) }.
 export async function invoiceViews(db, organisationId, { accounting = null } = {}) {
@@ -96,12 +112,14 @@ export async function invoiceViews(db, organisationId, { accounting = null } = {
     .orderBy(desc(invoices.sendUpdatedAt));
   for (const row of issued) {
     if (row.sendState === 'queued') sending.add(row.id);
-    else problems.set(row.id, [row.sendError ?? problem('send_failed', 'Sending failed.')]);
+    else problems.set(row.id, [row.sendError ?? problem('send_failed', 'Sending failed.', 'Send failed')]);
   }
+  // A draft whose checks pass is ready (Samuel, 2026-10-20): no person
+  // needs to mark it. toCheck stays for callers that still read it.
   const clean = drafts.filter((d) => !problems.has(d.id));
   return {
-    toCheck: clean.filter((d) => !d.readyAt).map((d) => d.id),
-    ready: clean.filter((d) => d.readyAt).map((d) => d.id),
+    toCheck: [],
+    ready: clean.map((d) => d.id),
     problems,
     sending,
   };
@@ -112,11 +130,11 @@ export async function invoiceView(db, organisationId, invoice, { accounting = nu
   if (invoice.status === 'void') return { view: null, problems: [] };
   if (invoice.status === 'issued') {
     if (invoice.sendState === 'queued') return { view: 'sending', problems: [] };
-    if (invoice.sendState === 'failed') return { view: 'problem', problems: [invoice.sendError ?? problem('send_failed', 'Sending failed.')] };
+    if (invoice.sendState === 'failed') return { view: 'problem', problems: [invoice.sendError ?? problem('send_failed', 'Sending failed.', 'Send failed')] };
     return { view: null, problems: [] };
   }
   const found = (await checkDrafts(db, organisationId, [invoice], accounting)).get(invoice.id) ?? [];
-  return { view: found.length ? 'problem' : invoice.readyAt ? 'ready' : 'to_check', problems: found };
+  return { view: found.length ? 'problem' : 'ready', problems: found };
 }
 
 // Mark ready: a person checked these drafts. A draft with a problem stays

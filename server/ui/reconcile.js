@@ -7,7 +7,7 @@
 // /jobs/:id/link, /jobs/:id/no-invoice (docs/JOB_INVOICE_LINKS.md).
 import { formatCents } from '/assets/ui/invoicing.js';
 
-const STATUS = { draft: 'Draft', issued: 'Finalised', void: 'Void' };
+const STATUS = { draft: 'Draft', issued: 'Approved', void: 'Void' };
 const fullDate = (iso) => (iso ? new Date(`${iso}T00:00:00`).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' }) : '—');
 const shortDate = (iso) => (iso ? new Date(`${iso}T00:00:00`).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' }) : '—');
 const money = (cents) => (cents == null ? '—' : formatCents(cents));

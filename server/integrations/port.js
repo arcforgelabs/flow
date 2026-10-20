@@ -16,6 +16,7 @@ export const CAPABILITIES = Object.freeze([
   'pushInvoice', // send an issued invoice; the Flow record id is the idempotency key
   'pushInvoices', // send several issued invoices in one pass (Send all ready, server/core/sending.js)
   'checkDrafts', // the accounting system's problems with Flow drafts, from its copy; null while not connected
+  'invoiceStages', // { organisationId, invoiceIds? }: Map(invoiceId -> draft | approved | sent | void | pending) for issued invoices, from its copy
   'documentFacts', // what the customer's copy of a sent invoice says (number, reference, dates), from the system's copy in Flow; never a live call
   'sendStatus', // { connected, writesAllowed }: may Flow send invoices now?
   'pushBill', // send an approved bill; the Flow record id is the idempotency key

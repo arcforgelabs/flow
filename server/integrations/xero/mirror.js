@@ -77,6 +77,7 @@ export function mapInvoice(invoice, { keepReference = false } = {}) {
     amountDueCents: toCents(invoice.AmountDue),
     amountPaidCents: toCents(invoice.AmountPaid),
     amountCreditedCents: toCents(invoice.AmountCredited),
+    sentToContact: typeof invoice.SentToContact === 'boolean' ? invoice.SentToContact : null,
     lines: mapLines(invoice.LineItems, keepReference),
     xeroUpdatedAt: parseXeroDate(invoice.UpdatedDateUTC),
   };
@@ -135,17 +136,17 @@ const UPSERT = {
   invoices: (org, r, hash) => sql`
     insert into xero_invoices (organisation_id, xero_invoice_id, type, invoice_number, reference, xero_contact_id, status,
       issued_on, due_on, fully_paid_on, currency, subtotal_cents, tax_cents, total_cents, amount_due_cents,
-      amount_paid_cents, amount_credited_cents, lines, xero_updated_at, record_hash)
+      amount_paid_cents, amount_credited_cents, sent_to_contact, lines, xero_updated_at, record_hash)
     values (${org}, ${r.xeroInvoiceId}, ${r.type}, ${r.invoiceNumber}, ${r.reference}, ${r.xeroContactId}, ${r.status},
       ${r.issuedOn}, ${r.dueOn}, ${r.fullyPaidOn}, ${r.currency}, ${r.subtotalCents}, ${r.taxCents}, ${r.totalCents},
-      ${r.amountDueCents}, ${r.amountPaidCents}, ${r.amountCreditedCents}, ${json(r.lines)}::jsonb, ${r.xeroUpdatedAt}, ${hash})
+      ${r.amountDueCents}, ${r.amountPaidCents}, ${r.amountCreditedCents}, ${r.sentToContact ?? null}, ${json(r.lines)}::jsonb, ${r.xeroUpdatedAt}, ${hash})
     on conflict (organisation_id, xero_invoice_id) do update set
       type = excluded.type, invoice_number = excluded.invoice_number, reference = excluded.reference,
       xero_contact_id = excluded.xero_contact_id, status = excluded.status, issued_on = excluded.issued_on,
       due_on = excluded.due_on, fully_paid_on = excluded.fully_paid_on, currency = excluded.currency,
       subtotal_cents = excluded.subtotal_cents, tax_cents = excluded.tax_cents, total_cents = excluded.total_cents,
       amount_due_cents = excluded.amount_due_cents, amount_paid_cents = excluded.amount_paid_cents,
-      amount_credited_cents = excluded.amount_credited_cents, lines = excluded.lines,
+      amount_credited_cents = excluded.amount_credited_cents, sent_to_contact = excluded.sent_to_contact, lines = excluded.lines,
       xero_updated_at = excluded.xero_updated_at, record_hash = excluded.record_hash, last_changed_at = now()
     where xero_invoices.record_hash is distinct from excluded.record_hash
     returning (xmax = 0) as inserted`,

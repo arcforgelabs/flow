@@ -6,6 +6,7 @@ import { readConnection } from './connections.js';
 import { createImportWorker } from './import.js';
 import { readPayments, xeroLiveCheck } from './ledger.js';
 import { findInvoices, listCustomers, listPriceItems, mirrorState } from './lookup.js';
+import { invoiceStages } from './reconcile.js';
 import { createXeroRouter } from './routes.js';
 import { createXeroRuntime, requireXeroSettings, XERO_CALL_GUARD } from './runtime.js';
 import { writesAllowed } from './settings.js';
@@ -116,6 +117,9 @@ export function createXeroAdapter({ runtime: given = null } = {}) {
       pushInvoice: ({ organisationId, invoiceId, pushedBy = null }) => pushInvoice(database, current(), { organisationId, invoiceId, pushedBy }),
       // Several issued invoices, in batches of MAX_BATCH (drafts.js).
       pushInvoices: ({ organisationId, invoiceIds, pushedBy = null }) => pushInvoices(database, current(), { organisationId, invoiceIds, pushedBy }),
+      // The Invoices page tab of each issued invoice (reconcile.js), from
+      // Flow's copy of Xero: draft, approved, sent, void or pending.
+      invoiceStages: ({ organisationId, invoiceIds = null }) => invoiceStages(database, current(), organisationId, invoiceIds),
       // What would stop each Flow draft in Xero, from Flow's copy (no calls).
       checkDrafts: ({ organisationId, invoiceIds }) => checkDrafts(database, current(), { organisationId, invoiceIds }),
       sendStatus: async ({ organisationId }) => {

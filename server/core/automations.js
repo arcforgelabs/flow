@@ -91,7 +91,7 @@ export const AUTOMATIONS = Object.freeze([
     key: 'ready_when_drafted',
     place: 'invoicing',
     name: 'Ready when drafted',
-    hint: 'An automatic draft goes straight to Ready. A draft a person changed stays in Drafts.',
+    hint: 'A draft with no problem goes straight to Ready.',
     defaults: { enabled: true, config: {} },
     readConfig: () => ({}),
   },

@@ -131,7 +131,7 @@ export function buildDraft(document, { settings, contact, items, sendMode = 'acc
     };
     if (line.itemCode) {
       if (items.has(line.itemCode)) out.ItemCode = line.itemCode;
-      else problems.push(problem('xero_item_missing', `Line ${line.position}: item ${line.itemCode} is not in Xero. Add it in Xero, then sync.`, { itemCode: line.itemCode }));
+      else problems.push(problem('xero_item_missing', `Line ${line.position}: item ${line.itemCode} is not in Xero. Add it in Xero, then sync.`, { itemCode: line.itemCode, short: `${line.itemCode} not in Xero` }));
     } else if (line.accountCode) {
       // A line with no item books to its own account, such as a surcharge.
       out.AccountCode = line.accountCode;
@@ -289,8 +289,8 @@ async function previewOne(db, runtime, organisationId, invoiceId) {
   if (invoice.status === 'void') problems.push(problem('invoice_void', 'This invoice is void. Flow does not send it to Xero.'));
   if (invoice.status === 'draft') problems.push(problem('invoice_not_issued', 'This invoice is a draft. Issue it, then send it to Xero.'));
   const match = await matchContact(db, organisationId, document.contact.name);
-  if (match.state === 'missing') problems.push(problem('xero_contact_missing', `No Xero contact is named "${document.contact.name}". Add it in Xero (Flow never creates Xero contacts), then sync.`));
-  if (match.state === 'ambiguous') problems.push(problem('xero_contact_ambiguous', `More than one Xero contact is named "${document.contact.name}". Merge or rename them in Xero, then sync.`));
+  if (match.state === 'missing') problems.push(problem('xero_contact_missing', `No Xero contact is named "${document.contact.name}". Add it in Xero (Flow never creates Xero contacts), then sync.`, { short: 'Client not in Xero' }));
+  if (match.state === 'ambiguous') problems.push(problem('xero_contact_ambiguous', `More than one Xero contact is named "${document.contact.name}". Merge or rename them in Xero, then sync.`, { short: 'Client twice in Xero' }));
   const items = await itemsByCode(db, organisationId, document.lines.map((l) => l.itemCode));
   const sendMode = await sendModeFor(db, organisationId, invoice.contactId);
   const { draft, problems: lineProblems } = buildDraft(document, { settings: runtime.settings, contact: match.contact, items, sendMode });
@@ -389,7 +389,7 @@ export async function checkDrafts(db, runtime, { organisationId, invoiceIds }) {
     for (const preview of invoices) {
       found.set(preview.invoiceId, preview.problems
         .filter((p) => p.blocking !== false && p.code !== 'invoice_not_issued')
-        .map(({ code, message }) => ({ code, message })));
+        .map(({ code, message, short }) => ({ code, message, ...(short ? { short } : {}) })));
     }
   }
   return found;
