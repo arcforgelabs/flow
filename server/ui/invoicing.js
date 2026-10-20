@@ -590,8 +590,7 @@ function draftView(invoice, ui, context, redraw) {
   // With no accounting system, Issue invoice gives the draft its number and
   // locks it. A changed job blocks it, as it blocks Move to Ready.
   const issueButton = context.canIssue && !to ? h('button', {
-    class: 'fx-btn fx-btn--primary', type: 'button', disabled: Boolean(invoice?.jobChange),
-    title: invoice?.jobChange ? 'Fix the problem first.' : 'Gives this invoice the next number and locks it.',
+    class: 'fx-btn fx-btn--primary', type: 'button',
     onclick: async () => {
       const saved = await save();
       if (!saved) return;
@@ -612,11 +611,12 @@ function draftView(invoice, ui, context, redraw) {
     },
   }, 'Issue invoice') : null;
   // Issue needs a client and a due date: until both are set it is greyed.
+  // A changed job greys it too, as it does Move to Ready.
   const syncIssue = () => {
     if (!issueButton) return;
     const missing = [contact ? null : 'a client', dueDate.value ? null : 'a due date'].filter(Boolean);
-    issueButton.disabled = missing.length > 0;
-    issueButton.title = missing.length ? `Choose ${missing.join(' and ')} first.` : '';
+    issueButton.disabled = missing.length > 0 || Boolean(invoice?.jobChange);
+    issueButton.title = invoice?.jobChange ? 'Fix the problem first.' : missing.length ? `Choose ${missing.join(' and ')} first.` : '';
   };
   onContact = syncIssue;
   clientInput.addEventListener('input', syncIssue);
