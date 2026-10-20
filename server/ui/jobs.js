@@ -654,8 +654,8 @@ export async function renderJobs(main, ui) {
   }
 
   // A column's menu (a click on its head, or a right-click): sort by it,
-  // move it, hide it, and show a hidden column again. Client always shows.
-  // `column` null opens only "Show a column".
+  // move it, hide it. Client always shows. `column` null is the + menu: the
+  // hidden columns, to add one back.
   const SORT_OF = { practitioner: 'practitioner', due: 'due', ordered: 'ordered', shipped: 'shipped', total: 'total' };
   const columnPop = h('div', { class: 'fx-pop', id: 'fx-jobs-colmenu', popover: 'auto', role: 'menu' });
   document.body.append(columnPop);
@@ -686,16 +686,15 @@ export async function renderJobs(main, ui) {
       }
       parts.push(h('div', { class: 'fx-pop__sep' }), item('eye-off', 'Hide column', () => change({ columns: rest })));
     }
-    const shown = new Set(ids);
-    const hidden = [
-      ...builtInColumns().filter((id) => !shown.has(id)).map((id) => ({ id, label: id === 'assignee' ? assigneeField().name : COLUMNS[id] })),
-      ...customColumns().filter((f) => !shown.has(fieldGroup(f.id))).map((f) => ({ id: fieldGroup(f.id), label: f.name })),
-    ];
-    if (hidden.length) {
-      if (parts.length) parts.push(h('div', { class: 'fx-pop__sep' }));
-      parts.push(h('p', { class: 'fx-pop__head' }, 'Show hidden'), ...hidden.map((c) => item('eye', c.label, () => change({ columns: [...ids, c.id] }))));
-    } else if (!column) {
-      parts.push(h('p', { class: 'fx-pop__head' }, 'Every column shows'));
+    // + lists the hidden columns: a click adds one at the end.
+    if (!column) {
+      const shown = new Set(ids);
+      const hidden = [
+        ...builtInColumns().filter((id) => !shown.has(id)).map((id) => ({ id, label: id === 'assignee' ? assigneeField().name : COLUMNS[id] })),
+        ...customColumns().filter((f) => !shown.has(fieldGroup(f.id))).map((f) => ({ id: fieldGroup(f.id), label: f.name })),
+      ];
+      parts.push(...hidden.map((c) => h('button', { type: 'button', class: 'fx-pop__item', role: 'menuitem', onclick: () => { close(); change({ columns: [...ids, c.id] }); } }, c.label)));
+      if (!hidden.length) parts.push(h('p', { class: 'fx-pop__head' }, 'Every column shows'));
     }
     columnPop.replaceChildren(...parts);
     columnPop.showPopover?.();

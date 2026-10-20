@@ -135,8 +135,8 @@ The page at `/sign-in`, `/people`, `/account` and `/appearance`
   on hover), and a late Due date shows in red. A person column shows each
   person's badge (initials; the name on hover). A click or right-click on
   a column head opens its menu: sort by it (when it sorts), move it to the
-  start or end, Edit custom field (owners and admins), Hide column, and
-  Show hidden. + at the end of the head shows a hidden column. Filter has
+  start or end, Edit custom field (owners and admins), Hide column. + at
+  the end of the head lists the hidden columns; a click adds one back. Filter has
   "Assignee: me".
   The Stage column shows each status as its coloured label. A
   tick column is at the left; a group head ticks every job in its group,
