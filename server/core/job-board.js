@@ -1,8 +1,8 @@
 import { and, eq, inArray, isNull } from 'drizzle-orm';
-import { contacts, invoices, priceItems } from '../db/schema.js';
+import { contacts, invoices, priceItems, reviewItems } from '../db/schema.js';
 import { listRules } from './invoice-rules.js';
 import { customerBillingByContact, effectiveSettings, readInvoicingSettings, ruleBlockers } from './invoicing-rules.js';
-import { listObligations } from './ledger.js';
+import { REVIEW_CHANGED, listObligations } from './ledger.js';
 import { isHistoryHeld } from './history.js';
 import { invoiceViews } from './sending.js';
 
@@ -21,7 +21,8 @@ import { invoiceViews } from './sending.js';
 export async function describeObligations(db, organisationId, listed, { accounting = null } = {}) {
   const contactIds = [...new Set(listed.map((e) => e.obligation.contactId).filter(Boolean))];
   const invoiceIds = [...new Set(listed.map((e) => e.obligation.invoiceId).filter(Boolean))];
-  const [names, numbers, views] = await Promise.all([
+  const changedIds = listed.filter((e) => e.obligation.holdState === 'review' && e.obligation.invoiceId).map((e) => e.obligation.id);
+  const [names, numbers, views, changed] = await Promise.all([
     contactIds.length
       ? db.select({ id: contacts.id, name: contacts.name }).from(contacts)
         .where(and(eq(contacts.organisationId, organisationId), inArray(contacts.id, contactIds)))
@@ -31,7 +32,16 @@ export async function describeObligations(db, organisationId, listed, { accounti
         .where(and(eq(invoices.organisationId, organisationId), inArray(invoices.id, invoiceIds)))
       : [],
     invoiceIds.length ? invoiceViews(db, organisationId, { accounting }) : null,
+    // The open "job changed" alerts (ledger.js): only the work system changed
+    // and the draft is not sent, so a person can use the new lines.
+    changedIds.length
+      ? db.select({ flowId: reviewItems.flowId, evidence: reviewItems.evidence }).from(reviewItems).where(and(
+        eq(reviewItems.organisationId, organisationId), eq(reviewItems.kind, REVIEW_CHANGED),
+        eq(reviewItems.state, 'open'), inArray(reviewItems.flowId, changedIds),
+      ))
+      : [],
   ]);
+  const offers = new Set(changed.filter((r) => r.evidence?.canUseNewLines).map((r) => r.flowId));
   const nameOf = new Map(names.map((c) => [c.id, c.name]));
   const invoiceOf = new Map(numbers.map((i) => [i.id, i]));
   const settings = await readInvoicingSettings(db, organisationId);
@@ -46,8 +56,9 @@ export async function describeObligations(db, organisationId, listed, { accounti
   // draft can still come from.
   const waitingFor = (o, v) => (o.invoiceId || !['in_work', 'ready', 'pending', 'held'].includes(v)
     ? [] : ruleBlockers(o, effectiveSettings(settings, customers.get(o.contactId)), { rules }));
-  return listed.map(({ obligation: { lineFingerprint: _fingerprint, organisationId: _org, ...o }, view, reasons }) => ({
+  return listed.map(({ obligation: { lineFingerprint: _fingerprint, organisationId: _org, draftBasis: _basis, ...o }, view, reasons }) => ({
     ...o,
+    canUseNewLines: offers.has(o.id),
     contactName: nameOf.get(o.contactId) ?? null,
     invoiceNumber: invoiceOf.get(o.invoiceId)?.number ?? null,
     invoiceStatus: invoiceOf.get(o.invoiceId)?.status ?? null,
