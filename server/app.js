@@ -52,6 +52,9 @@ export function createApp({
   signInRateLimitPerMinute = 30,
   clerkProxyRateLimitPerMinute = 300,
   defaultFamily = DEFAULT_FAMILY,
+  // Buttons that call Xero or Seazona wait between presses (the action
+  // guard, server/integrations/call-guard.js). Off only in tests.
+  buttonCooldowns = true,
   log = console,
   tracing = null,
 } = {}) {
@@ -141,7 +144,7 @@ export function createApp({
     // The price list: every enabled integration that keeps its own (Xero
     // items, Seazona products).
     const priceSystems = () => integrations?.with('listPriceItems') ?? [];
-    app.use('/api/invoicing', createInvoicingRouter({ db: database.db, personAuth: auth.personAuth, log, liveCheckFor, accounting, work, priceSystems }));
+    app.use('/api/invoicing', createInvoicingRouter({ db: database.db, personAuth: auth.personAuth, log, liveCheckFor, accounting, work, priceSystems, buttonCooldowns }));
     // Custom fields for jobs (server/core/custom-fields.js): kept in Flow
     // only; the work systems' statuses show beside them, read only.
     app.use('/api/custom-fields', createCustomFieldsRouter({ db: database.db, personAuth: auth.personAuth, work, log }));
@@ -172,7 +175,7 @@ export function createApp({
       res.json(settings ? { ok: true, on: true, service: adapter.id, ...settings } : { ok: true, on: false });
     });
   }
-  for (const { path, handler } of integrations?.routes({ db: database?.db ?? null, personAuth: auth?.personAuth ?? null, log, messagePage: page }) ?? []) {
+  for (const { path, handler } of integrations?.routes({ db: database?.db ?? null, personAuth: auth?.personAuth ?? null, log, messagePage: page, buttonCooldowns }) ?? []) {
     app.use(path, handler);
   }
 
