@@ -28,7 +28,7 @@ API: `server/api/invoicing.js`.
 - A likely code agrees by name (words, or a short word that starts a long
   one), then price, then tax. A **sure** match agrees on all three, with no
   other code as close. "Link N sure" links every sure one in one call.
-- Check prices sits on the Reconcile screen.
+- There is no Check prices button. The pipeline runs the check on each pass.
 
 ## The parts
 
@@ -54,9 +54,8 @@ API: `server/api/invoicing.js`.
 
 ## The price check
 
-The check runs at the start of each pipeline run, and when a person presses
-"Check prices". It reads only Flow's copies, so it makes no calls to Xero or
-Seazona. Xero's copy changes on each Xero sync; Seazona's on its daily
+The check runs at the start of each pipeline run. It reads only Flow's
+copies, so it makes no calls to Xero or Seazona. Xero's copy changes on each Xero sync; Seazona's on its daily
 products read.
 
 | Finding | Means |

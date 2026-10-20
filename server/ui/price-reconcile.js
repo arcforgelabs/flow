@@ -10,6 +10,7 @@
 // A record with no link offers likely codes (price-match.js). A code that
 // differs from its linked record is an alert only: Mark resolved, or fix it
 // at its source. It reads Flow's copies only: no call to Xero or Seazona.
+// The price check itself runs on each pipeline pass, so there is no button.
 import { bulkBar } from '/assets/ui/bulk-bar.js';
 import { lucide } from '/assets/ui/custom-fields.js';
 import { findCodes, nameScore, reconcileRows, SAME_NAME } from '/assets/ui/price-match.js';
@@ -30,14 +31,13 @@ export async function renderPriceReconcile(main, ui) {
     class: 'fx-xi__view', type: 'button', role: 'tab', 'aria-selected': String(view === name), 'aria-label': label, title: label, 'data-view': name,
     onclick: () => setView(name),
   }, icon(glyph));
-  const checkButton = h('button', { class: 'fx-btn fx-btn--ghost', type: 'button', disabled: !canAct }, 'Check prices');
   const bulk = bulkBar(ui, { label: 'Ticked records' });
   main.append(
     h('nav', { class: 'fx-crumbs', 'aria-label': 'Breadcrumb' },
       h('a', { href: '/price-list', onclick: (event) => ui.go(event) }, 'Price list'), h('span', { 'aria-hidden': 'true' }, '›'), h('span', {}, 'Reconcile')),
     ui.pageHeader('Reconcile prices', {
       subtitle,
-      actions: [checkButton, h('div', { class: 'fx-xi__views', role: 'tablist', 'aria-label': 'View' }, toggle('card', 'One at a time', 'square'), toggle('list', 'List, tick many', 'list-checks'))],
+      actions: [h('div', { class: 'fx-xi__views', role: 'tablist', 'aria-label': 'View' }, toggle('card', 'One at a time', 'square'), toggle('list', 'List, tick many', 'list-checks'))],
     }),
     host, bulk.element);
 
@@ -352,14 +352,6 @@ export async function renderPriceReconcile(main, ui) {
         })))));
     drawBar();
   }
-
-  checkButton.addEventListener('click', async () => {
-    checkButton.disabled = true;
-    const body = await call('/api/invoicing/price-list/check', 'POST', {});
-    if (body) toast(body.summary.differing ? `${body.summary.differing} codes differ.` : 'Every linked price agrees.', body.summary.differing ? 'info' : 'success');
-    checkButton.disabled = !canAct;
-    await load();
-  });
 
   await load();
 }
