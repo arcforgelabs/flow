@@ -681,14 +681,13 @@ export async function renderJobs(main, ui) {
 
   function bulkActions(rows) {
     if (!rows.length) return { groups: [], more: [] };
-    const status = [];
-    const movable = rows.filter(movesStages);
-    if (movable.length) status.push({ icon: 'arrow-right-left', label: 'Move', title: 'Move to a stage', run: () => moveMany(movable) });
+    const status = [{ icon: 'arrow-right-left', label: 'Move', title: 'Move to a stage', run: () => moveMany(rows) }];
+    if (groupable().length) status.push({ icon: 'tag', label: 'Field', title: 'Set a field', run: () => setMany(rows) });
     const workable = rows.filter((job) => job.obligation?.view === 'in_work');
     if (workable.length) status.push({ icon: 'check-check', label: 'Ready', title: 'Mark ready to invoice', run: () => readyMany(workable) });
     const draftable = state.canDraft ? rows.filter((job) => job.obligation?.view === 'ready' && !job.obligation.invoiceId) : [];
     if (draftable.length) status.push({ icon: 'file-plus', label: 'Draft', title: 'Draft invoices', run: () => draftMany(draftable) });
-    const fields = groupable().map((field) => ({ icon: 'tag', label: field.name, title: `Set ${field.name}`, run: () => setMany(rows, field) }));
+    const fields = groupable().map((field) => ({ icon: 'tag', label: field.name, title: `Set ${field.name}`, run: () => setMany(rows, field.id) }));
     const apply = [
       { icon: 'copy', label: 'Copy', iconOnly: true, title: 'Copy case numbers', run: () => copyLines(rows.map((job) => caseNumber(job) ?? clientOf(job))) },
       { icon: 'download', label: 'Export', iconOnly: true, title: 'Export CSV', run: () => exportCsv(rows) },
@@ -710,36 +709,17 @@ export async function renderJobs(main, ui) {
     };
   }
 
-  // Move the ticked jobs to one stage. As with a drag, the work system
-  // cannot take the move through its API: Flow records each move and the
-  // rows wait until the sync reads the new status.
+  // Move the ticked jobs to one stage. A work system's own stages
+  // (Seazona) cannot be moved from Flow in bulk yet, so this says so; a
+  // lab's own stages are custom fields (Field). Someone who needs it can
+  // report it (Report a problem).
   async function moveMany(jobs) {
-    const systems = [...new Set(jobs.map((job) => job.sourceSystem))];
-    const stages = [...new Set(state.systemFields.filter((f) => systems.includes(f.source)).flatMap((f) => f.options.map((o) => o.name)))];
-    const names = systems.map((id) => SYSTEM_NAME[id] ?? id).join(' and ');
-    const select = h('select', { class: 'fx-select', name: 'to', required: true, 'aria-label': 'Stage' },
-      h('option', { value: '' }, 'Choose a stage…'), stages.map((name) => h('option', { value: name }, name)));
-    const data = await ui.dialog({
-      title: `Move ${plural(jobs.length, 'job', 'jobs')}`,
-      body: h('div', { class: 'fx-fields fx-move' },
-        h('label', { class: 'fx-field' }, h('span', {}, 'Move to'), select),
-        h('p', { class: 'fx-move__note' }, `${names} cannot take this change from Flow. Set each case to the new stage in ${names}. Flow shows the rows as waiting until it reads the change. After a day they go back.`)),
-      confirm: 'Move',
+    const systems = [...new Set(jobs.map((job) => SYSTEM_NAME[job.sourceSystem] ?? job.sourceSystem))].join(' and ');
+    await ui.dialog({
+      title: 'Not yet available',
+      body: h('p', {}, `Moving ${plural(jobs.length, 'job', 'jobs')} to a ${systems} stage at once is not yet available.`),
+      confirm: 'OK',
     });
-    const to = data?.get('to');
-    if (!to) return;
-    let moved = 0;
-    let error = null;
-    for (const job of jobs.filter((j) => (j.status ?? NO_STATUS) !== to)) {
-      try {
-        const { move } = await flow('/api/work/moves', { method: 'POST', body: JSON.stringify({ sourceSystem: job.sourceSystem, sourceJobRef: job.sourceJobRef, toStatus: to }) });
-        job.pendingMove = { to: move.to, from: move.from, requestedAt: move.requestedAt, expiresAt: move.expiresAt, openUrl: move.openUrl, openExact: move.openExact };
-        moved += 1;
-      } catch (e) { error = e; }
-    }
-    ui.toast?.(error ? `${moved} waiting for ${names}. ${error.message}` : `${plural(moved, 'job', 'jobs')} waiting for ${names}. Set ${moved === 1 ? 'it' : 'them'} to ${to} there.`, error ? 'danger' : 'success');
-    state.ticked.clear();
-    draw();
   }
 
   // One step on each job's invoice record, one job after the other.
@@ -772,21 +752,34 @@ export async function renderJobs(main, ui) {
     await load();
   }
 
-  // Set one custom field on the ticked jobs, in Flow only.
-  async function setMany(jobs, field) {
-    const lanes = fieldLanes(field, { people: state.people, jobs: state.jobs, valueOf: (job) => valueOf(job, field.id)?.value ?? null }).filter((lane) => !lane.archived);
-    const select = h('select', { class: 'fx-select', name: 'lane', 'aria-label': field.name },
-      lanes.map((lane, i) => h('option', { value: String(i) }, lane.label)));
+  // Set one custom field on the ticked jobs, in Flow only: choose the
+  // field, then its value. `fieldId` starts on that field.
+  async function setMany(jobs, fieldId = null) {
+    const fields = groupable();
+    if (!fields.length) return;
+    const lanesOf = (field) => fieldLanes(field, { people: state.people, jobs: state.jobs, valueOf: (job) => valueOf(job, field.id)?.value ?? null }).filter((lane) => !lane.archived);
+    const pickField = h('select', { class: 'fx-select', name: 'field', 'aria-label': 'Field' },
+      fields.map((f) => h('option', { value: f.id, selected: f.id === fieldId }, f.name)));
+    const pickValue = h('select', { class: 'fx-select', name: 'lane', 'aria-label': 'Value' });
+    const fillValues = () => {
+      const field = fields.find((f) => f.id === pickField.value) ?? fields[0];
+      pickValue.replaceChildren(...lanesOf(field).map((lane, i) => h('option', { value: String(i) }, lane.label)));
+    };
+    pickField.addEventListener('change', fillValues);
+    fillValues();
     const data = await ui.dialog({
-      title: `Set ${field.name} on ${plural(jobs.length, 'job', 'jobs')}`,
-      body: h('div', { class: 'fx-fields' }, h('label', { class: 'fx-field' }, h('span', {}, field.name), select)),
+      title: `Set a field on ${plural(jobs.length, 'job', 'jobs')}`,
+      body: h('div', { class: 'fx-fields' },
+        h('label', { class: 'fx-field' }, h('span', {}, 'Field'), pickField),
+        h('label', { class: 'fx-field' }, h('span', {}, 'Value'), pickValue)),
       confirm: 'Set',
     });
     if (!data) return;
-    const lane = lanes[Number(data.get('lane'))];
+    const field = fields.find((f) => f.id === data.get('field'));
+    const lane = field ? lanesOf(field)[Number(data.get('lane'))] : null;
     if (!lane) return;
     for (const job of jobs) await setValue(job, field, lane.value);
-    ui.toast?.(`${field.name} set on ${plural(jobs.length, 'job', 'jobs')}.`, 'success');
+    ui.toast?.(`${field.name} set to ${lane.label} on ${plural(jobs.length, 'job', 'jobs')}.`, 'success');
   }
 
   async function copyLines(lines) {
