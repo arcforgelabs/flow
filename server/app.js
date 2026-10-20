@@ -1,5 +1,6 @@
 import express from 'express';
 import { createAlertsRouter } from './api/alerts.js';
+import { createCustomFieldsRouter } from './api/custom-fields.js';
 import { createConnectorApi } from './api/connector.js';
 import { createInvoicingRouter } from './api/invoicing.js';
 import { createSignInRouter } from './auth/routes.js';
@@ -136,6 +137,9 @@ export function createApp({
     // items, Seazona products).
     const priceSystems = () => integrations?.with('listPriceItems') ?? [];
     app.use('/api/invoicing', createInvoicingRouter({ db: database.db, personAuth: auth.personAuth, log, liveCheckFor, accounting, work, priceSystems }));
+    // Custom fields for jobs (server/core/custom-fields.js): kept in Flow
+    // only; the work systems' statuses show beside them, read only.
+    app.use('/api/custom-fields', createCustomFieldsRouter({ db: database.db, personAuth: auth.personAuth, work, log }));
     // Quiet alerts (server/core/alerts.js): what needs a person on each page.
     // Integrations add their own through the `alerts` capability.
     app.use('/api/alerts', createAlertsRouter({

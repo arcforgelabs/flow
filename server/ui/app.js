@@ -13,6 +13,7 @@ import { renderInvoice, renderInvoiceList } from '/assets/ui/invoicing.js';
 import { automationSection } from '/assets/ui/automations.js';
 import { renderInvoicingSettings, sendModeSection } from '/assets/ui/invoicing-settings.js';
 import { renderPriceList } from '/assets/ui/price-list.js';
+import { renderCustomFields } from '/assets/ui/custom-fields.js';
 import { renderJobs } from '/assets/ui/jobs.js';
 import { startMonitoring } from '/assets/ui/monitoring.js';
 import { openSearch } from '/assets/ui/search.js';
@@ -198,6 +199,7 @@ const VIEWS = {
   invoices: { label: 'Invoices', icon: 'invoices', group: 'Work', render: (main, id) => (id ? renderInvoice(main, ui(), id) : renderInvoiceList(main, ui())) },
   'invoicing-settings': { label: 'Invoice rules', icon: 'invoices', group: 'Settings', render: (main) => renderInvoicingSettings(main, ui()) },
   'price-list': { label: 'Price list', icon: 'tag', group: 'Settings', render: (main) => renderPriceList(main, ui()) },
+  'custom-fields': { label: 'Custom fields', icon: 'fields', group: 'Settings', render: (main) => renderCustomFields(main, ui()) },
   people: { label: 'People', icon: 'people', group: 'Settings', ownerOnly: true, render: renderPeople },
   integrations: { label: 'Integrations', icon: 'plug', group: 'Settings', ownerOnly: true, render: (main, id) => (id ? renderIntegration(main, id) : renderIntegrations(main)) },
   // Not in the sidebar: "Manage account" in the account menu opens the same
@@ -212,6 +214,7 @@ const ICON_PATHS = {
   invoices: '<path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 13h7M9 17h5"/>',
   people: '<circle cx="9" cy="8" r="3"/><path d="M3 20c0-3.5 2.7-6 6-6s6 2.5 6 6"/><path d="M16 5a3 3 0 010 6M21 20c0-3-1.6-5-4-5.7"/>',
   tag: '<path d="M3 12V4h8l10 10-8 8z"/><circle cx="7.5" cy="8.5" r="1.5"/>',
+  fields: '<rect x="3" y="4" width="18" height="5" rx="1.5"/><rect x="3" y="13" width="18" height="5" rx="1.5"/><path d="M7 6.5h4M7 15.5h7"/>',
   plug: '<path d="M9 3v5M15 3v5M6 8h12v3a6 6 0 01-12 0zM12 17v4"/>',
   person: '<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-7 8-7s8 3 8 7"/>',
   flag: '<path d="M5 21V4M5 4h11l-2 4 2 4H5"/>',
