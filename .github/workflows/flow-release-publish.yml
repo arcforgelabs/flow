@@ -335,6 +335,25 @@ jobs:
             --output "$RUNNER_TEMP/assets/release-manifest.json"
           jq . "$RUNNER_TEMP/assets/release-manifest.json"
 
+      # Flow NPM Release reads the manifest from this run: the GitHub Release
+      # is a draft until npm is verified, and a draft is hidden from its
+      # read-only token.
+      - name: Keep the release manifest for Flow NPM Release
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/manifest"
+          cp "$RUNNER_TEMP/assets/release-manifest.json" "$RUNNER_TEMP/manifest/"
+          cd "$RUNNER_TEMP/manifest"
+          sha256sum release-manifest.json > release-manifest.json.sha256
+
+      - name: Upload the release manifest
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-manifest
+          path: ${{ runner.temp }}/manifest
+          retention-days: 30
+          if-no-files-found: error
+
       - name: Create the GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}

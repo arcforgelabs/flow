@@ -101,8 +101,11 @@ jobs:
           fi
           mkdir -p "$RUNNER_TEMP/package" "$RUNNER_TEMP/release"
           gh run download "$RUN_ID" --repo "$GITHUB_REPOSITORY" --name npm-package --dir "$RUNNER_TEMP/package"
+          # The manifest comes from the same Publish run as the tarball: the
+          # GitHub Release is still a draft, which this read-only token
+          # cannot see.
+          gh run download "$RUN_ID" --repo "$GITHUB_REPOSITORY" --name release-manifest --dir "$RUNNER_TEMP/release"
           cd "$RUNNER_TEMP/release"
-          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern 'release-manifest.json*'
           sha256sum -c release-manifest.json.sha256
           manifest="$RUNNER_TEMP/release/release-manifest.json"
           jq -e --arg tag "$TAG" '.tag == $tag' "$manifest" >/dev/null || { echo "::error::The manifest is not for ${TAG}." >&2; exit 1; }
