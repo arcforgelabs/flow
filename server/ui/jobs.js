@@ -14,7 +14,7 @@
 
 import { formatCents } from '/assets/ui/invoicing.js';
 import {
-  FINAL_RANK, fixes, INVOICE_STAGES, invoiceStage, matches, NO_STATUS, orderStatuses, problemSummary, statusRank,
+  caseNumber, FINAL_RANK, fixes, INVOICE_STAGES, invoiceStage, matches, NO_STATUS, orderStatuses, problemSummary, statusRank,
 } from '/assets/ui/job-board.js';
 import {
   DEFAULT_VIEW, fieldGroup, fieldIdOf, fieldLanes, filterCount, filterJobs, groupJobs, GROUPS, laneOf, normaliseJobsView, NOT_SET, sortJobs, SORTS,
@@ -74,7 +74,7 @@ export async function renderJobs(main, ui) {
   const saved = ui.me?.views?.jobs;
   const state = {
     view: normaliseJobsView(saved ?? { ...DEFAULT_VIEW, layout: readLayout() }),
-    q: asked.trim().toLowerCase(), jobs: [], statuses: [], accountingName: null, canDraft: false,
+    q: asked.trim().toLowerCase(), jobs: [], statuses: [], canDraft: false,
     // Custom fields (docs/CUSTOM_FIELDS.md): the lab's fields, the work
     // systems' stage fields, the people a person field can name, and each
     // job's values by job and field.
@@ -99,7 +99,7 @@ export async function renderJobs(main, ui) {
   drawToggle();
   search.addEventListener('input', () => { state.q = search.value.trim(); draw(); });
 
-  const problemsOf = (job) => fixes(job.obligation, { accountingName: state.accountingName });
+  const problemsOf = (job) => fixes(job.obligation);
   const valueKey = (job, fieldId) => `${job.sourceSystem}\u0000${job.sourceJobRef}\u0000${fieldId}`;
   const valueOf = (job, fieldId) => state.values.get(valueKey(job, fieldId)) ?? null;
   const groupable = () => state.fields.filter((f) => f.groupable);
@@ -232,7 +232,6 @@ export async function renderJobs(main, ui) {
       ]);
       state.jobs = body.jobs;
       state.statuses = body.statuses;
-      state.accountingName = body.accountingName;
       state.canDraft = context.canIssue;
       state.fields = fields?.fields ?? [];
       state.systemFields = fields?.systemFields ?? [];
@@ -495,7 +494,7 @@ export async function renderJobs(main, ui) {
     try {
       const { move } = await flow('/api/work/moves', { method: 'POST', body: JSON.stringify({ ...ref, toStatus: status }) });
       job.pendingMove = { to: move.to, from: move.from, requestedAt: move.requestedAt, expiresAt: move.expiresAt, openUrl: move.openUrl, openExact: move.openExact };
-      ui.toast?.(`Waiting for ${system}. Set case ${move.caseRef} to ${move.to} there.`, 'success');
+      ui.toast?.(`Waiting for ${system}. Set ${caseNumber(move) ? `case ${caseNumber(move)}` : 'the case'} to ${move.to} there.`, 'success');
     } catch (error) {
       job.pendingMove = before;
       ui.toast?.(error.message, 'danger');
@@ -512,13 +511,14 @@ export async function renderJobs(main, ui) {
   // system's web app. An exact link opens the order itself; otherwise it
   // opens the lab's home page there, and the person finds the case.
   function openStep(job, system) {
-    const caseRef = job.caseRef ?? job.sourceJobRef;
+    const caseRef = caseNumber(job);
+    const named = caseRef ? `case ${caseRef}` : `the case for ${clientOf(job)}`;
     const url = job.link?.url ?? null;
-    if (!url) return `Open case ${caseRef} in ${system}.`;
+    if (!url) return `Open ${named} in ${system}.`;
     const out = (text) => h('a', { class: 'fx-task__link', href: url, target: '_blank', rel: 'noopener' }, text);
     return job.link.exact
-      ? h('span', {}, out(`Open case ${caseRef} in ${system} ↗`))
-      : h('span', {}, out(`Open ${system} ↗`), ` and find case ${caseRef}.`);
+      ? h('span', {}, out(caseRef ? `Open case ${caseRef} in ${system} ↗` : `Open the case in ${system} ↗`))
+      : h('span', {}, out(`Open ${system} ↗`), ` and find ${named}.`);
   }
 
   // The job panel's custom fields: one control each, saved when it changes.
@@ -681,7 +681,20 @@ export async function renderJobs(main, ui) {
       : stage ? INVOICE_STAGES[stage] : o ? 'Not ready to invoice' : 'No invoice yet';
     const fixBox = found.length ? h('section', { class: 'fx-task__fix', 'aria-label': 'Fix' },
       h('h3', {}, 'Fix'),
-      found.map((f) => h('div', { class: 'fx-task__fixrow' }, h('span', {}, `${f.text} ${f.todo}`)))) : null;
+      found.map((f) => h('div', { class: 'fx-task__fixrow' }, h('span', {}, `${f.text} ${f.todo}`), fixLink(f.go)))) : null;
+    // Each fix's link: Flow's own invoice, the job in the work system, or
+    // the Flow page where the fix is made (job-board.js GO).
+    function fixLink(go) {
+      const inFlow = (href, text) => h('a', { class: 'fx-task__link', href, onclick: (event) => { close(); ui.go(event); } }, text);
+      if (go === 'invoice' && o?.invoiceId) return inFlow(`/invoices/${o.invoiceId}`, 'Open invoice');
+      if (go === 'work' && job.link?.url) {
+        return h('a', { class: 'fx-task__link', href: job.link.url, target: '_blank', rel: 'noopener' }, job.link.exact ? `Open case in ${system} ↗` : `Open ${system} ↗`);
+      }
+      if (go === 'price-list') return inFlow('/price-list', 'Open price list');
+      if (go === 'invoicing-settings') return inFlow('/invoicing-settings', 'Open invoice rules');
+      if (go === 'integrations' && ui.me?.person?.role === 'owner') return inFlow('/integrations', 'Open integrations');
+      return null;
+    }
     const lines = job.lines ?? [];
     const activity = h('ol', {}, h('li', { class: 'fx-dim' }, 'Loading…'));
     element.append(h('div', { class: 'fx-task__grid' },
@@ -697,13 +710,14 @@ export async function renderJobs(main, ui) {
           field(job.dueOn ? 'Due' : 'Ordered', job.dueOn ? fullDate(job.dueOn) : job.orderedOn ? fullDate(job.orderedOn) : null, late ? { class: 'fx-task__late' } : {}),
           job.dueOn ? field('Ordered', job.orderedOn ? fullDate(job.orderedOn) : null) : null,
           field('Total', job.totalCents == null ? null : formatCents(job.totalCents)),
-          field('Case number', job.caseRef ?? job.sourceJobRef, { class: 'fx-mono' }),
+          field('Case number', caseNumber(job), { class: 'fx-mono' }),
           job.link?.url ? field(system, link({ href: job.link.url, target: '_blank', rel: 'noopener' }, job.link.exact ? `Open case in ${system} ↗` : `Open ${system} ↗`)) : null,
           field(`${system} status`, job.status),
           field(`${system} client`, job.workClientName && job.workClientName !== job.clientName ? job.workClientName : null),
           field('Department', job.department),
-          field('Invoice', invoiceText),
-          o?.accountingUrl ? field(state.accountingName ?? 'Accounting', link({ href: o.accountingUrl, target: '_blank', rel: 'noopener' }, `Open in ${state.accountingName ?? 'the accounting system'}`)) : null),
+          // The job links to Flow's invoice only. The invoice page shows its
+          // link to an accounting system (its Linked card).
+          field('Invoice', invoiceText)),
         fixBox,
         state.fields.length ? h('section', { class: 'fx-task__custom', 'aria-label': 'Custom fields' },
           h('h3', {}, 'Fields'),

@@ -76,66 +76,82 @@ const capital = (text) => (text ? text[0].toUpperCase() + text.slice(1) : text);
 const sentence = (text) => capital(String(text).trim().replace(/\.?$/, '.'));
 
 // One ledger reason (server/core/ledger.js) as a fix: a short label, what is
-// wrong, and what to do.
-function reasonFix(reason, acct) {
-  const fix = (label, todo) => ({ label, text: sentence(reason), todo });
+// wrong, what to do, and where to go to do it (`go`, see GO). A job's fix
+// speaks of Flow's own invoice only. How that invoice stands in an
+// accounting system is the invoice's business, on the invoice page.
+function reasonFix(reason) {
+  const fix = (label, todo, go = null) => ({ label, text: sentence(reason), todo, go });
   if (reason === 'the accounting system was not checked') {
-    return { label: `Not checked in ${acct}`, text: `Flow did not check ${acct} for an invoice for this job yet.`, todo: `Wait for the next check, a few minutes. If it stays, check ${acct} under Settings, Integrations.` };
+    return { label: 'Not checked yet', text: 'Flow did not check for an invoice for this job yet.', todo: 'Wait for the next check, a few minutes. If it stays, check Settings, Integrations.', go: 'integrations' };
   }
   if (reason === 'a line does not map to a price item') {
-    return { label: 'No price code', text: 'A line has a code that is not in the price list.', todo: 'Add the code to the price list, or correct the code in the work system.' };
+    return { label: 'No price code', text: 'A line has a code that is not in the price list.', todo: 'Add the code to the price list, or correct the code in the work system.', go: 'price-list' };
   }
   if (reason === 'the job has no customer contact') {
-    return { label: 'Client not linked', text: 'The client is not linked to a customer in Flow.', todo: 'Link the client to a customer in Flow.' };
+    return { label: 'Client not linked', text: 'The client is not linked to a customer in Flow.', todo: 'Link the client to a customer in Flow.', go: null };
   }
   if (reason === 'the work system report is out of date') {
-    return { label: 'Out of date', text: 'Flow has no news of this job from the work system for more than a day.', todo: 'Check the work system under Settings, Integrations.' };
+    return { label: 'Out of date', text: 'Flow has no news of this job from the work system for more than a day.', todo: 'Check the work system under Settings, Integrations.', go: 'integrations' };
   }
-  if (reason === 'the job changed after its invoice was made') return fix('Job changed', 'Open the invoice to see what changed. Fix the job in the work system, or adopt its changes on the draft.');
-  if (reason === 'the job status moved back after its invoice was made') return fix('Status moved back', 'Check the job in the work system. Void or hold its invoice if the work is not done.');
-  if (/deleted in /i.test(reason)) return fix('Deleted', 'Check the job in the work system. Void its invoice if it has one.');
-  if (/^the accounting evidence is ambiguous/.test(reason)) return fix(`${acct} match unclear`, `Find the invoice for this job in ${acct}, then link it.`);
-  if (/^the accounting evidence is conflict/.test(reason)) return fix(`Two ${acct} invoices`, `Find the right invoice for this job in ${acct}. Void the other.`);
-  if (/^invoice .* was (voided|deleted)$/.test(reason)) return fix(`Invoice ${/voided$/.test(reason) ? 'voided' : 'deleted'}`, 'Make a new invoice, or close the job.');
-  if (/^the accounting system reports /.test(reason)) return fix(`Already in ${acct}`, `Check the invoice in ${acct}. Link it to this job if it is the right one.`);
+  if (reason === 'the job changed after its invoice was made') return fix('Job changed', 'Open the invoice to see what changed. Fix the job in the work system, or adopt its changes on the draft.', 'invoice');
+  if (reason === 'the job status moved back after its invoice was made') return fix('Status moved back', 'Check the job in the work system. Void or hold its invoice if the work is not done.', 'work');
+  if (/deleted in /i.test(reason)) return fix('Deleted', 'Check the job in the work system. Void its invoice if it has one.', 'work');
+  // The matcher found invoices that may be this job's, but no exact link.
+  // Flow holds the job so that it is not invoiced two times.
+  if (/^the accounting evidence is ambiguous/.test(reason)) {
+    return { label: 'Invoice unclear', text: 'Flow cannot tell if this job has an invoice already.', todo: 'Check the invoice number on the job in the work system. Flow holds the job so it is not invoiced two times.', go: 'work' };
+  }
+  if (/^the accounting evidence is conflict/.test(reason)) {
+    return { label: 'Invoice link changed', text: 'A second invoice now answers for this job, or its invoice is gone.', todo: 'Check the invoice number on the job in the work system. Void an extra invoice.', go: 'work' };
+  }
+  if (/^invoice .* was (voided|deleted)$/.test(reason)) {
+    const voided = /voided$/.test(reason);
+    return { label: `Invoice ${voided ? 'voided' : 'deleted'}`, text: `The invoice for this job was ${voided ? 'voided' : 'deleted'}.`, todo: 'Make a new invoice, or close the job.', go: 'invoice' };
+  }
+  if (/^the accounting system reports /.test(reason)) {
+    return { label: 'May be invoiced', text: 'Flow found an invoice that may be for this job.', todo: 'Check the invoice number on the job in the work system.', go: 'work' };
+  }
   if (/^the job is held$/.test(reason)) return fix('On hold', 'Release the hold when the job can be invoiced.');
-  if (/^the job is review$/.test(reason)) return fix('Needs review', 'Check the job and its invoice.');
+  if (/^the job is review$/.test(reason)) return fix('Needs review', 'Check the job and its invoice.', 'invoice');
   if (reason === 'held') return fix('On hold', 'Release the hold when the job can be invoiced.');
-  return fix('Needs review', 'Check the job and its invoice.');
+  return fix('Needs review', 'Check the job and its invoice.', 'invoice');
 }
 
-// One draft problem (server/core/sending.js, and the accounting system's) as a fix.
-function draftFix(problem, acct) {
+// One problem on the job's invoice (server/core/sending.js, and an accounting
+// system's) as a job fix. Flow's own invoice problems keep their words. A
+// problem an accounting system found stays on the invoice page; the job only
+// says that its invoice needs a fix.
+function draftFix(problem) {
   const code = problem.code ?? '';
-  const fix = (label, todo) => ({ label, text: sentence(problem.message ?? label), todo });
+  const fix = (label, todo) => ({ label, text: sentence(problem.message ?? label), todo, go: 'invoice' });
   if (code === 'no_lines') return fix('No lines', 'Open the invoice and add the lines.');
   if (code === 'no_amount') return fix('Total is $0', 'Open the invoice and correct the amounts.');
   if (code === 'line_no_item') return fix('No price code', 'Open the invoice and choose a price item for each line.');
-  if (code.endsWith('_item_missing')) return fix(`Item not in ${acct}`, `Add the item in ${acct}, then sync.`);
-  if (code.endsWith('_contact_missing')) return fix(`Client not in ${acct}`, `Add the client in ${acct}, then sync.`);
-  if (code.endsWith('_contact_ambiguous')) return fix(`Two ${acct} clients`, `Merge or rename the clients in ${acct}, then sync.`);
-  if (code.includes('earlier_version')) return fix(`Old copy in ${acct}`, 'Open the invoice for the steps.');
-  if (code.startsWith('send_') || code.endsWith('_push_failed') || code.endsWith('_outcome_unknown')) return fix('Not sent', 'Open the invoice and send it again.');
-  return fix('Invoice problem', 'Open the invoice to correct it.');
+  if (code.startsWith('send_') || code.endsWith('_push_failed') || code.endsWith('_outcome_unknown')) {
+    return { label: 'Not sent', text: 'The invoice for this job was not sent.', todo: 'Open the invoice and send it again.', go: 'invoice' };
+  }
+  return { label: 'Invoice problem', text: 'The invoice for this job needs a fix before it can be sent.', todo: 'Open the invoice for the steps.', go: 'invoice' };
 }
 
-// What a person must fix on a job, in order: [{ label, text, todo }]. Empty
-// unless invoiceStage is Problem. `accountingName` names the accounting
-// system (for example Xero).
-export function fixes(o, { accountingName = null } = {}) {
+// Where a fix's link goes: Flow's invoice, the job in the work system, or a
+// Flow settings page (jobs.js draws the link).
+export const GO = ['invoice', 'work', 'price-list', 'invoicing-settings', 'integrations'];
+
+// What a person must fix on a job, in order: [{ label, text, todo, go }].
+// Empty unless invoiceStage is Problem.
+export function fixes(o) {
   if (invoiceStage(o) !== 'problem') return [];
-  const acct = accountingName ?? 'the accounting system';
   const found = [];
-  if (PROBLEM_VIEWS.includes(o.view)) found.push(...(o.reasons ?? []).map((r) => reasonFix(r, acct)));
+  if (PROBLEM_VIEWS.includes(o.view)) found.push(...(o.reasons ?? []).map((r) => reasonFix(r)));
   if (o.view === 'ready') {
     found.push(...(o.waitingFor ?? []).filter(isRule).map((r) => ({
-      label: 'Stopped by a rule', text: sentence(r), todo: 'Draft the invoice here, or change the rule under Settings, Invoicing, Rules.',
+      label: 'Stopped by a rule', text: sentence(r), todo: 'Draft the invoice here, or change the rule under Settings, Invoice rules.', go: 'invoicing-settings',
     })));
   }
   if (o.invoiceStatus === 'void') {
-    found.push({ label: 'Invoice void', text: 'The invoice for this job is void.', todo: 'Make a new invoice, or close the job.' });
+    found.push({ label: 'Invoice void', text: 'The invoice for this job is void.', todo: 'Make a new invoice, or close the job.', go: 'invoice' });
   }
-  found.push(...(o.invoiceProblems ?? []).map((p) => draftFix(p, acct)));
+  found.push(...(o.invoiceProblems ?? []).map((p) => draftFix(p)));
   return found;
 }
 
@@ -144,6 +160,14 @@ export function problemSummary(found) {
   const labels = [...new Set(found.map((f) => f.label))];
   if (!labels.length) return '';
   return labels.length > 1 ? `${labels[0]} +${labels.length - 1}` : labels[0];
+}
+
+// A system's own record id (a UUID) is not a case number a person reads.
+// Search still finds the job by it (job-board.js matches).
+const RECORD_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export function caseNumber(job) {
+  const ref = job.caseRef ?? job.sourceJobRef ?? null;
+  return ref && !RECORD_ID.test(ref) ? ref : null;
 }
 
 // Does a job match the search text? Case, client, practitioner or invoice
