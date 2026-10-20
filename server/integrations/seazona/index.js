@@ -8,7 +8,7 @@ import { readBillableJobs } from './reconcile.js';
 import { SEAZONA_CALL_GUARD } from './governor.js';
 import { createSeazonaRouter } from './routes.js';
 import {
-  cancelStageMove, expiredStageMoves, readPersonSettings, requestStageMove, settleStageMoves, waitingStageMoves, writePersonSetting,
+  cancelStageMove, expiredStageMoves, orderUrl, readPersonSettings, requestStageMove, settleStageMoves, waitingStageMoves, writePersonSetting,
 } from './stage-moves.js';
 import { orderPatient } from './patients.js';
 import { createSeazonaScheduler } from './scheduler.js';
@@ -227,7 +227,7 @@ export function createSeazonaAdapter({ env = null, fetchImpl = null, now = Date.
         // shows in its new lane, waiting for Seazona.
         for (const item of work.items) {
           const move = waiting.get(item.sourceJobRef);
-          if (move) item.pendingMove = { to: move.toStatus, from: move.fromStatus, requestedAt: move.requestedAt.toISOString(), expiresAt: move.expiresAt.toISOString() };
+          if (move) item.pendingMove = { to: move.toStatus, from: move.fromStatus, requestedAt: move.requestedAt.toISOString(), expiresAt: move.expiresAt.toISOString(), openUrl: orderUrl(current().settings.orderUrlTemplate, move.orderId) };
         }
         return work;
       },

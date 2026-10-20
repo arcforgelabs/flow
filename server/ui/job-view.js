@@ -10,6 +10,12 @@ export const SORTS = { board: 'Lab system order', due: 'Date', client: 'Client',
 export const DIRS = ['asc', 'desc'];
 export const DEFAULT_VIEW = Object.freeze({ layout: 'board', group: 'status', sort: 'board', dir: 'asc', hide: [], late: false, problems: false });
 
+// Group by one of the lab's custom fields (docs/CUSTOM_FIELDS.md):
+// 'field:<field id>'. Only dropdown, person and checkbox fields make lanes.
+const FIELD_GROUP = /^field:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export const fieldGroup = (fieldId) => `field:${fieldId}`;
+export const fieldIdOf = (group) => (FIELD_GROUP.test(group ?? '') ? group.slice(6) : null);
+
 const MAX_HIDDEN = 100;
 const MAX_LABEL = 120;
 
@@ -23,7 +29,7 @@ export function normaliseJobsView(input) {
     : [];
   return {
     layout: pick('layout', LAYOUTS),
-    group: pick('group', Object.keys(GROUPS)),
+    group: FIELD_GROUP.test(value.group ?? '') ? value.group : pick('group', Object.keys(GROUPS)),
     sort: pick('sort', Object.keys(SORTS)),
     dir: pick('dir', DIRS),
     hide,
@@ -79,4 +85,35 @@ export function groupJobs(jobs, columns, labelOf) {
     groups.get(label).push(job);
   }
   return [...groups].map(([label, inGroup]) => ({ label, jobs: inGroup }));
+}
+
+// The lanes of a custom field, in order: [{ label, value, color }]. `value`
+// is what a card dropped in the lane gets (null clears it). The empty lane
+// comes first, like ClickUp's. An archived option that a job still has gets
+// a lane after the live ones. `people` is [{ id, name }] for a person field;
+// `jobs` are the jobs on the page and `valueOf` reads a job's value.
+export const NOT_SET = 'Not set';
+export function fieldLanes(field, { people = [], jobs = [], valueOf = () => null } = {}) {
+  const used = new Set(jobs.map(valueOf).filter((v) => v != null));
+  if (field.type === 'checkbox') {
+    return [{ label: 'No', value: null, color: 'gray' }, { label: 'Yes', value: true, color: 'green' }];
+  }
+  const empty = { label: NOT_SET, value: null, color: 'gray' };
+  if (field.type === 'person') {
+    const known = people.map((p) => ({ label: p.name, value: p.id, color: 'blue' }));
+    const gone = [...used].filter((id) => !people.some((p) => p.id === id))
+      .map((id, i) => ({ label: `Former person ${i + 1}`, value: id, color: 'gray' }));
+    return [empty, ...known, ...gone];
+  }
+  const options = field.options ?? [];
+  return [empty,
+    ...options.filter((o) => !o.archived).map((o) => ({ label: o.name, value: o.id, color: o.color ?? 'gray' })),
+    ...options.filter((o) => o.archived && used.has(o.id)).map((o) => ({ label: `${o.name} (archived)`, value: o.id, color: 'gray', archived: true }))];
+}
+
+// The lane label a job sits in for a field's lanes. A checkbox that is
+// false sits in "No", with the unset ones.
+export function laneOf(lanes, value) {
+  if (value === false || value == null) return lanes[0].label;
+  return (lanes.find((lane) => lane.value === value) ?? lanes[0]).label;
 }

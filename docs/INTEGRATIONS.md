@@ -44,7 +44,7 @@ never a live call: `{ items, statuses }`, each item with its `sourceSystem`,
 `sourceJobRef`, `status`, `clientName`, `practitioner`, dates, lines and
 total (Seazona: open orders and orders finished in the last 30 days, never
 one deleted in Seazona). An item may carry `pendingMove`, `{ to, from,
-requestedAt, expiresAt }`: a stage move the work system has not made yet.
+requestedAt, expiresAt, openUrl }`: a stage move the work system has not made yet.
 `moveWork({ sourceJobRef, toStatus, personId })` takes a person's move of a
 job to another stage on the Jobs board and answers what happens; an
 adapter whose API cannot change a stage answers a hand-off, `{ kind:

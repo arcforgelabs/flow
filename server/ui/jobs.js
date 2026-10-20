@@ -1,16 +1,23 @@
 // Jobs (/jobs): the work system's jobs, as a board with one column per work
-// system status (its own statuses, one to one), or as a list. Cards are not
-// dragged: a job moves when the work system changes its status. A click on a
-// job opens its detail panel: the job, its lines, its invoice, and what to
-// fix. Data comes from /api/invoicing/board (server/core/job-board.js); the
-// rules are in server/ui/job-board.js.
+// system status (its own statuses, one to one), or as a list. A click on a
+// job opens its detail panel: the job, its lines, its invoice, its custom
+// fields, and what to fix. Data comes from /api/invoicing/board
+// (server/core/job-board.js); the rules are in server/ui/job-board.js and
+// server/ui/job-view.js.
+//
+// A card can be dragged to another lane with a mouse or pen
+// (docs/JOB_BOARD_MOVES.md). Grouped by a custom field, the move sets the
+// job's value, in Flow only. Grouped by status, the move is a stage move
+// in the work system: Seazona cannot take one through its API, so Flow
+// shows what to do there and the card waits in its new lane. On a phone,
+// or with a keyboard, the job's panel has the same moves.
 
 import { formatCents } from '/assets/ui/invoicing.js';
 import {
   FINAL_RANK, fixes, INVOICE_STAGES, invoiceStage, matches, NO_STATUS, orderStatuses, problemSummary, statusRank,
 } from '/assets/ui/job-board.js';
 import {
-  DEFAULT_VIEW, filterCount, filterJobs, groupJobs, GROUPS, normaliseJobsView, sortJobs, SORTS,
+  DEFAULT_VIEW, fieldGroup, fieldIdOf, fieldLanes, filterCount, filterJobs, groupJobs, GROUPS, laneOf, normaliseJobsView, NOT_SET, sortJobs, SORTS,
 } from '/assets/ui/job-view.js';
 
 const LAYOUT_KEY = 'flow_jobs_layout';
@@ -68,6 +75,12 @@ export async function renderJobs(main, ui) {
   const state = {
     view: normaliseJobsView(saved ?? { ...DEFAULT_VIEW, layout: readLayout() }),
     q: asked.trim().toLowerCase(), jobs: [], statuses: [], accountingName: null, canDraft: false,
+    // Custom fields (docs/CUSTOM_FIELDS.md): the lab's fields, the work
+    // systems' stage fields, the people a person field can name, and each
+    // job's values by job and field.
+    fields: [], systemFields: [], people: [], values: new Map(),
+    // Each work system's "Ask before stage moves", read on the first move.
+    askBefore: new Map(),
   };
   const toggle = h('div', { class: 'fx-seg', role: 'radiogroup', 'aria-label': 'Layout' });
   const search = h('input', { class: 'fx-input fx-search', type: 'search', placeholder: 'Find a case, client or practitioner', 'aria-label': 'Find a job', value: asked });
@@ -87,6 +100,15 @@ export async function renderJobs(main, ui) {
   search.addEventListener('input', () => { state.q = search.value.trim(); draw(); });
 
   const problemsOf = (job) => fixes(job.obligation, { accountingName: state.accountingName });
+  const valueKey = (job, fieldId) => `${job.sourceSystem}\u0000${job.sourceJobRef}\u0000${fieldId}`;
+  const valueOf = (job, fieldId) => state.values.get(valueKey(job, fieldId)) ?? null;
+  const groupable = () => state.fields.filter((f) => f.groupable);
+  const fieldOfGroup = (group) => groupable().find((f) => f.id === fieldIdOf(group)) ?? null;
+  // A work system whose stages Flow can hand a move to (Seazona).
+  const movesStages = (job) => state.systemFields.some((f) => f.source === job.sourceSystem);
+  // The lane a job shows in when grouped by status: a stage move the work
+  // system has not made yet puts it in its new lane.
+  const laneStatusOf = (job) => job.pendingMove?.to ?? job.status ?? NO_STATUS;
   const statusOf = (job) => job.status ?? NO_STATUS;
   const isLate = (job) => Boolean(job.dueOn && job.dueOn < today() && statusRank(job.status) < FINAL_RANK);
 
@@ -140,6 +162,9 @@ export async function renderJobs(main, ui) {
   const groupMenu = menu(GROUP_ICON, (_redraw, close) => [
     heading('Group by'),
     ...Object.entries(GROUPS).map(([id, text]) => option(text, state.view.group === id, () => { change({ group: id }); close(); })),
+    groupable().length ? h('div', { class: 'fx-pop__sep' }) : null,
+    groupable().length ? heading('Custom fields') : null,
+    ...groupable().map((f) => option(f.name, state.view.group === fieldGroup(f.id), () => { change({ group: fieldGroup(f.id) }); close(); })),
   ]);
   const sortMenu = menu(SORT_ICON, (redraw) => {
     const [up, down] = DIR_WORDS[state.view.sort] ?? ['A to Z', 'Z to A'];
@@ -174,7 +199,8 @@ export async function renderJobs(main, ui) {
 
   function drawControls() {
     const { group, sort, dir } = state.view;
-    groupMenu.set(`Group: ${GROUPS[group]}`, group !== DEFAULT_VIEW.group);
+    const field = fieldOfGroup(group);
+    groupMenu.set(`Group: ${field?.name ?? GROUPS[group] ?? GROUPS.status}`, group !== DEFAULT_VIEW.group && (Boolean(field) || Boolean(GROUPS[group])));
     const sorted = sort !== DEFAULT_VIEW.sort || dir !== DEFAULT_VIEW.dir;
     sortMenu.set(sorted ? `Sort: ${SORTS[sort]}${dir === 'desc' ? ' ↓' : ''}` : 'Sort', sorted);
     const count = filterCount(state.view);
@@ -199,15 +225,24 @@ export async function renderJobs(main, ui) {
 
   async function load() {
     try {
-      const [body, context] = await Promise.all([flow('/api/invoicing/board'), flow('/api/invoicing/context')]);
+      // Custom fields are extra: the board still shows without them.
+      const [body, context, fields, values] = await Promise.all([
+        flow('/api/invoicing/board'), flow('/api/invoicing/context'),
+        flow('/api/custom-fields').catch(() => null), flow('/api/custom-fields/values').catch(() => null),
+      ]);
       state.jobs = body.jobs;
       state.statuses = body.statuses;
       state.accountingName = body.accountingName;
       state.canDraft = context.canIssue;
+      state.fields = fields?.fields ?? [];
+      state.systemFields = fields?.systemFields ?? [];
+      state.people = fields?.people ?? [];
+      state.values = new Map((values?.values ?? []).map((v) => [valueKey(v, v.fieldId), { value: v.value, updatedAt: v.updatedAt }]));
     } catch (error) {
       host.replaceChildren(notice(error.message, 'danger'));
       return;
     }
+    drawControls();
     draw();
   }
 
@@ -226,15 +261,16 @@ export async function renderJobs(main, ui) {
   // One card ("Task card"). The card design may change, so its markup stays
   // here and its CSS in one block of flow.css ("Job card"): client,
   // practitioner, one date, total, and a warning mark when the job has a
-  // problem. Never the case number. A late job's date shows in red. No
-  // "move to the next stage" tick yet: Flow only reads the lab system.
+  // problem. Never the case number. A late job's date shows in red. A stage
+  // move the work system has not made yet adds "Waiting for <system>".
   function jobCard(job) {
     const date = dateOf(job);
     const day = job.dueOn ?? job.orderedOn ?? job.jobDate;
     const late = isLate(job);
-    return h('article', {
+    const system = SYSTEM_NAME[job.sourceSystem] ?? job.sourceSystem;
+    const card = h('article', {
       class: 'fx-job', tabindex: '0', role: 'button', 'aria-label': `${clientOf(job)}, open the job`,
-      onclick: () => openJob(job),
+      onclick: () => { if (!dragged) openJob(job); },
       onkeydown: (event) => { if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); openJob(job); } },
     },
     h('div', { class: 'fx-job__client' }, clientOf(job)),
@@ -243,7 +279,10 @@ export async function renderJobs(main, ui) {
       day ? h('span', { class: `fx-job__date${late ? ' fx-job__date--late' : ''}`, title: late ? `${date}, past due` : date }, svg(CALENDAR_ICON), showDate(day)) : null,
       h('span', { class: 'fx-job__space' }),
       problemMark(job),
-      h('span', { class: 'fx-job__amount' }, job.totalCents == null ? '—' : formatCents(job.totalCents))));
+      h('span', { class: 'fx-job__amount' }, job.totalCents == null ? '—' : formatCents(job.totalCents))),
+    job.pendingMove ? h('span', { class: 'fx-job__wait', title: `Set the status to ${job.pendingMove.to} in ${system}. Flow then reads the change.` }, `Waiting for ${system}`) : null);
+    cardJobs.set(card, job);
+    return card;
   }
 
   // A group's label: in its stage colour when the group is a status or an
@@ -255,12 +294,25 @@ export async function renderJobs(main, ui) {
   // The groups the view asks for, in order, each with its jobs. Grouped by
   // status, every status the work system has shows, even with no job, except
   // the ones the filter hides.
+  // A group's `drop` says what a card dropped in it changes: a custom
+  // field's value, or the job's stage in the work system. No `drop`: cards
+  // cannot be dropped there (invoice stage, client, practitioner).
   function grouped(jobs) {
     const { group } = state.view;
-    if (group === 'status') {
+    const field = fieldOfGroup(group);
+    if (field) {
+      const read = (job) => valueOf(job, field.id)?.value ?? null;
+      const lanes = fieldLanes(field, { people: state.people, jobs: state.jobs, valueOf: read });
+      const byLabel = new Map(lanes.map((lane) => [lane.label, lane]));
+      return groupJobs(jobs, lanes.map((lane) => lane.label), (job) => laneOf(lanes, read(job))).map((g) => {
+        const lane = byLabel.get(g.label);
+        return { ...g, rank: 'plain', color: lane?.color, drop: lane && !lane.archived ? { kind: 'field', field, value: lane.value } : null };
+      });
+    }
+    if (group === 'status' || !GROUPS[group]) {
       const hidden = new Set(state.view.hide);
-      return groupJobs(jobs, orderStatuses(state.statuses, state.jobs).filter((label) => !hidden.has(label)), statusOf)
-        .map((g) => ({ ...g, rank: statusRank(g.label) }));
+      return groupJobs(jobs, orderStatuses(state.statuses, state.jobs).filter((label) => !hidden.has(label)), laneStatusOf)
+        .map((g) => ({ ...g, rank: statusRank(g.label), drop: g.label === NO_STATUS ? null : { kind: 'stage', status: g.label } }));
     }
     if (group === 'stage') {
       const labelOf = (job) => STAGE_GROUPS[invoiceStage(job.obligation) ?? 'in_work'];
@@ -275,11 +327,233 @@ export async function renderJobs(main, ui) {
 
   function board(groups) {
     if (!groups.length) return h('div', { class: 'fx-panel' }, h('p', { class: 'fx-empty' }, 'No job matches the search or filter.'));
-    return h('div', { class: 'fx-board' }, groups.map(({ label, jobs, rank }) => h('section', { class: 'fx-board__col', 'aria-label': label },
+    const element = h('div', { class: 'fx-board' }, groups.map(({ label, jobs, rank, color }, index) => h('section', { class: 'fx-board__col', 'aria-label': label, 'data-lane': String(index) },
       h('header', { class: 'fx-board__head' },
-        stagePill(label, jobs.length, rank),
+        color ? h('span', { class: 'fx-cf__opt fx-board__lane', 'data-color': color }, label, h('span', { class: 'fx-stage__count' }, String(jobs.length))) : stagePill(label, jobs.length, rank),
         h('span', { class: 'fx-board__sum' }, jobs.length ? formatCents(totalOf(jobs)) : '')),
       h('div', { class: 'fx-board__cards' }, jobs.length ? jobs.map(jobCard) : h('p', { class: 'fx-board__none' }, 'None')))));
+    if (groups.some((g) => g.drop)) enableDrag(element, groups);
+    return element;
+  }
+
+  // ── Moves ────────────────────────────────────────────────────────────────
+  // Drag with a mouse or pen: press on a card, move 6px, and a copy of the
+  // card follows the pointer. A lane that takes the card lights up. Touch
+  // keeps scrolling the board; the job's panel has the moves instead.
+  const cardJobs = new WeakMap();
+  let dragged = false;
+  function enableDrag(element, groups) {
+    let drag = null;
+    const laneAt = (x, y) => document.elementFromPoint(x, y)?.closest?.('.fx-board__col') ?? null;
+    const canDrop = (lane, job) => {
+      if (!lane || !drag) return false;
+      const target = groups[Number(lane.dataset.lane)];
+      if (!target?.drop || Number(lane.dataset.lane) === drag.from) return false;
+      return target.drop.kind === 'field' || movesStages(job);
+    };
+    const end = () => {
+      drag?.ghost?.remove();
+      drag?.card.classList.remove('fx-job--lifted');
+      element.classList.remove('fx-board--dragging');
+      element.querySelectorAll('.fx-board__col--over').forEach((lane) => lane.classList.remove('fx-board__col--over'));
+      drag = null;
+    };
+    element.addEventListener('pointerdown', (event) => {
+      if (event.button !== 0 || event.pointerType === 'touch') return;
+      const card = event.target.closest('.fx-job');
+      if (!card || event.target.closest('button, a')) return;
+      const rect = card.getBoundingClientRect();
+      drag = { card, job: cardJobs.get(card), from: Number(card.closest('.fx-board__col').dataset.lane), x: event.clientX, y: event.clientY, dx: event.clientX - rect.left, dy: event.clientY - rect.top, width: rect.width, moved: false, over: null };
+      card.setPointerCapture(event.pointerId);
+    });
+    element.addEventListener('pointermove', (event) => {
+      if (!drag) return;
+      if (!drag.moved) {
+        if (Math.hypot(event.clientX - drag.x, event.clientY - drag.y) < 6) return;
+        drag.moved = true;
+        drag.ghost = drag.card.cloneNode(true);
+        drag.ghost.classList.add('fx-job--ghost');
+        drag.ghost.style.width = `${drag.width}px`;
+        document.body.append(drag.ghost);
+        drag.card.classList.add('fx-job--lifted');
+        element.classList.add('fx-board--dragging');
+      }
+      drag.ghost.style.transform = `translate(${event.clientX - drag.dx}px, ${event.clientY - drag.dy}px) rotate(1.5deg)`;
+      const lane = laneAt(event.clientX, event.clientY);
+      const over = canDrop(lane, drag.job) ? lane : null;
+      if (over !== drag.over) {
+        drag.over?.classList.remove('fx-board__col--over');
+        over?.classList.add('fx-board__col--over');
+        drag.over = over;
+      }
+    });
+    element.addEventListener('pointerup', (event) => {
+      if (!drag) return;
+      const { moved, over, job } = drag;
+      const target = over ? groups[Number(over.dataset.lane)] : null;
+      end();
+      if (!moved) return;
+      // The click that ends a drag does not open the job.
+      dragged = true;
+      setTimeout(() => { dragged = false; }, 0);
+      if (target) moveJob(job, target.drop);
+      event.preventDefault();
+    });
+    element.addEventListener('pointercancel', end);
+    element.addEventListener('keydown', (event) => { if (event.key === 'Escape' && drag) end(); });
+  }
+
+  function moveJob(job, drop) {
+    if (drop.kind === 'field') return setValue(job, drop.field, drop.value);
+    return moveStage(job, drop.status);
+  }
+
+  // Set one job's custom field value, in Flow only. The board shows it at
+  // once; `expectedUpdatedAt` makes a change someone else made first win,
+  // and the board then shows theirs.
+  async function setValue(job, field, value) {
+    const key = valueKey(job, field.id);
+    const before = state.values.get(key) ?? null;
+    if ((before?.value ?? null) === value) return;
+    if (value == null) state.values.delete(key); else state.values.set(key, { value, updatedAt: before?.updatedAt ?? null });
+    draw();
+    const keep = (saved) => {
+      if (saved?.value == null) state.values.delete(key); else state.values.set(key, { value: saved.value, updatedAt: saved.updatedAt });
+    };
+    try {
+      const { value: saved } = await flow('/api/custom-fields/values', {
+        method: 'PUT',
+        body: JSON.stringify({ sourceSystem: job.sourceSystem, sourceJobRef: job.sourceJobRef, fieldId: field.id, value, expectedUpdatedAt: before?.updatedAt ?? null }),
+      });
+      keep(saved);
+    } catch (error) {
+      if (error.code === 'conflict' && error.details) {
+        keep(error.details.current);
+        ui.toast?.(`Someone changed ${field.name} on this job just now. The board shows their change.`, 'info');
+      } else {
+        if (before) state.values.set(key, before); else state.values.delete(key);
+        ui.toast?.(error.message, 'danger');
+      }
+    }
+    draw();
+  }
+
+  // "Ask before stage moves", this person's own setting in the work system's
+  // integration. On unless they said "Don't ask again".
+  async function askBefore(system) {
+    if (!state.askBefore.has(system)) {
+      try {
+        const { integrations } = await flow(`/api/work/my-settings?integration=${encodeURIComponent(system)}`);
+        state.askBefore.set(system, integrations[0]?.settings.find((s) => s.key === 'askBeforeStageMoves')?.value ?? true);
+      } catch {
+        state.askBefore.set(system, true);
+      }
+    }
+    return state.askBefore.get(system);
+  }
+
+  // A stage move in the work system. Seazona cannot take it through its
+  // API, so Flow says what to do there, records the move, and the card waits
+  // in its new lane until the sync reads the new status. A move back to the
+  // job's own status takes a waiting move back.
+  async function moveStage(job, status) {
+    const system = SYSTEM_NAME[job.sourceSystem] ?? job.sourceSystem;
+    const ref = { sourceSystem: job.sourceSystem, sourceJobRef: job.sourceJobRef };
+    const before = job.pendingMove ?? null;
+    if (status === (job.status ?? NO_STATUS)) {
+      if (!before) return;
+      job.pendingMove = null;
+      draw();
+      try {
+        await flow('/api/work/moves/cancel', { method: 'POST', body: JSON.stringify(ref) });
+        ui.toast?.(`Move taken back. The card follows ${system} again.`, 'success');
+      } catch (error) {
+        job.pendingMove = before;
+        ui.toast?.(error.message, 'danger');
+        draw();
+      }
+      return;
+    }
+    let dontAsk = false;
+    if (await askBefore(job.sourceSystem)) {
+      const tick = h('input', { type: 'checkbox', name: 'dontAsk' });
+      const chip = (text) => h('span', { class: 'fx-move__stage' }, text);
+      const body = h('div', { class: 'fx-fields fx-move' },
+        h('p', { class: 'fx-move__path' }, chip(job.status ?? NO_STATUS), h('span', { 'aria-hidden': 'true' }, '→'), chip(status)),
+        h('p', { class: 'fx-move__note' }, `${system} cannot take this change from Flow. Make it in ${system}:`),
+        h('ol', { class: 'fx-steps' },
+          h('li', {}, `Open case ${job.caseRef ?? job.sourceJobRef} in ${system}.`),
+          h('li', {}, `Set its status to ${status}.`),
+          h('li', {}, `Flow shows the card as waiting until it reads the change. After a day it goes back.`)),
+        h('label', { class: 'fx-check' }, tick, h('span', {}, "Don't ask again")));
+      const ok = await ui.dialog({ title: `Move in ${system}`, body, confirm: 'Move card' });
+      if (!ok) return;
+      dontAsk = tick.checked;
+    }
+    job.pendingMove = { to: status, from: job.status, openUrl: before?.openUrl ?? null };
+    draw();
+    try {
+      const { move } = await flow('/api/work/moves', { method: 'POST', body: JSON.stringify({ ...ref, toStatus: status }) });
+      job.pendingMove = { to: move.to, from: move.from, requestedAt: move.requestedAt, expiresAt: move.expiresAt, openUrl: move.openUrl };
+      ui.toast?.(`Waiting for ${system}. Set case ${move.caseRef} to ${move.to} there.`, 'success');
+    } catch (error) {
+      job.pendingMove = before;
+      ui.toast?.(error.message, 'danger');
+    }
+    if (dontAsk) {
+      state.askBefore.set(job.sourceSystem, false);
+      flow('/api/work/my-settings', { method: 'PUT', body: JSON.stringify({ integration: job.sourceSystem, key: 'askBeforeStageMoves', value: false }) })
+        .catch(() => ui.toast?.('Flow could not save "Don\'t ask again".', 'danger'));
+    }
+    draw();
+  }
+
+  // The job panel's custom fields: one control each, saved when it changes.
+  function fieldControl(job, field) {
+    const current = valueOf(job, field.id)?.value ?? null;
+    const save = (value) => setValue(job, field, value);
+    const label = field.name;
+    if (field.type === 'dropdown' || field.type === 'person') {
+      const choices = field.type === 'person'
+        ? state.people.map((p) => ({ value: p.id, label: p.name }))
+        : field.options.filter((o) => !o.archived || o.id === current).map((o) => ({ value: o.id, label: o.archived ? `${o.name} (archived)` : o.name }));
+      const select = h('select', { class: 'fx-select fx-task__input', 'aria-label': label },
+        h('option', { value: '' }, NOT_SET), choices.map((c) => h('option', { value: c.value, selected: c.value === current }, c.label)));
+      select.addEventListener('change', () => save(select.value || null));
+      return select;
+    }
+    if (field.type === 'checkbox') {
+      const box = h('input', { type: 'checkbox', 'aria-label': label, checked: current === true });
+      box.addEventListener('change', () => save(box.checked ? true : null));
+      return box;
+    }
+    const input = h('input', {
+      class: 'fx-input fx-task__input', 'aria-label': label,
+      type: field.type === 'date' ? 'date' : field.type === 'number' ? 'number' : 'text',
+      value: current ?? '', maxlength: field.type === 'text' ? '500' : null, step: field.type === 'number' ? 'any' : null,
+    });
+    input.addEventListener('change', () => {
+      const raw = input.value.trim();
+      save(raw === '' ? null : field.type === 'number' ? Number(raw) : raw);
+    });
+    return input;
+  }
+
+  // The job panel's stage move: the same move as a drag, for a phone or a
+  // keyboard. A waiting move shows what to do, with Take back.
+  function stageControl(job) {
+    const system = SYSTEM_NAME[job.sourceSystem] ?? job.sourceSystem;
+    const stages = state.systemFields.find((f) => f.source === job.sourceSystem)?.options ?? [];
+    if (!stages.length) return null;
+    const select = h('select', { class: 'fx-select fx-task__input', 'aria-label': `Move to a ${system} stage` },
+      h('option', { value: '' }, 'Move to…'),
+      stages.filter((s) => s.name !== job.status).map((s) => h('option', { value: s.name }, s.name)));
+    select.addEventListener('change', () => { if (select.value) moveStage(job, select.value).then(() => select.closest('dialog')?.close()); });
+    const wait = job.pendingMove ? h('div', { class: 'fx-task__wait' },
+      h('span', {}, `Waiting for ${system}: set the status to ${job.pendingMove.to} there.`),
+      job.pendingMove.openUrl ? h('a', { class: 'fx-task__link', href: job.pendingMove.openUrl, target: '_blank', rel: 'noopener' }, `Open in ${system}`) : null,
+      h('button', { class: 'fx-btn fx-btn--ghost fx-btn--sm', type: 'button', onclick: (event) => { event.currentTarget.closest('dialog')?.close(); moveStage(job, job.status ?? NO_STATUS); } }, 'Take back')) : null;
+    return h('div', { class: 'fx-task__move' }, wait, select);
   }
 
   // The list: one block per group, with the group's label over its rows.
@@ -372,8 +646,9 @@ export async function renderJobs(main, ui) {
   // The job's page: a large panel over the board, like a task page. A
   // breadcrumb, the client's name, the stage, the job's fields, what to fix
   // and its lines; its activity at the side (below on a phone). Esc, the X
-  // or a click outside closes it. `atFix` scrolls to what to fix. Nothing is
-  // edited here yet: Flow only reads the lab system.
+  // or a click outside closes it. `atFix` scrolls to what to fix. The job's
+  // custom fields can be changed here (in Flow only), and its stage moved
+  // (a hand-off to the work system).
   function openJob(job, { atFix = false } = {}) {
     const o = job.obligation;
     const stage = invoiceStage(o);
@@ -415,6 +690,11 @@ export async function renderJobs(main, ui) {
           field('Invoice', invoiceText),
           o?.accountingUrl ? field(state.accountingName ?? 'Accounting', link({ href: o.accountingUrl, target: '_blank', rel: 'noopener' }, `Open in ${state.accountingName ?? 'the accounting system'}`)) : null),
         fixBox,
+        state.fields.length ? h('section', { class: 'fx-task__custom', 'aria-label': 'Custom fields' },
+          h('h3', {}, 'Fields'),
+          h('dl', { class: 'fx-task__fields' }, state.fields.map((f) => h('div', {}, h('dt', {}, f.name), h('dd', {}, fieldControl(job, f)))))) : null,
+        movesStages(job) ? h('section', { class: 'fx-task__custom', 'aria-label': `${system} stage` },
+          h('h3', {}, `${system} stage`), stageControl(job)) : null,
         h('section', { class: 'fx-task__lines' },
           h('h3', {}, 'Lines'),
           lines.length ? h('table', {},

@@ -1,18 +1,31 @@
 # Job board moves
 
-A person moves a job on the Jobs board by dragging its card to another lane.
-What the move changes depends on what the board is grouped by.
+A person moves a job on the Jobs board by dragging its card to another lane
+with a mouse or pen (`server/ui/jobs.js`). What the move changes depends on
+what the board is grouped by. A lane that takes the card lights up while the
+card is over it; Escape stops the drag. On a phone, touch keeps scrolling the
+board, so the job's panel has the same moves: its Fields section sets each
+custom field, and its stage section has "Move to…" and, for a waiting move,
+"Open in Seazona" and "Take back". The panel also serves a keyboard.
 
 | Grouped by | A move changes | Where it is written |
 | --- | --- | --- |
-| A Flow custom field | The job's value for that field | Flow only (`docs/CUSTOM_FIELDS.md`) |
-| A work system's stage (Seazona) | The job's stage in that system | The work system, through its adapter's `moveWork` |
+| A Flow custom field (dropdown, person, checkbox) | The job's value for that field | Flow only (`docs/CUSTOM_FIELDS.md`) |
+| Status (the work system's stage, Seazona) | The job's stage in that system | The work system, through its adapter's `moveWork` |
+| Invoice stage, client, practitioner | Nothing: cards cannot be dropped | — |
+
+Group by a custom field is saved with the person's view as `field:<id>`
+(`server/ui/job-view.js`). Its lanes are "Not set" first, then the options
+in their order (people A to Z for a person field; No and Yes for a
+checkbox). An archived option that a job still has gets its own lane, which
+takes no cards.
 
 ## Custom field moves
 
 `PUT /api/custom-fields/values` with `expectedUpdatedAt`. A move never
 writes to Seazona or Xero. When someone changed the value since the person
-saw it, nothing changes and the board shows the current value (409).
+saw it, nothing changes and the board shows the current value (409), with
+a short note.
 
 ## Stage moves
 
@@ -20,7 +33,8 @@ saw it, nothing changes and the board shows the current value (409).
 adapter answers what happens. Seazona's API cannot change a stage, so the
 Seazona adapter answers a hand-off: Flow records the move, the person makes
 it in Seazona, and the card shows "Waiting for Seazona" until the sync reads
-the new status, or a day passes (`docs/SEAZONA.md`, "Stage moves").
+the new status, or a day passes (`docs/SEAZONA.md`, "Stage moves"). A card
+dropped back in its own Seazona lane takes the waiting move back.
 `POST /api/work/moves/cancel` takes a waiting move back. VISION.md: where
 the case system cannot take a change through its API, the change becomes a
 short checklist for a person.
