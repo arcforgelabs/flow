@@ -236,6 +236,15 @@ const jobOf = (o) => (o ? {
   id: o.id, sourceSystem: o.sourceSystem, sourceJobRef: o.sourceJobRef, caseRef: o.caseRef, practitioner: o.practitioner, shippedOn: o.shippedOn,
 } : null);
 
+// A job with its work system's name and its link in that system's web app
+// (jobLink: no live call), for the Linked column.
+function withLink(job, systems) {
+  if (!job) return null;
+  const source = systems.find((a) => a.id === job.sourceSystem) ?? null;
+  const link = typeof source?.capabilities.jobLink === 'function' ? source.capabilities.jobLink({ sourceJobRef: job.sourceJobRef }) : null;
+  return { ...job, systemName: source?.name ?? job.sourceSystem, link: link ?? null };
+}
+
 async function jobsByInvoice(db, organisationId, invoiceIds) {
   if (!invoiceIds.length) return new Map();
   const rows = await db.select().from(billingObligations)
@@ -343,6 +352,7 @@ export function createInvoicingRouter({
       return { rows, jobs: await jobsByInvoice(db, organisationId, rows.map((r) => r.invoice.id)) };
     })();
     const [views, counted, { rows, jobs }, mode] = await Promise.all([checking, counting, listing, sendMode]);
+    const systems = work();
     const counts = Object.fromEntries(INVOICE_STATUSES.map((s) => [s, 0]));
     for (const { status: s, n } of counted) counts[s] = n;
     counts.to_check = views.toCheck.length;
@@ -355,7 +365,7 @@ export function createInvoicingRouter({
       invoices: rows.map(({ invoice, contactName }) => ({
         ...invoice,
         contactName,
-        job: jobs.get(invoice.id) ?? null,
+        job: withLink(jobs.get(invoice.id) ?? null, systems),
         view: views.problems.has(invoice.id) ? 'problem' : ready.has(invoice.id) ? 'ready' : toCheck.has(invoice.id) ? 'to_check'
           : views.sending.has(invoice.id) ? 'sending' : null,
         problems: views.problems.get(invoice.id) ?? [],
@@ -363,6 +373,8 @@ export function createInvoicingRouter({
       counts,
       sendsTo: system?.name ?? null,
       sendMode: mode,
+      // The Linked column: one icon for each connected system.
+      linksTo: [...systems.map((a) => ({ id: a.id, name: a.name, kind: 'work' })), ...(system ? [{ id: system.id, name: system.name, kind: 'accounting' }] : [])],
     });
   }));
 

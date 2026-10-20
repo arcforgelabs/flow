@@ -46,26 +46,33 @@ export function xeroTag(ui, status) {
     : h('span', { class: 'fx-status', 'data-tone': XERO_TONE[status.state] ?? 'mute' }, status.label);
 }
 
-// The badge in the Xero column: Xero's mark, Xero's number and its state.
-// A badge with a Xero invoice opens it in Xero.
-const XERO_SHORT = {
-  not_sent: 'Not sent', sending: 'Sending', not_copied: 'Sent', draft: 'Draft',
-  approved: 'Approved', part_paid: 'Part paid', paid: 'Paid', voided: 'Voided', deleted: 'Deleted',
+// The Linked column: one icon for each connected system (linksTo), with a
+// dot for the state of this invoice's link there. An icon with a link opens
+// the record in that system. Accounting icons show on numbered invoices only.
+const LINK_TONE = {
+  not_sent: 'warn', sending: 'warn', not_copied: 'warn', draft: 'success',
+  approved: 'success', part_paid: 'success', paid: 'success', voided: 'mute', deleted: 'mute',
 };
-export function xeroBadge(ui, status) {
+export function linkIcon(ui, system, { tone = null, title, url = null } = {}) {
   const { h } = ui;
-  const tone = status.finding ? 'danger' : status.state === 'not_sent' ? 'warn' : XERO_TONE[status.state] ?? 'mute';
-  const word = status.finding ? 'Out of sync' : XERO_SHORT[status.state] ?? status.label;
-  const number = status.xero?.number;
-  const kids = [
-    h('img', { class: 'fx-xero__mark', src: '/assets/ui/logos/xero.svg', alt: '' }),
-    number ? h('span', { class: 'fx-xero__number' }, number) : null,
-    h('span', { class: 'fx-status', 'data-tone': tone }, word),
-  ];
-  const title = status.message ?? status.label;
-  return status.xero?.url
-    ? h('a', { class: 'fx-xero', href: status.xero.url, target: '_blank', rel: 'noopener', title: `${title}. Open in Xero.`, onclick: (event) => event.stopPropagation() }, ...kids)
-    : h('span', { class: 'fx-xero', title }, ...kids);
+  const kids = [h('img', { src: `/assets/ui/logos/${system.id}.svg`, alt: '' }), tone ? h('i', { class: 'fx-link__dot', 'data-tone': tone }) : null];
+  const props = { class: `fx-link${tone ? '' : ' fx-link--none'}`, title, 'aria-label': title };
+  return url
+    ? h('a', { ...props, href: url, target: '_blank', rel: 'noopener', onclick: (event) => event.stopPropagation() }, ...kids)
+    : h('span', props, ...kids);
+}
+
+function workIcon(ui, system, job) {
+  if (job?.sourceSystem !== system.id) return linkIcon(ui, system, { title: `Not linked to ${system.name}` });
+  const ref = job.caseRef ?? job.sourceJobRef;
+  return linkIcon(ui, system, { tone: 'success', title: `${system.name} ${ref}${job.link?.url ? `. Open in ${system.name}.` : ''}`, url: job.link?.url ?? null });
+}
+
+export function accountingIcon(ui, system, status) {
+  const tone = status.finding ? 'danger' : LINK_TONE[status.state] ?? 'mute';
+  const number = status.xero?.number ? ` ${status.xero.number}` : '';
+  const title = `${system.name}${number}: ${status.finding ? status.message : status.label}${status.xero?.url ? ` Open in ${system.name}.` : ''}`;
+  return linkIcon(ui, system, { tone, title, url: status.xero?.url ?? null });
 }
 
 const showField = (field, value) => (['subtotal', 'tax', 'total'].includes(field) && Number.isFinite(value) ? formatCents(value) : String(value ?? '—'));
@@ -256,9 +263,10 @@ export async function renderInvoiceList(main, ui) {
     // An invoice gets its number when it is sent or issued, so only the
     // Finalised and Void tabs show a Number column; the others open on Client.
     const numbered = !created;
-    // With Xero on, Finalised and Void also show a Xero column: each
-    // invoice's badge, from Flow's link to Xero (filled in below).
-    const xeroColumn = numbered && body.sendsTo === 'Xero';
+    // With an integration on, every tab has a Linked column (linkIcon).
+    const systems = body.linksTo ?? [];
+    const linked = systems.length > 0;
+    const accountingSystem = systems.find((s) => s.kind === 'accounting') ?? null;
     const boxes = [];
     const tickBox = (invoice) => {
       const box = h('input', {
@@ -284,7 +292,7 @@ export async function renderInvoiceList(main, ui) {
         ticks ? h('th', { class: 'fx-tick-cell' }, all) : null,
         numbered ? h('th', {}, 'Number') : null, h('th', {}, 'Client'), h('th', {}, showProblem ? 'Problem' : 'Reference'),
         h('th', {}, created ? 'Created' : 'Finalised'), h('th', { class: 'fx-num' }, 'Total'), h('th', {}, 'Status'),
-        xeroColumn ? h('th', {}, 'Xero') : null)),
+        linked ? h('th', {}, 'Linked') : null)),
       h('tbody', {}, body.invoices.map((invoice) => {
         const href = `/invoices/${invoice.id}`;
         const first = invoice.problems?.[0];
@@ -302,24 +310,24 @@ export async function renderInvoiceList(main, ui) {
             const cell = h('td', { class: 'fx-status-cell' }, view
               ? h('span', { class: 'fx-status', 'data-tone': VIEW_TONE[view] }, VIEW_LABEL[view])
               : h('span', { class: 'fx-status', 'data-tone': STATUS_TONE[invoice.status] }, STATUS_LABEL[invoice.status]));
-            if (!xeroColumn) statusCells.set(invoice.id, cell);
+            if (!linked) statusCells.set(invoice.id, cell);
             return cell;
           })(),
-          xeroColumn ? (() => {
-            const cell = h('td', { class: 'fx-status-cell' });
+          linked ? (() => {
+            const cell = h('td', { class: 'fx-links' }, systems.filter((s) => s.kind === 'work').map((s) => workIcon(ui, s, invoice.job)));
             statusCells.set(invoice.id, cell);
             return cell;
           })() : null);
       }))));
     // Finalised and void invoices also show Xero's status, from Flow's copy:
-    // in the Xero column, every invoice gets a badge, so one not in Xero
+    // in the Linked column every one gets an icon, so one not in Xero
     // stands out.
     if (numbered) {
       const shownBody = body;
       const statuses = await xeroStatuses(ui, context.organisations?.[0]?.id, body.invoices.map((i) => i.id));
       if (shownBody !== body) return;
       for (const [invoiceId, status] of statuses) {
-        if (xeroColumn) statusCells.get(invoiceId)?.append(xeroBadge(ui, status));
+        if (linked) { if (accountingSystem) statusCells.get(invoiceId)?.append(accountingIcon(ui, accountingSystem, status)); }
         else if (status.state !== 'not_sent' || status.finding) statusCells.get(invoiceId)?.append(' ', xeroTag(ui, status));
       }
     }
