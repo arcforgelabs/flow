@@ -50,6 +50,13 @@
       "when": 1792459854631,
       "tag": "0006_sweep_findings",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1792472936253,
+      "tag": "0007_stage_moves",
+      "breakpoints": true
     }
   ]
 }

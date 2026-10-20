@@ -31,8 +31,8 @@ export const exampleAdapter = {
 
 The capabilities are `pullWorkItems`, `pullHistoryJobs`, `pushInvoice`, `pushBill`,
 `pullPayments`, `checkInvoice`, `listCustomers`, `findInvoices`, `listWork`,
-`billableJobs`, `listPriceItems`, `jobIssues`, `captureError`, `browserMonitoring`, `traceSpan`,
-`traceRequest`, `alerts` and
+`billableJobs`, `listPriceItems`, `jobIssues`, `moveWork`, `cancelMove`, `personSettings`,
+`setPersonSetting`, `captureError`, `browserMonitoring`, `traceSpan`, `traceRequest`, `alerts` and
 `health`. `alerts({ organisationId })` answers what only a person can clear,
 for the quiet alert on the Integrations page (docs/ALERTS.md).
 `listPriceItems({ organisationId })` answers the system's own price list from
@@ -43,7 +43,16 @@ answers the work system's jobs for the Jobs board from the adapter's own copy,
 never a live call: `{ items, statuses }`, each item with its `sourceSystem`,
 `sourceJobRef`, `status`, `clientName`, `practitioner`, dates, lines and
 total (Seazona: open orders and orders finished in the last 30 days, never
-one deleted in Seazona). `jobIssues({ refs })` answers the integration's
+one deleted in Seazona). An item may carry `pendingMove`, `{ to, from,
+requestedAt, expiresAt }`: a stage move the work system has not made yet.
+`moveWork({ sourceJobRef, toStatus, personId })` takes a person's move of a
+job to another stage on the Jobs board and answers what happens; an
+adapter whose API cannot change a stage answers a hand-off, `{ kind:
+'hand_off', from, to, openUrl, expiresAt }` (Seazona). `cancelMove({
+sourceJobRef })` takes back a move not yet made. `personSettings({ personId
+})` answers each person's own choices in the integration, `[{ key, label,
+hint, kind, value }]`, and `setPersonSetting({ personId, key, value })`
+changes one (`docs/JOB_BOARD_MOVES.md`). `jobIssues({ refs })` answers the integration's
 open issues for those job refs, `{ [ref]: [{ integration, phrase, href }] }`:
 one short phrase and the page where a person fixes it; the Jobs board shows
 them on each job (Seazona: history jobs a person must decide).

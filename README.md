@@ -45,6 +45,8 @@ run a lab.
 | `docs/ALERTS.md` | Quiet alerts: the slim line on a page when something there needs a person, and how a person dismisses it |
 | `docs/AUTOMATIONS.md` | Automations: Flow routines that mark jobs ready to invoice and draft them, each on or off |
 | `docs/LINE_MAPPING.md` | Line mapping: how each work system line finds its price item, and Price codes in Settings |
+| `docs/CUSTOM_FIELDS.md` | Custom fields: the lab's own fields for its jobs, kept in Flow only, and how a board move checks for conflicts |
+| `docs/JOB_BOARD_MOVES.md` | Moving jobs on the Jobs board: custom field moves stay in Flow; Seazona stage moves become a hand-off |
 | `docs/PRICE_LIST.md` | The price list: Flow's own codes and prices, their links to Xero items and Seazona products, and the price check |
 | `docs/LOW_RISK_MERGE.md` | The low-risk merge lane: which pull requests merge themselves when green, with ClawSweeper's risk labels |
 | `docs/RELEASING.md` | Versions and channels, the release workflows, how to cut and roll back a release, and the one-time setup |
