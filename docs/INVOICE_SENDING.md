@@ -49,6 +49,9 @@ One press, on the Ready tab, by an owner or admin:
    draft, or that the work system deleted or no longer bills, goes to
    review and its draft to Problem. A draft whose job could not be read
    waits for the next press (`waiting` in the answer).
+   Then the accounting system reads its latest changes (issue #45, see
+   [XERO.md](XERO.md#read-before-draft-and-send)). When that read cannot
+   run, nothing is issued and every draft in the press waits.
 3. Each ready draft (marked by a person) is issued and gets its number. One press takes up to 100
    drafts; the rest wait for the next press.
 4. Each issued invoice is queued for the accounting system.

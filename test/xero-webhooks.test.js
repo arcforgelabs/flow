@@ -3,7 +3,7 @@ import { createHmac } from 'node:crypto';
 import { after, before, beforeEach, describe, test } from 'node:test';
 import { sql } from 'drizzle-orm';
 import { IMPORT_KIND, queueChangesRead, REFRESH_MS, runImportOnce } from '../server/integrations/xero/import.js';
-import { dailyCheck, DAILY_FLAG_MAX, readInbox, runWebhookWork, signatureValid, summaryDiffers, WEBHOOK_REFRESH_MS } from '../server/integrations/xero/webhooks.js';
+import { dailyCheck, DAILY_FLAG_MAX, READ_FIRST_MS, readChangesFirst, readInbox, runWebhookWork, signatureValid, summaryDiffers, WEBHOOK_REFRESH_MS } from '../server/integrations/xero/webhooks.js';
 import { request } from './support/clerk.js';
 import { freshDatabase, skipWithoutDatabase } from './support/db.js';
 import { bootFlow, connectDirectly, quietLog, scriptedXero, seedLab, TENANT, xeroAnswer } from './support/xero.js';
@@ -186,6 +186,50 @@ describe('Xero webhooks', { skip: skipWithoutDatabase }, () => {
     assert.equal(calls.calls.length, 0, 'it waits before the next try');
     assert.equal(log.lines.filter((l) => /reading waiting changes/.test(l)).length, 1);
     assert.equal(holds.get(org()).failures, 1);
+  });
+
+  test('before a draft or send, Xero is read only when the copy may be old', async () => {
+    const empty = (path) => xeroAnswer(path, { [path]: [] }, { query: { page: 1 } });
+    await handle.db.execute(sql`update xero_webhook_events set pending = false`);
+    await handle.db.execute(sql`update xero_webhook_events set received_at = now() - interval '2 days'`);
+
+    // Read within the last 10 minutes: no call.
+    await handle.db.execute(sql`update xero_mirror_cursors set last_read_at = now() where organisation_id = ${org()}`);
+    let replay = xero.script([]);
+    assert.deepEqual(await readChangesFirst(handle.db, xero.runtime, org()), { state: 'fresh' });
+    assert.equal(replay.calls.length, 0);
+
+    // Older: one read of invoices and credit notes; a new invoice is a change.
+    await handle.db.execute(sql`update xero_mirror_cursors set last_read_at = now() - ${`${READ_FIRST_MS * 2} milliseconds`}::interval
+      where organisation_id = ${org()}`);
+    replay = xero.script([
+      xeroAnswer('Invoices', { Invoices: [invoice('r1')] }, { query: { page: 1 } }),
+      empty('CreditNotes'),
+    ]);
+    assert.deepEqual(await readChangesFirst(handle.db, xero.runtime, org()), { state: 'read', changed: 1 });
+    assert.deepEqual(replay.calls.map((c) => c.path.split('/').pop()), ['Invoices', 'CreditNotes']);
+
+    // A waiting webhook event is read, even just after a read.
+    await deliver({ events: [event('INVOICE', 'r1')] });
+    replay = xero.script([xeroAnswer('Invoices', { Invoices: [invoice('r1', { Status: 'VOIDED' })] }, { query: { IDs: 'r1', page: 1 } }),
+      xeroAnswer('Invoices', { Invoices: [] }, { query: { page: 1 } }), empty('CreditNotes')]);
+    assert.deepEqual(await readChangesFirst(handle.db, xero.runtime, org()), { state: 'read', changed: 1 });
+    assert.deepEqual(await pending(), []);
+
+    // Webhooks arrive and none waits: the copy is current, no call.
+    await handle.db.execute(sql`update xero_mirror_cursors set last_read_at = now() - interval '1 day' where organisation_id = ${org()}`);
+    await handle.db.execute(sql`update xero_webhook_events set received_at = now()`);
+    replay = xero.script([]);
+    assert.deepEqual(await readChangesFirst(handle.db, xero.runtime, org()), { state: 'fresh' });
+    assert.equal(replay.calls.length, 0);
+
+    // A failing read, or no connection, means wait.
+    await deliver({ events: [event('INVOICE', 'r2')] });
+    xero.script([xeroAnswer('Invoices', { Message: 'boom' }, { status: 500, repeat: true })]);
+    assert.equal((await readChangesFirst(handle.db, xero.runtime, org())).state, 'unavailable');
+    await handle.db.execute(sql`update xero_webhook_events set pending = false`);
+    const other = await handle.db.execute(sql`select gen_random_uuid() as id`);
+    assert.deepEqual(await readChangesFirst(handle.db, xero.runtime, other.rows[0].id), { state: 'unavailable', reason: 'Xero is not connected' });
   });
 
   test('without a webhook key, the endpoint does not answer', async () => {

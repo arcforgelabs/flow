@@ -2,7 +2,7 @@ import { and, eq } from 'drizzle-orm';
 import { billingObligations } from '../db/schema.js';
 import { FlowError } from './errors.js';
 import { observeJob, observeWithdrawn } from './ledger.js';
-import { workJobMaker } from './pipeline.js';
+import { matchJobs, workJobMaker } from './pipeline.js';
 
 // Read before act (issue #141). Flow drafts and sends from its own copy of
 // the work system. Just before a draft, and before Send all ready, a job
@@ -71,6 +71,22 @@ export function needsRead(obligation, { work, now = new Date() }) {
   return typeof work?.capabilities?.readWorkItem === 'function'
     && obligation.sourceSystem === work.id
     && now - new Date(obligation.sourceSeenAt) > READ_BEFORE_ACT_MS;
+}
+
+// The accounting side of read before act (issue #45, step 5): once per
+// automatic draft pass or Send all ready press, before the first draft or
+// send, the accounting system reads its latest changes into its copy (its
+// readChanges capability). When the copy changed, the matcher runs first, so
+// a job someone invoiced in the accounting system meanwhile is linked to that
+// invoice and never drafted or sent twice. Answers { outcome, reason? }:
+// fresh or read (act), or waiting (act on nothing now).
+export async function readAccountingFirst(db, organisationId, { accounting, now = new Date() }) {
+  if (typeof accounting?.capabilities?.readChanges !== 'function') return { outcome: 'fresh' };
+  const answer = await accounting.capabilities.readChanges({ organisationId });
+  if (answer?.state === 'fresh') return { outcome: 'fresh' };
+  if (answer?.state !== 'read') return { outcome: 'waiting', reason: answer?.reason || 'the accounting system read failed' };
+  if (answer.changed) await matchJobs(db, organisationId, { accounting, now });
+  return { outcome: 'read', changed: answer.changed ?? 0 };
 }
 
 async function reload(db, organisationId, id) {

@@ -378,6 +378,26 @@ flowchart LR
   Invoices, and Credit notes when Xero offers it. Paste the webhook key into Flow's Xero settings
   ("Webhook key"), save, then press "Send Intent to receive" in Xero.
 
+### Read before draft and send
+
+Just before an automatic draft pass, and before Send all ready, Flow reads
+Xero's latest changes into the copy (`readChangesFirst`, the adapter's
+`readChanges` capability). This is once per pass or press, before the first
+draft or send, so a job someone invoiced in Xero a minute ago is not drafted
+or sent twice.
+
+- **No call** while webhooks arrive and none waits in the inbox, or when the
+  copy read invoices and credit notes in the last 10 minutes
+  (`READ_FIRST_MS`).
+- **Otherwise** Flow reads the waiting inbox ids, then the invoice and credit
+  note changes (at most 5 pages), through the call guard and the sync lane.
+- **A changed copy** runs the matcher before the draft or send, so the job
+  links to its Xero invoice and waits.
+- **A read that cannot run** (not connected, calls stopped, the day's calls
+  kept for people, more changes than one read takes) drafts and sends
+  nothing. The answer says `accountingRead: 'waiting'` or `waiting: N`; the
+  next pass tries again.
+
 ## Sent invoices against the copy
 
 People change invoices in both places after Flow sends them

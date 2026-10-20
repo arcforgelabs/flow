@@ -5,7 +5,7 @@ import {
 import { FlowError, notFound } from './errors.js';
 import { listRules, ruleReasons } from './invoice-rules.js';
 import { draftInvoiceForObligation } from './ledger.js';
-import { needsRead, readBeforeAct, READS_PER_PASS } from './read-before-act.js';
+import { needsRead, readAccountingFirst, readBeforeAct, READS_PER_PASS } from './read-before-act.js';
 import { checkReferenceTemplate, DEFAULT_REFERENCE, jobReference } from './references.js';
 
 // Invoicing rules (docs/INVOICING_RULES.md). They are the checks a job that
@@ -222,6 +222,12 @@ export function copyCheck(accounting, organisationId) {
   };
 }
 
+async function reloadObligation(db, organisationId, id) {
+  const [row] = await db.select().from(billingObligations)
+    .where(and(eq(billingObligations.organisationId, organisationId), eq(billingObligations.id, id)));
+  return row;
+}
+
 // Drafts the invoice of each job that is ready to invoice and passes the
 // ledger's checks and every rule, except for customers whose drafting is off.
 // It writes only Flow's own records: the drafts wait in Flow for a person.
@@ -252,6 +258,7 @@ export async function autoDraftJobs(db, organisationId, { accounting = null, wor
   const customers = await customerBillingByContact(db, organisationId, candidates.map((o) => o.contactId));
   const liveCheck = accounting ? copyCheck(accounting, organisationId) : null;
   const invoiceDate = isoDay(now);
+  let accountingRead = null;
 
   for (const candidate of candidates) {
     let effective = effectiveSettings(settings, customers.get(candidate.contactId));
@@ -269,11 +276,30 @@ export async function autoDraftJobs(db, organisationId, { accounting = null, wor
       result.waiting += 1;
       continue;
     }
-    const { outcome, obligation } = (await readBeforeAct(db, organisationId, [candidate], { work, now, actor })).get(candidate.id);
+    let { outcome, obligation } = (await readBeforeAct(db, organisationId, [candidate], { work, now, actor })).get(candidate.id);
     if (outcome !== 'fresh') result.readFirst += 1;
     if (outcome === 'waiting' || outcome === 'review') {
       result.waiting += 1;
       continue;
+    }
+    // Issue #45: the accounting copy reads its latest changes once, before
+    // the first draft. When it changed, the matcher ran: this job may now
+    // have its invoice.
+    if (accounting) {
+      if (!accountingRead) {
+        accountingRead = await readAccountingFirst(db, organisationId, { accounting, now });
+        // The summary says when the copy read or could not read.
+        if (accountingRead.outcome !== 'fresh') result.accountingRead = accountingRead.outcome;
+      }
+      if (accountingRead.outcome === 'waiting') {
+        result.waiting += 1;
+        continue;
+      }
+      if (accountingRead.outcome === 'read') obligation = await reloadObligation(db, organisationId, obligation.id);
+      if (obligation.accountingState !== 'not_found') {
+        result.waiting += 1;
+        continue;
+      }
     }
     if (obligation !== candidate) {
       effective = effectiveSettings(settings, customers.get(obligation.contactId));

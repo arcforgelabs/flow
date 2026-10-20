@@ -27,6 +27,7 @@ export const CAPABILITIES = Object.freeze([
   'jobIssues', // open issues the integration holds for jobs, by job ref: a short phrase and the page where a person fixes it
   'listCustomers', // the system's customers, by id and name, for the identity map (Seazona: clients; Xero: contacts)
   'findInvoices', // sales invoices in the accounting system's copy, for the matcher; never a live call
+  'readChanges', // { state: fresh | read | unavailable }: the accounting system's latest changes into its copy now, just before Flow drafts or sends (read before act)
   'listPriceItems', // the system's own price list from its copy in Flow, for the price list's links and check; never a live call
   'health', // connection state for Settings
   'alerts', // what only a person can clear (a refused sign-in, stopped calls), for the Integrations page; reads Flow's data only
