@@ -217,7 +217,7 @@ describe('the pipeline', { skip: skipWithoutDatabase }, () => {
   });
 
   test('an order deleted in the work system sends its job to review', async () => {
-    const work = fakeWork([{ items: [], withdrawn: [{ sourceId: '1005', reason: 'deleted_in_seazona', ledgerHold: { sourceSystem: 'seazona', sourceJobRef: '1005', holdState: 'review', reason: 'the order was deleted in Seazona' } }] }]);
+    const work = fakeWork([{ items: [], withdrawn: [{ sourceId: '1005', reason: 'deleted_in_seazona', ledgerWithdrawn: { sourceSystem: 'seazona', sourceJobRef: '1005', deleted: true, reason: 'the order was deleted in Seazona' } }] }]);
     await handle.db.execute(sql`delete from pipeline_cursors`);
     await runPipelineOnce(handle.db, integrationsOf([work.adapter]), { now: NOW });
     assert.equal((await obligation('1005')).holdState, 'review');

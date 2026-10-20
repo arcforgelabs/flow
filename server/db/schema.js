@@ -250,6 +250,9 @@ export const billingObligations = pgTable('billing_obligations', {
   holdReason: text('hold_reason'),
   // The Flow invoice made for this job.
   invoiceId: uuid('invoice_id'),
+  // The job facts the invoice was built from: the merge base for the
+  // three-way compare when the job changes later (server/core/ledger.js).
+  draftBasis: jsonb('draft_basis'),
   // What the accounting system reported, how it matched, and when Flow checked.
   accountingState: text('accounting_state').notNull().default('unknown'),
   accountingRef: text('accounting_ref'),

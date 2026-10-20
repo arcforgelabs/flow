@@ -137,6 +137,9 @@ export function resolveSeazonaSettings(env = process.env) {
     // Issue #12: after this many failed reads in a row an order waits this long.
     orderQuarantineFailures: clampInt(env.SEAZONA_ORDER_QUARANTINE_FAILURES, 3, 1, 20),
     orderQuarantineMs: ms('SEAZONA_ORDER_QUARANTINE_MS', DAY_MS, 5 * MINUTE, 30 * DAY_MS),
+    // Issue #142: the invoice and client lanes read this many quarantined
+    // records again per run, once their wait has ended.
+    recordRereadsPerRun: clampInt(env.SEAZONA_RECORD_REREADS_PER_RUN, 5, 0, 50),
     // A failed lane waits 1 minute, doubling to at most 6 hours.
     retryBaseMs: MINUTE,
     retryMaxMs: 6 * 60 * MINUTE,

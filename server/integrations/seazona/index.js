@@ -1,8 +1,10 @@
 import { guardAlerts } from '../call-guard.js';
+import { createActReader } from './act.js';
 import { createSeazonaClient } from './client.js';
 import { listClients, listProducts, listWork, readBillableWork } from './feed.js';
 import { historyJobIssues, historySummary, readHistoryWork } from './history/index.js';
 import { readSeazonaSyncHealth, runSeazonaSync } from './lanes.js';
+import { readBillableJobs } from './reconcile.js';
 import { SEAZONA_CALL_GUARD } from './governor.js';
 import { createSeazonaRouter } from './routes.js';
 import { orderPatient } from './patients.js';
@@ -64,6 +66,7 @@ const readNames = (lanes) => lanes.map((lane) => READ_NAMES[lane.lane] ?? lane.l
 
 export function createSeazonaAdapter({ env = null, fetchImpl = null, now = Date.now, timers } = {}) {
   let runtime = null; // { settings, db, client, scheduler }
+  const actReader = createActReader({ now });
 
   function current() {
     if (!runtime) throw new Error('The Seazona adapter has not started');
@@ -127,6 +130,8 @@ export function createSeazonaAdapter({ env = null, fetchImpl = null, now = Date.
           scheduler: schedulerStatus,
           governor: await client.governor.status(),
           ...sync,
+          // Issue #141: today's reads before a draft or a send.
+          readsBeforeAct: actReader.status(),
           history: await historySummary(db),
           sweep: await readSweepHealth(db, settings, { now }),
         };
@@ -172,10 +177,23 @@ export function createSeazonaAdapter({ env = null, fetchImpl = null, now = Date.
         return readBillableWork(current().db, { cursor, ...options });
       },
 
+      // Read before act (issue #141): reads one order from Seazona now, and
+      // answers it as the feed would (act.js). The only capability here that
+      // calls Seazona on a person's or an automation's behalf.
+      async readWorkItem({ sourceJobRef }) {
+        return actReader.read(current(), sourceJobRef);
+      },
+
       // Past work from the history import (docs/SEAZONA.md, "History
       // import"), as ledger jobs marked `historical`. Reads Flow's copy only.
       async pullHistoryJobs(cursor = null, options = {}) {
         return readHistoryWork(current().db, { cursor, ...options });
+      },
+
+      // Billable jobs by day, for the daily reconcile
+      // (server/core/reconcile.js). Reads Flow's copy only.
+      async billableJobs({ from = null, to = null } = {}) {
+        return readBillableJobs(current().db, { from, to });
       },
 
       // Seazona clients by id and company name, for the identity map. Reads

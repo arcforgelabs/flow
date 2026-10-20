@@ -4,6 +4,7 @@ import { createConnectorApi } from './api/connector.js';
 import { createInvoicingRouter } from './api/invoicing.js';
 import { createSignInRouter } from './auth/routes.js';
 import { integrationAlertsSource, invoiceProblemsSource, priceDifferencesSource } from './core/alerts.js';
+import { reconcileHealth } from './core/reconcile.js';
 import { appliedMigrationCounts } from './db/doctor.js';
 import { deployedBuildStatus } from './deployed-build.js';
 import { integrationsHealth } from './integrations/health.js';
@@ -72,6 +73,9 @@ export function createApp({
         .then((migrations) => ({ migrations }), () => null);
     }
     if (integrations) body.integrations = await integrationsHealth(integrations);
+    // The daily reconcile's last run (server/core/reconcile.js): counts only.
+    // A difference does not fail the health check.
+    if (databaseOk && database.db) body.reconcile = await reconcileHealth(database.db).catch(() => null);
     res.status(ok ? 200 : 503).json(body);
   });
 

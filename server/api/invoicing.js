@@ -16,11 +16,12 @@ import {
   saveCustomerBilling, saveInvoicingSettings, sendModeFor, sendModeSummary,
 } from '../core/invoicing-rules.js';
 import { boardJobs, describeObligations } from '../core/job-board.js';
+import { readBeforeAct } from '../core/read-before-act.js';
 import { jobReference } from '../core/references.js';
 import {
   acceptFindings, archivePriceItem, checkPrices, createPriceItem, linkPriceItem, readCatalogues, readPriceList, unlinkPriceItem, updatePriceItem,
 } from '../core/price-list.js';
-import { draftInvoiceForObligation, explainObligation, listObligations, setReady } from '../core/ledger.js';
+import { draftInvoiceForObligation, explainObligation, listObligations, setReady, useSourceLines } from '../core/ledger.js';
 import { isHistoryHeld } from '../core/history.js';
 import { invoicePdfDocument, pdfFields, pdfFilename, renderInvoicePdf } from '../core/invoice-pdf.js';
 import { invoiceView, invoiceViews, markNotReady, markReady, sendAgain, sendAllReady } from '../core/sending.js';
@@ -366,7 +367,9 @@ export function createInvoicingRouter({
     const organisationId = await organisationOf(req);
     const issueDate = optionalDate(req.body?.issueDate, 'issueDate') ?? today();
     const ids = req.body?.invoiceIds === undefined ? null : invoiceIdsOf(req.body);
-    const result = await sendAllReady(db, organisationId, { accounting: accounting(), personId: req.person.id, issueDate, invoiceIds: ids });
+    // Read before act (issue #141) reads each old job from the work system that can.
+    const reader = work().find((a) => typeof a.capabilities.readWorkItem === 'function') ?? null;
+    const result = await sendAllReady(db, organisationId, { accounting: accounting(), work: reader, personId: req.person.id, issueDate, invoiceIds: ids });
     log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} sent all ready: ${JSON.stringify(result)}`);
     res.json({ ok: true, ...result });
   }));
@@ -506,13 +509,31 @@ export function createInvoicingRouter({
     const organisationId = await organisationOf(req);
     // With no accounting system connected, Flow's own records are the check.
     const liveCheck = liveCheckFor(organisationId) ?? null;
-    const [obligation] = await db.select().from(billingObligations)
+    let [obligation] = await db.select().from(billingObligations)
       .where(and(eq(billingObligations.organisationId, organisationId), eq(billingObligations.id, obligationId)));
+    const source = obligation ? work().find((a) => a.id === obligation.sourceSystem) ?? null : null;
+    if (obligation) {
+      // Read before act (issue #141): an old job report is read again first.
+      const read = (await readBeforeAct(db, organisationId, [obligation], { work: source, actor: `person:${req.person.id}` })).get(obligation.id);
+      if (read.outcome === 'waiting' || read.outcome === 'review') {
+        throw new FlowError('not_ready', 'the draft invoice was refused', { reasons: [read.reason ?? read.obligation.holdReason ?? 'the job needs a look'] });
+      }
+      obligation = read.obligation;
+    }
     const { referenceTemplate: template } = await readInvoicingSettings(db, organisationId);
-    const reference = obligation ? await jobReference(db, organisationId, obligation, { template, work: work().find((a) => a.id === obligation.sourceSystem) ?? null }) : null;
+    const reference = obligation ? await jobReference(db, organisationId, obligation, { template, work: source }) : null;
     const { invoice } = await draftInvoiceForObligation(db, organisationId, obligationId, { liveCheck, actor: `person:${req.person.id}`, reference });
     log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} drafted invoice ${invoice.id} from job ${obligationId}`);
     res.status(201).json({ ok: true, invoice: await invoiceDetail(db, organisationId, invoice.id) });
+  }));
+
+  // "Use new lines": the job changed in the work system after its draft was
+  // made, and only there. Flow changes its own draft; no other system.
+  router.post('/jobs/:id/use-new-lines', ...manager, handle(log, async (req, res) => {
+    const obligationId = pathId(req.params.id, 'job');
+    const organisationId = await organisationOf(req);
+    const { invoice } = await useSourceLines(db, organisationId, obligationId, { actor: `person:${req.person.id}` });
+    res.json({ ok: true, invoice: await invoiceDetail(db, organisationId, invoice.id) });
   }));
 
   router.post('/jobs/:id/ready', ...signedIn, handle(log, async (req, res) => {

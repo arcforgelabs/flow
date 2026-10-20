@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { after, before, beforeEach, describe, test } from 'node:test';
 import { eq, sql } from 'drizzle-orm';
+import { createActReader } from '../server/integrations/seazona/act.js';
 import { createSeazonaClient } from '../server/integrations/seazona/client.js';
 import { readSeazonaSyncHealth, runSeazonaSync } from '../server/integrations/seazona/lanes.js';
 import { DELETED_STATUS, orderStatusLabel } from '../server/integrations/seazona/map.js';
@@ -300,6 +301,31 @@ describe('Seazona sync lanes', { skip: skipWithoutDatabase }, () => {
     assert.equal((await resetFailedLanes(db, { at: new Date(clock.now()) })).length, 5);
   });
 
+  // Issue #141.
+  test('a read before act reads one order now and answers it as the feed would', async () => {
+    await seed(['ORD-6001', 'ORD-6002', 'ORD-6003']);
+    const settings = settingsFor({ SEAZONA_API_MAX_RETRIES: '0', SEAZONA_CIRCUIT_FAILURES: '100' });
+    const reader = createActReader({ now: clock.now });
+    const readWith = async (responses, id) => {
+      const fetchImpl = createReplayFetch({ responses });
+      const client = createSeazonaClient({ settings, db, fetchImpl, now: clock.now, sleepFn: clock.sleep, random: () => 0 });
+      return { answer: await reader.read({ db, client, settings }, id), calls: fetchImpl.calls };
+    };
+    const shipped = await readWith([{ path: 'orders/ORD-6001', body: orderDetail('ORD-6001', 'Shipped') }], 'ORD-6001');
+    assert.equal(shipped.calls.length, 1);
+    assert.equal(shipped.answer.state, 'read');
+    assert.equal(shipped.answer.item.ledgerJob.sourceJobRef, 'ORD-6001');
+    assert.equal((await getOrder('ORD-6001')).status, 'Shipped');
+    const gone = await readWith([{ path: 'orders/ORD-6002', status: 404 }], 'ORD-6002');
+    assert.equal(gone.answer.state, 'withdrawn');
+    assert.equal(gone.answer.ledgerWithdrawn.deleted, true);
+    const working = await readWith([{ path: 'orders/ORD-6003', body: orderDetail('ORD-6003') }], 'ORD-6003');
+    assert.deepEqual([working.answer.state, working.answer.reason, working.answer.ledgerWithdrawn.deleted], ['withdrawn', 'not_billable', false]);
+    const failed = await readWith([{ path: 'orders/ORD-6003', status: 500 }], 'ORD-6003');
+    assert.equal(failed.answer.state, 'unavailable');
+    assert.deepEqual(reader.status(), { day: '2026-10-01', reads: 4, changed: 1, withdrawn: 2, unavailable: 1 });
+  });
+
   test('an invoice that keeps failing is quarantined and no longer holds the cursor', async () => {
     const list = { path: 'invoices/', query: { lastModified: '*' }, body: [{ invoiceNumber: 7001, id: 'INV-7001', status: 'Shipped' }] };
     const responses = [list, { path: 'invoices/INV-7001', status: 500 }];
@@ -318,5 +344,52 @@ describe('Seazona sync lanes', { skip: skipWithoutDatabase }, () => {
     const lane = await cursorOf();
     assert.equal(lane.quarantinedRecords, 1);
     assert.ok(lane.lastSuccessAt);
+  });
+
+  // Issue #142.
+  const quarantine = async (lane, path, list) => {
+    const env = { SEAZONA_API_MAX_RETRIES: '0', SEAZONA_CIRCUIT_FAILURES: '100' };
+    for (let i = 0; i < 3; i += 1) {
+      await run([list, { path, status: 500 }], { env, only: [lane] });
+      clock.advance(MINUTE);
+    }
+    return env;
+  };
+  const laneHealth = async (lane) => (await readSeazonaSyncHealth(db, settingsFor(), { now: clock.now })).lanes.find((l) => l.lane === lane);
+
+  test('a quarantined invoice is read again by id when its wait ends, though no list names it', async () => {
+    const env = await quarantine('invoices', 'invoices/INV-7001', { path: 'invoices/', query: { lastModified: '*' }, body: [{ invoiceNumber: 7001, id: 'INV-7001', status: 'Shipped' }] });
+    const waiting = await run([{ path: 'invoices/', query: { lastModified: '*' }, body: [] }], { env, only: ['invoices'] });
+    assert.ok(!waiting.calls.some((call) => call.path === 'invoices/INV-7001'), 'no read during the wait');
+    clock.advance(DAY);
+    assert.equal((await laneHealth('invoices')).rereadDue, 1);
+    const { result, calls } = await run([
+      { path: 'invoices/', query: { lastModified: '*' }, body: [] },
+      { path: 'invoices/INV-7001', body: { invoiceNumber: 7001, id: 'INV-7001', status: 'Shipped', total: 110, productServiceItems: [{ description: 'Example crown', quantity: 1, price: 110 }] } },
+    ], { env, only: ['invoices'] });
+    assert.equal(calls.filter((call) => call.path === 'invoices/INV-7001').length, 1);
+    assert.equal(result.results.invoices.ok, true);
+    assert.deepEqual(result.results.invoices.rereads, { attempted: 1, read: 1, gone: 0, failed: 0 });
+    const [invoice] = await db.select().from(seazonaInvoices).where(eq(seazonaInvoices.invoiceNumber, '7001'));
+    assert.equal(invoice.totalCents, 11000);
+    const lane = await laneHealth('invoices');
+    assert.equal(lane.rereadDue, undefined);
+    assert.equal(lane.quarantinedRecords, undefined);
+  });
+
+  test('a client that fails its re-read waits again with no new report; one Seazona no longer has is let go', async () => {
+    const list = { path: 'clients/', query: { lastModified: '*' }, body: [{ id: 'CL-1', company: 'Example Practice' }] };
+    const env = await quarantine('clients', 'clients/CL-1', list);
+    clock.advance(DAY);
+    const empty = { path: 'clients/', query: { lastModified: '*' }, body: [] };
+    const again = await run([empty, { path: 'clients/CL-1', status: 500 }], { env, only: ['clients'] });
+    assert.deepEqual(again.result.results.clients.rereads, { attempted: 1, read: 0, gone: 0, failed: 1 });
+    assert.equal(again.result.results.clients.newlyQuarantined, 0, 'the new wait is not reported again');
+    assert.equal((await laneHealth('clients')).quarantinedRecords, 1);
+    clock.advance(DAY);
+    const gone = await run([empty, { path: 'clients/CL-1', status: 404 }], { env, only: ['clients'] });
+    assert.deepEqual(gone.result.results.clients.rereads, { attempted: 1, read: 0, gone: 1, failed: 0 });
+    const { rows } = await db.execute(sql`select count(*)::int as n from seazona_record_read_failures`);
+    assert.equal(rows[0].n, 0);
   });
 });

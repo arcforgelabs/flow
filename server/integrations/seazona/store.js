@@ -1,4 +1,4 @@
-import { and, eq, getTableColumns, gt, inArray, isNotNull, isNull, lt, ne, or, sql } from 'drizzle-orm';
+import { and, asc, eq, getTableColumns, gt, inArray, isNotNull, isNull, lt, lte, ne, or, sql } from 'drizzle-orm';
 import { hashOf } from './map.js';
 import {
   seazonaClients,
@@ -215,11 +215,12 @@ export async function clearRecordFailures(db, resource, keys) {
 
 // Records one failed read, as recordOrderFailure does for orders. Answers
 // { failureCount, quarantinedUntil }.
-export async function recordRecordFailure(db, resource, key, failure, { at, quarantineFailures, quarantineMs }) {
+export async function recordRecordFailure(db, resource, key, failure, { at, quarantineFailures, quarantineMs, detailId = null }) {
   const until = new Date(at.getTime() + quarantineMs);
   const [row] = await db.insert(seazonaRecordReadFailures).values({
     resource,
     recordKey: key,
+    detailId,
     failureCount: 1,
     lastAttemptAt: at,
     lastHttpStatus: failure.httpStatus,
@@ -229,6 +230,7 @@ export async function recordRecordFailure(db, resource, key, failure, { at, quar
     target: [seazonaRecordReadFailures.resource, seazonaRecordReadFailures.recordKey],
     set: {
       failureCount: sql`${seazonaRecordReadFailures.failureCount} + 1`,
+      detailId: sql`coalesce(${detailId}::text, ${seazonaRecordReadFailures.detailId})`,
       lastAttemptAt: at,
       lastHttpStatus: failure.httpStatus,
       lastFailureKind: failure.kind,
@@ -237,6 +239,26 @@ export async function recordRecordFailure(db, resource, key, failure, { at, quar
     },
   }).returning();
   return { failureCount: row.failureCount, quarantinedUntil: row.quarantinedUntil?.toISOString() ?? null };
+}
+
+// Issue #142: quarantined records whose wait has ended, oldest wait first,
+// that the lane can read again by id.
+export async function readRecordsDueForReread(db, resource, { at, limit }) {
+  return db.select().from(seazonaRecordReadFailures).where(and(
+    eq(seazonaRecordReadFailures.resource, resource),
+    isNotNull(seazonaRecordReadFailures.detailId),
+    lte(seazonaRecordReadFailures.quarantinedUntil, at),
+  )).orderBy(asc(seazonaRecordReadFailures.quarantinedUntil)).limit(limit);
+}
+
+// Per resource: quarantined records whose wait has ended, so they wait for a
+// re-read.
+export async function readRecordRereadCounts(db, { at }) {
+  const rows = await db.select({ resource: seazonaRecordReadFailures.resource, records: sql`count(*)::int` })
+    .from(seazonaRecordReadFailures)
+    .where(lte(seazonaRecordReadFailures.quarantinedUntil, at))
+    .groupBy(seazonaRecordReadFailures.resource);
+  return Object.fromEntries(rows.map((row) => [row.resource, row.records]));
 }
 
 export async function readQuarantinedRecordCounts(db, { at }) {

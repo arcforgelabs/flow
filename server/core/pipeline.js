@@ -6,7 +6,7 @@ import {
 import { FlowError } from './errors.js';
 import { listAutomations, runAutomations } from './automations.js';
 import { readInvoicingSettings } from './invoicing-rules.js';
-import { observeJob, recordAccountingEvidence, setHold } from './ledger.js';
+import { observeJob, observeWithdrawn, recordAccountingEvidence, setHold } from './ledger.js';
 import { loadMappingContext, mapLines } from './line-mapping.js';
 import { checkPrices, readCatalogues } from './price-list.js';
 import { linkRecord, priorLinkFor } from './links.js';
@@ -130,25 +130,38 @@ async function writeCursor(db, organisationId, name, cursor) {
     .onConflictDoUpdate({ target: [pipelineCursors.organisationId, pipelineCursors.name], set: { cursor, updatedAt: sql`now()` } });
 }
 
+// Turns a work item into the job the ledger observes: its customer from the
+// identity map, and its lines mapped to price items when "Map lines" is on.
+// `mapped` says whether lines are mapped.
+export async function workJobMaker(db, organisationId, adapter) {
+  const links = await activeLinks(db, organisationId, { system: adapter.id, entity: 'contact' });
+  const contactOf = new Map(links.map((l) => [l.externalId, l.flowId]));
+  // Line mapping (line-mapping.js): each line finds its price item first.
+  const mapping = (await listAutomations(db, organisationId)).find((a) => a.key === 'map_lines');
+  const context = mapping?.enabled ? await loadMappingContext(db, organisationId, mapping.config, { system: adapter.id }) : null;
+  const toJob = (item) => {
+    const job = context ? { ...item.ledgerJob, lines: mapLines(item.ledgerJob.lines ?? [], context) } : item.ledgerJob;
+    return { ...job, contactId: contactOf.get(String(item.clientId ?? '')) ?? null };
+  };
+  toJob.mapped = Boolean(context);
+  return toJob;
+}
+
 // Reads the work system's billable jobs since the last run into the ledger.
 // `restart` reads every job again, for example after new customer links.
 export async function ingestWork(db, organisationId, { adapter, restart = false, pages = WORK_PAGES }) {
   const name = `${adapter.id}.work`;
   let cursor = restart ? null : await readCursor(db, organisationId, name);
-  const links = await activeLinks(db, organisationId, { system: adapter.id, entity: 'contact' });
-  const contactOf = new Map(links.map((l) => [l.externalId, l.flowId]));
-  const result = { observed: 0, withoutCustomer: 0, skipped: 0, sentToReview: 0, unmappedLines: 0, more: false };
-  // Line mapping (line-mapping.js): each line finds its price item first.
-  const mapping = (await listAutomations(db, organisationId)).find((a) => a.key === 'map_lines');
-  const context = mapping?.enabled ? await loadMappingContext(db, organisationId, mapping.config, { system: adapter.id }) : null;
+  const toJob = await workJobMaker(db, organisationId, adapter);
+  const result = { observed: 0, withoutCustomer: 0, skipped: 0, sentToReview: 0, readyCleared: 0, unmappedLines: 0, more: false };
   for (let page = 0; page < pages; page += 1) {
     const { items, withdrawn, cursor: next, more } = await adapter.capabilities.pullWorkItems(cursor, { limit: 200 });
     for (const item of items) {
-      const contactId = contactOf.get(String(item.clientId ?? '')) ?? null;
-      const job = context ? { ...item.ledgerJob, lines: mapLines(item.ledgerJob.lines ?? [], context) } : item.ledgerJob;
-      if (context) result.unmappedLines += job.lines.filter((l) => !l.itemCode && !l.accountCode).length;
+      const job = toJob(item);
+      const { contactId } = job;
+      if (toJob.mapped) result.unmappedLines += job.lines.filter((l) => !l.itemCode && !l.accountCode).length;
       try {
-        await observeJob(db, organisationId, { ...job, contactId });
+        await observeJob(db, organisationId, job);
         result.observed += 1;
         if (!contactId) result.withoutCustomer += 1;
       } catch (error) {
@@ -157,17 +170,12 @@ export async function ingestWork(db, organisationId, { adapter, restart = false,
         result.skipped += 1;
       }
     }
+    // A job no longer billable: deleted, or its status moved back (ledger.js).
     for (const entry of withdrawn) {
-      if (!entry.ledgerHold) continue;
-      const { sourceSystem, sourceJobRef, holdState, reason } = entry.ledgerHold;
-      const [obligation] = await db.select().from(billingObligations).where(and(
-        eq(billingObligations.organisationId, organisationId),
-        eq(billingObligations.sourceSystem, sourceSystem),
-        eq(billingObligations.sourceJobRef, sourceJobRef),
-      ));
-      if (!obligation || obligation.holdState === holdState) continue;
-      await setHold(db, organisationId, obligation.id, { holdState, reason, actor: `system:${adapter.id}` });
-      result.sentToReview += 1;
+      if (!entry.ledgerWithdrawn) continue;
+      const { action } = await observeWithdrawn(db, organisationId, { ...entry.ledgerWithdrawn, actor: `system:${adapter.id}` });
+      if (action === 'review') result.sentToReview += 1;
+      if (action === 'ready_cleared') result.readyCleared += 1;
     }
     cursor = next;
     await writeCursor(db, organisationId, name, cursor);

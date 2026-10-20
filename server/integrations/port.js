@@ -11,6 +11,7 @@ import { isMissingTable, migrateAdapterSchema } from './schema.js';
 
 export const CAPABILITIES = Object.freeze([
   'pullWorkItems', // billable work since a cursor (Seazona: completed cases)
+  'readWorkItem', // { state: read | withdrawn | unavailable }: one job read from the work system now, as pullWorkItems gives it (read before act, server/core/read-before-act.js)
   'pullHistoryJobs', // past work from a history import, as ledger jobs marked historical (Seazona: its API backfill)
   'pushInvoice', // send an issued invoice; the Flow record id is the idempotency key
   'pushInvoices', // send several issued invoices in one pass (Send all ready, server/core/sending.js)
@@ -20,6 +21,7 @@ export const CAPABILITIES = Object.freeze([
   'pushBill', // send an approved bill; the Flow record id is the idempotency key
   'pullPayments', // payments since a cursor, matched to invoices and bills
   'checkInvoice', // does the accounting system hold an invoice for a billable job? (the ledger's liveCheck)
+  'billableJobs', // billable jobs by day from the work system's copy in Flow, for the daily reconcile; never a live call
   'jobReferenceFields', // { patient }: the fields a job gives the invoice Reference (server/core/references.js)
   'listWork', // the work system's jobs from its copy in Flow, open and lately finished, for the Jobs board
   'jobIssues', // open issues the integration holds for jobs, by job ref: a short phrase and the page where a person fixes it

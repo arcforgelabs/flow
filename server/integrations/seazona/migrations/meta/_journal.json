@@ -40,8 +40,15 @@
     {
       "idx": 5,
       "version": "7",
-      "when": 1792458162655,
-      "tag": "0005_sweep_findings",
+      "when": 1792458014317,
+      "tag": "0005_record_reread",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1792459854631,
+      "tag": "0006_sweep_findings",
       "breakpoints": true
     }
   ]
