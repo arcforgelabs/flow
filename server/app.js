@@ -1,6 +1,7 @@
 import express from 'express';
 import { createAlertsRouter } from './api/alerts.js';
 import { createCustomFieldsRouter } from './api/custom-fields.js';
+import { createWorkMovesRouter } from './api/work-moves.js';
 import { createConnectorApi } from './api/connector.js';
 import { createInvoicingRouter } from './api/invoicing.js';
 import { createSignInRouter } from './auth/routes.js';
@@ -140,6 +141,9 @@ export function createApp({
     // Custom fields for jobs (server/core/custom-fields.js): kept in Flow
     // only; the work systems' statuses show beside them, read only.
     app.use('/api/custom-fields', createCustomFieldsRouter({ db: database.db, personAuth: auth.personAuth, work, log }));
+    // Stage moves the work system must make, and each person's own
+    // integration choices (server/api/work-moves.js).
+    app.use('/api/work', createWorkMovesRouter({ adapters: (capability) => integrations?.with(capability) ?? [], personAuth: auth.personAuth, log }));
     // Quiet alerts (server/core/alerts.js): what needs a person on each page.
     // Integrations add their own through the `alerts` capability.
     app.use('/api/alerts', createAlertsRouter({

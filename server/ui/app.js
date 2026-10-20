@@ -777,6 +777,7 @@ async function renderIntegration(main, id) {
           current.state === 'failed' && current.error ? notice(current.error, 'danger', 'It could not start.') : null,
           current.id === 'xero' && current.state === 'ready' ? h('section', { class: 'fx-int-section' }, xeroConnection(body.organisations, canChange)) : null,
           current.id === 'seazona' ? h('section', { class: 'fx-int-section fx-card', style: { padding: '8px 20px 16px' } }, automationSection(ui(), 'seazona', 'Ready to invoice')) : null,
+          on && current.state === 'ready' ? personSettingsSection(current) : null,
           current.id === 'xero' ? h('section', { class: 'fx-int-section fx-card', style: { padding: '8px 20px 16px' } }, sendModeSection(ui())) : null,
           guide ? h('section', { class: 'fx-int-section' },
             h('h2', { class: 'fx-int-section__title' }, 'Set up'),
@@ -799,6 +800,36 @@ async function renderIntegration(main, id) {
   };
   document.title = `${found.name} · Flow`;
   draw(found);
+}
+
+// "Your settings": this person's own choices in one integration
+// (GET /api/work/my-settings), such as Seazona's "Ask before stage moves".
+// Each person sees and changes only their own.
+function personSettingsSection(integration) {
+  const section = h('section', { class: 'fx-int-section' },
+    h('h2', { class: 'fx-int-section__title' }, 'Your settings'), h('div', { class: 'fx-skeleton' }));
+  flow(`/api/work/my-settings?integration=${encodeURIComponent(integration.id)}`).then(({ integrations }) => {
+    const settings = integrations[0]?.settings ?? [];
+    if (!settings.length) { section.remove(); return; }
+    const rows = settings.map((setting) => {
+      const input = h('select', { class: 'fx-select' },
+        [{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }].map((c) => h('option', { value: c.value, selected: (setting.value ? 'on' : 'off') === c.value }, c.label)));
+      input.addEventListener('change', async () => {
+        input.disabled = true;
+        try {
+          await flow('/api/work/my-settings', { method: 'PUT', body: JSON.stringify({ integration: integration.id, key: setting.key, value: input.value === 'on' }) });
+          toast('Saved for you.', 'success');
+        } catch (error) {
+          input.value = setting.value ? 'on' : 'off';
+          toast(error.message, 'danger');
+        }
+        input.disabled = false;
+      });
+      return settingRow({ label: setting.label, hint: setting.hint, control: input });
+    });
+    section.replaceChildren(section.firstChild, h('div', { class: 'fx-settings' }, rows));
+  }).catch(() => section.remove());
+  return section;
 }
 
 // One setting, laid out the same on every settings screen: a short name, one

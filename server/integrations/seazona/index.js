@@ -7,6 +7,9 @@ import { readSeazonaSyncHealth, runSeazonaSync } from './lanes.js';
 import { readBillableJobs } from './reconcile.js';
 import { SEAZONA_CALL_GUARD } from './governor.js';
 import { createSeazonaRouter } from './routes.js';
+import {
+  cancelStageMove, expiredStageMoves, readPersonSettings, requestStageMove, settleStageMoves, waitingStageMoves, writePersonSetting,
+} from './stage-moves.js';
 import { orderPatient } from './patients.js';
 import { createSeazonaScheduler } from './scheduler.js';
 import { readSweepHealth } from './sweep.js';
@@ -48,6 +51,7 @@ export const SEAZONA_SETUP = {
     { name: 'SEAZONA_API_BASE_URL', label: 'API address', kind: 'url', help: 'The API root of your account, https://…' },
     { name: 'SEAZONA_API_CLIENT_ID', label: 'Client id' },
     { name: 'SEAZONA_API_CLIENT_SECRET', label: 'Client secret', secret: true, help: 'Stored encrypted. Flow never shows it again.' },
+    { name: 'SEAZONA_ORDER_URL', label: 'Order address', kind: 'url', help: 'Optional. The address of one order in Seazona, with {ref} for the order number. Stage moves on the Jobs board open it.' },
     { name: 'SEAZONA_KEEP_PATIENT_REFERENCE', label: 'Keep patient names', kind: 'onoff', help: 'On: Flow keeps the patient name of each job for the invoice Reference.' },
   ],
 };
@@ -144,6 +148,17 @@ export function createSeazonaAdapter({ env = null, fetchImpl = null, now = Date.
         if (!runtime?.client.governor) return [];
         const status = await runtime.client.governor.status();
         const alerts = guardAlerts('Seazona', status, { fix: 'Check the API client in the Seazona settings, then save them.' });
+        // Stage moves nobody made in Seazona within a day (stage-moves.js).
+        await settleStageMoves(runtime.db, { now: now() });
+        const expired = await expiredStageMoves(runtime.db, { now: now() });
+        if (expired.length) {
+          alerts.push({
+            id: 'stage-moves-expired',
+            tone: 'warn',
+            title: `${expired.length === 1 ? 'One stage move was' : `${expired.length} stage moves were`} not made in Seazona within a day: ${expired.slice(0, 5).map((m) => `${m.orderId} to ${m.toStatus}`).join(', ')}${expired.length > 5 ? ', …' : ''}. The cards went back to their Seazona stage.`,
+            members: expired.map((m) => `${m.orderId}:${m.settledAt?.toISOString() ?? ''}`),
+          });
+        }
         // Issue #143: what the lanes cannot fix by themselves. A refused API
         // client already has its own alert above, so it stops no lane here.
         if (!runtime.settings.scheduled) return alerts;
@@ -205,7 +220,38 @@ export function createSeazonaAdapter({ env = null, fetchImpl = null, now = Date.
       // Open orders and orders finished lately, with their statuses, for the
       // Jobs board. Reads Flow's copy only.
       async listWork() {
-        return listWork(current().db, { now: now() });
+        const { db } = current();
+        await settleStageMoves(db, { now: now() });
+        const [work, waiting] = await Promise.all([listWork(db, { now: now() }), waitingStageMoves(db)]);
+        // A stage move Seazona has not made yet (stage-moves.js): the card
+        // shows in its new lane, waiting for Seazona.
+        for (const item of work.items) {
+          const move = waiting.get(item.sourceJobRef);
+          if (move) item.pendingMove = { to: move.toStatus, from: move.fromStatus, requestedAt: move.requestedAt.toISOString(), expiresAt: move.expiresAt.toISOString() };
+        }
+        return work;
+      },
+
+      // A person's move of a job to another Seazona stage. Seazona's API
+      // cannot change an order's status, so this never calls Seazona: it
+      // records a hand-off and answers what the person does in Seazona.
+      async moveWork({ sourceJobRef, toStatus, personId = null }) {
+        const { db, settings } = current();
+        return requestStageMove(db, { orderId: sourceJobRef, toStatus, personId, orderUrlTemplate: settings.orderUrlTemplate, now: now() });
+      },
+
+      async cancelMove({ sourceJobRef }) {
+        return cancelStageMove(current().db, { orderId: sourceJobRef, now: now() });
+      },
+
+      // Each person's own Seazona choices: today, whether the board asks
+      // before a stage move.
+      async personSettings({ personId }) {
+        return readPersonSettings(current().db, personId);
+      },
+
+      async setPersonSetting({ personId, key, value }) {
+        return writePersonSetting(current().db, personId, { key, value }, { now: now() });
       },
 
       // The fields a job gives the invoice Reference: the patient name, when
