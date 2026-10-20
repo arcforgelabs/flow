@@ -113,6 +113,7 @@ body:is([data-state="off"], [data-state="error"], [data-state="no-access"]) .fx-
   display: flex; flex-direction: column; gap: 4px; flex: none;
   width: 232px; height: 100vh; padding: 16px 12px 12px;
   background: var(--t-s1); border-right: 1px solid var(--fx-line);
+  transition: width .18s ease;
 }
 .fx-side__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 0 14px 8px; }
 .fx-side__head .fx-brand { min-width: 0; font-size: 19px; }
@@ -658,13 +659,20 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
   .fx-side { flex-direction: row; align-items: center; width: auto; height: 60px; padding: 0 12px; border-right: 0; border-bottom: 1px solid var(--fx-line); }
   .fx-side__head { flex-direction: row-reverse; gap: 6px; padding: 0; }
   .fx-side__head .fx-brand span { display: none; }
-  /* The menu opens as a panel below the bar. */
+  /* The menu is a drawer: it slides in from the left, below the bar, over
+     a dimmed page. A click on the dimmed page closes it (app.js). */
   .fx-nav {
-    display: none; position: absolute; top: 60px; left: 0; right: 0;
-    max-height: calc(100vh - 60px); padding: 4px 12px 12px;
-    background: var(--t-s1); border-bottom: 1px solid var(--fx-line); box-shadow: var(--t-shadow);
+    position: fixed; top: 60px; bottom: 0; left: 0; z-index: 2;
+    width: min(280px, 85vw); padding: 8px 12px 12px;
+    background: var(--t-s1); border-right: 1px solid var(--fx-line); box-shadow: var(--t-shadow);
+    transform: translateX(-100%); visibility: hidden;
+    transition: transform .2s ease, visibility .2s;
   }
-  .fx-shell[data-menu-open] .fx-nav { display: flex; }
+  .fx-shell[data-menu-open] .fx-nav { transform: none; visibility: visible; }
+  .fx-shell[data-menu-open]::after {
+    content: ""; position: fixed; inset: 60px 0 0; z-index: 9;
+    background: rgba(0, 0, 0, .32);
+  }
   .fx-nav__report { margin-top: 8px; }
   .fx-side__end { margin-left: auto; padding: 0; border-top: 0; }
   #user-button { flex: none; }

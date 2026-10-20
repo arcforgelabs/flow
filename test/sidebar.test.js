@@ -18,12 +18,18 @@ test('search.js is served with the other page scripts', () => {
   assert.match(read('../server/ui/app.js'), /import \{ openSearch \} from '\/assets\/ui\/search\.js';/);
 });
 
-test('the menu button folds the sidebar on wide screens and opens it on narrow ones', () => {
+test('the sidebar button folds the sidebar on wide screens and opens it as a drawer on narrow ones', () => {
   const page = read('../server/ui/app-page.js');
   assert.match(page, /<div class="fx-side__head">[\s\S]*id="menu-toggle"[^>]*aria-controls="nav"/);
   const css = read('../server/ui/flow.css');
   assert.match(css, /@media \(min-width: 821px\) \{\n  \.fx-shell\[data-folded\] \.fx-side \{ width: 64px;/);
-  assert.match(css, /\.fx-shell\[data-menu-open\] \.fx-nav \{ display: flex; \}/);
+  // Narrow: a drawer from the left over a dimmed page, not a panel dropping
+  // down; the button shows a sidebar icon, never a hamburger.
+  assert.match(css, /\.fx-shell\[data-menu-open\] \.fx-nav \{ transform: none; visibility: visible; \}/);
+  assert.match(css, /\.fx-shell\[data-menu-open\]::after \{/);
+  const app = read('../server/ui/app.js');
+  assert.match(app, /\$\('menu-toggle'\)\.replaceChildren\(icon\('sidebar'\)\)/);
+  assert.doesNotMatch(app, /M4 6h16M4 12h16M4 18h16/, 'no hamburger icon');
   // Folded, the page names stay for screen readers.
   assert.match(css, /\.fx-shell\[data-folded\] \.fx-nav__label \{ position: absolute; width: 1px;/);
 });
