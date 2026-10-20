@@ -17,9 +17,10 @@ function loadScript({ src, integrity }) {
   });
 }
 
-// "Notify me": the form's email field (Sentry's own words) starts empty and
-// is optional. A person who types an address there asks to hear back; Flow
-// tags the report notify=yes, so the support desk sees it on the task.
+// "Notify me": the form's email field (Sentry's own words) starts with the
+// signed-in person's email. A report sent with an address asks to hear back;
+// Flow tags it notify=yes, so the support desk sees it on the task. A person
+// who clears the field sends notify=no.
 // Sentry's form has no tick box of its own; this keeps to its stock options.
 export function tagNotify(event) {
   if (event?.type !== 'feedback') return;
@@ -71,9 +72,8 @@ export async function startMonitoring({ flow, person }) {
     showBranding: false,
     // Flow already knows who is signed in (setUser below).
     showName: false,
-    // The email field is the opt-in (tagNotify), so it is not filled from
-    // the signed-in person: a key setUser never sets.
-    useSentryUser: { name: 'username', email: 'notify_email' },
+    // The form fills in the signed-in person's name and email (setUser).
+    useSentryUser: { name: 'username', email: 'email' },
     enableScreenshot: true,
     triggerLabel: 'Report a problem',
     formTitle: 'Report a problem',
@@ -102,16 +102,17 @@ export async function startMonitoring({ flow, person }) {
   });
   Sentry.getClient()?.on('beforeSendFeedback', tagNotify);
   // Who reported or met the error, so the lab can follow up.
-  Sentry.setUser({ id: person.id, email: person.email });
+  Sentry.setUser({ id: person.id, email: person.email, username: person.name || undefined });
   const feedback = config.feedback ? Sentry.getFeedback() : null;
   if (!feedback) return null;
-  // One form, made on first use and opened again after that.
+  // A new form each time. Sentry's form keeps a refused screenshot's error
+  // ("Permission denied by user") until the next click, so a reused form
+  // would show it before the person tries again.
   let form = null;
   return async () => {
-    if (!form) {
-      form = await feedback.createForm();
-      form.appendToDom();
-    }
+    form?.removeFromDom();
+    form = await feedback.createForm();
+    form.appendToDom();
     form.open();
   };
 }

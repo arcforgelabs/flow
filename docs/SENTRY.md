@@ -44,8 +44,9 @@ A change in Flow applies at once, with no restart. The adapter has no tables.
   and in the account menu, opens Sentry's feedback form, with an optional screenshot. It shows only while
   Sentry is on and `SENTRY_FEEDBACK` is on.
 - **Notify me.** The form's email field, with Sentry's own label, starts
-  empty and is optional. A person who types an address asks to hear back:
-  the report gets the tag `notify=yes`, else `notify=no`. An issue tracker or
+  with the signed-in person's email and is optional. A report sent with an
+  address asks to hear back: it gets the tag `notify=yes`. A person who
+  clears the field sends `notify=no`. An issue tracker or
   relay can read the tag to know who wants a reply. Sentry's form has no tick
   box of its own; this uses its stock options only.
 - **Who.** Each browser event carries the person's Flow id and email, so the
