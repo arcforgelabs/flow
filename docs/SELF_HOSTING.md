@@ -172,12 +172,20 @@ Flow always keeps one active owner, and nobody changes or removes themself.
 - Someone with a Clerk account made elsewhere still gets no access, and Flow
   stores nothing about them (`403 not_invited`).
 - An owner invites people by email and role, on the People page or with
-  `POST /api/people`. Flow makes the invitee's Clerk account (no password)
-  through Clerk's Backend API. The invitee signs in with Google on that
-  address, and Flow links them by their verified email.
-- Flow sends no invitation email. After an invite, the People page copies
-  a short sign-in message, and **Copy invite** on an invited person copies
-  it again. The owner sends that message to the invitee.
+  `POST /api/people`. Clerk emails the invitation (Clerk's Invitations API,
+  from Clerk's own email sender; no mail setting in Flow). Its link opens
+  this installation's `/sign-in`, where the invitee makes their Clerk
+  account on that address only. Flow links them by their verified email.
+- **Email invite again** on the People page (`POST /api/people/:id/invite`)
+  sends a new invitation to someone who has not signed in yet. An unused
+  Clerk account Flow made for an earlier invitee is removed first, because
+  Clerk does not invite an address that has an account.
+- If Clerk cannot send the email, Flow makes the invitee's Clerk account (no
+  password) instead. The People page then copies a short sign-in message
+  for the owner to send; the invitee signs in with Google on that address.
+- The invitation email comes from Clerk. Its sender and wording are set in
+  the Clerk Dashboard (Customization, Emails, Invitation). The Clerk
+  instance must allow sign-up by invitation (Restricted mode allows it).
 
 With `FLOW_PUBLIC_SIGN_UP=on`, anyone with a verified email can sign up and
 waits as `pending`, with no access, until an owner approves them.

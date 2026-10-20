@@ -275,9 +275,6 @@ a.fx-link:hover, a.fx-link:focus-visible { border-color: var(--t-strong); }
   font-size: 12.5px; font-weight: 700; letter-spacing: .02em;
 }
 .fx-empty { padding: 28px 16px; color: var(--t-dim); text-align: center; }
-.fx-roles { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; margin: 0; font-size: 13.5px; color: var(--t-dim); }
-.fx-roles dt { color: var(--t-strong); font-weight: 600; }
-.fx-roles dd { margin: 0; }
 
 /* ── Integrations ───────────────────────────────────────────────────────── */
 .fx-chip { border: 1px solid var(--fx-line); border-radius: 999px; background: var(--t-paper); color: var(--t-text); }
@@ -928,6 +925,7 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
 .fx-cfm > .fx-notice { margin: 12px 16px 0; }
 .fx-cfm__foot { display: flex; justify-content: space-between; gap: 12px; padding: 12px 16px; border-top: 1px solid var(--fx-line-soft); color: var(--t-dim); font-size: 13px; }
 .fx-pop__item:disabled { opacity: .5; cursor: default; }
+.fx-pop__item[data-tone="danger"], .fx-pop__item[data-tone="danger"] .fx-pop__tick { color: var(--t-danger); }
 .fx-pop__item .fx-lucide { width: 15px; height: 15px; }
 @media (max-width: 720px) {
   .fx-cfm { grid-template-columns: minmax(0, 1fr) 40px 40px; }

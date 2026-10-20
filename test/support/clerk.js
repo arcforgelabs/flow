@@ -2,10 +2,10 @@
 // Synthetic people only.
 export const TEST_PUBLISHABLE_KEY = `pk_test_${Buffer.from('clerk.example.test$').toString('base64')}`;
 
-export function fakeClerk({ now = Date.now } = {}) {
+export function fakeClerk({ now = Date.now, inviteFails = false } = {}) {
   const users = new Map();
   const sessions = new Map();
-  const calls = { authenticate: 0, created: [] };
+  const calls = { authenticate: 0, created: [], invited: [], deleted: [] };
   let counter = 0;
 
   function addUser({ id = `user_${++counter}`, email, verified = true, google = false, password = true }) {
@@ -15,6 +15,7 @@ export function fakeClerk({ now = Date.now } = {}) {
       emailAddresses: [{ id: `idn_${id}`, emailAddress: email, verification: { status: verified ? 'verified' : 'unverified' } }],
       externalAccounts: google ? [{ provider: 'oauth_google', emailAddress: email, verification: { status: 'verified' } }] : [],
       passwordEnabled: password,
+      lastSignInAt: null,
       firstName: null,
       lastName: null,
     });
@@ -26,6 +27,7 @@ export function fakeClerk({ now = Date.now } = {}) {
   // is minutes since a second factor (-1: none).
   function signIn(userId, { expiresIn = 600, secondFactorAge = -1 } = {}) {
     const token = `sess_${userId}_${++counter}`;
+    if (users.has(userId)) users.get(userId).lastSignInAt = now();
     sessions.set(token, {
       userId,
       sessionClaims: { sub: userId, exp: Math.floor(now() / 1000) + expiresIn },
@@ -61,6 +63,17 @@ export function fakeClerk({ now = Date.now } = {}) {
       // Made by the backend: verified email, no password. Signing in with
       // Google on that address later joins this account.
       return addUser({ email, google: true, password: false });
+    },
+    async deleteUser(id) {
+      calls.deleted.push(id);
+      users.delete(id);
+    },
+    // Clerk would email a link and make the account when the invitee takes it
+    // up; the fake makes it at once (no password, nothing connected).
+    async inviteByEmail({ email, redirectUrl }) {
+      if (inviteFails) throw new Error('Clerk is unavailable');
+      calls.invited.push({ email, redirectUrl });
+      addUser({ email, password: false });
     },
   };
 }

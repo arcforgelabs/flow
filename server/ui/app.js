@@ -13,7 +13,7 @@ import { renderInvoice, renderInvoiceList } from '/assets/ui/invoicing.js';
 import { automationSection } from '/assets/ui/automations.js';
 import { renderInvoicingSettings, sendModeSection } from '/assets/ui/invoicing-settings.js';
 import { renderPriceList } from '/assets/ui/price-list.js';
-import { renderCustomFields } from '/assets/ui/custom-fields.js';
+import { lucide, renderCustomFields } from '/assets/ui/custom-fields.js';
 import { renderJobs } from '/assets/ui/jobs.js';
 import { startMonitoring } from '/assets/ui/monitoring.js';
 import { openSearch } from '/assets/ui/search.js';
@@ -59,6 +59,7 @@ function mountClerk(kind, element, options = {}) {
   // The "Manage account" modal does not inherit the button's appearance.
   if (kind === 'userButton') props.userProfileProps = { ...options.userProfileProps, appearance: clerkAppearance('modal') };
   if (kind === 'signIn') Clerk.mountSignIn(element, props);
+  else if (kind === 'signUp') Clerk.mountSignUp(element, props);
   else if (kind === 'userButton') Clerk.mountUserButton(element, props);
   else if (kind === 'profile') Clerk.mountUserProfile(element, props);
   mounted.set(element, { kind, options });
@@ -69,6 +70,7 @@ function unmountClerk(element) {
   if (!entry) return;
   const Clerk = window.Clerk;
   if (entry.kind === 'signIn') Clerk.unmountSignIn(element);
+  else if (entry.kind === 'signUp') Clerk.unmountSignUp(element);
   else if (entry.kind === 'userButton') Clerk.unmountUserButton(element);
   else if (entry.kind === 'profile') Clerk.unmountUserProfile(element);
   mounted.delete(element);
@@ -181,12 +183,13 @@ function statusPill(person) {
   if (person.status === 'pending') return h('span', { class: 'fx-status', 'data-tone': 'warn' }, 'Waiting for approval');
   if (person.status === 'disabled') return h('span', { class: 'fx-status', 'data-tone': 'mute' }, 'Turned off');
   if (person.invited) return h('span', { class: 'fx-status', 'data-tone': 'info' }, 'Invited');
-  return h('span', { class: 'fx-status', 'data-tone': 'success' }, 'Active');
+  // Active is the usual state, so it shows nothing.
+  return null;
 }
 
 function roleSelect(value, attrs = {}) {
   return h('select', { class: 'fx-select', ...attrs },
-    ['owner', 'admin', 'staff'].map((role) => h('option', { value: role, selected: role === value }, ROLE_LABEL[role])));
+    ['owner', 'admin', 'staff'].map((role) => h('option', { value: role, selected: role === value, title: ROLE_HINT[role] }, ROLE_LABEL[role])));
 }
 
 // ── Views ──────────────────────────────────────────────────────────────────
@@ -363,6 +366,13 @@ function renderSignedOut() {
   document.body.dataset.state = 'signed-out';
   document.title = 'Sign in · Flow';
   const panel = $('sign-in');
+  // The link in an invitation email (POST /api/people) carries a Clerk
+  // ticket: the invitee makes their account here, on that address only.
+  if (new URLSearchParams(location.search).has('__clerk_ticket')) {
+    $('sign-in-note').textContent = 'Finish your invitation to Flow.';
+    mountClerk('signUp', panel, { forceRedirectUrl: '/sign-in', signInUrl: '/sign-in' });
+    return;
+  }
   $('sign-in-note').textContent = config.publicSignUp
     ? 'Sign in, or ask for access with your work email.'
     : 'Sign in with the account you were invited with.';
@@ -442,13 +452,12 @@ function renderNoAccess(error) {
 // removes. Managing people needs a verified owner sign-in (/api/me says).
 async function renderPeople(main) {
   const canManage = Boolean(me.ownerActions?.allowed);
-  const invite = h('button', { class: 'fx-btn fx-btn--primary', type: 'button', disabled: !canManage, onclick: () => invitePerson() }, 'Invite someone');
+  const invite = h('button', { class: 'fx-btn fx-btn--primary', type: 'button', disabled: !canManage, onclick: () => invitePerson() }, 'Invite');
   const tableHost = h('div', { class: 'fx-panel' }, h('div', { class: 'fx-skeleton' }));
   main.append(...[
-    pageHeader('People', { subtitle: 'Who can sign in to Flow, and what each person can do.', actions: [invite] }),
+    pageHeader('People', { actions: [invite] }),
     canManage ? null : notice('Managing people needs a verified owner sign-in: Google Workspace on the owner domain with no password, or a second factor.', 'warn', 'Read only.'),
     tableHost,
-    h('dl', { class: 'fx-roles' }, ['owner', 'admin', 'staff'].flatMap((role) => [h('dt', {}, ROLE_LABEL[role]), h('dd', {}, ROLE_HINT[role])])),
   ].filter(Boolean));
   if (!canManage) {
     tableHost.replaceChildren(h('p', { class: 'fx-empty' }, 'The people list opens after a verified owner sign-in.'));
@@ -469,10 +478,32 @@ async function refreshPeople(host) {
   const rows = people.map((person) => personRow(person, host));
   host.replaceChildren(...[
     waiting ? notice(`${waiting} ${waiting === 1 ? 'person is' : 'people are'} waiting for approval.`, 'info') : null,
-    h('table', { class: 'fx-table' },
-      h('thead', {}, h('tr', {}, h('th', {}, 'Person'), h('th', {}, 'Role'), h('th', {}, 'Access'), h('th', { class: 'fx-table__actions' }, h('span', { class: 'fx-sr' }, 'Actions')))),
+    h('table', { class: 'fx-table fx-people' },
+      h('thead', { class: 'fx-sr' }, h('tr', {}, h('th', {}, 'Person'), h('th', {}, 'Role'), h('th', {}, 'Access'), h('th', {}, 'Actions'))),
       h('tbody', {}, rows)),
   ].filter(Boolean));
+}
+
+let peopleMenus = 0;
+
+// A row's ⋯ menu, as on the Custom fields page.
+function rowMenu(label, items) {
+  const id = `fx-people-menu-${++peopleMenus}`;
+  const button = h('button', { class: 'fx-cfm__more', type: 'button', 'aria-label': label, popovertarget: id, 'aria-haspopup': 'menu', 'aria-expanded': 'false' }, lucide(h, 'ellipsis'));
+  const panel = h('div', { class: 'fx-pop', id, popover: 'auto', role: 'menu' });
+  panel.addEventListener('toggle', (event) => {
+    button.setAttribute('aria-expanded', String(event.newState === 'open'));
+    if (event.newState !== 'open') return;
+    const close = () => panel.hidePopover();
+    panel.replaceChildren(...items.map((entry) => (entry === '-'
+      ? h('div', { class: 'fx-pop__sep' })
+      : h('button', { type: 'button', class: 'fx-pop__item', role: 'menuitem', 'data-tone': entry.tone, onclick: () => { close(); entry.run(); } },
+        h('span', { class: 'fx-pop__tick' }, lucide(h, entry.icon)), h('span', {}, entry.text)))));
+    const at = button.getBoundingClientRect();
+    panel.style.top = `${Math.round(at.bottom + 6)}px`;
+    panel.style.left = `${Math.round(Math.max(8, Math.min(at.right - panel.offsetWidth, innerWidth - panel.offsetWidth - 8)))}px`;
+  });
+  return [button, panel];
 }
 
 function personRow(person, host) {
@@ -493,35 +524,28 @@ function personRow(person, host) {
       h('span', { class: 'fx-person__name' }, person.name || person.email, self ? h('span', { class: 'fx-tag' }, 'You') : null),
       person.name ? h('span', { class: 'fx-person__email' }, person.email) : null));
   const role = self
-    ? h('span', {}, ROLE_LABEL[person.role])
+    ? h('span', { title: ROLE_HINT[person.role] }, ROLE_LABEL[person.role])
     : roleSelect(person.role, {
       'aria-label': `Role for ${person.email}`,
+      title: ROLE_HINT[person.role],
       onchange: (event) => act(() => patch({ role: event.target.value }), `${person.email} is now ${ROLE_LABEL[event.target.value].toLowerCase()}.`),
     });
   const actions = [];
-  if (!self && person.invited && person.status === 'active') {
-    actions.push(h('button', {
-      class: 'fx-btn fx-btn--sm',
-      type: 'button',
-      title: 'Copy a sign-in message to send to them. Flow sends no email.',
-      onclick: async () => {
-        if (await copyInvite(person)) toast('Invite message copied. Paste it into an email to them.', 'success');
-        else toast(inviteMessage(person), 'info');
-      },
-    }, 'Copy invite'));
-  }
   if (!self) {
     if (person.status === 'pending') {
       actions.push(h('button', { class: 'fx-btn fx-btn--primary fx-btn--sm', type: 'button', onclick: () => act(() => patch({ status: 'active' }), `${person.email} can sign in.`) }, 'Approve'));
-    } else if (person.status === 'active') {
-      actions.push(h('button', { class: 'fx-btn fx-btn--sm', type: 'button', onclick: () => act(() => patch({ status: 'disabled' }), `${person.email} is turned off.`) }, 'Turn off'));
-    } else {
-      actions.push(h('button', { class: 'fx-btn fx-btn--sm', type: 'button', onclick: () => act(() => patch({ status: 'active' }), `${person.email} is turned on.`) }, 'Turn on'));
     }
-    actions.push(h('button', {
-      class: 'fx-btn fx-btn--ghost fx-btn--danger fx-btn--sm',
-      type: 'button',
-      onclick: async () => {
+    const items = [];
+    if (person.invited && person.status === 'active') {
+      items.push({ icon: 'mail', text: 'Email invite again', run: () => act(() => flow(`/api/people/${person.id}/invite`, { method: 'POST' }), `Invite emailed to ${person.email}.`) });
+    }
+    if (person.status === 'active') items.push({ icon: 'circle-off', text: 'Turn off', run: () => act(() => patch({ status: 'disabled' }), `${person.email} is turned off.`) });
+    if (person.status === 'disabled') items.push({ icon: 'circle-check', text: 'Turn on', run: () => act(() => patch({ status: 'active' }), `${person.email} is turned on.`) });
+    items.push('-', {
+      icon: 'trash-2',
+      text: 'Remove',
+      tone: 'danger',
+      run: async () => {
         const ok = await dialog({
           title: `Remove ${person.email}?`,
           body: h('p', {}, 'They can no longer sign in to Flow. Records they made stay.'),
@@ -530,7 +554,8 @@ function personRow(person, host) {
         });
         if (ok) await act(() => flow(`/api/people/${person.id}`, { method: 'DELETE' }), `${person.email} is removed.`);
       },
-    }, 'Remove'));
+    });
+    actions.push(...rowMenu(`More for ${person.email}`, items));
   }
   return h('tr', {},
     h('td', {}, who),
@@ -918,8 +943,8 @@ function xeroConnection(organisations, canChange) {
   return h('div', {}, h('h2', { class: 'fx-int-section__title' }, 'Xero organisation'), host);
 }
 
-// Flow sends no email, so the owner sends each invitee this message. It
-// names the sign-in address and the email to sign in with.
+// When Clerk cannot email an invitation, the owner sends the invitee this
+// message instead. It names the sign-in address and the email to use.
 function inviteMessage(person) {
   return [
     'You have access to Flow.',
@@ -938,6 +963,7 @@ async function copyInvite(person) {
 }
 
 async function invitePerson() {
+  const hint = h('p', { class: 'fx-dim' }, ROLE_HINT.staff);
   const data = await dialog({
     title: 'Invite someone',
     body: h('div', { class: 'fx-fields' },
@@ -946,17 +972,16 @@ async function invitePerson() {
         h('input', { class: 'fx-input', name: 'email', type: 'email', required: true, autocomplete: 'off', placeholder: 'name@example.com' })),
       h('label', { class: 'fx-field' },
         h('span', { class: 'fx-label' }, 'Role'),
-        roleSelect('staff', { name: 'role' })),
-      h('p', { class: 'fx-dim' }, 'They sign in with this email. Flow prepares their sign-in account but sends no email: send them the invite message yourself.')),
-    confirm: 'Invite',
+        roleSelect('staff', { name: 'role', onchange: (event) => { hint.textContent = ROLE_HINT[event.target.value]; } })),
+      hint),
+    confirm: 'Send invite',
   });
   if (!data) return;
   try {
-    const { person } = await flow('/api/people', { method: 'POST', body: JSON.stringify({ email: data.get('email'), role: data.get('role') }) });
-    const copied = await copyInvite(person);
-    toast(copied
-      ? `${person.email} is invited. The invite message is copied: paste it into an email to them.`
-      : `${person.email} is invited. Flow sends no email: use Copy invite and send it to them.`, 'success');
+    const { person, invite } = await flow('/api/people', { method: 'POST', body: JSON.stringify({ email: data.get('email'), role: data.get('role') }) });
+    if (invite?.emailed) toast(`Invite emailed to ${person.email}.`, 'success');
+    else if (await copyInvite(person)) toast(`${person.email} is invited, but the email could not be sent. A sign-in message is copied: paste it into an email to them.`, 'info');
+    else toast(`${person.email} is invited, but the email could not be sent. Send them: ${inviteMessage(person)}`, 'info');
   } catch (error) {
     toast(error.message, 'danger');
   }

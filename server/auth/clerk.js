@@ -8,6 +8,9 @@ import { normaliseEmail } from './people.js';
 //   getUser(clerkUserId)     the Clerk user (emails, external accounts)
 //   findUserIdByEmail(email) the Clerk user with this email, or null
 //   createUser({ email })    a Clerk account with no password, for an invitee
+//   deleteUser(clerkUserId)  removes a Clerk account (an unused invitee's only)
+//   inviteByEmail({ email, redirectUrl })
+//                            Clerk emails an invitation link to `email`
 //
 // The real one is loaded only when FLOW_AUTH=clerk.
 export async function loadClerkAdapter({ secretKey, publishableKey, proxyUrl, authorizedParties = [] }) {
@@ -36,7 +39,39 @@ export async function loadClerkAdapter({ secretKey, publishableKey, proxyUrl, au
       const user = await client.users.createUser({ emailAddress: [email], skipPasswordRequirement: true });
       return user.id;
     },
+    async deleteUser(clerkUserId) {
+      await client.users.deleteUser(clerkUserId);
+    },
+    // Clerk sends the email. Its link opens `redirectUrl` with a sign-up
+    // ticket; a pending invitation for the same address is replaced.
+    async inviteByEmail({ email, redirectUrl }) {
+      await client.invitations.createInvitation({ emailAddress: email, redirectUrl, notify: true, ignoreExisting: true });
+    },
   };
+}
+
+// A Clerk account nobody has used: never signed in, no password and no
+// connected account. Flow made it for an invitee (ensureClerkAccount).
+export function unusedClerkAccount(clerkUser) {
+  return Boolean(clerkUser)
+    && !clerkUser.lastSignInAt
+    && clerkUser.passwordEnabled === false
+    && !(Array.isArray(clerkUser.externalAccounts) && clerkUser.externalAccounts.length);
+}
+
+// Has Clerk email an invitation to `email`. Clerk does not invite an address
+// that already has an account, so an unused account Flow made earlier is
+// removed first; the invitee's account is made when they take up the
+// invitation. An address with a used account gets no email: that person can
+// already sign in. Returns { emailed }.
+export async function sendClerkInvitation(clerk, email, redirectUrl) {
+  const existing = await clerk.findUserIdByEmail(email);
+  if (existing) {
+    if (!unusedClerkAccount(await clerk.getUser(existing))) return { emailed: false };
+    await clerk.deleteUser(existing);
+  }
+  await clerk.inviteByEmail({ email, redirectUrl });
+  return { emailed: true };
 }
 
 // An invitee needs a Clerk account before their first sign-in, because with
