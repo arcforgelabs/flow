@@ -78,6 +78,7 @@ workspace live credentials.
 | `SEAZONA_CIRCUIT_FAILURES`, `SEAZONA_CIRCUIT_WINDOW_MS` | Failed calls inside the window that open the circuit. Defaults 5 and 10 minutes. |
 | `SEAZONA_CIRCUIT_PAUSE_MS` | The first pause when the circuit opens. It doubles after each failed probe, to at most 6 hours. Default 5 minutes. |
 | `SEAZONA_DAILY_FAILURE_BUDGET` | Failed calls allowed in one UTC day. When they are spent, calls stop until the next day. Default 50. |
+| `SEAZONA_HISTORY_CALLS_PER_RUN`, `SEAZONA_HISTORY_CADENCE_MS`, `SEAZONA_HISTORY_PAGE_SIZE` | Calls the history backfill makes per run, how often it runs, and orders per list page. Defaults 10, 2 minutes and 500. It calls Seazona only while a person has started one. |
 
 The code holds no Seazona host or account. Every address and credential is
 configuration.
@@ -167,6 +168,7 @@ another.
 | `orders_active` | Each open order Flow already knows, oldest first, 25 a run. "Complete" stays open until Seazona says it shipped. | 5 minutes |
 | `clients` | The whole list the first time, then changes since the cursor, then each changed client's detail | 30 minutes |
 | `products`, `users` | The whole list | Daily |
+| `history` | Past orders, one UTC day at a time, a few calls a run (History import, below) | Every 2 minutes, only while a backfill runs |
 
 A list row whose list fields did not change costs no detail read. Seazona
 documents no paging, so a list exactly `SEAZONA_LIST_CAP` long may be cut off:
@@ -264,6 +266,179 @@ per line. An order deleted in Seazona sends its obligation to review
 The ledger's "paid" write-back to Seazona is not built: this adapter only
 reads.
 
+## History import
+
+The API sync reads forward from the day it started. The history import brings
+in the years before that, so Flow holds the lab's full job history. It has
+two sources, and both end in the same batches, reconciliation and history
+table:
+
+- **The API backfill** (the main source, below). It reads every past order
+  from the Seazona API. Each order it reads is a batch row: the record of
+  what the API confirmed.
+- **A CSV export** (parked). Seazona's help pages document no export
+  format, so this path is only for a file a person has. It is not built
+  out further unless the API backfill cannot do the job.
+
+The earlier app's own links from orders to Xero invoices are already in
+`prior_links` (imported at start); the matcher uses them as evidence for
+each history job (`docs/JOB_INVOICE_LINKS.md`). The earlier app read only
+30 days of orders, so its archive is not a full history.
+
+### The API backfill
+
+An owner or admin starts it: `POST /api/seazona/history/backfill` with
+`{ "from": "2019-01-01" }` (and `through`, by default the day before the
+recent-order lane's window). The `history` lane then:
+
+1. lists orders from the next day (`GET orders/?ordered=<day>`, with `page`
+   and `pageSize` up to 500). Seazona's guide says the list answers the
+   orders placed on or after that time, oldest first, in stable pages; the
+   recent-order lane was built when it answered one day. The walk works
+   either way: a full page goes on to the next page, a short page to the
+   next day, and an order placed after `through` ends the walk unread;
+2. leaves out the orders the live copy already holds;
+3. reads each other order (`GET orders/<id>`), maps it as the live lanes do,
+   and stages it as job `case:<order id>` in the backfill's batch;
+4. reconciles each staged job at once, and writes a new one to Flow's
+   history; a job that needs a person waits in the batch.
+
+It makes at most `SEAZONA_HISTORY_CALLS_PER_RUN` calls a run (default 10,
+at most 25), every `SEAZONA_HISTORY_CADENCE_MS` (default 2 minutes), through
+the same rate governor, circuit and failed-call budget as the live lanes.
+At the default, about 300 calls an hour. A 404 means the order is gone and
+is skipped. Other failed reads are retried later in the walk and quarantined
+after `SEAZONA_ORDER_QUARANTINE_FAILURES`. A refused or halted call stops
+the lane as it stops the others. The lane keeps its place (day, page and
+orders still to read) in its cursor, so it resumes after a restart. When
+the last day is done, the batch waits like an upload for a person to decide
+what is left. `POST /api/seazona/history/backfill/stop` ends it early.
+`GET /api/seazona/history` shows `backfill`: the next day, days done, the
+latest order day reached, orders read and orders still to read.
+
+### CSV upload
+
+The code is in `server/integrations/seazona/history/`; the routes are under
+`/api/seazona/history` (`routes.js`). There is no screen yet.
+
+```mermaid
+flowchart LR
+  file[Seazona CSV export] -- upload --> stage[Staged batch<br/>rows and jobs]
+  stage --> rec[Reconcile]
+  mirror[API copy<br/>orders, invoices, clients] --> rec
+  hist[Flow history] --> rec
+  rec -- new --> apply
+  rec -- same --> skip[Skipped]
+  rec -- needs a person or changed --> person[Person decides]
+  person -- import --> apply[Apply]
+  person -- skip --> skip
+  apply --> hist
+  hist -- pullHistoryJobs --> core[Core: ledger and matcher]
+```
+
+1. **Upload.** An owner or admin posts the file
+   (`POST /history/batches`, a `text/csv` body with `?fileName=`, or JSON
+   `{ csv, fileName, columns }`, at most 25 MB and 200,000 rows). Flow
+   guesses each column from its header (below); `columns` corrects a guess
+   (`{ "doctorName": "Client Name" }`). A file without a practice, an item,
+   an amount and a date is refused, and the answer lists the headers it has.
+   The same file uploaded again answers its first batch.
+2. **Read.** Each row is read into Flow fields. A row with a bad or missing
+   date, practice, item or amount joins no job and is listed with its
+   problems. Columns Flow does not know are listed by name; their values are
+   never stored. The patient column groups rows into jobs and is stored only
+   when `SEAZONA_KEEP_PATIENT_REFERENCE` is on.
+3. **Group.** Rows with the same invoice number are one job; with no invoice
+   number, the same case number; with neither, the same date, practice,
+   doctor and patient, as the earlier app grouped them. A job with no number
+   is keyed by its content without the patient, so no patient value or hash
+   is kept.
+4. **Reconcile.** Each job is compared with what Flow holds. It reads Flow's
+   database only.
+5. **Decide.** A person settles each job that waits:
+   `POST /history/batches/:id/decisions` with
+   `{ decisions: [{ jobKey, decision: "import" | "skip" | null, clientId? }] }`.
+6. **Apply.** `POST /history/batches/:id/apply` reconciles once more, then
+   writes each new job and each job a person chose to import into
+   `seazona_history_jobs`. A batch is applied once. Nothing in the API copy
+   changes.
+
+| Finding | Blocks | Meaning |
+| --- | --- | --- |
+| `mixed_company`, `mixed_doctorName` | Yes | One invoice number carries two practices or doctors |
+| `conflicting_totals` | Yes | The job's rows give different invoice totals |
+| `total_differs_from_lines` | No | The total is not the lines, with or without GST |
+| `differs_from_api_copy` | No | The API copy holds the same invoice or order at another amount |
+| `invoice_has_several_orders` | No | The API copy has more than one order on the invoice |
+| `api_copy_ambiguous` | Yes | With no number, more than one order in the API copy fits |
+| `client_unknown` | No | No Seazona client has the practice name; the job imports without one |
+| `client_ambiguous` | Yes | More than one Seazona client has the name; the person picks `clientId` |
+| `differs_from_earlier_import` | Yes | An applied batch holds the same job with other values (outcome `changed`) |
+
+Outcomes: `new` (apply writes it), `same` (already in Flow's history,
+skipped), `changed` and `needs_person` (wait for a decision). A difference
+is a finding, never a silent change.
+
+The headers Flow reads (`GET /history/columns`). They compare without case,
+spaces or punctuation:
+
+| Field | Headers |
+| --- | --- |
+| Invoice number | Invoice #, Invoice Number, Invoice No |
+| Case number | Case #, Case Number, Order #, Order Number, Order ID |
+| Dates | Invoice Date or Date; Due Date; Ship Date or Date Shipped |
+| Practice | Company Name, Company, Practice, Account Name |
+| Account number | Account #, Account Number |
+| Doctor | Doctor Name, Doctor, Dentist, Practitioner |
+| Patient | Patient, Patient Name |
+| Status | Status, Case Status |
+| Line | Item, Product, Description, Service; Item Code or Code; Qty or Quantity; Tooth |
+| Line amount | Item Amount, Amount, Line Amount, Line Total, Price |
+| Line taxable | Item Taxable, Taxable (Yes/No) |
+| Invoice total | Total, Invoice Total |
+
+"Client Name" is not guessed: in Seazona it can mean the doctor or the
+practice, so map it with `columns`.
+
+`pullHistoryJobs(cursor)` gives the applied jobs as ledger jobs marked
+`historical`, oldest change first. A job the API copy also holds uses the
+same order id as `sourceJobRef`, so the two are one job; others use the case
+number, else `history:<job key>`. `health()` shows `history`: jobs held,
+how many the API copy also has, the first and last job date, and open
+batches.
+
+### History jobs in the ledger
+
+The pipeline reads `pullHistoryJobs` after the live feed
+(`server/core/pipeline.js`, `ingestHistory`; `server/core/history.js`):
+
+| Case | What happens |
+| --- | --- |
+| The ledger has no job with that order id | The job is made and held: `hold_state` `held`, reason `history_import`, actor `import:seazona_history`. A held job never drafts. |
+| The live feed made the job first | Nothing changes: not its lines, hold, ready mark or invoice. |
+| History made the job, then the live feed reads it | The live read updates its lines. The hold stays. |
+| A later import changes a job only history has reported | The job takes the new lines and stays held. |
+
+The matcher runs on held jobs too, so each history job gets its accounting
+state. `GET /api/seazona/history/ledger` lists the held history jobs by that
+state; `?state=needs_person` gives `not_found`, `ambiguous` and `conflict`.
+A matched job stays held: it is history and already invoiced. Only a
+person's release (`POST /api/seazona/history/ledger/:obligationId/release`)
+moves a job into drafting. The Jobs board and `GET /api/invoicing/jobs`
+leave held history jobs out; `/jobs?history=include` shows them, and its
+`counts.history` gives how many there are.
+
+### Issues on job cards
+
+A history job a person must decide (outcome `needs_person`, or `changed`
+with no decision) is an issue on the card of the job it belongs to: the
+order with that id on the Jobs board. The adapter's `jobIssues` gives each
+issue as one short phrase (for example "Seazona client is unclear") and a
+link to the Seazona integration's reconciliation,
+`/integrations/seazona?batch=<id>&job=<job key>`. A person's decision there
+clears the issue: the board reads issues again each time. `health()` shows
+`history.waitingForPerson`, the count for the integration's card.
+
 ## Health
 
 `health()` reads Flow's database only; it never calls Seazona. `GET /health`
@@ -331,6 +506,10 @@ installation-wide.
 | `seazona_lane_state` | Each lane's cursor, next run, status and last failure |
 | `seazona_order_read_failures` | Failed reads per order, and quarantine |
 | `seazona_record_read_failures` | Failed detail reads per invoice or client, and quarantine (issue #101) |
+| `seazona_history_batches` | Each uploaded CSV export: its columns, status and counts |
+| `seazona_history_rows` | Each row of an upload as Flow read it, and its problems |
+| `seazona_history_batch_jobs` | Each job of an upload: what reconciliation found and what a person decided |
+| `seazona_history_jobs` | Flow's own record of past work from applied uploads |
 
 To change them, edit `server/integrations/seazona/schema.js` and run:
 

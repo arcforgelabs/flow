@@ -6,7 +6,7 @@
 //   DATABASE_URL=postgres://… FLOW_INTEGRATIONS=seazona SEAZONA_MODE=sandbox … \
 //     node server/integrations/seazona/sync-once.js [lane …]
 //
-// Lanes: invoices, orders_recent, orders_active, clients, products, users.
+// Lanes: invoices, orders_recent, orders_active, clients, products, users, history.
 // None named: all of them.
 import { openDatabase } from '../../db/index.js';
 import { resolveEnabledIntegrations } from '../index.js';

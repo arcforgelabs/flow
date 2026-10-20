@@ -9,6 +9,7 @@ import {
   orderListSignature,
   text,
 } from './map.js';
+import { runHistoryBackfill } from './history/backfill.js';
 import { seazonaOrders } from './schema.js';
 import {
   claimLane,
@@ -38,6 +39,8 @@ import {
 //   clients        changed clients since a cursor, every 30 min
 //   products       the product list, daily
 //   users          the lab user list, daily
+//   history        past orders, a few calls per run, only while a person
+//                  has started a backfill (history/backfill.js)
 //
 // Issue #12 holds for every order read: a 404 marks the order deleted in
 // Seazona, an empty answer is a failure, each failure is recorded per order
@@ -51,7 +54,7 @@ import {
 // only after a person saves the settings or Flow restarts on a new release.
 // Calls the governor stopped (SeazonaCallsStopped) wait out its pause.
 
-export const LANES = Object.freeze(['invoices', 'orders_recent', 'orders_active', 'clients', 'products', 'users']);
+export const LANES = Object.freeze(['invoices', 'orders_recent', 'orders_active', 'clients', 'products', 'users', 'history']);
 
 const DAY_MS = 24 * 60 * 60_000;
 const MAX_REPORTED = 25;
@@ -376,6 +379,7 @@ const laneRuns = {
     return { ...result, cursorTime: result.anyFailed ? ctx.state?.cursorTime ?? null : at, since: since || null };
   },
 
+  history: (ctx) => runHistoryBackfill(ctx, { isLaneLevel, describeReadFailure, emptyResponse, LaneError }),
   products: (ctx) => syncReference(ctx, 'products'),
   users: (ctx) => syncReference(ctx, 'users'),
 };
