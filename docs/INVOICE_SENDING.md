@@ -73,6 +73,10 @@ One press, on the Ready tab, by an owner or admin:
    not in Xero yet, red out of step with Xero. A dashed grey icon means no
    link. The Xero icon shows on finalised and void invoices; its title gives
    Xero's number and state. An icon with a link opens the record there.
+8. One invoice's page has a **Linked** card with the same systems: the work
+   system row gives the order number, the accounting row gives Xero's number
+   and state, and each has **Open**. A separate Xero card shows only when
+   Xero differs from what Flow sent.
 
 With no accounting system on, the button issues the ready drafts only.
 
