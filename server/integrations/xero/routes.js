@@ -81,6 +81,14 @@ export const handle = (log, fn) => async (req, res) => {
 
 // `messagePage` draws the callback's answer in the installation's design
 // system (server/ui/page.js); the server's app passes it.
+// What the Xero page says about calls for one connection: stopped until a
+// person connects again (a refused connection or resource), and since when.
+export function callsState(status) {
+  const resources = status.stoppedResources.map((r) => r.resource);
+  const since = status.haltedAt ?? status.stoppedResources.map((r) => r.at).filter(Boolean).sort()[0] ?? null;
+  return { stopped: Boolean(status.haltedReason) || resources.length > 0, all: Boolean(status.haltedReason), resources, since };
+}
+
 export function createXeroRouter({ db, personAuth, runtime, log = console, messagePage = (options) => themedMessagePage({ ...options, defaultFamily: DEFAULT_FAMILY }) }) {
   const page = (title, text, tone) => messagePage({ title, text, tone });
   const { settings } = runtime;
@@ -106,6 +114,7 @@ export function createXeroRouter({ db, personAuth, runtime, log = console, messa
       connected: Boolean(connection && connection.mode === settings.mode),
       connection: describeConnection(connection),
       rateLimit: connection ? runtime.governor.status(connection.tenantId) : null,
+      calls: connection ? callsState(await runtime.guardFor(db).status(connection.tenantId)) : null,
       lastSync: await lastSync(db, organisationId),
     });
   }));

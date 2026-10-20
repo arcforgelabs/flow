@@ -9,6 +9,7 @@ import { createDraftInvoice } from '../server/core/invoices.js';
 import { openReview, resolveReviewFor } from '../server/core/review.js';
 import { guardAlerts } from '../server/integrations/call-guard.js';
 import { createRegistry } from '../server/integrations/port.js';
+import { callsState } from '../server/integrations/xero/routes.js';
 import { fakeClerk, request, TEST_PUBLISHABLE_KEY } from './support/clerk.js';
 import { freshDatabase, skipWithoutDatabase } from './support/db.js';
 
@@ -26,6 +27,13 @@ test('a guard makes an alert only for a stop that a person must clear', () => {
   const stopped = guardAlerts('Books', { stoppedResources: [{ resource: 'Payments', at: 't1' }] }, { fix: 'Save the settings.' });
   assert.deepEqual(stopped.map((a) => [a.id, a.members]), [['resources-stopped', ['Payments:t1']]]);
   assert.match(stopped[0].title, /for Payments\. Flow stopped those calls\. Save the settings\.$/);
+});
+
+test('the Xero page says calls are stopped, and since when', () => {
+  assert.deepEqual(callsState({ haltedReason: null, haltedAt: null, stoppedResources: [] }), { stopped: false, all: false, resources: [], since: null });
+  assert.deepEqual(callsState({ haltedReason: 'auth', haltedAt: 't1', stoppedResources: [] }), { stopped: true, all: true, resources: [], since: 't1' });
+  assert.deepEqual(callsState({ haltedReason: null, haltedAt: null, stoppedResources: [{ resource: 'Payments', at: 't3' }, { resource: 'Items', at: 't2' }] }),
+    { stopped: true, all: false, resources: ['Payments', 'Items'], since: 't2' });
 });
 
 describe('quiet alerts against PostgreSQL', { skip: skipWithoutDatabase }, () => {
@@ -134,6 +142,14 @@ describe('quiet alerts against PostgreSQL', { skip: skipWithoutDatabase }, () =>
     assert.deepEqual(res.body.alerts.map((a) => [a.key, a.tone]), [['integrations:books:calls-stopped', 'danger'], ['integrations:books:other', 'warn']]);
     assert.deepEqual(res.body.alerts[0].action, { label: 'Open Books', href: '/integrations/books' });
     assert.deepEqual((await call('?page=integrations', staffToken)).body.alerts, []);
+    // An integration's own page shows only its alerts; `danger` stays true after a dismiss.
+    assert.equal((await call('?page=integrations&scope=books', ownerToken)).body.alerts.length, 2);
+    assert.deepEqual((await call('?page=integrations&scope=other', ownerToken)).body, { ok: true, alerts: [], danger: false });
+    assert.equal((await call('?page=integrations&scope=Bad!', ownerToken)).status, 400);
+    await call('/dismiss', ownerToken, { method: 'POST', body: { key: 'integrations:books:calls-stopped' } });
+    const after = (await call('?page=integrations&scope=books', ownerToken)).body;
+    assert.deepEqual(after.alerts.map((a) => a.key), ['integrations:books:other']);
+    assert.equal(after.danger, true);
     // Staff cannot dismiss what they cannot see.
     assert.deepEqual((await call('/dismiss', staffToken, { method: 'POST', body: { key: 'integrations:books:calls-stopped' } })).body.dismissed, false);
     booksAlerts = [];
