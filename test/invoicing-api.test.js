@@ -454,7 +454,7 @@ describe('invoicing API', { skip: skipWithoutDatabase }, () => {
 
     const refused = await request(appWithoutCheck, `/api/invoicing/invoices/${invoice.id}/issue`, { token: ownerToken, method: 'POST', body: { organisationId: lab.id } });
     assert.equal(refused.status, 409);
-    assert.match(refused.body.error, /the job changed after its invoice was made\. Nothing was finalised\./);
+    assert.match(refused.body.error, /the job changed after its invoice was made\. Nothing was approved\./);
 
     const adopted = await request(appWithoutCheck, `/api/invoicing/jobs/${job.id}/use-new-lines`, { token: ownerToken, method: 'POST', body: { organisationId: lab.id } });
     assert.equal(adopted.status, 200);
