@@ -61,7 +61,7 @@ const selected = (main) => main.all((el) => el.getAttribute('aria-selected') ===
 const panel = (main) => main.all((el) => el.getAttribute('class') === 'fx-panel')[0];
 
 test('a tab click selects the tab at once; only the newest answer draws; a tab seen before shows at once', async () => {
-  globalThis.sessionStorage = { getItem: () => null, setItem() {} };
+  globalThis.sessionStorage = { getItem: () => null, setItem() {}, removeItem() {} };
   globalThis.document = { visibilityState: 'visible', addEventListener() {}, removeEventListener() {} };
   const { main, ui, asked } = page();
   const opened = renderInvoiceList(main, ui);
