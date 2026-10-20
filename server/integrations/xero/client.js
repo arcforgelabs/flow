@@ -263,6 +263,18 @@ export function createXeroClient({
       });
       return payload[path] ?? [];
     },
+    // Invoices by Xero id, with their lines (a `page` brings the lines).
+    // Up to 50 ids a call, for the webhook inbox (webhooks.js).
+    async listInvoicesByIds(ids) {
+      if (!ids.length) return [];
+      const payload = await request('GET', 'Invoices', { query: { IDs: ids.join(','), page: 1, pageSize: 100 } });
+      return payload.Invoices ?? [];
+    },
+    // One page of every invoice, in summary (no lines), for the daily check.
+    async listInvoiceSummaries({ page = 1, pageSize = 1000 } = {}) {
+      const payload = await request('GET', 'Invoices', { query: { summaryOnly: 'true', page, pageSize, order: 'InvoiceID ASC' } });
+      return payload.Invoices ?? [];
+    },
     // Xero emails one approved invoice to its contact, with the organisation's
     // own template, and marks it sent. Not idempotent: a repeat sends again.
     async emailInvoice(invoiceId) {

@@ -12,6 +12,7 @@ import { accountingStatus, checkSentInvoices } from './reconcile.js';
 import { decryptToken, deleteConnection, describeConnection, readConnection, saveConnection } from './connections.js';
 import { authorizeUrl, exchangeCode, fetchConnections, revokeToken, selectConnection } from './oauth.js';
 import { writesAllowed } from './settings.js';
+import { saveEvents, signatureValid } from './webhooks.js';
 import { DEFAULT_FAMILY } from '../../theme/themes.js';
 import { messagePage as themedMessagePage } from '../../ui/page.js';
 
@@ -38,6 +39,8 @@ import { messagePage as themedMessagePage } from '../../ui/page.js';
 //   POST /mirror                   owner or admin: copies Xero invoices, credit
 //                                  notes and payments changed since the last copy
 //   GET  /mirror?organisationId=   any signed-in person: what the copy holds
+//   POST /webhooks                 Xero: change events, signed with the
+//                                  webhook key (XERO_WEBHOOK_KEY); no session
 //
 // Only an owner, with a verified owner sign-in, can connect or disconnect.
 // The callback carries no Flow session: the one-use state from /connect,
@@ -93,6 +96,23 @@ export function createXeroRouter({ db, personAuth, runtime, log = console, messa
   const page = (title, text, tone) => messagePage({ title, text, tone });
   const { settings } = runtime;
   const router = express.Router();
+
+  // Xero's webhooks (webhooks.js), before the JSON parser: the signature
+  // covers the raw body. Xero wants 200 with no body within 5 seconds, and
+  // 401 for a bad signature (its "intent to receive" test sends both).
+  router.post('/webhooks', express.raw({ type: () => true, limit: '1mb' }), async (req, res) => {
+    if (!settings.webhookKey) return res.status(404).end();
+    const raw = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
+    if (!signatureValid(settings.webhookKey, raw, req.get('x-xero-signature'))) return res.status(401).end();
+    try {
+      await saveEvents(db, runtime, JSON.parse(raw.toString('utf8') || '{}'));
+    } catch (error) {
+      log.error?.(`[xero] saving webhook events failed: ${error?.code ?? error?.name ?? 'error'}`);
+      return res.status(500).end();
+    }
+    return res.status(200).end();
+  });
+
   router.use(express.json({ limit: '256kb' }));
 
   // Sign-in off: nothing but the callback answers, and it fails for want of
