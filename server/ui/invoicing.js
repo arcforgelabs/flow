@@ -9,14 +9,14 @@ import { alertStrip } from '/assets/ui/alerts.js';
 import { draftNote, sendModeNote } from '/assets/ui/invoice-notes.js';
 import { jobChangeBanner } from '/assets/ui/job-change.js';
 
-const STATUS_LABEL = { draft: 'Draft', issued: 'Issued', void: 'Void' };
+const STATUS_LABEL = { draft: 'Draft', issued: 'Finalised', void: 'Void' };
 const STATUS_TONE = { draft: 'info', issued: 'success', void: 'mute' };
 // Drafts (to check), Problem and Ready are views (server/core/sending.js):
 // every draft is in one of them. A person marks a checked draft ready; a
 // saved change keeps it there. An issued invoice that failed to send is a
 // problem.
 // Ready first: it opens by default, as the drafts most often wait there to send.
-const TABS = [['ready', 'Ready'], ['to_check', 'Drafts'], ['problem', 'Problem'], ['issued', 'Issued'], ['void', 'Void']];
+const TABS = [['ready', 'Ready'], ['to_check', 'Drafts'], ['problem', 'Problem'], ['issued', 'Finalised'], ['void', 'Void']];
 const VIEW_LABEL = { problem: 'Problem', ready: 'Ready', sending: 'Sending', to_check: 'Draft' };
 const VIEW_TONE = { problem: 'danger', ready: 'success', sending: 'info', to_check: 'info' };
 const EMPTY = {
@@ -44,6 +44,28 @@ export function xeroTag(ui, status) {
   return status.finding
     ? h('span', { class: 'fx-status', 'data-tone': 'danger', title: status.message }, 'Out of sync with Xero')
     : h('span', { class: 'fx-status', 'data-tone': XERO_TONE[status.state] ?? 'mute' }, status.label);
+}
+
+// The badge in the Xero column: Xero's mark, Xero's number and its state.
+// A badge with a Xero invoice opens it in Xero.
+const XERO_SHORT = {
+  not_sent: 'Not sent', sending: 'Sending', not_copied: 'Sent', draft: 'Draft',
+  approved: 'Approved', part_paid: 'Part paid', paid: 'Paid', voided: 'Voided', deleted: 'Deleted',
+};
+export function xeroBadge(ui, status) {
+  const { h } = ui;
+  const tone = status.finding ? 'danger' : status.state === 'not_sent' ? 'warn' : XERO_TONE[status.state] ?? 'mute';
+  const word = status.finding ? 'Out of sync' : XERO_SHORT[status.state] ?? status.label;
+  const number = status.xero?.number;
+  const kids = [
+    h('img', { class: 'fx-xero__mark', src: '/assets/ui/logos/xero.svg', alt: '' }),
+    number ? h('span', { class: 'fx-xero__number' }, number) : null,
+    h('span', { class: 'fx-status', 'data-tone': tone }, word),
+  ];
+  const title = status.message ?? status.label;
+  return status.xero?.url
+    ? h('a', { class: 'fx-xero', href: status.xero.url, target: '_blank', rel: 'noopener', title: `${title}. Open in Xero.`, onclick: (event) => event.stopPropagation() }, ...kids)
+    : h('span', { class: 'fx-xero', title }, ...kids);
 }
 
 const showField = (field, value) => (['subtotal', 'tax', 'total'].includes(field) && Number.isFinite(value) ? formatCents(value) : String(value ?? '—'));
@@ -153,13 +175,13 @@ export async function renderInvoiceList(main, ui) {
       }
       if (context.canIssue && body.counts.ready > 0) {
         buttons.push(action(to ? `Send all ${body.counts.ready} ready to ${to}` : `Finalise all ${body.counts.ready} ready`, 'send-ready', () => ({ issueDate: localDate() }),
-          (res) => [`${res.issued} issued.${to ? ` They are on the way to ${to}.` : ''}${res.remaining ? ` ${res.remaining} more are ready: press again.` : ''}`, 'success']));
+          (res) => [`${res.issued} finalised.${to ? ` They are on the way to ${to}.` : ''}${res.remaining ? ` ${res.remaining} more are ready: press again.` : ''}`, 'success']));
       }
       if (buttons.length) parts.push(h('div', { class: 'fx-sendbar__actions' }, buttons));
     } else if (state.status === 'problem') {
       const failed = body.invoices.filter((i) => i.status === 'issued').length;
       if (context.canIssue && to && failed > 0) {
-        parts.push(h('p', { class: 'fx-dim' }, `${plural(failed, 'issued invoice', 'issued invoices')} did not reach ${to}. Fix the cause, then send again.`));
+        parts.push(h('p', { class: 'fx-dim' }, `${plural(failed, 'finalised invoice', 'finalised invoices')} did not reach ${to}. Fix the cause, then send again.`));
         parts.push(action('Send again', 'send-again', () => ({}), (res) => [`${res.queued} on the way to ${to} again.`, 'success']));
       }
     }
@@ -232,8 +254,11 @@ export async function renderInvoiceList(main, ui) {
     const showProblem = state.status === 'problem';
     const created = ['to_check', 'problem', 'ready'].includes(state.status);
     // An invoice gets its number when it is sent or issued, so only the
-    // Issued and Void tabs show a Number column; the others open on Client.
+    // Finalised and Void tabs show a Number column; the others open on Client.
     const numbered = !created;
+    // With Xero on, Finalised and Void also show a Xero column: each
+    // invoice's badge, from Flow's link to Xero (filled in below).
+    const xeroColumn = numbered && body.sendsTo === 'Xero';
     const boxes = [];
     const tickBox = (invoice) => {
       const box = h('input', {
@@ -258,7 +283,8 @@ export async function renderInvoiceList(main, ui) {
       h('thead', {}, h('tr', {},
         ticks ? h('th', { class: 'fx-tick-cell' }, all) : null,
         numbered ? h('th', {}, 'Number') : null, h('th', {}, 'Client'), h('th', {}, showProblem ? 'Problem' : 'Reference'),
-        h('th', {}, created ? 'Created' : 'Issued'), h('th', { class: 'fx-num' }, 'Total'), h('th', {}, 'Status'))),
+        h('th', {}, created ? 'Created' : 'Finalised'), h('th', { class: 'fx-num' }, 'Total'), h('th', {}, 'Status'),
+        xeroColumn ? h('th', {}, 'Xero') : null)),
       h('tbody', {}, body.invoices.map((invoice) => {
         const href = `/invoices/${invoice.id}`;
         const first = invoice.problems?.[0];
@@ -276,17 +302,25 @@ export async function renderInvoiceList(main, ui) {
             const cell = h('td', { class: 'fx-status-cell' }, view
               ? h('span', { class: 'fx-status', 'data-tone': VIEW_TONE[view] }, VIEW_LABEL[view])
               : h('span', { class: 'fx-status', 'data-tone': STATUS_TONE[invoice.status] }, STATUS_LABEL[invoice.status]));
+            if (!xeroColumn) statusCells.set(invoice.id, cell);
+            return cell;
+          })(),
+          xeroColumn ? (() => {
+            const cell = h('td', { class: 'fx-status-cell' });
             statusCells.set(invoice.id, cell);
             return cell;
-          })());
+          })() : null);
       }))));
-    // Issued and void invoices also show Xero's status, from Flow's copy.
-    if (['issued', 'void'].includes(state.status)) {
+    // Finalised and void invoices also show Xero's status, from Flow's copy:
+    // in the Xero column, every invoice gets a badge, so one not in Xero
+    // stands out.
+    if (numbered) {
       const shownBody = body;
       const statuses = await xeroStatuses(ui, context.organisations?.[0]?.id, body.invoices.map((i) => i.id));
       if (shownBody !== body) return;
       for (const [invoiceId, status] of statuses) {
-        if (status.state !== 'not_sent' || status.finding) statusCells.get(invoiceId)?.append(' ', xeroTag(ui, status));
+        if (xeroColumn) statusCells.get(invoiceId)?.append(xeroBadge(ui, status));
+        else if (status.state !== 'not_sent' || status.finding) statusCells.get(invoiceId)?.append(' ', xeroTag(ui, status));
       }
     }
   }
@@ -307,7 +341,7 @@ function saveNav(nav) {
 
 // The bar above one invoice: Back to the list as it was, and the previous and
 // next invoice of that list. An invoice opened from elsewhere (the job board,
-// search, a link) steps through its own tab: Drafts, Ready, Problem, Issued
+// search, a link) steps through its own tab: Drafts, Ready, Problem, Finalised
 // or Void, read once here.
 function navBar(ui, invoice) {
   const { h, go, flow } = ui;
@@ -826,7 +860,7 @@ function issuedView(invoice, ui, context, redraw) {
   const voidBody = () => {
     const live = xeroStatus?.xero && !['VOIDED', 'DELETED'].includes(xeroStatus.xero.status);
     return h('div', {},
-      h('p', {}, 'The number stays used. A void invoice cannot be issued again.'),
+      h('p', {}, 'The number stays used. A void invoice cannot be finalised again.'),
       live ? h('p', { class: 'fx-problem' }, `Xero still holds it as ${xeroStatus.label.replace(/ in Xero$/, '').toLowerCase()}${xeroStatus.xero.number ? ` (${xeroStatus.xero.number})` : ''}. Flow does not change Xero: void it in Xero too.`) : null);
   };
   const actions = invoice.status === 'issued' && context.canIssue ? [
@@ -843,7 +877,7 @@ function issuedView(invoice, ui, context, redraw) {
         h('div', { class: 'fx-row' },
           h('h1', { class: 'fx-title' }, invoice.number),
           h('span', { class: 'fx-status', 'data-tone': STATUS_TONE[invoice.status] }, STATUS_LABEL[invoice.status])),
-        h('p', { class: 'fx-ph__sub' }, `${invoice.contact?.name ?? ''} · issued ${showDate(invoice.issueDate)}`)),
+        h('p', { class: 'fx-ph__sub' }, `${invoice.contact?.name ?? ''} · finalised ${showDate(invoice.issueDate)}`)),
       h('div', { class: 'fx-ph__actions' }, actions, previewButton(ui, invoice.id), send)),
     h('div', { class: 'fx-invoice__grid' },
       h('div', { class: 'fx-invoice__main' },
@@ -851,7 +885,7 @@ function issuedView(invoice, ui, context, redraw) {
           h('dl', { class: 'fx-doc__meta' },
             h('div', {}, h('dt', { class: 'fx-label' }, 'Bill to'), h('dd', {}, invoice.contact?.name ?? '—', invoice.contact?.email ? h('span', { class: 'fx-dim' }, invoice.contact.email) : null)),
             h('div', {}, h('dt', { class: 'fx-label' }, 'Reference'), h('dd', {}, invoice.reference ?? '—')),
-            h('div', {}, h('dt', { class: 'fx-label' }, 'Issued'), h('dd', {}, showDate(invoice.issueDate))),
+            h('div', {}, h('dt', { class: 'fx-label' }, 'Finalised'), h('dd', {}, showDate(invoice.issueDate))),
             h('div', {}, h('dt', { class: 'fx-label' }, 'Due'), h('dd', {}, showDate(invoice.dueDate)))),
           h('table', { class: 'fx-lines__table fx-lines__table--read' },
             h('thead', {}, h('tr', {}, h('th', {}, 'Description'), h('th', { class: 'fx-num' }, 'Qty'), h('th', { class: 'fx-num' }, 'Unit price'), h('th', {}, 'Tax'), h('th', { class: 'fx-num' }, 'Amount'))),
@@ -868,7 +902,7 @@ function issuedView(invoice, ui, context, redraw) {
         invoice.versions?.length ? h('section', { class: 'fx-card fx-side-card' },
           h('h3', { class: 'fx-label' }, 'History'),
           h('ol', { class: 'fx-timeline' }, invoice.versions.map((v) => h('li', {},
-            h('span', { class: 'fx-strong' }, v.version === 1 ? 'Issued' : `Reissued (version ${v.version})`),
+            h('span', { class: 'fx-strong' }, v.version === 1 ? 'Finalised' : `Revised (version ${v.version})`),
             h('span', { class: 'fx-dim' }, new Date(v.issuedAt).toLocaleString('en-AU', { dateStyle: 'medium', timeStyle: 'short' })))))) : null)),
   ];
 }
