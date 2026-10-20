@@ -537,7 +537,7 @@ const STATE_TONE = { ready: 'success', disabled: 'mute', failed: 'danger', resta
 const CATALOGUE = {
   xero: { maker: 'Xero', category: 'accounting', blurb: 'Send invoices to Xero as drafts and bring payments back.', logo: 'xero.svg' },
   seazona: { maker: 'Seazona', category: 'lab', blurb: 'Bring lab cases and orders into Flow as jobs.', logo: 'seazona.svg' },
-  sentry: { maker: 'Sentry', category: 'monitoring', blurb: 'Send errors and problem reports to your own Sentry project.', logo: 'sentry.svg' },
+  sentry: { maker: 'Sentry', category: 'monitoring', blurb: 'Send errors, problem reports and speed traces to your own Sentry project.', logo: 'sentry.svg' },
 };
 const CATEGORIES = [['all', 'All'], ['accounting', 'Accounting'], ['lab', 'Lab software'], ['monitoring', 'Monitoring']];
 const CATEGORY_LABEL = Object.fromEntries(CATEGORIES);

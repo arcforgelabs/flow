@@ -8,8 +8,9 @@ import { createPersonAuth } from '../server/auth/session.js';
 import { createMonitoredLog } from '../server/core/monitoring.js';
 import { adapters } from '../server/integrations/adapters.js';
 import { createRegistry } from '../server/integrations/port.js';
-import { createSentryAdapter, readSentrySettings, SENTRY_BROWSER, sentryRelease } from '../server/integrations/sentry/index.js';
-import { tagNotify } from '../server/ui/monitoring.js';
+import { createTracing, requestName, sqlName, traceQueries } from '../server/core/tracing.js';
+import { createSentryAdapter, readSentrySettings, SENTRY_BROWSER, SENTRY_BROWSER_TRACING, sentryRelease } from '../server/integrations/sentry/index.js';
+import { routePattern, scrubSpan, tagNotify } from '../server/ui/monitoring.js';
 import { fakeClerk, request, TEST_PUBLISHABLE_KEY } from './support/clerk.js';
 import { freshDatabase, skipWithoutDatabase } from './support/db.js';
 
@@ -26,6 +27,10 @@ function fakeSdk() {
     captureEvent: (event) => calls.push(['event', event]),
     captureException: (error, scope) => calls.push(['exception', error, scope]),
     close: async () => calls.push(['close']),
+    startSpan: (options, work) => { calls.push(['span', options]); return work(); },
+    getActiveSpan: () => ({ id: 'request' }),
+    getRootSpan: (span) => ({ root: span.id }),
+    updateSpanName: (span, name) => calls.push(['name', span, name]),
   };
 }
 
@@ -52,15 +57,24 @@ test('with the real SDK, a logged line reaches Sentry as the title, with no stac
 test('Flow ships the Sentry adapter, with no DSN of its own', () => {
   const sentry = adapters.find((a) => a.id === 'sentry');
   assert.ok(sentry);
-  assert.deepEqual(sentry.setup.fields.map((f) => f.name), ['SENTRY_DSN', 'SENTRY_ENVIRONMENT', 'SENTRY_FEEDBACK']);
+  assert.deepEqual(sentry.setup.fields.map((f) => f.name), ['SENTRY_DSN', 'SENTRY_ENVIRONMENT', 'SENTRY_FEEDBACK', 'SENTRY_TRACES_SAMPLE_RATE']);
   assert.equal(sentry.schema, undefined);
 });
 
 test('the settings need a Sentry DSN; environment and the report button have defaults', () => {
   assert.throws(() => readSentrySettings({}), /SENTRY_DSN is not set/);
   assert.throws(() => readSentrySettings({ SENTRY_DSN: 'https://example.test/1' }), /not a Sentry DSN/);
-  assert.deepEqual(readSentrySettings({ SENTRY_DSN: DSN }), { dsn: DSN, environment: 'production', feedback: true });
-  assert.deepEqual(readSentrySettings({ SENTRY_DSN: ` ${DSN} `, SENTRY_ENVIRONMENT: 'staging', SENTRY_FEEDBACK: 'off' }), { dsn: DSN, environment: 'staging', feedback: false });
+  assert.deepEqual(readSentrySettings({ SENTRY_DSN: DSN }), { dsn: DSN, environment: 'production', feedback: true, tracesSampleRate: 0.2 });
+  assert.deepEqual(readSentrySettings({ SENTRY_DSN: ` ${DSN} `, SENTRY_ENVIRONMENT: 'staging', SENTRY_FEEDBACK: 'off', SENTRY_TRACES_SAMPLE_RATE: '0' }), { dsn: DSN, environment: 'staging', feedback: false, tracesSampleRate: 0 });
+});
+
+test('the traces setting is a share from 0 to 1', () => {
+  for (const [rate, expected] of [['1', 1], ['0.05', 0.05], ['.5', 0.5], [' ', 0.2]]) {
+    assert.equal(readSentrySettings({ SENTRY_DSN: DSN, SENTRY_TRACES_SAMPLE_RATE: rate }).tracesSampleRate, expected);
+  }
+  for (const rate of ['2', '-0.1', 'all', '0x1', '1e-1']) {
+    assert.throws(() => readSentrySettings({ SENTRY_DSN: DSN, SENTRY_TRACES_SAMPLE_RATE: rate }), /SENTRY_TRACES_SAMPLE_RATE must be a number from 0 to 1/);
+  }
 });
 
 test('the release is the Flow release tag, else the commit', () => {
@@ -73,6 +87,10 @@ test('the release is the Flow release tag, else the commit', () => {
 test('the browser SDK is pinned with an integrity hash', () => {
   assert.match(SENTRY_BROWSER.src, /^https:\/\/browser\.sentry-cdn\.com\/\d+\.\d+\.\d+\/bundle\.feedback\.min\.js$/);
   assert.match(SENTRY_BROWSER.integrity, /^sha384-[A-Za-z0-9+/]{64}$/);
+  assert.match(SENTRY_BROWSER_TRACING.src, /^https:\/\/browser\.sentry-cdn\.com\/\d+\.\d+\.\d+\/bundle\.tracing\.replay\.feedback\.min\.js$/);
+  assert.match(SENTRY_BROWSER_TRACING.integrity, /^sha384-[A-Za-z0-9+/]{64}$/);
+  // One SDK version for both bundles.
+  assert.equal(SENTRY_BROWSER.src.split('/')[3], SENTRY_BROWSER_TRACING.src.split('/')[3]);
 });
 
 test('the adapter starts the SDK without personal data, and sends errors only while started', async () => {
@@ -88,6 +106,11 @@ test('the adapter starts the SDK without personal data, and sends errors only wh
   assert.equal(options.sendDefaultPii, false);
   assert.equal(options.release, 'flow@2026.10.26');
   assert.equal(options.environment, 'production');
+  assert.equal(options.beforeSendSpan, scrubSpan);
+  // The host's health check is never traced; a browser's choice is kept.
+  const sampled = (path) => options.tracesSampler({ attributes: { 'url.path': path }, inheritOrSampleWith: (rate) => rate });
+  assert.equal(sampled('/health'), 0);
+  assert.equal(sampled('/api/invoicing/invoices'), 0.2);
 
   adapter.capabilities.captureError({ message: '[seazona] read failed', source: 'seazona' });
   const boom = new Error('boom');
@@ -98,13 +121,121 @@ test('the adapter starts the SDK without personal data, and sends errors only wh
   assert.deepEqual(sdk.calls[2][2].tags, { source: 'http' });
 
   assert.deepEqual(adapter.capabilities.browserMonitoring(), {
-    dsn: DSN, environment: 'production', release: 'flow@2026.10.26', feedback: true, script: SENTRY_BROWSER,
+    dsn: DSN, environment: 'production', release: 'flow@2026.10.26', feedback: true, tracesSampleRate: 0.2, script: SENTRY_BROWSER_TRACING,
   });
   assert.deepEqual(await adapter.capabilities.health(), { ok: true, environment: 'production', feedback: true });
 
   await adapter.stop();
   assert.deepEqual(sdk.calls.at(-1), ['close']);
   assert.equal(adapter.capabilities.browserMonitoring(), null);
+});
+
+test('with traces at 0 the adapter traces nothing and the browser loads the smaller SDK', async () => {
+  const sdk = fakeSdk();
+  const adapter = createSentryAdapter({ sdk, env: {} });
+  await adapter.start({ log: quiet, env: { SENTRY_DSN: DSN, SENTRY_TRACES_SAMPLE_RATE: '0' } });
+  assert.equal(adapter.capabilities.browserMonitoring().script, SENTRY_BROWSER);
+  assert.equal(adapter.capabilities.traceRequest(), null);
+  assert.equal(adapter.capabilities.traceSpan({ name: 'q', op: 'db' }, () => 7), 7);
+  assert.equal(sdk.calls.filter(([kind]) => kind === 'span').length, 0);
+});
+
+test('with traces on, spans join the request\'s trace and the request is named by its route', async () => {
+  const sdk = fakeSdk();
+  const adapter = createSentryAdapter({ sdk, env: {} });
+  assert.equal(adapter.capabilities.traceRequest(), null);
+  await adapter.start({ log: quiet, env: { SENTRY_DSN: DSN, SENTRY_TRACES_SAMPLE_RATE: '1' } });
+  assert.equal(adapter.capabilities.traceSpan({ name: 'SELECT ?', op: 'db', attributes: {} }, () => 'rows'), 'rows');
+  assert.deepEqual(sdk.calls.at(-1), ['span', { name: 'SELECT ?', op: 'db', attributes: {}, onlyIfParent: true }]);
+  adapter.capabilities.traceRequest()('GET /api/invoicing/invoices/:id');
+  assert.deepEqual(sdk.calls.at(-1), ['name', { root: 'request' }, 'GET /api/invoicing/invoices/:id']);
+});
+
+test('a trace span keeps timings and the route, never a query string, header, address or email', () => {
+  const span = scrubSpan({
+    name: 'GET /api/invoicing/search?q=Jane%20Citizen',
+    attributes: {
+      'sentry.op': 'http.client',
+      'url.full': 'https://flow.example.test/api/invoicing/search?q=Jane',
+      'url.path': '/api/invoicing/search',
+      'url.query': 'q=Jane',
+      'http.request.header.cookie': ['session=[Filtered]'],
+      'http.response.header.set-cookie': ['x'],
+      'client.address': '203.0.113.9',
+      'network.peer.address': '203.0.113.9',
+      'user.id': 'p1',
+      'user.email': 'person@example.test',
+      'user.ip_address': '203.0.113.9',
+      'http.response.status_code': 200,
+    },
+  });
+  assert.equal(span.name, 'GET /api/invoicing/search');
+  assert.deepEqual(span.attributes, {
+    'sentry.op': 'http.client',
+    'url.full': 'https://flow.example.test/api/invoicing/search',
+    'url.path': '/api/invoicing/search',
+    'user.id': 'p1',
+    'http.response.status_code': 200,
+  });
+  // A database span's SQL keeps its placeholders.
+  assert.equal(scrubSpan({ name: 'SELECT ? FROM invoices WHERE id = $1', attributes: {} }).name, 'SELECT ? FROM invoices WHERE id = $1');
+});
+
+test('paths and SQL are named without the values in them', () => {
+  assert.equal(routePattern('/invoices/123?q=Jane'), '/invoices/:id');
+  assert.equal(routePattern('/api/x/0b9c6a3e-1f2d-4c5b-8a7e-9d0c1b2a3f4e/lines'), '/api/x/:id/lines');
+  assert.equal(routePattern('/jobs/board'), '/jobs/board');
+  assert.equal(sqlName("select $1::int, 'Jane Citizen' as n, 42 from xero_v2  where a = 3.5"), 'select $1::int, ? as n, ? from xero_v2 where a = ?');
+  assert.equal(sqlName({ text: 'SELECT 1' }), 'SELECT ?');
+  assert.equal(requestName({ method: 'GET', baseUrl: '/api/invoicing', route: { path: '/invoices/:id' }, originalUrl: '/api/invoicing/invoices/9' }), 'GET /api/invoicing/invoices/:id');
+  assert.equal(requestName({ method: 'GET', originalUrl: '/invoices/9?x=1' }), 'GET /invoices/:id');
+});
+
+test('with no tracer on, tracing runs the work as it is', async () => {
+  const tracing = createTracing();
+  assert.equal(tracing.span('q', 'db', () => 3), 3);
+  const queries = [];
+  const pool = { query: async (...args) => { queries.push(args); return { rows: [] }; }, on() {} };
+  traceQueries(pool, tracing);
+  await pool.query('SELECT $1', [1]);
+  assert.deepEqual(queries, [['SELECT $1', [1]]]);
+});
+
+test('each request is named by the route it matched, and each query gets a span', async () => {
+  const names = [];
+  const spans = [];
+  const tracer = { capabilities: {
+    traceRequest: () => (name) => names.push(name),
+    traceSpan: ({ name, op }, work) => { spans.push([op, name]); return work(); },
+  } };
+  const tracing = createTracing({ tracers: () => [tracer] });
+  let connected;
+  const pool = { query: async () => ({ rows: [] }), on: (event, fn) => { connected = fn; } };
+  traceQueries(pool, tracing);
+  const client = { query: async () => ({ rows: [] }) };
+  connected(client);
+  const app = express();
+  app.use(tracing.requests());
+  const router = express.Router();
+  router.get('/invoices/:id', async (_req, res) => {
+    await pool.query('SELECT * FROM invoices WHERE id = $1', ['9']);
+    await client.query({ text: "UPDATE invoices SET state = 'sent'" });
+    // pg's own callback call inside the pool: no second span.
+    pool.query('SELECT 1', () => {});
+    res.json({ ok: true });
+  });
+  app.use('/api/invoicing', router);
+  const server = app.listen(0);
+  try {
+    const { port } = server.address();
+    await (await fetch(`http://127.0.0.1:${port}/api/invoicing/invoices/9?q=Jane`)).json();
+    await (await fetch(`http://127.0.0.1:${port}/invoices/12`)).text();
+    await new Promise((resolve) => setImmediate(resolve));
+  } finally {
+    server.close();
+  }
+  assert.deepEqual(names, ['GET /api/invoicing/invoices/:id', 'GET /invoices/:id']);
+  assert.deepEqual(spans, [['db', 'SELECT * FROM invoices WHERE id = $1'], ['db', 'UPDATE invoices SET state = ?']]);
 });
 
 test('a problem report is tagged notify=yes only when the person typed an email', () => {
@@ -201,7 +332,8 @@ describe('monitoring API', { skip: skipWithoutDatabase }, () => {
     assert.equal(body.service, 'sentry');
     assert.equal(body.dsn, DSN);
     assert.equal(body.feedback, true);
-    assert.equal(body.script.src, SENTRY_BROWSER.src);
+    assert.equal(body.tracesSampleRate, 0.2);
+    assert.equal(body.script.src, SENTRY_BROWSER_TRACING.src);
     await on.integrations.stop();
   });
 
