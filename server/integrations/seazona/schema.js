@@ -170,9 +170,12 @@ export const seazonaOrderReadFailures = pgTable('seazona_order_read_failures', {
 // Issue #101: each failed detail read of an invoice or a client, per record.
 // Orders keep their own table (issue #12). After a few failures in a row the
 // record is quarantined: the lane skips it and its cursor moves on.
+// Issue #142: `detail_id` is the id its detail path needs (an invoice's key
+// is its number), so the lane can read it again when its wait ends.
 export const seazonaRecordReadFailures = pgTable('seazona_record_read_failures', {
   resource: text('resource').notNull(),
   recordKey: text('record_key').notNull(),
+  detailId: text('detail_id'),
   failureCount: integer('failure_count').notNull(),
   lastAttemptAt: at('last_attempt_at').notNull(),
   lastHttpStatus: integer('last_http_status'),

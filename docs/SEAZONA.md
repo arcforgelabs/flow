@@ -76,6 +76,7 @@ workspace live credentials.
 | `SEAZONA_LIST_CAP` | A list this long may be cut off, so its lane reads on (see Sync lanes). Also the order page size, at most 500. Default 50. |
 | `SEAZONA_LIST_PAGES_PER_RUN` | The most list calls one lane makes in a run; the next run goes on from where it stopped. Default 10. |
 | `SEAZONA_ORDER_QUARANTINE_FAILURES`, `SEAZONA_ORDER_QUARANTINE_MS` | Failed reads in a row before an order, an invoice or a client is quarantined, and for how long. Defaults 3 and 1 day. |
+| `SEAZONA_RECORD_REREADS_PER_RUN` | Quarantined invoices or clients whose wait has ended that the lane reads again by id in one run. Default 5. |
 | `SEAZONA_CIRCUIT_FAILURES`, `SEAZONA_CIRCUIT_WINDOW_MS` | Failed calls inside the window that open the circuit. Defaults 5 and 10 minutes. |
 | `SEAZONA_CIRCUIT_PAUSE_MS` | The first pause when the circuit opens. It doubles after each failed probe, to at most 6 hours. Default 5 minutes. |
 | `SEAZONA_DAILY_FAILURE_BUDGET` | Failed calls allowed in one UTC day. When they are spent, calls stop until the next day. Default 50. |
@@ -129,7 +130,7 @@ flowchart LR
 | 404 on one record | Marks the order deleted (issue #12). Not a failure. | |
 | 429 | Waits for `Retry-After`, as before. Counts as a failure. | |
 | 5xx, timeout, network | Retries, then the lane backs off. Counts as a failure. | |
-| The same record fails 3 times | Quarantines the order, invoice or client for a day. The lane skips it and its cursor moves on. | The quarantine ends. |
+| The same record fails 3 times | Quarantines the order, invoice or client for a day. The lane skips it and its cursor moves on. | The quarantine ends. An invoice or a client is then read again by id, even when no list names it (issue #142): a success clears it, a 404 lets it go, a failure waits again with no new report. |
 | 5 failures in 10 minutes | Opens the circuit. | After the pause, one probe. |
 | 50 failures in a UTC day | Stops calls. | The next UTC day. |
 
@@ -484,7 +485,7 @@ shows it under `integrations`:
   `processing`, `never_run`), whether it is fresh or `stale`, its last success and
   error, and the failing orders by id and status; `orders_active` also lists
   the quarantined orders, and `invoices` and `clients` show
-  `quarantinedRecords`;
+  `quarantinedRecords` and `rereadDue` (waits ended, re-read not yet made);
 - `deletedOrders`: how many orders are marked deleted in Seazona.
 
 `ok` is false while a lane is failed, held, stopped or stale, or a run is
@@ -542,7 +543,7 @@ installation-wide.
 | `seazona_reference` | Products and users |
 | `seazona_lane_state` | Each lane's cursor, next run, status and last failure |
 | `seazona_order_read_failures` | Failed reads per order, and quarantine |
-| `seazona_record_read_failures` | Failed detail reads per invoice or client, and quarantine (issue #101) |
+| `seazona_record_read_failures` | Failed detail reads per invoice or client, the id to read it again by, and quarantine (issues #101, #142) |
 | `seazona_history_batches` | Each uploaded CSV export: its columns, status and counts |
 | `seazona_history_rows` | Each row of an upload as Flow read it, and its problems |
 | `seazona_history_batch_jobs` | Each job of an upload: what reconciliation found and what a person decided |

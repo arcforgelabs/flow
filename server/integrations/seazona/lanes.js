@@ -22,6 +22,8 @@ import {
   readQuarantinedOrders,
   readQuarantinedRecordCounts,
   readQuarantinedRecords,
+  readRecordRereadCounts,
+  readRecordsDueForReread,
   recordOrderFailure,
   recordRecordFailure,
   selectActiveOrders,
@@ -237,6 +239,7 @@ async function syncListWithDetail(ctx, { mirror, what, items, keyOf, idOf, signa
           at,
           quarantineFailures: sync.orderQuarantineFailures,
           quarantineMs: sync.orderQuarantineMs,
+          detailId: id,
         });
         if (recorded.quarantinedUntil) newlyQuarantined += 1;
         failures.push({ id: key, ...failure, ...recorded });
@@ -255,6 +258,52 @@ async function syncListWithDetail(ctx, { mirror, what, items, keyOf, idOf, signa
   // be read again does.
   const anyFailed = failures.some((failure) => !failure.quarantinedUntil);
   return { summary, detailReads, listCount: items.length, failureDetails, anyFailed, newlyQuarantined, quarantined: skipped.length };
+}
+
+// Issue #142: a quarantined invoice or client is in a later list only if it
+// changes again, so when its wait ends the lane reads its detail by id. A
+// success stores it and clears the failure; a 404 clears the failure (the
+// record is gone, issue #126); a failure quarantines it again, with no new
+// report. Each read goes through the call guard like any other.
+async function rereadReleased(ctx, { mirror, what, detailPath, map }) {
+  const { db, client, sync, at } = ctx;
+  const due = sync.recordRereadsPerRun ? await readRecordsDueForReread(db, mirror, { at, limit: sync.recordRereadsPerRun }) : [];
+  const result = { summary: { created: 0, changed: 0, unchanged: 0 }, detailReads: 0, reread: 0, gone: 0, failed: 0 };
+  for (const row of due) {
+    result.detailReads += 1;
+    try {
+      const detail = await client.get(detailPath(row.detailId));
+      if (!detail || typeof detail !== 'object' || Array.isArray(detail)) throw emptyResponse(`${what} ${row.recordKey}`);
+      addSummary(result.summary, await upsertRecords(db, mirror, [map(detail)], { at }));
+      await clearRecordFailures(db, mirror, [row.recordKey]);
+      result.reread += 1;
+    } catch (error) {
+      if (isLaneLevel(error)) throw error;
+      if (error?.statusCode === 404) {
+        await clearRecordFailures(db, mirror, [row.recordKey]);
+        result.gone += 1;
+        continue;
+      }
+      await recordRecordFailure(db, mirror, row.recordKey, describeReadFailure(error), {
+        at,
+        quarantineFailures: sync.orderQuarantineFailures,
+        quarantineMs: sync.orderQuarantineMs,
+      });
+      result.failed += 1;
+    }
+  }
+  return result;
+}
+
+// Adds the re-reads to a lane's result.
+function withRereads(result, reread) {
+  if (!reread.detailReads) return result;
+  addSummary(result.summary, reread.summary);
+  return {
+    ...result,
+    detailReads: result.detailReads + reread.detailReads,
+    rereads: { attempted: reread.detailReads, read: reread.reread, gone: reread.gone, failed: reread.failed },
+  };
 }
 
 // Where the next changed-list read starts. A run that stopped inside a
@@ -351,7 +400,13 @@ const laneRuns = {
     const { client, sync, at } = ctx;
     const firstSince = cursorSince(ctx, new Date(floorUtcDay(at.getTime()) - sync.invoiceLookbackDays * DAY_MS).toISOString());
     const mapOptions = { keepPatientReference: sync.keepPatientReference };
-    return walkChangedList(ctx, {
+    const reread = await rereadReleased(ctx, {
+      mirror: 'invoices',
+      what: 'invoice',
+      detailPath: (id) => `invoices/${encodeURIComponent(id)}`,
+      map: (detail) => mapInvoice({}, detail, mapOptions),
+    });
+    return withRereads(await walkChangedList(ctx, {
       what: 'invoice',
       firstSince,
       // The guide: on or after lastModified (inclusive).
@@ -367,7 +422,7 @@ const laneRuns = {
         detailPath: (id) => `invoices/${encodeURIComponent(id)}`,
         map: (item, detail) => mapInvoice(item, detail, mapOptions),
       }),
-    });
+    }), reread);
   },
 
   async orders_recent(ctx) {
@@ -485,10 +540,16 @@ const laneRuns = {
 
   async clients(ctx) {
     const { client } = ctx;
+    const reread = await rereadReleased(ctx, {
+      mirror: 'clients',
+      what: 'client',
+      detailPath: (id) => `clients/${encodeURIComponent(id)}`,
+      map: (detail) => mapClient({}, detail),
+    });
     // The first run reads the whole list; later runs read changes only.
     // Seazona answers the whole list only to an empty `?lastModified=`; a
     // bare path is a 404.
-    return walkChangedList(ctx, {
+    return withRereads(await walkChangedList(ctx, {
       what: 'client',
       firstSince: cursorSince(ctx, ''),
       // The guide says "modified after": step back a second so a row in the
@@ -505,7 +566,7 @@ const laneRuns = {
         detailPath: (id) => `clients/${encodeURIComponent(id)}`,
         map: (item, detail) => mapClient(item, detail),
       }),
-    });
+    }), reread);
   },
 
   history: (ctx) => runHistoryBackfill(ctx, { isLaneLevel, describeReadFailure, emptyResponse, LaneError }),
@@ -599,6 +660,7 @@ export async function readSeazonaSyncHealth(db, settings, { now = Date.now } = {
   const quarantinedOrders = await readQuarantinedOrders(db, { at: new Date(nowMs), limit: MAX_REPORTED });
   const [{ deleted }] = await db.select({ deleted: count() }).from(seazonaOrders).where(isNotNull(seazonaOrders.deletedInSourceAt));
   const quarantinedRecords = await readQuarantinedRecordCounts(db, { at: new Date(nowMs) });
+  const rereadDue = await readRecordRereadCounts(db, { at: new Date(nowMs) });
   const lanes = LANES.map((lane) => {
     const state = states.get(lane);
     const { freshnessMs, cadenceMs } = settings.sync.lanes[lane];
@@ -619,6 +681,7 @@ export async function readSeazonaSyncHealth(db, settings, { now = Date.now } = {
       failureDetails: state?.failureDetails ?? null,
       ...(lane === 'orders_active' ? { quarantinedOrders } : {}),
       ...(quarantinedRecords[lane] ? { quarantinedRecords: quarantinedRecords[lane] } : {}),
+      ...(rereadDue[lane] ? { rereadDue: rereadDue[lane] } : {}),
     };
   });
   return {
