@@ -616,13 +616,15 @@ function draftView(invoice, ui, context, redraw) {
   dueDate.addEventListener('change', syncIssue);
   syncIssue();
 
-  // From job: a new invoice can start from a job that has no invoice yet.
-  // Flow drafts it the way the invoicing rules do (client, Reference, lines)
-  // and links it to the job. An invoice with no job is fine too.
-  const fromJobButton = isNew && context.canIssue ? h('button', {
-    class: 'fx-btn', type: 'button',
-    onclick: () => pickJob(ui),
-  }, 'From job') : null;
+  // A new invoice can start from a job that has no invoice yet: a quiet
+  // strip above the form says so. Flow drafts it the way the invoicing rules
+  // do (client, Reference, lines) and links it to the job. An invoice with
+  // no job is fine too.
+  const fromJob = isNew && context.canIssue ? h('section', { class: 'fx-fromjob' },
+    h('div', { class: 'fx-fromjob__text' },
+      h('span', { class: 'fx-strong' }, 'Billing a job?'),
+      h('span', { class: 'fx-dim' }, 'Choose it, and Flow fills in the client, Reference and lines.')),
+    h('button', { class: 'fx-btn', type: 'button', onclick: () => pickJob(ui) }, 'Choose a job')) : null;
 
   // Mark ready: the draft is saved, then Flow checks it; one with a problem
   // stays a draft. Move to Drafts, on the Status card, undoes it.
@@ -669,8 +671,9 @@ function draftView(invoice, ui, context, redraw) {
       h('div', { class: 'fx-ph__text' },
         h('h1', { class: 'fx-title' }, isNew ? 'New invoice' : ready ? 'Ready invoice' : 'Draft invoice'),
         h('p', { class: 'fx-ph__sub' }, draftNote(to, invoice, ready))),
-      h('div', { class: 'fx-ph__actions' }, fromJobButton, saveButton, markReadyButton, isNew ? null : previewButton(ui, invoice.id, 'Shows the saved invoice.'), sendButton ?? issueButton)),
+      h('div', { class: 'fx-ph__actions' }, saveButton, markReadyButton, isNew ? null : previewButton(ui, invoice.id, 'Shows the saved invoice.'), sendButton ?? issueButton)),
     problems,
+    fromJob,
     h('div', { class: 'fx-invoice__grid' },
       h('div', { class: 'fx-invoice__main' },
         h('section', { class: 'fx-card fx-invoice__head' },

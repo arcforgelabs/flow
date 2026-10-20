@@ -74,9 +74,9 @@ mark it ready, then send it.
 
 ## New invoice from a job
 
-A new invoice can start blank or from a job. **From job**, left of Save
-draft, lists the jobs with no invoice yet (client, practitioner, shipped
-date, total), with a search. Picking one makes its draft the way the
+A new invoice can start blank or from a job. A strip above the form says
+"Billing a job?". Its **Choose a job** button lists the jobs with no invoice
+yet (client, practitioner, shipped date, total), with a search. Picking one makes its draft the way the
 invoicing rules do (`POST /api/invoicing/jobs/:id/draft`): the client, the
 Reference from the Reference rule, and the job's lines, linked to the job. A
 job the rules refuse is not drafted, and the toast names the reason. An
