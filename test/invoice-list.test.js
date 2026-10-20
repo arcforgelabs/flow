@@ -159,3 +159,53 @@ test('with integrations on, a Linked column shows one icon per system; one not i
   assert.equal(noXero.tag, 'span');
   assert.equal(noXero.all((el) => el.getAttribute('data-tone') === 'warn').length, 1);
 });
+
+test('ticked rows bring up the bulk bar: N selected, the tab\'s actions, and × clears', async () => {
+  globalThis.sessionStorage = { getItem: () => null, setItem() {}, removeItem() {} };
+  globalThis.document = { visibilityState: 'visible', addEventListener() {}, removeEventListener() {} };
+  const { main, ui, asked } = page();
+  const opened = renderInvoiceList(main, ui);
+  await settle();
+  asked.shift().answer(list('ready', ['R-1', 'R-2', 'R-3']));
+  await opened;
+  const bulk = () => main.all((el) => el.getAttribute('class') === 'fx-bulk')[0];
+  const acts = () => bulk().all((el) => /fx-bulk__act( |$)/.test(el.getAttribute('class') ?? ''));
+  const words = () => acts().map((el) => el.getAttribute('data-tip') ?? el.text);
+  assert.equal(bulk().hidden, true);
+
+  // Tick two rows: the bar shows the count, Finalise first, then Drafts.
+  const boxes = panel(main).all((el) => el.tag === 'input' && /^Tick /.test(el.getAttribute('aria-label') ?? '') && el.getAttribute('aria-label') !== 'Tick every invoice shown');
+  for (const box of boxes.slice(0, 2)) { box.checked = true; box.onchange(); }
+  assert.equal(bulk().hidden, false);
+  assert.match(bulk().text, /^2 selected/);
+  assert.deepEqual(words(), ['Finalise', 'Drafts', 'Copy references', 'Export CSV', 'More']);
+  assert.match(acts()[0].getAttribute('class'), /--primary/);
+  // The old send bar button is gone.
+  assert.doesNotMatch(main.text, /Move 2 to Drafts/);
+
+  // Drafts moves the ticked rows back, by id.
+  acts()[1].onclick();
+  await settle();
+  const move = asked.shift();
+  assert.equal(move.path, '/api/invoicing/invoices/mark-not-ready');
+
+  // × clears the ticks and hides the bar.
+  move.answer({ moved: 2 });
+  await settle();
+  asked.shift().answer(list('ready', ['R-1', 'R-2', 'R-3']));
+  await settle();
+  assert.equal(bulk().hidden, true);
+  const again = panel(main).all((el) => el.tag === 'input' && el.getAttribute('aria-label')?.startsWith('Tick R-'));
+  again[0].checked = true; again[0].onchange();
+  assert.match(bulk().text, /^1 selected/);
+  bulk().all((el) => el.getAttribute('aria-label') === 'Clear the ticks')[0].onclick();
+  assert.equal(bulk().hidden, true);
+
+  // Finalised rows can be ticked too; there the bar has Void, not Finalise.
+  tab(main, 'Finalised').onclick();
+  asked.shift().answer(list('issued', ['FL-1']));
+  await settle();
+  const fl = panel(main).all((el) => el.tag === 'input' && el.getAttribute('aria-label')?.startsWith('Tick FL-1'))[0];
+  fl.checked = true; fl.onchange();
+  assert.deepEqual(words(), ['Copy numbers', 'Export CSV', 'Download PDFs', 'Void', 'More']);
+});
