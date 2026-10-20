@@ -96,6 +96,12 @@ Xero** button: an invoice that is queued, sent, or found in Xero cannot be
 sent twice. Back reloads the list, where the sent invoice is under Issued.
 After the last invoice of the list, the list opens.
 
+Drafts work the same way. **Finalise** and **Save as draft** open the next
+invoice of the list, so a person reviews drafts one after another without
+going back. **Adopt changes** stays on the invoice, to show the result. An
+invoice opened from somewhere else (the job board, search, a link) steps
+through its own tab: Drafts, Ready, Problem, Issued or Void.
+
 ## Records
 
 `invoices.send_state` is `queued`, `sent` or `failed` (null when the invoice

@@ -306,12 +306,12 @@ function saveNav(nav) {
 }
 
 // The bar above one invoice: Back to the list as it was, and the previous and
-// next invoice of that list.
-function navBar(ui, id) {
-  const { h, go } = ui;
-  const nav = readNav();
-  const ids = nav?.ids ?? [];
-  const at = ids.indexOf(id);
+// next invoice of that list. An invoice opened from elsewhere (the job board,
+// search, a link) steps through its own tab: Drafts, Ready, Problem, Issued
+// or Void, read once here.
+function navBar(ui, invoice) {
+  const { h, go, flow } = ui;
+  const id = invoice?.id ?? null;
   const back = () => { sessionStorage.setItem(NAV_BACK, '1'); go('/invoices'); };
   const step = (to, label, path) => {
     const button = h('button', {
@@ -321,15 +321,33 @@ function navBar(ui, id) {
     button.innerHTML = `<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="${path}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
     return button;
   };
-  return h('nav', { class: 'fx-pager', 'aria-label': 'Invoices' },
-    h('button', { class: 'fx-pager__back', type: 'button', onclick: back }, '← Back'),
-    at >= 0 ? h('span', { class: 'fx-pager__count' }, `${at + 1} of ${ids.length}`) : null,
-    at >= 0 ? h('span', { class: 'fx-pager__steps' }, step(ids[at - 1], 'Previous invoice', 'M14.5 6l-6 6 6 6'), step(ids[at + 1], 'Next invoice', 'M9.5 6l6 6-6 6')) : null);
+  const bar = h('nav', { class: 'fx-pager', 'aria-label': 'Invoices' },
+    h('button', { class: 'fx-pager__back', type: 'button', onclick: back }, '← Back'));
+  const fill = (ids) => {
+    const at = ids.indexOf(id);
+    if (at < 0) return false;
+    bar.replaceChildren(bar.firstChild,
+      h('span', { class: 'fx-pager__count' }, `${at + 1} of ${ids.length}`),
+      h('span', { class: 'fx-pager__steps' }, step(ids[at - 1], 'Previous invoice', 'M14.5 6l-6 6 6 6'), step(ids[at + 1], 'Next invoice', 'M9.5 6l6 6-6 6')));
+    return true;
+  };
+  const tab = invoice?.status === 'void' ? 'void' : invoice?.view ?? invoice?.status;
+  if (id && !fill(readNav()?.ids ?? []) && TABS.some(([t]) => t === tab)) {
+    flow(`/api/invoicing/invoices?${new URLSearchParams({ status: tab })}`).then((body) => {
+      const ids = body.invoices.map((i) => i.id);
+      if (!fill(ids)) return;
+      saveNav({ tab, q: '', ids });
+      try { sessionStorage.setItem('flow_invoice_tab', tab); } catch { /* Back opens the last tab */ }
+    }).catch(() => { /* Back only */ });
+  }
+  return bar;
 }
 
-// After a send, the next invoice of the list opens; at its end, the list.
-// The sent invoice stays in the bar's list, so the count holds (2 of 35) and
-// Previous opens it again, now sent. Back reloads the list without it.
+// After a send, a Finalise or a Save as draft, the next invoice of the list
+// opens; at its end, the list. So a person reviews drafts one after another
+// without going back. The invoice stays in the bar's list, so the count holds
+// (2 of 35) and Previous opens it again, now done. Back reloads the list
+// without it.
 export function openNext(ui, id) {
   const ids = readNav()?.ids ?? [];
   const at = ids.indexOf(id);
@@ -546,7 +564,7 @@ function draftView(invoice, ui, context, redraw) {
   };
 
   // Save shows only when there is something to save: a new invoice, or a
-  // change since the page opened. Saving keeps the invoice where it is.
+  // change since the page opened. Save as draft opens the next invoice.
   // Save as draft: a draft that is not ready always offers it. A ready
   // invoice offers Save changes only once something changed.
   const keepsSave = isNew || invoice?.view !== 'ready';
@@ -557,6 +575,7 @@ function draftView(invoice, ui, context, redraw) {
       if (!saved) return;
       toast(keepsSave ? 'Saved as a draft.' : 'Changes saved.', 'success');
       if (isNew) go(`/invoices/${saved.id}`, { replace: true });
+      else if (keepsSave) openNext(ui, invoice.id);
       else redraw(saved);
     },
   }, keepsSave ? 'Save as draft' : 'Save changes');
@@ -607,7 +626,7 @@ function draftView(invoice, ui, context, redraw) {
         const { invoice: issued } = await flow(`/api/invoicing/invoices/${saved.id}/issue`, { method: 'POST', body: JSON.stringify({ issueDate: localDate() }) });
         toast(`${issued.number} is final.`, 'success');
         if (isNew) go(`/invoices/${issued.id}`, { replace: true });
-        else redraw(issued);
+        else openNext(ui, invoice.id);
       } catch (error) {
         toast(error.message, 'danger');
       }
@@ -651,8 +670,12 @@ function draftView(invoice, ui, context, redraw) {
       if (!(await save())) return;
       try {
         const res = await flow('/api/invoicing/invoices/mark-ready', { method: 'POST', body: JSON.stringify({ invoiceIds: [invoice.id] }) });
-        if (res.marked) toast(`Final. It is in Ready; Send all ready sends it to ${to}.`, 'success');
-        else toast(res.refused[0]?.problems.map((p) => p.message).join(' ') ?? 'It has a problem.', 'danger');
+        if (res.marked) {
+          toast(`Final. It is in Ready; Send all ready sends it to ${to}.`, 'success');
+          openNext(ui, invoice.id);
+          return;
+        }
+        toast(res.refused[0]?.problems.map((p) => p.message).join(' ') ?? 'It has a problem.', 'danger');
         const { invoice: fresh } = await flow(`/api/invoicing/invoices/${invoice.id}`);
         redraw(fresh);
       } catch (error) {
@@ -706,7 +729,7 @@ function draftView(invoice, ui, context, redraw) {
   ];
 
   return [
-    navBar(ui, invoice?.id ?? null),
+    navBar(ui, invoice),
     h('header', { class: 'fx-ph' },
       h('div', { class: 'fx-ph__text' },
         h('h1', { class: 'fx-title' }, isNew ? 'New invoice' : ready ? 'Ready invoice' : 'Draft invoice'),
@@ -814,7 +837,7 @@ function issuedView(invoice, ui, context, redraw) {
     h('button', { class: 'fx-btn', type: 'button', onclick: () => act('revise', `${invoice.number} is a draft again.`) }, 'Revise'),
   ] : [];
   return [
-    navBar(ui, invoice.id),
+    navBar(ui, invoice),
     h('header', { class: 'fx-ph' },
       h('div', { class: 'fx-ph__text' },
         h('div', { class: 'fx-row' },
