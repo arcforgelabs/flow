@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS "xero_invoice_links" (
 -- The Import page's settings, one row for each organisation.
 CREATE TABLE IF NOT EXISTS "xero_import_settings" (
 	"organisation_id" uuid PRIMARY KEY NOT NULL REFERENCES "organisations"("id"),
+	"auto_link" boolean DEFAULT true NOT NULL,
 	"make_unmatched" boolean DEFAULT false NOT NULL,
 	"updated_by" text,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL

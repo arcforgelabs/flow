@@ -129,6 +129,32 @@ describe('Xero import: Xero invoices against Flow invoices', { skip: skipWithout
     await call('/import/settings', { method: 'PUT', body: { organisationId: org(), makeUnmatched: false } });
   });
 
+  test('with Link sure matches off, a sure fit waits for a person; check lists what fits', async () => {
+    const off = await call('/import/settings', { method: 'PUT', body: { organisationId: org(), autoLink: false } });
+    assert.deepEqual(off.body.settings, { autoLink: false, makeUnmatched: false }, 'a setting left out keeps its value');
+    await flowInvoice('2026-05-05');
+    const id = await copy(8, { issuedOn: '2026-05-05' });
+    assert.equal((await stateOf(id)).sure, true);
+    assert.equal((await matchXero(handle.db, org())).linked, 0);
+    const check = await call(`/import?organisationId=${org()}&show=check`);
+    assert.ok(check.body.rows.some((r) => r.xeroInvoiceId === id));
+    assert.ok(check.body.rows.every((r) => ['invoice_fits', 'job_fits'].includes(r.state)));
+    await call('/import/settings', { method: 'PUT', body: { organisationId: org(), autoLink: true } });
+    assert.equal((await matchXero(handle.db, org())).linked, 1);
+  });
+
+  test('a Flow invoice whose job carries the work-system invoice number is a sure fit, even at another total', async () => {
+    const job = await observeJob(handle.db, org(), { sourceSystem: 'worksystem', sourceJobRef: 'JOB-N', caseRef: 'CASE-N', sourceInvoiceRef: 'INV-9R', contactId: practice.id, jobDate: '2026-04-02', lines: [{ itemCode: 'CROWN' }] });
+    await setReady(handle.db, org(), job.id, { actor: 'person:test' });
+    const own = await flowInvoice('2026-04-02');
+    await handle.db.update(billingObligations).set({ invoiceId: own.id }).where(eq(billingObligations.id, job.id));
+    const id = await copy(9, { contact: XC2, issuedOn: '2026-04-20', total: 30000 });
+    const row = await stateOf(id);
+    assert.equal(row.state, 'invoice_fits');
+    assert.equal(row.sure, true);
+    assert.equal(row.invoices[0].hard, 'work_invoice_number');
+  });
+
   test('only an owner or admin links, makes or changes the setting', async () => {
     const id = await copy(7, { contact: XC2, issuedOn: '2026-06-01' });
     const res = await request(app, `/api/xero/import/${id}/make`, { token: lab.staffToken, method: 'POST', body: { organisationId: org() } });

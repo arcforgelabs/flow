@@ -868,21 +868,50 @@ function connectProgress({ steps, started }) {
       step.label))));
 }
 
-// Xero › Import: how many Xero invoices still need a Flow invoice. The counts
-// come from Flow's copy of Xero; the page itself is server/ui/xero-import.js.
+// Xero › Import, in settings rows: how many Xero invoices to check (Review
+// opens them one at a time), the two import settings, and the history. The
+// counts come from Flow's copy of Xero; the pages are server/ui/xero-import.js.
 function xeroImportSection(organisations) {
-  const counts = h('p', { class: 'fx-dim' }, 'Counting…');
-  const section = h('section', { class: 'fx-int-section fx-card fx-xi-card' },
-    h('h2', { class: 'fx-int-section__title' }, 'Import'),
-    h('p', {}, 'Each Xero invoice, and the Flow invoice it is. Link it, or make the Flow invoice from it.'),
-    counts,
-    h('a', { class: 'fx-btn fx-btn--sm', href: '/xero-import', onclick: navigate }, 'Open import'));
   const organisationId = organisations?.[0]?.id;
+  const canAct = ['owner', 'admin'].includes(me?.person?.role);
+  const count = h('span', { class: 'fx-num fx-xi-count' }, '…');
+  const copied = h('span', {}, 'Every Xero invoice Flow copied. Search it with no Xero call.');
+  const switchFor = (name, label) => {
+    const button = h('button', { class: 'fx-switch', type: 'button', role: 'switch', 'aria-label': label, 'aria-checked': 'false', disabled: true });
+    button.addEventListener('click', async () => {
+      const on = button.getAttribute('aria-checked') !== 'true';
+      button.disabled = true;
+      try {
+        const { settings } = await flow('/api/xero/import/settings', { method: 'PUT', body: JSON.stringify({ organisationId, [name]: on }) });
+        button.setAttribute('aria-checked', String(settings[name]));
+        toast('Saved.', 'success');
+      } catch (error) {
+        toast(error.message, 'danger');
+      }
+      button.disabled = !canAct;
+    });
+    return button;
+  };
+  const autoLink = switchFor('autoLink', 'Link sure matches');
+  const makeUnmatched = switchFor('makeUnmatched', 'Make Flow invoices for the rest');
+  const section = h('section', { class: 'fx-set fx-int-section fx-card', style: { padding: '8px 20px 16px' } },
+    h('h2', { class: 'fx-set__title' }, 'Import'),
+    settingRow({ label: 'To check', hint: 'Xero invoices that fit a Flow invoice or a Flow job.',
+      control: h('span', { class: 'fx-row' }, count, h('a', { class: 'fx-btn fx-btn--sm fx-btn--primary', href: '/xero-import', onclick: navigate }, 'Review')) }),
+    settingRow({ label: 'Link sure matches', hint: 'Same client, total and week, and only one fit. Flow links them.', control: autoLink }),
+    settingRow({ label: 'Make Flow invoices for the rest', hint: 'Off: they stay in the Xero history.', control: makeUnmatched }),
+    settingRow({ label: 'Xero history', hint: copied, control: h('a', { class: 'fx-btn fx-btn--sm', href: '/xero-import?show=all', onclick: navigate }, 'Search') }));
   if (organisationId) {
-    flow(`/api/xero/import?organisationId=${organisationId}&show=linked&limit=1`)
-      .then(({ counts: c }) => counts.replaceChildren(`${c.linked} linked · ${c.job_fits} a job fits · ${c.invoice_fits} a Flow invoice fits · ${c.none} nothing fits`))
-      .catch(() => counts.replaceChildren(''));
-  } else counts.replaceChildren('');
+    flow(`/api/xero/import?organisationId=${organisationId}&show=check&limit=1`)
+      .then(({ counts: c, settings }) => {
+        count.replaceChildren(String(c.job_fits + c.invoice_fits));
+        copied.replaceChildren(`${Object.values(c).reduce((a, b) => a + b, 0)} Xero invoices copied, ${c.linked} in Flow. Search with no Xero call.`);
+        autoLink.setAttribute('aria-checked', String(settings.autoLink));
+        makeUnmatched.setAttribute('aria-checked', String(settings.makeUnmatched));
+        autoLink.disabled = makeUnmatched.disabled = !canAct;
+      })
+      .catch(() => count.replaceChildren('—'));
+  }
   return section;
 }
 

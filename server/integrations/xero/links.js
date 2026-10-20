@@ -5,6 +5,7 @@ import { FlowError } from '../../core/errors.js';
 import { createDraftInvoice, issueInvoice } from '../../core/invoices.js';
 import { linkJobToInvoice } from '../../core/ledger.js';
 import { normaliseName } from './catalogue.js';
+import { canFit, scoreFit, sureFits } from './fit.js';
 
 // The Import page (docs/XERO_IMPORT.md): each sales invoice in Flow's copy of
 // Xero against Flow's own invoices. Flow's own records are the ones it works
@@ -12,11 +13,13 @@ import { normaliseName } from './catalogue.js';
 //
 //   linked        a Flow invoice is this Xero invoice: Flow sent it (a push),
 //                 the import matched it, or a person linked or made it.
-//   invoice_fits  a Flow invoice of the same client, total and week has no
-//                 Xero invoice. One fit both ways is linked by `matchXero`;
-//                 more than one waits for a person.
+//   invoice_fits  a Flow invoice with no Xero invoice fits (fit.js: hard
+//                 evidence from its jobs, or the same client, an amount that
+//                 fits and dates within two weeks). A sure fit is linked by
+//                 `matchXero`; the rest wait for a person.
 //   job_fits      no Flow invoice, but a Flow job with no invoice fits: the
-//                 earlier matcher tied it to this Xero invoice, or it has the
+//                 earlier matcher tied it to this Xero invoice, its work-system
+//                 invoice number is this Xero number, or it has the
 //                 same client and total within a week. A person makes the Flow
 //                 invoice from the Xero one and links the job.
 //   none          nothing in Flow fits. The Xero invoice stays in the copy; a
@@ -26,6 +29,7 @@ import { normaliseName } from './catalogue.js';
 // It reads only Flow's database: no Xero call.
 
 export const IMPORT_STATES = Object.freeze(['linked', 'invoice_fits', 'job_fits', 'none']);
+const CHECK = new Set(['invoice_fits', 'job_fits']);
 const FIT_DAYS = 7;
 const SKIP_STATUSES = ['DELETED', 'VOIDED'];
 const num = (value) => (value === null || value === undefined ? null : Number(value));
@@ -40,7 +44,7 @@ const near = (a, b) => {
 async function classify(db, organisationId) {
   const { rows: xero } = await db.execute(sql`
     select x.xero_invoice_id, x.invoice_number, x.reference, x.status, x.issued_on, x.total_cents, x.amount_due_cents,
-      x.xero_contact_id, c.name as contact_name, c.email as contact_email
+      x.xero_contact_id, x.lines, c.name as contact_name, c.email as contact_email
     from xero_invoices x
     left join xero_contacts c on c.organisation_id = x.organisation_id and c.xero_contact_id = x.xero_contact_id
     where x.organisation_id = ${organisationId} and x.type = 'ACCREC'
@@ -67,15 +71,28 @@ async function classify(db, organisationId) {
     byName.set(key, byName.has(key) ? null : p.id);
   }
   const { rows: flowInvoices } = await db.execute(sql`
-    select i.id, i.number, i.contact_id, i.total_cents, i.status, coalesce(i.issue_date, i.created_at::date) as date
+    select i.id, i.number, i.contact_id, i.total_cents, i.subtotal_cents, i.reference, i.status, coalesce(i.issue_date, i.created_at::date) as date,
+      coalesce((select array_agg(distinct p.code) from invoice_lines l join price_items p on p.id = l.price_item_id
+        where l.invoice_id = i.id and p.code is not null), '{}') as item_codes,
+      coalesce((select jsonb_agg(jsonb_build_object('accountingRef', o.accounting_ref, 'sourceInvoiceRef', o.source_invoice_ref, 'practitioner', o.practitioner))
+        from billing_obligations o where o.organisation_id = i.organisation_id and o.invoice_id = i.id), '[]') as jobs
     from invoices i
     where i.organisation_id = ${organisationId} and i.status <> 'void'`);
   const open = flowInvoices.filter((i) => !linkedInvoices.has(i.id));
   const { rows: jobs } = await db.execute(sql`
-    select o.id, o.contact_id, o.total_cents, o.job_date, o.practitioner, o.case_ref, o.accounting_ref
+    select o.id, o.contact_id, o.total_cents, o.job_date, o.practitioner, o.case_ref, o.accounting_ref, o.source_invoice_ref
     from billing_obligations o
     where o.organisation_id = ${organisationId} and o.invoice_id is null`);
   const jobByRef = new Map(jobs.filter((j) => j.accounting_ref).map((j) => [j.accounting_ref, j]));
+  // The work system's own invoice number, as Xero numbers it (a trailing R is
+  // a reissue). Only a number one job holds counts.
+  const workNumber = (ref) => String(ref ?? '').trim().replace(/R$/i, '').toLowerCase();
+  const jobByNumber = new Map();
+  for (const j of jobs) {
+    if (!j.source_invoice_ref) continue;
+    const key = workNumber(j.source_invoice_ref);
+    jobByNumber.set(key, jobByNumber.has(key) ? null : j);
+  }
 
   const rows = xero.map((x) => {
     const contactId = x.contact_name ? byName.get(normaliseName(x.contact_name)) ?? null : null;
@@ -99,22 +116,30 @@ async function classify(db, organisationId) {
       row.link = { invoiceId: link.invoice_id, number: invoice?.number ?? null, matchedBy: link.matched_by };
       return { ...row, state: 'linked' };
     }
-    if (contactId) {
-      row.invoices = open.filter((i) => i.contact_id === contactId && num(i.total_cents) === row.totalCents && near(day(i.date), row.issuedOn))
-        .map((i) => ({ id: i.id, number: i.number, status: i.status, date: day(i.date), totalCents: num(i.total_cents) }));
-    }
+    const xeroFit = { id: x.xero_invoice_id, number: x.invoice_number, contactId, totalCents: row.totalCents, issuedOn: row.issuedOn,
+      itemCodes: (x.lines ?? []).map((l) => l.itemCode).filter(Boolean), reference: x.reference };
+    row.invoices = open.map((i) => {
+      const flowFit = { id: i.id, contactId: i.contact_id, totalCents: num(i.total_cents), subtotalCents: num(i.subtotal_cents), date: day(i.date),
+        itemCodes: i.item_codes ?? [], reference: i.reference, jobs: i.jobs ?? [] };
+      const scored = scoreFit(xeroFit, flowFit);
+      return canFit(xeroFit, flowFit, scored)
+        ? { id: i.id, number: i.number, status: i.status, date: day(i.date), totalCents: num(i.total_cents), score: scored.score, hard: scored.hard }
+        : null;
+    }).filter(Boolean).sort((a, b) => b.score - a.score);
     if (row.invoices.length) return { ...row, state: 'invoice_fits' };
-    const tied = jobByRef.get(x.xero_invoice_id);
+    const tied = jobByRef.get(x.xero_invoice_id) ?? (x.invoice_number ? jobByNumber.get(workNumber(x.invoice_number)) : null) ?? null;
     const fits = tied ? [tied] : contactId
       ? jobs.filter((j) => !j.accounting_ref && j.contact_id === contactId && num(j.total_cents) === row.totalCents && near(day(j.job_date), row.issuedOn))
       : [];
     row.jobs = fits.map((j) => ({ id: j.id, jobDate: day(j.job_date), practitioner: j.practitioner, caseRef: j.case_ref, totalCents: num(j.total_cents), tied: j === tied }));
     return { ...row, state: row.jobs.length ? 'job_fits' : 'none' };
   });
-  // A Flow invoice that fits more than one Xero invoice is not a sure match.
-  const fitsOf = new Map();
-  for (const r of rows) for (const i of r.invoices) fitsOf.set(i.id, (fitsOf.get(i.id) ?? 0) + 1);
-  for (const r of rows) r.sure = r.state === 'invoice_fits' && r.invoices.length === 1 && fitsOf.get(r.invoices[0].id) === 1;
+  // Sure only when it is clearly the one fit both ways (fit.js).
+  const sure = sureFits(rows.flatMap((r) => r.invoices.map((i) => ({ xeroId: r.xeroInvoiceId, flowId: i.id, score: i.score, hard: i.hard }))));
+  for (const r of rows) {
+    r.sure = r.state === 'invoice_fits' && sure.has(r.xeroInvoiceId);
+    if (r.sure) r.invoices.sort((a, b) => (b.id === sure.get(r.xeroInvoiceId)) - (a.id === sure.get(r.xeroInvoiceId)));
+  }
   return rows;
 }
 
@@ -126,27 +151,37 @@ const matches = (row, q) => {
   return [row.number, row.clientName, row.reference].some((v) => v && String(v).toLowerCase().includes(words));
 };
 
-// The page: counts by state, and one page of rows. `show` is a state or
-// 'all'; `q` searches number, client, Reference or amount.
+// The page: counts by state, and one page of rows. `show` is a state, 'check'
+// (what a person checks: a Flow invoice or a job fits), or 'all'; `q`
+// searches number, client, Reference or amount.
 export async function importOverview(db, organisationId, { show = 'all', q = '', limit = 50, offset = 0 } = {}) {
   const rows = await classify(db, organisationId);
   const counts = Object.fromEntries(IMPORT_STATES.map((s) => [s, 0]));
   for (const r of rows) counts[r.state] += 1;
-  const shown = rows.filter((r) => (show === 'all' || r.state === show) && matches(r, q));
+  const shown = rows.filter((r) => (show === 'all' || r.state === show || (show === 'check' && CHECK.has(r.state))) && matches(r, q));
   const settings = await readImportSettings(db, organisationId);
   return { counts, total: shown.length, rows: shown.slice(offset, offset + limit), settings };
 }
 
+// `autoLink` (on): the import links each sure fit. `makeUnmatched` (off):
+// it also makes a Flow invoice for each Xero invoice nothing fits.
 export async function readImportSettings(db, organisationId) {
-  const { rows } = await db.execute(sql`select make_unmatched from xero_import_settings where organisation_id = ${organisationId}`);
-  return { makeUnmatched: Boolean(rows[0]?.make_unmatched) };
+  const { rows } = await db.execute(sql`select auto_link, make_unmatched from xero_import_settings where organisation_id = ${organisationId}`);
+  return { autoLink: rows[0] ? Boolean(rows[0].auto_link) : true, makeUnmatched: Boolean(rows[0]?.make_unmatched) };
 }
 
-export async function saveImportSettings(db, organisationId, { makeUnmatched, actor }) {
-  if (typeof makeUnmatched !== 'boolean') throw new FlowError('invalid', 'makeUnmatched must be true or false');
-  await db.execute(sql`insert into xero_import_settings (organisation_id, make_unmatched, updated_by, updated_at)
-    values (${organisationId}, ${makeUnmatched}, ${actor}, now())
-    on conflict (organisation_id) do update set make_unmatched = excluded.make_unmatched, updated_by = excluded.updated_by, updated_at = now()`);
+// Saves the settings given; a setting left out keeps its value.
+export async function saveImportSettings(db, organisationId, { autoLink, makeUnmatched, actor }) {
+  for (const [name, value] of [['autoLink', autoLink], ['makeUnmatched', makeUnmatched]]) {
+    if (value !== undefined && typeof value !== 'boolean') throw new FlowError('invalid', `${name} must be true or false`);
+  }
+  const next = { ...(await readImportSettings(db, organisationId)) };
+  if (autoLink !== undefined) next.autoLink = autoLink;
+  if (makeUnmatched !== undefined) next.makeUnmatched = makeUnmatched;
+  await db.execute(sql`insert into xero_import_settings (organisation_id, auto_link, make_unmatched, updated_by, updated_at)
+    values (${organisationId}, ${next.autoLink}, ${next.makeUnmatched}, ${actor}, now())
+    on conflict (organisation_id) do update set auto_link = excluded.auto_link, make_unmatched = excluded.make_unmatched,
+      updated_by = excluded.updated_by, updated_at = now()`);
   return readImportSettings(db, organisationId);
 }
 
@@ -218,15 +253,15 @@ async function makeFrom(db, organisationId, row, { jobId = null, actor }) {
   });
 }
 
-// Links each sure fit, and with `make_unmatched` on makes a Flow invoice for
+// With `autoLink` on, links each sure fit; with `makeUnmatched` on, makes a Flow invoice for
 // each Xero invoice nothing fits. Answers counts. The history import runs it
 // after each read of the copy; a person can run it from the page.
 export async function matchXero(db, organisationId, { actor = 'automation:xero-import' } = {}) {
   const rows = await classify(db, organisationId);
-  const { makeUnmatched } = await readImportSettings(db, organisationId);
+  const { autoLink, makeUnmatched } = await readImportSettings(db, organisationId);
   const result = { linked: 0, made: 0, failed: 0 };
   for (const row of rows) {
-    if (row.sure) {
+    if (row.sure && autoLink) {
       await insertLink(db, organisationId, { xeroInvoiceId: row.xeroInvoiceId, invoiceId: row.invoices[0].id, matchedBy: 'auto', actor }).then(() => { result.linked += 1; }, () => { result.failed += 1; });
     } else if (makeUnmatched && row.state === 'none') {
       await makeFrom(db, organisationId, row, { actor }).then(() => { result.made += 1; }, () => { result.failed += 1; });
