@@ -187,4 +187,22 @@ describe('price list against PostgreSQL', { skip: skipWithoutDatabase }, () => {
     const bad = await call('/price-items', { method: 'POST', body: { code: 'X', name: 'X', unitAmountCents: -1 } });
     assert.equal(bad.status, 400);
   });
+
+  test('the API links many records in one call (Reconcile prices)', async () => {
+    products = [...products, { id: 'p-20', code: '9020', name: 'Night Guard', unitAmountCents: 20000, taxCode: 'GST' },
+      { id: 'p-21', code: '9021', name: 'Sports Guard', unitAmountCents: 19000, taxCode: 'GST' }];
+    const guard = (await call('/price-items', { method: 'POST', body: { code: 'NG', name: 'Night Guard', unitAmountCents: 20000 } })).body.item;
+    const sport = (await call('/price-items', { method: 'POST', body: { code: 'SG', name: 'Sports Guard', unitAmountCents: 19000 } })).body.item;
+    const links = [{ priceItemId: guard.id, system: 'worksystem', externalId: 'p-20' }, { priceItemId: sport.id, system: 'worksystem', externalId: 'p-21' }];
+    assert.equal((await call('/price-links', { method: 'POST', token: staffToken, body: { links } })).status, 403);
+    assert.equal((await call('/price-links', { method: 'POST', body: { links: [] } })).status, 400);
+    assert.equal((await call('/price-links', { method: 'POST', body: { links: [{ ...links[0], priceItemId: 'nope' }] } })).status, 404);
+    const made = await call('/price-links', { method: 'POST', body: { links } });
+    assert.equal(made.status, 201);
+    assert.equal(made.body.linked, 2);
+    const list = (await call('/price-list')).body;
+    const left = list.unlinked.find((u) => u.system === 'worksystem').records.map((r) => r.id);
+    assert.ok(!left.includes('p-20') && !left.includes('p-21'));
+    assert.deepEqual(list.items.find((i) => i.code === 'NG').links.map((l) => [l.externalId, l.matchedBy]), [['p-20', 'person']]);
+  });
 });

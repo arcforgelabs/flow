@@ -1,6 +1,7 @@
 // Core migrations from GUARD_FROM on, and every adapter's, must run on a
-// database that already has their tables and columns: on Replit, publishing
-// can add them to production before Flow starts (docs/REPLIT.md, "Updates go to the workspace first").
+// database that already has their tables and columns. A second safety net: on
+// Replit, a publish whose database prompt was approved by mistake adds them to
+// production before Flow starts (docs/REPLIT.md, "The workspace database").
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';

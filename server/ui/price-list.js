@@ -1,13 +1,13 @@
 // Settings, Price list (/price-list; server/core/price-list.js,
 // docs/PRICE_LIST.md). Flow's own codes and prices, which work with no
-// integration connected. Each row is one code: its name, its price and tax,
-// and a chip for each connected system (Xero, Seazona) that says whether that
-// system's record agrees. Edit opens a dialog with the code's fields, its
-// links and, when something differs, Mark resolved. Below the list, each
-// system's records that link to no code, with a menu to link each one, and
-// the line price setting. Everyone can read it; an owner or admin changes it.
-// The caller passes in app.js's shared pieces as `ui`.
+// integration connected: one table row per code, with its price and tax, and
+// the line price setting below. Edit opens a dialog with the code's fields, its
+// links and, when something differs, Mark resolved. While an integration with
+// its own price list is on, Reconcile (price-reconcile.js) says how many
+// records need a person and opens the work. Everyone can read it; an owner or
+// admin changes it. The caller passes in app.js's shared pieces as `ui`.
 import { alertStrip } from '/assets/ui/alerts.js';
+import { reconcileRows } from '/assets/ui/price-match.js';
 
 const DOCS = 'https://github.com/arcforgelabs/flow/blob/main/docs/PRICE_LIST.md';
 const TAX_LABELS = { GST: 'GST', GST_FREE: 'GST free' };
@@ -25,14 +25,16 @@ const toCents = (text) => {
 export async function renderPriceList(main, ui) {
   const { h, flow, toast, notice, dialog, pageHeader, me } = ui;
   const disabled = !['owner', 'admin'].includes(me?.person.role);
-  const host = h('div', { class: 'fx-card', style: { padding: '8px 20px 16px' } }, h('div', { class: 'fx-skeleton' }));
+  const host = h('div', { class: 'fx-price' }, h('div', { class: 'fx-skeleton' }));
   const addButton = h('button', { class: 'fx-btn fx-btn--primary', type: 'button', disabled }, 'Add code');
-  const checkButton = h('button', { class: 'fx-btn fx-btn--ghost', type: 'button', disabled }, 'Check prices');
+  const reconcileButton = h('button', { class: 'fx-btn fx-btn--ghost', type: 'button', hidden: true, onclick: () => ui.go('/price-list/reconcile') }, 'Reconcile');
   const alerts = alertStrip(ui, 'price-list');
-  main.append(pageHeader('Price list', { subtitle: 'The codes and prices that Flow puts on invoice lines.', actions: [checkButton, addButton] }), alerts.element, host);
+  main.append(pageHeader('Price list', { subtitle: 'The codes and prices that Flow puts on invoice lines.', actions: [reconcileButton, addButton] }), alerts.element, host);
 
   let data = null;
   let query = '';
+  let tab = 'active';
+  let opened = new URLSearchParams(location.search).get('code');
   const systemName = (id) => data.systems.find((s) => s.id === id)?.name ?? id;
 
   async function send(path, method, payload, done = 'Saved.') {
@@ -49,22 +51,6 @@ export async function renderPriceList(main, ui) {
   const row = (name, hint, control) => h('div', { class: 'fx-set__row' },
     h('div', { class: 'fx-set__text' }, h('span', { class: 'fx-set__name' }, name), hint),
     h('div', { class: 'fx-set__control fx-rule__controls' }, control));
-
-  // One chip for each connected system: agrees, differs (with its price), or
-  // has no record for this code.
-  function chips(item) {
-    return data.systems.map((system) => {
-      const mine = item.findings.filter((f) => f.system === system.id);
-      const linked = item.links.some((l) => l.system === system.id);
-      if (mine.some((f) => f.kind === 'not_linked')) return h('span', { class: 'fx-status', 'data-tone': 'warn' }, `Not in ${system.name}`);
-      if (!linked) return null;
-      const price = mine.find((f) => f.kind === 'price');
-      if (price) return h('span', { class: 'fx-status', 'data-tone': 'danger' }, `${system.name} ${money(price.other)}`);
-      if (mine.some((f) => f.kind === 'tax')) return h('span', { class: 'fx-status', 'data-tone': 'danger' }, `${system.name} tax`);
-      if (mine.some((f) => f.kind === 'missing')) return h('span', { class: 'fx-status', 'data-tone': 'danger' }, `${system.name} removed`);
-      return h('span', { class: 'fx-status', 'data-tone': 'success' }, system.name);
-    }).filter(Boolean);
-  }
 
   const findingText = (f) => {
     const name = systemName(f.system);
@@ -141,33 +127,6 @@ export async function renderPriceList(main, ui) {
     return load();
   }
 
-  // A system's record that links to no code: a menu of codes to link it to,
-  // or "New code" to add it to the list as it is.
-  function unlinkedRow(system, record, items) {
-    const select = h('select', { class: 'fx-select fx-price__link', 'aria-label': `Code for ${record.name ?? record.code}`, disabled },
-      h('option', { value: '' }, 'Link to a code…'),
-      h('option', { value: 'new' }, 'Add as a new code'),
-      ...items.filter((i) => !i.archivedAt).map((i) => h('option', { value: i.id }, `${i.code} · ${i.name} · ${money(i.unitAmountCents)}`)));
-    select.addEventListener('change', async () => {
-      if (!select.value) return;
-      select.disabled = true;
-      let itemId = select.value;
-      if (itemId === 'new') {
-        const made = await send('/api/invoicing/price-items', 'POST', {
-          code: record.code || record.id, name: record.name || record.code || record.id,
-          unitAmountCents: record.unitAmountCents ?? 0, taxCode: record.taxCode ?? 'GST',
-        }, null);
-        itemId = made?.item.id ?? null;
-      }
-      if (itemId && await send(`/api/invoicing/price-items/${itemId}/links`, 'POST', { system: system.id, externalId: record.id }, 'Linked. Jobs with this item update in a few minutes.')) return load();
-      select.disabled = disabled;
-      select.value = '';
-      return null;
-    });
-    const hint = [record.code, money(record.unitAmountCents), TAX_LABELS[record.taxCode]].filter(Boolean).join(' · ');
-    return row(record.name ?? record.code ?? record.id, h('span', { class: 'fx-set__hint' }, hint), select);
-  }
-
   async function linePriceRow() {
     const select = h('select', { class: 'fx-select', 'aria-label': 'Line price from', disabled }, LINE_PRICES.map((p) => h('option', { value: p.value }, p.label)));
     try {
@@ -188,40 +147,46 @@ export async function renderPriceList(main, ui) {
 
   function draw() {
     const words = query.trim().toLowerCase();
-    const shown = data.items.filter((i) => !words || `${i.code} ${i.name}`.toLowerCase().includes(words));
-    const live = shown.filter((i) => !i.archivedAt);
-    const archived = shown.filter((i) => i.archivedAt);
-    const itemRow = (item) => {
-      const editButton = h('button', { class: 'fx-btn fx-btn--ghost fx-btn--sm', type: 'button', disabled }, 'Edit');
-      editButton.addEventListener('click', () => edit(item));
-      const hint = h('span', { class: 'fx-set__hint' }, `${money(item.unitAmountCents)} · ${TAX_LABELS[item.taxCode] ?? item.taxCode}`);
-      return row(`${item.code} · ${item.name}`, h('div', { class: 'fx-price__hint' }, hint, ...chips(item)), editButton);
-    };
+    const live = data.items.filter((i) => !i.archivedAt);
+    const archived = data.items.filter((i) => i.archivedAt);
+    const shown = (tab === 'archived' ? archived : live).filter((i) => !words || `${i.code} ${i.name}`.toLowerCase().includes(words));
+    const todo = data.systems.length ? reconcileRows(data).length : 0;
+    reconcileButton.hidden = !data.systems.length;
+    reconcileButton.replaceChildren('Reconcile', todo ? h('span', { class: 'fx-tabs__count', 'data-tone': 'warn' }, String(todo)) : null);
+    reconcileButton.title = todo ? `${todo} records need a person` : 'Every record has a code, and every price agrees';
+
     const search = h('input', { class: 'fx-input fx-search', type: 'search', placeholder: 'Find a code', value: query, 'aria-label': 'Find a code' });
     search.addEventListener('input', () => { query = search.value; draw(); search.focus(); search.setSelectionRange(query.length, query.length); });
-    const systems = data.systems.length
-      ? h('div', { class: 'fx-price__systems' }, ...data.systems.map((s) => h('span', { class: 'fx-chip fx-chip--static' }, `${s.name} · ${s.count} ${s.kind === 'accounting' ? 'items' : 'products'}`)))
-      : h('p', { class: 'fx-dim' }, 'No integration has a price list. Flow uses this list alone.');
+    const tabs = h('div', { class: 'fx-tabs', role: 'tablist' }, [['active', 'Active', live.length], ['archived', 'Archived', archived.length]].map(([id, label, count]) => h('button', {
+      type: 'button', role: 'tab', 'aria-selected': String(tab === id), onclick: () => { tab = id; draw(); },
+    }, label, h('span', { class: 'fx-tabs__count' }, String(count)))));
+    const itemRow = (item) => h('tr', { onclick: () => edit(item), tabindex: '0', onkeydown: (event) => { if (event.key === 'Enter') edit(item); } },
+      h('td', { class: 'fx-price__code' }, item.code),
+      h('td', {}, item.name),
+      h('td', { class: 'fx-num' }, money(item.unitAmountCents)),
+      h('td', { class: 'fx-dim' }, TAX_LABELS[item.taxCode] ?? item.taxCode));
+    const table = shown.length
+      ? h('div', { class: 'fx-price__scroll' }, h('table', { class: 'fx-table fx-table--rows fx-price__table' },
+        h('thead', {}, h('tr', {}, h('th', {}, 'Code'), h('th', {}, 'Name'), h('th', { class: 'fx-num' }, 'Price'), h('th', {}, 'Tax'))),
+        h('tbody', {}, shown.map(itemRow))))
+      : h('p', { class: 'fx-empty' }, words ? 'No code matches.' : tab === 'archived' ? 'No archived codes.' : 'No codes yet. Add the first one.');
     const sections = [
       disabled ? notice('Only an owner or admin can change these.', 'info') : null,
-      h('section', { class: 'fx-set' }, h('div', { class: 'fx-price__head' }, h('h2', { class: 'fx-set__title' }, `Codes · ${data.items.filter((i) => !i.archivedAt).length}`), search), systems,
-        ...(live.length ? live.map(itemRow) : [h('p', { class: 'fx-dim' }, words ? 'No code matches.' : 'No codes yet. Add the first one.')])),
+      h('div', { class: 'fx-toolbar fx-price__head' }, tabs, search),
+      table,
     ];
-    for (const { system: id, records } of data.unlinked) {
-      if (!records.length) continue;
-      const system = data.systems.find((s) => s.id === id);
-      sections.push(h('section', { class: 'fx-set' }, h('h2', { class: 'fx-set__title' }, `${system.name} · not on the list · ${records.length}`),
-        ...records.slice(0, 200).map((r) => unlinkedRow(system, r, data.items)),
-        records.length > 200 ? h('p', { class: 'fx-dim' }, `${records.length - 200} more. Link these first.`) : null));
-    }
-    if (archived.length) {
-      sections.push(h('section', { class: 'fx-set' }, h('h2', { class: 'fx-set__title' }, `Archived · ${archived.length}`), ...archived.map(itemRow)));
-    }
-    const settings = h('section', { class: 'fx-set' }, h('h2', { class: 'fx-set__title' }, 'Invoice lines'), h('div', { class: 'fx-skeleton' }));
+    const settings = h('section', { class: 'fx-set fx-price__settings' }, h('h2', { class: 'fx-set__title' }, 'Invoice lines'), h('div', { class: 'fx-skeleton' }));
     linePriceRow().then((r) => settings.replaceChildren(settings.firstChild, r,
       h('p', { class: 'fx-dim', style: { margin: '8px 0 0' } }, h('a', { href: DOCS, target: '_blank', rel: 'noopener' }, 'How the price list works'))));
     sections.push(settings);
     host.replaceChildren(...sections.filter(Boolean));
+    // Opened from Reconcile's "Edit code": that code's dialog, once.
+    if (opened) {
+      const item = data.items.find((i) => i.id === opened);
+      opened = null;
+      window.history.replaceState(null, '', '/price-list');
+      if (item) edit(item);
+    }
   }
 
   async function load() {
@@ -235,13 +200,5 @@ export async function renderPriceList(main, ui) {
   }
 
   addButton.addEventListener('click', () => edit(null));
-  checkButton.addEventListener('click', async () => {
-    checkButton.disabled = true;
-    const body = await send('/api/invoicing/price-list/check', 'POST', {}, null);
-    if (body) toast(body.summary.differing ? `${body.summary.differing} codes differ.` : 'Every linked price agrees.', body.summary.differing ? 'info' : 'success');
-    checkButton.disabled = disabled;
-    alerts.refresh();
-    await load();
-  });
   await load();
 }

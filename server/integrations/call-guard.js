@@ -360,3 +360,151 @@ export function createCallGuard({
 
   return { integration, policy, check, stoppedNow, record, halt, resume, status };
 }
+
+// ── Button presses ─────────────────────────────────────────────────────────
+//
+// The action guard: a person's button press that calls an outside system (a
+// copy, a recheck, a send) is one action. Pressed again and again, it spends
+// the provider's rate limit and can trip the call guard above. So each
+// guarded route:
+//
+//   - runs once at a time per key: a second press while it runs waits
+//     (429, `action_running`);
+//   - after a run, waits `cooldownMs` before it runs again for that key
+//     (429, `action_cooldown`);
+//   - after a failed run (a 5xx, a 429 or a stopped call), waits twice as
+//     long each time, to at most `maxCooldownMs`; a good run resets it;
+//   - shares one budget per integration: at most `budget` runs in `budgetMs`
+//     for all its actions together (429, `action_budget`). An action with
+//     `budget: false` (a send a person makes one invoice at a time) is
+//     outside it; the provider's rate limit still paces its calls.
+//
+// A 429 carries Retry-After and `retryAfterMs`, so the page shows the wait.
+// A good run says its cooldown in the `Flow-Cooldown-Ms` header. A refused
+// request (another 4xx) costs nothing: no call went. The state is in memory:
+// one Flow process serves one lab (server/rate-limit.js), and the call guard
+// above still protects every process.
+
+export const ACTION_GUARD_POLICY = Object.freeze({
+  cooldownMs: 30_000,
+  maxCooldownMs: 15 * 60_000,
+  budget: 30,
+  budgetMs: 10 * 60_000,
+});
+
+const ACTION_TEXT = {
+  action_running: () => 'This is already running. Wait for it to finish.',
+  action_cooldown: (seconds) => `Flow just did this. Try again in ${seconds} seconds.`,
+  action_budget: (seconds) => `Too many requests to this system. Try again in ${seconds} seconds.`,
+};
+
+// The wait after `failures` failed runs in a row.
+export function actionCooldownMs(failures, { cooldownMs, maxCooldownMs }) {
+  if (failures <= 0) return cooldownMs;
+  return Math.min(maxCooldownMs, Math.max(cooldownMs, 5_000) * 2 ** Math.min(failures, 10));
+}
+
+// How a response ends a run: 'ok', 'failed' (the system or the call guard
+// said no) or 'refused' (Flow refused the request; nothing was called).
+export function actionOutcome(statusCode) {
+  if (statusCode >= 500 || statusCode === 429) return 'failed';
+  if (statusCode >= 400) return 'refused';
+  return 'ok';
+}
+
+const cleanPart = (value) => String(value ?? '').replace(/[^A-Za-z0-9_.:-]+/g, '').slice(0, 80);
+
+// `integration` names the budget; `actions` maps each action name to its
+// policy ({ cooldownMs, maxCooldownMs, budget }). `route(name, { key })` answers the
+// Express middleware for one route; `key(req)` names what the cooldown
+// covers inside the organisation (an invoice id, say), or null for all of it.
+// `off: true` lets every press through (tests that press one route often).
+export function createActionGuard({ integration, actions = {}, policy: overrides = {}, off = false, now = Date.now } = {}) {
+  if (!/^[a-z][a-z0-9-]{1,31}$/.test(integration ?? '')) throw new TypeError('createActionGuard: integration must be an adapter id');
+  const policy = { ...ACTION_GUARD_POLICY, ...overrides };
+  const runs = new Map(); // key -> { running, failures, readyAt }
+  const started = []; // start times inside the budget window
+  const policyOf = (name) => ({ cooldownMs: policy.cooldownMs, maxCooldownMs: policy.maxCooldownMs, ...(actions[name] ?? {}) });
+
+  const runOf = (key) => {
+    let run = runs.get(key);
+    if (!run) runs.set(key, (run = { running: false, failures: 0, readyAt: 0 }));
+    return run;
+  };
+
+  // Why `name` may not run for `key` now, or null.
+  function waitFor(name, key) {
+    const nowMs = Number(now());
+    const run = runs.get(key);
+    if (run?.running) return { code: 'action_running', retryAfterMs: 5_000 };
+    if (run && run.readyAt > nowMs) return { code: 'action_cooldown', retryAfterMs: run.readyAt - nowMs };
+    if (policyOf(name).budget === false) return null;
+    while (started.length && started[0] <= nowMs - policy.budgetMs) started.shift();
+    if (started.length >= policy.budget) return { code: 'action_budget', retryAfterMs: started[0] + policy.budgetMs - nowMs };
+    return null;
+  }
+
+  function begin(name, key) {
+    const wait = waitFor(name, key);
+    if (wait) return wait;
+    runOf(key).running = true;
+    if (policyOf(name).budget !== false) started.push(Number(now()));
+    return null;
+  }
+
+  // `retryAfterMs`: a wait the system or the call guard asked for.
+  function end(name, key, outcome, { retryAfterMs = 0 } = {}) {
+    const run = runOf(key);
+    const rule = policyOf(name);
+    run.running = false;
+    if (outcome === 'refused') {
+      if (rule.budget !== false) started.pop();
+      return 0;
+    }
+    run.failures = outcome === 'failed' ? run.failures + 1 : 0;
+    const waitMs = Math.max(actionCooldownMs(run.failures, rule), retryAfterMs || 0);
+    run.readyAt = Number(now()) + waitMs;
+    return waitMs;
+  }
+
+  function route(name, { key = () => null } = {}) {
+    if (!actions[name]) throw new TypeError(`createActionGuard: ${name} is not a declared action`);
+    if (off) return (_req, _res, next) => next();
+    return (req, res, next) => {
+      const organisation = cleanPart(req.body?.organisationId ?? req.query?.organisationId) || 'sole';
+      const sub = key(req);
+      const runKey = [name, organisation, sub === null || sub === undefined ? '' : cleanPart(sub)].join('|');
+      const wait = begin(name, runKey);
+      if (wait) {
+        const seconds = Math.max(1, Math.ceil(wait.retryAfterMs / 1000));
+        res.set('Retry-After', String(seconds));
+        return res.status(429).json({ ok: false, code: wait.code, error: ACTION_TEXT[wait.code](seconds), retryAfterMs: wait.retryAfterMs });
+      }
+      let ended = false;
+      const finish = (statusCode) => {
+        if (ended) return 0;
+        ended = true;
+        const asked = Number(res.getHeader('Retry-After')) * 1000;
+        return end(name, runKey, actionOutcome(statusCode), { retryAfterMs: Number.isFinite(asked) ? asked : 0 });
+      };
+      // The cooldown is set as the answer is written, so a press right after
+      // it already waits, and the page learns the wait from the header.
+      const writeHead = res.writeHead;
+      res.writeHead = function writeHeadWithCooldown(statusCode, ...rest) {
+        const waitMs = finish(statusCode);
+        if (waitMs && actionOutcome(statusCode) === 'ok' && !res.headersSent) res.setHeader('Flow-Cooldown-Ms', String(waitMs));
+        return writeHead.call(this, statusCode, ...rest);
+      };
+      res.on('close', () => finish(res.headersSent ? res.statusCode : 500));
+      return next();
+    };
+  }
+
+  // Forget every run: for tests, and when a person connects again.
+  const reset = () => {
+    runs.clear();
+    started.length = 0;
+  };
+
+  return { integration, policy, actions, route, waitFor, reset };
+}

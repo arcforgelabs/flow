@@ -142,7 +142,7 @@ export function createXeroAdapter({ runtime: given = null } = {}) {
       // Xero items, from Flow's copy, for the price list (lookup.js).
       listPriceItems: ({ organisationId }) => listPriceItems(database, organisationId, { taxTypes: current().settings.taxTypes }),
     },
-    routes: ({ db, personAuth, log, messagePage }) => createXeroRouter({ db, personAuth, runtime: current(), log, messagePage }),
+    routes: ({ db, personAuth, log, messagePage, buttonCooldowns }) => createXeroRouter({ db, personAuth, runtime: current(), log, messagePage, buttonCooldowns }),
   };
 }
 

@@ -1,6 +1,7 @@
 import { and, asc, desc, eq, ilike, inArray, isNull, or, sql } from 'drizzle-orm';
 import express from 'express';
 import { FlowError } from '../core/errors.js';
+import { createActionGuard } from '../integrations/call-guard.js';
 import {
   createDraftInvoice, getInvoice, issueInvoice, listInvoiceVersions, reviseInvoice, updateDraftInvoice, voidInvoice,
 } from '../core/invoices.js';
@@ -20,7 +21,7 @@ import { readBeforeAct } from '../core/read-before-act.js';
 import { invoiceMatchDetail, jobMatchDetail, listReconcile } from '../core/job-match.js';
 import { jobReference } from '../core/references.js';
 import {
-  acceptFindings, archivePriceItem, checkPrices, createPriceItem, linkPriceItem, readCatalogues, readPriceList, unlinkPriceItem, updatePriceItem,
+  acceptFindings, archivePriceItem, checkPrices, createPriceItem, linkPriceItem, linkPriceItems, MAX_LINKS_AT_ONCE, readCatalogues, readPriceList, unlinkPriceItem, updatePriceItem,
 } from '../core/price-list.js';
 import {
   confirmNoInvoice, draftInvoiceForObligation, explainObligation, jobChangeFor, linkJobToInvoice, listObligations,
@@ -81,6 +82,7 @@ import {
 //   POST  /price-items/:id/links      owner or admin: { system, externalId } link a record of a system's list
 //   POST  /price-items/:id/resolve    owner or admin: Mark resolved: check again, accept what still differs
 //   DELETE /price-links/:id           owner or admin: remove a link
+//   POST  /price-links                owner or admin: { links: [{ priceItemId, system, externalId }] } many links at once
 //   GET   /automations?place=         Flow's routines, each on or off (server/core/automations.js)
 //   PUT   /automations/:key           owner or admin: { enabled, config }
 //   GET   /work-statuses              the work system's job statuses, with job counts
@@ -307,10 +309,23 @@ async function invoiceDetail(db, organisationId, invoiceId, accounting = null, w
   };
 }
 
+// The buttons here that may call a connected system, and how long each waits
+// before it runs again (the action guard, server/integrations/call-guard.js).
+// A send or a draft is one at a time, and a draft waits per job, so ticking
+// many jobs still works. Check prices reads Flow's copies only, so it has no
+// wait.
+export const INVOICING_ACTIONS = Object.freeze({
+  sendReady: { cooldownMs: 0, budget: false },
+  sendAgain: { cooldownMs: 0, budget: false },
+  draftJob: { cooldownMs: 10_000, budget: false },
+});
+
 export function createInvoicingRouter({
   db, personAuth, log = console, liveCheckFor = () => null, accounting = () => null, work = () => [], priceSystems = () => [],
+  buttonCooldowns = true, actions = createActionGuard({ integration: 'invoicing', actions: INVOICING_ACTIONS, off: !buttonCooldowns }),
 }) {
   const router = express.Router();
+  const act = (name, key) => actions.route(name, { key });
   router.use(express.json({ limit: '64kb' }));
 
   const signedIn = [personAuth.requireSession];
@@ -411,7 +426,7 @@ export function createInvoicingRouter({
     res.json({ ok: true, ...(await markNotReady(db, organisationId, invoiceIdsOf(req.body))) });
   }));
 
-  router.post('/invoices/send-ready', ...manager, handle(log, async (req, res) => {
+  router.post('/invoices/send-ready', ...manager, act('sendReady'), handle(log, async (req, res) => {
     const organisationId = await organisationOf(req);
     const issueDate = optionalDate(req.body?.issueDate, 'issueDate') ?? today();
     const ids = req.body?.invoiceIds === undefined ? null : invoiceIdsOf(req.body);
@@ -422,7 +437,7 @@ export function createInvoicingRouter({
     res.json({ ok: true, ...result });
   }));
 
-  router.post('/invoices/send-again', ...manager, handle(log, async (req, res) => {
+  router.post('/invoices/send-again', ...manager, act('sendAgain'), handle(log, async (req, res) => {
     const organisationId = await organisationOf(req);
     const ids = req.body?.invoiceIds === undefined ? null : invoiceIdsOf(req.body);
     const result = await sendAgain(db, organisationId, { accounting: accounting(), personId: req.person.id, invoiceIds: ids });
@@ -558,7 +573,7 @@ export function createInvoicingRouter({
     res.json({ ok: true, jobs, statuses, accountingName: accounting()?.name ?? null });
   }));
 
-  router.post('/jobs/:id/draft', ...manager, handle(log, async (req, res) => {
+  router.post('/jobs/:id/draft', ...manager, act('draftJob', (req) => req.params.id), handle(log, async (req, res) => {
     const obligationId = pathId(req.params.id, 'job');
     const organisationId = await organisationOf(req);
     // With no accounting system connected, Flow's own records are the check.
@@ -836,6 +851,21 @@ export function createInvoicingRouter({
     const link = await linkPriceItem(db, organisationId, itemId, { system, externalId }, { catalogues: await catalogues(organisationId), personId: req.person.id });
     log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} linked price item ${itemId} to ${system}`);
     res.status(201).json({ ok: true, link: { id: link.id, system: link.system, externalId: link.externalId, externalCode: link.externalCode, matchedBy: link.matchedBy } });
+  }));
+
+  router.post('/price-links', ...manager, handle(log, async (req, res) => {
+    const organisationId = await organisationOf(req);
+    const raw = req.body?.links;
+    if (!Array.isArray(raw) || !raw.length || raw.length > MAX_LINKS_AT_ONCE) throw invalid(`links must be a list of 1 to ${MAX_LINKS_AT_ONCE} links`);
+    const links = raw.map((l, at) => {
+      const system = text(l?.system);
+      const externalId = text(l?.externalId);
+      if (!system || !externalId) throw invalid(`links[${at}]: system and externalId are required`);
+      return { priceItemId: pathId(l?.priceItemId, 'price item'), system, externalId };
+    });
+    const made = await linkPriceItems(db, organisationId, links, { catalogues: await catalogues(organisationId), personId: req.person.id });
+    log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} made ${made.length} price links`);
+    res.status(201).json({ ok: true, linked: made.length });
   }));
 
   router.post('/price-items/:id/resolve', ...manager, handle(log, async (req, res) => {
