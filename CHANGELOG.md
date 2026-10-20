@@ -2,24 +2,23 @@
 
 <!-- flow:split-changelog -->
 
-Each release has its own file in `CHANGELOG/`, newest first below. The
-release cut writes it from the pull requests merged since the previous
-release; pull requests do not edit these files (`CONTRIBUTING.md`).
-`scripts/release/changelog.mjs` writes this index.
+Release notes: https://github.com/arcforgelabs/flow/releases
 
-- [Unreleased](CHANGELOG/Unreleased.md)
-- [2026.10.32](CHANGELOG/2026.10.32.md)
-- [2026.10.31](CHANGELOG/2026.10.31.md)
-- [2026.10.30](CHANGELOG/2026.10.30.md)
-- [2026.10.29](CHANGELOG/2026.10.29.md)
-- [2026.10.28](CHANGELOG/2026.10.28.md)
-- [2026.10.27](CHANGELOG/2026.10.27.md)
-- [2026.10.26](CHANGELOG/2026.10.26.md)
-- [2026.10.25](CHANGELOG/2026.10.25.md)
-- [2026.10.24](CHANGELOG/2026.10.24.md)
-- [2026.10.23](CHANGELOG/2026.10.23.md)
-- [2026.10.22](CHANGELOG/2026.10.22.md)
-- [2026.10.21](CHANGELOG/2026.10.21.md)
-- [2026.10.20](CHANGELOG/2026.10.20.md)
-- [2026.10.19](CHANGELOG/2026.10.19.md)
-- [2026.10.18](CHANGELOG/2026.10.18.md)
+Each release has its complete changelog below. Audited contribution records are retained separately when available.
+
+- [Unreleased](CHANGELOG/Unreleased.md) · [Raw](https://github.com/arcforgelabs/flow/raw/refs/heads/main/CHANGELOG/Unreleased.md)
+- [2026.10.32](CHANGELOG/2026.10.32.md) · [Raw](https://github.com/arcforgelabs/flow/raw/refs/heads/main/CHANGELOG/2026.10.32.md)
+- [2026.10.31](CHANGELOG/2026.10.31.md) · [Raw](https://github.com/arcforgelabs/flow/raw/refs/heads/main/CHANGELOG/2026.10.31.md)
+- [2026.10.30](CHANGELOG/2026.10.30.md) · [Raw](https://github.com/arcforgelabs/flow/raw/refs/heads/main/CHANGELOG/2026.10.30.md)
+- [2026.10.29](CHANGELOG/2026.10.29.md) · [Raw](https://github.com/arcforgelabs/flow/raw/refs/heads/main/CHANGELOG/2026.10.29.md)
+- [2026.10.28](CHANGELOG/2026.10.28.md) · [Raw](https://github.com/arcforgelabs/flow/raw/refs/heads/main/CHANGELOG/2026.10.28.md)
+- [2026.10.27](CHANGELOG/2026.10.27.md) · [Raw](https://github.com/arcforgelabs/flow/raw/refs/heads/main/CHANGELOG/2026.10.27.md)
+- [2026.10.26](CHANGELOG/2026.10.26.md) · [Raw](https://github.com/arcforgelabs/flow/raw/refs/heads/main/CHANGELOG/2026.10.26.md)
+- [2026.10.25](CHANGELOG/2026.10.25.md) · [Raw](https://github.com/arcforgelabs/flow/raw/refs/heads/main/CHANGELOG/2026.10.25.md)
+- [2026.10.24](CHANGELOG/2026.10.24.md) · [Raw](https://github.com/arcforgelabs/flow/raw/refs/heads/main/CHANGELOG/2026.10.24.md)
+- [2026.10.23](CHANGELOG/2026.10.23.md) · [Raw](https://github.com/arcforgelabs/flow/raw/refs/heads/main/CHANGELOG/2026.10.23.md)
+- [2026.10.22](CHANGELOG/2026.10.22.md) · [Raw](https://github.com/arcforgelabs/flow/raw/refs/heads/main/CHANGELOG/2026.10.22.md)
+- [2026.10.21](CHANGELOG/2026.10.21.md) · [Raw](https://github.com/arcforgelabs/flow/raw/refs/heads/main/CHANGELOG/2026.10.21.md)
+- [2026.10.20](CHANGELOG/2026.10.20.md) · [Raw](https://github.com/arcforgelabs/flow/raw/refs/heads/main/CHANGELOG/2026.10.20.md)
+- [2026.10.19](CHANGELOG/2026.10.19.md) · [Raw](https://github.com/arcforgelabs/flow/raw/refs/heads/main/CHANGELOG/2026.10.19.md)
+- [2026.10.18](CHANGELOG/2026.10.18.md) · [Raw](https://github.com/arcforgelabs/flow/raw/refs/heads/main/CHANGELOG/2026.10.18.md)

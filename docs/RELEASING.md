@@ -28,11 +28,12 @@ Each GitHub Release has these assets, each with a `.sha256` file:
   dependencies.
 
 The notes are the release's changelog file, `CHANGELOG/<version>.md`
-(`CONTRIBUTING.md`, `.agents/skills/flow-changelog-update/SKILL.md`). A
-stable release needs one: Flow Release Prepare refuses to tag it unless the
-file's record lists every pull request since the previous stable release. A
-beta uses its file when there is one, and GitHub's generated notes when
-there is not.
+(`CONTRIBUTING.md`, `.agents/skills/flow-changelog-update/SKILL.md`). Every
+release needs one: Flow Release Prepare refuses to tag a release unless the
+file's record lists every pull request in its range with GitHub's credit,
+and a stable release has 5 to 8 highlights. After the GitHub Release is
+published, Publish checks that its body is the file. A release tagged before
+the changelog existed keeps GitHub's generated notes.
 
 ## Versions and channels
 
@@ -101,23 +102,24 @@ forward with a new tag.
    `chore: release 2026.10.18`. Merge it when CI passes. Do this once per
    version; its betas reuse it. The version must be newer than the latest
    stable release, or Prepare refuses it.
-2. Before the beta you mean to make stable, write the stable version's
-   changelog file from the pull requests
-   merged since the previous stable release, and merge it in a pull request
-   titled `docs(changelog): <version> notes`
+2. Before each beta, write that beta's changelog file
+   (`<version>-beta.<n>`, from the release npm's `beta` tag selects). Before
+   the beta you mean to make stable, also write the stable version's file
+   (from the previous stable release, with 5 to 8 highlights). Merge them in
+   a pull request titled `docs(changelog): <version> notes`
    (`.agents/skills/flow-changelog-update/SKILL.md`):
 
    ```bash
    git fetch --unshallow --tags origin
-   node scripts/release/changelog.mjs draft --version <version> --output /tmp/section.md
+   node scripts/release/changelog.mjs draft --version <version> --output /tmp/section.md --manifest /tmp/manifest.json
    # edit the Highlights, Changes and Fixes
    node scripts/release/changelog.mjs write --version <version> --file /tmp/section.md
    node scripts/release/changelog.mjs verify --version <version>
    ```
 
    A pull request that merges after this one is not in the record, and
-   Prepare refuses the stable release until the file is written again. So
-   the stable release is the commit of a beta that already holds the file.
+   Prepare refuses the release until the file is written again. So the
+   stable release is the commit of a beta that already holds the file.
 3. Start a beta:
 
    ```bash

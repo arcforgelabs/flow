@@ -7,32 +7,51 @@ import test from "node:test";
 import {
   baseTag,
   checkChangelog,
+  checkReleaseBody,
   checkSection,
   compareVersions,
+  creditFor,
+  highlightCountError,
+  isEligibleHandle,
   main,
   parseSubject,
+  provenance,
   pullRequestsIn,
-  pullUrl,
+  recordRow,
   releaseNotes,
   renderIndex,
+  renderRecordFile,
   renderSection,
 } from "../scripts/release/changelog.mjs";
 
 const root = join(import.meta.dirname, "..");
-const link = (number) => `[#${number}](${pullUrl(number)})`;
+const A = "a".repeat(40);
+const B = "b".repeat(40);
 
-function section(version, { highlights = [], changes = [], fixes = [], record = [] } = {}) {
-  const lines = [`## ${version}`, ""];
-  if (highlights.length) lines.push("### Highlights", "", ...highlights, "");
-  if (changes.length) lines.push("### Changes", "", ...changes, "");
-  if (fixes.length) lines.push("### Fixes", "", ...fixes, "");
-  lines.push("### Complete contribution record", "", `This record covers the complete v0..v1 history: ${record.length} pull request${record.length === 1 ? "" : "s"}.`, "", ...record, "");
+function section(version, { highlights = [], changes = [], fixes = [], rows = [] } = {}) {
+  const lines = [`## ${version}`, "", "### Highlights", "", ...highlights, "", "### Changes", "", ...changes, "", "### Fixes", "", ...fixes, ""];
+  lines.push("### Complete contribution record", "", provenance({ base: A, target: B, total: rows.length }), "", "#### Pull requests", "", ...rows, "");
   return lines.join("\n");
+}
+
+// A stand-in for `gh api`: pull requests, their commits and issues.
+function fakeGithub({ pulls = {}, issues = {}, releases = {} }) {
+  return (path) => {
+    let match = /pulls\/(\d+)\/commits/.exec(path);
+    if (match) return pulls[match[1]]?.commits ?? [];
+    match = /pulls\/(\d+)$/.exec(path);
+    if (match) return pulls[match[1]] ? { user: { login: "IAMSamuelRodda", type: "User" }, body: "", ...pulls[match[1]] } : null;
+    match = /issues\/(\d+)$/.exec(path);
+    if (match) return issues[match[1]] ?? (pulls[match[1]] ? { pull_request: {} } : null);
+    match = /releases\/tags\/(.+)$/.exec(path);
+    if (match) return releases[match[1]] ?? null;
+    throw new Error(`unexpected ${path}`);
+  };
 }
 
 test("the repository's changelog follows the rules", () => {
   const { versions } = checkChangelog(root);
-  assert.ok(versions.includes("2026.10.31"));
+  assert.ok(versions.includes("2026.10.32"));
 });
 
 test("a squash subject gives the pull request, its type and its section", () => {
@@ -59,68 +78,96 @@ test("direct commits and changelog pull requests get no row, and a pull request 
   assert.deepEqual(prs.map((pr) => pr.number), [10]);
 });
 
-test("versions sort newest first, with a stable release before its betas", () => {
+test("versions sort newest first, and the index links each file and its raw copy", () => {
   const sorted = ["2026.10.9", "2026.10.32-beta.1", "2026.10.32", "2026.10.31", "2026.11.1"].sort((a, b) => compareVersions(b, a));
   assert.deepEqual(sorted, ["2026.11.1", "2026.10.32", "2026.10.32-beta.1", "2026.10.31", "2026.10.9"]);
-  assert.match(renderIndex(["2026.10.9", "2026.10.31"]), /- \[Unreleased\]\(CHANGELOG\/Unreleased\.md\)\n- \[2026\.10\.31\]\(CHANGELOG\/2026\.10\.31\.md\)\n- \[2026\.10\.9\]/);
+  assert.match(renderIndex(["2026.10.9", "2026.10.31"]), /- \[Unreleased\]\(CHANGELOG\/Unreleased\.md\) · \[Raw\]\(https:\/\/github\.com\/arcforgelabs\/flow\/raw\/refs\/heads\/main\/CHANGELOG\/Unreleased\.md\)\n- \[2026\.10\.31\]/);
 });
 
-test("a stable release starts from the previous stable release, a beta from the previous release", () => {
+test("a stable release starts from the previous stable release that the target contains", () => {
   const tags = ["v2026.10.30", "v2026.10.31", "v2026.10.32-beta.1", "v2026.10.32-beta.2", "v2026.10.33", "not-a-tag"];
   assert.equal(baseTag({ version: "2026.10.32", tags }), "v2026.10.31");
-  assert.equal(baseTag({ version: "2026.10.32-beta.2", tags }), "v2026.10.32-beta.1");
-  assert.equal(baseTag({ version: "2026.10.32-beta.1", tags }), "v2026.10.31");
   assert.equal(baseTag({ version: "2026.10.32", tags, contains: (tag) => tag !== "v2026.10.31" }), "v2026.10.30");
   assert.equal(baseTag({ version: "2026.10.30", tags }), null);
 });
 
-test("a drafted section passes the check", () => {
+test("credit is OpenClaw's: closed issues as Related, thanks to people, never to bots or excluded handles", () => {
+  const github = fakeGithub({
+    pulls: {
+      10: {
+        user: { login: "ada", type: "User" },
+        body: "Closes #5. Fixes arcforgelabs/tools#6. Related: #7. Resolves #11.",
+        commits: [
+          { author: { login: "ada", type: "User" }, commit: { message: "feat: x\n\nCo-authored-by: Grace <123+grace@users.noreply.github.com>\nCo-authored-by: Claude <noreply@anthropic.com>" } },
+          { author: { login: "dependabot[bot]", type: "Bot" }, commit: { message: "chore: bump" } },
+        ],
+      },
+      11: {},
+    },
+    issues: { 5: { user: { login: "linus", type: "User" } }, 7: { user: { login: "ken", type: "User" } } },
+  });
+  assert.deepEqual(creditFor(github, 10), { related: [5], thanks: ["ada", "grace", "linus"] });
+  assert.deepEqual(creditFor(github, 11), { related: [], thanks: [] });
+  assert.equal(recordRow(10, creditFor(github, 10)), "- **PR #10** Related #5. Thanks @ada and @grace and @linus.");
+  for (const handle of ["IAMSamuelRodda", "claude", "codex", "arcforgelabs", "github-actions", "renovate[bot]", "app/x"]) assert.equal(isEligibleHandle(handle), false, handle);
+});
+
+test("a drafted section is OpenClaw's format and passes the check", () => {
   const prs = pullRequestsIn([
     { sha: "a", subject: "feat: job board (#10)" },
     { sha: "b", subject: "fix: sign-in loop (#11)" },
     { sha: "c", subject: "docs: how to release (#12)" },
   ]);
-  const text = renderSection({ version: "2026.10.40", range: "v2026.10.39..v2026.10.40", prs });
-  assert.match(text, /### Changes\n\n- Job board\. \[#10\]/);
-  assert.match(text, /### Fixes\n\n- Sign-in loop\. \[#11\]/);
-  assert.match(text, /- \*\*PR #12\*\* docs: how to release/);
-  assert.doesNotMatch(text.slice(0, text.indexOf("### Complete")), /#12/);
-  assert.deepEqual(checkSection("2026.10.40.md", text), [10, 11, 12]);
+  const credits = new Map([[10, { related: [5], thanks: ["ada"] }]]);
+  const text = renderSection({ version: "2026.10.40", base: A, target: B, prs, credits });
+  assert.match(text, /### Changes\n\n- Job board\. \(#10\) Thanks @ada\./);
+  assert.match(text, /### Fixes\n\n- Sign-in loop\. \(#11\)\n/);
+  assert.match(text, /covers the complete a{40}\.\.b{40} history: 3 in-range PRs \+ 0 retained seed-only PRs = 3 unique PRs\./);
+  assert.match(text, /#### Pull requests\n\n- \*\*PR #10\*\* Related #5\. Thanks @ada\.\n- \*\*PR #11\*\*\n- \*\*PR #12\*\*\n$/);
+  assert.equal(checkSection("2026.10.40.md", text).rows.size, 3);
+  assert.equal(renderRecordFile("2026.10.40", text), `## 2026.10.40\n\n${text.slice(text.indexOf("### Complete"))}`);
 });
 
-test("the check refuses a section that breaks the rules", () => {
-  const record = ["- **PR #10** feat: job board", "- **PR #12** docs: how to release"];
-  const ok = { highlights: [`- Job board. ${link(10)}`], changes: [`- Job board. ${link(10)}`], record };
-  assert.deepEqual(checkSection("2026.10.40.md", section("2026.10.40", ok)), [10, 12]);
+test("the check refuses a section that breaks the format rules", () => {
+  const rows = ["- **PR #10** Thanks @ada.", "- **PR #12**"];
+  const ok = { highlights: ["- Job board. (#10) Thanks @ada."], changes: ["- Job board. (#10) Thanks @ada."], rows };
+  assert.equal(checkSection("2026.10.40.md", section("2026.10.40", ok)).rows.size, 2);
   const refused = [
-    [{ ...ok, changes: [`- How to release. ${link(12)}`] }, /belongs only in the record/],
-    [{ ...ok, changes: [`- Something else. ${link(13)}`] }, /not in the record/],
-    [{ ...ok, changes: ["- Job board, no link."] }, /links its pull request/],
-    [{ ...ok, highlights: [] }, /at least one highlight/],
-    [{ ...ok, highlights: Array(9).fill(`- Job board. ${link(10)}`) }, /at most 8 highlights/],
-    [{ ...ok, record: [...record, "- **PR #10** feat: job board"] }, /in the record twice/],
+    [{ ...ok, changes: ["- Job board. (#10)"] }, /keeps its credit @ada/],
+    [{ ...ok, changes: ["- Job board. (#10) Thanks @IAMSamuelRodda and @ada."] }, /never thank @IAMSamuelRodda/],
+    [{ ...ok, changes: ["- Job board. (#10) Thanks @ada and @claude."] }, /never thank @claude/],
+    [{ ...ok, rows: [...rows, "- **PR #10**"] }, /in the record twice/],
+    [{ ...ok, rows: [...rows, "- **PR #13** feat: a title"] }, /a record row is/],
   ];
   for (const [parts, reason] of refused) assert.throws(() => checkSection("2026.10.40.md", section("2026.10.40", parts)), reason);
   assert.throws(() => checkSection("2026.10.40.md", section("2026.10.41", ok)), /first line must be "## 2026.10.40"/);
-  assert.throws(() => checkSection("2026.10.40.md", section("2026.10.40", ok).replace("2 pull requests", "3 pull requests")), /says how many/);
+  assert.throws(() => checkSection("2026.10.40.md", section("2026.10.40", ok).replace("= 2 unique", "= 3 unique")), /sum must match its 2 rows/);
+  assert.throws(() => checkSection("2026.10.40.md", section("2026.10.40", ok).replace("#### Pull requests", "#### Rows")), /rows follow/);
   assert.throws(() => checkSection("2026.10.40.md", section("2026.10.40", ok).replace("### Highlights", "### Notes")), /is not one of/);
-  assert.throws(() => checkSection("2026.10.40.md", `## 2026.10.40\n\n### Changes\n\n- A. ${link(10)}\n\n### Highlights\n\n- A. ${link(10)}\n`), /out of order/);
   assert.throws(() => checkSection("Unreleased.md", section("Unreleased", ok)), /Unreleased has no record/);
-  // A beta of a small hotfix needs no highlight.
-  assert.deepEqual(checkSection("2026.10.40-beta.1.md", section("2026.10.40-beta.1", { ...ok, highlights: [] })), [10, 12]);
 });
 
-test("release notes keep the whole section, or the prose and a link when GitHub would refuse it", () => {
-  const short = section("2026.10.40", { highlights: [`- Job board. ${link(10)}`], changes: [`- Job board. ${link(10)}`], record: ["- **PR #10** feat: job board"] });
+test("the highlight budget is 5-8 for a stable release and 0-8 for a beta", () => {
+  const five = Array.from({ length: 5 }, (_, i) => `- Story ${i}. (#10)`);
+  assert.equal(highlightCountError("2026.10.40", section("2026.10.40", { highlights: five })), null);
+  assert.match(highlightCountError("2026.10.40", section("2026.10.40", { highlights: five.slice(1) })), /5-8 top-level bullets; found 4/);
+  assert.match(highlightCountError("2026.10.40", section("2026.10.40", { highlights: [...five, ...five] })), /found 10/);
+  assert.equal(highlightCountError("2026.10.40-beta.1", section("2026.10.40-beta.1")), null);
+});
+
+test("release notes keep the whole section, or the prose and a link to the record file, and the published body must match", () => {
+  const short = section("2026.10.40", { highlights: ["- Job board. (#10)"], rows: ["- **PR #10**"] });
   assert.equal(releaseNotes(short, "2026.10.40"), short);
-  const long = short.replace("- **PR #10** feat: job board", `- **PR #10** feat: ${"x".repeat(130_000)}`);
+  const long = short.replace("- **PR #10**", Array.from({ length: 9000 }, (_, i) => `- **PR #${i + 1}**`).join("\n").repeat(2));
   const notes = releaseNotes(long, "2026.10.40");
   assert.ok(notes.length < 2000);
-  assert.match(notes, /### Highlights/);
-  assert.match(notes, /blob\/v2026\.10\.40\/CHANGELOG\/2026\.10\.40\.md#complete-contribution-record/);
+  assert.match(notes, /blob\/v2026\.10\.40\/CHANGELOG\/records\/2026\.10\.40\.md/);
+  assert.equal(checkReleaseBody(short.replace(/\n/g, "\r\n"), short), null);
+  assert.equal(checkReleaseBody(`${short}\n### Release verification\n\nrun 1\n`, short), null);
+  assert.match(checkReleaseBody(`${short}\nmore`, short), /not the changelog section/);
 });
 
-test("draft, write and verify work from a git history", () => {
+test("draft, write and verify work from a git history and GitHub", () => {
   const dir = mkdtempSync(join(tmpdir(), "flow-changelog-"));
   const run = (...args) => execFileSync("git", args, { cwd: dir, encoding: "utf8" });
   run("init", "-q", "-b", "main");
@@ -131,33 +178,70 @@ test("draft, write and verify work from a git history", () => {
   run("tag", "v2026.10.1");
   commit("feat: job board (#2)");
   commit("fix: sign-in loop (#3)");
+  commit("chore: direct commit");
   commit("chore: release 2026.10.2 (#4)");
   run("tag", "v2026.10.2");
   mkdirSync(join(dir, "CHANGELOG"));
   writeFileSync(join(dir, "CHANGELOG", "Unreleased.md"), "## Unreleased\n");
+  const request = fakeGithub({
+    pulls: { 2: { user: { login: "ada", type: "User" }, body: "Closes #9" }, 3: {}, 4: {} },
+    issues: { 9: { user: { login: "IAMSamuelRodda", type: "User" } }, 20: { user: { login: "ken" } } },
+    releases: {},
+  });
+  const sha = (ref) => run("rev-parse", ref).trim();
 
-  const draft = main(["draft", "--version", "2026.10.2"], dir);
-  assert.match(draft, /This record covers the complete v2026\.10\.1\.\.v2026\.10\.2 history: 3 pull requests\./);
-  writeFileSync(join(dir, "draft.md"), draft);
+  const manifest = join(dir, "manifest.json");
+  const draft = main(["draft", "--version", "2026.10.2", "--target", "v2026.10.2", "--manifest", manifest], dir, { request });
+  assert.ok(draft.includes(`${sha("v2026.10.1")}..${sha("v2026.10.2")} history: 3 in-range PRs`));
+  assert.match(draft, /- \*\*PR #2\*\* Related #9\. Thanks @ada\.\n/);
+  assert.deepEqual(JSON.parse(readFileSync(manifest, "utf8")).directCommits.map((c) => c.subject), ["chore: direct commit"]);
+
+  // Five highlights, one story each, as a stable release needs.
+  const stories = ["Job board. (#2) Thanks @ada.", "Sign-in loop. (#3)", "Board filters. (#2) Thanks @ada.", "Board cards. (#2) Thanks @ada.", "Fixes the loop in #20. (#3)"];
+  const edited = draft.replace(/### Highlights\n\n[\s\S]*?\n\n### Changes/, `### Highlights\n\n${stories.map((s) => `- ${s}`).join("\n")}\n\n### Changes`);
+  writeFileSync(join(dir, "draft.md"), edited);
   main(["write", "--version", "2026.10.2", "--file", join(dir, "draft.md")], dir);
-  assert.equal(readFileSync(join(dir, "CHANGELOG", "2026.10.2.md"), "utf8"), draft);
+  assert.equal(readFileSync(join(dir, "CHANGELOG", "records", "2026.10.2.md"), "utf8"), renderRecordFile("2026.10.2", edited));
   assert.match(main(["check"], dir), /follow the rules/);
-  assert.match(main(["verify", "--version", "2026.10.2"], dir), /lists the 3 pull requests/);
-  assert.equal(main(["read", "--version", "2026.10.2"], dir), draft);
+  assert.match(main(["verify", "--version", "2026.10.2"], dir, { request }), /lists the 3 pull requests through v2026\.10\.2/);
+  assert.equal(main(["read", "--version", "2026.10.2", "--record"], dir), renderRecordFile("2026.10.2", edited));
 
-  writeFileSync(join(dir, "CHANGELOG", "2026.10.2.md"), draft.replace(/- \*\*PR #3\*\*.*\n/, "").replace(/.*\[#3\].*\n/g, "").replace("3 pull requests", "2 pull requests"));
-  assert.throws(() => main(["verify", "--version", "2026.10.2"], dir), /missing #3/);
-  writeFileSync(join(dir, "CHANGELOG", "2026.10.9.md"), draft.replace("## 2026.10.2", "## 2026.10.9"));
-  assert.throws(() => main(["check"], dir), /CHANGELOG.md is not the index/);
+  const save = (text) => {
+    writeFileSync(join(dir, "draft.md"), text);
+    main(["write", "--version", "2026.10.2", "--file", join(dir, "draft.md")], dir);
+  };
+  save(edited.replace("- **PR #2** Related #9. Thanks @ada.", "- **PR #2** Thanks @ada."));
+  assert.throws(() => main(["verify", "--version", "2026.10.2"], dir, { request }), /GitHub gives "- \*\*PR #2\*\* Related #9\. Thanks @ada\."/);
+  save(edited.replace(/- \*\*PR #3\*\*\n/, "").replace(/.*\(#3\).*\n/g, "").replace(/3 in-range PRs \+ 0 retained seed-only PRs = 3/, "2 in-range PRs + 0 retained seed-only PRs = 2"));
+  assert.throws(() => main(["verify", "--version", "2026.10.2"], dir, { request }), /missing #3/);
+  save(edited.replace("- Sign-in loop. (#3)\n", "- Release tooling. (#4)\n"));
+  assert.throws(() => main(["verify", "--version", "2026.10.2"], dir, { request }), /PR #4 \(chore\) belongs only in the record/);
+  save(edited.replace("- Sign-in loop. (#3)\n", ""));
+  assert.throws(() => main(["verify", "--version", "2026.10.2"], dir, { request }), /5-8 top-level bullets; found 4/);
+  save(edited);
+
+  const notes = main(["notes", "--version", "2026.10.2"], dir);
+  const published = fakeGithub({ releases: { "v2026.10.2": { body: notes } } });
+  assert.match(main(["verify", "--version", "2026.10.2", "--check-github"], dir, { request: published }), /body is CHANGELOG\/2026\.10\.2\.md/);
+  assert.throws(() => main(["verify", "--version", "2026.10.2", "--check-github"], dir, { request: fakeGithub({ releases: { "v2026.10.2": { body: "generated" } } }) }), /not the changelog section/);
+
+  // A beta starts at what npm's beta tag selects before it publishes.
+  commit("feat: invoices (#5)");
+  assert.match(main(["draft", "--version", "2026.10.3-beta.1"], dir, { request: fakeGithub({ pulls: { 5: {} } }), npm: () => "2026.10.2" }), /- \*\*PR #5\*\*\n$/);
+  assert.throws(() => main(["draft", "--version", "2026.10.3-beta.1"], dir, { request, npm: () => "2026.10.3-beta.1" }), /already selects/);
+  assert.throws(() => main(["draft", "--version", "2026.10.3-beta.1"], dir, { request, npm: () => null }), /Pass --base/);
+
+  writeFileSync(join(dir, "CHANGELOG", "2026.10.9.md"), edited.replace("## 2026.10.2", "## 2026.10.9"));
+  assert.throws(() => main(["check"], dir), /records\/2026\.10\.9\.md is missing/);
 });
 
-test("a stable release needs its changelog file, and the GitHub Release takes its notes from it", () => {
+test("Prepare verifies the changelog before it tags, and Publish uses it and checks the published body", () => {
   const workflow = (name) => readFileSync(join(root, ".github/workflows", name), "utf8");
   const prepare = workflow("flow-release-prepare.yml");
   const verify = prepare.indexOf("changelog.mjs verify --version");
   assert.ok(verify > 0 && verify < prepare.indexOf("- name: Create the tag"), "Prepare verifies the changelog before it tags");
-  assert.match(prepare, /- name: Require the changelog for a stable release\n\s+if: inputs\.channel == 'stable'/);
+  assert.match(prepare, /- name: Require the changelog\n/);
   const publish = workflow("flow-release-publish.yml");
   assert.match(publish, /changelog\.mjs notes --version "\$VERSION"/);
-  assert.match(publish, /flags=\(--verify-tag --title "flow \$\{VERSION\}" "\$\{notes\[@\]\}"\)/);
+  assert.match(publish, /changelog\.mjs verify --version "\$VERSION" --check-github/);
 });

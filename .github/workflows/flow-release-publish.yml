@@ -342,7 +342,8 @@ jobs:
         run: |
           set -euo pipefail
           # The notes are the release's changelog file (CHANGELOG/<version>.md,
-          # CONTRIBUTING.md). A beta without one gets GitHub's generated notes.
+          # CONTRIBUTING.md). A release tagged before the changelog gets
+          # GitHub's generated notes.
           notes=(--generate-notes)
           if [[ -f "CHANGELOG/${VERSION}.md" ]]; then
             node scripts/release/changelog.mjs notes --version "$VERSION" > "$RUNNER_TEMP/notes.md"
@@ -368,6 +369,18 @@ jobs:
             gh release create "$TAG" --repo "$GITHUB_REPOSITORY" "${flags[@]}" ./*
           fi
           echo "Released ${TAG}: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/${TAG}" >> "$GITHUB_STEP_SUMMARY"
+
+      # OpenClaw's --check-github: the published body must be the notes.
+      - name: Check the GitHub Release body
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+          VERSION: ${{ needs.checks.outputs.version }}
+        run: |
+          set -euo pipefail
+          if [[ -f "CHANGELOG/${VERSION}.md" ]]; then
+            node scripts/release/changelog.mjs verify --version "$VERSION" --check-github --release-tag "$TAG"
+          fi
 
   # npm trusted publishing names one workflow file, and checks the top-level
   # workflow of a run, so the npm publish is its own workflow

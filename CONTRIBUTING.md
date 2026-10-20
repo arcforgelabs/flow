@@ -36,8 +36,10 @@ Title: `type: user-facing description`, where type is one of `feat`, `fix`,
 
 ## Changelog
 
-`CHANGELOG.md` is an index of one file per release in `CHANGELOG/`, the
-split layout that openclaw/openclaw uses. The release owns these files:
+`CHANGELOG.md` is an index of one file per release in `CHANGELOG/`, with
+each release's contribution record again in `CHANGELOG/records/`. The
+layout, formats and rules are openclaw/openclaw's split changelog. The
+release owns these files:
 
 - A normal pull request never edits `CHANGELOG.md` or `CHANGELOG/`. Put the
   release-note text in the pull request: its title and its User Impact
@@ -46,19 +48,27 @@ split layout that openclaw/openclaw uses. The release owns these files:
   merged since the previous release, edits the prose, and merges it in a
   `docs(changelog): <version> notes` pull request, which has no row of its
   own. The procedure is `.agents/skills/flow-changelog-update/SKILL.md`.
-- Flow Release Prepare refuses a stable release until its file lists every
-  pull request since the previous stable release, and the GitHub Release
-  takes its notes from the file (`docs/RELEASING.md`).
+- Flow Release Prepare refuses a release until its file lists every pull
+  request in its range with GitHub's credit, and the GitHub Release takes
+  its notes from the file (`docs/RELEASING.md`).
 - A stable release covers everything since the previous stable release. A
-  beta covers everything since the previous release of either channel, in
-  its own file.
-- A release file has Highlights, Changes and Fixes, then a complete record
-  that lists every pull request in the range once. `feat`, `improve` and
-  `fix` pull requests go in the prose; `docs`, `chore`, `refactor`, `test`,
-  `ci`, `build` and `style` go only in the record, unless the title marks a
-  breaking change with `!`.
-- `npm test` runs `scripts/release/changelog.mjs check`, which holds these
-  rules. `CHANGELOG/Unreleased.md` stays empty.
+  beta covers everything since the release npm's `beta` tag selects before
+  the beta publishes, in its own file.
+- A release file has Highlights, Changes and Fixes, then a complete
+  contribution record that lists every pull request in the range once:
+  `- **PR #N** Related #I. Thanks @a and @b.` A prose bullet names its pull
+  requests as `(#N, #M)` and keeps every thanks from their rows. `feat`,
+  `improve` and `fix` pull requests go in the prose; `docs`, `chore`,
+  `refactor`, `test`, `ci`, `build` and `style` go only in the record,
+  unless the title marks a breaking change with `!`.
+- A stable release has 5 to 8 highlights; a beta has 0 to 8.
+- Thanks go to the pull request's author, its co-authors and the people who
+  reported the issues it closes (`Closes #N`, `Fixes #N`, `Resolves #N`).
+  Never to bots, to Claude or Codex, to the organization or to the
+  maintainer.
+- `npm test` runs `scripts/release/changelog.mjs check`, which holds the
+  format rules; `verify` holds the rules that need git and GitHub.
+  `CHANGELOG/Unreleased.md` stays empty.
 
 ## Merging to main
 
