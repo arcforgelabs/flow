@@ -107,10 +107,12 @@ The page at `/sign-in`, `/people`, `/account` and `/appearance`
   surface in dark) beside Clerk's sign-in card. On a phone the panel is a
   band above the card.
 - **Sidebar**: the Flow mark and the views the person may open (People and
-  Integrations for owners). At its foot: the account chip (Clerk's photo or
+  Integrations for owners). Account is not in the list: "Manage account" in
+  the account menu opens it. At its foot: the account chip (Clerk's photo or
   initial, then the name, or the email when there is no name, clipped to fit)
   that opens the account menu (Manage account, Report a problem when Sentry
-  is on, Sign out), and Search (also Ctrl+K or ⌘K) for pages, invoices and
+  is on, Sign out; as wide as its rows, 220px to 280px, with a long name or
+  email clipped), and Search (also Ctrl+K or ⌘K) for pages, invoices and
   jobs. While Sentry's report form is on, "Report a problem" sits at the
   foot of the menu, above the chip (an icon when folded). The menu button at the top folds the sidebar to its icons and back;
   the choice stays in the browser. On narrow screens the sidebar is a bar
@@ -122,7 +124,8 @@ The page at `/sign-in`, `/people`, `/account` and `/appearance`
   Turned off) and the row's actions (Approve, Turn off or Turn on, Remove
   behind a confirm dialog). Results show as toasts. Without a verified owner
   sign-in the page says so and the list stays closed.
-- **Account**: Clerk's profile, with the person's Flow role above it.
+- **Account**: Clerk's profile. Its own card heading is the only visible
+  title.
 - **Appearance**: mode, design system cards (each drawn in its own family)
   and accent swatches.
 - **Messages**: one-card pages (sign-in not set up, an error, no access yet,
