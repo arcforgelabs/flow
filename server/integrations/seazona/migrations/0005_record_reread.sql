@@ -1,0 +1,1 @@
+ALTER TABLE "seazona_record_read_failures" ADD COLUMN IF NOT EXISTS "detail_id" text;
