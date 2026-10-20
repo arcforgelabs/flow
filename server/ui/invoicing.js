@@ -70,9 +70,13 @@ export function sendModeNote(to, sendMode, what = 'each invoice') {
 export async function renderInvoiceList(main, ui) {
   const { h, flow, pageHeader, notice, go, toast } = ui;
   const saved = sessionStorage.getItem('flow_invoice_tab');
-  const state = { status: TABS.some(([id]) => id === saved) ? saved : 'ready', q: '', ticked: new Set() };
+  // Back from an invoice comes here with the tab, search and scroll it left.
+  const back = readNav();
+  const returning = sessionStorage.getItem(NAV_BACK) === '1';
+  sessionStorage.removeItem(NAV_BACK);
+  const state = { status: TABS.some(([id]) => id === saved) ? saved : 'ready', q: returning ? back?.q ?? '' : '', ticked: new Set() };
   const tabs = h('div', { class: 'fx-tabs', role: 'tablist' });
-  const search = h('input', { class: 'fx-input fx-search', type: 'search', placeholder: 'Find a number, client or reference', 'aria-label': 'Find an invoice' });
+  const search = h('input', { class: 'fx-input fx-search', type: 'search', placeholder: 'Find a number, client or reference', 'aria-label': 'Find an invoice', value: state.q });
   const bar = h('div', { class: 'fx-sendbar', hidden: true });
   const host = h('div', { class: 'fx-panel' }, h('div', { class: 'fx-skeleton' }));
   const context = await flow('/api/invoicing/context').catch(() => ({ canIssue: false }));
@@ -170,6 +174,9 @@ export async function renderInvoiceList(main, ui) {
         : EMPTY[state.status] ?? `No ${STATUS_LABEL[state.status].toLowerCase()} invoices yet.`));
       return;
     }
+    // The invoice page steps through this list, in this order (navBar).
+    saveNav({ tab: state.status, q: state.q, ids: body.invoices.map((i) => i.id) });
+    const open = (href) => { saveNav({ ...readNav(), scrollY: window.scrollY }); go(href); };
     const ticks = TICKS[state.status];
     const showProblem = state.status === 'problem';
     const created = ['to_check', 'problem', 'ready'].includes(state.status);
@@ -201,13 +208,13 @@ export async function renderInvoiceList(main, ui) {
         const href = `/invoices/${invoice.id}`;
         const first = invoice.problems?.[0];
         const view = invoice.status === 'void' ? null : invoice.view;
-        return h('tr', { tabindex: '0', onclick: () => go(href), onkeydown: (event) => { if (event.key === 'Enter') go(href); } },
+        return h('tr', { tabindex: '0', onclick: () => open(href), onkeydown: (event) => { if (event.key === 'Enter') open(href); } },
           ticks ? h('td', { class: 'fx-tick-cell', onclick: (event) => event.stopPropagation() }, tickBox(invoice)) : null,
-          h('td', {}, h('a', { class: 'fx-strong', href, onclick: go }, invoice.number ?? 'Draft')),
+          h('td', {}, h('a', { class: 'fx-strong', href, onclick: (event) => { event.preventDefault(); event.stopPropagation(); open(href); } }, invoice.number ?? 'Draft')),
           h('td', {}, invoice.contactName ?? '—'),
           showProblem
             ? h('td', { class: 'fx-problem' }, first?.message ?? '—', invoice.problems.length > 1 ? h('span', { class: 'fx-dim' }, ` +${invoice.problems.length - 1} more`) : null)
-            : h('td', { class: 'fx-dim' }, invoice.job?.caseRef ?? invoice.reference ?? '—'),
+            : h('td', { class: 'fx-dim' }, invoice.reference ?? '—'),
           h('td', { class: 'fx-dim' }, showDate(invoice.issueDate ?? invoice.createdAt?.slice(0, 10))),
           h('td', { class: 'fx-num fx-strong' }, formatCents(invoice.totalCents)),
           h('td', {}, view
@@ -216,6 +223,51 @@ export async function renderInvoiceList(main, ui) {
       }))));
   }
   await load();
+  if (returning && back?.scrollY) window.scrollTo(0, back.scrollY);
+}
+
+// The list an invoice was opened from: its tab, search, invoice ids in order,
+// and scroll. The invoice page's bar steps through it and goes back to it.
+const NAV = 'flow_invoice_nav';
+const NAV_BACK = 'flow_invoice_back';
+function readNav() {
+  try { return JSON.parse(sessionStorage.getItem(NAV) ?? 'null'); } catch { return null; }
+}
+function saveNav(nav) {
+  try { sessionStorage.setItem(NAV, JSON.stringify(nav)); } catch { /* the bar then shows Back only */ }
+}
+
+// The bar above one invoice: Back to the list as it was, and the previous and
+// next invoice of that list.
+function navBar(ui, id) {
+  const { h, go } = ui;
+  const nav = readNav();
+  const ids = nav?.ids ?? [];
+  const at = ids.indexOf(id);
+  const back = () => { sessionStorage.setItem(NAV_BACK, '1'); go('/invoices'); };
+  const step = (to, label, path) => {
+    const button = h('button', {
+      class: 'fx-pager__step', type: 'button', disabled: !to, 'aria-label': label, title: label,
+      onclick: () => go(`/invoices/${to}`),
+    });
+    button.innerHTML = `<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="${path}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+    return button;
+  };
+  return h('nav', { class: 'fx-pager', 'aria-label': 'Invoices' },
+    h('button', { class: 'fx-pager__back', type: 'button', onclick: back }, '← Back'),
+    at >= 0 ? h('span', { class: 'fx-pager__count' }, `${at + 1} of ${ids.length}`) : null,
+    at >= 0 ? h('span', { class: 'fx-pager__steps' }, step(ids[at - 1], 'Previous invoice', 'M14.5 6l-6 6 6 6'), step(ids[at + 1], 'Next invoice', 'M9.5 6l6 6-6 6')) : null);
+}
+
+// After a send, the next invoice of the list opens; at its end, the list.
+function openNext(ui, id) {
+  const nav = readNav();
+  const ids = nav?.ids ?? [];
+  const at = ids.indexOf(id);
+  const next = at >= 0 ? (ids[at + 1] ?? ids[at - 1]) : null;
+  if (at >= 0) saveNav({ ...nav, ids: ids.filter((other) => other !== id) });
+  if (next) ui.go(`/invoices/${next}`);
+  else { sessionStorage.setItem(NAV_BACK, '1'); ui.go('/invoices'); }
 }
 
 // ── One invoice ────────────────────────────────────────────────────────────
@@ -245,12 +297,6 @@ export async function renderInvoice(main, ui, id) {
       : draftView(current, ui, context, draw)).filter(Boolean));
   };
   draw(invoice);
-}
-
-function crumbs(ui, label) {
-  const { h, go } = ui;
-  return h('nav', { class: 'fx-crumbs', 'aria-label': 'Breadcrumb' },
-    h('a', { href: '/invoices', onclick: go }, 'Invoices'), h('span', { 'aria-hidden': 'true' }, '/'), h('span', {}, label));
 }
 
 function totalsBox(ui, { subtotalCents, taxCents, totalCents }) {
@@ -464,7 +510,7 @@ function draftView(invoice, ui, context, redraw) {
         await flow('/api/invoicing/invoices/send-ready', { method: 'POST', body: JSON.stringify({ issueDate: localDate(), invoiceIds: [invoice.id] }) });
         const { invoice: fresh } = await flow(`/api/invoicing/invoices/${invoice.id}`);
         toast(`${fresh.number} is on the way to ${to}.`, 'success');
-        redraw(fresh);
+        openNext(ui, invoice.id);
       } catch (error) {
         toast(error.message, 'danger');
       }
@@ -532,7 +578,7 @@ function draftView(invoice, ui, context, redraw) {
     : null;
 
   return [
-    crumbs(ui, isNew ? 'New invoice' : ready ? 'Ready' : 'Draft'),
+    navBar(ui, invoice?.id ?? null),
     h('header', { class: 'fx-ph' },
       h('div', { class: 'fx-ph__text' },
         h('h1', { class: 'fx-title' }, isNew ? 'New invoice' : ready ? 'Ready invoice' : 'Draft invoice'),
@@ -596,7 +642,7 @@ function issuedView(invoice, ui, context, redraw) {
     sendToXero(invoice, ui, context),
   ] : [];
   return [
-    crumbs(ui, invoice.number),
+    navBar(ui, invoice.id),
     h('header', { class: 'fx-ph' },
       h('div', { class: 'fx-ph__text' },
         h('div', { class: 'fx-row' },
