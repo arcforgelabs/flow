@@ -318,9 +318,24 @@ target_revision() {
 cmd_sync_workspace() {
   if [ -z "${DATABASE_URL:-}" ]; then log "no DATABASE_URL, so there is no workspace database to update"; return 0; fi
   if [ "${FLOW_DEPLOY_FROM_WORKSPACE:-}" = "1" ]; then log "FLOW_DEPLOY_FROM_WORKSPACE=1: the workspace updater does nothing"; return 0; fi
-  local target
+  local target followed=0
+  # Follow production first with the build already here: a new build takes
+  # minutes, and a publish pressed meanwhile would compare a database that
+  # is still behind. replit-workspace-db.js fetches production's own
+  # migrations, so an older build's tools can follow a newer production.
+  if [ -f "$OUT/.flow-revision" ] && [ -f "$OUT/scripts/replit-workspace-db.js" ]; then
+    mkdir -p "$STATE"
+    if ( if command -v flock >/dev/null 2>&1; then
+           exec 9>"$STATE/update.lock"
+           flock -w 1800 9 || die "another update of the workspace is still running"
+         fi
+         follow_production ); then
+      followed=1
+    fi
+  fi
   target="$(target_revision)" || { log "could not tell which commit ${FLOW_DEPLOY_REF:-main} names now; trying again later"; return 1; }
   if [ -f "$OUT/.flow-revision" ] && [ "$(cat "$OUT/.flow-revision")" = "$target" ]; then
+    [ "$followed" = 1 ] && return 0
     mkdir -p "$STATE"
     if command -v flock >/dev/null 2>&1; then
       exec 9>"$STATE/update.lock"
