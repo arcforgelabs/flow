@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { after, before, describe, test } from 'node:test';
+import * as SentryNode from '@sentry/node';
 import express from 'express';
 import { createApp } from '../server/app.js';
 import { invitePerson, seedFirstOwner } from '../server/auth/people.js';
@@ -22,11 +23,31 @@ function fakeSdk() {
   return {
     calls,
     init: (options) => calls.push(['init', options]),
-    captureMessage: (message, scope) => calls.push(['message', message, scope]),
+    captureEvent: (event) => calls.push(['event', event]),
     captureException: (error, scope) => calls.push(['exception', error, scope]),
     close: async () => calls.push(['close']),
   };
 }
+
+test('with the real SDK, a logged line reaches Sentry as the title, with no stack to name it', async () => {
+  // Sentry names an event that has a stack after its top frame. A logged
+  // line must keep its own words, or every issue reads "Object.captureError".
+  const sent = [];
+  const sdk = { ...SentryNode, init: (options) => SentryNode.init({ ...options, beforeSend: (event) => { sent.push(event); return null; } }) };
+  const adapter = createSentryAdapter({ sdk, env: {} });
+  await adapter.start({ log: quiet, env: { SENTRY_DSN: DSN } });
+  try {
+    adapter.capabilities.captureError({ message: '[seazona] read failed', source: 'seazona' });
+    await SentryNode.flush(1000);
+    assert.equal(sent.length, 1);
+    assert.equal(sent[0].message, '[seazona] read failed');
+    assert.equal(sent[0].exception, undefined);
+    assert.equal(sent[0].level, 'error');
+    assert.equal(sent[0].tags.source, 'seazona');
+  } finally {
+    await adapter.stop();
+  }
+});
 
 test('Flow ships the Sentry adapter, with no DSN of its own', () => {
   const sentry = adapters.find((a) => a.id === 'sentry');
@@ -71,7 +92,7 @@ test('the adapter starts the SDK without personal data, and sends errors only wh
   adapter.capabilities.captureError({ message: '[seazona] read failed', source: 'seazona' });
   const boom = new Error('boom');
   adapter.capabilities.captureError({ message: '[http] boom', source: 'http', error: boom });
-  assert.deepEqual(sdk.calls[1], ['message', '[seazona] read failed', { level: 'error', tags: { source: 'seazona' } }]);
+  assert.deepEqual(sdk.calls[1], ['event', { message: '[seazona] read failed', level: 'error', tags: { source: 'seazona' } }]);
   assert.equal(sdk.calls[2][0], 'exception');
   assert.equal(sdk.calls[2][1], boom);
   assert.deepEqual(sdk.calls[2][2].tags, { source: 'http' });
