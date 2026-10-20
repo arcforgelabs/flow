@@ -36,11 +36,9 @@ function encodeCursor(at, id) {
   return Buffer.from(JSON.stringify({ at, id })).toString('base64url');
 }
 
-export async function readBillableWork(db, { cursor = null, limit = 200 } = {}) {
-  const after = decodeCursor(cursor);
-  const changedAt = sql`greatest(${seazonaOrders.lastChangedAt}, coalesce(${seazonaInvoices.lastChangedAt}, ${seazonaOrders.lastChangedAt}), date_trunc(${SEEN_STEP}, ${seazonaOrders.lastSyncedAt}))`;
-  const pageSize = Math.max(1, Math.min(1000, limit));
-  const rows = await db.select({
+// One order, its invoice and its client, as the feed reads them.
+function feedQuery(db, changedAt) {
+  return db.select({
     order: seazonaOrders,
     invoice: seazonaInvoices,
     client: { accountNumber: seazonaClients.accountNumber, company: seazonaClients.company, email: seazonaClients.email },
@@ -50,56 +48,69 @@ export async function readBillableWork(db, { cursor = null, limit = 200 } = {}) 
   })
     .from(seazonaOrders)
     .leftJoin(seazonaInvoices, eq(seazonaInvoices.invoiceNumber, seazonaOrders.invoiceNumber))
-    .leftJoin(seazonaClients, eq(seazonaClients.id, seazonaOrders.clientId))
+    .leftJoin(seazonaClients, eq(seazonaClients.id, seazonaOrders.clientId));
+}
+
+// A feed row as an item, or as a withdrawn entry when it is not billable.
+function toFeedEntry({ order, invoice, client, invoiceOrderCount }) {
+  const billable = !order.deletedInSourceAt && BILLABLE.test(order.status ?? '');
+  if (!billable) {
+    const entry = {
+      sourceId: order.id,
+      status: orderStatusLabel(order),
+      reason: order.deletedInSourceAt ? 'deleted_in_seazona' : 'not_billable',
+    };
+    return { withdrawn: { ...entry, ledgerHold: toLedgerHold(entry) } };
+  }
+  const item = {
+    source: 'seazona',
+    sourceId: order.id,
+    invoiceNumber: order.invoiceNumber,
+    status: order.status,
+    shipped: SHIPPED.test(order.status ?? ''),
+    clientId: order.clientId,
+    company: order.company,
+    doctorName: order.doctorName,
+    orderedOn: parseSeazonaDate(order.orderedText),
+    dueOn: parseSeazonaDate(order.dueText),
+    lines: order.lines,
+    subtotalCents: order.subtotalCents,
+    patientReference: order.patientReference,
+    syncedAt: order.lastSyncedAt.toISOString(),
+    invoice: invoice ? {
+      invoiceNumber: invoice.invoiceNumber,
+      status: invoice.status,
+      accountNumber: invoice.accountNumber,
+      invoiceDate: parseSeazonaDate(invoice.invoiceDateText),
+      dueDate: parseSeazonaDate(invoice.dueText),
+      lines: invoice.lines,
+      subtotalCents: invoice.subtotalCents,
+      taxCents: invoice.taxCents,
+      totalCents: invoice.totalCents,
+      discountCents: invoice.discountCents,
+      patientReference: invoice.patientReference,
+    } : null,
+    client: client?.accountNumber || client?.company || client?.email ? client : null,
+    invoiceOrderCount: order.invoiceNumber ? Number(invoiceOrderCount) : 0,
+  };
+  return { item: { ...item, linesFrom: ledgerLinesFor(item).linesFrom, ledgerJob: toLedgerJob(item) } };
+}
+
+export async function readBillableWork(db, { cursor = null, limit = 200 } = {}) {
+  const after = decodeCursor(cursor);
+  const changedAt = sql`greatest(${seazonaOrders.lastChangedAt}, coalesce(${seazonaInvoices.lastChangedAt}, ${seazonaOrders.lastChangedAt}), date_trunc(${SEEN_STEP}, ${seazonaOrders.lastSyncedAt}))`;
+  const pageSize = Math.max(1, Math.min(1000, limit));
+  const rows = await feedQuery(db, changedAt)
     .where(after ? sql`(${changedAt}, ${seazonaOrders.id}) > (${after.at}::timestamptz, ${after.id})` : undefined)
     .orderBy(changedAt, seazonaOrders.id)
     .limit(pageSize);
 
   const items = [];
   const withdrawn = [];
-  for (const { order, invoice, client, invoiceOrderCount } of rows) {
-    const billable = !order.deletedInSourceAt && BILLABLE.test(order.status ?? '');
-    if (!billable) {
-      const entry = {
-        sourceId: order.id,
-        status: orderStatusLabel(order),
-        reason: order.deletedInSourceAt ? 'deleted_in_seazona' : 'not_billable',
-      };
-      withdrawn.push({ ...entry, ledgerHold: toLedgerHold(entry) });
-      continue;
-    }
-    const item = {
-      source: 'seazona',
-      sourceId: order.id,
-      invoiceNumber: order.invoiceNumber,
-      status: order.status,
-      shipped: SHIPPED.test(order.status ?? ''),
-      clientId: order.clientId,
-      company: order.company,
-      doctorName: order.doctorName,
-      orderedOn: parseSeazonaDate(order.orderedText),
-      dueOn: parseSeazonaDate(order.dueText),
-      lines: order.lines,
-      subtotalCents: order.subtotalCents,
-      patientReference: order.patientReference,
-      syncedAt: order.lastSyncedAt.toISOString(),
-      invoice: invoice ? {
-        invoiceNumber: invoice.invoiceNumber,
-        status: invoice.status,
-        accountNumber: invoice.accountNumber,
-        invoiceDate: parseSeazonaDate(invoice.invoiceDateText),
-        dueDate: parseSeazonaDate(invoice.dueText),
-        lines: invoice.lines,
-        subtotalCents: invoice.subtotalCents,
-        taxCents: invoice.taxCents,
-        totalCents: invoice.totalCents,
-        discountCents: invoice.discountCents,
-        patientReference: invoice.patientReference,
-      } : null,
-      client: client?.accountNumber || client?.company || client?.email ? client : null,
-      invoiceOrderCount: order.invoiceNumber ? Number(invoiceOrderCount) : 0,
-    };
-    items.push({ ...item, linesFrom: ledgerLinesFor(item).linesFrom, ledgerJob: toLedgerJob(item) });
+  for (const row of rows) {
+    const entry = toFeedEntry(row);
+    if (entry.item) items.push(entry.item);
+    else withdrawn.push(entry.withdrawn);
   }
   const lastRow = rows.at(-1);
   return {
@@ -108,6 +119,14 @@ export async function readBillableWork(db, { cursor = null, limit = 200 } = {}) 
     cursor: lastRow ? encodeCursor(lastRow.changedAt, lastRow.order.id) : cursor,
     more: rows.length === pageSize,
   };
+}
+
+// One order as the feed gives it (issue #141, read before act): `{ item }`
+// when it is billable, `{ withdrawn }` when it is not, or null when Flow's
+// copy does not have it.
+export async function readBillableOrder(db, orderId) {
+  const [row] = await feedQuery(db, seazonaOrders.lastChangedAt).where(eq(seazonaOrders.id, orderId));
+  return row ? toFeedEntry(row) : null;
 }
 
 // Seazona clients, by id and the company name an invoice bills. A client

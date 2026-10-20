@@ -148,7 +148,7 @@ describe('drafts by rule', { skip: skipWithoutDatabase }, () => {
     const notShipped = await cleared({ ready: false });
     const notBillable = await cleared({ contact: quiet });
     const result = await autoDraftJobs(handle.db, lab.id, { accounting, now: NOW });
-    assert.deepEqual(result, { drafted: 1, waiting: 1, off: 0, refused: 0 });
+    assert.deepEqual(result, { drafted: 1, waiting: 1, off: 0, refused: 0, readFirst: 0 });
     const drafted = await reload(ready);
     const invoice = await getInvoice(handle.db, lab.id, drafted.invoiceId);
     assert.equal(invoice.status, 'draft');

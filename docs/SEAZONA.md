@@ -253,7 +253,10 @@ the feed again. A read that finds no change does too, at most once an hour,
 so the ledger's report of the order never gets older than a day while a
 lane still reads it (the ledger refuses a draft from a report over a day old).
 An order no lane reads again (shipped, and placed before the recent-order
-lookback) is not reported again. Call `registry.whenEnabled('seazona', …)` to reach it, so a
+lookback) is not reported again. Before Flow drafts or sends from such a job,
+it reads the order now (`readWorkItem`, `server/integrations/seazona/act.js`;
+`server/core/read-before-act.js`): one `GET orders/{id}` through the call
+guard, stored through the mirror, answered as the feed would answer it. Call `registry.whenEnabled('seazona', …)` to reach it, so a
 turned-off adapter answers as turned off (`docs/INTEGRATIONS.md`).
 
 ## Billing ledger
@@ -482,7 +485,10 @@ shows it under `integrations`:
   error, and the failing orders by id and status; `orders_active` also lists
   the quarantined orders, and `invoices` and `clients` show
   `quarantinedRecords`;
-- `deletedOrders`: how many orders are marked deleted in Seazona.
+- `deletedOrders`: how many orders are marked deleted in Seazona;
+- `readsBeforeAct`: today's reads before a draft or a send (`reads`,
+  `changed`, `withdrawn`, `unavailable`), counted in memory since the last
+  start, or null when there was none.
 
 `ok` is false while a lane is failed, held, stopped or stale, or a run is
 stuck. A lane is stale when it ran before and has not succeeded within its
