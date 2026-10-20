@@ -131,7 +131,13 @@ The page at `/sign-in`, `/people`, `/account` and `/appearance`
   always shows): Case, Practitioner, Patient (only when the installation
   keeps patient names), Stage, Assignee, Requested, Due, Shipped, Total,
   and each custom field. One column holds one field: each date has its own
-  column, and a late Due date shows in red. Filter has "Assignee: me".
+  column, short (Today, Tomorrow, Yesterday, else day/month; the full date
+  on hover), and a late Due date shows in red. A person column shows each
+  person's badge (initials; the name on hover). A click or right-click on
+  a column head opens its menu: sort by it (when it sorts), move it to the
+  start or end, Edit custom field (owners and admins), Hide column, and
+  Show hidden. + at the end of the head shows a hidden column. Filter has
+  "Assignee: me".
   The Stage column shows each status as its coloured label. A
   tick column is at the left; a group head ticks every job in its group,
   and a click on the head folds the group or opens it (folds stay in the

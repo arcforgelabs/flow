@@ -8,7 +8,7 @@ export const LAYOUTS = ['board', 'list'];
 // 'none' is one plain list with no group heads. The board has a lane per
 // group, so there it shows the status lanes.
 export const GROUPS = { status: 'Status', stage: 'Invoice stage', client: 'Client', practitioner: 'Practitioner', none: 'None' };
-export const SORTS = { board: 'Lab system order', due: 'Date', client: 'Client', practitioner: 'Practitioner', total: 'Total' };
+export const SORTS = { board: 'Lab system order', due: 'Date', ordered: 'Requested', shipped: 'Shipped', client: 'Client', practitioner: 'Practitioner', total: 'Total' };
 export const DIRS = ['asc', 'desc'];
 // The list's columns, in order. Client is always the first column. One
 // column holds one field: each date has its own column. A custom field is
@@ -77,6 +77,8 @@ const dayOf = (job) => job.dueOn ?? job.orderedOn ?? job.jobDate ?? null;
 const text = (value) => (value ?? '').toString().toLowerCase();
 const KEYS = {
   due: dayOf,
+  ordered: (job) => job.orderedOn ?? null,
+  shipped: (job) => job.shippedOn ?? null,
   client: (job) => text(job.clientName) || null,
   practitioner: (job) => text(job.practitioner) || null,
   total: (job) => job.totalCents ?? null,

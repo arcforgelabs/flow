@@ -13,6 +13,7 @@
 // or with a keyboard, the job's panel has the same moves.
 
 import { bulkBar } from '/assets/ui/bulk-bar.js';
+import { lucide } from '/assets/ui/custom-fields.js';
 import { formatCents } from '/assets/ui/invoicing.js';
 import {
   caseNumber, FINAL_RANK, fixes, INVOICE_STAGES, invoiceStage, matches, NO_STATUS, orderStatuses, problemSummary, statusRank,
@@ -41,6 +42,23 @@ const STAGE_RANK = { 'In work': 0, Drafted: 2, Problem: 2, 'Ready to invoice': 4
 
 const showDate = (iso) => (iso ? new Date(`${iso}T00:00:00`).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' }) : '—');
 const fullDate = (iso) => (iso ? new Date(`${iso}T00:00:00`).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' }) : '—');
+// A list date, short: Today, Tomorrow or Yesterday, else day/month (and
+// year when it is not this year).
+const shortDate = (iso) => {
+  if (!iso) return '—';
+  const at = new Date(`${iso}T00:00:00`);
+  const now = new Date();
+  const days = Math.round((at - new Date(now.getFullYear(), now.getMonth(), now.getDate())) / 86_400_000);
+  if (days === 0) return 'Today';
+  if (days === 1) return 'Tomorrow';
+  if (days === -1) return 'Yesterday';
+  return at.toLocaleDateString('en-AU', at.getFullYear() === now.getFullYear() ? { day: '2-digit', month: '2-digit' } : { day: '2-digit', month: '2-digit', year: '2-digit' });
+};
+// A person's badge: their initials in a circle; the name on hover.
+const initialsOf = (name) => {
+  const parts = (name ?? '?').split(/[\s._-]+/).filter(Boolean);
+  return ((parts[0]?.[0] ?? '?') + (parts[1]?.[0] ?? '')).toUpperCase();
+};
 const clientOf = (job) => job.clientName ?? 'No client';
 // The one date a card shows: when the job is due, else when it was ordered.
 const dateOf = (job) => (job.dueOn ? `Due ${showDate(job.dueOn)}` : job.orderedOn ? `Ordered ${showDate(job.orderedOn)}` : job.jobDate ? showDate(job.jobDate) : null);
@@ -192,7 +210,8 @@ export async function renderJobs(main, ui) {
     type: 'button', class: 'fx-pop__item', role, 'aria-checked': String(checked), onclick,
   }, h('span', { class: 'fx-pop__tick' }, checked ? svg(TICK_ICON) : null), h('span', {}, text));
   const heading = (text) => h('p', { class: 'fx-pop__head' }, text);
-  const DIR_WORDS = { total: ['Low to high', 'High to low'], due: ['Oldest first', 'Newest first'], board: ['As the lab system has it', 'Reversed'] };
+  const DATE_WORDS = ['Oldest first', 'Newest first'];
+  const DIR_WORDS = { total: ['Low to high', 'High to low'], due: DATE_WORDS, ordered: DATE_WORDS, shipped: DATE_WORDS, board: ['As the lab system has it', 'Reversed'] };
 
   const groupMenu = menu(GROUP_ICON, (_redraw, close) => [
     heading('Group by'),
@@ -634,17 +653,69 @@ export async function renderJobs(main, ui) {
     return h('div', { class: 'fx-task__move' }, wait, select);
   }
 
+  // A column's menu (a click on its head, or a right-click): sort by it,
+  // move it, hide it, and show a hidden column again. Client always shows.
+  // `column` null opens only "Show a column".
+  const SORT_OF = { practitioner: 'practitioner', due: 'due', ordered: 'ordered', shipped: 'shipped', total: 'total' };
+  const columnPop = h('div', { class: 'fx-pop', id: 'fx-jobs-colmenu', popover: 'auto', role: 'menu' });
+  document.body.append(columnPop);
+  // A popover opened while the right button is still down closes again on
+  // its release (light dismiss), so open it after the release.
+  function onRightButton(event, open) {
+    if (event.buttons & 2) addEventListener('pointerup', () => setTimeout(open), { once: true });
+    else open();
+  }
+  function columnMenu(column, event) {
+    const ids = state.view.columns;
+    const close = () => columnPop.hidePopover?.();
+    const item = (icon, text, run) => h('button', { type: 'button', class: 'fx-pop__item', role: 'menuitem', onclick: () => { close(); run(); } },
+      h('span', { class: 'fx-pop__tick' }, lucide(h, icon)), h('span', {}, text));
+    const parts = [];
+    if (column) {
+      const sort = SORT_OF[column.id];
+      if (sort) {
+        const [up, down] = DIR_WORDS[sort] ?? ['A to Z', 'Z to A'];
+        parts.push(item('arrow-up-narrow-wide', `Sort: ${up}`, () => change({ sort, dir: 'asc' })),
+          item('arrow-down-wide-narrow', `Sort: ${down}`, () => change({ sort, dir: 'desc' })), h('div', { class: 'fx-pop__sep' }));
+      }
+      const rest = ids.filter((c) => c !== column.id);
+      parts.push(item('arrow-left-to-line', 'Move to start', () => change({ columns: [column.id, ...rest] })),
+        item('arrow-right-to-line', 'Move to end', () => change({ columns: [...rest, column.id] })));
+      if (column.id.startsWith('field:') && ['owner', 'admin'].includes(ui.me?.person?.role)) {
+        parts.push(item('settings', 'Edit custom field', () => ui.go('/custom-fields')));
+      }
+      parts.push(h('div', { class: 'fx-pop__sep' }), item('eye-off', 'Hide column', () => change({ columns: rest })));
+    }
+    const shown = new Set(ids);
+    const hidden = [
+      ...builtInColumns().filter((id) => !shown.has(id)).map((id) => ({ id, label: id === 'assignee' ? assigneeField().name : COLUMNS[id] })),
+      ...customColumns().filter((f) => !shown.has(fieldGroup(f.id))).map((f) => ({ id: fieldGroup(f.id), label: f.name })),
+    ];
+    if (hidden.length) {
+      if (parts.length) parts.push(h('div', { class: 'fx-pop__sep' }));
+      parts.push(h('p', { class: 'fx-pop__head' }, 'Show hidden'), ...hidden.map((c) => item('eye', c.label, () => change({ columns: [...ids, c.id] }))));
+    } else if (!column) {
+      parts.push(h('p', { class: 'fx-pop__head' }, 'Every column shows'));
+    }
+    columnPop.replaceChildren(...parts);
+    columnPop.showPopover?.();
+    const x = event.clientX || event.currentTarget?.getBoundingClientRect?.().left || 0;
+    const y = event.clientY || event.currentTarget?.getBoundingClientRect?.().bottom || 0;
+    columnPop.style.top = `${Math.round(Math.min(y + 4, innerHeight - columnPop.offsetHeight - 8))}px`;
+    columnPop.style.left = `${Math.round(Math.max(8, Math.min(x, innerWidth - columnPop.offsetWidth - 8)))}px`;
+  }
+
   // The list's columns, in the order the person chose them. One column holds
   // one field; each date has its own column.
   function listColumns() {
-    const day = (iso) => (iso ? showDate(iso) : '—');
+    const day = (iso) => h('time', { datetime: iso ?? null, title: iso ? fullDate(iso) : null }, shortDate(iso));
     const late = (job) => (isLate(job) ? h('span', { class: 'fx-job__date--late', title: 'Past due' }, day(job.dueOn)) : day(job.dueOn));
     const BUILT_IN = {
       case: { kind: 'case', dim: true, cell: (job) => caseNumber(job) ?? '—' },
       practitioner: { kind: 'text', dim: true, cell: (job) => job.practitioner ?? '—' },
       patient: { kind: 'text', dim: true, cell: (job) => job.patient ?? '—' },
       stage: { kind: 'stage', cell: (job) => stagePill(statusOf(job)) },
-      assignee: { kind: 'text', dim: true, cell: (job) => fieldText(job, assigneeField()) },
+      assignee: { kind: 'person', cell: (job) => personBadge(job, assigneeField()) },
       ordered: { kind: 'date', dim: true, cell: (job) => day(job.orderedOn) },
       due: { kind: 'date', dim: true, cell: late },
       shipped: { kind: 'date', dim: true, cell: (job) => day(job.shippedOn) },
@@ -654,8 +725,19 @@ export async function renderJobs(main, ui) {
     return state.view.columns.map((id) => {
       if (BUILT_IN[id]) return allowed.has(id) ? { id, label: id === 'assignee' ? assigneeField().name : COLUMNS[id], ...BUILT_IN[id] } : null;
       const field = customColumns().find((f) => fieldGroup(f.id) === id);
-      return field ? { id, label: field.name, kind: field.type === 'date' ? 'date' : field.type === 'number' ? 'total' : 'text', num: field.type === 'number', dim: true, cell: (job) => fieldText(job, field) } : null;
+      if (!field) return null;
+      const cell = field.type === 'person' ? (job) => personBadge(job, field)
+        : field.type === 'date' ? (job) => day(valueOf(job, field.id)?.value ?? null) : (job) => fieldText(job, field);
+      return { id, label: field.name, kind: field.type === 'date' ? 'date' : field.type === 'person' ? 'person' : field.type === 'number' ? 'total' : 'text', num: field.type === 'number', dim: true, cell };
     }).filter(Boolean);
+  }
+
+  // A person custom field's value as a badge (initials), the name on hover.
+  function personBadge(job, field) {
+    const value = field ? valueOf(job, field.id)?.value ?? null : null;
+    if (!value) return h('span', { class: 'fx-dim' }, '—');
+    const name = state.people.find((p) => p.id === value)?.name ?? 'Former person';
+    return h('span', { class: 'fx-avatar fx-avatar--sm', role: 'img', 'aria-label': name, title: name }, initialsOf(name));
   }
 
   // A job's custom field value as text.
@@ -705,7 +787,8 @@ export async function renderJobs(main, ui) {
     },
     tickCell(setBox([job], `Tick ${clientOf(job)}${caseNumber(job) ? `, case ${caseNumber(job)}` : ''}`)),
     h('td', { class: 'fx-c-client' }, h('span', { class: 'fx-job__cell' }, h('span', { class: 'fx-strong' }, clientOf(job)), problemMark(job))),
-    columns.map((c) => h('td', { class: `fx-c-${c.kind}${c.num ? ' fx-num' : ''}${c.dim ? ' fx-dim' : ''}${c.strong ? ' fx-strong' : ''}`, 'data-label': c.label }, c.cell(job))));
+    columns.map((c) => h('td', { class: `fx-c-${c.kind}${c.num ? ' fx-num' : ''}${c.dim ? ' fx-dim' : ''}${c.strong ? ' fx-strong' : ''}`, 'data-label': c.label }, c.cell(job))),
+    h('td', { class: 'fx-c-end' }));
     const fold = (label) => {
       const next = new Set(state.folded[state.view.group] ?? []);
       if (next.has(label)) next.delete(label); else next.add(label);
@@ -722,12 +805,17 @@ export async function renderJobs(main, ui) {
       color ? h('span', { class: 'fx-cf__opt fx-board__lane', 'data-color': color }, label, h('span', { class: 'fx-stage__count' }, String(jobs.length))) : stagePill(label, jobs.length, rank));
       return h('tr', { class: `fx-table__group${open ? '' : ' fx-table__group--folded'}`, onclick: () => fold(label) },
         tickCell(setBox(jobs, `Tick every job in ${label}`)),
-        h('td', { colspan: String(columns.length + 1) }, h('span', { class: 'fx-table__group-row' }, toggle, h('span', { class: 'fx-board__sum' }, formatCents(totalOf(jobs))))));
+        h('td', { colspan: String(columns.length + 2) }, h('span', { class: 'fx-table__group-row' }, toggle, h('span', { class: 'fx-board__sum' }, formatCents(totalOf(jobs))))));
     };
     return h('div', { class: 'fx-panel' }, h('table', { class: 'fx-table fx-table--jobs' },
       h('thead', {}, h('tr', {},
         h('th', { class: 'fx-tick-cell' }, setBox(allJobs, 'Tick every job shown')),
-        h('th', {}, 'Client'), columns.map((c) => h('th', { class: c.num ? 'fx-num' : null }, c.label)))),
+        h('th', {}, 'Client'),
+        columns.map((c) => h('th', { class: c.num ? 'fx-num' : null, oncontextmenu: (event) => { event.preventDefault(); onRightButton(event, () => columnMenu(c, event)); } },
+          h('button', { type: 'button', class: 'fx-th', 'aria-haspopup': 'menu', title: 'Column menu (or right-click)', onclick: (event) => columnMenu(c, event) }, c.label))),
+        h('th', { class: 'fx-th-add' }, h('button', {
+          type: 'button', class: 'fx-th fx-th--add', 'aria-label': 'Show a column', title: 'Show a column', onclick: (event) => columnMenu(null, event),
+        }, '+')))),
       shownGroups.map((g) => h('tbody', {},
         g.label == null ? null : head(g),
         g.label != null && folded.has(g.label) ? null : g.jobs.map(row)))));
