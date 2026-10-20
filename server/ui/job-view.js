@@ -5,7 +5,9 @@
 // (test/job-view.test.js). server/ui/jobs.js draws the page.
 
 export const LAYOUTS = ['board', 'list'];
-export const GROUPS = { status: 'Status', stage: 'Invoice stage', client: 'Client', practitioner: 'Practitioner' };
+// 'none' is one plain list with no group heads. The board has a lane per
+// group, so there it shows the status lanes.
+export const GROUPS = { status: 'Status', stage: 'Invoice stage', client: 'Client', practitioner: 'Practitioner', none: 'None' };
 export const SORTS = { board: 'Lab system order', due: 'Date', client: 'Client', practitioner: 'Practitioner', total: 'Total' };
 export const DIRS = ['asc', 'desc'];
 export const DEFAULT_VIEW = Object.freeze({ layout: 'board', group: 'status', sort: 'board', dir: 'asc', hide: [], late: false, problems: false });

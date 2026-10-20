@@ -27,6 +27,10 @@ test('a saved view keeps only known values; anything else falls back to the defa
   assert.equal(normaliseJobsView({ hide: Array.from({ length: 300 }, (_, i) => `S${i}`) }).hide.length, 100);
 });
 
+test('a view can have no grouping: one plain list', () => {
+  assert.equal(normaliseJobsView({ layout: 'list', group: 'none' }).group, 'none');
+});
+
 test('the account sends back only the pages Flow knows', () => {
   assert.deepEqual(normaliseViews(null), {});
   assert.deepEqual(normaliseViews({ jobs: { group: 'stage' }, other: { a: 1 } }), { jobs: { ...DEFAULT_VIEW, group: 'stage' } });

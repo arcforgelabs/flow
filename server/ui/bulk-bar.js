@@ -5,7 +5,8 @@
 // its name on hover and to a screen reader. More opens every action, with a
 // search box, grouped under small heads.
 //
-// bulkBar(ui) answers { element, draw(state) }. state = { count, onClear,
+// bulkBar(ui, { label }) answers { element, draw(state) }. label names the
+// bar for a screen reader ("Ticked invoices", "Ticked jobs"). state = { count, onClear,
 // groups: [[action]], more: [{ head, actions: [action] }] }; an action is
 // { icon, label, title?, run, primary?, iconOnly?, tone? }. title is the
 // long name, for the hover tip and the More menu. A count of 0 hides the
@@ -14,10 +15,10 @@ import { lucide } from '/assets/ui/custom-fields.js';
 
 let barCount = 0;
 
-export function bulkBar(ui) {
+export function bulkBar(ui, { label = 'Ticked invoices' } = {}) {
   const { h } = ui;
   const id = `fx-bulk-more-${++barCount}`;
-  const element = h('div', { class: 'fx-bulk', role: 'toolbar', 'aria-label': 'Ticked invoices', hidden: true });
+  const element = h('div', { class: 'fx-bulk', role: 'toolbar', 'aria-label': label, hidden: true });
   const panel = h('div', { class: 'fx-pop fx-bulk__more', id, popover: 'auto', role: 'menu' });
   let current = null;
   let busy = false;

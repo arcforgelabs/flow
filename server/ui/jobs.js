@@ -12,6 +12,7 @@
 // shows what to do there and the card waits in its new lane. On a phone,
 // or with a keyboard, the job's panel has the same moves.
 
+import { bulkBar } from '/assets/ui/bulk-bar.js';
 import { formatCents } from '/assets/ui/invoicing.js';
 import {
   caseNumber, FINAL_RANK, fixes, INVOICE_STAGES, invoiceStage, matches, NO_STATUS, orderStatuses, problemSummary, statusRank,
@@ -21,6 +22,7 @@ import {
 } from '/assets/ui/job-view.js';
 
 const LAYOUT_KEY = 'flow_jobs_layout';
+const FOLDED_KEY = 'flow_jobs_folded';
 const SYSTEM_NAME = { seazona: 'Seazona', xero: 'Xero' };
 // A job's events (server/core/ledger.js), in plain words.
 const ACTIVITY = {
@@ -51,6 +53,18 @@ function saveLayout(layout) {
   try { localStorage.setItem(LAYOUT_KEY, layout); } catch { /* the choice is only a convenience */ }
 }
 
+// The list's folded groups, by group key, in this browser only.
+function readFolded() {
+  try {
+    const value = JSON.parse(localStorage.getItem(FOLDED_KEY) ?? '{}');
+    return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  } catch { return {}; }
+}
+
+function saveFolded(folded) {
+  try { localStorage.setItem(FOLDED_KEY, JSON.stringify(folded)); } catch { /* a convenience only */ }
+}
+
 // The local calendar day, as yyyy-mm-dd, to mark late jobs.
 const today = () => {
   const now = new Date();
@@ -63,6 +77,7 @@ const GROUP_ICON = '<svg width="14" height="14" viewBox="0 0 16 16" aria-hidden=
 const SORT_ICON = '<svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="m4.5 6 3.5-3.5L11.5 6M4.5 10 8 13.5l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 const FILTER_ICON = '<svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 3.5h12M4.5 8h7M7 12.5h2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>';
 const TICK_ICON = '<svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="m3 8.5 3.2 3L13 4.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const CHEVRON_ICON = '<svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="m6 3.5 4.5 4.5L6 12.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 const CALENDAR_ICON = '<svg width="13" height="13" viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="3" width="12" height="11" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M2 6.5h12M5.5 1.5v3M10.5 1.5v3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>';
 
 export async function renderJobs(main, ui) {
@@ -81,16 +96,21 @@ export async function renderJobs(main, ui) {
     fields: [], systemFields: [], people: [], values: new Map(),
     // Each work system's "Ask before stage moves", read on the first move.
     askBefore: new Map(),
+    // The list's ticked jobs (by jobKey), and its folded groups by group key.
+    ticked: new Set(), folded: readFolded(),
   };
   const toggle = h('div', { class: 'fx-seg', role: 'radiogroup', 'aria-label': 'Layout' });
   const search = h('input', { class: 'fx-input fx-search', type: 'search', placeholder: 'Find a case, client or practitioner', 'aria-label': 'Find a job', value: asked });
   const host = h('div', { class: 'fx-jobs' }, h('div', { class: 'fx-skeleton' }));
   const controls = h('div', { class: 'fx-viewbar', role: 'group', 'aria-label': 'Group, sort and filter' });
+  // In the list, ticked rows get the same floating bar as Invoices.
+  const bulk = bulkBar(ui, { label: 'Ticked jobs' });
   main.classList.add('fx-main--wide');
   main.append(
     pageHeader('Jobs', { subtitle: 'Every job in the lab system, by its status there.' }),
     h('div', { class: 'fx-toolbar fx-toolbar--plain' }, controls, h('div', { class: 'fx-toolbar__end' }, search, toggle)),
-    host);
+    host,
+    bulk.element);
 
   const drawToggle = () => toggle.replaceChildren(...[['board', 'Board'], ['list', 'List']].map(([id, label]) => h('button', {
     type: 'button', role: 'radio', class: 'fx-seg__item', 'aria-checked': String(state.view.layout === id),
@@ -100,6 +120,7 @@ export async function renderJobs(main, ui) {
   search.addEventListener('input', () => { state.q = search.value.trim(); draw(); });
 
   const problemsOf = (job) => fixes(job.obligation);
+  const jobKey = (job) => `${job.sourceSystem}\u0000${job.sourceJobRef}`;
   const valueKey = (job, fieldId) => `${job.sourceSystem}\u0000${job.sourceJobRef}\u0000${fieldId}`;
   const valueOf = (job, fieldId) => state.values.get(valueKey(job, fieldId)) ?? null;
   const groupable = () => state.fields.filter((f) => f.groupable);
@@ -200,7 +221,9 @@ export async function renderJobs(main, ui) {
   function drawControls() {
     const { group, sort, dir } = state.view;
     const field = fieldOfGroup(group);
-    groupMenu.set(`Group: ${field?.name ?? GROUPS[group] ?? GROUPS.status}`, group !== DEFAULT_VIEW.group && (Boolean(field) || Boolean(GROUPS[group])));
+    // The board has no "None": it shows the status lanes.
+    const shown = group === 'none' && state.view.layout === 'board' ? 'status' : group;
+    groupMenu.set(`Group: ${field?.name ?? GROUPS[shown] ?? GROUPS.status}`, shown !== DEFAULT_VIEW.group && (Boolean(field) || Boolean(GROUPS[shown])));
     const sorted = sort !== DEFAULT_VIEW.sort || dir !== DEFAULT_VIEW.dir;
     sortMenu.set(sorted ? `Sort: ${SORTS[sort]}${dir === 'desc' ? ' ↓' : ''}` : 'Sort', sorted);
     const count = filterCount(state.view);
@@ -220,7 +243,12 @@ export async function renderJobs(main, ui) {
       { status: statusOf, late: isLate, problem: (job) => problemsOf(job).length > 0 });
     const groups = grouped(sortJobs(found, state.view));
     main.classList.toggle('fx-main--board', state.view.layout === 'board');
+    // A tick on a job the search or filter now hides goes.
+    const shown = new Set(found.map(jobKey));
+    for (const key of state.ticked) if (!shown.has(key)) state.ticked.delete(key);
+    state.found = found;
     host.replaceChildren(state.view.layout === 'list' ? list(groups, found.length) : board(groups));
+    drawBulk();
   }
 
   async function load() {
@@ -308,7 +336,8 @@ export async function renderJobs(main, ui) {
         return { ...g, rank: 'plain', color: lane?.color, drop: lane && !lane.archived ? { kind: 'field', field, value: lane.value } : null };
       });
     }
-    if (group === 'status' || !GROUPS[group]) {
+    if (group === 'none' && state.view.layout === 'list') return [{ label: null, jobs, rank: 'plain' }];
+    if (group === 'status' || group === 'none' || !GROUPS[group]) {
       const hidden = new Set(state.view.hide);
       return groupJobs(jobs, orderStatuses(state.statuses, state.jobs).filter((label) => !hidden.has(label)), laneStatusOf)
         .map((g) => ({ ...g, rank: statusRank(g.label), drop: g.label === NO_STATUS ? null : { kind: 'stage', status: g.label } }));
@@ -570,26 +599,218 @@ export async function renderJobs(main, ui) {
   }
 
   // The list: one block per group, with the group's label over its rows.
+  // A tick column at the left; a group's head has a tick for every job in
+  // the group, and a click on the head folds the group or opens it. Grouped
+  // by None, it is one plain list with no heads.
   function list(groups, count) {
     if (!count) return h('div', { class: 'fx-panel' }, h('p', { class: 'fx-empty' }, 'No job matches the search or filter.'));
+    const shownGroups = groups.filter((g) => g.jobs.length);
+    const folded = new Set(state.folded[state.view.group] ?? []);
+    const allJobs = shownGroups.flatMap((g) => g.jobs);
+    const boxes = [];
+    // A tick box for a set of jobs: ticked when all are, half when some are.
+    const setBox = (jobs, label) => {
+      const box = h('input', { type: 'checkbox', class: 'fx-tick', 'aria-label': label, onclick: (event) => event.stopPropagation() });
+      const sync = () => {
+        const on = jobs.filter((job) => state.ticked.has(jobKey(job))).length;
+        box.checked = on > 0 && on === jobs.length;
+        box.indeterminate = on > 0 && on < jobs.length;
+      };
+      box.addEventListener('change', () => {
+        for (const job of jobs) { if (box.checked) state.ticked.add(jobKey(job)); else state.ticked.delete(jobKey(job)); }
+        syncAll();
+      });
+      boxes.push(sync);
+      sync();
+      return box;
+    };
+    const syncAll = () => { for (const sync of boxes) sync(); drawBulk(); };
+    const tickCell = (box) => h('td', { class: 'fx-tick-cell', onclick: (event) => event.stopPropagation() }, box);
     const row = (job) => h('tr', {
       class: 'fx-row-link', tabindex: '0',
       onclick: () => openJob(job),
-      onkeydown: (event) => { if (event.key === 'Enter') openJob(job); },
+      onkeydown: (event) => { if (event.key === 'Enter' && event.target === event.currentTarget) openJob(job); },
     },
+    tickCell(setBox([job], `Tick ${clientOf(job)}${caseNumber(job) ? `, case ${caseNumber(job)}` : ''}`)),
     h('td', {}, h('span', { class: 'fx-job__cell' }, h('span', { class: 'fx-strong' }, clientOf(job)), problemMark(job))),
     h('td', { class: 'fx-dim' }, job.practitioner ?? '—'),
-    h('td', {}, job.status ?? NO_STATUS),
+    h('td', {}, stagePill(statusOf(job))),
     h('td', { class: 'fx-dim' }, dateOf(job) ?? '—'),
     h('td', { class: 'fx-num fx-strong' }, job.totalCents == null ? '—' : formatCents(job.totalCents)));
+    const fold = (label) => {
+      const next = new Set(state.folded[state.view.group] ?? []);
+      if (next.has(label)) next.delete(label); else next.add(label);
+      state.folded = { ...state.folded, [state.view.group]: [...next] };
+      saveFolded(state.folded);
+      draw();
+    };
+    const head = ({ label, jobs, rank, color }) => {
+      const open = !folded.has(label);
+      const toggle = h('button', {
+        type: 'button', class: 'fx-table__fold', 'aria-expanded': String(open), 'aria-label': `${label}, ${jobs.length} ${jobs.length === 1 ? 'job' : 'jobs'}. ${open ? 'Fold' : 'Open'} the group`,
+        onclick: (event) => { event.stopPropagation(); fold(label); },
+      }, svg(CHEVRON_ICON),
+      color ? h('span', { class: 'fx-cf__opt fx-board__lane', 'data-color': color }, label, h('span', { class: 'fx-stage__count' }, String(jobs.length))) : stagePill(label, jobs.length, rank));
+      return h('tr', { class: `fx-table__group${open ? '' : ' fx-table__group--folded'}`, onclick: () => fold(label) },
+        tickCell(setBox(jobs, `Tick every job in ${label}`)),
+        h('td', { colspan: '5' }, h('span', { class: 'fx-table__group-row' }, toggle, h('span', { class: 'fx-board__sum' }, formatCents(totalOf(jobs))))));
+    };
     return h('div', { class: 'fx-panel' }, h('table', { class: 'fx-table fx-table--jobs' },
       h('thead', {}, h('tr', {},
+        h('th', { class: 'fx-tick-cell' }, setBox(allJobs, 'Tick every job shown')),
         h('th', {}, 'Client'), h('th', {}, 'Practitioner'), h('th', {}, 'Stage'), h('th', {}, 'Date'),
         h('th', { class: 'fx-num' }, 'Total'))),
-      groups.filter((g) => g.jobs.length).map(({ label, jobs, rank }) => h('tbody', {},
-        h('tr', { class: 'fx-table__group' }, h('td', { colspan: '5' },
-          h('span', { class: 'fx-table__group-row' }, stagePill(label, jobs.length, rank), h('span', { class: 'fx-board__sum' }, formatCents(totalOf(jobs)))))),
-        jobs.map(row)))));
+      shownGroups.map((g) => h('tbody', {},
+        g.label == null ? null : head(g),
+        g.label != null && folded.has(g.label) ? null : g.jobs.map(row)))));
+  }
+
+  // ── Bulk actions ─────────────────────────────────────────────────────────
+  // The bar floats at the foot while list rows are ticked (bulk-bar.js, as on
+  // Invoices). Move and Ready are the main steps; Copy and Export take the
+  // ticked rows out; More has them all, a field per custom field, and the
+  // Selection steps.
+  const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+  const tickedJobs = () => (state.found ?? []).filter((job) => state.ticked.has(jobKey(job)));
+  const setTicks = (jobs) => { state.ticked = new Set(jobs.map(jobKey)); draw(); };
+
+  function drawBulk() {
+    const rows = state.view.layout === 'list' ? tickedJobs() : [];
+    bulk.draw({ count: rows.length, onClear: () => setTicks([]), ...bulkActions(rows) });
+  }
+
+  function bulkActions(rows) {
+    if (!rows.length) return { groups: [], more: [] };
+    const status = [];
+    const movable = rows.filter(movesStages);
+    if (movable.length) status.push({ icon: 'arrow-right-left', label: 'Move', title: 'Move to a stage', run: () => moveMany(movable) });
+    const workable = rows.filter((job) => job.obligation?.view === 'in_work');
+    if (workable.length) status.push({ icon: 'check-check', label: 'Ready', title: 'Mark ready to invoice', run: () => readyMany(workable) });
+    const draftable = state.canDraft ? rows.filter((job) => job.obligation?.view === 'ready' && !job.obligation.invoiceId) : [];
+    if (draftable.length) status.push({ icon: 'file-plus', label: 'Draft', title: 'Draft invoices', run: () => draftMany(draftable) });
+    const fields = groupable().map((field) => ({ icon: 'tag', label: field.name, title: `Set ${field.name}`, run: () => setMany(rows, field) }));
+    const apply = [
+      { icon: 'copy', label: 'Copy', iconOnly: true, title: 'Copy case numbers', run: () => copyLines(rows.map((job) => caseNumber(job) ?? clientOf(job))) },
+      { icon: 'download', label: 'Export', iconOnly: true, title: 'Export CSV', run: () => exportCsv(rows) },
+    ];
+    const all = state.found ?? [];
+    const selection = [
+      { icon: 'list-checks', label: 'Tick all shown', run: () => setTicks(all) },
+      { icon: 'square-check', label: 'Invert ticks', run: () => setTicks(all.filter((job) => !state.ticked.has(jobKey(job)))) },
+      { icon: 'square-x', label: 'Clear ticks', run: () => setTicks([]) },
+    ];
+    return {
+      groups: [status, apply],
+      more: [
+        { head: 'Change stage', actions: status },
+        { head: 'Set a field', actions: fields },
+        { head: 'Apply an action', actions: apply },
+        { head: 'Selection', actions: selection },
+      ],
+    };
+  }
+
+  // Move the ticked jobs to one stage. As with a drag, the work system
+  // cannot take the move through its API: Flow records each move and the
+  // rows wait until the sync reads the new status.
+  async function moveMany(jobs) {
+    const systems = [...new Set(jobs.map((job) => job.sourceSystem))];
+    const stages = [...new Set(state.systemFields.filter((f) => systems.includes(f.source)).flatMap((f) => f.options.map((o) => o.name)))];
+    const names = systems.map((id) => SYSTEM_NAME[id] ?? id).join(' and ');
+    const select = h('select', { class: 'fx-select', name: 'to', required: true, 'aria-label': 'Stage' },
+      h('option', { value: '' }, 'Choose a stage…'), stages.map((name) => h('option', { value: name }, name)));
+    const data = await ui.dialog({
+      title: `Move ${plural(jobs.length, 'job', 'jobs')}`,
+      body: h('div', { class: 'fx-fields fx-move' },
+        h('label', { class: 'fx-field' }, h('span', {}, 'Move to'), select),
+        h('p', { class: 'fx-move__note' }, `${names} cannot take this change from Flow. Set each case to the new stage in ${names}. Flow shows the rows as waiting until it reads the change. After a day they go back.`)),
+      confirm: 'Move',
+    });
+    const to = data?.get('to');
+    if (!to) return;
+    let moved = 0;
+    let error = null;
+    for (const job of jobs.filter((j) => (j.status ?? NO_STATUS) !== to)) {
+      try {
+        const { move } = await flow('/api/work/moves', { method: 'POST', body: JSON.stringify({ sourceSystem: job.sourceSystem, sourceJobRef: job.sourceJobRef, toStatus: to }) });
+        job.pendingMove = { to: move.to, from: move.from, requestedAt: move.requestedAt, expiresAt: move.expiresAt, openUrl: move.openUrl, openExact: move.openExact };
+        moved += 1;
+      } catch (e) { error = e; }
+    }
+    ui.toast?.(error ? `${moved} waiting for ${names}. ${error.message}` : `${plural(moved, 'job', 'jobs')} waiting for ${names}. Set ${moved === 1 ? 'it' : 'them'} to ${to} there.`, error ? 'danger' : 'success');
+    state.ticked.clear();
+    draw();
+  }
+
+  // One step on each job's invoice record, one job after the other.
+  async function eachJob(jobs, step) {
+    let done = 0;
+    const refused = [];
+    for (const job of jobs) {
+      try { await step(job); done += 1; } catch (e) { refused.push(e); }
+    }
+    return { done, refused };
+  }
+
+  async function readyMany(jobs) {
+    const { done, refused } = await eachJob(jobs, (job) => flow(`/api/invoicing/jobs/${job.obligation.id}/ready`, { method: 'POST', body: JSON.stringify({ ready: true }) }));
+    ui.toast?.(refused.length ? `${done} ready to invoice. ${refused[0].message}` : `${plural(done, 'job', 'jobs')} ready to invoice.`, refused.length ? 'danger' : 'success');
+    state.ticked.clear();
+    await load();
+  }
+
+  async function draftMany(jobs) {
+    const ok = await ui.dialog({
+      title: `Draft ${plural(jobs.length, 'invoice', 'invoices')}?`,
+      body: h('p', {}, 'Flow makes a draft invoice for each job. The drafts stay in Flow until a person checks them.'),
+      confirm: `Draft ${jobs.length}`,
+    });
+    if (!ok) return;
+    const { done, refused } = await eachJob(jobs, (job) => flow(`/api/invoicing/jobs/${job.obligation.id}/draft`, { method: 'POST', body: '{}' }));
+    ui.toast?.(refused.length ? `${done} drafted. ${plural(refused.length, 'job was', 'jobs were')} not drafted: open ${refused.length === 1 ? 'it' : 'them'} to see why.` : `${plural(done, 'draft invoice', 'draft invoices')} made.`, refused.length ? 'danger' : 'success');
+    state.ticked.clear();
+    await load();
+  }
+
+  // Set one custom field on the ticked jobs, in Flow only.
+  async function setMany(jobs, field) {
+    const lanes = fieldLanes(field, { people: state.people, jobs: state.jobs, valueOf: (job) => valueOf(job, field.id)?.value ?? null }).filter((lane) => !lane.archived);
+    const select = h('select', { class: 'fx-select', name: 'lane', 'aria-label': field.name },
+      lanes.map((lane, i) => h('option', { value: String(i) }, lane.label)));
+    const data = await ui.dialog({
+      title: `Set ${field.name} on ${plural(jobs.length, 'job', 'jobs')}`,
+      body: h('div', { class: 'fx-fields' }, h('label', { class: 'fx-field' }, h('span', {}, field.name), select)),
+      confirm: 'Set',
+    });
+    if (!data) return;
+    const lane = lanes[Number(data.get('lane'))];
+    if (!lane) return;
+    for (const job of jobs) await setValue(job, field, lane.value);
+    ui.toast?.(`${field.name} set on ${plural(jobs.length, 'job', 'jobs')}.`, 'success');
+  }
+
+  async function copyLines(lines) {
+    try {
+      await navigator.clipboard.writeText(lines.join('\n'));
+      ui.toast?.(`${plural(lines.length, 'line', 'lines')} copied.`, 'success');
+    } catch {
+      ui.toast?.('The browser did not allow a copy.', 'danger');
+    }
+  }
+
+  // The ticked rows as a CSV file, with the columns on the screen.
+  function exportCsv(jobs) {
+    const cell = (v) => (/[",\n]/.test(String(v ?? '')) ? `"${String(v).replace(/"/g, '""')}"` : String(v ?? ''));
+    const lines = [['Case', 'Client', 'Practitioner', 'Stage', 'Due', 'Ordered', 'Total']]
+      .concat(jobs.map((job) => [caseNumber(job) ?? '', clientOf(job), job.practitioner ?? '', statusOf(job), job.dueOn ?? '', job.orderedOn ?? '',
+        job.totalCents == null ? '' : (job.totalCents / 100).toFixed(2)]));
+    const url = URL.createObjectURL(new Blob([lines.map((l) => l.map(cell).join(',')).join('\r\n')], { type: 'text/csv' }));
+    const a = h('a', { href: url, download: `jobs-${today()}.csv` });
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    ui.toast?.(`${plural(jobs.length, 'job', 'jobs')} exported.`, 'success');
   }
 
   // What a person can do with the job's invoice from here.

@@ -120,12 +120,20 @@ The page at `/sign-in`, `/people`, `/account` and `/appearance`
   button opens the pages as a panel below the bar.
 - **Jobs**: the board (one lane per group, about a phone wide, filling the
   window to its bottom edge, each lane scrolling inside itself) or the list.
-  The toolbar has Group (status, invoice stage, client, practitioner), Sort
+  The toolbar has Group (status, invoice stage, client, practitioner, or
+  None: one plain list; the board then shows status lanes), Sort
   (lab system order, date, client, practitioner, total; either direction)
   and Filter (only late jobs, only jobs with a problem, statuses to show) at
   the left, and search and Board/List at the right. Each person's view is
   saved with their account (`people.views`, `PUT /api/me/views/jobs`,
   server/ui/job-view.js), so it follows them to every device.
+  In the list, the Stage column shows each status as its coloured label. A
+  tick column is at the left; a group head ticks every job in its group,
+  and a click on the head folds the group or opens it (folds stay in the
+  browser). Ticked rows get the bulk bar at the foot, as on Invoices (Move
+  to a stage, Mark ready to invoice, Draft invoices, Copy case numbers,
+  Export CSV; More adds Set a field and Selection). A bulk move is the same
+  hand-off as a drag (docs/JOB_BOARD_MOVES.md).
 - **People** (owners): a title with one primary action, Invite (a dialog:
   email, and role with its one-line hint). One row per person: initials, the
   name (the email under it only when there is a name), the role as a select
