@@ -274,3 +274,21 @@ export const seazonaHistoryJobs = pgTable('seazona_history_jobs', {
   index('seazona_history_jobs_invoice').on(t.invoiceNumber),
   index('seazona_history_jobs_changed').on(t.lastChangedAt),
 ]);
+
+// Issue #126: what the sweep found that the cursor lanes missed, one row per
+// record and kind. `changed` and `created`: an edit or a new record the lanes
+// passed by. `deleted`: an order Seazona answered 404 for. `missing`: an
+// invoice or client that Seazona no longer lists; the row stays, and the
+// mark clears when Seazona lists the record again.
+export const seazonaSweepFindings = pgTable('seazona_sweep_findings', {
+  resource: text('resource').notNull(),
+  recordKey: text('record_key').notNull(),
+  kind: text('kind').notNull(),
+  firstFoundAt: at('first_found_at').notNull(),
+  lastFoundAt: at('last_found_at').notNull(),
+  // Status codes and statuses only. Never patient data.
+  detail: jsonb('detail'),
+}, (t) => [
+  primaryKey({ columns: [t.resource, t.recordKey, t.kind] }),
+  index('seazona_sweep_findings_found').on(t.lastFoundAt),
+]);

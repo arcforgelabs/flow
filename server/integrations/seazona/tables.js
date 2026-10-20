@@ -18,5 +18,6 @@ export const seazonaSchema = Object.freeze({
     'seazona_history_rows',
     'seazona_history_batch_jobs',
     'seazona_history_jobs',
+    'seazona_sweep_findings',
   ]),
 });

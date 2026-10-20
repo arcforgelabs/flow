@@ -11,6 +11,7 @@ import {
 } from './map.js';
 import { runHistoryBackfill } from './history/backfill.js';
 import { seazonaOrders } from './schema.js';
+import { runSweep } from './sweep.js';
 import {
   claimLane,
   clearOrderFailure,
@@ -43,6 +44,8 @@ import {
 //   users          the lab user list, daily
 //   history        past orders, a few calls per run, only while a person
 //                  has started a backfill (history/backfill.js)
+//   sweep          whole lists again, slowly, for what the others missed
+//                  (issue #126, sweep.js)
 //
 // Issue #12 holds for every order read: a 404 marks the order deleted in
 // Seazona, an empty answer is a failure, each failure is recorded per order
@@ -60,7 +63,7 @@ import {
 // only after a person saves the settings or Flow restarts on a new release.
 // Calls the governor stopped (SeazonaCallsStopped) wait out its pause.
 
-export const LANES = Object.freeze(['invoices', 'orders_recent', 'orders_active', 'clients', 'products', 'users', 'history']);
+export const LANES = Object.freeze(['invoices', 'orders_recent', 'orders_active', 'clients', 'products', 'users', 'history', 'sweep']);
 
 const DAY_MS = 24 * 60 * 60_000;
 const MAX_REPORTED = 25;
@@ -570,6 +573,7 @@ const laneRuns = {
   },
 
   history: (ctx) => runHistoryBackfill(ctx, { isLaneLevel, describeReadFailure, emptyResponse, LaneError }),
+  sweep: (ctx) => runSweep(ctx, { readOrder, isLaneLevel, describeReadFailure, emptyResponse, LaneError }),
   products: (ctx) => syncReference(ctx, 'products'),
   users: (ctx) => syncReference(ctx, 'users'),
 };

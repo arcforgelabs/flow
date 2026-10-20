@@ -70,7 +70,7 @@ describe('Seazona sync lanes', { skip: skipWithoutDatabase }, () => {
   test('a run fills the mirror with what billing needs, in cents, and nothing clinical', async () => {
     const { result } = await run(billing());
     assert.equal(result.ok, true, JSON.stringify(result));
-    assert.deepEqual(Object.keys(result.results), ['invoices', 'orders_recent', 'orders_active', 'clients', 'products', 'users', 'history']);
+    assert.deepEqual(Object.keys(result.results), ['invoices', 'orders_recent', 'orders_active', 'clients', 'products', 'users', 'history', 'sweep']);
 
     const [invoice] = await db.select().from(seazonaInvoices);
     assert.equal(invoice.invoiceNumber, '5001');

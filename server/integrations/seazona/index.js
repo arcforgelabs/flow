@@ -9,6 +9,7 @@ import { SEAZONA_CALL_GUARD } from './governor.js';
 import { createSeazonaRouter } from './routes.js';
 import { orderPatient } from './patients.js';
 import { createSeazonaScheduler } from './scheduler.js';
+import { readSweepHealth } from './sweep.js';
 import { resetFailedLanes, resetStoppedLanes } from './store.js';
 import { describeSeazonaSettings, resolveSeazonaSettings } from './settings.js';
 import { seazonaSchema } from './tables.js';
@@ -132,6 +133,7 @@ export function createSeazonaAdapter({ env = null, fetchImpl = null, now = Date.
           // Issue #141: today's reads before a draft or a send.
           readsBeforeAct: actReader.status(),
           history: await historySummary(db),
+          sweep: await readSweepHealth(db, settings, { now }),
         };
       },
 
