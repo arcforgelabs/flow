@@ -2,6 +2,7 @@ import { and, asc, eq, isNull, ne, sql } from 'drizzle-orm';
 import { people, PERSON_ROLES } from '../db/schema.js';
 import { FlowError } from '../core/errors.js';
 import { isThemeFamily, normalizeAccent } from '../theme/themes.js';
+import { normaliseJobsView } from '../ui/job-view.js';
 import { isPlainEmail } from './settings.js';
 
 // The people who may sign in, and their roles. Only an owner changes this
@@ -48,6 +49,40 @@ export async function setPersonAppearance(db, { id, appearance }) {
     .returning();
   if (!row) throw new FlowError('not_found', 'person not found');
   return row.appearance;
+}
+
+// The pages a person can keep their own view of, each with its check.
+// Each page is named in a switch, never looked up by the name a request
+// sends, so a name such as "constructor" can only be refused.
+function viewCheck(page) {
+  switch (page) {
+    case 'jobs': return normaliseJobsView;
+    default: return null;
+  }
+}
+const VIEW_PAGE_NAMES = ['jobs'];
+
+// A person's saved views as Flow sends them: only the known pages, each
+// checked, so a view saved by an older Flow still loads.
+export function normaliseViews(input) {
+  const value = input && typeof input === 'object' ? input : {};
+  const out = {};
+  for (const page of VIEW_PAGE_NAMES) if (value[page]) out[page] = viewCheck(page)(value[page]);
+  return out;
+}
+
+// Each person keeps their own view of a page; saving one page leaves the
+// others as they were.
+export async function setPersonView(db, { id, page, view }) {
+  const normalise = viewCheck(page);
+  if (typeof normalise !== 'function') throw new FlowError('not_found', 'no such page');
+  const value = normalise(view);
+  const [row] = await db.update(people)
+    .set({ views: sql`coalesce(${people.views}, '{}'::jsonb) || ${JSON.stringify({ [page]: value })}::jsonb`, updatedAt: new Date() })
+    .where(eq(people.id, id))
+    .returning();
+  if (!row) throw new FlowError('not_found', 'person not found');
+  return value;
 }
 
 export async function findPersonById(db, id) {

@@ -177,7 +177,10 @@ export const PERSON_STATUSES = ['active', 'pending', 'disabled'];
 // are stored lower-case. `clerk_user_id` is set on the person's first verified
 // sign-in; until then the row is an invitation. `appearance` is the person's
 // own design system, light or dark and accent (server/auth/people.js,
-// normaliseAppearance); null until they first choose.
+// normaliseAppearance); null until they first choose. `views` is the
+// person's own view of each page, such as how the Jobs page groups, sorts
+// and filters ({ jobs: … }, server/ui/job-view.js); null until they first
+// change one.
 export const people = pgTable('people', {
   id: id(),
   email: text('email').notNull(),
@@ -188,6 +191,7 @@ export const people = pgTable('people', {
   invitedBy: uuid('invited_by').references(() => people.id, { onDelete: 'set null' }),
   linkedAt: timestamp('linked_at', { withTimezone: true }),
   appearance: jsonb('appearance'),
+  views: jsonb('views'),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 }, (t) => [
