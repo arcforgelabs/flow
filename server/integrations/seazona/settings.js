@@ -8,6 +8,8 @@
 //   replay   recorded, synthetic responses from a file; no network at all.
 // There is no default mode. Without one the adapter does nothing.
 
+import { backgroundJobsOn } from '../../core/host.js';
+
 export const MODES = Object.freeze(['live', 'sandbox', 'replay']);
 
 // Seazona publishes 60 requests a minute per API client. Flow stays at half of
@@ -190,8 +192,9 @@ export function resolveSeazonaSettings(env = process.env) {
     credentials: null,
     replayFile: '',
     rate,
-    // The scheduler starts only in live mode (issue #10).
-    scheduled: mode === 'live',
+    // The scheduler starts only in live mode (issue #10), and only where
+    // background jobs run: never in a Replit workspace (server/core/host.js).
+    scheduled: mode === 'live' && backgroundJobsOn(env),
     // The address of one order in Seazona's own screens, with {ref} for the
     // order number, for "Open in Seazona" on a stage move. Optional; one
     // without {ref} is ignored.

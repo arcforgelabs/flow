@@ -13,6 +13,7 @@ import { createMonitoredLog } from './core/monitoring.js';
 import { createTracing, traceQueries } from './core/tracing.js';
 import { createPipelineWorker } from './core/pipeline.js';
 import { createReconcileWorker } from './core/reconcile.js';
+import { backgroundJobsOn } from './core/host.js';
 import { createSendWorker } from './core/sending.js';
 import { resolveSecretsKey } from './core/secrets.js';
 import { adapters as shippedAdapters } from './integrations/adapters.js';
@@ -96,20 +97,25 @@ try {
 const integrationsOn = integrations.list().filter((a) => a.enabled).map((a) => `${a.id}${a.state === 'ready' ? '' : ` (${a.state})`}`);
 console.log(`[integrations] on: ${integrationsOn.join(', ') || 'none'}; secrets key ${secrets ? `from ${secrets.source}` : 'not set (FLOW_SECRETS_KEY)'}`);
 
+// Background jobs run only where FLOW_BACKGROUND_JOBS allows: never in a
+// Replit workspace, which shares the published app's secrets
+// (server/core/host.js).
+const jobsOn = backgroundJobsOn(process.env);
+if (!jobsOn) console.log('[flow] background jobs off (FLOW_BACKGROUND_JOBS): no sync, pipeline, reconcile or sending in this copy');
 // The pipeline (server/core/pipeline.js) joins what the integrations copy into
 // Flow: jobs into the ledger, and each job to its accounting invoice. It runs
 // only while an integration that feeds it is on, and writes to no other
 // system. FLOW_PIPELINE=off stops it.
-if (process.env.FLOW_PIPELINE !== 'off') {
+if (jobsOn && process.env.FLOW_PIPELINE !== 'off') {
   createPipelineWorker({ db: database.db, integrations, log }).start();
 }
 // The daily reconcile (server/core/reconcile.js) compares Flow's own copies
 // and opens a review item for a day that does not agree. It never calls or
 // writes to another system.
-createReconcileWorker({ db: database.db, integrations, log }).start();
+if (jobsOn) createReconcileWorker({ db: database.db, integrations, log }).start();
 // The send worker (server/core/sending.js) sends only what a person queued
 // with Send all ready, to the accounting integration that is on.
-createSendWorker({ db: database.db, integrations, log }).start();
+if (jobsOn) createSendWorker({ db: database.db, integrations, log }).start();
 
 let auth = null;
 if (settings.mode === 'clerk') {

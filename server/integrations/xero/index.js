@@ -75,10 +75,10 @@ export function createXeroAdapter({ runtime: given = null } = {}) {
       if (!given) runtime = createXeroRuntime({ settings: requireXeroSettings(env ?? process.env) });
       const { settings } = current();
       if (reconfigured) await current().guardFor(db).resume();
-      log.info?.(`[xero] mode ${settings.mode}; writes ${writesAllowed(settings) ? 'on' : 'off (XERO_ALLOW_LIVE_WRITES)'}; redirect URI ${settings.redirectUri ?? 'not set (FLOW_PUBLIC_ORIGIN)'}`);
+      log.info?.(`[xero] mode ${settings.mode}; writes ${writesAllowed(settings) ? 'on' : settings.backgroundJobs === false ? 'off (FLOW_BACKGROUND_JOBS)' : 'off (XERO_ALLOW_LIVE_WRITES)'}; redirect URI ${settings.redirectUri ?? 'not set (FLOW_PUBLIC_ORIGIN)'}`);
       // The history import (import.js) runs in the background outside replay
-      // mode. Replay tests run its slices directly.
-      if (settings.mode !== 'replay') {
+      // mode, where background jobs run. Replay tests run its slices directly.
+      if (settings.mode !== 'replay' && settings.backgroundJobs !== false) {
         importer = createImportWorker({ db, runtime: current(), log });
         await importer.start();
       }

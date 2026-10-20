@@ -27,7 +27,7 @@ flowchart LR
 | Setting | What it does | Default |
 | --- | --- | --- |
 | `SENTRY_DSN` | The project's DSN. Browsers see it, so it is not a secret. | none: Sentry cannot start |
-| `SENTRY_ENVIRONMENT` | The environment Sentry shows for this installation. | `production` |
+| `SENTRY_ENVIRONMENT` | The environment Sentry shows for this installation. | `production`; `workspace` in a Replit workspace |
 | `SENTRY_FEEDBACK` | `on`: "Report a problem" shows in the sidebar and the account menu for everyone signed in. | `on` |
 | `SENTRY_TRACES_SAMPLE_RATE` | The share of clicks, page loads and requests traced, from `0` (off) to `1` (all). | `0.2` |
 
