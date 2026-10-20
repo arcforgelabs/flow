@@ -48,6 +48,7 @@ run a lab.
 | `docs/CUSTOM_FIELDS.md` | Custom fields: the lab's own fields for its jobs, kept in Flow only, and how a board move checks for conflicts |
 | `docs/JOB_BOARD_MOVES.md` | Moving jobs on the Jobs board: custom field moves stay in Flow; Seazona stage moves become a hand-off |
 | `docs/PRICE_LIST.md` | The price list: Flow's own codes and prices, their links to Xero items and Seazona products, and the price check |
+| `docs/LOW_RISK_MERGE.md` | The low-risk merge lane: which pull requests merge themselves when green, with ClawSweeper's risk labels |
 | `docs/RELEASING.md` | Versions and channels, the release workflows, how to cut and roll back a release, and the one-time setup |
 | `docs/SELF_HOSTING.md` | Running a Flow release with Docker, Node or Replit, the update notice, and Clerk sign-in |
 | `docs/REPLIT.md` | A Replit workspace of this repository that follows a release channel (`FLOW_DEPLOY_REF`) |

@@ -1,0 +1,81 @@
+# The low-risk merge lane (docs/LOW_RISK_MERGE.md). A pull request from a
+# maintainer that is a small fix with no merge risk gets ClawSweeper's
+# `status: 🚀 automerge armed` label and merges itself (squash) once every
+# check on its head is green. Anything else gets its `merge-risk:` labels and
+# waits for a maintainer.
+#
+# Trusted code only: the job runs scripts/github/low-risk-merge.mjs from the
+# default branch and reads the pull request through the API. It never checks
+# out or runs pull request code.
+#
+# Switch: repository variable FLOW_LOW_RISK_MERGE=off keeps the labels and the
+# comment but stops the merge.
+name: Low-Risk Merge
+
+on:
+  pull_request_target: # trusted code only; never checks out PR code
+    types: [opened, reopened, synchronize, edited, ready_for_review, converted_to_draft, labeled, unlabeled]
+  workflow_run:
+    workflows: [CI, Secret Scan]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: Pull request number to decide again
+        required: true
+
+permissions: {}
+
+jobs:
+  lane:
+    if: >-
+      ${{ github.event_name != 'workflow_run' ||
+        (github.event.workflow_run.event == 'pull_request' &&
+         github.event.workflow_run.head_repository.full_name == github.repository) }}
+    concurrency:
+      group: low-risk-merge-${{ github.event.pull_request.number || github.event.workflow_run.pull_requests[0].number || inputs.pr }}
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      checks: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      # Optional: with the Barnacle App, the merge commit starts CI on main;
+      # the workflow token cannot start workflows.
+      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        id: app-token
+        if: ${{ vars.BARNACLE_APP_ID != '' }}
+        continue-on-error: true
+        with:
+          app-id: ${{ vars.BARNACLE_APP_ID }}
+          private-key: ${{ secrets.BARNACLE_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: write
+          permission-pull-requests: write
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          sparse-checkout: scripts/github
+          persist-credentials: false
+      - name: Decide and merge
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
+        env:
+          MERGE_TOKEN: ${{ steps.app-token.outputs.token }}
+          FLOW_LOW_RISK_MERGE: ${{ vars.FLOW_LOW_RISK_MERGE }}
+        with:
+          script: |
+            const { pathToFileURL } = require("node:url");
+            const { run } = await import(pathToFileURL(`${process.env.GITHUB_WORKSPACE}/scripts/github/low-risk-merge.mjs`).href);
+            const merger = process.env.MERGE_TOKEN ? getOctokit(process.env.MERGE_TOKEN) : github;
+            await run({
+              github,
+              merger,
+              context,
+              core,
+              mergeEnabled: process.env.FLOW_LOW_RISK_MERGE !== "off",
+              ignoreChecks: ["lane"],
+            });
