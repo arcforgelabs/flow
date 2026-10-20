@@ -79,13 +79,30 @@ test("the options name one stable version and full commit hashes", () => {
   assert.throws(() => parseArgs(["2026.10.40", "--cut-sha", "abc"]), /full lowercase commit hash/);
   assert.throws(() => parseArgs(["2026.10.40", "--notes-ref"]), /needs a value/);
   assert.throws(() => parseArgs(["2026.10.40", "--yes"]), /Unknown option --yes/);
+  assert.equal(parseArgs(["2026.10.40"]).hold, false);
+  assert.equal(parseArgs(["2026.10.40", "--hold"]).hold, true);
   assert.deepEqual(PHASES, ["cut", "validate", "publish", "flip-github", "sync-beta", "closeout"]);
 });
 
-test("the cut waits for the operator to confirm the newest validated main commit, and prints what to do next", () => {
+test("the cut needs the notes, and prints how to write them at the newest validated main commit", () => {
+  const world = { runs: {}, beta: "2026.10.39" };
+  const { exec, calls } = fake(world);
+  const opts = options();
+  assert.throws(() => runReleaseStable(opts, { exec, ...quiet }), (error) => {
+    assert.ok(error instanceof ReleaseRefusal);
+    assert.match(error.message, new RegExp(`Write the 2026.10.40 notes at the cut ${CUT}`));
+    assert.ok(error.next.some((line) => line.includes(`changelog.mjs draft --version 2026.10.40 --target ${CUT}`)));
+    assert.ok(error.next.at(-1).includes("--notes-ref"));
+    return true;
+  });
+  assert.deepEqual(calls.filter((call) => call.includes("/dispatches")), []);
+  assert.equal(loadState(opts).cut.cutSha, CUT);
+});
+
+test("with --hold, the cut waits for the operator to confirm the newest validated main commit", () => {
   const world = { runs: {}, beta: "2026.10.39" };
   const { exec } = fake(world);
-  const opts = options();
+  const opts = options(["--hold"]);
   let refusal;
   try {
     runReleaseStable(opts, { exec, ...quiet });
@@ -95,16 +112,16 @@ test("the cut waits for the operator to confirm the newest validated main commit
   assert.ok(refusal instanceof ReleaseRefusal);
   assert.match(refusal.message, new RegExp(`Confirm the cut ${CUT}`));
   assert.ok(refusal.next.some((line) => line.includes(`changelog.mjs draft --version 2026.10.40 --target ${CUT}`)));
-  assert.ok(refusal.next.at(-1).includes(`--confirm-cut-sha ${CUT}`));
+  assert.ok(refusal.next.at(-1).includes("--hold") && refusal.next.at(-1).includes(`--confirm-cut-sha ${CUT}`));
   const state = loadState(opts);
   assert.equal(state.phases.cut.status, "refused");
   assert.equal(state.cut.cutSha, CUT);
 });
 
-test("with the cut confirmed and publication approved, it runs every phase once, and a rerun does nothing again", () => {
+test("with the notes named, it runs every phase once with no stop, and a rerun does nothing again", () => {
   const world = { runs: {}, beta: "2026.10.40-beta.2", pr: { number: 12, html_url: "https://github.com/arcforgelabs/flow/pull/12", head: { sha: "e".repeat(40) } } };
   const { exec, calls } = fake(world);
-  const opts = options(["--confirm-cut-sha", CUT, "--notes-ref", "notes", "--approve-publication"]);
+  const opts = options(["--notes-ref", "notes"]);
   const state = runReleaseStable(opts, { exec, ...quiet });
   for (const phase of PHASES) assert.equal(state.phases[phase].status, "completed", phase);
   const dispatched = calls.filter((call) => call.includes("/dispatches"));
@@ -120,9 +137,9 @@ test("with the cut confirmed and publication approved, it runs every phase once,
   assert.deepEqual(again.calls.filter((call) => call.includes("/dispatches") || call.includes("/merge")), []);
 });
 
-test("publication waits for approval, and a failed validation stops the release", () => {
+test("with --hold, publication waits for approval; a failed validation stops the release", () => {
   const world = { runs: {}, beta: "2026.10.39", branch: true };
-  const opts = options();
+  const opts = options(["--hold"]);
   assert.throws(() => runReleaseStable(opts, { exec: fake(world).exec, ...quiet }), /Approve publishing v2026.10.40/);
   const failing = { ...world, validation: "failure" };
   assert.throws(() => runReleaseStable(options(), { exec: fake(failing).exec, ...quiet }), /Flow Full Release Validation of release\/2026.10.40 ended failure/);

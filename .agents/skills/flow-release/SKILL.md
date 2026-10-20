@@ -48,10 +48,12 @@ evidence (the job, the error, the commit).
 
 ## Publication
 
-- `--approve-publication` needs the maintainer's word for this release (a
-  tapped card counts). Without it, stop at the refusal and ask.
-- The tag is signed by Flow Release Prepare and checked by Flow Release
-  Checks. The GitHub Release stays a draft until npm serves the version.
+- Nothing waits for a person: run `release:stable` without `--hold`. The
+  maintainer's one step is the installation's own deploy. Use `--hold` only
+  when the maintainer asks for the stops; then `--approve-publication`
+  needs their word for this release (a tapped card counts).
+- Flow Release Prepare makes the tag (signed when `RELEASE_TAG_SIGNING_KEY`
+  is set) and Flow Release Checks checks it. The GitHub Release stays a draft until npm serves the version.
 - The release is done when the closeout pull request has merged and `main`
   carries the shipped changelog file and version.
 

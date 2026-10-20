@@ -7,13 +7,14 @@
 // It runs the release as one resumable state machine with these phases:
 //
 //   cut          picks the cut: the newest main commit that Flow Full Release
-//                Validation proved (or --cut-sha). It refuses until the
-//                operator confirms that exact commit (--confirm-cut-sha) and
-//                names the branch that holds the version's changelog file
+//                Validation proved (or --cut-sha). It refuses until it has
+//                the branch that holds the version's changelog file
 //                (--notes-ref). Then Flow Release Branch cuts release/<v>.
+//                With --hold it also waits for the operator to confirm that
+//                exact commit (--confirm-cut-sha).
 //   validate     waits for Flow Full Release Validation on the branch's head.
-//   publish      needs --approve-publication. Flow Release Prepare tags the
-//                head (signed) and starts Flow Release Publish, then Flow NPM
+//   publish      Flow Release Prepare tags the head (signed when a key is
+//                set) and starts Flow Release Publish, then Flow NPM
 //                Release; done when npm serves <v>.
 //   flip-github  requires the GitHub Release public and latest (Flow NPM
 //                Release makes it so after npm is verified).
@@ -27,7 +28,13 @@
 // continues from the first phase not completed; --from <phase> starts again
 // from that phase; --status prints the table; --dry-run prints each command
 // instead of running it. Every refusal prints "Next:" with the commands to
-// run before resuming. GitHub is reached through `gh api` (REST) only, since
+// run before resuming.
+//
+// By default nothing waits for a person: the maintainer's one step is the
+// install's own deploy (docs/RELEASING.md). --hold adds openclaw's two
+// stops, for when releases need the maintainer's word: confirm the cut and
+// approve publication (--approve-publication, which also merges the
+// closeout). GitHub is reached through `gh api` (REST) only, since
 // agent sessions cannot reach GitHub's GraphQL API, which `gh pr` uses.
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -50,7 +57,7 @@ export class ReleaseRefusal extends Error {
   }
 }
 
-const FLAGS = ["--dry-run", "--status", "--approve-publication", "--help"];
+const FLAGS = ["--dry-run", "--status", "--hold", "--approve-publication", "--help"];
 const VALUES = ["--from", "--repo", "--state-dir", "--cut-sha", "--confirm-cut-sha", "--notes-ref"];
 
 function split(argv) {
@@ -88,6 +95,7 @@ export function parseArgs(argv) {
     from,
     dryRun: flags.has("--dry-run"),
     status: flags.has("--status"),
+    hold: flags.has("--hold"),
     approvePublication: flags.has("--approve-publication"),
     repo: values["--repo"] ?? "arcforgelabs/flow",
     stateDir: values["--state-dir"] ?? `.artifacts/release-${version}`,
@@ -106,9 +114,10 @@ export function parseArgs(argv) {
 
 export const USAGE = `Usage: npm run release:stable -- <YYYY.M.N> [options]
   --cut-sha <sha>            Cut at this main commit instead of the newest validated one
-  --confirm-cut-sha <sha>    Confirm the cut (required before the branch is cut)
   --notes-ref <branch>       The branch whose CHANGELOG/ holds the version's files
-  --approve-publication      Approve tagging and publishing the release
+  --hold                     Wait for the maintainer at the cut and before publishing
+  --confirm-cut-sha <sha>    With --hold: confirm the cut
+  --approve-publication      With --hold: approve tagging, publishing and the closeout merge
   --from <${PHASES.join("|")}>
                              Start again from this phase
   --status                   Print the phases and what each recorded
@@ -175,6 +184,7 @@ export function resumeCommand(options, extra = []) {
   const args = ["npm", "run", "release:stable", "--", options.version];
   if (options.cutSha) args.push("--cut-sha", options.cutSha);
   if (options.notesRef) args.push("--notes-ref", options.notesRef);
+  if (options.hold) args.push("--hold");
   if (options.confirmCutSha) args.push("--confirm-cut-sha", options.confirmCutSha);
   if (options.approvePublication) args.push("--approve-publication");
   if (options.stateDir !== `.artifacts/release-${options.version}`) args.push("--state-dir", options.stateDir);
@@ -268,17 +278,22 @@ const phases = {
     state.cut.cutSha = cut;
     ctx.save();
     const draft = `node scripts/release/changelog.mjs draft --version ${state.version} --target ${cut} --output /tmp/section.md --manifest /tmp/manifest.json`;
-    if (options.confirmCutSha !== cut) {
+    const notesSteps = [
+      `git fetch --unshallow --tags origin || git fetch --tags origin`,
+      draft,
+      `# edit the prose (.agents/skills/flow-changelog-update), then write and verify it at the cut:`,
+      `node scripts/release/changelog.mjs write --version ${state.version} --file /tmp/section.md && node scripts/release/changelog.mjs verify --version ${state.version} --target ${cut}`,
+      `# commit CHANGELOG/ on a branch, push it, then:`,
+    ];
+    if (options.hold && options.confirmCutSha !== cut) {
       throw new ReleaseRefusal(`Confirm the cut ${cut} (the newest main commit Flow Full Release Validation proved, unless --cut-sha chose it)`, [
-        `git fetch --unshallow --tags origin || git fetch --tags origin`,
-        draft,
-        `# edit the prose (.agents/skills/flow-changelog-update), then write and verify it at the cut:`,
-        `node scripts/release/changelog.mjs write --version ${state.version} --file /tmp/section.md && node scripts/release/changelog.mjs verify --version ${state.version} --target ${cut}`,
-        `# commit CHANGELOG/ on a branch, push it, then:`,
+        ...notesSteps,
         resumeCommand({ ...options, cutSha: options.cutSha }, ["--confirm-cut-sha", cut, ...(options.notesRef ? [] : ["--notes-ref", "<branch>"])]),
       ]);
     }
-    if (!options.notesRef) throw new ReleaseRefusal(`Name the branch that holds CHANGELOG/${state.version}.md`, [draft, resumeCommand(options, ["--notes-ref", "<branch>"])]);
+    if (!options.notesRef) {
+      throw new ReleaseRefusal(`Write the ${state.version} notes at the cut ${cut} and name their branch`, [...notesSteps, resumeCommand(options, ["--notes-ref", "<branch>"])]);
+    }
     const notes = api(ctx, `repos/${state.repo}/contents/CHANGELOG/${state.version}.md?ref=${encodeURIComponent(options.notesRef)}`, { allowFailure: true });
     if (!notes) throw new ReleaseRefusal(`${options.notesRef} has no CHANGELOG/${state.version}.md`, [draft, resumeCommand(options)]);
     const run = dispatch(ctx, "flow-release-branch.yml", { operation: "cut", version: state.version, commits: cut, notes_ref: options.notesRef });
@@ -316,7 +331,7 @@ const phases = {
       ctx.log(`npm already serves ${PACKAGE}@${state.version}`);
       return;
     }
-    if (!options.approvePublication) {
+    if (options.hold && !options.approvePublication) {
       throw new ReleaseRefusal(`Approve publishing ${state.tag} from ${state.branch} at ${state.validate.headSha}`, [resumeCommand(options, ["--approve-publication"])]);
     }
     const tagged = api(ctx, `repos/${state.repo}/git/ref/tags/${state.tag}`, { allowFailure: true });
@@ -396,7 +411,7 @@ const phases = {
     if (!pr) return;
     state.closeout.pullRequest = pr.html_url;
     ctx.save();
-    if (!options.approvePublication) throw new ReleaseRefusal(`Approve merging the closeout ${pr.html_url}`, [resumeCommand(options, ["--approve-publication"])]);
+    if (options.hold && !options.approvePublication) throw new ReleaseRefusal(`Approve merging the closeout ${pr.html_url}`, [resumeCommand(options, ["--approve-publication"])]);
     if (!options.dryRun) {
       // The checks the main ruleset requires: test and gitleaks.
       const deadline = ctx.now() + FINISH_MS;

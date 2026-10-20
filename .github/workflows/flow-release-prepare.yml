@@ -130,36 +130,49 @@ jobs:
       # publish refuses any other. The key is an SSH signing key whose public
       # half is a signing key of the tagger's GitHub account, so GitHub shows
       # the tag as verified (docs/RELEASING.md, One-time setup).
-      - name: Create the signed tag
+      # Signing is off until the maintainer turns it on (docs/RELEASING.md,
+      # One-time setup): with no key the tag is annotated and unsigned, so a
+      # release never stops on it. RELEASE_REQUIRE_SIGNED_TAGS=true makes a
+      # missing key stop the release.
+      - name: Create the release tag
+        id: tag
         env:
           SIGNING_KEY: ${{ secrets.RELEASE_TAG_SIGNING_KEY }}
+          REQUIRE_SIGNED: ${{ vars.RELEASE_REQUIRE_SIGNED_TAGS }}
           TAGGER: ${{ vars.RELEASE_TAGGER }}
           TAG: ${{ steps.plan.outputs.tag }}
           VERSION: ${{ steps.plan.outputs.version }}
           COMMIT: ${{ steps.commit.outputs.commit }}
         run: |
           set -euo pipefail
-          if [[ -z "$SIGNING_KEY" ]]; then
-            echo "::error::The secret RELEASE_TAG_SIGNING_KEY is not set, and a release tag must be signed (docs/RELEASING.md, One-time setup)." >&2
+          if [[ -z "$SIGNING_KEY" && "$REQUIRE_SIGNED" == "true" ]]; then
+            echo "::error::RELEASE_REQUIRE_SIGNED_TAGS is true, and the secret RELEASE_TAG_SIGNING_KEY is not set (docs/RELEASING.md, One-time setup)." >&2
             exit 1
           fi
           tagger="${TAGGER:-IAMSamuelRodda <7961255+IAMSamuelRodda@users.noreply.github.com>}"
           name="${tagger% <*}"
           email="${tagger##*<}"
           email="${email%>}"
+          git config user.name "$name"
+          git config user.email "$email"
+          if [[ -z "$SIGNING_KEY" ]]; then
+            git tag --annotate "$TAG" --message "Flow ${VERSION}" "$COMMIT"
+            git push origin "refs/tags/${TAG}"
+            echo "signed=no" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           key="$RUNNER_TEMP/release-tag-key"
           trap 'rm -f "$key" "$key.pub"' EXIT
           (umask 077 && printf '%s\n' "$SIGNING_KEY" > "$key")
           ssh-keygen -y -f "$key" > "$key.pub"
           printf '%s namespaces="git" %s\n' "$email" "$(cat "$key.pub")" > "$RUNNER_TEMP/allowed-signers"
-          git config user.name "$name"
-          git config user.email "$email"
           git config gpg.format ssh
           git config user.signingkey "$key"
           git config gpg.ssh.allowedSignersFile "$RUNNER_TEMP/allowed-signers"
           git tag --sign "$TAG" --message "Flow ${VERSION}" "$COMMIT"
           git tag --verify "$TAG"
           git push origin "refs/tags/${TAG}"
+          echo "signed=yes" >> "$GITHUB_OUTPUT"
 
       # A tag pushed with GITHUB_TOKEN starts no workflow, so start the
       # publish run explicitly.
@@ -168,12 +181,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.plan.outputs.tag }}
           COMMIT: ${{ steps.commit.outputs.commit }}
+          SIGNED: ${{ steps.tag.outputs.signed }}
         run: |
           set -euo pipefail
           gh workflow run flow-release-publish.yml --repo "$GITHUB_REPOSITORY" --ref main -f tag="$TAG"
           {
             echo "## ${TAG}"
             echo
-            echo "Tagged ${COMMIT} (signed) and started Flow Release Publish:"
+            echo "Tagged ${COMMIT} (signed: ${SIGNED}) and started Flow Release Publish:"
             echo "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/workflows/flow-release-publish.yml"
           } >> "$GITHUB_STEP_SUMMARY"
