@@ -177,7 +177,10 @@ export const PERSON_STATUSES = ['active', 'pending', 'disabled'];
 // are stored lower-case. `clerk_user_id` is set on the person's first verified
 // sign-in; until then the row is an invitation. `appearance` is the person's
 // own design system, light or dark and accent (server/auth/people.js,
-// normaliseAppearance); null until they first choose.
+// normaliseAppearance); null until they first choose. `views` is the
+// person's own view of each page, such as how the Jobs page groups, sorts
+// and filters ({ jobs: … }, server/ui/job-view.js); null until they first
+// change one.
 export const people = pgTable('people', {
   id: id(),
   email: text('email').notNull(),
@@ -188,6 +191,7 @@ export const people = pgTable('people', {
   invitedBy: uuid('invited_by').references(() => people.id, { onDelete: 'set null' }),
   linkedAt: timestamp('linked_at', { withTimezone: true }),
   appearance: jsonb('appearance'),
+  views: jsonb('views'),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 }, (t) => [
@@ -765,4 +769,63 @@ export const priceItemLinks = pgTable('price_item_links', {
   uniqueIndex('price_item_links_external').on(t.organisationId, t.system, t.externalId),
   check('price_item_links_matched_by_valid', sql`${t.matchedBy} in ('code', 'person')`),
   check('price_item_links_system_valid', sql`${t.system} ~ '^[a-z][a-z0-9-]{1,31}$'`),
+]);
+
+// Custom fields (server/core/custom-fields.js, docs/CUSTOM_FIELDS.md): fields
+// a lab makes for its jobs in Flow, in Settings, Custom fields. Only an owner
+// or admin makes or changes one. A dropdown's options are
+// [{ id, name, color }] in lane order; an option a person removes stays in
+// `options` with `archived: true`, so old values and history still read.
+// The type never changes after a field is made.
+export const CUSTOM_FIELD_TYPES = ['dropdown', 'person', 'checkbox', 'date', 'number', 'text'];
+export const jobFields = pgTable('job_fields', {
+  id: id(),
+  organisationId: organisationId().references(() => organisations.id),
+  name: text('name').notNull(),
+  type: text('type').notNull(),
+  options: jsonb('options').notNull().default(sql`'[]'::jsonb`),
+  position: integer('position').notNull(),
+  archivedAt: timestamp('archived_at', { withTimezone: true }),
+  createdBy: uuid('created_by').references(() => people.id, { onDelete: 'set null' }),
+  updatedBy: uuid('updated_by').references(() => people.id, { onDelete: 'set null' }),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, (t) => [
+  unique('job_fields_org_id').on(t.organisationId, t.id),
+  check('job_fields_type_valid', sql`${t.type} in ('dropdown', 'person', 'checkbox', 'date', 'number', 'text')`),
+  check('job_fields_name_valid', sql`length(${t.name}) between 1 and 60`),
+]);
+
+// A job's value for one custom field. A job is the work system's job
+// (source_system, source_job_ref), the same key the Jobs board uses, so a
+// value needs no Flow copy of the job. `value` is JSON: an option id, a person
+// id, true or false, a YYYY-MM-DD date, a number or text. No row means empty.
+export const jobFieldValues = pgTable('job_field_values', {
+  organisationId: organisationId().references(() => organisations.id),
+  fieldId: uuid('field_id').notNull(),
+  sourceSystem: text('source_system').notNull(),
+  sourceJobRef: text('source_job_ref').notNull(),
+  value: jsonb('value').notNull(),
+  updatedBy: uuid('updated_by').references(() => people.id, { onDelete: 'set null' }),
+  updatedAt: updatedAt(),
+}, (t) => [
+  primaryKey({ columns: [t.organisationId, t.fieldId, t.sourceSystem, t.sourceJobRef] }),
+  foreignKey({ name: 'job_field_values_field_same_org', columns: [t.organisationId, t.fieldId], foreignColumns: [jobFields.organisationId, jobFields.id] }).onDelete('cascade'),
+  index('job_field_values_job').on(t.organisationId, t.sourceSystem, t.sourceJobRef),
+]);
+
+// Every change of a job's custom field value: who, when, from and to.
+export const jobFieldEvents = pgTable('job_field_events', {
+  id: id(),
+  organisationId: organisationId().references(() => organisations.id),
+  fieldId: uuid('field_id').notNull(),
+  sourceSystem: text('source_system').notNull(),
+  sourceJobRef: text('source_job_ref').notNull(),
+  fromValue: jsonb('from_value'),
+  toValue: jsonb('to_value'),
+  actor: uuid('actor').references(() => people.id, { onDelete: 'set null' }),
+  createdAt: createdAt(),
+}, (t) => [
+  foreignKey({ name: 'job_field_events_field_same_org', columns: [t.organisationId, t.fieldId], foreignColumns: [jobFields.organisationId, jobFields.id] }).onDelete('cascade'),
+  index('job_field_events_job').on(t.organisationId, t.sourceSystem, t.sourceJobRef, t.createdAt),
 ]);

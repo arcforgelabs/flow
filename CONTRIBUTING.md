@@ -83,6 +83,9 @@ ruleset in `.github/rulesets/release-branches.json` stops anyone from
 deleting or force-pushing a release branch (`release/20*`, except the
 `-main-closeout` branches).
 
+A small fix with no merge risk merges itself when its checks are green; all
+other pull requests wait for a maintainer (`docs/LOW_RISK_MERGE.md`).
+
 The main and tag rulesets are live (applied 18 Oct 2026); the maintainer
 applies the release-branch ruleset (`docs/RELEASING.md`, One-time setup). To
 apply them again, for example on a fork:

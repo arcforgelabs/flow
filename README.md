@@ -31,6 +31,9 @@ run a lab.
 | `CHANGELOG.md` | What changed in each release: an index of one file per release in `CHANGELOG/` |
 | `SECURITY.md` | How to report a security problem, the trust model, and the rules held hard |
 | `LICENSE` | MIT licence |
+| `docs/docs.json` | The docs site navigation. `docs/` is published at https://arcforgelabs.github.io/docs/flow/ by arcforgelabs/docs |
+| `docs/index.md` | The docs site home page |
+| `docs/releases/` | One release notes page per version (`<version>.md`), shown on the docs site |
 | `docs/DESIGN.md` | The design systems (theme families), how pages and Clerk's components take them, and the screens |
 | `docs/DATA_MODEL.md` | The PostgreSQL records, the rules the database holds, and how to change the schema |
 | `docs/DATA_SPINE.md` | The design of the tables and jobs every integration shares: mirror, identity map, job queue, outbox, review queue |
@@ -42,7 +45,10 @@ run a lab.
 | `docs/ALERTS.md` | Quiet alerts: the slim line on a page when something there needs a person, and how a person dismisses it |
 | `docs/AUTOMATIONS.md` | Automations: Flow routines that mark jobs ready to invoice and draft them, each on or off |
 | `docs/LINE_MAPPING.md` | Line mapping: how each work system line finds its price item, and Price codes in Settings |
+| `docs/CUSTOM_FIELDS.md` | Custom fields: the lab's own fields for its jobs, kept in Flow only, and how a board move checks for conflicts |
+| `docs/JOB_BOARD_MOVES.md` | Moving jobs on the Jobs board: custom field moves stay in Flow; Seazona stage moves become a hand-off |
 | `docs/PRICE_LIST.md` | The price list: Flow's own codes and prices, their links to Xero items and Seazona products, and the price check |
+| `docs/LOW_RISK_MERGE.md` | The low-risk merge lane: which pull requests merge themselves when green, with ClawSweeper's risk labels |
 | `docs/RELEASING.md` | Versions and channels, the release workflows, how to cut and roll back a release, and the one-time setup |
 | `docs/SELF_HOSTING.md` | Running a Flow release with Docker, Node or Replit, the update notice, and Clerk sign-in |
 | `docs/REPLIT.md` | A Replit workspace of this repository that follows a release channel (`FLOW_DEPLOY_REF`) |

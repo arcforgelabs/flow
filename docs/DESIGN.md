@@ -118,6 +118,14 @@ The page at `/sign-in`, `/people`, `/account` and `/appearance`
   the choice stays in the browser. On narrow screens the sidebar is a bar
   across the top (menu button, Flow mark, account photo, Search), and the menu
   button opens the pages as a panel below the bar.
+- **Jobs**: the board (one lane per group, about a phone wide, filling the
+  window to its bottom edge, each lane scrolling inside itself) or the list.
+  The toolbar has Group (status, invoice stage, client, practitioner), Sort
+  (lab system order, date, client, practitioner, total; either direction)
+  and Filter (only late jobs, only jobs with a problem, statuses to show) at
+  the left, and search and Board/List at the right. Each person's view is
+  saved with their account (`people.views`, `PUT /api/me/views/jobs`,
+  server/ui/job-view.js), so it follows them to every device.
 - **People** (owners): page header with one primary action, Invite someone
   (a dialog: email and role). A table of people with initials, the role as a
   select, access as a status pill (Active, Invited, Waiting for approval,
