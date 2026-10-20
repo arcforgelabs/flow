@@ -100,14 +100,14 @@ describe('pages and assets', () => {
     const css = await request(app, '/assets/themes.css');
     assert.equal(css.status, 200);
     assert.match(css.text, /\[data-theme="harbour"\]\[data-mode="dark"\]/);
-    for (const path of ['/assets/theme/themes.js', '/assets/theme/openclaw-palettes.js', '/assets/theme/color-contrast.js', '/assets/theme/font-families.js', '/assets/ui/flow.css', '/assets/ui/appearance.js', '/assets/ui/clerk-appearance.js', '/assets/ui/app.js', '/assets/ui/invoicing.js', '/assets/ui/invoicing-settings.js', '/assets/ui/automations.js', '/assets/ui/line-mappings.js', '/assets/ui/price-list.js', '/assets/ui/jobs.js', '/assets/ui/logos/xero.svg', '/assets/ui/logos/seazona.svg']) {
+    for (const path of ['/assets/theme/themes.js', '/assets/theme/openclaw-palettes.js', '/assets/theme/color-contrast.js', '/assets/theme/font-families.js', '/assets/ui/flow.css', '/assets/ui/appearance.js', '/assets/ui/clerk-appearance.js', '/assets/ui/app.js', '/assets/ui/invoicing.js', '/assets/ui/invoicing-settings.js', '/assets/ui/automations.js', '/assets/ui/line-mappings.js', '/assets/ui/price-list.js', '/assets/ui/jobs.js', '/assets/ui/logos/xero.svg', '/assets/ui/logos/seazona.svg', '/assets/icons/calendar.svg', '/assets/icons/square-chevron-down.svg']) {
       assert.equal((await request(app, path)).status, 200, path);
     }
     const font = await request(app, '/assets/fonts/nunito-sans/index.css');
     assert.equal(font.status, 200);
     const file = font.text.match(/url\(\.\/files\/([^)]+\.woff2)\)/)[1];
     assert.equal((await request(app, `/assets/fonts/nunito-sans/files/${file}`)).status, 200);
-    for (const path of ['/assets/theme/../app.js', '/assets/ui/page.js', '/assets/ui/routes.js', '/assets/fonts/nunito-sans/package.json', '/assets/fonts/left-pad/index.css', '/assets/ui/logos/other.svg']) {
+    for (const path of ['/assets/theme/../app.js', '/assets/ui/page.js', '/assets/ui/routes.js', '/assets/fonts/nunito-sans/package.json', '/assets/fonts/left-pad/index.css', '/assets/ui/logos/other.svg', '/assets/icons/no-such-icon.svg', '/assets/icons/..%2Fpackage.json', '/assets/icons/Calendar.svg']) {
       assert.equal((await request(app, path)).status, 404, path);
     }
   });

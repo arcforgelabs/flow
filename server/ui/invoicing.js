@@ -7,6 +7,7 @@
 // (server/api/invoicing.js). app.js passes in its shared pieces as `ui`.
 import { alertStrip } from '/assets/ui/alerts.js';
 import { draftNote, sendModeNote } from '/assets/ui/invoice-notes.js';
+import { jobChangeBanner } from '/assets/ui/job-change.js';
 
 const STATUS_LABEL = { draft: 'Draft', issued: 'Issued', void: 'Void' };
 const STATUS_TONE = { draft: 'info', issued: 'success', void: 'mute' };
@@ -21,7 +22,7 @@ const VIEW_TONE = { problem: 'danger', ready: 'success', sending: 'info', to_che
 const EMPTY = {
   to_check: 'No drafts to check. Press New invoice to start one.',
   problem: 'No problems.',
-  ready: 'Nothing is ready. Tick drafts and press Mark ready.',
+  ready: 'Nothing is ready. Tick drafts and press Move to Ready.',
 };
 // Tabs whose rows can be ticked, and what the ticked rows can do.
 const TICKS = { to_check: true, ready: true };
@@ -137,9 +138,9 @@ export async function renderInvoiceList(main, ui) {
     const ticked = [...state.ticked];
     const parts = [];
     if (state.status === 'to_check') {
-      parts.push(h('p', { class: 'fx-dim' }, ticked.length ? `${plural(ticked.length, 'draft', 'drafts')} ticked.` : 'Check each draft, tick it, then mark it ready.'));
+      parts.push(h('p', { class: 'fx-dim' }, ticked.length ? `${plural(ticked.length, 'draft', 'drafts')} ticked.` : 'Check each draft, tick it, then move it to Ready.'));
       if (ticked.length) {
-        parts.push(action(`Mark ${ticked.length} ready`, 'mark-ready', () => ({ invoiceIds: ticked }), (res) => (res.refused.length
+        parts.push(action(`Move ${ticked.length} to Ready`, 'mark-ready', () => ({ invoiceIds: ticked }), (res) => (res.refused.length
           ? [`${res.marked} ready. ${plural(res.refused.length, 'draft has', 'drafts have')} a problem and moved to Problem.`, 'danger']
           : [`${plural(res.marked, 'draft', 'drafts')} ready.`, 'success'])));
       }
@@ -151,7 +152,7 @@ export async function renderInvoiceList(main, ui) {
           (res) => [`${plural(res.moved, 'invoice', 'invoices')} back in Drafts.`, 'success'], 'ghost'));
       }
       if (context.canIssue && body.counts.ready > 0) {
-        buttons.push(action(to ? `Send all ${body.counts.ready} ready to ${to}` : `Issue all ${body.counts.ready} ready`, 'send-ready', () => ({ issueDate: localDate() }),
+        buttons.push(action(to ? `Send all ${body.counts.ready} ready to ${to}` : `Finalise all ${body.counts.ready} ready`, 'send-ready', () => ({ issueDate: localDate() }),
           (res) => [`${res.issued} issued.${to ? ` They are on the way to ${to}.` : ''}${res.remaining ? ` ${res.remaining} more are ready: press again.` : ''}`, 'success']));
       }
       if (buttons.length) parts.push(h('div', { class: 'fx-sendbar__actions' }, buttons));
@@ -226,9 +227,13 @@ export async function renderInvoiceList(main, ui) {
     // The invoice page steps through this list, in this order (navBar).
     saveNav({ tab: state.status, q: state.q, ids: body.invoices.map((i) => i.id) });
     const open = (href) => { saveNav({ ...readNav(), scrollY: window.scrollY }); go(href); };
+    const link = (href, label) => h('a', { class: 'fx-strong', href, onclick: (event) => { event.preventDefault(); event.stopPropagation(); open(href); } }, label);
     const ticks = TICKS[state.status];
     const showProblem = state.status === 'problem';
     const created = ['to_check', 'problem', 'ready'].includes(state.status);
+    // An invoice gets its number when it is sent or issued, so only the
+    // Issued and Void tabs show a Number column; the others open on Client.
+    const numbered = !created;
     const boxes = [];
     const tickBox = (invoice) => {
       const box = h('input', {
@@ -252,7 +257,7 @@ export async function renderInvoiceList(main, ui) {
     host.replaceChildren(h('table', { class: 'fx-table fx-table--rows' },
       h('thead', {}, h('tr', {},
         ticks ? h('th', { class: 'fx-tick-cell' }, all) : null,
-        h('th', {}, 'Number'), h('th', {}, 'Client'), h('th', {}, showProblem ? 'Problem' : 'Reference'),
+        numbered ? h('th', {}, 'Number') : null, h('th', {}, 'Client'), h('th', {}, showProblem ? 'Problem' : 'Reference'),
         h('th', {}, created ? 'Created' : 'Issued'), h('th', { class: 'fx-num' }, 'Total'), h('th', {}, 'Status'))),
       h('tbody', {}, body.invoices.map((invoice) => {
         const href = `/invoices/${invoice.id}`;
@@ -260,8 +265,8 @@ export async function renderInvoiceList(main, ui) {
         const view = invoice.status === 'void' ? null : invoice.view;
         return h('tr', { tabindex: '0', onclick: () => open(href), onkeydown: (event) => { if (event.key === 'Enter') open(href); } },
           ticks ? h('td', { class: 'fx-tick-cell', onclick: (event) => event.stopPropagation() }, tickBox(invoice)) : null,
-          h('td', {}, h('a', { class: 'fx-strong', href, onclick: (event) => { event.preventDefault(); event.stopPropagation(); open(href); } }, invoice.number ?? 'Draft')),
-          h('td', {}, invoice.contactName ?? '—'),
+          numbered ? h('td', {}, link(href, invoice.number ?? 'Draft')) : null,
+          h('td', {}, numbered ? (invoice.contactName ?? '—') : link(href, invoice.contactName ?? 'No client')),
           showProblem
             ? h('td', { class: 'fx-problem' }, first?.message ?? '—', invoice.problems.length > 1 ? h('span', { class: 'fx-dim' }, ` +${invoice.problems.length - 1} more`) : null)
             : h('td', { class: 'fx-dim' }, invoice.reference ?? '—'),
@@ -301,12 +306,12 @@ function saveNav(nav) {
 }
 
 // The bar above one invoice: Back to the list as it was, and the previous and
-// next invoice of that list.
-function navBar(ui, id) {
-  const { h, go } = ui;
-  const nav = readNav();
-  const ids = nav?.ids ?? [];
-  const at = ids.indexOf(id);
+// next invoice of that list. An invoice opened from elsewhere (the job board,
+// search, a link) steps through its own tab: Drafts, Ready, Problem, Issued
+// or Void, read once here.
+function navBar(ui, invoice) {
+  const { h, go, flow } = ui;
+  const id = invoice?.id ?? null;
   const back = () => { sessionStorage.setItem(NAV_BACK, '1'); go('/invoices'); };
   const step = (to, label, path) => {
     const button = h('button', {
@@ -316,15 +321,33 @@ function navBar(ui, id) {
     button.innerHTML = `<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="${path}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
     return button;
   };
-  return h('nav', { class: 'fx-pager', 'aria-label': 'Invoices' },
-    h('button', { class: 'fx-pager__back', type: 'button', onclick: back }, '← Back'),
-    at >= 0 ? h('span', { class: 'fx-pager__count' }, `${at + 1} of ${ids.length}`) : null,
-    at >= 0 ? h('span', { class: 'fx-pager__steps' }, step(ids[at - 1], 'Previous invoice', 'M14.5 6l-6 6 6 6'), step(ids[at + 1], 'Next invoice', 'M9.5 6l6 6-6 6')) : null);
+  const bar = h('nav', { class: 'fx-pager', 'aria-label': 'Invoices' },
+    h('button', { class: 'fx-pager__back', type: 'button', onclick: back }, '← Back'));
+  const fill = (ids) => {
+    const at = ids.indexOf(id);
+    if (at < 0) return false;
+    bar.replaceChildren(bar.firstChild,
+      h('span', { class: 'fx-pager__count' }, `${at + 1} of ${ids.length}`),
+      h('span', { class: 'fx-pager__steps' }, step(ids[at - 1], 'Previous invoice', 'M14.5 6l-6 6 6 6'), step(ids[at + 1], 'Next invoice', 'M9.5 6l6 6-6 6')));
+    return true;
+  };
+  const tab = invoice?.status === 'void' ? 'void' : invoice?.view ?? invoice?.status;
+  if (id && !fill(readNav()?.ids ?? []) && TABS.some(([t]) => t === tab)) {
+    flow(`/api/invoicing/invoices?${new URLSearchParams({ status: tab })}`).then((body) => {
+      const ids = body.invoices.map((i) => i.id);
+      if (!fill(ids)) return;
+      saveNav({ tab, q: '', ids });
+      try { sessionStorage.setItem('flow_invoice_tab', tab); } catch { /* Back opens the last tab */ }
+    }).catch(() => { /* Back only */ });
+  }
+  return bar;
 }
 
-// After a send, the next invoice of the list opens; at its end, the list.
-// The sent invoice stays in the bar's list, so the count holds (2 of 35) and
-// Previous opens it again, now sent. Back reloads the list without it.
+// After a send, a Finalise or a Save as draft, the next invoice of the list
+// opens; at its end, the list. So a person reviews drafts one after another
+// without going back. The invoice stays in the bar's list, so the count holds
+// (2 of 35) and Previous opens it again, now done. Back reloads the list
+// without it.
 export function openNext(ui, id) {
   const ids = readNav()?.ids ?? [];
   const at = ids.indexOf(id);
@@ -389,6 +412,8 @@ function draftView(invoice, ui, context, redraw) {
   const lines = (invoice?.lines ?? []).map((line) => ({ ...line }));
   if (!lines.length) lines.push({ description: '', quantity: 1, unitAmountCents: null, taxCode: 'GST', priceItemId: null });
   let contact = invoice?.contact ?? null;
+  // Finalise invoice waits for a client and a due date (syncIssue, below).
+  let onContact = () => {};
 
   // Client: type to find a customer.
   const clientInput = h('input', { class: 'fx-input', type: 'text', autocomplete: 'off', placeholder: 'Type a client name', value: contact?.name ?? '', 'aria-label': 'Client' });
@@ -410,6 +435,7 @@ function draftView(invoice, ui, context, redraw) {
             contact = c;
             clientInput.value = c.name;
             clientList.hidden = true;
+            onContact();
           },
         }, c.name, c.email ? h('span', { class: 'fx-dim' }, c.email) : null)) : [h('p', { class: 'fx-dim fx-suggest__none' }, 'No client by that name.')]));
         clientList.hidden = false;
@@ -420,7 +446,7 @@ function draftView(invoice, ui, context, redraw) {
   });
   clientInput.addEventListener('blur', () => { setTimeout(() => { clientList.hidden = true; }, 120); });
 
-  const reference = h('input', { class: 'fx-input', type: 'text', value: invoice?.reference ?? '', placeholder: 'Case or order number' });
+  const reference = h('input', { class: 'fx-input', type: 'text', value: invoice?.reference ?? '', placeholder: 'Practitioner - Patient' });
   const dueDate = h('input', { class: 'fx-input', type: 'date', value: invoice?.dueDate ?? '' });
 
   // Lines.
@@ -538,24 +564,28 @@ function draftView(invoice, ui, context, redraw) {
   };
 
   // Save shows only when there is something to save: a new invoice, or a
-  // change since the page opened. Saving keeps the invoice where it is.
+  // change since the page opened. Save as draft opens the next invoice.
+  // Save as draft: a draft that is not ready always offers it. A ready
+  // invoice offers Save changes only once something changed.
+  const keepsSave = isNew || invoice?.view !== 'ready';
   const saveButton = h('button', {
-    class: 'fx-btn', type: 'button', hidden: !isNew,
+    class: 'fx-btn', type: 'button', hidden: !keepsSave,
     onclick: async () => {
       const saved = await save();
       if (!saved) return;
-      toast(isNew ? 'Draft saved.' : 'Changes saved.', 'success');
+      toast(keepsSave ? 'Saved as a draft.' : 'Changes saved.', 'success');
       if (isNew) go(`/invoices/${saved.id}`, { replace: true });
+      else if (keepsSave) openNext(ui, invoice.id);
       else redraw(saved);
     },
-  }, isNew ? 'Save draft' : 'Save changes');
+  }, keepsSave ? 'Save as draft' : 'Save changes');
   const opened = JSON.stringify(body());
   const changed = () => !isNew && JSON.stringify(body()) !== opened;
-  const watchChanges = () => { if (!isNew) saveButton.hidden = !changed(); };
+  const watchChanges = () => { if (!keepsSave) saveButton.hidden = !changed(); };
   // With an accounting system on, a ready invoice is sent there: Flow issues
   // it and queues it, the same as Send all ready. With none, Flow issues it
-  // and keeps it. A draft that is not ready has no send: mark it ready first.
-  const to = invoice?.sendsTo ?? null;
+  // and keeps it. A draft that is not ready has no send: move it to Ready first.
+  const to = invoice?.sendsTo ?? context.sendsTo ?? null;
   const ready = invoice?.view === 'ready';
   const nextNumber = `${context.organisations[0]?.invoicePrefix ?? ''}${String(context.organisations[0]?.nextInvoiceNumber ?? '').padStart(4, '0')}`;
   const emails = invoice?.sendMode?.mode === 'approve_and_email';
@@ -579,45 +609,80 @@ function draftView(invoice, ui, context, redraw) {
       }
     },
   }, emails ? `Send to ${to} and email` : `Send to ${to}`) : null;
+  // With no accounting system, Finalise invoice gives the draft its number and
+  // locks it. A changed job blocks it, as it blocks Move to Ready.
   const issueButton = context.canIssue && !to ? h('button', {
     class: 'fx-btn fx-btn--primary', type: 'button',
     onclick: async () => {
       const saved = await save();
       if (!saved) return;
       const ok = await ui.dialog({
-        title: 'Issue this invoice?',
+        title: 'Finalise this invoice?',
         body: h('p', {}, `It gets the next number (${nextNumber}). Flow keeps it exactly as issued. To change it later, revise it.`),
-        confirm: 'Issue',
+        confirm: 'Finalise',
       });
       if (!ok) { if (isNew) go(`/invoices/${saved.id}`, { replace: true }); else redraw(saved); return; }
       try {
         const { invoice: issued } = await flow(`/api/invoicing/invoices/${saved.id}/issue`, { method: 'POST', body: JSON.stringify({ issueDate: localDate() }) });
-        toast(`${issued.number} issued.`, 'success');
+        toast(`${issued.number} is final.`, 'success');
         if (isNew) go(`/invoices/${issued.id}`, { replace: true });
-        else redraw(issued);
+        else openNext(ui, invoice.id);
       } catch (error) {
         toast(error.message, 'danger');
       }
     },
-  }, 'Issue invoice') : null;
+  }, 'Finalise') : null;
+  // Issue needs a client and a due date: until both are set it is greyed.
+  // A changed job greys it too, as it does Move to Ready.
+  const syncIssue = () => {
+    if (!issueButton) return;
+    const missing = [contact ? null : 'a client', dueDate.value ? null : 'a due date'].filter(Boolean);
+    issueButton.disabled = missing.length > 0 || Boolean(invoice?.jobChange);
+    issueButton.title = invoice?.jobChange ? 'Fix the problem first.' : missing.length ? `Choose ${missing.join(' and ')} first.` : 'Gives it the next number and locks it. Nothing is sent.';
+  };
+  onContact = syncIssue;
+  clientInput.addEventListener('input', syncIssue);
+  dueDate.addEventListener('input', syncIssue);
+  dueDate.addEventListener('change', syncIssue);
+  syncIssue();
 
-  // Mark ready: the draft is saved, then Flow checks it; one with a problem
-  // stays a draft. Move to Drafts, on the Status card, undoes it.
-  const markReadyButton = isNew || ready ? null : h('button', {
-    class: 'fx-btn', type: 'button',
+  // A new invoice can start from a job that has no invoice yet: a quiet
+  // strip above the form says so. Flow drafts it the way the invoicing rules
+  // do (client, Reference, lines) and links it to the job. An invoice with
+  // no job is fine too.
+  const fromJob = isNew && context.canIssue ? h('section', { class: 'fx-fromjob' },
+    h('div', { class: 'fx-fromjob__text' },
+      h('span', { class: 'fx-strong' }, 'Billing a job?'),
+      h('span', { class: 'fx-dim' }, 'Flow fills in the details.')),
+    h('button', { class: 'fx-btn', type: 'button', onclick: () => pickJob(ui) }, 'Choose a job')) : null;
+
+  // Finalise, with an accounting system on: the draft is saved, then Flow
+  // checks it and moves it to the Ready tab, for Send all ready; nothing is
+  // sent here. A draft the draft routine made from a job ready to invoice is
+  // in Ready already (automations.js), so this is for the rest. One with a
+  // problem stays a draft. Move to Drafts, on the Status card, undoes it. A
+  // changed job is fixed at its source or adopted, so the button waits.
+  const jobChange = invoice?.jobChange ?? null;
+  const markReadyButton = isNew || ready || !to ? null : h('button', {
+    class: 'fx-btn fx-btn--primary', type: 'button', disabled: Boolean(jobChange),
+    title: jobChange ? 'Fix the problem first.' : `Checks this draft and moves it to Ready. Send all ready sends it to ${to}.`,
     onclick: async () => {
       if (!(await save())) return;
       try {
         const res = await flow('/api/invoicing/invoices/mark-ready', { method: 'POST', body: JSON.stringify({ invoiceIds: [invoice.id] }) });
-        if (res.marked) toast('Ready to send.', 'success');
-        else toast(res.refused[0]?.problems.map((p) => p.message).join(' ') ?? 'It has a problem.', 'danger');
+        if (res.marked) {
+          toast(`Final. It is in Ready; Send all ready sends it to ${to}.`, 'success');
+          openNext(ui, invoice.id);
+          return;
+        }
+        toast(res.refused[0]?.problems.map((p) => p.message).join(' ') ?? 'It has a problem.', 'danger');
         const { invoice: fresh } = await flow(`/api/invoicing/invoices/${invoice.id}`);
         redraw(fresh);
       } catch (error) {
         toast(error.message, 'danger');
       }
     },
-  }, 'Mark ready');
+  }, 'Finalise');
   // A ready invoice can go back to Drafts. It is a status change, so it sits
   // with the status, not with the page's main buttons.
   const statusCard = ready ? h('section', { class: 'fx-card fx-side-card' },
@@ -636,18 +701,42 @@ function draftView(invoice, ui, context, redraw) {
         }
       },
     }, 'Move to Drafts')) : null;
-  const problems = invoice?.problems?.length
-    ? notice(invoice.problems.map((p) => p.message).join(' '), 'danger', 'Problem.')
-    : null;
+  // The job changed after the invoice was made: its own banner shows what
+  // changed. Other problems stay one line.
+  const otherProblems = (invoice?.problems ?? []).filter((p) => !(jobChange && p.code === 'job_review'));
+  const problems = [
+    jobChange ? jobChangeBanner(ui, jobChange, {
+      money: formatCents,
+      // Adopting changes the draft for the business: owners and admins only.
+      onAdopt: !context.canIssue ? null : async () => {
+        const system = jobChange.systemName;
+        const ok = await ui.dialog({
+          title: `Adopt the ${system} changes?`,
+          body: h('p', {}, `This invoice takes the Now in ${system} column.${changed() ? ' Your unsaved changes here are lost.' : ''} Nothing goes to ${system} or the accounting system.`),
+          confirm: 'Adopt changes',
+        });
+        if (!ok) return;
+        try {
+          const res = await flow(`/api/invoicing/jobs/${jobChange.jobId}/use-new-lines`, { method: 'POST', body: '{}' });
+          toast(`The invoice now matches ${system}.${res.invoice.view === 'ready' ? ' It is in Ready.' : ''}`, 'success');
+          redraw(res.invoice);
+        } catch (error) {
+          toast(error.message, 'danger');
+        }
+      },
+    }) : null,
+    otherProblems.length ? notice(otherProblems.map((p) => p.message).join(' '), 'danger', 'Problem.') : null,
+  ];
 
   return [
-    navBar(ui, invoice?.id ?? null),
+    navBar(ui, invoice),
     h('header', { class: 'fx-ph' },
       h('div', { class: 'fx-ph__text' },
         h('h1', { class: 'fx-title' }, isNew ? 'New invoice' : ready ? 'Ready invoice' : 'Draft invoice'),
         h('p', { class: 'fx-ph__sub' }, draftNote(to, invoice, ready))),
-      h('div', { class: 'fx-ph__actions' }, saveButton, markReadyButton, isNew ? null : previewButton(ui, invoice.id, 'Shows the saved invoice.'), sendButton ?? issueButton)),
-    problems,
+      h('div', { class: 'fx-ph__actions' }, isNew ? null : previewButton(ui, invoice.id, 'Shows the saved invoice.'), saveButton, markReadyButton, sendButton ?? issueButton)),
+    ...problems,
+    fromJob,
     h('div', { class: 'fx-invoice__grid' },
       h('div', { class: 'fx-invoice__main' },
         h('section', { class: 'fx-card fx-invoice__head' },
@@ -748,7 +837,7 @@ function issuedView(invoice, ui, context, redraw) {
     h('button', { class: 'fx-btn', type: 'button', onclick: () => act('revise', `${invoice.number} is a draft again.`) }, 'Revise'),
   ] : [];
   return [
-    navBar(ui, invoice.id),
+    navBar(ui, invoice),
     h('header', { class: 'fx-ph' },
       h('div', { class: 'fx-ph__text' },
         h('div', { class: 'fx-row' },
@@ -870,4 +959,52 @@ function showSent(button) {
   button.disabled = true;
   button.textContent = 'Sent to Xero';
   button.title = 'Flow sent this invoice to Xero.';
+}
+
+// The jobs a new invoice can start from: no invoice yet, newest first.
+const PICKABLE = new Set(['in_work', 'ready', 'pending']);
+
+async function pickJob(ui) {
+  const { h, flow, toast, go } = ui;
+  let jobs;
+  try {
+    jobs = (await flow('/api/invoicing/jobs?limit=500')).jobs.filter((job) => PICKABLE.has(job.view) && !job.invoiceId);
+  } catch (error) {
+    toast(error.message, 'danger');
+    return;
+  }
+  const search = h('input', { class: 'fx-input', type: 'search', placeholder: 'Find a client or practitioner', 'aria-label': 'Find a job' });
+  const rows = jobs.map((job) => {
+    const label = h('label', { class: 'fx-pick__row' },
+      h('input', { type: 'radio', name: 'job', value: job.id, required: true }),
+      h('span', { class: 'fx-pick__main' },
+        h('span', { class: 'fx-strong' }, job.contactName ?? 'No client yet'),
+        h('span', { class: 'fx-dim' }, [job.practitioner, job.shippedOn ? showDate(job.shippedOn) : null].filter(Boolean).join(' · '))),
+      h('span', { class: 'fx-num fx-strong' }, job.totalCents == null ? '—' : formatCents(job.totalCents)));
+    label.dataset.find = `${job.contactName ?? ''} ${job.practitioner ?? ''}`.toLowerCase();
+    return label;
+  });
+  const list = h('div', { class: 'fx-pick', role: 'radiogroup', 'aria-label': 'Jobs' },
+    rows.length ? rows : h('p', { class: 'fx-dim' }, 'Every job has an invoice already.'));
+  search.addEventListener('input', () => {
+    const q = search.value.trim().toLowerCase();
+    for (const row of rows) row.hidden = Boolean(q) && !row.dataset.find.includes(q);
+  });
+  const picked = await ui.dialog({
+    title: 'New invoice from a job',
+    body: h('div', { class: 'fx-pick__body' },
+      h('p', { class: 'fx-dim' }, 'Flow fills in the client, Reference and lines from the invoice rules, and links the invoice to the job.'),
+      search, list),
+    confirm: 'Make draft',
+  });
+  const jobId = picked?.get('job');
+  if (!jobId) return;
+  try {
+    const { invoice } = await flow(`/api/invoicing/jobs/${jobId}/draft`, { method: 'POST', body: '{}' });
+    toast('Draft invoice made from the job.', 'success');
+    go(`/invoices/${invoice.id}`, { replace: true });
+  } catch (error) {
+    const reasons = error.details?.reasons;
+    toast(reasons?.length ? `Not drafted: ${reasons.join('; ')}.` : error.message, 'danger');
+  }
 }

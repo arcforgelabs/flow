@@ -4,7 +4,7 @@ import { createApp } from '../server/app.js';
 import { invitePerson, seedFirstOwner } from '../server/auth/people.js';
 import { createPersonAuth } from '../server/auth/session.js';
 import { createContact, createOrganisation, createPriceItem } from '../server/core/directory.js';
-import { observeJob, recordAccountingEvidence, setReady } from '../server/core/ledger.js';
+import { draftInvoiceForObligation, observeJob, recordAccountingEvidence, setReady } from '../server/core/ledger.js';
 import { createRegistry } from '../server/integrations/port.js';
 import { createXeroAdapter } from '../server/integrations/xero/index.js';
 import { fakeClerk, request, TEST_PUBLISHABLE_KEY } from './support/clerk.js';
@@ -425,5 +425,30 @@ describe('invoicing API', { skip: skipWithoutDatabase }, () => {
     const listed = await call(`/line-mappings?organisationId=${lab.id}`, { token: staffToken });
     assert.deepEqual(listed.body.mappings.map((m) => [m.kind, m.label, m.itemCode]), [['saved', 'night splint', 'CRN']]);
     assert.equal((await call(`/line-mappings/${saved.body.mapping.id}?organisationId=${lab.id}`, { method: 'DELETE' })).status, 200);
+  });
+  test('a draft whose job changed shows was and now, cannot be issued, and issues after the change is adopted', async () => {
+    const report = { sourceSystem: 'worksystem', sourceJobRef: 'JOB-CHANGED', contactId: practice.id, sourceStatus: 'Shipped', lines: [{ itemCode: 'CRN' }] };
+    const job = await observeJob(handle.db, lab.id, report);
+    await recordAccountingEvidence(handle.db, lab.id, job.id, { state: 'not_found', actor: 'user:test' });
+    const { invoice } = await draftInvoiceForObligation(handle.db, lab.id, job.id, { actor: 'user:test', liveCheck: async () => ({ state: 'not_found' }) });
+    await observeJob(handle.db, lab.id, { ...report, lines: [{ itemCode: 'CRN', quantity: 2 }] });
+
+    const open = await request(appWithoutCheck, `/api/invoicing/invoices/${invoice.id}?organisationId=${lab.id}`, { token: ownerToken });
+    assert.equal(open.status, 200);
+    const { jobChange } = open.body.invoice;
+    assert.equal(jobChange.canAdopt, true);
+    assert.deepEqual(jobChange.lines.map((l) => [l.change, l.fields]), [['changed', ['quantity']]]);
+    assert.equal(jobChange.link, null, 'a work system with no job link gives none');
+
+    const refused = await request(appWithoutCheck, `/api/invoicing/invoices/${invoice.id}/issue`, { token: ownerToken, method: 'POST', body: { organisationId: lab.id } });
+    assert.equal(refused.status, 409);
+    assert.match(refused.body.error, /the job changed after its invoice was made\. Nothing was finalised\./);
+
+    const adopted = await request(appWithoutCheck, `/api/invoicing/jobs/${job.id}/use-new-lines`, { token: ownerToken, method: 'POST', body: { organisationId: lab.id } });
+    assert.equal(adopted.status, 200);
+    assert.equal(adopted.body.invoice.jobChange, null);
+    const issued = await request(appWithoutCheck, `/api/invoicing/invoices/${invoice.id}/issue`, { token: ownerToken, method: 'POST', body: { organisationId: lab.id } });
+    assert.equal(issued.status, 200, JSON.stringify(issued.body));
+    assert.equal(issued.body.invoice.status, 'issued');
   });
 });

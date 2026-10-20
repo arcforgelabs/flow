@@ -11,6 +11,7 @@ import { themeStylesheet } from '../theme/themes.js';
 //   /assets/theme/<file>.js  the theme engine itself, as browser modules
 //   /assets/ui/<file>        Flow's components (flow.css) and page scripts
 //   /assets/fonts/<pkg>/…    the families' faces (server/theme/font-families.js)
+//   /assets/icons/<name>.svg one Lucide icon (lucide-static, ISC), for any page
 // Only the files named here are served. They change only with a release, so
 // browsers may keep them for an hour.
 
@@ -20,7 +21,9 @@ const themeDir = join(here, '..', 'theme');
 const logoDir = join(here, 'logos');
 const LOGO_FILES = new Set(['xero.svg', 'seazona.svg', 'sentry.svg']);
 const THEME_FILES = new Set(['themes.js', 'color-contrast.js', 'openclaw-palettes.js', 'font-families.js']);
-const UI_FILES = new Set(['flow.css', 'appearance.js', 'clerk-appearance.js', 'app.js', 'invoicing.js', 'invoice-notes.js', 'invoicing-settings.js', 'automations.js', 'invoice-rules.js', 'line-mappings.js', 'price-list.js', 'jobs.js', 'job-board.js', 'monitoring.js', 'search.js', 'alerts.js', 'flow-mark.svg']);
+const UI_FILES = new Set(['flow.css', 'appearance.js', 'clerk-appearance.js', 'app.js', 'invoicing.js', 'invoice-notes.js', 'job-change.js', 'invoicing-settings.js', 'automations.js', 'invoice-rules.js', 'line-mappings.js', 'price-list.js', 'custom-fields.js', 'jobs.js', 'job-board.js', 'job-view.js', 'monitoring.js', 'search.js', 'alerts.js', 'flow-mark.svg']);
+const iconDir = join(dirname(require.resolve('lucide-static/package.json')), 'icons');
+const ICON_FILE = /^[a-z0-9]+(?:-[a-z0-9]+)*\.svg$/;
 const MAX_AGE = '1h';
 
 // Send one named file from dir. Passing dir as root limits the dotfile check
@@ -48,6 +51,13 @@ export function createUiAssetsRouter({ rateLimitPerMinute = 600 } = {}) {
   router.get('/assets/ui/:file', sendFrom(here, UI_FILES));
   // Each integration's logo, the maker's own mark (Integrations).
   router.get('/assets/ui/logos/:file', sendFrom(logoDir, LOGO_FILES));
+
+  // The whole Lucide set: a page names any icon, and only the icons a page
+  // uses are fetched. A name outside the set falls through to the 404.
+  router.get('/assets/icons/:file', (req, res, next) => {
+    if (!ICON_FILE.test(req.params.file)) return next();
+    sendNamed(res, next, iconDir, req.params.file);
+  });
 
   for (const name of FONT_PACKAGES) {
     const dir = dirname(require.resolve(`@fontsource-variable/${name}/LICENSE`));

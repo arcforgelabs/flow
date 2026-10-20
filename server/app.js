@@ -1,5 +1,7 @@
 import express from 'express';
 import { createAlertsRouter } from './api/alerts.js';
+import { createCustomFieldsRouter } from './api/custom-fields.js';
+import { createWorkMovesRouter } from './api/work-moves.js';
 import { createConnectorApi } from './api/connector.js';
 import { createInvoicingRouter } from './api/invoicing.js';
 import { createSignInRouter } from './auth/routes.js';
@@ -35,6 +37,8 @@ import { createUiAssetsRouter } from './ui/routes.js';
 // the migration journals this build ships (server/db/doctor.js): GET /health
 // reports how many of each the database has applied, so the workspace's
 // doctor can tell what Replit's publish step will offer (docs/REPLIT.md).
+// `tracing` (server/core/tracing.js) names each request's performance trace
+// by its route, while a tracing service is on.
 export function createApp({
   build = deployedBuildStatus(),
   database = null,
@@ -49,10 +53,12 @@ export function createApp({
   clerkProxyRateLimitPerMinute = 300,
   defaultFamily = DEFAULT_FAMILY,
   log = console,
+  tracing = null,
 } = {}) {
   const app = express();
   app.disable('x-powered-by');
   app.set('trust proxy', trustProxy);
+  if (tracing) app.use(tracing.requests());
 
   app.get('/health', async (_req, res) => {
     let databaseOk = null;
@@ -136,6 +142,12 @@ export function createApp({
     // items, Seazona products).
     const priceSystems = () => integrations?.with('listPriceItems') ?? [];
     app.use('/api/invoicing', createInvoicingRouter({ db: database.db, personAuth: auth.personAuth, log, liveCheckFor, accounting, work, priceSystems }));
+    // Custom fields for jobs (server/core/custom-fields.js): kept in Flow
+    // only; the work systems' statuses show beside them, read only.
+    app.use('/api/custom-fields', createCustomFieldsRouter({ db: database.db, personAuth: auth.personAuth, work, log }));
+    // Stage moves the work system must make, and each person's own
+    // integration choices (server/api/work-moves.js).
+    app.use('/api/work', createWorkMovesRouter({ adapters: (capability) => integrations?.with(capability) ?? [], personAuth: auth.personAuth, log }));
     // Quiet alerts (server/core/alerts.js): what needs a person on each page.
     // Integrations add their own through the `alerts` capability.
     app.use('/api/alerts', createAlertsRouter({
