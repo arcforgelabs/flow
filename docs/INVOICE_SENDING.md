@@ -18,13 +18,30 @@ does a draft whose job change a person adopted. Any other draft waits in
 Drafts. On the invoice the buttons are, left to right, **Preview**, **Save as
 draft** and **Finalise**. With an accounting system on, **Finalise** saves the
 draft, checks it and moves it to the Ready tab; nothing is sent until **Send
-all ready**. In the list, a person ticks drafts and presses **Move N to
-Ready**. A draft with a problem stays where it is and shows in Problem. While
+all ready**. In the list, a person ticks drafts and presses **Ready** on the
+bulk bar. A draft with a problem stays where it is and shows in Problem. While
 the draft's job changed after it was made (below), Finalise is off: fix the
 job at its source, or adopt the change. A saved change keeps a draft ready;
 Flow's checks still run on it. **Move to Drafts**, on the invoice's Status
 card or for ticked rows in the list, takes it back. `invoices.ready_at` and
 `ready_by` record who marked it and when.
+
+### Bulk bar
+
+Ticking rows on any tab of the Invoices list brings up the bulk bar
+(server/ui/bulk-bar.js). It floats at the foot of the page, and the tabs,
+search and send bar stay at the top while the rows scroll under them. The bar
+shows **N selected ×** (× or Esc clears the ticks), then the tab's actions in
+groups, then **More**, a searchable menu of every action plus Tick all shown,
+Invert ticks and Clear ticks. An icon-only action shows its name on hover.
+
+| Tab | Actions |
+| --- | --- |
+| Ready | **Finalise** (the main one: send-ready for the ticked ids, so with an accounting system on each goes there), **Drafts**, Copy references, Export CSV |
+| Drafts | **Ready**, Copy references, Export CSV |
+| Problem | **Retry** (send-again for the ticked finalised ones), Copy references, Export CSV |
+| Finalised | Copy numbers, Export CSV, Download PDFs, Void (asks first; Flow does not change the accounting system) |
+| Void | Copy numbers, Export CSV, Download PDFs |
 
 ## Checks
 
