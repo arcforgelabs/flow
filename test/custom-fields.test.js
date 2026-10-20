@@ -123,6 +123,8 @@ describe('custom fields against PostgreSQL', { skip: skipWithoutDatabase }, () =
     assert.equal(read.status, 200);
     assert.deepEqual(read.body.systemFields.map((f) => [f.id, f.readOnly, f.options.map((o) => o.name)]),
       [['worksystem:stage', true, ['In lab', 'Shipped']]]);
+    // A person field can name every active person, by name.
+    assert.deepEqual(read.body.people.map((p) => p.name).sort(), ['owner', 'staff']);
 
     const refused = await call('', { method: 'POST', token: staffToken, body: { name: 'Rush', type: 'checkbox' } });
     assert.equal(refused.status, 403);

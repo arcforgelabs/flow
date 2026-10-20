@@ -286,6 +286,14 @@ export async function listJobFieldValues(db, organisationId, { jobs = null } = {
   return rows.filter((r) => !wanted || wanted.has(`${r.sourceSystem}\u0000${r.sourceJobRef}`)).map(publicValue);
 }
 
+// The people a person field can name: every active person, by id and name
+// (the part of the email before @ when they have no name), A to Z.
+export async function choosablePeople(db) {
+  const rows = await db.select({ id: people.id, name: people.name, email: people.email }).from(people).where(eq(people.status, 'active'));
+  return rows.map((r) => ({ id: r.id, name: r.name?.trim() || r.email.replace(/@.*/, '') }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
 // What happened to one job's custom field values, newest first.
 export async function jobFieldHistory(db, organisationId, raw, { limit = 50 } = {}) {
   const job = readJob(raw);

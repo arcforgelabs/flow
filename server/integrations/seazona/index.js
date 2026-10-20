@@ -8,7 +8,7 @@ import { readBillableJobs } from './reconcile.js';
 import { SEAZONA_CALL_GUARD } from './governor.js';
 import { createSeazonaRouter } from './routes.js';
 import {
-  cancelStageMove, expiredStageMoves, readPersonSettings, requestStageMove, settleStageMoves, waitingStageMoves, writePersonSetting,
+  cancelStageMove, expiredStageMoves, handOff, readPersonSettings, requestStageMove, settleStageMoves, waitingStageMoves, writePersonSetting,
 } from './stage-moves.js';
 import { orderPatient } from './patients.js';
 import { createSeazonaScheduler } from './scheduler.js';
@@ -225,9 +225,15 @@ export function createSeazonaAdapter({ env = null, fetchImpl = null, now = Date.
         const [work, waiting] = await Promise.all([listWork(db, { now: now() }), waitingStageMoves(db)]);
         // A stage move Seazona has not made yet (stage-moves.js): the card
         // shows in its new lane, waiting for Seazona.
+        // Each card also carries the link that opens its order in Seazona.
+        const { settings } = current();
         for (const item of work.items) {
+          item.link = orderLink(settings, { sourceJobRef: item.sourceJobRef });
           const move = waiting.get(item.sourceJobRef);
-          if (move) item.pendingMove = { to: move.toStatus, from: move.fromStatus, requestedAt: move.requestedAt.toISOString(), expiresAt: move.expiresAt.toISOString() };
+          if (move) {
+            const { to, from, requestedAt, expiresAt, openUrl, openExact } = handOff(move, { settings });
+            item.pendingMove = { to, from, requestedAt, expiresAt, openUrl, openExact };
+          }
         }
         return work;
       },
@@ -237,7 +243,7 @@ export function createSeazonaAdapter({ env = null, fetchImpl = null, now = Date.
       // records a hand-off and answers what the person does in Seazona.
       async moveWork({ sourceJobRef, toStatus, personId = null }) {
         const { db, settings } = current();
-        return requestStageMove(db, { orderId: sourceJobRef, toStatus, personId, orderUrlTemplate: settings.orderUrlTemplate, now: now() });
+        return requestStageMove(db, { orderId: sourceJobRef, toStatus, personId, settings, now: now() });
       },
 
       async cancelMove({ sourceJobRef }) {

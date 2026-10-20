@@ -1,6 +1,7 @@
 import { and, eq, gte, inArray, lt, sql } from 'drizzle-orm';
 import { FlowError } from '../../core/errors.js';
 import { orderStatusLabel } from './map.js';
+import { orderLink } from './settings.js';
 import { seazonaOrders, seazonaPersonSettings, seazonaStageMoves } from './schema.js';
 
 // Stage moves on the Jobs board (docs/SEAZONA.md, "Stage moves"). Seazona's
@@ -16,16 +17,9 @@ export const HAND_OFF_MS = 24 * 60 * 60_000;
 const EXPIRED_ALERT_MS = 7 * 24 * 60 * 60_000;
 const MAX_STATUS = 80;
 
-// The address that opens one order in Seazona, from SEAZONA_ORDER_URL with
-// its {ref} placeholder, or null when the installation has not set one.
-export function orderUrl(template, ref) {
-  if (!template || !template.includes('{ref}')) return null;
-  return template.replaceAll('{ref}', encodeURIComponent(ref));
-}
-
 // Record a person's move of one order to `toStatus`, and answer the hand-off
 // the board shows. A second move of the same order replaces the first.
-export async function requestStageMove(db, { orderId, toStatus, personId = null, orderUrlTemplate = null, now = Date.now() }) {
+export async function requestStageMove(db, { orderId, toStatus, personId = null, settings = null, now = Date.now() }) {
   const to = typeof toStatus === 'string' ? toStatus.trim() : '';
   if (!to || to.length > MAX_STATUS) throw new FlowError('invalid', 'toStatus must be a Seazona status');
   const [order] = await db.select().from(seazonaOrders).where(eq(seazonaOrders.id, String(orderId ?? '')));
@@ -41,7 +35,7 @@ export async function requestStageMove(db, { orderId, toStatus, personId = null,
     requestedAt: at, expiresAt: new Date(at.getTime() + HAND_OFF_MS), state: 'waiting', settledAt: null,
   };
   await db.insert(seazonaStageMoves).values(row).onConflictDoUpdate({ target: seazonaStageMoves.orderId, set: row });
-  return handOff(row, { orderUrlTemplate });
+  return handOff(row, { settings });
 }
 
 // Take a waiting move back: the card returns to Seazona's stage.
@@ -92,8 +86,11 @@ export async function expiredStageMoves(db, { now = Date.now() } = {}) {
   ));
 }
 
-// What the board shows for a waiting move.
-export function handOff(row, { orderUrlTemplate = null } = {}) {
+// What the board shows for a waiting move. `link` opens the order in
+// Seazona's web app (settings.js, orderLink); `exact` is false when it opens
+// only the lab's Seazona home page.
+export function handOff(row, { settings = null } = {}) {
+  const link = orderLink(settings, { sourceJobRef: row.orderId });
   return {
     kind: 'hand_off',
     system: 'seazona',
@@ -104,7 +101,8 @@ export function handOff(row, { orderUrlTemplate = null } = {}) {
     state: row.state,
     requestedAt: row.requestedAt.toISOString(),
     expiresAt: row.expiresAt.toISOString(),
-    openUrl: orderUrl(orderUrlTemplate, row.orderId),
+    openUrl: link?.url ?? null,
+    openExact: Boolean(link?.exact),
   };
 }
 

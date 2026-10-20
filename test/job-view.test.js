@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { after, before, describe, test } from 'node:test';
 import {
-  DEFAULT_VIEW, filterCount, filterJobs, groupJobs, normaliseJobsView, sortJobs,
+  DEFAULT_VIEW, fieldGroup, fieldIdOf, fieldLanes, filterCount, filterJobs, groupJobs, laneOf, normaliseJobsView, sortJobs,
 } from '../server/ui/job-view.js';
 import {
   findPersonById, normaliseViews, seedFirstOwner, setPersonAppearance, setPersonView,
@@ -54,6 +54,30 @@ test('sorting keeps jobs with no value last, in either direction', () => {
 test('groups keep their given order, keep empty ones, and add any label not given', () => {
   const groups = groupJobs(jobs, ['New', 'Hold'], (job) => job.status);
   assert.deepEqual(groups.map((g) => [g.label, ids(g.jobs)]), [['New', [1, 3]], ['Hold', []], ['Shipped', [2]]]);
+});
+
+test('a view can group by a custom field, by its id', () => {
+  const id = '0a1b2c3d-0000-4000-8000-000000000001';
+  assert.equal(normaliseJobsView({ group: fieldGroup(id) }).group, `field:${id}`);
+  assert.equal(fieldIdOf(`field:${id}`), id);
+  assert.equal(normaliseJobsView({ group: 'field:nope' }).group, 'status');
+  assert.equal(fieldIdOf('status'), null);
+});
+
+test("a custom field's lanes: Not set first, live options in order, and an archived option a job still has", () => {
+  const field = { type: 'dropdown', options: [{ id: 'a', name: 'Urgent', color: 'red' }, { id: 'b', name: 'Low' }, { id: 'c', name: 'Old', archived: true }, { id: 'd', name: 'Gone', archived: true }] };
+  const values = { 1: 'a', 2: 'c', 3: null };
+  const lanes = fieldLanes(field, { jobs: jobs.map((j) => j.id), valueOf: (id) => values[id] ?? null });
+  assert.deepEqual(lanes.map((l) => [l.label, l.value]), [['Not set', null], ['Urgent', 'a'], ['Low', 'b'], ['Old (archived)', 'c']]);
+  assert.equal(laneOf(lanes, 'a'), 'Urgent');
+  assert.equal(laneOf(lanes, null), 'Not set');
+  assert.equal(laneOf(lanes, 'unknown'), 'Not set');
+  const person = fieldLanes({ type: 'person' }, { people: [{ id: 'p1', name: 'Ana' }], jobs: [1, 2], valueOf: (id) => (id === 2 ? 'p9' : null) });
+  assert.deepEqual(person.map((l) => l.label), ['Not set', 'Ana', 'Former person 1']);
+  const box = fieldLanes({ type: 'checkbox' });
+  assert.deepEqual(box.map((l) => [l.label, l.value]), [['No', null], ['Yes', true]]);
+  assert.equal(laneOf(box, false), 'No');
+  assert.equal(laneOf(box, true), 'Yes');
 });
 
 describe('a saved view follows the account', { skip: skipWithoutDatabase }, () => {

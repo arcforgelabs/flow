@@ -6,7 +6,10 @@ Everyone can set a job's value. A value lives only in Flow: a change never
 writes to the work system (Seazona) or the accounting system (Xero).
 
 Code: `server/core/custom-fields.js`. Screen: Settings, Custom fields
-(`server/ui/custom-fields.js`). API: `server/api/custom-fields.js`.
+(`server/ui/custom-fields.js`). API: `server/api/custom-fields.js`. On the
+Jobs page, a job's panel shows its fields to change, and the board can be
+grouped by a dropdown, person or checkbox field and moved by drag
+(`docs/JOB_BOARD_MOVES.md`).
 
 ## The parts
 
@@ -50,7 +53,7 @@ value. This copies OpenClaw's workboard: the server's copy wins.
 
 | Route | Who | What |
 | --- | --- | --- |
-| `GET /api/custom-fields[?archived=1]` | Signed in | Fields, system fields, types, groupable types, option colours |
+| `GET /api/custom-fields[?archived=1]` | Signed in | Fields, system fields, the people a person field can name (active people, by name), types, groupable types, option colours |
 | `POST /api/custom-fields` | Owner, admin | Make a field: `{ name, type[, options] }` |
 | `PUT /api/custom-fields/order` | Owner, admin | `{ ids }`: every live field, in the new order |
 | `PUT /api/custom-fields/:id` | Owner, admin | `{ name?, options? }` |

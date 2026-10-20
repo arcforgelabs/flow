@@ -1,6 +1,6 @@
 import express from 'express';
 import {
-  CUSTOM_FIELD_TYPES, GROUPABLE_TYPES, OPTION_COLORS, archiveField, createField, jobFieldHistory, listFields,
+  CUSTOM_FIELD_TYPES, GROUPABLE_TYPES, OPTION_COLORS, archiveField, choosablePeople, createField, jobFieldHistory, listFields,
   listJobFieldValues, orderFields, setJobFieldValue, updateField,
 } from '../core/custom-fields.js';
 import { FlowError } from '../core/errors.js';
@@ -8,7 +8,8 @@ import { resolveOrganisation } from './invoicing.js';
 
 // Custom fields for jobs (server/core/custom-fields.js, docs/CUSTOM_FIELDS.md).
 //
-//   GET  /api/custom-fields[?archived=1]          the lab's fields, and the work systems' own fields (read only)
+//   GET  /api/custom-fields[?archived=1]          the lab's fields, the work systems' own fields (read only),
+//        and the people a person field can name
 //   POST /api/custom-fields { name, type[, options] }        owner or admin: make a field
 //   PUT  /api/custom-fields/order { ids }                   owner or admin: the field order
 //   PUT  /api/custom-fields/:id { name?, options? }         owner or admin: rename, change options
@@ -70,8 +71,8 @@ export function createCustomFieldsRouter({ db, personAuth, work = () => [], log 
   router.get('/', ...signedIn, handle(async (req, res) => {
     const organisationId = await organisationOf(req);
     const archived = req.query.archived === '1' || req.query.archived === 'true';
-    const [fields, system] = await Promise.all([listFields(db, organisationId, { archived }), systemFields()]);
-    res.json({ ok: true, fields, systemFields: system, types: CUSTOM_FIELD_TYPES, groupable: GROUPABLE_TYPES, colors: OPTION_COLORS });
+    const [fields, system, chosen] = await Promise.all([listFields(db, organisationId, { archived }), systemFields(), choosablePeople(db)]);
+    res.json({ ok: true, fields, systemFields: system, people: chosen, types: CUSTOM_FIELD_TYPES, groupable: GROUPABLE_TYPES, colors: OPTION_COLORS });
   }));
 
   router.post('/', ...manager, handle(async (req, res) => {

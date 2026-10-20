@@ -578,8 +578,9 @@ moves a job to another Seazona stage on the Jobs board, Flow never calls
 Seazona. The move becomes a hand-off (`stage-moves.js`):
 
 1. Flow records the move in `seazona_stage_moves` as `waiting`, and answers
-   what to do: the order number, the new stage, and "Open in Seazona" when
-   `SEAZONA_ORDER_URL` is set.
+   what to do: the order number, the new stage, and a link that opens the
+   order in Seazona (`SEAZONA_ORDER_URL`, or the lab's Seazona home
+   page).
 2. The card shows in the new lane with "Waiting for Seazona" (`listWork`
    gives it `pendingMove`).
 3. The person changes the status in Seazona. The next sync reads the order,
