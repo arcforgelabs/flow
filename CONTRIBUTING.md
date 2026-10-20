@@ -45,14 +45,17 @@ release owns these files:
   release-note text in the pull request: its title and its User Impact
   section.
 - The release cut writes `CHANGELOG/<version>.md` from the pull requests
-  merged since the previous release, edits the prose, and merges it in a
-  `docs(changelog): <version> notes` pull request, which has no row of its
-  own. The procedure is `.agents/skills/flow-changelog-update/SKILL.md`.
+  in the release's range, edits the prose, and commits it on the release
+  branch `release/<version>` with the version (`docs/RELEASING.md`). It
+  never goes through a pull request to `main`: Flow Release Closeout brings
+  the shipped file to `main` after the stable release. The procedure is
+  `.agents/skills/flow-changelog-update/SKILL.md`.
 - Flow Release Prepare refuses a release until its file lists every pull
   request in its range with GitHub's credit, and the GitHub Release takes
   its notes from the file (`docs/RELEASING.md`).
-- A stable release covers everything since the previous stable release. A
-  beta covers everything since the release npm's `beta` tag selects before
+- A stable release covers everything since the previous stable release,
+  including the blocker fixes picked onto its branch. A correction
+  (`<version>-<n>`) covers the same range plus its fix. A beta covers everything since the release npm's `beta` tag selects before
   the beta publishes, in its own file.
 - A release file has Highlights, Changes and Fixes, then a complete
   contribution record that lists every pull request in the range once:
@@ -75,14 +78,19 @@ release owns these files:
 The ruleset in `.github/rulesets/main.json` requires a pull request and the
 checks `test` (CI) and `gitleaks` (Secret Scan), and blocks force pushes and
 deletion of `main`. The ruleset in `.github/rulesets/release-tags.json` stops
-anyone from deleting, moving or force-pushing a release tag (`v20*`).
+anyone from deleting, moving or force-pushing a release tag (`v20*`). The
+ruleset in `.github/rulesets/release-branches.json` stops anyone from
+deleting or force-pushing a release branch (`release/20*`, except the
+`-main-closeout` branches).
 
-Both rulesets are live (applied 18 Oct 2026). To apply them again, for
-example on a fork:
+The main and tag rulesets are live (applied 18 Oct 2026); the maintainer
+applies the release-branch ruleset (`docs/RELEASING.md`, One-time setup). To
+apply them again, for example on a fork:
 
 ```bash
 gh api -X POST repos/arcforgelabs/flow/rulesets --input .github/rulesets/main.json
 gh api -X POST repos/arcforgelabs/flow/rulesets --input .github/rulesets/release-tags.json
+gh api -X POST repos/arcforgelabs/flow/rulesets --input .github/rulesets/release-branches.json
 ```
 
 Claude Code sessions merge a pull request through the REST endpoint that

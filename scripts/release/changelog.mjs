@@ -21,11 +21,13 @@
 //   node scripts/release/changelog.mjs notes --version <v>
 //     The GitHub Release body for <v>: the section, or, when it is too long
 //     for GitHub, the prose and a link to the record.
-//   node scripts/release/changelog.mjs verify --version <v> [--target <ref>] [--check-github [--release-tag <tag>]]
+//   node scripts/release/changelog.mjs verify --version <v> [--target <ref>] [--check-github [--release-tag <tag>] [--body-file <file>]]
 //     Whether the record lists exactly the pull requests in the range, with
 //     the related issues and thanks GitHub gives, and whether the prose keeps
 //     the rules below. Flow Release Prepare runs it before it tags.
-//     --check-github: whether the published GitHub Release body is `notes`.
+//     --check-github: whether the published GitHub Release body is `notes`;
+//     --body-file checks that body instead (a draft release's, which only the
+//     publish run can read).
 //   node scripts/release/changelog.mjs index
 //     Writes CHANGELOG.md again from the files in CHANGELOG/.
 //   node scripts/release/changelog.mjs check
@@ -37,7 +39,14 @@
 //
 // A release's range: a stable release covers the history since the previous
 // stable release; a beta covers the history since the version npm's `beta`
-// tag selects before the beta is published. Only `feat`, `improve` and `fix`
+// tag selects before the beta is published; a correction (YYYY.M.N-C)
+// covers the history since the stable release before YYYY.M.N, as its stable
+// release did, so it replaces that file's notes whole. Each release is tagged
+// on its own release branch (docs/RELEASING.md), so the base tag is often not
+// in the target's history: the range then starts where the two branches
+// split, less every pull request the base already shipped (as a cherry-pick
+// with `-x`, or as its release commit), as OpenClaw's verifier subtracts a
+// shipped record. Only `feat`, `improve` and `fix`
 // pull requests (and any type marked breaking with `!`) appear in the prose;
 // `docs`, `chore`, `refactor`, `test`, `ci`, `build` and `style` appear only in
 // the record. A stable release has 5-8 highlights, a beta 0-8. Thanks never go
@@ -46,7 +55,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { compareBase, parseTag } from "./release.mjs";
+import { compareTags, parseTag } from "./release.mjs";
 
 export const REPOSITORY = "arcforgelabs/flow";
 export const PACKAGE = "@arcforgelabs/flow";
@@ -82,15 +91,13 @@ export function parseVersion(version) {
   try {
     return parseTag(`v${version}`);
   } catch {
-    throw new ChangelogError(`"${version}" is not a release version (YYYY.M.N or YYYY.M.N-beta.B)`);
+    throw new ChangelogError(`"${version}" is not a release version (YYYY.M.N, YYYY.M.N-beta.B or YYYY.M.N-C)`);
   }
 }
 
-// Newest first; a stable release comes before its own betas.
+// Oldest first: a beta, its stable release, then that release's corrections.
 export function compareVersions(a, b) {
-  const [x, y] = [parseVersion(a), parseVersion(b)];
-  const beta = (release) => release.beta ?? Number.MAX_SAFE_INTEGER;
-  return compareBase(x.base, y.base) || beta(x) - beta(y);
+  return compareTags(`v${parseVersion(a).version}`, `v${parseVersion(b).version}`);
 }
 
 // A merged pull request's squash subject, `type(scope)!: description (#N)`.
@@ -354,9 +361,10 @@ function releaseTags(root) {
 }
 
 // The previous release a version's notes start from: the newest older stable
-// tag (for a stable release) or older tag of either channel, that the target
-// contains.
-export function baseTag({ version, tags, contains = () => true }) {
+// tag for a stable release, or older tag of either channel. A correction
+// starts where its stable release started. Release branches mean the tag
+// need not be in the target's history (historyRange).
+export function baseTag({ version, tags }) {
   const release = parseVersion(version);
   const older = [];
   for (const tag of tags) {
@@ -367,11 +375,12 @@ export function baseTag({ version, tags, contains = () => true }) {
       continue;
     }
     if (release.channel === "stable" && parsed.channel !== "stable") continue;
+    if (release.correction && parsed.base === release.base) continue;
     if (compareVersions(parsed.version, release.version) >= 0) continue;
     older.push(parsed);
   }
   older.sort((a, b) => compareVersions(b.version, a.version));
-  return older.find((tag) => contains(tag.tag))?.tag ?? null;
+  return older[0]?.tag ?? null;
 }
 
 function npmBeta() {
@@ -387,7 +396,7 @@ function npmBeta() {
 export function resolveBase(root, { version, base, target, npm = npmBeta }) {
   if (base && base !== "npm-beta") return base;
   const release = parseVersion(version);
-  if (release.channel === "stable") return baseTag({ version, tags: releaseTags(root), contains: (tag) => isAncestor(root, tag, target) });
+  if (release.channel === "stable") return baseTag({ version, tags: releaseTags(root) });
   const selected = npm();
   if (!selected) throw new ChangelogError(`npm's beta tag for ${PACKAGE} could not be read. Pass --base <the tag it selected>`);
   if (compareVersions(selected, version) >= 0) throw new ChangelogError(`npm's beta tag already selects ${selected}, so it cannot be ${version}'s base. Pass --base <the tag captured before publishing>`);
@@ -395,9 +404,8 @@ export function resolveBase(root, { version, base, target, npm = npmBeta }) {
 }
 
 // Pull requests in a list of commits ({ sha, subject }), oldest first. A
-// commit with no "(#N)" is a direct commit and has no row. A revert of a pull
-// request in the same range removes both. A `docs(changelog):` pull request
-// carries the notes themselves, so it has no row: it could not list itself.
+// commit with no "(#N)" is a direct commit and has no row, as the release
+// commit has. A revert of a pull request in the same range removes both.
 export function pullRequestsIn(commits) {
   const prs = [];
   const reverted = new Set();
@@ -409,31 +417,65 @@ export function pullRequestsIn(commits) {
     if (reverted.has(commit.subject.trim())) continue;
     if (/^Revert "/.test(commit.subject) && commits.some((other) => other.subject.trim() === /^Revert "(.+)"/.exec(commit.subject)[1].trim())) continue;
     const pr = parseSubject(commit.subject);
-    if (pr.type === "docs" && pr.scope === "changelog") continue;
     if (pr.number !== null && !prs.some((other) => other.number === pr.number)) prs.push({ ...pr, sha: commit.sha });
   }
   return prs;
 }
 
-// Every commit the target has and the base does not, oldest first.
+function commitsIn(root, range) {
+  return git(root, ["log", "--topo-order", "--reverse", "--format=%H%x1f%s%x1f%b%x1e", range])
+    .split("\x1e")
+    .map((record) => record.trim())
+    .filter(Boolean)
+    .map((record) => {
+      const [sha, subject, body = ""] = record.split("\x1f");
+      return { sha, subject, body };
+    });
+}
+
+// The pull requests a release branch shipped that its target lacks: each
+// commit's own "(#N)", and the pull request of the main commit a `-x`
+// cherry-pick names.
+function shippedPullRequests(root, commits) {
+  const shipped = new Set();
+  for (const commit of commits) {
+    const own = parseSubject(commit.subject).number;
+    if (own !== null) shipped.add(own);
+    for (const [, origin] of commit.body.matchAll(/\(cherry picked from commit ([0-9a-f]{40})\)/g)) {
+      try {
+        const number = parseSubject(git(root, ["log", "-1", "--format=%s", origin]).trim()).number;
+        if (number !== null) shipped.add(number);
+      } catch {
+        // The original commit is not in this clone; its own subject counted.
+      }
+    }
+  }
+  return shipped;
+}
+
+// Every commit the target has and the base does not, oldest first. When the
+// base is on another release branch, the range starts at the commit the two
+// share, and the pull requests the base branch already shipped drop out.
 export function historyRange(root, { base, target }) {
   if (git(root, ["rev-parse", "--is-shallow-repository"]).trim() === "true") {
     throw new ChangelogError("this clone is shallow, so its history is cut short. Run: git fetch --unshallow --tags origin");
   }
   const to = revParse(root, target);
   const from = base ? revParse(root, base) : null;
-  if (from && !isAncestor(root, from, to)) throw new ChangelogError(`${base} is not an ancestor of ${target}`);
-  const log = git(root, ["log", "--topo-order", "--reverse", "--format=%H%x1f%s%x1e", from ? `${from}..${to}` : to]);
-  const commits = log
-    .split("\x1e")
-    .map((record) => record.trim())
-    .filter(Boolean)
-    .map((record) => {
-      const [sha, subject] = record.split("\x1f");
-      return { sha, subject };
-    });
+  let start = from;
+  let shipped = new Set();
+  if (from && !isAncestor(root, from, to)) {
+    try {
+      start = git(root, ["merge-base", from, to]).trim();
+    } catch {
+      throw new ChangelogError(`${base} and ${target} share no history`);
+    }
+    shipped = shippedPullRequests(root, commitsIn(root, `${start}..${from}`));
+  }
+  const commits = commitsIn(root, start ? `${start}..${to}` : to).map(({ sha, subject }) => ({ sha, subject }));
   const direct = commits.filter((commit) => parseSubject(commit.subject).number === null && !/^Merge /.test(commit.subject));
-  return { base: from, target: to, prs: pullRequestsIn(commits), direct };
+  const prs = pullRequestsIn(commits).filter((pr) => !shipped.has(pr.number));
+  return { base: from, target: to, prs, direct, shipped: [...shipped].sort((a, b) => a - b) };
 }
 
 // GitHub through `gh api`, with each answer kept in .git/flow-changelog/ so
@@ -558,7 +600,7 @@ export function verifySection(root, { version, target, github }) {
   if (!isAncestor(root, record.target, finalSha)) fail(`the record's target ${record.target} is not in ${finalTarget}`);
   const tagCommits = new Map(tags.map((tag) => [revParse(root, tag), tag]));
   if (parseVersion(version).channel === "stable") {
-    const expected = baseTag({ version, tags, contains: (tag) => isAncestor(root, tag, finalSha) });
+    const expected = baseTag({ version, tags });
     const expectedSha = expected ? revParse(root, expected) : null;
     if (record.base !== expectedSha) fail(`a stable record starts at the previous stable release ${expected ? `${expected} (${expectedSha})` : "(none: the first commit)"}; it starts at ${record.base ?? "the first commit"}`);
   } else if (!record.base || !tagCommits.has(record.base)) {
@@ -632,6 +674,7 @@ export function main(argv, root = resolve(import.meta.dirname, "../.."), { reque
         target: history.target,
         pullRequests: history.prs.map((pr) => ({ number: pr.number, title: pr.title, type: pr.type, editorial: pr.editorial, section: pr.section, ...credits.get(pr.number) })),
         directCommits: history.direct,
+        shippedByBase: history.shipped,
       };
       writeFileSync(isAbsolute(manifest) ? manifest : resolve(manifest), `${JSON.stringify(inventory, null, 2)}\n`);
     }
@@ -657,7 +700,8 @@ export function main(argv, root = resolve(import.meta.dirname, "../.."), { reque
     const client = github();
     if (args.includes("--check-github")) {
       const tag = option(args, "--release-tag") ?? `v${version}`;
-      const release = client(`repos/${REPOSITORY}/releases/tags/${tag}`, { live: true });
+      const bodyFile = option(args, "--body-file");
+      const release = bodyFile ? { body: readFileSync(bodyFile, "utf8").replace(/\n$/, "") } : client(`repos/${REPOSITORY}/releases/tags/${tag}`, { live: true });
       if (!release) throw new ChangelogError(`GitHub has no release ${tag}`);
       const error = checkReleaseBody(release.body, releaseNotes(readSection(root, version), version));
       if (error) throw new ChangelogError(`${tag}: ${error}. Fix: node scripts/release/changelog.mjs notes --version ${version} > notes.md && gh release edit ${tag} --notes-file notes.md`);

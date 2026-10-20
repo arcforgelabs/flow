@@ -1,10 +1,16 @@
 # Releasing Flow
 
-A release is one tagged commit on `main`, built once and published three
-ways: an npm package, a container image, and a GitHub Release that records
-both. An installation runs a release it chose, by version and fingerprint,
-never a branch. This is the same release track as
-[Field](https://github.com/arcforgelabs/field/blob/main/docs/RELEASING.md).
+Flow releases as openclaw/openclaw does. A release is a release train: it
+ships what `main` holds at the cut, and nothing waits for a named feature.
+A release agent picks the cut, a `main` commit that the 3-hourly Flow Full
+Release Validation proved, and cuts a release branch `release/YYYY.M.N`
+from it. After the cut, only blocker fixes enter the branch, as `-x`
+cherry-picks of merged `main` commits. Each release is one signed tag on its
+release branch, built once and published three ways: an npm package, a
+container image, and a GitHub Release that records both. After a stable
+release, a closeout pull request brings what shipped back to `main`. An
+installation runs a release it chose, by version and fingerprint, never a
+branch.
 
 ## What a release produces
 
@@ -42,47 +48,63 @@ count of releases in that month. The count is not the day, and it can pass
 31: `2026.10.31` comes before `2026.10.32`. A new month can start again at 1.
 A stable release is `2026.10.18`. A beta is a pre-release of the **upcoming**
 stable version, so `2026.10.18-beta.1` and `2026.10.18-beta.2` come before
-`2026.10.18`. Tags
-add a `v`, and each GitHub Release is titled `flow <version>`.
-`package.json` holds the upcoming stable version.
-`scripts/release/release.mjs` holds the rules, and `test/release.test.js`
-tests them.
+`2026.10.18`. A correction is `2026.10.18-1`: a fix of a published stable
+release from its release branch, when that version cannot be published
+again (npm never replaces a version). Corrections count from 1 and come
+after their stable release. Tags add a `v`, are annotated and signed, and
+each GitHub Release is titled `flow <version>`. On a release branch,
+`package.json` holds the branch's version; a beta and a correction take
+their own version only in the packed tarball. `main` holds the newest
+shipped version, set by each closeout. `scripts/release/release.mjs` holds
+the rules, and `test/release.test.js` tests them.
 
 | Channel | npm dist-tag | Image tags | GitHub Release |
 | --- | --- | --- | --- |
 | beta | `beta` | `<version>`, `beta` | pre-release |
 | stable | `latest` | `<version>`, `stable`, `latest` | release, marked latest |
+| correction | `latest` | `<version>`, `stable`, `latest` | release, marked latest |
 
 A release reaches its channel when it is published; there is no separate
-step.
+step. The GitHub Release stays a draft until npm serves the version, then
+Flow NPM Release makes it public, as openclaw/openclaw does, so an
+installation that follows GitHub's latest release never sees a version npm
+does not have.
 
 ## The workflows
 
 | Workflow | Starts | Does |
 | --- | --- | --- |
-| `flow-release-prepare.yml` (Flow Release Prepare) | By hand, from `main` | Takes a `main` commit (default: the head) whose required checks passed: `test` and `gitleaks`, the checks the main ruleset requires (`scripts/deploy-checks.js`). Plans the next tag for the channel, creates it, and starts Flow Release Publish. |
-| `flow-release-checks.yml` (Flow Release Checks) | From Flow Release Publish | Requires the tag to be a calendar version on `main` that matches `package.json`. Runs every CI lane on its commit (`.github/workflows/ci.yml`: `test`, `docker-build`, `package`). Packs the npm tarball with a shrinkwrap of the tested dependencies, then installs it in an empty directory and starts it against PostgreSQL. Publishes nothing. |
-| `flow-release-publish.yml` (Flow Release Publish) | From Flow Release Prepare, or by hand for an existing tag | `approve` job at the start, alongside the checks: environment `release` for a stable release (Samuel's one approval), `release-beta` for a beta (no reviewer). Then the `image` job pushes the image by digest, attests it and its SBOM, verifies the attestation, starts the pushed digest against PostgreSQL, then adds the channel's tags. Then it creates the GitHub Release with the manifest, and starts Flow NPM Release for the tarball it proved. |
-| `flow-npm-release.yml` (Flow NPM Release) | From Flow Release Publish | Requires the tarball from that run to match the GitHub Release's manifest. Dispatched by Flow Release Publish, it publishes on that run's approval: it checks that GitHub Actions dispatched it, that the run is for this tag, and, for a stable release, that GitHub's approvals record shows `release` approved. Dispatched by hand, it waits for `npm-release` first. `publish` runs in environment `npm-publish`: npm trusted publishing with provenance, to the channel's dist-tag. Then it verifies what npm serves and attaches the post-publish evidence. |
-| `flow-release-promote.yml` (Flow Release Promote) | By hand, from `main` | Points a channel at a published release, to roll it back or put it back. It verifies the release (the manifest's checksum, the npm integrity, signatures and provenance, and the image attestation), then in environment `npm-release` moves the channel. A stable tag moves npm `latest`, GHCR `stable` and `latest`, and GitHub's latest release, and moves `beta` up when the beta channel is behind. A beta tag moves npm and GHCR `beta`. |
+| `flow-full-release-validation.yml` (Flow Full Release Validation) | Every 3 hours on `main`; on a release branch after each change there (Flow Release Branch); by hand | Proves one exact commit with every lane a release needs: all CI lanes (`test`, `docker-build`, `package`) and the secret scan over the whole history. On a release branch it also requires `package.json` to hold the branch's version and each changelog file of that version to match its history. A scheduled run reuses an earlier pass of the same commit. Publishes nothing. |
+| `flow-release-branch.yml` (Flow Release Branch) | By hand or from `release:stable`, from `main` | The only writer of `release/YYYY.M.N`. `cut` creates it at a picked `main` commit with one release commit on top: `package.json`'s version and the version's changelog files from `notes_ref`. `cherry-pick` copies merged `main` commits with `git cherry-pick -x` (blocker fixes only), with refreshed notes if given. `notes` replaces the version's changelog files. Each push starts the validation, CI and the secret scan on the branch. |
+| `flow-release-prepare.yml` (Flow Release Prepare) | By hand or from `release:stable`, from `main` | Takes a commit on a release branch (default: its head) that Flow Full Release Validation proved. Plans the next tag for the channel (beta, stable or correction), verifies the changelog, creates the tag annotated and signed with the release tag key, and starts Flow Release Publish. |
+| `flow-release-checks.yml` (Flow Release Checks) | From Flow Release Publish | Requires the tag to be annotated with a signature GitHub verifies, before it checks anything out; to be a calendar version that matches `package.json`; and to sit on its release branch. Runs every CI lane on its commit, packs the npm tarball with a shrinkwrap of the tested dependencies, then installs it in an empty directory and starts it against PostgreSQL. Publishes nothing. |
+| `flow-release-publish.yml` (Flow Release Publish) | From Flow Release Prepare, or by hand for an existing tag | `approve` job at the start, alongside the checks: environment `release` for a stable release or correction, `release-beta` for a beta. Then the `image` job pushes the image by digest, attests it and its SBOM, verifies the attestation, starts the pushed digest against PostgreSQL, then adds the channel's tags. Then it creates the GitHub Release as a draft with the manifest, checks its body is the changelog file, and starts Flow NPM Release for the tarball it proved. |
+| `flow-npm-release.yml` (Flow NPM Release) | From Flow Release Publish | Requires the tarball from that run to match the GitHub Release's manifest. Dispatched by Flow Release Publish, it publishes on that run's approval: it checks that GitHub Actions dispatched it, that the run is for this tag, and, for a stable release, that GitHub's approvals record shows `release` approved. Dispatched by hand, it waits for `npm-release` first. `publish` runs in environment `npm-publish`: npm trusted publishing with provenance, to the channel's dist-tag. Then it verifies what npm serves, attaches the post-publish evidence and makes the GitHub Release public. For a stable release or correction it starts Flow Release Closeout. |
+| `flow-release-closeout.yml` (Flow Release Closeout) | From Flow NPM Release, or by hand | openclaw/openclaw's stable main closeout. Requires every commit of the release branch that `main` lacks to be the release commit, a changelog commit or a `-x` cherry-pick of a `main` commit. On branch `release/<version>-main-closeout` from `main`, it copies the version's changelog files and sets `package.json` to the shipped version (unless `main` is newer), then opens `chore(release): close out <version> on main` and starts its checks. It does not merge. |
+| `flow-release-promote.yml` (Flow Release Promote) | By hand or from `release:stable`, from `main` | Points a channel at a published release, to roll it back or put it back, and moves `beta` up after a stable release. It verifies the release (the manifest's checksum, the npm integrity, signatures and provenance, and the image attestation), then in environment `npm-release` moves the channel. A stable tag moves npm `latest`, GHCR `stable` and `latest`, and GitHub's latest release, and moves `beta` up when the beta channel is behind. A beta tag moves npm and GHCR `beta`. |
 
 | Action | Approvals |
 | --- | --- |
 | Beta (`vYYYY.M.N-beta.B`) | 0 |
-| Stable release (`vYYYY.M.N`) | 1: `release` |
-| Promote or roll back a channel | 1: `npm-release` |
-| Flow NPM Release dispatched by hand | 1: `npm-release` |
+| Stable release (`vYYYY.M.N`) or correction (`vYYYY.M.N-C`) | 1: `release` (switched off for now, by the maintainer's decision; the one difference from openclaw/openclaw) |
+| Promote or roll back a channel | 1: `npm-release` (switched off for now) |
+| Flow NPM Release dispatched by hand | 1: `npm-release` (switched off for now) |
 
-A beta has guards instead of a gate: it runs only from `main`, only for a
-`vYYYY.M.N-beta.B` tag on a `main` commit whose required checks passed
-(Flow Release Prepare), and only after every CI lane passes again on that
-commit (Flow Release Checks). Every environment accepts only runs from
-`main`, and `npm-publish`, the environment npm's trusted publisher names, has
-no reviewer of its own. Release tags (`v20*`) cannot be moved or deleted
-(`.github/rulesets/release-tags.json`). Each job that builds or publishes
-checks out the tag itself, never a commit handed on from an earlier job, and
-stops if the tag no longer points at the commit the checks proved
-(`test/release-workflows.test.js` holds this rule).
+Every release workflow that changes anything runs only from `main`, so the
+release tooling is `main`'s even when the release is an older branch; every
+environment accepts only runs from `main`, and `npm-publish`, the
+environment npm's trusted publisher names, has no reviewer of its own.
+Release tags (`v20*`) cannot be moved or deleted
+(`.github/rulesets/release-tags.json`), and release branches cannot be
+deleted or force-pushed (`.github/rulesets/release-branches.json`). Each job
+that builds or publishes checks out the tag itself, never a commit handed on
+from an earlier job, and stops if the tag no longer points at the commit the
+checks proved (`test/release-workflows.test.js` holds this rule). A tag
+from before release branches is lightweight or unsigned, so it is never
+published again: fix forward with a new version.
+
+`main`'s CI health never gates a release: validation and publication run on
+the release branch. A red `main` is fixed on `main`, in parallel.
 
 npm can take minutes to serve a new version. Flow NPM Release reads it back
 with backoff for about 15 minutes, and a rerun skips a version npm already
@@ -92,64 +114,127 @@ Running Flow Release Publish again for the same tag is safe. It checks again,
 updates the GitHub Release's assets, and starts Flow NPM Release, which skips
 an npm version that is already published with the same bytes and refuses one
 published with different bytes. A published version is never replaced: fix
-forward with a new tag.
+forward with a correction or a new version.
 
-## Cut a release
+## Release a stable version
 
-1. Open a pull request that sets the upcoming stable version:
-   `npm version 2026.10.18 --no-git-tag-version` (the next count in this month), which updates
-   `package.json` and `package-lock.json`. Title it
-   `chore: release 2026.10.18`. Merge it when CI passes. Do this once per
-   version; its betas reuse it. The version must be newer than the latest
-   stable release, or Prepare refuses it.
-2. Before each beta, write that beta's changelog file
-   (`<version>-beta.<n>`, from the release npm's `beta` tag selects). Before
-   the beta you mean to make stable, also write the stable version's file
-   (from the previous stable release, with 5 to 8 highlights). Merge them in
-   a pull request titled `docs(changelog): <version> notes`
-   (`.agents/skills/flow-changelog-update/SKILL.md`):
-
-   ```bash
-   git fetch --unshallow --tags origin
-   node scripts/release/changelog.mjs draft --version <version> --output /tmp/section.md --manifest /tmp/manifest.json
-   # edit the Highlights, Changes and Fixes
-   node scripts/release/changelog.mjs write --version <version> --file /tmp/section.md
-   node scripts/release/changelog.mjs verify --version <version>
-   ```
-
-   A pull request that merges after this one is not in the record, and
-   Prepare refuses the release until the file is written again. So the
-   stable release is the commit of a beta that already holds the file.
-3. Start a beta:
-
-   ```bash
-   gh workflow run flow-release-prepare.yml --repo arcforgelabs/flow --ref main -f channel=beta
-   ```
-
-4. Nothing waits for approval: when the checks pass, the beta is published to
-   npm `beta`, GHCR `beta` and a GitHub pre-release.
-5. Run the beta where it matters. To release that commit as stable, give it:
-
-   ```bash
-   gh workflow run flow-release-prepare.yml --repo arcforgelabs/flow --ref main -f channel=stable -f commit=<commit>
-   ```
-
-   Approve `release` in the Flow Release Publish run; you can do it while
-   the checks run. That is the only approval. When the checks pass, it is npm
-   `latest`, GHCR `stable` and `latest`, and GitHub's latest release.
-
-To roll back, point the channel at the previous release (a stable tag for
-`latest`, a beta tag for `beta`), and approve `npm-release`. Nothing is
-unpublished:
+One command runs the whole stable release, as openclaw/openclaw's
+`pnpm release:stable` does. A release agent runs it when the maintainer asks
+for a release, and follows `.agents/skills/flow-release/SKILL.md`:
 
 ```bash
-gh workflow run flow-release-promote.yml --repo arcforgelabs/flow --ref main -f tag=v2026.10.18
+git fetch --unshallow --tags origin   # or: git fetch --tags origin
+npm run release:stable -- 2026.10.34
+```
+
+It is a resumable state machine with the phases `cut → validate → publish →
+flip-github → sync-beta → closeout`. State lives in
+`.artifacts/release-<version>/state.json`; running the command again
+continues from the first phase not completed, `--from <phase>` starts again
+from a phase, `--status` prints the table, and `--dry-run` prints every
+command that would change anything without running it. Every refusal prints
+`Next:` with the exact commands to run before resuming. It answers only
+two questions, each with a flag: confirm the cut (`--confirm-cut-sha <sha>`)
+and approve publication (`--approve-publication`, which also merges the
+closeout).
+
+1. **cut.** The command picks the newest `main` commit that Flow Full Release
+   Validation proved (or `--cut-sha`), and refuses until that commit is
+   confirmed and the version's notes exist. Write them at the cut
+   (`.agents/skills/flow-changelog-update/SKILL.md`), with 5 to 8 highlights:
+
+   ```bash
+   node scripts/release/changelog.mjs draft --version 2026.10.34 --target <cut> --output /tmp/section.md --manifest /tmp/manifest.json
+   # edit the Highlights, Changes and Fixes
+   node scripts/release/changelog.mjs write --version 2026.10.34 --file /tmp/section.md
+   node scripts/release/changelog.mjs verify --version 2026.10.34 --target <cut>
+   ```
+
+   Commit `CHANGELOG/` on any branch, push it, and run the command again
+   with `--confirm-cut-sha <cut> --notes-ref <branch>`. Flow Release Branch
+   cuts `release/2026.10.34` with the release commit: the version and the
+   notes, in one commit. The notes never go through a pull request to
+   `main`; the closeout brings them there.
+2. **validate.** Flow Full Release Validation runs on the branch's head.
+3. **publish.** With `--approve-publication`, Flow Release Prepare tags the
+   head (signed), Flow Release Publish and Flow NPM Release run, and the
+   phase ends when npm serves the version.
+4. **flip-github.** The GitHub Release is public and GitHub's latest.
+5. **sync-beta.** npm `beta` moves up to the release when it is behind
+   (Flow Release Promote), so beta users are never behind stable.
+6. **closeout.** Flow NPM Release started Flow Release Closeout; the
+   command opens its pull request if GitHub Actions could not, waits for
+   `test` and `gitleaks`, and merges it. The release is done when `main`
+   carries the shipped changelog file and version.
+
+A beta needs no command of its own: after the cut, start one from the
+branch. Its notes are its own file, `CHANGELOG/<version>-beta.<n>.md`, from
+the release npm's `beta` tag selects, put on the branch with Flow Release
+Branch `notes`:
+
+```bash
+gh workflow run flow-release-branch.yml --repo arcforgelabs/flow --ref main -f operation=notes -f version=2026.10.34 -f notes_ref=<branch>
+gh workflow run flow-release-prepare.yml --repo arcforgelabs/flow --ref main -f channel=beta -f branch=release/2026.10.34
+```
+
+### Blockers, flakes and the cut
+
+The release branch is the work queue. `main` moves on; the branch takes
+only fixes for confirmed release blockers: a required lane that fails
+deterministically on the branch, or an install, update or publish defect.
+A flake is not a blocker, and neither is a dependency advisory (only known
+malware stops a release). Every failed check gets a written decision,
+blocker or flake. Rerun a flake on the same commit at most twice, and fix it
+on `main` in parallel. Never cut again on newer `main` to pick up a fix, and
+never cut again without the maintainer's word.
+
+A blocker fix merges to `main` first, then reaches the branch:
+
+```bash
+gh workflow run flow-release-branch.yml --repo arcforgelabs/flow --ref main \
+  -f operation=cherry-pick -f version=2026.10.34 -f commits="<main sha> <main sha>" -f notes_ref=<branch>
+```
+
+The pick adds its pull request to the release's range, so the stable notes
+need it in their record: give `notes_ref` the refreshed notes (drafted
+again at the branch's head) in the same run, or run `notes` after it. When a
+pick does not apply cleanly, open a pull request into `release/<version>`
+with the resolved cherry-pick, keeping its `(cherry picked from commit …)`
+line, and merge it. Release-process changes (workflows, release scripts and
+tests, this file) land on `main` first too, and reach an open branch the
+same way.
+
+### Correct a stable release
+
+When a published stable release needs a fix and its version cannot be
+published again, cherry-pick the fix onto its branch, write
+`CHANGELOG/<version>-<n>.md` (the same range as the stable release's notes,
+plus the fix, with 5 to 8 highlights), put it on the branch, and prepare a
+correction:
+
+```bash
+gh workflow run flow-release-prepare.yml --repo arcforgelabs/flow --ref main -f channel=correction -f branch=release/2026.10.34
+```
+
+Only the newest stable release takes a correction. It publishes to npm
+`latest` as `2026.10.34-1`, and Flow Release Closeout brings its notes to
+`main`.
+
+### Roll back
+
+To roll back, point the channel at the previous release (a stable tag for
+`latest`, a beta tag for `beta`). Nothing is unpublished:
+
+```bash
+gh workflow run flow-release-promote.yml --repo arcforgelabs/flow --ref main -f tag=v2026.10.33
 ```
 
 Prepare has no dry run: the tag it creates is protected and cannot be
-deleted, and it starts the publish at once. To test the release steps
-without publishing, look at CI on any pull request: its `package` and
-`docker-build` lanes run the same smokes as a release.
+deleted, and it starts the publish at once. `npm run release:stable --
+<version> --dry-run` prints what a release would run. To test the release
+steps without publishing, run Flow Full Release Validation on any branch, or
+look at CI on any pull request: its `package` and `docker-build` lanes run
+the same smokes as a release.
 
 ## Run a release
 
@@ -168,7 +253,37 @@ settings:
 - The rulesets on `main` and on release tags (`CONTRIBUTING.md`, "Merging to
   main").
 
-Still to do, by Samuel, before the first beta.
+Still to do, by Samuel, before the first release from a release branch:
+
+1. **The release branch ruleset.** Settings → Rules → Rulesets → New ruleset
+   → New branch ruleset. Name `Protect Flow release branches`, enforcement
+   Active, no bypass list. Target branches → Add target → Include by
+   pattern `release/20*`; Exclude by pattern `release/*-main-closeout`.
+   Rules: tick **Restrict deletions** and **Block force pushes**, nothing
+   else. Create. (Or New ruleset → Import a ruleset, with
+   `.github/rulesets/release-branches.json`.)
+2. **The release tag signing key.** Prepare signs each tag with an SSH key.
+   Make one on your own computer: `ssh-keygen -t ed25519 -C "flow release
+   tags" -N "" -f flow-release-tags`. Then:
+   - Repository Settings → Secrets and variables → Actions → New repository
+     secret: name `RELEASE_TAG_SIGNING_KEY`, value the whole private key
+     file `flow-release-tags`.
+   - Your GitHub account Settings → SSH and GPG keys → New SSH key: title
+     `Flow release tags`, key type **Signing Key**, key the line in
+     `flow-release-tags.pub`. GitHub then shows each release tag as
+     verified, signed by you, and Flow Release Checks refuses any tag it
+     does not show so.
+   - Delete both files from your computer.
+
+   Prepare tags as `IAMSamuelRodda <7961255+IAMSamuelRodda@users.noreply.github.com>`;
+   a repository variable `RELEASE_TAGGER` (`Name <email>`) names another
+   account that holds the signing key.
+3. **Pull requests from GitHub Actions.** Settings → Actions → General →
+   Workflow permissions: tick **Allow GitHub Actions to create and approve
+   pull requests**, so Flow Release Closeout opens its pull request. Without
+   it, `release:stable` opens the pull request itself.
+
+Done before the first beta (18 Oct 2026):
 
 npm (an npm owner of the `@arcforgelabs` scope does this on npmjs.com, with
 two-factor authentication; never with a token in a file or a command):
