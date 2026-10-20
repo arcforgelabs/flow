@@ -269,6 +269,7 @@ flowchart LR
   later --> slice
   next --> slice
   slice -- all resources done --> done[History complete]
+  done -- 15 minutes later --> slice
 ```
 
 - The import is a job on the core queue (`server/integrations/xero/import.js`).
@@ -281,6 +282,26 @@ flowchart LR
   reserve share of the day's calls (`XERO_MIRROR_RESERVE_FRACTION`).
 - A failed slice retries with the queue's back-off. After its last attempt
   it opens a review item (`job.dead`).
+
+### Reading the changes
+
+The copy is fresh only while its last full read of invoices is less than a
+day old (`mirrorState` in `lookup.js`). A copy that is not fresh proves
+nothing, so drafts by rule wait and the matcher does not say "no invoice"
+(issue #131). So the import never ends:
+
+- When every resource is read to its end, the same job is queued again for
+  15 minutes later (`REFRESH_MS`). It reads only what changed since each
+  cursor: with few changes, one call per resource.
+- The worker keeps one read queued for each connected organisation, so a
+  restart or an upgrade needs no step. While the call guard stops Xero calls,
+  no read is queued. A read that gave up waits for a person (its review
+  item), a restart or the next day.
+- A copy that goes out of date is reported once with `log.error`, and again
+  when it is fresh. `health()` shows each copy under `copies` and is not `ok`
+  while a complete copy is out of date.
+- About 192 calls a day (invoices and credit notes, every 15 minutes), inside
+  the reserve the mirror leaves for drafts and people.
 
 `POST /api/xero/mirror` with `{ "organisationId": "…", "resources"?: [...] }`
 (owner or admin) reads each resource from its cursor now. `GET /api/xero/mirror`
@@ -310,6 +331,35 @@ flowchart LR
   what Flow stores; `last_changed_at` moves only with it.
 - **No patient text by default.** References and line descriptions are kept
   only with `XERO_KEEP_REFERENCE=on`.
+
+## Sent invoices against the copy
+
+People change invoices in both places after Flow sends them
+(`server/integrations/xero/reconcile.js`, issue #132). The version Flow sent
+is the merge base: the document both sides agreed on. After each read of the
+copy that changed an invoice, Flow compares every invoice it sent with
+Xero's copy of it. No Xero calls.
+
+| Finding | When |
+| --- | --- |
+| `differs` | Xero's copy no longer matches the version Flow sent: client, subtotal, GST, total, line count, item codes or date |
+| `voided_in_xero` | Xero voided or deleted the invoice; the Flow invoice is still issued |
+| `voided_in_flow` | Flow voided the invoice; Xero still holds it live |
+
+- Each finding is one review item (`invoice.accounting_differs`) with both
+  sides. A repeat refreshes it. It only alerts: Flow never writes to Xero or
+  to the Flow invoice to fix it. A person fixes it where they choose.
+- The item closes when a later check finds no difference.
+- **Mark resolved** (`POST /api/xero/invoices/<id>/recheck`, owner or admin)
+  reads Xero's invoice changes first, then checks that one invoice again.
+- `POST /api/xero/invoices/status` (anyone signed in) answers each invoice's
+  Xero status from the copy: `not_sent`, `sending`, `not_copied`, `draft`,
+  `approved`, `part_paid`, `paid`, `voided` or `deleted`, with any finding.
+  The Invoices page shows it as a tag on issued and void invoices, and the
+  invoice shows the differences, **Open in Xero** and **Mark resolved**.
+- Voiding a sent invoice in Flow warns while Xero still holds it live.
+- References and line descriptions are not compared: the copy keeps them only
+  with `XERO_KEEP_REFERENCE=on`.
 
 ## The billing ledger
 

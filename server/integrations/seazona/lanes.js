@@ -9,6 +9,7 @@ import {
   orderListSignature,
   text,
 } from './map.js';
+import { runHistoryBackfill } from './history/backfill.js';
 import { seazonaOrders } from './schema.js';
 import {
   claimLane,
@@ -38,11 +39,17 @@ import {
 //   clients        changed clients since a cursor, every 30 min
 //   products       the product list, daily
 //   users          the lab user list, daily
+//   history        past orders, a few calls per run, only while a person
+//                  has started a backfill (history/backfill.js)
 //
 // Issue #12 holds for every order read: a 404 marks the order deleted in
 // Seazona, an empty answer is a failure, each failure is recorded per order
 // and quarantines it after a few in a row, and a lane fails only when most of
 // its reads fail. Errors and /health name each failing order and its status.
+//
+// Issue #125: a list at the row cap is read on, not held: invoices and
+// clients from the last row they answered, orders page by page. A lane holds
+// only where Seazona gives no way on.
 //
 // Issue #101 holds for every lane: invoices and clients quarantine a record
 // after a few failed reads too, so one bad record never holds a cursor. A
@@ -51,34 +58,45 @@ import {
 // only after a person saves the settings or Flow restarts on a new release.
 // Calls the governor stopped (SeazonaCallsStopped) wait out its pause.
 
-export const LANES = Object.freeze(['invoices', 'orders_recent', 'orders_active', 'clients', 'products', 'users']);
+export const LANES = Object.freeze(['invoices', 'orders_recent', 'orders_active', 'clients', 'products', 'users', 'history']);
 
 const DAY_MS = 24 * 60 * 60_000;
 const MAX_REPORTED = 25;
 const FINAL_STATUS_PATTERN = 'shipped|delivered|cancelled|canceled|void|closed|archived|deleted';
 
 class LaneError extends Error {
-  constructor(message, { code, details = null, held = false, retryAfterMs = null } = {}) {
+  constructor(message, { code, details = null, held = false, retryAfterMs = null, progress = null } = {}) {
     super(message);
     this.code = code;
     this.details = details;
     this.held = held;
     this.retryAfterMs = retryAfterMs;
+    // What the lane read before it stopped: { cursor }, kept with the failure.
+    this.progress = progress;
   }
 }
 
-function listOrFail(list, what, sync) {
+function listOrFail(list, what) {
   if (!Array.isArray(list)) throw new LaneError(`Seazona ${what} answer was not a list`, { code: 'seazona_list_invalid' });
-  // Seazona documents no paging. A list exactly at the cap may be cut off,
-  // so hold the cursor rather than trust it.
-  if (list.length === sync.listCap) {
-    throw new LaneError(`Seazona ${what} answer has exactly ${sync.listCap} rows and may be cut off; the cursor is held`, {
-      code: 'seazona_list_at_cap',
-      held: true,
-      details: { observedCount: list.length, listCap: sync.listCap },
-    });
-  }
   return list;
+}
+
+// Issue #125: a list at the cap is read on, page by page or from its last
+// row. The lane holds only where it cannot go on.
+function cannotGoOn(what, sync, reason, progress) {
+  return new LaneError(`Seazona ${what} answer is full (${sync.listCap} rows) and cannot be read further (${reason}); the cursor is held`, {
+    code: 'seazona_list_at_cap',
+    held: true,
+    details: { listCap: sync.listCap, reason },
+    progress,
+  });
+}
+
+// Seazona writes lastModified in UTC with no zone suffix.
+function parseUtc(value) {
+  const stamp = text(value);
+  if (!stamp) return NaN;
+  return Date.parse(/[zZ]|[+-]\d\d:?\d\d$/.test(stamp) ? stamp : `${stamp}Z`);
 }
 
 // A failure that is about Seazona or the rate limit, not one record: the
@@ -239,9 +257,67 @@ async function syncListWithDetail(ctx, { mirror, what, items, keyOf, idOf, signa
   return { summary, detailReads, listCount: items.length, failureDetails, anyFailed, newlyQuarantined, quarantined: skipped.length };
 }
 
-function cursorSince(ctx, fallbackMs) {
+// Where the next changed-list read starts. A run that stopped inside a
+// window keeps the exact start of the next part (`cursor.since`); otherwise
+// the last finished run's start, less the overlap.
+function cursorSince(ctx, fallback) {
+  const exact = ctx.state?.cursor?.since;
+  if (typeof exact === 'string') return exact;
   const cursorMs = ctx.state?.cursorTime?.getTime();
-  return new Date(Number.isFinite(cursorMs) ? cursorMs - ctx.sync.cursorOverlapMs : fallbackMs).toISOString();
+  return Number.isFinite(cursorMs) ? new Date(cursorMs - ctx.sync.cursorOverlapMs).toISOString() : fallback;
+}
+
+function mergeDetails(total, details) {
+  if (!details) return total;
+  if (!total) return details;
+  return {
+    ...total,
+    attempted: (total.attempted ?? 0) + (details.attempted ?? 0),
+    failed: (total.failed ?? 0) + (details.failed ?? 0),
+    failures: [...(total.failures ?? []), ...(details.failures ?? [])].slice(0, MAX_REPORTED),
+    ...(total.quarantinedIds || details.quarantinedIds
+      ? { quarantinedIds: [...(total.quarantinedIds ?? []), ...(details.quarantinedIds ?? [])].slice(0, MAX_REPORTED) }
+      : {}),
+  };
+}
+
+// Invoices and clients: Seazona answers changes since a time in one list,
+// with no paging, cut at the cap. The guide says the invoice list answers
+// changes on or after the time, oldest first, so a full list is one part of
+// the window: the next part starts at its last row (less `stepBackMs`, for a
+// list that answers strictly after). Rows out of order, or a full list inside
+// one second, cannot go on: the lane holds, and keeps where it got to. A run
+// reads at most `listPagesPerRun` parts; the next run goes on from the exact
+// start it stored.
+async function walkChangedList(ctx, { what, firstSince, stepBackMs, list, read }) {
+  const { sync, at, state } = ctx;
+  const total = { summary: { created: 0, changed: 0, unchanged: 0 }, detailReads: 0, listCount: 0, failureDetails: null, newlyQuarantined: 0, quarantined: 0 };
+  let since = firstSince;
+  for (let pages = 1; ; pages += 1) {
+    const items = listOrFail(await list(since), `${what} list`);
+    const result = await read(items);
+    addSummary(total.summary, result.summary);
+    total.detailReads += result.detailReads;
+    total.listCount += result.listCount;
+    total.newlyQuarantined += result.newlyQuarantined;
+    total.quarantined += result.quarantined;
+    total.failureDetails = mergeDetails(total.failureDetails, result.failureDetails);
+    const keep = { ...total, pages, since: firstSince || null };
+    // A failed read keeps this part's start, so the next run reads it again.
+    if (result.anyFailed) return { ...keep, anyFailed: true, cursorTime: state?.cursorTime ?? null, cursor: { since } };
+    if (items.length < sync.listCap) return { ...keep, cursorTime: at, cursor: {} };
+    const sinceMs = since ? parseUtc(since) : -Infinity;
+    let lastMs = -Infinity;
+    for (const item of items) {
+      const ms = parseUtc(item?.lastModified);
+      if (!Number.isFinite(ms) || ms < lastMs) throw cannotGoOn(`${what} list`, sync, 'rows are not oldest first', { cursor: { since } });
+      lastMs = ms;
+    }
+    const next = lastMs - stepBackMs;
+    if (!(next > sinceMs)) throw cannotGoOn(`${what} list`, sync, 'one second holds more than the cap', { cursor: { since } });
+    since = new Date(next).toISOString();
+    if (pages >= sync.listPagesPerRun) return { ...keep, cursorTime: state?.cursorTime ?? null, cursor: { since } };
+  }
 }
 
 const floorUtcDay = (ms) => {
@@ -255,24 +331,43 @@ export function formatOrderedDay(ms) {
   return new Date(floorUtcDay(ms)).toISOString().replace(/\.\d{3}Z$/, '');
 }
 
+// The guide's largest order page.
+const ORDER_PAGE_MAX = 500;
+
+// True when an order row was placed on a later day than `dayMs` (the start
+// of a UTC day). `ordered` is the lab's local time with no zone, written
+// yyyy-MM-ddTHH:mm:ss or dd/MM/yyyy; this compares calendar days only, so a
+// lab ahead of UTC never ends a day early. Unknown dates are not after.
+function placedAfter(item, dayMs) {
+  const raw = text(item?.ordered);
+  const iso = /^(\d{4})-(\d{2})-(\d{2})/.exec(raw);
+  const local = /^(\d{2})\/(\d{2})\/(\d{4})/.exec(raw);
+  const placed = iso ? Date.UTC(+iso[1], +iso[2] - 1, +iso[3]) : local ? Date.UTC(+local[3], +local[2] - 1, +local[1]) : NaN;
+  return Number.isFinite(placed) && placed > dayMs;
+}
+
 const laneRuns = {
   async invoices(ctx) {
     const { client, sync, at } = ctx;
-    const since = cursorSince(ctx, floorUtcDay(at.getTime()) - sync.invoiceLookbackDays * DAY_MS);
-    const items = listOrFail(await client.get('invoices/', { lastModified: since }), 'invoice list', sync);
+    const firstSince = cursorSince(ctx, new Date(floorUtcDay(at.getTime()) - sync.invoiceLookbackDays * DAY_MS).toISOString());
     const mapOptions = { keepPatientReference: sync.keepPatientReference };
-    const result = await syncListWithDetail(ctx, {
-      mirror: 'invoices',
+    return walkChangedList(ctx, {
       what: 'invoice',
-      items,
-      keyOf: (item) => text(item?.invoiceNumber),
-      idOf: (item) => text(item?.id),
-      signatureOf: invoiceListSignature,
-      detailPath: (id) => `invoices/${encodeURIComponent(id)}`,
-      map: (item, detail) => mapInvoice(item, detail, mapOptions),
+      firstSince,
+      // The guide: on or after lastModified (inclusive).
+      stepBackMs: 0,
+      list: (since) => client.get('invoices/', { lastModified: since }),
+      read: (items) => syncListWithDetail(ctx, {
+        mirror: 'invoices',
+        what: 'invoice',
+        items,
+        keyOf: (item) => text(item?.invoiceNumber),
+        idOf: (item) => text(item?.id),
+        signatureOf: invoiceListSignature,
+        detailPath: (id) => `invoices/${encodeURIComponent(id)}`,
+        map: (item, detail) => mapInvoice(item, detail, mapOptions),
+      }),
     });
-    // A failed invoice read keeps the cursor, so the next run reads it again.
-    return { ...result, cursorTime: result.anyFailed ? ctx.state?.cursorTime ?? null : at, since };
   },
 
   async orders_recent(ctx) {
@@ -280,15 +375,44 @@ const laneRuns = {
     const nowMs = at.getTime();
     const lookbackStart = floorUtcDay(nowMs - sync.orderLookbackDays * DAY_MS);
     const doneThrough = Date.parse(ctx.state?.cursor?.completedThrough ?? '');
-    // Re-read the last finished day as well, so late orders on it are seen.
-    const resume = Number.isFinite(doneThrough) ? Math.max(lookbackStart, doneThrough) : lookbackStart;
-    const days = [];
-    for (let day = floorUtcDay(resume); day <= floorUtcDay(nowMs) && days.length < sync.orderDaysPerRun; day += DAY_MS) days.push(day);
+    const partial = ctx.state?.cursor?.partial;
+    const partialDay = Date.parse(partial?.day ?? '');
+    // Go on inside a day a run did not finish; otherwise re-read the last
+    // finished day as well, so late orders on it are seen.
+    const resumeInside = Number.isFinite(partialDay) && partialDay >= lookbackStart;
+    const resume = resumeInside ? partialDay : Number.isFinite(doneThrough) ? Math.max(lookbackStart, doneThrough) : lookbackStart;
 
+    // Issue #125: the list is paged (page, pageSize). A full page goes on to
+    // the next page; a short page, or a page past the day, ends the day. The
+    // guide says the list answers orders on or after `ordered`; a list that
+    // answers one day works the same way.
+    const pageSize = Math.min(ORDER_PAGE_MAX, sync.listCap);
     const byId = new Map();
-    for (const day of days) {
-      const list = listOrFail(await client.get('orders/', { ordered: formatOrderedDay(day) }), `order list for ${formatOrderedDay(day)}`, sync);
-      for (const item of list) if (text(item?.id)) byId.set(text(item.id), item);
+    const days = [];
+    let calls = 0;
+    let lastDone = null;
+    let stoppedAt = null;
+    for (let day = floorUtcDay(resume); day <= floorUtcDay(nowMs) && days.length < sync.orderDaysPerRun && !stoppedAt; day += DAY_MS) {
+      const label = `order list for ${formatOrderedDay(day)}`;
+      let page = resumeInside && day === floorUtcDay(resume) ? Math.max(1, Number(partial.page) || 1) : 1;
+      let previous = null;
+      for (;;) {
+        if (calls >= sync.listPagesPerRun) {
+          stoppedAt = { day, page };
+          break;
+        }
+        calls += 1;
+        if (!days.includes(day)) days.push(day);
+        const list = listOrFail(await client.get('orders/', { ordered: formatOrderedDay(day), page, pageSize }), label);
+        const ids = list.map((item) => text(item?.id)).filter(Boolean);
+        // A Seazona that does not page answers the same rows again.
+        if (previous && ids.length && ids.every((id) => previous.has(id))) throw cannotGoOn(label, sync, 'the next page answers the same orders');
+        for (const item of list) if (text(item?.id)) byId.set(text(item.id), item);
+        if (list.length < pageSize || placedAfter(list[list.length - 1], day + DAY_MS)) break;
+        previous = new Set(ids);
+        page += 1;
+      }
+      if (!stoppedAt) lastDone = day;
     }
     const known = await readKnown(db, 'orders', [...byId.keys()]);
     const summary = { created: 0, changed: 0, unchanged: 0 };
@@ -312,16 +436,20 @@ const laneRuns = {
     await touchSynced(db, 'orders', unchanged, { at });
     summary.unchanged += unchanged.length;
     const failureDetails = judgeReads('recent order reads', detailReads, failures);
-    const lastDay = days.length ? days[days.length - 1] : floorUtcDay(nowMs);
+    const through = lastDone ?? (Number.isFinite(doneThrough) ? doneThrough : null);
     return {
       summary,
       detailReads,
       listCount: byId.size,
+      listCalls: calls,
       days: days.map(formatOrderedDay),
       deletedIds: deleted,
       failureDetails,
-      cursorTime: new Date(lastDay),
-      cursor: { completedThrough: new Date(lastDay).toISOString() },
+      cursorTime: through === null ? ctx.state?.cursorTime ?? null : new Date(through),
+      cursor: {
+        ...(through === null ? {} : { completedThrough: new Date(through).toISOString() }),
+        ...(stoppedAt ? { partial: { day: new Date(stoppedAt.day).toISOString(), page: stoppedAt.page } } : {}),
+      },
     };
   },
 
@@ -356,33 +484,40 @@ const laneRuns = {
   },
 
   async clients(ctx) {
-    const { client, sync, at } = ctx;
+    const { client } = ctx;
     // The first run reads the whole list; later runs read changes only.
     // Seazona answers the whole list only to an empty `?lastModified=`; a
     // bare path is a 404.
-    const since = ctx.state?.cursorTime ? cursorSince(ctx, 0) : '';
-    const reply = since ? await client.get('clients/', { lastModified: since }) : await client.get('clients/?lastModified=');
-    const items = listOrFail(reply, 'client list', sync);
-    const result = await syncListWithDetail(ctx, {
-      mirror: 'clients',
+    return walkChangedList(ctx, {
       what: 'client',
-      items,
-      keyOf: (item) => text(item?.id),
-      idOf: (item) => text(item?.id),
-      signatureOf: clientListSignature,
-      detailPath: (id) => `clients/${encodeURIComponent(id)}`,
-      map: (item, detail) => mapClient(item, detail),
+      firstSince: cursorSince(ctx, ''),
+      // The guide says "modified after": step back a second so a row in the
+      // last row's second is not lost.
+      stepBackMs: 1000,
+      list: (since) => (since ? client.get('clients/', { lastModified: since }) : client.get('clients/?lastModified=')),
+      read: (items) => syncListWithDetail(ctx, {
+        mirror: 'clients',
+        what: 'client',
+        items,
+        keyOf: (item) => text(item?.id),
+        idOf: (item) => text(item?.id),
+        signatureOf: clientListSignature,
+        detailPath: (id) => `clients/${encodeURIComponent(id)}`,
+        map: (item, detail) => mapClient(item, detail),
+      }),
     });
-    return { ...result, cursorTime: result.anyFailed ? ctx.state?.cursorTime ?? null : at, since: since || null };
   },
 
+  history: (ctx) => runHistoryBackfill(ctx, { isLaneLevel, describeReadFailure, emptyResponse, LaneError }),
   products: (ctx) => syncReference(ctx, 'products'),
   users: (ctx) => syncReference(ctx, 'users'),
 };
 
 async function syncReference(ctx, resource) {
   const { db, client, sync, at } = ctx;
-  const list = listOrFail(await client.get(`${resource}/`), `${resource} list`, sync);
+  const list = listOrFail(await client.get(`${resource}/`), `${resource} list`);
+  // The whole list in one answer, with no paging and no way to read on.
+  if (list.length === sync.listCap) throw cannotGoOn(`${resource} list`, sync, 'the list has no paging');
   const records = list.map((item) => mapReference(resource, item)).filter((record) => record.id);
   const { stored } = await upsertReference(db, resource, records, { at });
   return { listCount: list.length, stored, cursorTime: at };
@@ -439,6 +574,7 @@ export async function runSeazonaSync(db, client, { settings, now = Date.now, onl
         status,
         lastAttemptAt: at,
         nextRunAt: delayMs === null ? null : new Date(Number(now()) + delayMs),
+        ...(error?.progress?.cursor ? { cursor: error.progress.cursor } : {}),
         failureCount: (state?.failureCount ?? 0) + 1,
         lastError: message,
         failureDetails: error?.details ?? (Number.isInteger(error?.statusCode) ? { httpStatus: error.statusCode, path: error.path ?? null } : null),

@@ -37,8 +37,10 @@ run a lab.
 | `docs/INVOICING_RULES.md` | The invoicing rules that draft a job's invoice, and the two ways an invoice goes to Xero |
 | `docs/INVOICE_RULES.md` | Invoice rules a lab builds (When, If, Then) that make a ready job wait or never draft |
 | `docs/INVOICE_SENDING.md` | Drafts, Problem and Ready invoices, Mark ready, and Send all ready to the accounting system |
+| `docs/ALERTS.md` | Quiet alerts: the slim line on a page when something there needs a person, and how a person dismisses it |
 | `docs/AUTOMATIONS.md` | Automations: Flow routines that mark jobs ready to invoice and draft them, each on or off |
 | `docs/LINE_MAPPING.md` | Line mapping: how each work system line finds its price item, and Price codes in Settings |
+| `docs/PRICE_LIST.md` | The price list: Flow's own codes and prices, their links to Xero items and Seazona products, and the price check |
 | `docs/RELEASING.md` | Versions and channels, the release workflows, how to cut and roll back a release, and the one-time setup |
 | `docs/SELF_HOSTING.md` | Running a Flow release with Docker, Node or Replit, the update notice, and Clerk sign-in |
 | `docs/REPLIT.md` | A Replit workspace of this repository that follows a release channel (`FLOW_DEPLOY_REF`) |

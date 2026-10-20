@@ -1,5 +1,5 @@
 {
-  "id": "50405c3c-8730-429f-922b-de33fb56d3b8",
+  "id": "401fc023-725b-4679-a6df-d206a60871e5",
   "prevId": "701a32a9-d9d3-468f-9473-fb28915ddf74",
   "version": "7",
   "dialect": "postgresql",
@@ -1839,13 +1839,6 @@
           "notNull": true,
           "default": 20
         },
-        "reference_template": {
-          "name": "reference_template",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'{practitioner} - {patient}'"
-        },
         "rules_seeded": {
           "name": "rules_seeded",
           "type": "boolean",
@@ -3103,6 +3096,154 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.price_item_links": {
+      "name": "price_item_links",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "organisation_id": {
+          "name": "organisation_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "price_item_id": {
+          "name": "price_item_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "system": {
+          "name": "system",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "external_id": {
+          "name": "external_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "external_code": {
+          "name": "external_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "matched_by": {
+          "name": "matched_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "price_item_links_external": {
+          "name": "price_item_links_external",
+          "columns": [
+            {
+              "expression": "organisation_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "system",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "external_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "price_item_links_organisation_id_organisations_id_fk": {
+          "name": "price_item_links_organisation_id_organisations_id_fk",
+          "tableFrom": "price_item_links",
+          "tableTo": "organisations",
+          "columnsFrom": [
+            "organisation_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "price_item_links_created_by_people_id_fk": {
+          "name": "price_item_links_created_by_people_id_fk",
+          "tableFrom": "price_item_links",
+          "tableTo": "people",
+          "columnsFrom": [
+            "created_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "price_item_links_item_same_org": {
+          "name": "price_item_links_item_same_org",
+          "tableFrom": "price_item_links",
+          "tableTo": "price_items",
+          "columnsFrom": [
+            "organisation_id",
+            "price_item_id"
+          ],
+          "columnsTo": [
+            "organisation_id",
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "price_item_links_matched_by_valid": {
+          "name": "price_item_links_matched_by_valid",
+          "value": "\"price_item_links\".\"matched_by\" in ('code', 'person')"
+        },
+        "price_item_links_system_valid": {
+          "name": "price_item_links_system_valid",
+          "value": "\"price_item_links\".\"system\" ~ '^[a-z][a-z0-9-]{1,31}$'"
+        }
+      },
+      "isRLSEnabled": false
+    },
     "public.price_items": {
       "name": "price_items",
       "schema": "",
@@ -3151,14 +3292,33 @@
           "notNull": true,
           "default": "'GST'"
         },
+        "account_code": {
+          "name": "account_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "archived_at": {
           "name": "archived_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
         },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
@@ -3178,6 +3338,19 @@
             "id"
           ],
           "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "price_items_updated_by_people_id_fk": {
+          "name": "price_items_updated_by_people_id_fk",
+          "tableFrom": "price_items",
+          "tableTo": "people",
+          "columnsFrom": [
+            "updated_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
           "onUpdate": "no action"
         }
       },

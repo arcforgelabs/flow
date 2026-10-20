@@ -12,9 +12,11 @@ import { ACCENT_PRESETS, normalizeAccent, THEME_FAMILIES, tokensFor } from '/ass
 import { renderInvoice, renderInvoiceList } from '/assets/ui/invoicing.js';
 import { automationSection } from '/assets/ui/automations.js';
 import { renderInvoicingSettings, sendModeSection } from '/assets/ui/invoicing-settings.js';
+import { renderPriceList } from '/assets/ui/price-list.js';
 import { renderJobs } from '/assets/ui/jobs.js';
 import { startMonitoring } from '/assets/ui/monitoring.js';
 import { openSearch } from '/assets/ui/search.js';
+import { alertStrip } from '/assets/ui/alerts.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -195,9 +197,12 @@ const VIEWS = {
   jobs: { label: 'Jobs', icon: 'jobs', group: 'Work', render: (main) => renderJobs(main, ui()) },
   invoices: { label: 'Invoices', icon: 'invoices', group: 'Work', render: (main, id) => (id ? renderInvoice(main, ui(), id) : renderInvoiceList(main, ui())) },
   'invoicing-settings': { label: 'Invoice rules', icon: 'invoices', group: 'Settings', render: (main) => renderInvoicingSettings(main, ui()) },
+  'price-list': { label: 'Price list', icon: 'tag', group: 'Settings', render: (main) => renderPriceList(main, ui()) },
   people: { label: 'People', icon: 'people', group: 'Settings', ownerOnly: true, render: renderPeople },
   integrations: { label: 'Integrations', icon: 'plug', group: 'Settings', ownerOnly: true, render: (main, id) => (id ? renderIntegration(main, id) : renderIntegrations(main)) },
-  account: { label: 'Account', icon: 'person', group: 'Settings', render: renderAccount },
+  // Not in the sidebar: "Manage account" in the account menu opens the same
+  // Clerk profile. The page stays for links and Search.
+  account: { label: 'Account', icon: 'person', group: 'Settings', sidebar: false, render: renderAccount },
   appearance: { label: 'Appearance', icon: 'palette', group: 'Settings', render: renderAppearance },
 };
 
@@ -206,6 +211,7 @@ const ICON_PATHS = {
   jobs: '<rect x="3" y="4" width="5" height="16" rx="1"/><rect x="10" y="4" width="5" height="11" rx="1"/><rect x="17" y="4" width="4" height="14" rx="1"/>',
   invoices: '<path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 13h7M9 17h5"/>',
   people: '<circle cx="9" cy="8" r="3"/><path d="M3 20c0-3.5 2.7-6 6-6s6 2.5 6 6"/><path d="M16 5a3 3 0 010 6M21 20c0-3-1.6-5-4-5.7"/>',
+  tag: '<path d="M3 12V4h8l10 10-8 8z"/><circle cx="7.5" cy="8.5" r="1.5"/>',
   plug: '<path d="M9 3v5M15 3v5M6 8h12v3a6 6 0 01-12 0zM12 17v4"/>',
   person: '<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-7 8-7s8 3 8 7"/>',
   flag: '<path d="M5 21V4M5 4h11l-2 4 2 4H5"/>',
@@ -368,6 +374,7 @@ function renderShell() {
   let group = null;
   for (const [name, view] of Object.entries(VIEWS)) {
     if (view.ownerOnly && me?.person.role !== 'owner') continue;
+    if (view.sidebar === false) continue;
     if (view.group && view.group !== group) items.push(h('span', { class: 'fx-nav__group' }, view.group));
     group = view.group;
     items.push(h('a', { href: `/${name}`, 'data-nav': name, 'data-label': view.label, onclick: navigate }, icon(view.icon), h('span', { class: 'fx-nav__label' }, view.label)));
@@ -539,6 +546,7 @@ async function renderIntegrations(main) {
   const content = h('div', { class: 'fx-int-sections' }, h('div', { class: 'fx-skeleton' }));
   main.append(
     h('header', { class: 'fx-ph' }, h('div', { class: 'fx-ph__text' }, h('h1', { class: 'fx-title' }, 'Integrations'))),
+    alertStrip(ui(), 'integrations').element,
     h('div', { class: 'fx-int-bar' }, tabs, search),
     notices, content);
   let body;
@@ -854,9 +862,9 @@ async function invitePerson() {
 // security), with the person's Flow role above it.
 function renderAccount(main) {
   const host = h('div', { class: 'fx-clerk-profile' });
-  main.append(
-    pageHeader('Account', { subtitle: `${me.person.email} · ${ROLE_LABEL[me.person.role]}. ${ROLE_HINT[me.person.role]}` }),
-    host);
+  // Clerk's card has its own "Account" heading; Flow's page heading is for
+  // screen readers only, so the title shows once.
+  main.append(h('h1', { class: 'fx-sr' }, 'Account'), host);
   // Clerk keeps its own pages (profile, security) in memory, so the URL
   // stays Flow's.
   mountClerk('profile', host, { routing: 'virtual' });

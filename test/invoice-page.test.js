@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { draftNote, sendModeNote } from '../server/ui/invoicing.js';
+import { draftNote, sendModeNote } from '../server/ui/invoice-notes.js';
 
 // The notes on the Invoices page and one invoice (server/ui/invoicing.js).
 // One fact per sentence; they follow the accounting system's settings.

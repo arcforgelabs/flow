@@ -17,7 +17,11 @@ import {
 } from '../core/invoicing-rules.js';
 import { boardJobs, describeObligations } from '../core/job-board.js';
 import { jobReference } from '../core/references.js';
+import {
+  acceptFindings, archivePriceItem, checkPrices, createPriceItem, linkPriceItem, readCatalogues, readPriceList, unlinkPriceItem, updatePriceItem,
+} from '../core/price-list.js';
 import { draftInvoiceForObligation, explainObligation, listObligations, setReady } from '../core/ledger.js';
+import { isHistoryHeld } from '../core/history.js';
 import { invoiceView, invoiceViews, markNotReady, markReady, sendAgain, sendAllReady } from '../core/sending.js';
 import {
   billingObligations, contacts, invoices, INVOICE_STATUSES, organisations, priceItems, TAX_CODES,
@@ -59,6 +63,15 @@ import {
 //   POST  /line-mappings              owner or admin: a new mapping
 //   PUT   /line-mappings/:id          owner or admin: change some of a mapping
 //   DELETE /line-mappings/:id         owner or admin
+//   GET   /price-list                 the price list with its links, the connected systems' records with
+//                                     no link, and what differs (server/core/price-list.js)
+//   POST  /price-list/check           owner or admin: run the price check now (no calls to other systems)
+//   POST  /price-items                owner or admin: a new price item { code, name, unitAmountCents, taxCode, ... }
+//   PUT   /price-items/:id            owner or admin: change some of a price item
+//   POST  /price-items/:id/archive    owner or admin: { archived } archive it, or bring it back
+//   POST  /price-items/:id/links      owner or admin: { system, externalId } link a record of a system's list
+//   POST  /price-items/:id/resolve    owner or admin: Mark resolved: check again, accept what still differs
+//   DELETE /price-links/:id           owner or admin: remove a link
 //   GET   /automations?place=         Flow's routines, each on or off (server/core/automations.js)
 //   PUT   /automations/:key           owner or admin: { enabled, config }
 //   GET   /work-statuses              the work system's job statuses, with job counts
@@ -246,7 +259,7 @@ async function invoiceDetail(db, organisationId, invoiceId, accounting = null) {
 }
 
 export function createInvoicingRouter({
-  db, personAuth, log = console, liveCheckFor = () => null, accounting = () => null, work = () => [],
+  db, personAuth, log = console, liveCheckFor = () => null, accounting = () => null, work = () => [], priceSystems = () => [],
 }) {
   const router = express.Router();
   router.use(express.json({ limit: '64kb' }));
@@ -435,8 +448,13 @@ export function createInvoicingRouter({
     const view = text(req.query.view);
     if (view && !VIEWS.includes(view)) throw invalid(`view must be one of ${VIEWS.join(', ')}`);
     const limit = limitOf(req.query.limit, 200, 500);
-    const all = await listObligations(db, organisationId, { accounting: Boolean(liveCheckFor(organisationId)) });
+    const listedAll = await listObligations(db, organisationId, { accounting: Boolean(liveCheckFor(organisationId)) });
+    // Held history jobs (core/history.js) are left out unless asked for: they
+    // are past work, listed in the history import's own reconciliation.
+    const withHistory = req.query.history === 'include';
+    const all = withHistory ? listedAll : listedAll.filter((entry) => !isHistoryHeld(entry.obligation));
     const counts = Object.fromEntries(VIEWS.map((v) => [v, 0]));
+    counts.history = listedAll.length - listedAll.filter((entry) => !isHistoryHeld(entry.obligation)).length;
     for (const entry of all) counts[entry.view] += 1;
     const listed = (view ? all.filter((entry) => entry.view === view) : all).slice(0, limit);
     res.json({ ok: true, jobs: await describeObligations(db, organisationId, listed, { accounting: accounting() }), counts });
@@ -611,6 +629,74 @@ export function createInvoicingRouter({
     const organisationId = await organisationOf(req);
     await deleteMapping(db, organisationId, mappingId);
     log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} deleted line mapping ${mappingId}`);
+    res.json({ ok: true });
+  }));
+
+  // The price list (server/core/price-list.js). Every read is from Flow's own
+  // copies of the connected systems' lists.
+  const catalogues = (organisationId) => readCatalogues(organisationId, priceSystems(), { log });
+
+  router.get('/price-list', ...signedIn, handle(log, async (req, res) => {
+    const organisationId = await organisationOf(req);
+    res.json({ ok: true, ...(await readPriceList(db, organisationId, { catalogues: await catalogues(organisationId) })) });
+  }));
+
+  router.post('/price-list/check', ...manager, handle(log, async (req, res) => {
+    const organisationId = await organisationOf(req);
+    const summary = await checkPrices(db, organisationId, { catalogues: await catalogues(organisationId), actor: `person:${req.person.id}` });
+    res.json({ ok: true, summary });
+  }));
+
+  router.post('/price-items', ...manager, handle(log, async (req, res) => {
+    const organisationId = await organisationOf(req);
+    const { organisationId: _named, ...raw } = req.body ?? {};
+    const item = await createPriceItem(db, organisationId, raw, { personId: req.person.id });
+    log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} added price item ${item.id}`);
+    res.status(201).json({ ok: true, item });
+  }));
+
+  router.put('/price-items/:id', ...manager, handle(log, async (req, res) => {
+    const itemId = pathId(req.params.id, 'price item');
+    const organisationId = await organisationOf(req);
+    const { organisationId: _named, ...changes } = req.body ?? {};
+    const item = await updatePriceItem(db, organisationId, itemId, changes, { personId: req.person.id });
+    log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} changed price item ${item.id}`);
+    res.json({ ok: true, item });
+  }));
+
+  router.post('/price-items/:id/archive', ...manager, handle(log, async (req, res) => {
+    const itemId = pathId(req.params.id, 'price item');
+    const organisationId = await organisationOf(req);
+    const archived = req.body?.archived ?? true;
+    if (typeof archived !== 'boolean') throw invalid('archived must be true or false');
+    const item = await archivePriceItem(db, organisationId, itemId, { archived, personId: req.person.id });
+    log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} ${archived ? 'archived' : 'restored'} price item ${item.id}`);
+    res.json({ ok: true, item });
+  }));
+
+  router.post('/price-items/:id/links', ...manager, handle(log, async (req, res) => {
+    const itemId = pathId(req.params.id, 'price item');
+    const organisationId = await organisationOf(req);
+    const system = text(req.body?.system);
+    const externalId = text(req.body?.externalId);
+    if (!system || !externalId) throw invalid('system and externalId are required');
+    const link = await linkPriceItem(db, organisationId, itemId, { system, externalId }, { catalogues: await catalogues(organisationId), personId: req.person.id });
+    log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} linked price item ${itemId} to ${system}`);
+    res.status(201).json({ ok: true, link: { id: link.id, system: link.system, externalId: link.externalId, externalCode: link.externalCode, matchedBy: link.matchedBy } });
+  }));
+
+  router.post('/price-items/:id/resolve', ...manager, handle(log, async (req, res) => {
+    const itemId = pathId(req.params.id, 'price item');
+    const organisationId = await organisationOf(req);
+    const result = await acceptFindings(db, organisationId, itemId, { catalogues: await catalogues(organisationId), actor: `person:${req.person.id}` });
+    res.json({ ok: true, ...result });
+  }));
+
+  router.delete('/price-links/:id', ...manager, handle(log, async (req, res) => {
+    const linkId = pathId(req.params.id, 'link');
+    const organisationId = await organisationOf(req);
+    await unlinkPriceItem(db, organisationId, linkId);
+    log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} removed price link ${linkId}`);
     res.json({ ok: true });
   }));
 

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { after, before, describe, test } from 'node:test';
 import { sql } from 'drizzle-orm';
 import { invitePerson } from '../server/auth/people.js';
-import { organisationsToImport, queueHistoryImport, resetImport, runImportOnce } from '../server/integrations/xero/import.js';
+import { IMPORT_KIND, keepReadsQueued, organisationsToImport, queueHistoryImport, REFRESH_MS, reportStaleCopies, resetImport, runImportOnce } from '../server/integrations/xero/import.js';
 import { mapInvoice, mapPayment, mirrorResource, nextPosition, toCents } from '../server/integrations/xero/mirror.js';
 import { request } from './support/clerk.js';
 import { freshDatabase, skipWithoutDatabase } from './support/db.js';
@@ -180,9 +180,57 @@ describe('Xero mirror', { skip: skipWithoutDatabase }, () => {
     assert.equal(second.outcome, 'succeeded');
     assert.equal(second.job.result.more, null);
     assert.equal(replay.unused().length, 0);
-    assert.equal(await runImportOnce(handle.db, xero.runtime), null, 'nothing more is queued');
+    assert.equal(await runImportOnce(handle.db, xero.runtime), null, 'the next read waits REFRESH_MS');
+    const { rows: [next] } = await handle.db.execute(sql`select payload, run_after from background_jobs
+      where kind = ${IMPORT_KIND} and state = 'queued'`);
+    assert.equal(next.payload.reason, 'changes');
+    const wait = new Date(next.run_after) - Date.now();
+    assert.ok(wait > REFRESH_MS - 60_000 && wait <= REFRESH_MS, `next read in ${wait} ms`);
     assert.deepEqual(await organisationsToImport(handle.db, 'replay'), []);
     assert.equal(await count('xero_invoices'), 4);
+  });
+
+  test('a finished copy keeps reading the changes, so it stays fresh (#131)', async () => {
+    await handle.db.execute(sql`update background_jobs set run_after = now() where kind = ${IMPORT_KIND} and state = 'queued'`);
+    const before = await handle.db.execute(sql`select last_pass_finished_at from xero_mirror_cursors where resource = 'invoices'`);
+    const replay = xero.script([
+      page('invoices', 'Invoices', [invoice('i4', '2024-07-01T00:00:00Z', { Status: 'PAID', AmountPaid: 220, AmountDue: 0 })], { page: 1 }),
+      page('credit_notes', 'CreditNotes', [], { page: 1 }),
+      page('payments', 'Payments', [], { page: 1 }),
+    ]);
+    const ran = await runImportOnce(handle.db, xero.runtime);
+    assert.equal(ran.outcome, 'succeeded', ran.job.lastError);
+    assert.equal(ran.job.payload.reason, 'changes');
+    assert.equal(replay.unused().length, 0);
+    const { rows: [paid] } = await handle.db.execute(sql`select status, amount_paid_cents from xero_invoices where xero_invoice_id = 'i4'`);
+    assert.equal(paid.status, 'PAID', 'a payment made in Xero reaches the copy');
+    const after = await handle.db.execute(sql`select last_pass_finished_at from xero_mirror_cursors where resource = 'invoices'`);
+    assert.ok(new Date(after.rows[0].last_pass_finished_at) > new Date(before.rows[0].last_pass_finished_at), 'the pass time moves, so the copy is fresh');
+    const { rows: queued } = await handle.db.execute(sql`select 1 from background_jobs where kind = ${IMPORT_KIND} and state = 'queued'`);
+    assert.equal(queued.length, 1, 'and the next read is queued');
+  });
+
+  test('a read that gave up is queued again only after a restart or a day, and never while calls are stopped', async () => {
+    await handle.db.execute(sql`update background_jobs set state = 'dead', updated_at = now() where kind = ${IMPORT_KIND} and state = 'queued'`);
+    const open = async () => (await handle.db.execute(sql`select 1 from background_jobs where kind = ${IMPORT_KIND} and state in ('queued', 'running')`)).rows.length;
+    await keepReadsQueued(handle.db, xero.runtime, { startedAtMs: Date.now() - 60_000 });
+    assert.equal(await open(), 0, 'it waits after giving up');
+    await keepReadsQueued(handle.db, xero.runtime, { startedAtMs: Date.now() + 1000 });
+    assert.equal(await open(), 1, 'a restart queues it again');
+    await keepReadsQueued(handle.db, xero.runtime, { startedAtMs: Date.now() + 1000 });
+    assert.equal(await open(), 1, 'one open read at a time');
+  });
+
+  test('a copy that goes out of date is reported once, and its recovery once', async () => {
+    const lines = [];
+    const log = { error: (l) => lines.push(['error', l]), info: (l) => lines.push(['info', l]) };
+    const stale = new Set();
+    const later = () => Date.now() + 25 * 60 * 60 * 1000;
+    await reportStaleCopies(handle.db, xero.runtime, { stale, now: later, log });
+    await reportStaleCopies(handle.db, xero.runtime, { stale, now: later, log });
+    await reportStaleCopies(handle.db, xero.runtime, { stale, log });
+    assert.deepEqual(lines.map(([level]) => level), ['error', 'info']);
+    assert.match(lines[0][1], /out of date/);
   });
 
   test('a bad resource list is refused', async () => {
