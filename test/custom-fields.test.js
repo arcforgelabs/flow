@@ -5,7 +5,7 @@ import { invitePerson, seedFirstOwner } from '../server/auth/people.js';
 import { createPersonAuth } from '../server/auth/session.js';
 import { createOrganisation } from '../server/core/directory.js';
 import {
-  archiveField, createField, jobFieldHistory, listFields, listJobFieldValues, readField, readOptions, setJobFieldValue, updateField,
+  archiveField, createField, ensureAssignee, jobFieldHistory, listFields, listJobFieldValues, readField, readOptions, setJobFieldValue, updateField,
 } from '../server/core/custom-fields.js';
 import { createRegistry } from '../server/integrations/port.js';
 import { fakeClerk, request, TEST_PUBLISHABLE_KEY } from './support/clerk.js';
@@ -155,4 +155,16 @@ describe('custom fields against PostgreSQL', { skip: skipWithoutDatabase }, () =
     assert.equal(archived.body.field.archived, true);
     assert.equal((await call('/nope', { method: 'PUT', body: { name: 'X' } })).status, 404);
   });
+
+  // Last: a second organisation makes the API ask which one.
+  test('every lab gets an Assignee person field once; archived, it does not come back', async () => {
+    const other = await createOrganisation(handle.db, { name: 'Second Example Lab' });
+    const made = await ensureAssignee(handle.db, other.id);
+    assert.deepEqual([made.name, made.type], ['Assignee', 'person']);
+    assert.equal(await ensureAssignee(handle.db, other.id), null);
+    await archiveField(handle.db, other.id, made.id);
+    assert.equal(await ensureAssignee(handle.db, other.id), null);
+    assert.deepEqual(await listFields(handle.db, other.id), []);
+  });
+
 });

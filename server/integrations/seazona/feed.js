@@ -202,7 +202,7 @@ export async function listWork(db, { now = Date.now(), finishedDays = WORK_FINIS
     return {
       sourceSystem: 'seazona',
       sourceJobRef: order.id,
-      // The Seazona order id is the case number. Never patient data.
+      // The Seazona order id is the case number.
       caseRef: order.id,
       status,
       clientId: order.clientId,
@@ -211,6 +211,9 @@ export async function listWork(db, { now = Date.now(), finishedDays = WORK_FINIS
       department: order.department,
       orderedOn: parseSeazonaDate(order.orderedText),
       dueOn: parseSeazonaDate(order.dueText),
+      // The patient, only when this installation keeps patient names
+      // (SEAZONA_KEEP_PATIENT_REFERENCE); otherwise the copy has none.
+      patient: order.patientReference ?? null,
       lines: (order.lines ?? []).map((l) => ({ code: l.code ?? null, description: l.description, amountCents: l.amountCents ?? null })),
       totalCents: order.subtotalCents,
     };

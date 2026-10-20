@@ -127,13 +127,18 @@ The page at `/sign-in`, `/people`, `/account` and `/appearance`
   the left, and search and Board/List at the right. Each person's view is
   saved with their account (`people.views`, `PUT /api/me/views/jobs`,
   server/ui/job-view.js), so it follows them to every device.
-  In the list, the Stage column shows each status as its coloured label. A
+  In the list, Columns chooses the columns (saved with the view; Client
+  always shows): Case, Practitioner, Patient (only when the installation
+  keeps patient names), Stage, Assignee, Requested, Due, Shipped, Total,
+  and each custom field. One column holds one field: each date has its own
+  column, and a late Due date shows in red. Filter has "Assignee: me".
+  The Stage column shows each status as its coloured label. A
   tick column is at the left; a group head ticks every job in its group,
   and a click on the head folds the group or opens it (folds stay in the
   browser). Ticked rows get the bulk bar at the foot, as on Invoices (Move,
-  Field, Mark ready to invoice, Draft invoices, Copy case numbers, Export
-  CSV; More adds each field and Selection). Field sets a custom field: the
-  field, then its value, in Flow only. Move says "Not yet available": a
+  Custom field, Mark ready to invoice, Draft invoices, Copy case numbers, Export
+  CSV; More adds each custom field and Selection). Custom field sets one:
+  the custom field, then its value, in Flow only. Move says "Not yet available": a
   work system's stages cannot be moved from Flow in bulk yet. Every item
   in the bar is a working tool or says plainly that it is not available.
 - **People** (owners): a title with one primary action, Invite (a dialog:

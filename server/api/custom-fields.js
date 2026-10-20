@@ -1,6 +1,6 @@
 import express from 'express';
 import {
-  CUSTOM_FIELD_TYPES, GROUPABLE_TYPES, OPTION_COLORS, archiveField, choosablePeople, createField, jobFieldHistory, listFields,
+  CUSTOM_FIELD_TYPES, GROUPABLE_TYPES, OPTION_COLORS, archiveField, choosablePeople, createField, ensureAssignee, jobFieldHistory, listFields,
   listJobFieldValues, orderFields, setJobFieldValue, updateField,
 } from '../core/custom-fields.js';
 import { FlowError } from '../core/errors.js';
@@ -71,6 +71,7 @@ export function createCustomFieldsRouter({ db, personAuth, work = () => [], log 
   router.get('/', ...signedIn, handle(async (req, res) => {
     const organisationId = await organisationOf(req);
     const archived = req.query.archived === '1' || req.query.archived === 'true';
+    await ensureAssignee(db, organisationId);
     const [fields, system, chosen] = await Promise.all([listFields(db, organisationId, { archived }), systemFields(), choosablePeople(db)]);
     res.json({ ok: true, fields, systemFields: system, people: chosen, types: CUSTOM_FIELD_TYPES, groupable: GROUPABLE_TYPES, colors: OPTION_COLORS });
   }));
