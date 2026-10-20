@@ -249,7 +249,11 @@ Each item also carries `ledgerJob` and each withdrawn entry `ledgerHold`,
 shaped for the billing obligation ledger (below).
 
 A change to an order or to its Seazona invoice puts the order at the end of
-the feed again. Call `registry.whenEnabled('seazona', …)` to reach it, so a
+the feed again. A read that finds no change does too, at most once an hour,
+so the ledger's report of the order never gets older than a day while a
+lane still reads it (the ledger refuses a draft from a report over a day old).
+An order no lane reads again (shipped, and placed before the recent-order
+lookback) is not reported again. Call `registry.whenEnabled('seazona', …)` to reach it, so a
 turned-off adapter answers as turned off (`docs/INTEGRATIONS.md`).
 
 ## Billing ledger
