@@ -1,10 +1,9 @@
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { after, before, describe, test } from 'node:test';
-import { and, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { createOrganisation } from '../server/core/directory.js';
-import { explainObligation, ledgerView, observeJob, setHold } from '../server/core/ledger.js';
-import { billingObligations } from '../server/db/schema.js';
+import { explainObligation, ledgerView, observeJob, observeWithdrawn } from '../server/core/ledger.js';
 import { createSeazonaClient } from '../server/integrations/seazona/client.js';
 import { listWork, readBillableWork } from '../server/integrations/seazona/feed.js';
 import { runSeazonaSync } from '../server/integrations/seazona/lanes.js';
@@ -87,14 +86,9 @@ describe('Seazona work in the billing ledger', { skip: skipWithoutDatabase }, ()
     await sync([{ path: 'orders/ORD-1001', status: 404 }, { path: 'orders/ORD-1002', status: 200, body: { id: 'ORD-1002', status: 'In Production' } }], ['orders_active']);
     const { items, withdrawn } = await readBillableWork(db);
     assert.ok(!items.some((item) => item.sourceId === 'ORD-1001'));
-    const { ledgerHold } = withdrawn.find((entry) => entry.sourceId === 'ORD-1001');
-
-    const [obligation] = await db.select().from(billingObligations).where(and(
-      eq(billingObligations.organisationId, lab.id),
-      eq(billingObligations.sourceSystem, ledgerHold.sourceSystem),
-      eq(billingObligations.sourceJobRef, ledgerHold.sourceJobRef),
-    ));
-    const held = await setHold(db, lab.id, obligation.id, { holdState: ledgerHold.holdState, reason: ledgerHold.reason, actor: 'seazona' });
+    const { ledgerWithdrawn } = withdrawn.find((entry) => entry.sourceId === 'ORD-1001');
+    const { obligation: held, action } = await observeWithdrawn(db, lab.id, ledgerWithdrawn);
+    assert.equal(action, 'review');
     assert.deepEqual(ledgerView(held), { view: 'review_required', reasons: ['the order was deleted in Seazona'] });
   });
 

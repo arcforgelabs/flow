@@ -1,5 +1,5 @@
 import { and, desc, eq, gte, isNull, or, sql } from 'drizzle-orm';
-import { ledgerLinesFor, toLedgerHold, toLedgerJob } from './ledger.js';
+import { ledgerLinesFor, toLedgerJob, toLedgerWithdrawn } from './ledger.js';
 import { isFinalStatus, orderStatusLabel, parseSeazonaDate } from './map.js';
 import { seazonaClients, seazonaInvoices, seazonaOrders, seazonaReference } from './schema.js';
 
@@ -65,7 +65,8 @@ export async function readBillableWork(db, { cursor = null, limit = 200 } = {}) 
         status: orderStatusLabel(order),
         reason: order.deletedInSourceAt ? 'deleted_in_seazona' : 'not_billable',
       };
-      withdrawn.push({ ...entry, ledgerHold: toLedgerHold(entry) });
+      const syncedAt = order.lastSyncedAt?.toISOString() ?? null;
+      withdrawn.push({ ...entry, ledgerWithdrawn: toLedgerWithdrawn({ ...entry, syncedAt }) });
       continue;
     }
     const item = {

@@ -4,8 +4,9 @@ import {
   billingObligations, obligationEvents, obligationPayments, obligationWritebacks, priceItems,
 } from '../db/schema.js';
 import { FlowError, notFound } from './errors.js';
-import { createDraftInvoice } from './invoices.js';
+import { createDraftInvoice, getInvoice, updateDraftInvoice } from './invoices.js';
 import { invoiceTotals, lineTotals } from './money.js';
+import { openReview, resolveReviewFor } from './review.js';
 
 // The billing obligation ledger. One billable job in a work system is one
 // obligation. Its view (In work, Ready, Pending, Held, Drafted, Invoiced,
@@ -22,6 +23,29 @@ export const SOURCE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 export const EXACT_MATCHES = ['flow_invoice', 'source_invoice_ref', 'accounting_ref', 'prior_link', 'person'];
 
 const LINKED_STATES = ['drafted', 'authorised', 'part_paid', 'paid', 'voided', 'deleted'];
+
+// Which system owns each fact about a billed job (docs/DATA_SPINE.md, "Who
+// owns each field"). The work system owns the work; Flow owns its invoice
+// and the send; the accounting system owns approval and payment. Only the
+// work fields are compared when a job changes after its invoice was made.
+export const FIELD_OWNERS = {
+  lines: 'work',
+  contactId: 'work',
+  sourceStatus: 'work',
+  reference: 'flow',
+  dueDate: 'flow',
+  send: 'flow',
+  approval: 'accounting',
+  payment: 'accounting',
+};
+const COMPARED = Object.keys(FIELD_OWNERS).filter((field) => FIELD_OWNERS[field] === 'work' && field !== 'sourceStatus');
+
+export const CHANGED_REASON = 'the job changed after its invoice was made';
+export const STATUS_BACK_REASON = 'the job status moved back after its invoice was made';
+// Review queue kinds (server/core/review.js). An item only alerts.
+export const REVIEW_CHANGED = 'job.changed';
+export const REVIEW_STATUS_BACK = 'job.status_back';
+export const REVIEW_DELETED = 'job.deleted';
 
 async function loadObligation(tx, organisationId, obligationId, { lock = false } = {}) {
   let query = tx.select().from(billingObligations)
@@ -149,24 +173,233 @@ export async function observeJob(db, organisationId, job) {
     const changed = ['sourceInvoiceRef', 'caseRef', 'contactId', 'practitioner', 'shippedOn', 'lineFingerprint', 'totalCents']
       .filter((key) => String(existing[key] ?? '') !== String(facts[key] ?? ''));
     if (!changed.length) {
-      return update(tx, existing, {
+      const row = await update(tx, existing, {
         sourceSeenAt: seenAt, mappingComplete: facts.mappingComplete, lines, jobDate: facts.jobDate, sourceStatus: facts.sourceStatus,
       });
+      await statusBillableAgain(tx, organisationId, existing, row, actor);
+      return row;
     }
     const fields = { ...facts, sourceSeenAt: seenAt };
+    let compare = null;
     if (existing.invoiceId && changed.some((key) => ['lineFingerprint', 'totalCents', 'contactId'].includes(key))) {
-      fields.holdState = 'review';
-      fields.holdReason = 'the job changed after its invoice was made';
+      compare = await compareWithDraft(tx, organisationId, existing, facts);
+      if (compare.outcome !== 'none') {
+        fields.holdState = 'review';
+        fields.holdReason = CHANGED_REASON;
+      } else if (existing.holdState === 'review' && existing.holdReason === CHANGED_REASON) {
+        // The job is back to what the invoice was built from.
+        Object.assign(fields, { holdState: 'none', holdReason: null });
+      }
     }
     const row = await update(tx, existing, fields);
     await addEvent(tx, row, 'source_changed', actor, {
       changed,
       before: { lineFingerprint: existing.lineFingerprint, totalCents: existing.totalCents },
       after: { lineFingerprint: row.lineFingerprint, totalCents: row.totalCents },
-      ...(fields.holdState ? { holdReason: fields.holdReason } : {}),
+      ...(compare ? { compare: { outcome: compare.outcome, fields: compare.fields.map(({ field, changedIn }) => ({ field, changedIn })) } } : {}),
+      ...(fields.holdState === 'review' ? { holdReason: fields.holdReason } : {}),
     });
+    if (compare?.outcome === 'none') {
+      await resolveReviewFor(tx, organisationId, { kind: REVIEW_CHANGED, entity: 'obligation', flowId: row.id, resolution: 'job_matches_invoice', actor });
+    } else if (compare) {
+      await openReview(tx, organisationId, changedReview(row, compare));
+    }
+    await statusBillableAgain(tx, organisationId, existing, row, actor);
     return row;
   });
+}
+
+// A job billable again after its status moved back (observeWithdrawn): the
+// alert is over when no invoice was made in the meantime.
+async function statusBillableAgain(tx, organisationId, before, row, actor) {
+  if (row.invoiceId || String(before.sourceStatus ?? '') === String(row.sourceStatus ?? '')) return;
+  await resolveReviewFor(tx, organisationId, { kind: REVIEW_STATUS_BACK, entity: 'obligation', flowId: row.id, resolution: 'status_billable_again', actor });
+}
+
+// The job facts an invoice is built from, kept on the obligation when Flow
+// drafts the invoice: the merge base of the three-way compare.
+function basisOf(o) {
+  return {
+    lines: o.lines.map(({ itemCode = null, priceItemId = null, accountCode = null, description, quantity, unitAmountCents, taxCode }) => (
+      { itemCode, priceItemId, accountCode, description, quantity, unitAmountCents, taxCode }
+    )),
+    contactId: o.contactId ?? null,
+    subtotalCents: o.subtotalCents,
+    taxCents: o.taxCents,
+    totalCents: o.totalCents,
+    sourceStatus: o.sourceStatus ?? null,
+    sourceSeenAt: o.sourceSeenAt ? new Date(o.sourceSeenAt).toISOString() : null,
+  };
+}
+
+// One key for a set of lines, the same for the job's lines and the invoice's.
+function linesKey(lines) {
+  const keys = (lines ?? [])
+    .map((l) => [l.priceItemId ?? l.accountCode ?? String(l.description ?? '').trim().toLowerCase(), l.quantity, l.unitAmountCents, l.taxCode])
+    .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
+  return createHash('sha256').update(JSON.stringify(keys)).digest('hex');
+}
+
+const sideValue = (side, field) => (field === 'lines' ? linesKey(side.lines) : (side[field] ?? null));
+
+// The three-way compare, field by field, of the facts the invoice was built
+// from (base), the work system now (source) and Flow's invoice now (flow).
+// Only work fields are compared (FIELD_OWNERS). The outcome:
+//   none     the work system is as it was, or as the invoice is: nothing to do
+//   offer    only the work system changed and the draft is not sent: a person
+//            can take the new lines into Flow's own draft (useSourceLines)
+//   conflict both changed, or the invoice left Flow: an alert only
+export function compareThreeWays(base, source, flow, { sent = false } = {}) {
+  const fields = COMPARED.map((field) => {
+    const [b, s, f] = [base, source, flow].map((side) => sideValue(side, field));
+    const changedIn = s === b ? (f === b ? 'none' : 'flow') : (f === b ? 'work' : (f === s ? 'same' : 'both'));
+    return { field, owner: FIELD_OWNERS[field], changedIn };
+  });
+  const work = fields.filter((f) => ['work', 'both'].includes(f.changedIn));
+  let outcome = 'none';
+  if (work.length) outcome = sent || work.some((f) => f.changedIn === 'both') ? 'conflict' : 'offer';
+  return { outcome, sent, fields };
+}
+
+// The invoice has left Flow's hands: issued, queued or sent, or the
+// accounting system holds it.
+function invoiceSent(invoice, obligation) {
+  return invoice.status !== 'draft' || ['queued', 'sent'].includes(invoice.sendState)
+    || LINKED_STATES.includes(obligation.accountingState);
+}
+
+async function compareWithDraft(tx, organisationId, obligation, facts) {
+  // An invoice drafted before the basis was kept: the last report stands in.
+  const base = obligation.draftBasis ?? basisOf(obligation);
+  let invoice;
+  try {
+    invoice = await getInvoice(tx, organisationId, obligation.invoiceId);
+  } catch (error) {
+    if (error?.code !== 'not_found') throw error;
+    return { outcome: 'conflict', sent: false, fields: [], base, missing: true };
+  }
+  const flow = { lines: invoice.lines, contactId: invoice.contactId };
+  const compare = compareThreeWays(base, facts, flow, { sent: invoiceSent(invoice, obligation) });
+  return { ...compare, base, flow, invoiceStatus: invoice.status };
+}
+
+function changedReview(obligation, compare) {
+  return {
+    kind: REVIEW_CHANGED,
+    entity: 'obligation',
+    flowId: obligation.id,
+    systems: [obligation.sourceSystem, 'flow'],
+    moneyAtRiskCents: Math.max(0, obligation.totalCents ?? 0),
+    evidence: {
+      outcome: compare.outcome,
+      sent: compare.sent,
+      invoiceId: obligation.invoiceId,
+      fields: compare.fields,
+      basis: compare.base,
+      job: basisOf(obligation),
+      invoice: compare.flow ? { contactId: compare.flow.contactId, lines: compare.flow.lines.map(({ priceItemId, accountCode, description, quantity, unitAmountCents, taxCode }) => ({ priceItemId, accountCode, description, quantity, unitAmountCents, taxCode })) } : null,
+      canUseNewLines: compare.outcome === 'offer',
+    },
+  };
+}
+
+// "Use new lines": a person takes the work system's new lines (and its
+// customer, when that changed) into Flow's own unsent draft. Flow writes only
+// its own draft, never another system. Refused when the draft changed too,
+// or has left Flow: those stay alerts for a person.
+export async function useSourceLines(db, organisationId, obligationId, { actor }) {
+  requireActor(actor);
+  return db.transaction(async (tx) => {
+    const obligation = await loadObligation(tx, organisationId, obligationId, { lock: true });
+    if (!obligation.invoiceId) throw new FlowError('invalid', 'the job has no invoice');
+    const compare = await compareWithDraft(tx, organisationId, obligation, obligation);
+    if (compare.outcome === 'conflict') {
+      throw new FlowError('conflict', compare.sent ? 'the invoice has left Flow; change it where it is now' : 'the draft changed in Flow too; a person must compare them', { fields: compare.fields });
+    }
+    const changes = {};
+    for (const { field, changedIn } of compare.fields) {
+      if (changedIn !== 'work') continue;
+      if (field === 'lines') {
+        changes.lines = obligation.lines.map(({ priceItemId, accountCode, description, quantity, unitAmountCents, taxCode }) => (
+          { priceItemId, accountCode, description, quantity, unitAmountCents, taxCode }
+        ));
+      } else changes[field] = obligation[field];
+    }
+    const invoice = Object.keys(changes).length
+      ? await updateDraftInvoice(tx, organisationId, obligation.invoiceId, changes)
+      : await getInvoice(tx, organisationId, obligation.invoiceId);
+    const fields = { draftBasis: basisOf(obligation) };
+    if (obligation.holdState === 'review' && obligation.holdReason === CHANGED_REASON) Object.assign(fields, { holdState: 'none', holdReason: null });
+    const row = await update(tx, obligation, fields);
+    await addEvent(tx, row, 'source_lines_used', actor, { invoiceId: invoice.id, changed: Object.keys(changes), totalCents: invoice.totalCents });
+    await resolveReviewFor(tx, organisationId, { kind: REVIEW_CHANGED, entity: 'obligation', flowId: row.id, resolution: 'used_new_lines', actor });
+    return { obligation: row, invoice };
+  });
+}
+
+// Records that a job the ledger knows is no longer billable in the work
+// system: deleted there, or its status moved back (for example from Shipped
+// to In production). Flow writes nothing to another system:
+//   deleted                      review hold and an alert
+//   status back, invoice made    review hold and an alert
+//   status back, only ready      the ready mark is cleared and an alert opens;
+//                                the alert closes when the job is billable again
+// The status is stored, so a repeat report of the same status does nothing.
+export async function observeWithdrawn(db, organisationId, entry) {
+  const { sourceSystem, sourceJobRef, sourceStatus = null, deleted = false, reason = null, actor = `system:${sourceSystem}` } = entry;
+  if (!sourceSystem || !sourceJobRef) throw new FlowError('invalid', 'sourceSystem and sourceJobRef are required');
+  const seenAt = entry.observedAt ? new Date(entry.observedAt) : new Date();
+  return db.transaction(async (tx) => {
+    const [obligation] = await tx.select().from(billingObligations)
+      .where(and(
+        eq(billingObligations.organisationId, organisationId),
+        eq(billingObligations.sourceSystem, sourceSystem),
+        eq(billingObligations.sourceJobRef, sourceJobRef),
+      ))
+      .for('update');
+    if (!obligation) return { obligation: null, action: 'none' };
+    if (deleted) {
+      if (obligation.holdState === 'review') return { obligation, action: 'none' };
+      const holdReason = reason ?? 'the job was deleted in the work system';
+      const row = await update(tx, obligation, { holdState: 'review', holdReason });
+      await addEvent(tx, row, 'review', actor, { from: obligation.holdState, reason: holdReason });
+      await openReview(tx, organisationId, statusReview(REVIEW_DELETED, row, { reason: holdReason }));
+      return { obligation: row, action: 'review' };
+    }
+    if (seenAt < obligation.sourceSeenAt || String(obligation.sourceStatus ?? '') === String(sourceStatus ?? '')) {
+      return { obligation, action: 'none' };
+    }
+    const fields = { sourceStatus, sourceSeenAt: seenAt };
+    let action = 'status';
+    if (obligation.invoiceId) {
+      if (obligation.holdState !== 'review') Object.assign(fields, { holdState: 'review', holdReason: STATUS_BACK_REASON });
+      action = 'review';
+    } else if (obligation.readyAt) {
+      // Not setReady's "in work": that marks a person's choice, and the ready
+      // routine must mark the job again when its status is billable again.
+      Object.assign(fields, { readyAt: null, readyBy: null });
+      action = 'ready_cleared';
+    }
+    const row = await update(tx, obligation, fields);
+    await addEvent(tx, row, 'status_moved_back', actor, {
+      from: obligation.sourceStatus, to: sourceStatus, action, ...(fields.holdState ? { holdReason: fields.holdReason } : {}),
+    });
+    if (action !== 'status') {
+      await openReview(tx, organisationId, statusReview(REVIEW_STATUS_BACK, row, { from: obligation.sourceStatus, to: sourceStatus, action }));
+    }
+    return { obligation: row, action };
+  });
+}
+
+function statusReview(kind, obligation, evidence) {
+  return {
+    kind,
+    entity: 'obligation',
+    flowId: obligation.id,
+    systems: [obligation.sourceSystem, 'flow'],
+    moneyAtRiskCents: Math.max(0, obligation.totalCents ?? 0),
+    evidence: { ...evidence, sourceJobRef: obligation.sourceJobRef, invoiceId: obligation.invoiceId ?? null },
+  };
 }
 
 // Records what the accounting system says about the job's invoice. Evidence
@@ -432,7 +665,10 @@ export async function draftInvoiceForObligation(db, organisationId, obligationId
     });
     // Drafting the invoice says the job is ready, whoever asked.
     const row = await update(tx, obligation, {
-      invoiceId: invoice.id, accountingCheckedAt: now, ...(obligation.readyAt ? {} : { readyAt: now, readyBy: actor }),
+      invoiceId: invoice.id,
+      draftBasis: basisOf(obligation),
+      accountingCheckedAt: now,
+      ...(obligation.readyAt ? {} : { readyAt: now, readyBy: actor }),
     });
     await addEvent(tx, row, 'drafted', actor, { invoiceId: invoice.id, totalCents: invoice.totalCents, live });
     return { obligation: row, invoice };
