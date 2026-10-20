@@ -1039,28 +1039,33 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
 @media (max-width: 560px) { .fx-listhead { position: static; } }
 
 /* The bulk action bar (bulk-bar.js): floats at the foot while rows are
-   ticked. "N selected ×", then icon actions in groups, then More. */
+   ticked. "N selected ×", then icon actions in groups, then More. It takes
+   the theme's own surface, line, corners and primary button, like a menu. */
 .fx-bulk {
   position: sticky; bottom: 16px; z-index: 6; justify-self: center; display: flex; align-items: center; gap: 2px; max-width: 100%;
-  padding: 6px; border-radius: 12px; background: var(--t-strong); color: var(--t-paper); box-shadow: 0 12px 32px rgba(0, 0, 0, .3);
+  padding: 5px; border: 1px solid var(--fx-line); border-radius: var(--t-radius-lg); background: var(--t-paper); color: var(--t-text);
+  box-shadow: var(--t-shadow), 0 12px 32px rgba(0, 0, 0, .16);
   font: 500 13.5px/1 var(--t-body); white-space: nowrap;
 }
 .fx-bulk[hidden] { display: none; }
 .fx-bulk[aria-busy="true"] { opacity: .7; pointer-events: none; }
 .fx-bulk__acts { display: flex; align-items: center; gap: 2px; min-width: 0; }
-.fx-bulk__count { display: inline-flex; align-items: center; gap: 6px; flex: none; margin-right: 6px; padding: 3px 4px 3px 10px; border: 1px solid color-mix(in srgb, var(--t-paper) 30%, transparent); border-radius: 8px; font-weight: 600; }
-.fx-bulk__clear, .fx-bulk__act { position: relative; display: inline-flex; align-items: center; gap: 6px; padding: 7px 9px; border: 0; border-radius: 8px; background: none; color: inherit; font: inherit; cursor: pointer; }
-.fx-bulk__clear { padding: 4px; }
-.fx-bulk__clear:hover, .fx-bulk__act:hover, .fx-bulk__clear:focus-visible, .fx-bulk__act:focus-visible, .fx-bulk__act[aria-expanded="true"] { background: color-mix(in srgb, var(--t-paper) 16%, transparent); outline: none; }
-.fx-bulk__act--primary, .fx-bulk__act--primary:hover, .fx-bulk__act--primary:focus-visible { background: var(--t-paper); color: var(--t-strong); font-weight: 650; }
+.fx-bulk__count { display: inline-flex; align-items: center; gap: 6px; flex: none; margin-right: 6px; padding: 3px 4px 3px 10px; border: 1px solid var(--t-accent-brd, var(--fx-line)); border-radius: var(--t-radius); background: var(--t-accent-bg); color: var(--t-accent); font-weight: 600; }
+.fx-bulk__clear, .fx-bulk__act { position: relative; display: inline-flex; align-items: center; gap: 6px; padding: 7px 9px; border: 1px solid transparent; border-radius: var(--t-radius); background: none; color: inherit; font: inherit; cursor: pointer; }
+.fx-bulk__clear { padding: 3px; color: inherit; }
+.fx-bulk__act:hover, .fx-bulk__act:focus-visible, .fx-bulk__act[aria-expanded="true"] { background: var(--fx-hover); color: var(--t-strong); outline: none; }
+.fx-bulk__clear:hover, .fx-bulk__clear:focus-visible { background: color-mix(in srgb, var(--t-accent) 14%, transparent); outline: none; }
+.fx-bulk__act--primary, .fx-bulk__act--primary:hover, .fx-bulk__act--primary:focus-visible { background: var(--t-primary); border-color: var(--t-primary); color: var(--t-on-primary); font-weight: 600; }
+.fx-bulk__act--primary:hover { background: color-mix(in srgb, var(--t-primary) 86%, var(--t-text)); }
 .fx-bulk__act--icon { padding: 7px; }
 .fx-bulk__act[data-tone="danger"] { color: var(--t-danger); }
-.fx-bulk__sep { flex: none; width: 1px; height: 18px; margin: 0 4px; background: color-mix(in srgb, var(--t-paper) 28%, transparent); }
+.fx-bulk__act[data-tone="danger"]:hover { background: var(--t-danger-bg); }
+.fx-bulk__sep { flex: none; width: 1px; height: 18px; margin: 0 4px; background: var(--fx-line); }
 /* An icon-only action says its name on hover, in a tip above it. */
 .fx-bulk [data-tip]:hover::after, .fx-bulk [data-tip]:focus-visible::after {
   content: attr(data-tip); position: absolute; bottom: calc(100% + 10px); left: 50%; transform: translateX(-50%);
-  padding: 4px 8px; border-radius: 6px; background: var(--t-strong); color: var(--t-paper); font: 500 12px/1.2 var(--t-body); pointer-events: none;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, .25);
+  padding: 4px 8px; border: 1px solid var(--fx-line); border-radius: var(--t-radius); background: var(--t-paper); color: var(--t-strong);
+  font: 500 12px/1.2 var(--t-body); pointer-events: none; box-shadow: var(--t-shadow), 0 4px 12px rgba(0, 0, 0, .12);
 }
 /* More: a compact list, one row per action, like a dropdown. */
 .fx-pop.fx-bulk__more { width: 248px; min-width: 0; padding: 4px; }
