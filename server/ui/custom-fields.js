@@ -19,14 +19,6 @@ const DOCS = 'https://github.com/arcforgelabs/flow/blob/main/docs/CUSTOM_FIELDS.
 const TYPE_LABELS = {
   dropdown: 'Dropdown', person: 'Person', checkbox: 'Checkbox', date: 'Date', number: 'Number', text: 'Text',
 };
-const TYPE_HINTS = {
-  dropdown: 'One option from a list. Makes board lanes.',
-  person: 'One person in Flow. Makes board lanes.',
-  checkbox: 'Yes or no. Makes board lanes.',
-  date: 'A day, for example a promised date.',
-  number: 'A number, for example units.',
-  text: 'A short note.',
-};
 // Each type's icon (Lucide, served at /assets/icons/). Group colours come
 // from the server (groupColors); a field's own colour wins over its group's.
 const TYPE_ICONS = {
@@ -109,8 +101,6 @@ export async function renderCustomFields(main, ui) {
   let data = null;
   const groupColor = (type) => data?.groupColors?.[type] ?? 'gray';
   const colorOfField = (field) => field.color ?? groupColor(field.type);
-  // A field as a pill: its type icon and name, in its colour.
-  const fieldPill = (type, text, color) => h('span', { class: 'fx-cfm__pill', 'data-color': color }, lucide(h, TYPE_ICONS[type]), text);
 
   async function send(path, method, payload, done = 'Saved.') {
     try {
@@ -204,48 +194,40 @@ export async function renderCustomFields(main, ui) {
     name.addEventListener('input', changed);
     const nameBox = h('div', { class: 'fx-cfs__namebox' }, h('span', { class: 'fx-cfs__nameicon', 'data-color': field?.source ? 'gray' : (draft?.color ?? groupColor(type.value)) }, lucide(h, TYPE_ICONS[type.value])), name);
 
-    let fieldColor = draft?.color ?? null;
-    const colorOf = () => fieldColor ?? groupColor(type.value);
-    const color = colorPicker(h, {
-      colors: data.colors, value: colorOf(), label: 'Custom field colour', disabled: readOnly,
-      sample: (c) => fieldPill(type.value, name.value.trim() || 'Custom field', c),
-      onpick: (c) => { fieldColor = c; nameBox.firstChild.dataset.color = c; changed(); },
-    });
-    name.addEventListener('input', () => color.set(colorOf()));
+    // The colour is not here, as in ClickUp: the row's type icon and ⋯,
+    // Colour change it.
+    const colorOf = () => draft?.color ?? groupColor(type.value);
 
-    // A work system's stages show as the Jobs board's stage pills, in board order.
+    // A work system's stages: one line each, in board order, with the
+    // board's stage colour as the dot. Read only.
     const editor = field?.source
-      ? { element: h('div', { class: 'fx-cfs__stages' }, orderStatuses(field.options.map((o) => ({ label: o.name, firstSeenAt: o.firstSeenAt })))
-        .map((label) => h('span', { class: 'fx-stage', 'data-rank': String(statusRank(label)) }, h('span', { class: 'fx-stage__label' }, label)))) }
+      ? { element: h('div', { class: 'fx-cfs__options' }, orderStatuses(field.options.map((o) => ({ label: o.name, firstSeenAt: o.firstSeenAt })))
+        .map((label) => h('div', { class: 'fx-cfs__opt fx-cfs__opt--locked' },
+          h('span', { class: 'fx-cfs__dot', 'data-rank': String(statusRank(label)) }), h('span', { class: 'fx-cfs__optname' }, label)))) }
       : optionsEditor(draft?.options ?? [
         { name: 'To do', color: 'gray' }, { name: 'Doing', color: 'blue' }, { name: 'Done', color: 'green' },
       ], { readOnly, changed });
     const optionsSection = section(field?.source ? 'Stages' : 'Dropdown options', editor.element, {
-      required: true, hint: field?.source ? `${field.sourceLabel} owns these stages. The Jobs board shows one lane for each.` : 'Board lanes follow this order. A removed option is kept for old jobs.',
+      required: !field?.source, hint: field?.source ? `${field.sourceLabel} owns these stages. Flow reads them and cannot change them.` : null,
     });
-    const typeHint = h('span', { class: 'fx-dim fx-cfs__hint' }, TYPE_HINTS[type.value]);
     const fit = () => {
       optionsSection.hidden = type.value !== 'dropdown';
-      typeHint.textContent = TYPE_HINTS[type.value];
       typeText.textContent = TYPE_LABELS[type.value];
       headType.querySelector('.fx-lucide').style.setProperty('--icon', `url(/assets/icons/${TYPE_ICONS[type.value]}.svg)`);
       nameBox.querySelector('.fx-lucide').style.setProperty('--icon', `url(/assets/icons/${TYPE_ICONS[type.value]}.svg)`);
-      color.set(colorOf());
+      nameBox.firstChild.dataset.color = field?.source ? 'gray' : colorOf();
     };
     type.addEventListener('change', () => { fit(); changed(); });
 
     const where = field?.source ? `${field.sourceLabel} jobs` : 'Jobs';
-    const belongs = section('Custom field belongs to', h('div', { class: 'fx-cfs__where' }, lucide(h, 'list-checks'), where),
-      { hint: field?.source ? null : `${name.value.trim() || 'This custom field'} shows on every job.` });
+    const belongs = section('Custom field belongs to', h('div', { class: 'fx-cfs__where' }, lucide(h, 'list-checks'), where));
 
     const remove = field && !readOnly ? h('button', { class: 'fx-cfs__delete', type: 'button', 'aria-label': `Delete ${field.name}`, title: 'Delete', onclick: () => remove(field) }, lucide(h, 'trash-2')) : null;
     const cancel = h('button', { class: 'fx-btn fx-btn--ghost fx-btn--sm', type: 'button', onclick: closeSide }, readOnly ? 'Close' : 'Cancel');
     const form = h('form', { class: 'fx-cfs__form' },
       h('header', { class: 'fx-cfs__head' }, headType, close),
       h('div', { class: 'fx-cfs__body' },
-        readOnly && field?.source ? notice(`${field.sourceLabel} makes this field. Flow reads it and does not change it.`, 'info') : null,
-        section('Custom field name', nameBox, { required: true, hint: field ? null : typeHint }),
-        field?.source ? null : section('Colour', h('div', {}, color.button, color.panel)),
+        section('Custom field name', nameBox, { required: true }),
         optionsSection, belongs),
       h('footer', { class: 'fx-cfs__foot' }, remove, h('span', { class: 'fx-cfm__gap' }), cancel, readOnly ? null : save));
     form.addEventListener('submit', async (event) => {
@@ -253,7 +235,6 @@ export async function renderCustomFields(main, ui) {
       if (readOnly || !dirty) return;
       const payload = { name: name.value };
       if (!field) payload.type = type.value;
-      if (fieldColor !== (field?.color ?? null)) payload.color = fieldColor;
       if (type.value === 'dropdown') payload.options = editor.value();
       save.disabled = true;
       const body = field

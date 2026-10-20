@@ -30,9 +30,10 @@ Settings, Custom fields is laid out like ClickUp's Custom Field Manager:
   Delete. An archived field's menu has Bring back and Delete.
 - **Sidecar:** like ClickUp's, a panel that slides in from the right of
   the manager, below the toolbar: the type in its head (a new field picks
-  it there), the name, the colour, a dropdown's options (each with its
+  it there), the name, a dropdown's options as a list (each with its
   colour dot; Add option), where the field belongs, and Delete, Cancel and
-  Save at its foot. The table stays usable behind it: another row's Edit,
+  Save at its foot. The field's colour is not in the sidecar: the row's
+  type icon and ⋯, Colour change it. The table stays usable behind it: another row's Edit,
   or Create, switches the sidecar at once. Save, Cancel, × and Esc close it.
 - **Colours:** every colour picker (a group, a field, an option) shows the
   real pill in each colour, so a person sees the result before they pick.
@@ -41,7 +42,7 @@ Settings, Custom fields is laid out like ClickUp's Custom Field Manager:
   the field, its values and its history for good; Archive keeps them.
 - **From *system*:** the work system's own fields (Seazona's stage), read
   only, in their own group. View opens the sidecar, read only, with the
-  stages as the Jobs board's stage pills, in board order. Its Date
+  stages as a list, in board order, each dot in its board colour. Its Date
   created is the day the system was connected: the first time its
   settings were saved in Flow, or, for a system set up in the host's own
   settings, the first time Flow saw its work.
