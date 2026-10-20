@@ -505,7 +505,11 @@ function npmBeta() {
 export function resolveBase(root, { version, base, target, npm = npmBeta }) {
   if (base && base !== "npm-beta") return base;
   const release = parseVersion(version);
-  if (release.channel === "stable") return baseTag({ version, tags: releaseTags(root) });
+  const previous = baseTag({ version, tags: releaseTags(root) });
+  if (release.channel === "stable") return previous;
+  // The first release of all has no earlier tag: its notes cover the whole
+  // history through its target.
+  if (!previous) return null;
   const selected = npm();
   if (!selected) throw new ChangelogError(`npm's beta tag for ${PACKAGE} could not be read. Pass --base <the tag it selected>`);
   if (compareVersions(selected, version) >= 0) throw new ChangelogError(`npm's beta tag already selects ${selected}, so it cannot be ${version}'s base. Pass --base <the tag captured before publishing>`);
@@ -766,7 +770,7 @@ export function verifySection(root, { version, target, github }) {
     const expected = baseTag({ version, tags });
     const expectedSha = expected ? revParse(root, expected) : null;
     if (record.base !== expectedSha) fail(`a stable record starts at the previous stable release ${expected ? `${expected} (${expectedSha})` : "(none: the first commit)"}; it starts at ${record.base ?? "the first commit"}`);
-  } else if (!record.base || !tagCommits.has(record.base)) {
+  } else if (record.base ? !tagCommits.has(record.base) : baseTag({ version, tags }) !== null) {
     fail(`a beta record starts at the release npm's beta tag selected; ${record.base ?? "the first commit"} is no release tag`);
   }
   const history = historyRange(root, { base: record.base, target: finalSha });
