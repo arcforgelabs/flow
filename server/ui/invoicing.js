@@ -119,6 +119,7 @@ export async function renderInvoiceList(main, ui) {
           const res = await flow(`/api/invoicing/invoices/${path}`, { method: 'POST', body: JSON.stringify(payload()) });
           toast(...done(res));
           state.ticked.clear();
+          seen.clear();
           await load();
           alerts.refresh();
         } catch (error) {
@@ -165,23 +166,56 @@ export async function renderInvoiceList(main, ui) {
     bar.hidden = !parts.length;
   }
 
+  // A tab switch shows at once: the tab is selected, the last list seen for
+  // it (if any) is drawn and dimmed, and the fresh list replaces it. Only the
+  // newest request draws, so quick clicks never show an older tab's list.
+  const seen = new Map();
+  let asked = 0;
   async function load() {
+    const query = new URLSearchParams({ status: state.status, ...(state.q ? { q: state.q } : {}) });
+    const key = String(query);
+    const mine = ++asked;
+    if (seen.has(key)) {
+      delete host.dataset.stale;
+      draw(seen.get(key));
+    } else if (body) {
+      drawTabs(body.counts);
+      bar.hidden = true;
+      host.dataset.stale = '';
+    }
+    host.setAttribute('aria-busy', 'true');
+    let answer;
     try {
-      const query = new URLSearchParams({ status: state.status, ...(state.q ? { q: state.q } : {}) });
-      body = await flow(`/api/invoicing/invoices?${query}`);
+      answer = await flow(`/api/invoicing/invoices?${query}`);
     } catch (error) {
+      if (mine !== asked) return;
+      host.removeAttribute('aria-busy');
+      delete host.dataset.stale;
       host.replaceChildren(notice(error.message, 'danger'));
       return;
     }
-    const shown = new Set(body.invoices.map((i) => i.id));
-    for (const id of state.ticked) if (!shown.has(id)) state.ticked.delete(id);
+    if (mine !== asked) return;
+    seen.set(key, answer);
+    host.removeAttribute('aria-busy');
+    delete host.dataset.stale;
+    draw(answer);
+  }
+
+  function drawTabs(counts) {
     tabs.replaceChildren(...TABS.map(([id, label]) => h('button', {
       type: 'button',
       role: 'tab',
       'aria-selected': String(state.status === id),
-      ...(id === 'problem' && body.counts?.problem ? { 'data-tone': 'danger' } : {}),
-      onclick: () => openTab(id),
-    }, label, h('span', { class: 'fx-tabs__count' }, String(body.counts?.[id] ?? 0)))));
+      ...(id === 'problem' && counts?.problem ? { 'data-tone': 'danger' } : {}),
+      onclick: () => { if (state.status !== id) openTab(id); },
+    }, label, h('span', { class: 'fx-tabs__count' }, String(counts?.[id] ?? 0)))));
+  }
+
+  async function draw(answer) {
+    body = answer;
+    const shown = new Set(body.invoices.map((i) => i.id));
+    for (const id of state.ticked) if (!shown.has(id)) state.ticked.delete(id);
+    drawTabs(body.counts);
     drawBar();
     if (!body.invoices.length) {
       host.replaceChildren(h('p', { class: 'fx-empty' }, state.q
