@@ -284,6 +284,13 @@ document.addEventListener('keydown', (event) => {
 document.addEventListener('click', (event) => {
   if (!event.target.closest?.('.fx-side') || event.target.closest?.('[data-nav]')) closeMenu();
 });
+// Folded, a click on the sidebar's empty space opens it out again, as in
+// Claude. A click on a page, the account photo or Search still does its job.
+document.addEventListener('click', (event) => {
+  if (NARROW.matches || !readFolded() || !event.target.closest?.('.fx-side')) return;
+  if (event.target.closest('a, button, input, select, textarea, [role="button"], [role="menuitem"], #user-button')) return;
+  toggleMenu();
+});
 
 // Search, from the sidebar foot or Ctrl+K (⌘K): the pages this person may
 // open, invoices and jobs (search.js).
