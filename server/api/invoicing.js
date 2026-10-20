@@ -20,7 +20,7 @@ import {
   acceptFindings, archivePriceItem, checkPrices, createPriceItem, linkPriceItem, readCatalogues, readPriceList, unlinkPriceItem, updatePriceItem,
 } from '../core/price-list.js';
 import { draftInvoiceForObligation, explainObligation, listObligations, setReady } from '../core/ledger.js';
-import { invoicePdfDocument, pdfFilename, renderInvoicePdf } from '../core/invoice-pdf.js';
+import { invoicePdfDocument, pdfFields, pdfFilename, renderInvoicePdf } from '../core/invoice-pdf.js';
 import { invoiceView, invoiceViews, markNotReady, markReady, sendAgain, sendAllReady } from '../core/sending.js';
 import {
   billingObligations, contacts, invoices, INVOICE_STATUSES, organisations, priceItems, TAX_CODES,
@@ -38,7 +38,8 @@ import {
 //                                     accounting system { issueDate }
 //   POST  /invoices/send-again        owner or admin: queue failed sends again { invoiceIds? }
 //   GET   /invoices/:id               one invoice: lines, contact, job, issued versions
-//   GET   /invoices/:id/pdf?version=  the invoice as a PDF, drawn by Flow (server/core/invoice-pdf.js);
+//   GET   /invoices/:id/pdf?version=  the invoice as a PDF, drawn by Flow (server/core/invoice-pdf.js),
+//                                     with the accounting system's number and dates once it holds it;
 //                                     no accounting system calls
 //   POST  /invoices                   a new draft
 //   PATCH /invoices/:id               change a draft
@@ -370,11 +371,11 @@ export function createInvoicingRouter({
     const organisationId = await organisationOf(req);
     const version = req.query.version === undefined ? null : Number(req.query.version);
     if (version !== null && !(Number.isSafeInteger(version) && version > 0)) throw invalid('version must be a whole number above 0');
-    const source = await invoicePdfDocument(db, organisationId, invoiceId, { version });
+    const source = await invoicePdfDocument(db, organisationId, invoiceId, { version, accounting: accounting() });
     const bytes = await renderInvoicePdf(source);
     res.set({
       'Content-Type': 'application/pdf',
-      'Content-Disposition': `inline; filename="${pdfFilename(source.document)}"`,
+      'Content-Disposition': `inline; filename="${pdfFilename(pdfFields(source))}"`,
       'Cache-Control': 'no-store',
       'X-Content-Type-Options': 'nosniff',
     });

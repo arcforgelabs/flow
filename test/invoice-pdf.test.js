@@ -4,7 +4,7 @@ import { createApp } from '../server/app.js';
 import { seedFirstOwner } from '../server/auth/people.js';
 import { createPersonAuth } from '../server/auth/session.js';
 import { createContact, createOrganisation, createPriceItem } from '../server/core/directory.js';
-import { invoicePdfDocument, pdfFilename, pdfReference, renderInvoicePdf } from '../server/core/invoice-pdf.js';
+import { invoicePdfDocument, pdfFields, pdfFilename, pdfReference, renderInvoicePdf } from '../server/core/invoice-pdf.js';
 import { createDraftInvoice, issueInvoice, reviseInvoice, updateDraftInvoice, voidInvoice } from '../server/core/invoices.js';
 import { fakeClerk, TEST_PUBLISHABLE_KEY } from './support/clerk.js';
 import { freshDatabase, skipWithoutDatabase } from './support/db.js';
@@ -49,9 +49,40 @@ test('the reference is what the accounting system gets: its own, else the number
 });
 
 test('the file name is safe in a header', () => {
-  assert.equal(pdfFilename({ number: 'INV-0001' }), 'INV-0001.pdf');
-  assert.equal(pdfFilename({ number: null }), 'draft-invoice.pdf');
-  assert.equal(pdfFilename({ number: 'INV "1"/é' }), 'INV-1-.pdf');
+  assert.equal(pdfFilename({ number: { value: 'INV-0001' } }), 'INV-0001.pdf');
+  assert.equal(pdfFilename({ number: { missing: 'Set when issued' } }), 'invoice.pdf');
+  assert.equal(pdfFilename({ number: { value: 'INV "1"/é' } }), 'INV-1-.pdf');
+});
+
+test('the PDF shows only known values; a gap says why, never a sample', () => {
+  const draft = { ...document(1), number: null, issueDate: null, dueDate: null, reference: null };
+  assert.deepEqual(pdfFields({ document: draft }), {
+    number: { missing: 'Set when issued' },
+    reference: { missing: 'Set when issued' },
+    issueDate: { missing: 'Set when issued' },
+    dueDate: { missing: 'Set when issued' },
+  });
+  // Flow numbers it, and there is no accounting system.
+  assert.deepEqual(pdfFields({ document: document(1) }), {
+    number: { value: 'INV-0001' },
+    reference: { value: 'Dr Example - Sample Patient' },
+    issueDate: { value: '2026-10-19' },
+    dueDate: { value: '2026-11-18' },
+  });
+  // Xero numbers it and has not got it yet; it sets the due date from its default days.
+  const notSent = { system: 'Xero', sent: false, numberedBy: 'xero', defaultDueDays: 30 };
+  const issued = pdfFields({ document: { ...document(1), dueDate: null }, facts: notSent });
+  assert.deepEqual(issued.number, { missing: 'Xero sets it when sent' });
+  assert.deepEqual(issued.dueDate, { value: '2026-11-18' });
+  assert.deepEqual(pdfFields({ document: document(1), facts: { ...notSent, numberedBy: 'flow' } }).number, { value: 'INV-0001' });
+  // Xero holds it: its number and dates win; a value its copy lacks says so.
+  const sent = { system: 'Xero', sent: true, number: 'INV-2454', reference: null, issueDate: '2026-10-20', dueDate: '2026-11-19' };
+  assert.deepEqual(pdfFields({ document: document(1), facts: sent }), {
+    number: { value: 'INV-2454' },
+    reference: { missing: "Not in Flow's copy of Xero" },
+    issueDate: { value: '2026-10-20' },
+    dueDate: { value: '2026-11-19' },
+  });
 });
 
 describe('invoice PDF with PostgreSQL', { skip: skipWithoutDatabase }, () => {
@@ -112,6 +143,13 @@ describe('invoice PDF with PostgreSQL', { skip: skipWithoutDatabase }, () => {
     assert.equal((await invoicePdfDocument(handle.db, lab.id, draft.id)).document.version, 2);
     await voidInvoice(handle.db, lab.id, draft.id);
     assert.equal((await invoicePdfDocument(handle.db, lab.id, draft.id)).document.version, 2, 'a void invoice shows the version it was sent as');
+
+    // The accounting system is asked about the version shown, from its copy.
+    const asked = [];
+    const accounting = { capabilities: { documentFacts: async (query) => { asked.push(query); return { system: 'Xero', sent: true, number: 'INV-2454' }; } } };
+    const withFacts = await invoicePdfDocument(handle.db, lab.id, draft.id, { accounting });
+    assert.deepEqual(asked, [{ organisationId: lab.id, invoiceId: draft.id, version: 2 }]);
+    assert.equal(pdfFields(withFacts).number.value, 'INV-2454');
   });
 
   test('GET /invoices/:id/pdf answers a PDF to a signed-in person', async () => {
@@ -119,7 +157,7 @@ describe('invoice PDF with PostgreSQL', { skip: skipWithoutDatabase }, () => {
     const res = await get(`/invoices/${draft.id}/pdf`);
     assert.equal(res.status, 200);
     assert.equal(res.headers.get('content-type'), 'application/pdf');
-    assert.equal(res.headers.get('content-disposition'), 'inline; filename="draft-invoice.pdf"');
+    assert.equal(res.headers.get('content-disposition'), 'inline; filename="invoice.pdf"');
     assert.equal(res.headers.get('cache-control'), 'no-store');
     assert.equal(res.bytes.subarray(0, 5).toString(), '%PDF-');
 

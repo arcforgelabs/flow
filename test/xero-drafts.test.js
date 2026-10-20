@@ -176,6 +176,32 @@ describe('Xero drafts from issued invoices', { skip: skipWithoutDatabase }, () =
     assert.equal(again.calls.length, 0);
   });
 
+  test('the PDF learns what the customer\'s Xero copy says, from Flow\'s copy, with no calls', async () => {
+    const org = lab.organisation.id;
+    const invoice = await issued('Dr Example - Sample Patient');
+    const facts = integrations.with('documentFacts')[0].capabilities.documentFacts;
+    const none = xero.script([]);
+    assert.deepEqual(await facts({ organisationId: org, invoiceId: invoice.id, version: 1 }),
+      { system: 'Xero', sent: false, numberedBy: 'xero', defaultDueDays: xero.runtime.settings.defaultDueDays });
+
+    xero.script([byReference([]), created('xpdf'), readBack('xpdf', { reference: invoice.reference })]);
+    assert.equal(none.calls.length, 0);
+    assert.equal((await push([invoice.id])).status, 200);
+    const silent = xero.script([]);
+    const sent = await facts({ organisationId: org, invoiceId: invoice.id, version: 1 });
+    assert.equal(sent.sent, true);
+    assert.equal(sent.number, 'INV-xpdf');
+    assert.equal(sent.reference, 'Dr Example - Sample Patient', 'from the request Flow sent');
+    assert.equal(sent.issueDate, '2026-10-18');
+
+    // The mirror, once it has the invoice, wins over what Flow sent.
+    await handle.db.execute(sql`insert into xero_invoices (organisation_id, xero_invoice_id, type, invoice_number, status, issued_on, due_on, record_hash)
+      values (${org}, 'xpdf', 'ACCREC', 'INV-9001', 'AUTHORISED', '2026-10-20', '2026-11-19', 'h')`);
+    const mirrored = await facts({ organisationId: org, invoiceId: invoice.id, version: 1 });
+    assert.deepEqual([mirrored.number, mirrored.issueDate, mirrored.dueDate, mirrored.status], ['INV-9001', '2026-10-20', '2026-11-19', 'AUTHORISED']);
+    assert.equal(silent.calls.length, 0);
+  });
+
   test('an invoice made by hand in Xero with the same contact, reference and total is recorded, not made twice', async () => {
     const invoice = await issued();
     const replay = xero.script([byReference([xeroInvoice('hand-1', { reference: invoice.reference, total: 275, sub: 250, tax: 25, status: 'AUTHORISED' })])]);
