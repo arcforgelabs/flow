@@ -31,6 +31,9 @@ run a lab.
 | `CHANGELOG.md` | What changed in each release: an index of one file per release in `CHANGELOG/` |
 | `SECURITY.md` | How to report a security problem, the trust model, and the rules held hard |
 | `LICENSE` | MIT licence |
+| `docs/docs.json` | The docs site navigation. `docs/` is published at https://arcforgelabs.github.io/docs/flow/ by arcforgelabs/docs |
+| `docs/index.md` | The docs site home page |
+| `docs/releases/` | One release notes page per version (`<version>.md`), shown on the docs site |
 | `docs/DESIGN.md` | The design systems (theme families), how pages and Clerk's components take them, and the screens |
 | `docs/DATA_MODEL.md` | The PostgreSQL records, the rules the database holds, and how to change the schema |
 | `docs/DATA_SPINE.md` | The design of the tables and jobs every integration shares: mirror, identity map, job queue, outbox, review queue |

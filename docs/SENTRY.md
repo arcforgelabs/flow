@@ -29,6 +29,7 @@ flowchart LR
 | `SENTRY_DSN` | The project's DSN. Browsers see it, so it is not a secret. | none: Sentry cannot start |
 | `SENTRY_ENVIRONMENT` | The environment Sentry shows for this installation. | `production` |
 | `SENTRY_FEEDBACK` | `on`: "Report a problem" shows in the sidebar and the account menu for everyone signed in. | `on` |
+| `SENTRY_TRACES_SAMPLE_RATE` | The share of clicks, page loads and requests traced, from `0` (off) to `1` (all). | `0.2` |
 
 A change in Flow applies at once, with no restart. The adapter has no tables.
 
@@ -52,13 +53,50 @@ A change in Flow applies at once, with no restart. The adapter has no tables.
   addresses.
 - **Release.** `flow@<release>` from the Flow release tag, else the commit.
 
+- **Traces.** While `SENTRY_TRACES_SAMPLE_RATE` is above 0: see below.
+
 With Sentry off, Flow loads no Sentry code in the browser, sends nothing, and
 hides the button.
 
+## Traces
+
+A trace shows where the time goes between a click and the screen it opens.
+It shows in Sentry under Explore, Traces.
+
+```mermaid
+flowchart LR
+  click[Click or page load] --> fetch[Browser call<br/>to /api/...]
+  fetch -- "sentry-trace header" --> request[Server request<br/>GET /api/.../:id]
+  request --> db[Each database<br/>query]
+  request --> out[Each call to<br/>Xero or Seazona]
+```
+
+- **Browser.** Page loads, moves between pages, each click's wait (INP), web
+  vitals and each call to Flow's server. A page's name is its path with each
+  id as `:id`.
+- **Server.** Each request, named by its route
+  (`GET /api/invoicing/invoices/:id`); inside it, each database query
+  (`server/core/tracing.js`) and each outgoing call. A request the browser
+  traced keeps the browser's choice, so one click is one trace. Work outside a
+  request (the pipeline, the workers) starts no trace. `/health` is never
+  traced.
+- **What a span keeps.** Timings, the route, the status and the person's Flow
+  id. A span never keeps a query string (a search can hold a name), a header,
+  a cookie, an IP address or an email (`scrubSpan` in
+  `server/ui/monitoring.js`). A query's SQL keeps its placeholders: each value
+  is a parameter, and quoted text or a number in the SQL itself becomes `?`.
+- **Volume.** Each traced click sends a few dozen spans. Sentry's plan sets
+  how many spans a month it keeps; its Settings, Subscription page shows the
+  use. Lower `SENTRY_TRACES_SAMPLE_RATE` to send fewer. `0` turns traces off.
+
+With traces on, the browser loads Sentry's bundle that also traces
+(`SENTRY_BROWSER_TRACING`). It has session replay in it too; Flow never turns
+replay on.
+
 The browser SDK loads from Sentry's CDN, pinned to one version and checked
-against its integrity hash (`SENTRY_BROWSER` in
+against its integrity hash (`SENTRY_BROWSER` and `SENTRY_BROWSER_TRACING` in
 `server/integrations/sentry/index.js`). To update it, change the version and
-the hash together.
+both hashes together.
 
 ## Reports into an issue tracker
 

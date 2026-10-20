@@ -33,6 +33,8 @@ export const CAPABILITIES = Object.freeze([
   'alerts', // what only a person can clear (a refused sign-in, stopped calls), for the Integrations page; reads Flow's data only
   'captureError', // an error Flow logged, sent to the installation's own error service (Sentry)
   'browserMonitoring', // the public settings a browser needs to report errors and problems to that service
+  'traceSpan', // runs work inside a span of the current performance trace (server/core/tracing.js)
+  'traceRequest', // names a request's performance trace by its route, once the route is known
 ]);
 
 const ID_PATTERN = /^[a-z][a-z0-9-]{1,31}$/;
