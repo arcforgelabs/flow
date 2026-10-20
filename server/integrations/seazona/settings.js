@@ -55,14 +55,35 @@ export function normaliseBaseUrl(value) {
   return `${url.origin}${path}/v1`;
 }
 
-function orderUrlTemplate(value) {
-  const raw = text(value);
-  if (!raw.includes('{ref}')) return null;
+// SEAZONA_ORDER_URL: the address of one order in Seazona's own web app, with
+// {ref} where the order id goes. Seazona's API guide gives no order page
+// address, and each lab has its own, so a person may also paste the address
+// of any one order as the browser shows it: the order id in it (a GUID)
+// becomes {ref}. Answers the template, or null: https only, and an order id
+// or {ref} in it. It never throws; an address Flow cannot read turns it off.
+const ORDER_ID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+
+export function orderUrlTemplate(value) {
+  const given = text(value);
+  const raw = given.includes('{ref}') ? given : ORDER_ID.test(given) ? given.replace(ORDER_ID, '{ref}') : '';
+  if (!raw) return null;
   try {
     return new URL(raw.replaceAll('{ref}', 'x')).protocol === 'https:' ? raw : null;
   } catch {
     return null;
   }
+}
+
+// The link to one order for "Open in Seazona": the order's own page when the
+// installation set SEAZONA_ORDER_URL, else the home page of the lab's
+// Seazona web app when the API address names it (https://{lab}.seazonaapi.net),
+// else null. `exact` is true only for the order's own page.
+export function orderLink(settings, { sourceJobRef } = {}) {
+  const template = settings?.orderUrlTemplate ?? null;
+  if (template && sourceJobRef) return { url: template.replaceAll('{ref}', encodeURIComponent(sourceJobRef)), exact: true };
+  const host = settings?.baseUrl ? new URL(settings.baseUrl).hostname : '';
+  const lab = /^([a-z0-9-]+)\.seazonaapi\.net$/i.exec(host)?.[1];
+  return lab ? { url: `https://${lab}.seazona.net/`, exact: false } : null;
 }
 
 // Returns the resolved settings, or throws SeazonaSettingsError. `mode` is

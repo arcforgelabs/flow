@@ -313,22 +313,23 @@ export async function renderJobs(main, ui) {
       const label = o.invoiceStatus === 'draft' ? 'Open draft invoice' : `Open invoice ${o.invoiceNumber ?? ''}`.trim();
       const open = h('a', { class: 'fx-btn', href: `/invoices/${o.invoiceId}`, onclick: (event) => { close(); ui.go(event); } }, label);
       // Only the job changed and the draft is not sent (ledger.js): one tap
-      // puts the job's new lines on Flow's own draft.
+      // puts the job's new lines on Flow's own draft. Nothing goes elsewhere.
       if (!o.canUseNewLines) return [open];
+      const system = SYSTEM_NAME[job.sourceSystem] ?? job.sourceSystem;
       return [h('button', {
         class: 'fx-btn fx-btn--primary', type: 'button',
         onclick: async (event) => {
           event.currentTarget.disabled = true;
           try {
             await flow(`/api/invoicing/jobs/${o.id}/use-new-lines`, { method: 'POST', body: '{}' });
-            ui.toast('The draft has the new job lines.', 'success');
+            ui.toast(`The draft invoice now matches ${system}.`, 'success');
           } catch (error) {
             ui.toast(error.message, 'danger');
           }
           close();
           await load();
         },
-      }, 'Use new lines'), open];
+      }, `Adopt ${system} changes`), open];
     }
     // Flow's own stage: a person marks a job ready to invoice, or an
     // automation does (Settings, Automations).
