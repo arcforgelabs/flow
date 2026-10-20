@@ -42,7 +42,7 @@ export function orderStatuses(statuses = [], jobs = []) {
 }
 
 export const INVOICE_STAGES = {
-  drafted: 'Drafted', problem: 'Problem', ready: 'Ready to invoice', invoiced: 'Invoiced', paid: 'Paid',
+  drafted: 'Drafted', problem: 'Pending', ready: 'Ready to invoice', invoiced: 'Invoiced', paid: 'Paid',
 };
 
 const PROBLEM_VIEWS = ['pending', 'review_required', 'held'];
@@ -97,9 +97,9 @@ function reasonFix(reason) {
   if (reason === 'the job status moved back after its invoice was made') return fix('Status moved back', 'Check the job in the work system. Void or hold its invoice if the work is not done.', 'work');
   if (/deleted in /i.test(reason)) return fix('Deleted', 'Check the job in the work system. Void its invoice if it has one.', 'work');
   // The matcher found invoices that may be this job's, but no exact link.
-  // Flow holds the job so that it is not invoiced two times.
+  // A person makes an invoice or links one (jobs.js draws the two buttons).
   if (/^the accounting evidence is ambiguous/.test(reason)) {
-    return { label: 'Invoice unclear', text: 'Flow cannot tell if this job has an invoice already.', todo: 'Check the invoice number on the job in the work system. Flow holds the job so it is not invoiced two times.', go: 'work' };
+    return { label: 'No invoice', text: 'This job has no invoice.', todo: null, go: 'choose' };
   }
   if (/^the accounting evidence is conflict/.test(reason)) {
     return { label: 'Invoice link changed', text: 'A second invoice now answers for this job, or its invoice is gone.', todo: 'Check the invoice number on the job in the work system. Void an extra invoice.', go: 'work' };
@@ -133,11 +133,13 @@ function draftFix(problem) {
   return { label: 'Invoice problem', text: 'The invoice for this job needs a fix before it can be sent.', todo: 'Open the invoice for the steps.', go: 'invoice' };
 }
 
-// Where a fix's link goes: Flow's invoice, the job in the work system, or a
-// Flow settings page (jobs.js draws the link).
-export const GO = ['invoice', 'work', 'price-list', 'invoicing-settings', 'integrations'];
+// Where a fix's link goes: Flow's invoice, the job in the work system, a
+// Flow settings page, or `choose`: Make invoice and Link invoice buttons
+// (jobs.js draws them).
+export const GO = ['invoice', 'work', 'price-list', 'invoicing-settings', 'integrations', 'choose'];
 
-// What a person must fix on a job, in order: [{ label, text, todo, go }].
+// What a person must fix on a job, in order: [{ label, text, todo, go }];
+// `todo` is null when the buttons are the instruction.
 // Empty unless invoiceStage is Problem.
 export function fixes(o) {
   if (invoiceStage(o) !== 'problem') return [];

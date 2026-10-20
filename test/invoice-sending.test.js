@@ -23,7 +23,7 @@ test('Flow checks its own draft: lines, an amount, a price item on every line', 
   assert.deepEqual(draftProblems({ totalCents: 0 }, []).map((p) => p.code), ['no_lines']);
   assert.deepEqual(draftProblems({ totalCents: 0 }, [{ position: 1, priceItemId: 'x' }]).map((p) => p.code), ['no_amount']);
   assert.deepEqual(draftProblems({ totalCents: 100 }, [{ position: 1, priceItemId: 'x' }, { position: 2, priceItemId: null }]),
-    [{ code: 'line_no_item', message: 'Line 2 has no price item.' }]);
+    [{ code: 'line_no_item', message: 'Line 2 has no price item.', short: 'Line 2: no item' }]);
   assert.deepEqual(draftProblems({ totalCents: 100 }, [{ position: 1, priceItemId: 'x' }]), []);
 });
 
@@ -39,6 +39,8 @@ function fakeAccounting() {
     status: { connected: true, writesAllowed: true },
     checks: new Map(),
     outcomes: new Map(),
+    // Each issued invoice's stage there (invoiceStages).
+    stages: new Map(),
     pushed: [],
   };
   fake.adapter = {
@@ -47,6 +49,7 @@ function fakeAccounting() {
     capabilities: {
       health: async () => ({ ok: true }),
       sendStatus: async () => fake.status,
+      invoiceStages: async () => new Map(fake.stages),
       checkDrafts: async ({ invoiceIds }) => (fake.status.connected ? new Map(invoiceIds.map((id) => [id, fake.checks.get(id) ?? []])) : null),
       pushInvoices: async ({ invoiceIds, pushedBy }) => {
         fake.pushed.push(...invoiceIds.map((id) => [id, pushedBy]));
@@ -89,52 +92,44 @@ describe('ready, problem and send', { skip: skipWithoutDatabase }, () => {
   const good = () => draft([{ priceItemId: crown.id, quantity: 1 }]);
   const row = async (id) => (await handle.db.select().from(invoices).where(eq(invoices.id, id)))[0];
 
-  test('every draft is to check, ready or a problem; a person marks it ready; a change sends it back', async () => {
+  test('every draft is ready or a problem; a clean draft needs no mark', async () => {
     const one = await good();
     const freeText = await draft([{ description: 'Something', quantity: 1, unitAmountCents: 1000, taxCode: 'GST' }]);
     const empty = await draft([]);
     const missing = await good();
     let views = await invoiceViews(handle.db, lab.id);
-    assert.deepEqual(views.toCheck.sort(), [one.id, missing.id].sort());
-    assert.deepEqual(views.ready, []);
+    assert.deepEqual(views.toCheck, []);
+    assert.deepEqual(views.ready.sort(), [one.id, missing.id].sort());
     assert.deepEqual(views.problems.get(freeText.id).map((p) => p.code), ['line_no_item']);
     assert.deepEqual(views.problems.get(empty.id).map((p) => p.code), ['no_lines']);
-
-    // A draft with a problem cannot be marked ready.
-    const marked = await markReady(handle.db, lab.id, [one.id, freeText.id], { personId: owner.id });
-    assert.equal(marked.marked, 1);
-    assert.deepEqual(marked.refused.map((r) => r.invoiceId), [freeText.id]);
-    assert.equal((await row(one.id)).readyBy, owner.id);
-    views = await invoiceViews(handle.db, lab.id);
-    assert.deepEqual(views.ready, [one.id]);
-    assert.deepEqual(views.toCheck, [missing.id]);
 
     // The accounting system adds its own checks.
     const fake = fakeAccounting();
     fake.checks.set(missing.id, [{ code: 'xero_contact_missing', message: 'No Xero contact.' }]);
     views = await invoiceViews(handle.db, lab.id, { accounting: fake.adapter });
-    assert.deepEqual(views.toCheck, []);
+    assert.deepEqual(views.ready, [one.id]);
     assert.deepEqual(views.problems.get(missing.id).map((p) => p.code), ['xero_contact_missing']);
 
-    // A saved change keeps it ready; Move to Drafts takes it back.
-    await updateDraftInvoice(handle.db, lab.id, one.id, { reference: 'CASE-2' });
-    assert.notEqual((await row(one.id)).readyAt, null);
-    assert.deepEqual(await markNotReady(handle.db, lab.id, [one.id]), { moved: 1 });
-    assert.equal((await row(one.id)).readyAt, null);
+    // A fixed problem is ready at once.
+    await updateDraftInvoice(handle.db, lab.id, freeText.id, { lines: [{ priceItemId: crown.id, quantity: 1 }] });
+    views = await invoiceViews(handle.db, lab.id);
+    assert.ok(views.ready.includes(freeText.id));
+    // markReady still refuses a problem and a non-draft.
+    const marked = await markReady(handle.db, lab.id, [one.id, empty.id], { personId: owner.id });
+    assert.deepEqual(marked.refused.map((r) => r.invoiceId), [empty.id]);
     await assert.rejects(markReady(handle.db, lab.id, [one.id, crown.id], { personId: owner.id }), { code: 'not_draft' });
   });
 
   test('with no accounting system, Send all ready issues the ready drafts only', async () => {
     const ready = await good();
-    const unchecked = await good();
+    const other = await good();
     const problem = await draft([]);
-    await markReady(handle.db, lab.id, [ready.id], { personId: owner.id });
     const result = await sendAllReady(handle.db, lab.id, { personId: owner.id, issueDate: ISSUE_DATE });
-    assert.deepEqual(result, { issued: 1, queued: 0, remaining: 0, waiting: 0 });
+    assert.deepEqual(result, { issued: 2, queued: 0, remaining: 0, waiting: 0 });
     assert.equal((await row(ready.id)).status, 'issued');
     assert.equal((await row(ready.id)).sendState, null);
+    assert.equal((await row(other.id)).status, 'issued');
     assert.equal((await row(problem.id)).status, 'draft');
-    assert.equal((await row(unchecked.id)).status, 'draft');
   });
 
   test('Send all ready reads the accounting system\'s changes first; a failed read issues nothing', async () => {
@@ -164,8 +159,7 @@ describe('ready, problem and send', { skip: skipWithoutDatabase }, () => {
   test('Send on one invoice issues that ready draft only, and refuses one that is not ready', async () => {
     const one = await good();
     const other = await good();
-    const unchecked = await good();
-    await markReady(handle.db, lab.id, [one.id, other.id], { personId: owner.id });
+    const unchecked = await draft([]);
     await assert.rejects(sendAllReady(handle.db, lab.id, { personId: owner.id, issueDate: ISSUE_DATE, invoiceIds: [unchecked.id] }), { code: 'not_ready' });
     assert.equal((await row(unchecked.id)).status, 'draft');
     const result = await sendAllReady(handle.db, lab.id, { personId: owner.id, issueDate: ISSUE_DATE, invoiceIds: [one.id] });
@@ -261,38 +255,40 @@ describe('Send all ready over the API', { skip: skipWithoutDatabase }, () => {
 
   const call = (path, options = {}) => request(app, `/api/invoicing${path}`, { token: ownerToken, ...options });
 
-  test('the list counts Ready and Problem, and one press sends every ready invoice', async () => {
+  test('the list counts each tab, and one press sends every ready invoice', async () => {
     const ready = await createDraftInvoice(handle.db, lab.id, { contactId: practice.id, lines: [{ priceItemId: crown.id, quantity: 1 }] });
     const problem = await createDraftInvoice(handle.db, lab.id, { contactId: practice.id, lines: [] });
 
-    let res = await call('/invoices?status=to_check');
-    assert.deepEqual(res.body.invoices.map((i) => [i.id, i.view]), [[ready.id, 'to_check']]);
-    res = await call('/invoices/mark-ready', { method: 'POST', body: { invoiceIds: [ready.id, problem.id] } });
-    assert.equal(res.status, 200);
-    assert.equal(res.body.marked, 1);
-    assert.equal(res.body.refused[0].invoiceId, problem.id);
-    res = await call(`/invoices/${ready.id}`);
-    assert.equal(res.body.invoice.view, 'ready');
+    let res = await call(`/invoices/${ready.id}`);
+    assert.deepEqual([res.body.invoice.view, res.body.invoice.tab], ['ready', 'ready']);
     res = await call(`/invoices/${problem.id}`);
-    assert.deepEqual([res.body.invoice.view, res.body.invoice.problems[0].code], ['problem', 'no_lines']);
+    assert.deepEqual([res.body.invoice.tab, res.body.invoice.problems[0].code], ['pending', 'no_lines']);
     assert.equal((await call('/invoices/mark-ready', { method: 'POST', body: { invoiceIds: [] } })).status, 400);
 
     res = await call('/invoices?status=ready');
     assert.equal(res.status, 200);
-    assert.equal(res.body.counts.ready, 1);
-    assert.equal(res.body.counts.problem, 1);
-    assert.equal(res.body.counts.to_check, 0);
+    assert.deepEqual(res.body.counts, { pending: 1, ready: 1, draft: 0, approved: 0, sent: 0, void: 0 });
     assert.equal(res.body.sendsTo, 'Accounts');
-    assert.deepEqual(res.body.invoices.map((i) => [i.id, i.view]), [[ready.id, 'ready']]);
-    res = await call('/invoices?status=problem');
+    assert.deepEqual(res.body.invoices.map((i) => [i.id, i.tab]), [[ready.id, 'ready']]);
+    res = await call('/invoices?status=pending');
     assert.deepEqual(res.body.invoices.map((i) => [i.id, i.problems[0].code]), [[problem.id, 'no_lines']]);
+    assert.deepEqual((await call('/invoices?status=problem')).body.invoices.map((i) => i.id), [problem.id], 'an old tab name still works');
     assert.equal((await call('/invoices?status=other')).status, 400);
 
     res = await call('/invoices/send-ready', { method: 'POST', body: { issueDate: ISSUE_DATE } });
     assert.equal(res.status, 200);
     assert.deepEqual([res.body.issued, res.body.queued, res.body.remaining], [1, 1, 0]);
-    res = await call('/invoices?status=issued');
-    assert.deepEqual(res.body.invoices.map((i) => [i.id, i.view]), [[ready.id, 'sending']]);
+    // On its way: Draft, the lowest stage the accounting system holds.
+    res = await call('/invoices?status=draft');
+    assert.deepEqual(res.body.invoices.map((i) => [i.id, i.tab, i.sending]), [[ready.id, 'draft', true]]);
+    // The accounting system's stage moves it on.
+    await handle.db.update(invoices).set({ sendState: 'sent' }).where(eq(invoices.id, ready.id));
+    fake.stages.set(ready.id, 'approved');
+    assert.deepEqual((await call('/invoices?status=approved')).body.invoices.map((i) => i.id), [ready.id]);
+    fake.stages.set(ready.id, 'sent');
+    res = await call('/invoices?status=sent');
+    assert.deepEqual([res.body.invoices.map((i) => i.id), res.body.counts.sent], [[ready.id], 1]);
+    assert.equal((await call(`/invoices/${ready.id}`)).body.invoice.tab, 'sent');
 
     fake.status = { connected: false, writesAllowed: true };
     res = await call('/invoices/send-ready', { method: 'POST', body: {} });

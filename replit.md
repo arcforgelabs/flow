@@ -10,7 +10,7 @@ An installation runs published Flow releases. It does not develop Flow.
 | Task | Read |
 | --- | --- |
 | Set up a new installation on Replit | `docs/SELF_HOSTING.md` (start-up settings, "Sign-in (Clerk)"), then `docs/REPLIT.md` ("Configuration", "Publishing") |
-| Update to a new release | `docs/REPLIT.md`, "Updates go to the workspace first" and "The workspace updater" |
+| Update to a new release | `docs/REPLIT.md`, "Publishing" (steps), "The workspace database" and "The workspace updater" |
 | `git pull` fails | `docs/REPLIT.md`, "The workspace updater" (take the deploy files from the newest stable tag) |
 | Turn on and connect Seazona or Xero | `docs/SEAZONA.md`, "Turn it on"; `docs/XERO.md`, "Connect Xero" |
 | Pin a release or roll back | `docs/REPLIT.md`, "Pinning a release and rolling back" |
@@ -26,11 +26,14 @@ Rules for an installation:
   Adjust settings > Secrets. Put business settings in Flow's own screens.
   Never put them in a file in git (`docs/REPLIT.md`, "Where an
   installation's settings go").
-- Before Republish, update the workspace database first
-  (`bash scripts/replit-deploy.sh update-workspace`).
-- When Replit shows "Development database changes detected", approve only a
-  list of additions (`CREATE TABLE`, `ADD COLUMN`, `CREATE INDEX`,
-  `ADD CONSTRAINT`). Any `DROP` or `RENAME`: press Cancel.
+- When Replit shows "Development database changes detected", always press
+  Cancel. Never pick an option there. Flow migrates production itself when
+  it starts.
+- The workspace's database follows production by itself
+  (`docs/REPLIT.md`, "The workspace database"). To do it by hand:
+  `bash scripts/replit-deploy.sh update-workspace` (the Run button). Never
+  run `flow-server migrate` here: it applies this checkout's migrations,
+  which can be ahead of production.
 - Do not run SQL by hand on the production database.
 
 ## If this workspace develops Flow

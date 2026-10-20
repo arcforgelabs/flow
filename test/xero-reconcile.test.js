@@ -3,7 +3,8 @@ import { after, before, beforeEach, describe, test } from 'node:test';
 import { sql } from 'drizzle-orm';
 import { createContact, createPriceItem } from '../server/core/directory.js';
 import { createDraftInvoice, issueInvoice, voidInvoice } from '../server/core/invoices.js';
-import { checkSentInvoices, OUT_OF_SYNC, sentDifferences } from '../server/integrations/xero/reconcile.js';
+import { mapInvoice } from '../server/integrations/xero/mirror.js';
+import { checkSentInvoices, OUT_OF_SYNC, sentDifferences, stageOf } from '../server/integrations/xero/reconcile.js';
 import { request } from './support/clerk.js';
 import { freshDatabase, skipWithoutDatabase } from './support/db.js';
 import { bootFlow, connectDirectly, scriptedXero, seedLab, xeroAnswer } from './support/xero.js';
@@ -25,6 +26,17 @@ test('a Xero copy is compared with the version Flow sent, field by field', () =>
     { field: 'line count', flow: 1, xero: 2 },
     { field: 'date', flow: '2026-10-18', xero: '2026-10-19' },
   ]);
+});
+
+test('the Invoices page tab of an issued invoice follows its Xero stage', () => {
+  const at = (state, extra = {}) => stageOf({ state, finding: null, xero: { sentToContact: null }, ...extra });
+  assert.deepEqual(['not_sent', 'sending', 'not_copied', 'draft'].map((s) => at(s)), ['draft', 'draft', 'draft', 'draft']);
+  assert.equal(at('approved'), 'approved');
+  assert.equal(at('approved', { xero: { sentToContact: true } }), 'sent');
+  assert.deepEqual([at('part_paid'), at('paid'), at('voided'), at('deleted')], ['sent', 'sent', 'void', 'void']);
+  assert.equal(at('approved', { finding: 'edited_in_xero' }), 'pending', 'out of sync: a person looks');
+  assert.equal(mapInvoice({ InvoiceID: 'x', Status: 'AUTHORISED', SentToContact: true }).sentToContact, true);
+  assert.equal(mapInvoice({ InvoiceID: 'x', Status: 'DRAFT' }).sentToContact, null);
 });
 
 describe('sent invoices against the Xero copy', { skip: skipWithoutDatabase }, () => {

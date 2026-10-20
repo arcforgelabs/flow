@@ -6,6 +6,7 @@ import { readConnection } from './connections.js';
 import { createImportWorker } from './import.js';
 import { readPayments, xeroLiveCheck } from './ledger.js';
 import { findInvoices, listCustomers, listPriceItems, mirrorState } from './lookup.js';
+import { invoiceStages } from './reconcile.js';
 import { createXeroRouter } from './routes.js';
 import { createXeroRuntime, requireXeroSettings, XERO_CALL_GUARD } from './runtime.js';
 import { writesAllowed } from './settings.js';
@@ -15,7 +16,7 @@ import { readChangesFirst } from './webhooks.js';
 // XERO_MODE says which Xero it acts on. Its tables are created only while it
 // is on (docs/INTEGRATIONS.md).
 
-export const XERO_TABLES = Object.freeze(['xero_connections', 'xero_contacts', 'xero_items', 'xero_sync_runs', 'xero_invoice_pushes', 'xero_payment_cursors', 'xero_invoices', 'xero_credit_notes', 'xero_payments', 'xero_mirror_cursors', 'xero_call_guard', 'xero_calls', 'xero_webhook_events', 'xero_daily_checks']);
+export const XERO_TABLES = Object.freeze(['xero_connections', 'xero_contacts', 'xero_items', 'xero_sync_runs', 'xero_invoice_pushes', 'xero_payment_cursors', 'xero_invoices', 'xero_credit_notes', 'xero_payments', 'xero_mirror_cursors', 'xero_call_guard', 'xero_calls', 'xero_webhook_events', 'xero_daily_checks', 'xero_invoice_links', 'xero_import_settings']);
 
 // What an owner enters in Settings, Integrations (server/integrations/setup.js).
 // The refresh token's key comes from Flow's secrets key.
@@ -116,6 +117,9 @@ export function createXeroAdapter({ runtime: given = null } = {}) {
       pushInvoice: ({ organisationId, invoiceId, pushedBy = null }) => pushInvoice(database, current(), { organisationId, invoiceId, pushedBy }),
       // Several issued invoices, in batches of MAX_BATCH (drafts.js).
       pushInvoices: ({ organisationId, invoiceIds, pushedBy = null }) => pushInvoices(database, current(), { organisationId, invoiceIds, pushedBy }),
+      // The Invoices page tab of each issued invoice (reconcile.js), from
+      // Flow's copy of Xero: draft, approved, sent, void or pending.
+      invoiceStages: ({ organisationId, invoiceIds = null }) => invoiceStages(database, current(), organisationId, invoiceIds),
       // What would stop each Flow draft in Xero, from Flow's copy (no calls).
       checkDrafts: ({ organisationId, invoiceIds }) => checkDrafts(database, current(), { organisationId, invoiceIds }),
       sendStatus: async ({ organisationId }) => {
@@ -142,7 +146,7 @@ export function createXeroAdapter({ runtime: given = null } = {}) {
       // Xero items, from Flow's copy, for the price list (lookup.js).
       listPriceItems: ({ organisationId }) => listPriceItems(database, organisationId, { taxTypes: current().settings.taxTypes }),
     },
-    routes: ({ db, personAuth, log, messagePage }) => createXeroRouter({ db, personAuth, runtime: current(), log, messagePage }),
+    routes: ({ db, personAuth, log, messagePage, buttonCooldowns }) => createXeroRouter({ db, personAuth, runtime: current(), log, messagePage, buttonCooldowns }),
   };
 }
 

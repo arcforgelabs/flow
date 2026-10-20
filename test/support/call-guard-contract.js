@@ -120,8 +120,20 @@ export function callGuardContract(adapter) {
       } else {
         await stopsWith('halted', { resource: 'others' });
       }
-      clock.advance(24 * 60 * MINUTE);
+      clock.advance(60 * MINUTE);
       await assert.rejects(guard.check(KEY, { resource: 'things' }), CallsStopped);
+      if (resourceOnly) {
+        // A stopped resource gets a probe call later, by itself; a refused
+        // credential waits for a person.
+        clock.advance(declared.policy?.maxResourceRetryMs ?? 24 * 60 * MINUTE);
+        await guard.check(KEY, { resource: 'things' });
+        await guard.record(KEY, { resource: 'things', statusCode: 200 });
+        assert.deepEqual((await guard.status(KEY)).stoppedResources, []);
+        await fail(1, { resource: 'things', statusCode: 403 });
+      } else {
+        clock.advance(24 * 60 * MINUTE);
+        await assert.rejects(guard.check(KEY, { resource: 'things' }), CallsStopped);
+      }
       await guard.resume();
       await guard.check(KEY, { resource: 'things' });
     });

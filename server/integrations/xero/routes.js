@@ -1,11 +1,13 @@
 import { and, eq } from 'drizzle-orm';
 import express from 'express';
 import { FlowError } from '../../core/errors.js';
+import { createActionGuard } from '../call-guard.js';
 import { billingObligations, organisations } from '../../db/schema.js';
 import { lastSync, listContacts, listItems, syncCatalogue } from './catalogue.js';
 import { createXeroClient } from './client.js';
 import { describePush, listPushes, MAX_BATCH, previewDrafts, pushDrafts } from './drafts.js';
 import { recordXeroEvidence, recordXeroPayments } from './ledger.js';
+import { IMPORT_STATES, importOverview, linkXeroInvoice, makeFlowInvoice, matchXero, saveImportSettings } from './links.js';
 import { queueHistoryImport, resetImport } from './import.js';
 import { MIRROR_RESOURCES, mirrorStatus, mirrorXero } from './mirror.js';
 import { accountingStatus, checkSentInvoices } from './reconcile.js';
@@ -42,9 +44,24 @@ import { messagePage as themedMessagePage } from '../../ui/page.js';
 //   POST /webhooks                 Xero: change events, signed with the
 //                                  webhook key (XERO_WEBHOOK_KEY); no session
 //
+// Each POST that calls Xero waits between presses (XERO_ACTIONS, the action
+// guard): a press too soon answers 429 with the wait.
+//
 // Only an owner, with a verified owner sign-in, can connect or disconnect.
 // The callback carries no Flow session: the one-use state from /connect,
 // issued to that owner for that organisation, is what admits it.
+
+// The buttons that call Xero, and how long each waits before it runs again
+// (the action guard, call-guard.js). A send is one invoice at a time, so it
+// only runs once at a time and backs off after a failure.
+export const XERO_ACTIONS = Object.freeze({
+  sync: { cooldownMs: 5 * 60_000 },
+  recheck: { cooldownMs: 30_000 },
+  push: { cooldownMs: 0, budget: false },
+  obligationCheck: { cooldownMs: 30_000 },
+  paymentsSync: { cooldownMs: 5 * 60_000 },
+  mirror: { cooldownMs: 2 * 60_000 },
+});
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -92,10 +109,11 @@ export function callsState(status) {
   return { stopped: Boolean(status.haltedReason) || resources.length > 0, all: Boolean(status.haltedReason), resources, since };
 }
 
-export function createXeroRouter({ db, personAuth, runtime, log = console, messagePage = (options) => themedMessagePage({ ...options, defaultFamily: DEFAULT_FAMILY }) }) {
+export function createXeroRouter({ db, personAuth, runtime, log = console, buttonCooldowns = true, actions = createActionGuard({ integration: 'xero', actions: XERO_ACTIONS, off: !buttonCooldowns }), messagePage = (options) => themedMessagePage({ ...options, defaultFamily: DEFAULT_FAMILY }) }) {
   const page = (title, text, tone) => messagePage({ title, text, tone });
   const { settings } = runtime;
   const router = express.Router();
+  const act = (name, key) => actions.route(name, { key });
 
   // Xero's webhooks (webhooks.js), before the JSON parser: the signature
   // covers the raw body. Xero wants 200 with no body within 5 seconds, and
@@ -219,7 +237,7 @@ export function createXeroRouter({ db, personAuth, runtime, log = console, messa
     return res.json({ ok: true, disconnected: true, revoked });
   }));
 
-  router.post('/sync', ...manager, handle(log, async (req, res) => {
+  router.post('/sync', ...manager, act('sync'), handle(log, async (req, res) => {
     const organisationId = await requireOrganisation(db, req.body?.organisationId);
     const run = await syncCatalogue(db, runtime, organisationId, { startedBy: req.person.id });
     res.json({ ok: true, sync: run });
@@ -251,7 +269,7 @@ export function createXeroRouter({ db, personAuth, runtime, log = console, messa
   // Mark resolved: read Xero's changes (a few calls, through the call guard),
   // then check this one invoice again. The item closes only when the
   // difference is gone; otherwise it stays open with the new evidence.
-  router.post('/invoices/:invoiceId/recheck', ...manager, handle(log, async (req, res) => {
+  router.post('/invoices/:invoiceId/recheck', ...manager, act('recheck', (req) => req.params.invoiceId), handle(log, async (req, res) => {
     const organisationId = await requireOrganisation(db, req.body?.organisationId);
     const [invoiceId] = requireInvoiceIds([req.params.invoiceId], 'invoiceId');
     await mirrorXero(db, runtime, organisationId, { resources: ['invoices'] });
@@ -260,7 +278,7 @@ export function createXeroRouter({ db, personAuth, runtime, log = console, messa
     res.json({ ok: true, resolved: !status?.finding, closed: result.closed, status });
   }));
 
-  router.post('/invoices/push', ...manager, handle(log, async (req, res) => {
+  router.post('/invoices/push', ...manager, act('push'), handle(log, async (req, res) => {
     const organisationId = await requireOrganisation(db, req.body?.organisationId);
     const invoiceIds = requireInvoiceIds(req.body?.invoiceIds);
     const allowExistingReference = req.body?.allowExistingReference === undefined ? [] : requireInvoiceIds(req.body.allowExistingReference, 'allowExistingReference');
@@ -275,7 +293,7 @@ export function createXeroRouter({ db, personAuth, runtime, log = console, messa
     res.json({ ok: true, pushes: (await listPushes(db, organisationId, invoiceId)).map(describePush) });
   }));
 
-  router.post('/obligations/:obligationId/check', ...manager, handle(log, async (req, res) => {
+  router.post('/obligations/:obligationId/check', ...manager, act('obligationCheck', (req) => req.params.obligationId), handle(log, async (req, res) => {
     const organisationId = await requireOrganisation(db, req.body?.organisationId);
     const [obligationId] = requireInvoiceIds([req.params.obligationId], 'obligationId');
     const [obligation] = await db.select().from(billingObligations)
@@ -285,13 +303,13 @@ export function createXeroRouter({ db, personAuth, runtime, log = console, messa
     res.json({ ok: true, obligation: row });
   }));
 
-  router.post('/payments/sync', ...manager, handle(log, async (req, res) => {
+  router.post('/payments/sync', ...manager, act('paymentsSync'), handle(log, async (req, res) => {
     const organisationId = await requireOrganisation(db, req.body?.organisationId);
     const result = await recordXeroPayments(db, runtime, organisationId, { actor: `person:${req.person.id}` });
     res.json({ ok: true, ...result });
   }));
 
-  router.post('/mirror', ...manager, handle(log, async (req, res) => {
+  router.post('/mirror', ...manager, act('mirror'), handle(log, async (req, res) => {
     const organisationId = await requireOrganisation(db, req.body?.organisationId);
     const resources = req.body?.resources ?? MIRROR_RESOURCES;
     if (!Array.isArray(resources) || !resources.length || !resources.every((r) => MIRROR_RESOURCES.includes(r))) {
@@ -305,6 +323,47 @@ export function createXeroRouter({ db, personAuth, runtime, log = console, messa
   router.get('/mirror', ...signedIn, handle(log, async (req, res) => {
     const organisationId = await requireOrganisation(db, req.query.organisationId);
     res.json({ ok: true, ...(await mirrorStatus(db, organisationId)) });
+  }));
+
+  // The Import page (links.js): each Xero sales invoice in Flow's copy against
+  // Flow's own invoices. Reads Flow's database only.
+  router.get('/import', ...signedIn, handle(log, async (req, res) => {
+    const organisationId = await requireOrganisation(db, req.query.organisationId);
+    const show = typeof req.query.show === 'string' && [...IMPORT_STATES, 'check', 'all'].includes(req.query.show) ? req.query.show : 'all';
+    const q = typeof req.query.q === 'string' ? req.query.q.slice(0, 200) : '';
+    const offset = Math.max(0, Math.min(Number.parseInt(req.query.offset, 10) || 0, 1_000_000));
+    const limit = Math.max(1, Math.min(Number.parseInt(req.query.limit, 10) || 50, 100));
+    res.json({ ok: true, ...(await importOverview(db, organisationId, { show, q, limit, offset })) });
+  }));
+
+  router.post('/import/match', ...manager, handle(log, async (req, res) => {
+    const organisationId = await requireOrganisation(db, req.body?.organisationId);
+    const result = await matchXero(db, organisationId, { actor: `person:${req.person.id}` });
+    log.info?.(`[xero] organisation ${organisationId}: person ${req.person.id} matched Xero invoices: ${JSON.stringify(result)}`);
+    res.json({ ok: true, ...result });
+  }));
+
+  router.put('/import/settings', ...manager, handle(log, async (req, res) => {
+    const organisationId = await requireOrganisation(db, req.body?.organisationId);
+    res.json({ ok: true, settings: await saveImportSettings(db, organisationId, { autoLink: req.body?.autoLink, makeUnmatched: req.body?.makeUnmatched, actor: `person:${req.person.id}` }) });
+  }));
+
+  const xeroId = (raw) => {
+    if (typeof raw !== 'string' || !UUID.test(raw)) throw Object.assign(new FlowError('not_found', 'Xero invoice not found'), { status: 404 });
+    return raw;
+  };
+
+  router.post('/import/:xeroInvoiceId/link', ...manager, handle(log, async (req, res) => {
+    const organisationId = await requireOrganisation(db, req.body?.organisationId);
+    const [invoiceId] = requireInvoiceIds([req.body?.invoiceId], 'invoiceId');
+    res.json({ ok: true, ...(await linkXeroInvoice(db, organisationId, xeroId(req.params.xeroInvoiceId), { invoiceId, actor: `person:${req.person.id}` })) });
+  }));
+
+  router.post('/import/:xeroInvoiceId/make', ...manager, handle(log, async (req, res) => {
+    const organisationId = await requireOrganisation(db, req.body?.organisationId);
+    const jobId = req.body?.jobId == null ? null : requireInvoiceIds([req.body.jobId], 'jobId')[0];
+    const { invoice } = await makeFlowInvoice(db, organisationId, xeroId(req.params.xeroInvoiceId), { jobId, actor: `person:${req.person.id}` });
+    res.json({ ok: true, invoice: { id: invoice.id, number: invoice.number } });
   }));
 
   return router;

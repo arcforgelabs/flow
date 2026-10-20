@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
-import { CUSTOM_FIELD_TYPES, jobFieldEvents, jobFields, jobFieldValues, people } from '../db/schema.js';
+import {
+  CUSTOM_FIELD_TYPES, integrationSettingEvents, integrationSettings, jobFieldEvents, jobFields, jobFieldSettings, jobFieldValues, people,
+} from '../db/schema.js';
 import { FlowError, notFound } from './errors.js';
 
 // Custom fields (docs/CUSTOM_FIELDS.md): fields a lab makes for its jobs in
@@ -14,6 +16,14 @@ export { CUSTOM_FIELD_TYPES };
 // person, or yes and no.
 export const GROUPABLE_TYPES = ['dropdown', 'person', 'checkbox'];
 export const OPTION_COLORS = ['gray', 'blue', 'teal', 'green', 'amber', 'red', 'purple', 'pink'];
+// Each type group's own colour, until the lab picks another.
+export const TYPE_COLORS = { dropdown: 'green', person: 'blue', checkbox: 'purple', date: 'teal', number: 'amber', text: 'gray' };
+
+function readColor(raw, what) {
+  if (raw === null) return null;
+  if (!OPTION_COLORS.includes(raw)) throw invalid(`${what} must be one of ${OPTION_COLORS.join(', ')}`);
+  return raw;
+}
 
 const MAX_FIELDS = 50;
 const MAX_OPTIONS = 50;
@@ -74,6 +84,7 @@ export function readField(raw, { partial = false, previous = null } = {}) {
   } else if (input.type !== undefined && input.type !== previous?.type) {
     throw invalid('the type of a field cannot change; make a new field instead');
   }
+  if (input.color !== undefined) out.color = readColor(input.color, 'color');
   const type = out.type ?? previous?.type;
   if (type === 'dropdown' && (!partial || input.options !== undefined)) out.options = readOptions(input.options, previous?.options ?? []);
   else if (type !== 'dropdown' && input.options !== undefined && input.options !== null && !(Array.isArray(input.options) && !input.options.length)) {
@@ -87,6 +98,7 @@ export const publicField = (row) => ({
   name: row.name,
   type: row.type,
   options: row.options ?? [],
+  color: row.color ?? null,
   position: row.position,
   groupable: GROUPABLE_TYPES.includes(row.type),
   archived: Boolean(row.archivedAt),
@@ -95,11 +107,15 @@ export const publicField = (row) => ({
   updatedAt: row.updatedAt?.toISOString?.() ?? row.updatedAt,
 });
 
+// `valueCount` is how many jobs have a value, so Delete can say what goes.
 export async function listFields(db, organisationId, { archived = false } = {}) {
   const where = [eq(jobFields.organisationId, organisationId)];
   if (!archived) where.push(isNull(jobFields.archivedAt));
-  const rows = await db.select().from(jobFields).where(and(...where)).orderBy(asc(jobFields.position), asc(jobFields.createdAt));
-  return rows.map(publicField);
+  const rows = await db.select({
+    field: jobFields,
+    valueCount: sql`(select count(*) from ${jobFieldValues} v where v.organisation_id = ${jobFields.organisationId} and v.field_id = ${jobFields.id})`.mapWith(Number),
+  }).from(jobFields).where(and(...where)).orderBy(asc(jobFields.position), asc(jobFields.createdAt));
+  return rows.map(({ field, valueCount }) => ({ ...publicField(field), valueCount }));
 }
 
 async function readRow(db, organisationId, id) {
@@ -133,6 +149,66 @@ export async function createField(db, organisationId, raw, { personId = null } =
   });
 }
 
+// Every lab gets an Assignee: a person field, made once, the first time
+// the lab's fields are read and it has no person field at all (live or
+// archived). The lab can then rename, archive or delete it like any field,
+// and Flow does not make it again: job_field_settings.assignee_made_at
+// records that it was made (or that the lab already had a person field).
+// A field already named Assignee of another type is left alone.
+export const ASSIGNEE = { name: 'Assignee', type: 'person' };
+export async function ensureAssignee(db, organisationId) {
+  const [settings] = await db.select({ at: jobFieldSettings.assigneeMadeAt }).from(jobFieldSettings)
+    .where(eq(jobFieldSettings.organisationId, organisationId));
+  if (settings?.at) return null;
+  // Only the request that marks it makes it.
+  const [marked] = await db.insert(jobFieldSettings).values({ organisationId, assigneeMadeAt: new Date() })
+    .onConflictDoUpdate({ target: jobFieldSettings.organisationId, set: { assigneeMadeAt: new Date() }, setWhere: isNull(jobFieldSettings.assigneeMadeAt) })
+    .returning({ organisationId: jobFieldSettings.organisationId });
+  if (!marked) return null;
+  const [{ count }] = await db.select({ count: sql`count(*)`.mapWith(Number) }).from(jobFields)
+    .where(and(eq(jobFields.organisationId, organisationId), eq(jobFields.type, 'person')));
+  if (count > 0) return null;
+  try {
+    return await createField(db, organisationId, ASSIGNEE);
+  } catch (error) {
+    if (error.code === 'conflict' || error.code === 'invalid' || error.code === '23505') return null;
+    throw error;
+  }
+}
+
+// Each type group's colour: TYPE_COLORS, with the lab's own choices on top.
+export async function readGroupColors(db, organisationId) {
+  const [row] = await db.select({ colors: jobFieldSettings.groupColors }).from(jobFieldSettings)
+    .where(eq(jobFieldSettings.organisationId, organisationId));
+  const own = row?.colors ?? {};
+  return Object.fromEntries(CUSTOM_FIELD_TYPES.map((t) => [t, OPTION_COLORS.includes(own[t]) ? own[t] : TYPE_COLORS[t]]));
+}
+
+// Give one type group a colour. null puts back its own colour.
+export async function setGroupColor(db, organisationId, type, raw, { personId = null } = {}) {
+  if (!CUSTOM_FIELD_TYPES.includes(type)) throw notFound('group');
+  const color = raw === undefined ? undefined : readColor(raw, 'color');
+  if (color === undefined) throw invalid('color is required (null puts back the group\'s own colour)');
+  const own = { ...(await db.select({ colors: jobFieldSettings.groupColors }).from(jobFieldSettings)
+    .where(eq(jobFieldSettings.organisationId, organisationId)))[0]?.colors };
+  if (color === null || color === TYPE_COLORS[type]) delete own[type]; else own[type] = color;
+  await db.insert(jobFieldSettings).values({ organisationId, groupColors: own, updatedBy: personId })
+    .onConflictDoUpdate({ target: jobFieldSettings.organisationId, set: { groupColors: own, updatedBy: personId, updatedAt: new Date() } });
+  return readGroupColors(db, organisationId);
+}
+
+// When an integration was connected: the first time its settings were saved
+// or it was turned on in Flow, or, for one set up in the host's own
+// settings, the first time Flow saw one of its records (`seenSince`).
+export async function integrationConnectedAt(db, adapterId, seenSince = null) {
+  const [[saved], [event]] = await Promise.all([
+    db.select({ at: sql`min(${integrationSettings.createdAt})` }).from(integrationSettings).where(eq(integrationSettings.adapterId, adapterId)),
+    db.select({ at: sql`min(${integrationSettingEvents.createdAt})` }).from(integrationSettingEvents).where(eq(integrationSettingEvents.adapterId, adapterId)),
+  ]);
+  const times = [saved?.at, event?.at, seenSince].filter(Boolean).map((t) => new Date(t)).filter((t) => !Number.isNaN(t.getTime()));
+  return times.length ? new Date(Math.min(...times)).toISOString() : null;
+}
+
 export async function updateField(db, organisationId, id, raw, { personId = null } = {}) {
   const previous = await readRow(db, organisationId, id);
   if (previous.archivedAt) throw new FlowError('conflict', 'the field is archived; bring it back first');
@@ -151,6 +227,16 @@ export async function archiveField(db, organisationId, id, { archived = true, pe
   const [row] = await db.update(jobFields).set({ archivedAt: archived ? new Date() : null, updatedBy: personId, updatedAt: new Date() })
     .where(and(eq(jobFields.organisationId, organisationId), eq(jobFields.id, id))).returning();
   return publicField(row);
+}
+
+// Delete a field for good, with every job's value and its history (the
+// tables cascade). Archive is the step that keeps them.
+export async function deleteField(db, organisationId, id) {
+  const field = await readRow(db, organisationId, id);
+  const [{ count }] = await db.select({ count: sql`count(*)`.mapWith(Number) }).from(jobFieldValues)
+    .where(and(eq(jobFieldValues.organisationId, organisationId), eq(jobFieldValues.fieldId, field.id)));
+  await db.delete(jobFields).where(and(eq(jobFields.organisationId, organisationId), eq(jobFields.id, field.id)));
+  return { id: field.id, name: field.name, valuesDeleted: count };
 }
 
 // Put the fields in this order. `ids` lists every field that is not archived.

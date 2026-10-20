@@ -16,6 +16,7 @@ export const CAPABILITIES = Object.freeze([
   'pushInvoice', // send an issued invoice; the Flow record id is the idempotency key
   'pushInvoices', // send several issued invoices in one pass (Send all ready, server/core/sending.js)
   'checkDrafts', // the accounting system's problems with Flow drafts, from its copy; null while not connected
+  'invoiceStages', // { organisationId, invoiceIds? }: Map(invoiceId -> draft | approved | sent | void | pending) for issued invoices, from its copy
   'documentFacts', // what the customer's copy of a sent invoice says (number, reference, dates), from the system's copy in Flow; never a live call
   'sendStatus', // { connected, writesAllowed }: may Flow send invoices now?
   'pushBill', // send an approved bill; the Flow record id is the idempotency key
@@ -150,7 +151,7 @@ export function defineAdapter(adapter) {
     // integration id, its two tables, and its policy. An adapter that calls
     // an outside system declares it (docs/INTEGRATIONS.md, "Outbound calls").
     callGuard: callGuard ? Object.freeze({ ...callGuard }) : null,
-    // Optional HTTP routes: routes({ db, personAuth, log, messagePage }) returns a router
+    // Optional HTTP routes: routes({ db, personAuth, log, messagePage, buttonCooldowns }) returns a router
     // mounted at /api/<id> (registry.routes).
     routes: routes ?? null,
     // Optional: the settings an owner may enter in Settings, Integrations
@@ -317,7 +318,7 @@ export function createRegistry({ log = console, env = process.env } = {}) {
         .filter((a) => ready(a) && typeof a.capabilities[capability] === 'function');
     },
     // The adapters' own HTTP routes, each under /api/<id>. `context` is
-    // { db, personAuth, log, messagePage }. An enabled, ready adapter's router is built
+    // { db, personAuth, log, messagePage, buttonCooldowns }. An enabled, ready adapter's router is built
     // once, here; a request to an adapter that is off gets its turned-off
     // answer (503), so a turned-off adapter never reads its settings or
     // tables.

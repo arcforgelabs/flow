@@ -30,11 +30,12 @@ const NO_LONGER_BILLABLE = 'the work system no longer reports the job as billabl
 // Answers Map(obligationId -> { outcome, obligation, reason? }), where
 // outcome is fresh (no read needed), read, review (sent to review) or
 // waiting (the read could not run).
-export async function readBeforeAct(db, organisationId, obligations, { work, now = new Date(), actor }) {
+// `force` reads even a fresh report (a person's "Recheck").
+export async function readBeforeAct(db, organisationId, obligations, { work, now = new Date(), actor, force = false }) {
   const outcomes = new Map();
   let toJob = null;
   for (const obligation of obligations) {
-    if (!needsRead(obligation, { work, now })) {
+    if (!needsRead(obligation, { work, now: force ? new Date(8.64e15) : now })) {
       outcomes.set(obligation.id, { outcome: 'fresh', obligation });
       continue;
     }

@@ -14,7 +14,7 @@
           },
           { "group": "Data", "pages": ["data-model", "data-spine", "reconcile"] },
           { "group": "Jobs", "pages": ["custom-fields", "job-board-moves"] },
-          { "group": "Integrations", "pages": ["integrations", "xero", "seazona", "sentry"] }
+          { "group": "Integrations", "pages": ["integrations", "xero", "xero-import", "seazona", "sentry"] }
         ]
       },
       {

@@ -174,13 +174,13 @@ export async function linkByCode(db, organisationId, catalogue, { items = null, 
 // A person's link: `externalId` in `system`'s list goes to this price item.
 // For an accounting system it replaces the item's earlier link; a record
 // linked elsewhere moves here.
-export async function linkPriceItem(db, organisationId, priceItemId, { system, externalId }, { catalogues, personId = null }) {
+async function writeLink(db, organisationId, priceItemId, { system, externalId }, { catalogues, personId }) {
   const item = await loadItem(db, organisationId, priceItemId);
   const catalogue = catalogues.get(system);
   if (!catalogue) throw new FlowError('conflict', `${system} is not connected, or its price list has not been read yet`);
   const record = catalogue.byId.get(String(externalId ?? ''));
   if (!record) throw notFound(`${catalogue.name} record`);
-  const link = await db.transaction(async (tx) => {
+  return db.transaction(async (tx) => {
     await tx.delete(priceItemLinks).where(and(
       eq(priceItemLinks.organisationId, organisationId), eq(priceItemLinks.system, system), eq(priceItemLinks.externalId, String(record.id)),
     ));
@@ -194,8 +194,33 @@ export async function linkPriceItem(db, organisationId, priceItemId, { system, e
     }).returning();
     return row;
   });
+}
+
+export async function linkPriceItem(db, organisationId, priceItemId, { system, externalId }, { catalogues, personId = null }) {
+  const link = await writeLink(db, organisationId, priceItemId, { system, externalId }, { catalogues, personId });
   await remapJobs(db, organisationId);
   return link;
+}
+
+// Many links at once (Reconcile prices, "Link sure matches"): each one as
+// linkPriceItem makes it, then one remap. A link that fails stops the rest;
+// the ones before it stay.
+export const MAX_LINKS_AT_ONCE = 500;
+export async function linkPriceItems(db, organisationId, links, { catalogues, personId = null }) {
+  if (!Array.isArray(links) || !links.length) throw invalid('links must be a list of { priceItemId, system, externalId }');
+  if (links.length > MAX_LINKS_AT_ONCE) throw invalid(`${MAX_LINKS_AT_ONCE} links at once at most`);
+  const made = [];
+  try {
+    for (const link of links) {
+      if (!link || typeof link !== 'object' || !link.priceItemId || !link.system || !link.externalId) {
+        throw invalid('each link needs priceItemId, system and externalId');
+      }
+      made.push(await writeLink(db, organisationId, link.priceItemId, link, { catalogues, personId }));
+    }
+  } finally {
+    if (made.length) await remapJobs(db, organisationId);
+  }
+  return made;
 }
 
 export async function unlinkPriceItem(db, organisationId, linkId) {

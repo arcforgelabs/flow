@@ -13,16 +13,21 @@ import { freshDatabase, skipWithoutDatabase, testDatabaseUrl } from './support/d
 
 const OK = { ok: true, migrations: { core: 14, xero: 6 }, pending: [], missingTables: [], missingColumns: [], unknownTables: [] };
 
-test('the verdict says what the publish step will offer', () => {
-  assert.equal(publishVerdict({ ...OK, ok: false }, { core: 14 }).verdict, 'broken');
+test('the verdict says what the publish step will show, and the answer is always Cancel', () => {
   assert.equal(publishVerdict(OK, null).verdict, 'unknown');
+  assert.equal(publishVerdict({ ...OK, ok: false }, { core: 14, xero: 6 }).verdict, 'same');
   assert.equal(publishVerdict(OK, { core: 14, xero: 6 }).verdict, 'same');
-  assert.equal(publishVerdict(OK, { core: 13, xero: 6 }).verdict, 'adds');
+  assert.equal(publishVerdict(OK, { core: 13, xero: 6 }).verdict, 'ahead');
   // An adapter that is off in production has no migrations there.
-  assert.equal(publishVerdict(OK, { core: 14 }).verdict, 'adds');
+  assert.equal(publishVerdict(OK, { core: 14 }).verdict, 'ahead');
   const behind = publishVerdict(OK, { core: 15, xero: 6 });
   assert.equal(behind.verdict, 'behind');
-  assert.match(behind.say, /DROP/);
+  assert.match(behind.say, /db:follow-production/);
+  for (const live of [null, { core: 13, xero: 6 }, { core: 15, xero: 6 }]) {
+    const { say } = publishVerdict(OK, live);
+    assert.match(say, /press Cancel/);
+    assert.doesNotMatch(say, /approve/i);
+  }
 });
 
 test('the build expects every core table with its columns, and every adapter table', () => {

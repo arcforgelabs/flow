@@ -9,7 +9,10 @@ import { sql } from 'drizzle-orm';
 //   - a refused credential halts every call until a person acts (saves the
 //     settings or connects again, which calls resume());
 //   - a 401 or 403 on one resource, when the adapter's auth failures stop a
-//     resource only, stops that resource until a person acts;
+//     resource only, stops that resource; after `resourceRetryMs` one probe
+//     call may go, and a refused probe stops it again for twice as long, to
+//     at most `maxResourceRetryMs`. A good call, or a person connecting
+//     again, starts it again;
 //   - `circuitFailures` failed calls inside `circuitWindowMs` open the
 //     circuit: no call for `circuitPauseMs`, then a probe; a failed probe opens
 //     it again for twice as long, to at most `maxCircuitPauseMs`, and a
@@ -34,6 +37,8 @@ export const CALL_GUARD_POLICY = Object.freeze({
   // 'all': a 401 or 403 halts every call. 'resource': it stops only the
   // resource it came from; halt() still stops everything.
   authStops: 'all',
+  resourceRetryMs: 6 * 60 * 60_000,
+  maxResourceRetryMs: 24 * 60 * 60_000,
   telemetryRetentionMs: 35 * 24 * 60 * 60_000,
 });
 
@@ -68,12 +73,31 @@ export function circuitPauseMs(opens, policy = CALL_GUARD_POLICY) {
   return Math.min(policy.maxCircuitPauseMs, policy.circuitPauseMs * 2 ** Math.min(Math.max(0, opens), 10));
 }
 
+// The wait before the next probe of a stopped resource, after `probes`
+// refused probes.
+export function resourceRetryMs(probes, policy = CALL_GUARD_POLICY) {
+  return Math.min(policy.maxResourceRetryMs, policy.resourceRetryMs * 2 ** Math.min(Math.max(0, probes), 10));
+}
+
+// When a stopped resource may be probed again (ms). An entry written before
+// probes existed has no `retryAt`: it is due `resourceRetryMs` after `at`.
+export function resourceRetryAt(entry, policy = CALL_GUARD_POLICY) {
+  const due = entry?.retryAt ? new Date(entry.retryAt).getTime() : NaN;
+  if (Number.isFinite(due)) return due;
+  const at = entry?.at ? new Date(entry.at).getTime() : NaN;
+  return Number.isFinite(at) ? at + resourceRetryMs(0, policy) : Infinity;
+}
+
 // Why no call may go now, or null. `state` is the guard row
 // ({ haltedReason, circuitOpenUntil, stoppedResources }); `failedToday`
 // counts failed calls since the start of the UTC day.
 export function stoppedReason(state, { nowMs, failedToday, resource = null }, policy = CALL_GUARD_POLICY) {
   if (state?.haltedReason) return { reason: 'halted', retryAfterMs: null };
-  if (resource && state?.stoppedResources?.[resource]) return { reason: 'resource_stopped', retryAfterMs: null, resource };
+  const entry = resource ? state?.stoppedResources?.[resource] : null;
+  if (entry) {
+    const due = resourceRetryAt(entry, policy);
+    if (due > nowMs) return { reason: 'resource_stopped', retryAfterMs: due - nowMs, resource };
+  }
   const openUntil = state?.circuitOpenUntil ? new Date(state.circuitOpenUntil).getTime() : 0;
   if (openUntil > nowMs) return { reason: 'circuit_open', retryAfterMs: openUntil - nowMs };
   const dayStart = startOfUtcDay(nowMs);
@@ -95,7 +119,7 @@ export function circuitAfterFailure(state, { nowMs, recentFailures }, policy = C
 
 const STOP_TEXT = {
   halted: (name) => `${name} calls are stopped until a person checks the connection (it was refused)`,
-  resource_stopped: (name, resource) => `${name} calls to ${resource} are stopped until a person checks the connection (they were refused)`,
+  resource_stopped: (name, resource) => `${name} calls to ${resource} are stopped (they were refused); Flow tries again later by itself`,
   circuit_open: (name) => `${name} calls are paused after repeated failures`,
   budget_spent: (name) => `${name} calls are stopped for today: the day's failed calls are spent`,
 };
@@ -138,12 +162,14 @@ export function guardAlerts(name, status, { fix = 'Check the connection, then co
       members: [`halted:${status.haltedAt ?? ''}`],
     });
   }
+  // One refused resource is a warning, not a stop: every other call still
+  // goes, and Flow probes the resource again by itself.
   const resources = status?.stoppedResources ?? [];
   if (resources.length) {
     alerts.push({
       id: 'resources-stopped',
-      tone: 'danger',
-      title: `${name} refused Flow for ${resources.map((r) => r.resource).join(', ')}. Flow stopped those calls. ${fix}`,
+      tone: 'warn',
+      title: `${name} refused Flow for ${resources.map((r) => r.resource).join(', ')}. Other ${name} calls still work. Flow tries again by itself. To fix it now, connect again.`,
       members: resources.map((r) => `${r.resource}:${r.at ?? ''}`),
     });
   }
@@ -233,7 +259,8 @@ export function createCallGuard({
   }
 
   // Records how one call ended, and what that does to the guard. Answers
-  // what this call stopped ({ halted, resourceStopped, opened, budgetSpent }),
+  // what this call changed ({ halted, resourceStopped, resourceStillStopped,
+  // resourceResumed, opened, closed, budgetSpent }),
   // each of which was just reported once. `callId` names a call row the
   // adapter wrote when it admitted the call: that row is updated, not added.
   async function record(rawKey, { callId = null, resource = null, path = null, statusCode = null, failureKind = null, durationMs = null } = {}) {
@@ -256,22 +283,35 @@ export function createCallGuard({
       }
       const state = await readState(tx, key);
       if (!countsAsFailure({ statusCode: status, failureKind })) {
+        const result = {};
+        // A good probe: the resource is allowed again.
+        if (where && state.stoppedResources[where] && status !== null && status < 400) {
+          await tx.execute(sql`update ${T.state} set stopped_resources = stopped_resources - ${where}, updated_at = ${nowAt} where ${C.key} = ${key}`);
+          result.resourceResumed = where;
+        }
         if (state.circuitOpens > 0) {
           await tx.execute(sql`update ${T.state} set circuit_opens = 0, updated_at = ${nowAt} where ${C.key} = ${key}`);
-          return { closed: true };
+          result.closed = true;
         }
-        return {};
+        return result;
       }
       const result = {};
       const dayStart = startOfUtcDay(nowMs);
       if (await failuresSince(tx, key, dayStart) === policy.dailyFailureBudget) result.budgetSpent = { until: new Date(dayStart + DAY_MS).toISOString() };
       if (isAuthRefusal(status)) {
         if (policy.authStops === 'resource' && where) {
-          if (!state.stoppedResources[where]) {
-            await tx.execute(sql`update ${T.state} set stopped_resources = stopped_resources || ${JSON.stringify({ [where]: { statusCode: status, at: nowAt.toISOString() } })}::jsonb,
-              updated_at = ${nowAt} where ${C.key} = ${key}`);
-            result.resourceStopped = where;
-          }
+          const before = state.stoppedResources[where];
+          const probes = before ? (Number(before.probes) || 0) + 1 : 0;
+          const entry = {
+            statusCode: status,
+            at: before?.at ?? nowAt.toISOString(),
+            probes,
+            retryAt: new Date(nowMs + resourceRetryMs(probes, policy)).toISOString(),
+          };
+          await tx.execute(sql`update ${T.state} set stopped_resources = stopped_resources || ${JSON.stringify({ [where]: entry })}::jsonb,
+            updated_at = ${nowAt} where ${C.key} = ${key}`);
+          if (before) result.resourceStillStopped = { resource: where, retryAt: entry.retryAt };
+          else result.resourceStopped = where;
           return result;
         }
         if (!state.haltedReason) {
@@ -301,7 +341,9 @@ export function createCallGuard({
     if (!reports) return;
     const cause = status ? `HTTP ${status}` : failureKind;
     if (outcome.halted) log.error?.(`${tag} ${name} refused the connection (${cause}). Calls are stopped until a person checks the ${name} settings or connects again.`);
-    if (outcome.resourceStopped) log.error?.(`${tag} ${name} refused calls to ${where} (${cause}). Calls to ${where} are stopped until a person checks the connection.`);
+    if (outcome.resourceStopped) log.error?.(`${tag} ${name} refused calls to ${where} (${cause}). Calls to ${where} are stopped; Flow tries again by itself, or a person connects again.`);
+    if (outcome.resourceStillStopped) log.warn?.(`${tag} ${name} still refuses calls to ${where} (${cause}). Flow tries again at ${outcome.resourceStillStopped.retryAt}.`);
+    if (outcome.resourceResumed) log.info?.(`${tag} ${name} allows calls to ${outcome.resourceResumed} again.`);
     if (outcome.opened) {
       const line = `${tag} ${name} calls failed repeatedly (last: ${cause}${where ? ` on ${where}` : ''}). Calls pause until ${outcome.opened.until}.`;
       if (outcome.opened.opens === 1) log.error?.(line);
@@ -352,11 +394,159 @@ export function createCallGuard({
       circuitOpenUntil: openUntil > nowMs ? iso(openUntil) : null,
       haltedReason: state.haltedReason,
       haltedAt: iso(state.haltedAt),
-      stoppedResources: Object.entries(state.stoppedResources).map(([resource, entry]) => ({ resource, ...entry })),
+      stoppedResources: Object.entries(state.stoppedResources).map(([resource, entry]) => ({ resource, ...entry, retryAt: Number.isFinite(resourceRetryAt(entry, policy)) ? iso(resourceRetryAt(entry, policy)) : null })),
       failedToday: await failuresSince(db, key, startOfUtcDay(nowMs)),
       dailyFailureBudget: policy.dailyFailureBudget,
     };
   }
 
   return { integration, policy, check, stoppedNow, record, halt, resume, status };
+}
+
+// ── Button presses ─────────────────────────────────────────────────────────
+//
+// The action guard: a person's button press that calls an outside system (a
+// copy, a recheck, a send) is one action. Pressed again and again, it spends
+// the provider's rate limit and can trip the call guard above. So each
+// guarded route:
+//
+//   - runs once at a time per key: a second press while it runs waits
+//     (429, `action_running`);
+//   - after a run, waits `cooldownMs` before it runs again for that key
+//     (429, `action_cooldown`);
+//   - after a failed run (a 5xx, a 429 or a stopped call), waits twice as
+//     long each time, to at most `maxCooldownMs`; a good run resets it;
+//   - shares one budget per integration: at most `budget` runs in `budgetMs`
+//     for all its actions together (429, `action_budget`). An action with
+//     `budget: false` (a send a person makes one invoice at a time) is
+//     outside it; the provider's rate limit still paces its calls.
+//
+// A 429 carries Retry-After and `retryAfterMs`, so the page shows the wait.
+// A good run says its cooldown in the `Flow-Cooldown-Ms` header. A refused
+// request (another 4xx) costs nothing: no call went. The state is in memory:
+// one Flow process serves one lab (server/rate-limit.js), and the call guard
+// above still protects every process.
+
+export const ACTION_GUARD_POLICY = Object.freeze({
+  cooldownMs: 30_000,
+  maxCooldownMs: 15 * 60_000,
+  budget: 30,
+  budgetMs: 10 * 60_000,
+});
+
+const ACTION_TEXT = {
+  action_running: () => 'This is already running. Wait for it to finish.',
+  action_cooldown: (seconds) => `Flow just did this. Try again in ${seconds} seconds.`,
+  action_budget: (seconds) => `Too many requests to this system. Try again in ${seconds} seconds.`,
+};
+
+// The wait after `failures` failed runs in a row.
+export function actionCooldownMs(failures, { cooldownMs, maxCooldownMs }) {
+  if (failures <= 0) return cooldownMs;
+  return Math.min(maxCooldownMs, Math.max(cooldownMs, 5_000) * 2 ** Math.min(failures, 10));
+}
+
+// How a response ends a run: 'ok', 'failed' (the system or the call guard
+// said no) or 'refused' (Flow refused the request; nothing was called).
+export function actionOutcome(statusCode) {
+  if (statusCode >= 500 || statusCode === 429) return 'failed';
+  if (statusCode >= 400) return 'refused';
+  return 'ok';
+}
+
+const cleanPart = (value) => String(value ?? '').replace(/[^A-Za-z0-9_.:-]+/g, '').slice(0, 80);
+
+// `integration` names the budget; `actions` maps each action name to its
+// policy ({ cooldownMs, maxCooldownMs, budget }). `route(name, { key })` answers the
+// Express middleware for one route; `key(req)` names what the cooldown
+// covers inside the organisation (an invoice id, say), or null for all of it.
+// `off: true` lets every press through (tests that press one route often).
+export function createActionGuard({ integration, actions = {}, policy: overrides = {}, off = false, now = Date.now } = {}) {
+  if (!/^[a-z][a-z0-9-]{1,31}$/.test(integration ?? '')) throw new TypeError('createActionGuard: integration must be an adapter id');
+  const policy = { ...ACTION_GUARD_POLICY, ...overrides };
+  const runs = new Map(); // key -> { running, failures, readyAt }
+  const started = []; // start times inside the budget window
+  const policyOf = (name) => ({ cooldownMs: policy.cooldownMs, maxCooldownMs: policy.maxCooldownMs, ...(actions[name] ?? {}) });
+
+  const runOf = (key) => {
+    let run = runs.get(key);
+    if (!run) runs.set(key, (run = { running: false, failures: 0, readyAt: 0 }));
+    return run;
+  };
+
+  // Why `name` may not run for `key` now, or null.
+  function waitFor(name, key) {
+    const nowMs = Number(now());
+    const run = runs.get(key);
+    if (run?.running) return { code: 'action_running', retryAfterMs: 5_000 };
+    if (run && run.readyAt > nowMs) return { code: 'action_cooldown', retryAfterMs: run.readyAt - nowMs };
+    if (policyOf(name).budget === false) return null;
+    while (started.length && started[0] <= nowMs - policy.budgetMs) started.shift();
+    if (started.length >= policy.budget) return { code: 'action_budget', retryAfterMs: started[0] + policy.budgetMs - nowMs };
+    return null;
+  }
+
+  function begin(name, key) {
+    const wait = waitFor(name, key);
+    if (wait) return wait;
+    runOf(key).running = true;
+    if (policyOf(name).budget !== false) started.push(Number(now()));
+    return null;
+  }
+
+  // `retryAfterMs`: a wait the system or the call guard asked for.
+  function end(name, key, outcome, { retryAfterMs = 0 } = {}) {
+    const run = runOf(key);
+    const rule = policyOf(name);
+    run.running = false;
+    if (outcome === 'refused') {
+      if (rule.budget !== false) started.pop();
+      return 0;
+    }
+    run.failures = outcome === 'failed' ? run.failures + 1 : 0;
+    const waitMs = Math.max(actionCooldownMs(run.failures, rule), retryAfterMs || 0);
+    run.readyAt = Number(now()) + waitMs;
+    return waitMs;
+  }
+
+  function route(name, { key = () => null } = {}) {
+    if (!actions[name]) throw new TypeError(`createActionGuard: ${name} is not a declared action`);
+    if (off) return (_req, _res, next) => next();
+    return (req, res, next) => {
+      const organisation = cleanPart(req.body?.organisationId ?? req.query?.organisationId) || 'sole';
+      const sub = key(req);
+      const runKey = [name, organisation, sub === null || sub === undefined ? '' : cleanPart(sub)].join('|');
+      const wait = begin(name, runKey);
+      if (wait) {
+        const seconds = Math.max(1, Math.ceil(wait.retryAfterMs / 1000));
+        res.set('Retry-After', String(seconds));
+        return res.status(429).json({ ok: false, code: wait.code, error: ACTION_TEXT[wait.code](seconds), retryAfterMs: wait.retryAfterMs });
+      }
+      let ended = false;
+      const finish = (statusCode) => {
+        if (ended) return 0;
+        ended = true;
+        const asked = Number(res.getHeader('Retry-After')) * 1000;
+        return end(name, runKey, actionOutcome(statusCode), { retryAfterMs: Number.isFinite(asked) ? asked : 0 });
+      };
+      // The cooldown is set as the answer is written, so a press right after
+      // it already waits, and the page learns the wait from the header.
+      const writeHead = res.writeHead;
+      res.writeHead = function writeHeadWithCooldown(statusCode, ...rest) {
+        const waitMs = finish(statusCode);
+        if (waitMs && actionOutcome(statusCode) === 'ok' && !res.headersSent) res.setHeader('Flow-Cooldown-Ms', String(waitMs));
+        return writeHead.call(this, statusCode, ...rest);
+      };
+      res.on('close', () => finish(res.headersSent ? res.statusCode : 500));
+      return next();
+    };
+  }
+
+  // Forget every run: for tests, and when a person connects again.
+  const reset = () => {
+    runs.clear();
+    started.length = 0;
+  };
+
+  return { integration, policy, actions, route, waitFor, reset };
 }

@@ -91,6 +91,37 @@ describe('Xero call guard', { skip: skipWithoutDatabase }, () => {
     assert.equal(xero.log.lines.error.length, 1);
   });
 
+  test('a stopped resource is probed again by itself, and a good probe starts it again', async () => {
+    const refused = { Title: 'Unauthorized', Detail: 'AuthorizationUnsuccessful' };
+    const since = new Date('2026-09-01T00:00:00Z');
+    const paymentsSent = () => xero.sent.filter((s) => s.includes('Payments')).length;
+    const hours = (n) => n * 60 * 60_000;
+    xero.script([xeroAnswer('Payments', refused, { status: 401, repeat: true }), { ...tokenAnswer(1), repeat: true }]);
+    const c = await client();
+    await assert.rejects(c.listPaymentsSince(since), { code: 'xero_unauthorized' });
+    assert.equal(paymentsSent(), 2);
+    // Before the wait ends: no call.
+    xero.clock.at += hours(5);
+    await assert.rejects(c.listPaymentsSince(since), (error) => error.reason === 'resource_stopped' && error.retryAfterMs === hours(1));
+    assert.equal(paymentsSent(), 2);
+    // After 6 hours one probe goes; refused again, the next wait is 12 hours.
+    xero.clock.at += hours(1);
+    await assert.rejects(c.listPaymentsSince(since), { code: 'xero_unauthorized' });
+    assert.equal(paymentsSent(), 4, 'one probe, one with a fresh token');
+    assert.equal(xero.log.lines.error.length, 1, 'a refused probe is a warning, not a second report');
+    assert.equal(xero.log.lines.warn.length, 1);
+    xero.clock.at += hours(11);
+    await assert.rejects(c.listPaymentsSince(since), (error) => error.reason === 'resource_stopped');
+    assert.equal(paymentsSent(), 4);
+    // A person connected again with the scope: the next probe succeeds.
+    xero.script([xeroAnswer('Payments', { Payments: [] }, { repeat: true }), { ...tokenAnswer(2), repeat: true }]);
+    xero.clock.at += hours(1);
+    assert.deepEqual(await c.listPaymentsSince(since), []);
+    const tenantId = (await xero.runtime.clientFor(handle.db, lab.organisation.id)).connection.tenantId;
+    assert.deepEqual((await xero.runtime.guardFor(handle.db).status(tenantId)).stoppedResources, []);
+    assert.deepEqual(await c.listPaymentsSince(since), []);
+  });
+
   test('when every call fails, at most 5 go before the circuit opens', async () => {
     xero.script([xeroAnswer('Items', { Message: 'Down' }, { status: 503, repeat: true })]);
     const c = await client();

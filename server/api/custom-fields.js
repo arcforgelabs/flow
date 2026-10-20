@@ -1,7 +1,7 @@
 import express from 'express';
 import {
-  CUSTOM_FIELD_TYPES, GROUPABLE_TYPES, OPTION_COLORS, archiveField, choosablePeople, createField, jobFieldHistory, listFields,
-  listJobFieldValues, orderFields, setJobFieldValue, updateField,
+  CUSTOM_FIELD_TYPES, GROUPABLE_TYPES, OPTION_COLORS, archiveField, choosablePeople, createField, deleteField, ensureAssignee, integrationConnectedAt,
+  jobFieldHistory, listFields, listJobFieldValues, orderFields, readGroupColors, setGroupColor, setJobFieldValue, updateField,
 } from '../core/custom-fields.js';
 import { FlowError } from '../core/errors.js';
 import { resolveOrganisation } from './invoicing.js';
@@ -9,11 +9,13 @@ import { resolveOrganisation } from './invoicing.js';
 // Custom fields for jobs (server/core/custom-fields.js, docs/CUSTOM_FIELDS.md).
 //
 //   GET  /api/custom-fields[?archived=1]          the lab's fields, the work systems' own fields (read only),
-//        and the people a person field can name
-//   POST /api/custom-fields { name, type[, options] }        owner or admin: make a field
+//        the people a person field can name, and each type group's colour
+//   POST /api/custom-fields { name, type[, options, color] } owner or admin: make a field
 //   PUT  /api/custom-fields/order { ids }                   owner or admin: the field order
-//   PUT  /api/custom-fields/:id { name?, options? }         owner or admin: rename, change options
+//   PUT  /api/custom-fields/groups/:type { color }          owner or admin: a type group's colour (null: its own)
+//   PUT  /api/custom-fields/:id { name?, options?, color? } owner or admin: rename, change options or colour
 //   POST /api/custom-fields/:id/archive { archived }        owner or admin: archive or bring back
+//   DELETE /api/custom-fields/:id                           owner or admin: delete a field, its values and history
 //   GET  /api/custom-fields/values                          every job's values
 //   PUT  /api/custom-fields/values { sourceSystem, sourceJobRef, fieldId, value[, expectedUpdatedAt] }
 //        set one job's value; a stale expectedUpdatedAt gives 409 with the current value
@@ -51,15 +53,17 @@ export function createCustomFieldsRouter({ db, personAuth, work = () => [], log 
 
   // The work systems' own fields: their job statuses, as the Stage lanes on
   // the Jobs board. Read from Flow's copy; a work system that fails to answer
-  // is left out, not an error.
+  // is left out, not an error. `createdAt` is when the system was connected.
   async function systemFields() {
     const fields = [];
     for (const adapter of work()) {
       try {
         const { statuses = [] } = await adapter.capabilities.listWork();
+        const seen = statuses.map((s) => s.firstSeenAt).filter(Boolean).sort()[0] ?? null;
         fields.push({
           id: `${adapter.id}:stage`, source: adapter.id, sourceLabel: adapter.name ?? adapter.id, name: 'Stage',
-          type: 'dropdown', readOnly: true, options: statuses.map((s) => ({ id: s.label, name: s.label, final: Boolean(s.final) })),
+          type: 'dropdown', readOnly: true, createdAt: await integrationConnectedAt(db, adapter.id, seen),
+          options: statuses.map((s) => ({ id: s.label, name: s.label, final: Boolean(s.final), firstSeenAt: s.firstSeenAt ?? null })),
         });
       } catch (error) {
         log.warn?.(`[custom-fields] ${adapter.id} stages: ${error.message}`);
@@ -71,8 +75,11 @@ export function createCustomFieldsRouter({ db, personAuth, work = () => [], log 
   router.get('/', ...signedIn, handle(async (req, res) => {
     const organisationId = await organisationOf(req);
     const archived = req.query.archived === '1' || req.query.archived === 'true';
-    const [fields, system, chosen] = await Promise.all([listFields(db, organisationId, { archived }), systemFields(), choosablePeople(db)]);
-    res.json({ ok: true, fields, systemFields: system, people: chosen, types: CUSTOM_FIELD_TYPES, groupable: GROUPABLE_TYPES, colors: OPTION_COLORS });
+    await ensureAssignee(db, organisationId);
+    const [fields, system, chosen, groupColors] = await Promise.all([
+      listFields(db, organisationId, { archived }), systemFields(), choosablePeople(db), readGroupColors(db, organisationId),
+    ]);
+    res.json({ ok: true, fields, systemFields: system, people: chosen, types: CUSTOM_FIELD_TYPES, groupable: GROUPABLE_TYPES, colors: OPTION_COLORS, groupColors });
   }));
 
   router.post('/', ...manager, handle(async (req, res) => {
@@ -83,6 +90,11 @@ export function createCustomFieldsRouter({ db, personAuth, work = () => [], log 
   router.put('/order', ...manager, handle(async (req, res) => {
     const fields = await orderFields(db, await organisationOf(req), req.body?.ids, { personId: req.person.id });
     res.json({ ok: true, fields });
+  }));
+
+  router.put('/groups/:type', ...manager, handle(async (req, res) => {
+    const groupColors = await setGroupColor(db, await organisationOf(req), req.params.type, req.body?.color, { personId: req.person.id });
+    res.json({ ok: true, groupColors });
   }));
 
   router.get('/values', ...signedIn, handle(async (req, res) => {
@@ -109,6 +121,12 @@ export function createCustomFieldsRouter({ db, personAuth, work = () => [], log 
     if (typeof archived !== 'boolean') throw new FlowError('invalid', 'archived must be true or false');
     const field = await archiveField(db, await organisationOf(req), req.params.id, { archived, personId: req.person.id });
     res.json({ ok: true, field });
+  }));
+
+  router.delete('/:id', ...manager, handle(async (req, res) => {
+    const deleted = await deleteField(db, await organisationOf(req), req.params.id);
+    log.info?.(`[custom-fields] deleted field ${deleted.id} with ${deleted.valuesDeleted} values`);
+    res.json({ ok: true, deleted });
   }));
 
   return router;

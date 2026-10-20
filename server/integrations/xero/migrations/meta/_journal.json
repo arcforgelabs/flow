@@ -57,6 +57,20 @@
       "when": 1792500000000,
       "tag": "0007_xero_webhooks",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1792510000000,
+      "tag": "0008_xero_invoice_links",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1792520000000,
+      "tag": "0009_xero_sent_to_contact",
+      "breakpoints": true
     }
   ]
 }

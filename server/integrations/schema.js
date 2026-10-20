@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
+import { withMigrationLock } from '../db/index.js';
 
 // An adapter's tables: created from its own migrations while it is enabled,
 // never dropped by turning it off. Each adapter keeps its own migration
@@ -24,12 +25,15 @@ export async function missingAdapterTables(db, adapter) {
 
 // Runs the adapter's pending migrations, then checks they created every table
 // it declares, so the declaration stays true.
+// It holds Flow's migration lock (server/db/index.js) while it does.
 export async function migrateAdapterSchema(db, adapter) {
-  await migrate(db, { migrationsFolder: adapter.schema.migrationsFolder, migrationsTable: migrationsTable(adapter) });
-  const missing = await missingAdapterTables(db, adapter);
-  if (missing.length) {
-    throw new Error(`Adapter ${adapter.id} migrations did not create ${missing.join(', ')}`);
-  }
+  await withMigrationLock(db, async (locked) => {
+    await migrate(locked, { migrationsFolder: adapter.schema.migrationsFolder, migrationsTable: migrationsTable(adapter) });
+    const missing = await missingAdapterTables(locked, adapter);
+    if (missing.length) {
+      throw new Error(`Adapter ${adapter.id} migrations did not create ${missing.join(', ')}`);
+    }
+  });
 }
 
 export function isMissingTable(error) {

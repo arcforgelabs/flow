@@ -238,7 +238,7 @@ test('each request is named by the route it matched, and each query gets a span'
   assert.deepEqual(spans, [['db', 'SELECT * FROM invoices WHERE id = $1'], ['db', 'UPDATE invoices SET state = ?']]);
 });
 
-test('a problem report is tagged notify=yes only when the person typed an email', () => {
+test('a problem report is tagged notify=yes only when it carries an email', () => {
   const report = (email) => ({ type: 'feedback', tags: { source: 'browser' }, contexts: { feedback: { message: 'It broke.', contact_email: email } } });
   const asked = report('person@example.test');
   tagNotify(asked);

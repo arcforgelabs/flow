@@ -40,7 +40,7 @@ run a lab.
 | `docs/JOB_INVOICE_LINKS.md` | The pipeline: how each job links to its customer and to the accounting invoice that bills it |
 | `docs/INVOICING_RULES.md` | The invoicing rules that draft a job's invoice, and the two ways an invoice goes to Xero |
 | `docs/INVOICE_RULES.md` | Invoice rules a lab builds (When, If, Then) that make a ready job wait or never draft |
-| `docs/INVOICE_SENDING.md` | Drafts, Problem and Ready invoices, Finalise, a changed job, and Send all ready to the accounting system |
+| `docs/INVOICE_SENDING.md` | The invoice tabs (Pending, Ready, Draft, Approved, Sent, Void), a changed job, and Send all ready to the accounting system |
 | `docs/RECONCILE.md` | The daily reconcile: counts and totals per day across the work system's copy, the ledger and the accounting copy |
 | `docs/ALERTS.md` | Quiet alerts: the slim line on a page when something there needs a person, and how a person dismisses it |
 | `docs/AUTOMATIONS.md` | Automations: Flow routines that mark jobs ready to invoice and draft them, each on or off |
@@ -55,6 +55,7 @@ run a lab.
 | `docs/REPLIT.md` | A Replit workspace of this repository that follows a release channel (`FLOW_DEPLOY_REF`) |
 | `docs/INTEGRATIONS.md` | How an integration adapter is built, turned on and off, and owns its tables |
 | `docs/XERO.md` | The Xero adapter: modes, settings, rate limits, connecting Xero and draft invoices |
+| `docs/XERO_IMPORT.md` | Xero › Import: each Xero invoice in Flow's copy linked to its Flow invoice, or made into one |
 | `docs/SEAZONA.md` | The Seazona adapter: modes, settings, the rate governor, replay files and its tables |
 | `docs/SENTRY.md` | The Sentry adapter: errors and problem reports to the installation's own Sentry project |
 | `server/integrations/port.js` | The integration port every adapter implements |

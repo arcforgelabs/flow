@@ -12,12 +12,10 @@ import { migrationsTable } from '../integrations/schema.js';
 //   - the tables in public that neither declares (another app's, or an
 //     earlier Flow's).
 //
-// On Replit it runs on the workspace's database after each update
-// (scripts/replit-deploy.sh), and compares that database with the live app's
-// GET /health, which reports the same migration counts. Replit's publish step
-// offers to make production's tables match the workspace's, so the
-// comparison says what that step will show (docs/REPLIT.md, "The workspace
-// updater"). Anyone who runs Flow can run it: `flow-server doctor`.
+// On Replit, `flow-server doctor --live <address>` compares the workspace's
+// database with the live app's GET /health, which reports the same migration
+// counts, and says what Replit's publish step will show (docs/REPLIT.md, "The
+// workspace database"). Anyone who runs Flow can run it: `flow-server doctor`.
 
 const CORE_MIGRATIONS = fileURLToPath(new URL('./migrations', import.meta.url));
 const CORE_TABLE = '__drizzle_migrations';
@@ -114,26 +112,27 @@ export async function diagnoseDatabase(pool, { adapters = [] } = {}) {
   };
 }
 
-// What Replit's publish step will offer, from the workspace's report and the
+// What Replit's publish step will show, from the workspace's report and the
 // live app's migration counts (GET /health's schema.migrations, or null when
-// the live app could not say).
+// the live app could not say). Flow migrates production itself when it
+// starts, so the answer to "Development database changes detected" is always
+// Cancel (docs/REPLIT.md, "The workspace database").
 //
-//   broken  the workspace database is not at this build: do not publish
-//   behind  production has migrations the workspace lacks: the list would
-//           drop them, so Cancel and update the workspace first
-//   adds    the workspace is ahead: the list holds additions only; approve
 //   same    the two match: no list
-//   unknown the live app did not say: approve additions, Cancel a DROP
+//   behind  production has migrations the workspace lacks: follow production
+//   ahead   the workspace has migrations production does not run
+//   unknown the live app did not say
+export const CANCEL_RULE = 'If Replit shows "Development database changes detected", press Cancel.';
+
 export function publishVerdict(report, live) {
-  if (!report.ok) return { verdict: 'broken', say: 'The workspace database is not at this build. Do not publish. Update the workspace again.' };
-  if (!live) return { verdict: 'unknown', say: 'The live app did not report its migrations. Publish: approve a list of additions; Cancel any DROP.' };
+  if (!live) return { verdict: 'unknown', say: `The live app did not report its migrations. ${CANCEL_RULE}` };
   const behind = Object.entries(live).filter(([id, n]) => n > (report.migrations[id] ?? 0)).map(([id]) => id);
-  if (behind.length) {
-    return { verdict: 'behind', say: `Production has ${behind.join(', ')} migrations the workspace lacks. Do not publish: Replit would offer to DROP them. Update the workspace first.` };
-  }
   const ahead = Object.entries(report.migrations).filter(([id, n]) => n > (live[id] ?? 0)).map(([id]) => id);
   if (ahead.length) {
-    return { verdict: 'adds', say: `The workspace is ahead of production (${ahead.join(', ')}). Publish: Replit offers to add tables or columns only. Approve.` };
+    return { verdict: 'ahead', say: `The workspace has ${ahead.join(', ')} migrations production does not run. ${CANCEL_RULE} Production applies its own migrations when it starts.` };
+  }
+  if (behind.length) {
+    return { verdict: 'behind', say: `Production has ${behind.join(', ')} migrations the workspace lacks. Run npm run db:follow-production (or press Run). ${CANCEL_RULE}` };
   }
   return { verdict: 'same', say: 'The workspace and production are at the same migrations. Publish: Replit shows no database changes.' };
 }

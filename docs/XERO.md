@@ -57,7 +57,7 @@ credentials. Tests use replay only and never call the real Xero API.
 | `XERO_TENANT_ID` / `XERO_TENANT_NAME` | configuration | The Xero organisation this installation may connect. `live` needs one of them. |
 | `XERO_ALLOW_LIVE_WRITES` | configuration | `on` lets `live` mode create draft invoices. Default off. |
 | `XERO_REDIRECT_URI` | configuration | The OAuth callback. Default: `FLOW_PUBLIC_ORIGIN` + `/api/xero/oauth/callback`. Register the same address on the Xero app. |
-| `XERO_SCOPE` | configuration | OAuth scopes. Default `offline_access accounting.contacts accounting.invoices accounting.settings.read`. |
+| `XERO_SCOPE` | configuration | OAuth scopes. Default `offline_access accounting.contacts accounting.invoices accounting.payments.read accounting.settings.read`. A connection made before a scope was added keeps its old scopes until a person connects again. |
 | `XERO_DAY_LIMIT` | configuration | The app's daily call limit per organisation until Xero reports its own: 1000 on the Starter plan (the default), 5000 on Core and above. |
 | `XERO_USAGE_WARNING_FRACTION` | configuration | Log a warning when this share of the day's calls is used. Default 0.7. |
 | `XERO_TRACKING_CATEGORY` / `XERO_TRACKING_OPTION` | configuration | A tracking category and option put on every invoice line. Set both or neither. |
@@ -65,7 +65,7 @@ credentials. Tests use replay only and never call the real Xero API.
 | `XERO_DEFAULT_DUE_DAYS` | configuration | Days from the invoice date to the due date when a Flow invoice has none. Default 30. |
 | `XERO_INVOICE_NUMBER` | configuration | `xero` (default): Xero numbers the invoice. `flow`: Xero gets Flow's invoice number. |
 | `XERO_REPLAY_FIXTURES` | configuration | Replay mode only: a fixture file in place of the bundled one. |
-| `XERO_KEEP_REFERENCE` | configuration | `on` keeps free text from Xero records in the mirror: invoice and payment references and line descriptions. They can name a patient. Default off: those fields are stored empty. |
+| `XERO_KEEP_REFERENCE` | configuration | `on` (the default) keeps free text from Xero records in the copy: invoice and payment references and line descriptions. The Import matches on them. `off` stores those fields empty. |
 | `XERO_MIRROR_PAGE_SIZE` | configuration | Records per mirror call. Default 200, at most 1000. |
 | `XERO_MIRROR_RESERVE_FRACTION` | configuration | The share of the day's calls the mirror leaves for drafts and people. Default 0.3. |
 | `XERO_WEBHOOK_KEY` | secret | The webhook key from the Xero app's Webhooks page. Set: Flow takes Xero's change events at `/api/xero/webhooks`. Unset: Flow reads changes by polling only. |
@@ -330,8 +330,8 @@ flowchart LR
   remaining calls fall to `XERO_MIRROR_RESERVE_FRACTION` of the limit.
 - **A row changes only when its content does.** Each row keeps a hash of
   what Flow stores; `last_changed_at` moves only with it.
-- **No patient text by default.** References and line descriptions are kept
-  only with `XERO_KEEP_REFERENCE=on`.
+- **References are kept.** References and line descriptions are the lab's own
+  data and are kept, unless `XERO_KEEP_REFERENCE=off`.
 
 ### Webhooks and the daily check
 
@@ -424,8 +424,7 @@ Xero's copy of it. No Xero calls.
   The Invoices page shows it as a tag on issued and void invoices, and the
   invoice shows the differences, **Open in Xero** and **Mark resolved**.
 - Voiding a sent invoice in Flow warns while Xero still holds it live.
-- References and line descriptions are not compared: the copy keeps them only
-  with `XERO_KEEP_REFERENCE=on`.
+- References and line descriptions are not compared yet.
 
 ## The billing ledger
 
@@ -495,7 +494,10 @@ Every call also goes through the call guard (`docs/INTEGRATIONS.md`,
   until an owner connects Xero again or saves its settings;
 - a 401 or 403 that a fresh token does not clear stops only that resource
   (for example `Payments` when the connection lacks its scope, #99). The
-  history import skips a stopped resource as `refused` and reads the rest;
+  history import skips a stopped resource as `refused` and reads the rest.
+  After 6 hours one probe call may go (then 12, then 24 hours); a good probe
+  starts the resource again. A connection made before `accounting.payments.read`
+  was in the default scope needs one Connect again to read payments;
 - 5 failed calls in 10 minutes open the circuit (5 minutes, doubling to 6
   hours), and 50 failed calls stop calls until the next UTC day;
 - a first 401 (an expired access token) is not counted;

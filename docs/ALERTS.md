@@ -17,7 +17,7 @@ Issue #117. An alert says that something on one page needs a person.
 
 | Page | Alert | Source | Who sees it |
 | --- | --- | --- | --- |
-| Invoices | Invoices with a problem (a check stopped a draft, or the accounting system refused an issued invoice). The action opens the Problem tab. | `invoiceViews` (`server/core/sending.js`) | Everyone |
+| Invoices | Invoices with a problem (a check stopped a draft, or the accounting system refused an issued invoice). The action opens the Pending tab. | `invoiceViews` (`server/core/sending.js`) | Everyone |
 | Price list | Codes that differ from a connected system | Open `price_check` review items (`server/core/review.js`) | Everyone |
 | Integrations | A stop that only a person can clear: the system refused Flow | Each integration's `alerts` capability | Owners and admins |
 

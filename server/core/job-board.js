@@ -102,7 +102,7 @@ export async function boardJobs(db, organisationId, { work = [], accounting = nu
       if (status && !statuses.has(status)) statuses.set(status, { label: status, final: false, firstSeenAt: null });
       return {
         sourceSystem: o.sourceSystem, sourceJobRef: o.sourceJobRef, caseRef: o.caseRef, status,
-        clientName: o.contactName, workClientName: null, practitioner: o.practitioner, department: null,
+        clientName: o.contactName, workClientName: null, practitioner: o.practitioner, patient: null, department: null,
         orderedOn: null, dueOn: null, jobDate: o.jobDate, shippedOn: o.shippedOn,
         totalCents: o.totalCents, lines: ledgerLines(o.lines), obligation: o,
       };
@@ -129,6 +129,7 @@ export async function boardJobs(db, organisationId, { work = [], accounting = nu
         workClientName: item.clientName ?? null,
         practitioner: item.practitioner ?? o?.practitioner ?? null,
         department: item.department ?? null,
+        patient: item.patient ?? null,
         orderedOn: item.orderedOn ?? null,
         dueOn: item.dueOn ?? null,
         jobDate: o?.jobDate ?? null,
