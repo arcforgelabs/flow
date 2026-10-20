@@ -5,8 +5,8 @@ ships what `main` holds at the cut, and nothing waits for a named feature.
 A release agent picks the cut, a `main` commit that the 3-hourly Flow Full
 Release Validation proved, and cuts a release branch `release/YYYY.M.N`
 from it. After the cut, only blocker fixes enter the branch, as `-x`
-cherry-picks of merged `main` commits. Each release is one signed tag on its
-release branch, built once and published three ways: an npm package, a
+cherry-picks of merged `main` commits. Each release is one annotated tag on its
+release branch (signed once the maintainer sets a key), built once and published three ways: an npm package, a
 container image, and a GitHub Release that records both. After a stable
 release, a closeout pull request brings what shipped back to `main`. An
 installation runs a release it chose, by version and fingerprint, never a
@@ -51,7 +51,7 @@ stable version, so `2026.10.18-beta.1` and `2026.10.18-beta.2` come before
 `2026.10.18`. A correction is `2026.10.18-1`: a fix of a published stable
 release from its release branch, when that version cannot be published
 again (npm never replaces a version). Corrections count from 1 and come
-after their stable release. Tags add a `v`, are annotated and signed, and
+after their stable release. Tags add a `v`, are annotated (signed when a key is set), and
 each GitHub Release is titled `flow <version>`. On a release branch,
 `package.json` holds the branch's version; a beta and a correction take
 their own version only in the packed tarball. `main` holds the newest
@@ -77,7 +77,7 @@ does not have.
 | `flow-full-release-validation.yml` (Flow Full Release Validation) | Every 3 hours on `main`; on a release branch after each change there (Flow Release Branch); by hand | Proves one exact commit with every lane a release needs: all CI lanes (`test`, `docker-build`, `package`) and the secret scan over the whole history. On a release branch it also requires `package.json` to hold the branch's version and each changelog file of that version to match its history. A scheduled run reuses an earlier pass of the same commit. Publishes nothing. |
 | `flow-release-branch.yml` (Flow Release Branch) | By hand or from `release:stable`, from `main` | The only writer of `release/YYYY.M.N`. `cut` creates it at a picked `main` commit with one release commit on top: `package.json`'s version and the version's changelog files from `notes_ref`. `cherry-pick` copies merged `main` commits with `git cherry-pick -x` (blocker fixes only), with refreshed notes if given. `notes` replaces the version's changelog files. Each push starts the validation, CI and the secret scan on the branch. |
 | `flow-release-prepare.yml` (Flow Release Prepare) | By hand or from `release:stable`, from `main` | Takes a commit on a release branch (default: its head) that Flow Full Release Validation proved. Plans the next tag for the channel (beta, stable or correction), verifies the changelog, creates the tag annotated and signed with the release tag key, and starts Flow Release Publish. |
-| `flow-release-checks.yml` (Flow Release Checks) | From Flow Release Publish | Requires the tag to be annotated with a signature GitHub verifies, before it checks anything out; to be a calendar version that matches `package.json`; and to sit on its release branch. Runs every CI lane on its commit, packs the npm tarball with a shrinkwrap of the tested dependencies, then installs it in an empty directory and starts it against PostgreSQL. Publishes nothing. |
+| `flow-release-checks.yml` (Flow Release Checks) | From Flow Release Publish | Requires the tag to be annotated before it checks anything out, and its signature verified by GitHub when `RELEASE_REQUIRE_SIGNED_TAGS` is `true`; to be a calendar version that matches `package.json`; and to sit on its release branch. Runs every CI lane on its commit, packs the npm tarball with a shrinkwrap of the tested dependencies, then installs it in an empty directory and starts it against PostgreSQL. Publishes nothing. |
 | `flow-release-publish.yml` (Flow Release Publish) | From Flow Release Prepare, or by hand for an existing tag | `approve` job at the start, alongside the checks: environment `release` for a stable release or correction, `release-beta` for a beta. Then the `image` job pushes the image by digest, attests it and its SBOM, verifies the attestation, starts the pushed digest against PostgreSQL, then adds the channel's tags. Then it creates the GitHub Release as a draft with the manifest, checks its body is the changelog file, and starts Flow NPM Release for the tarball it proved. |
 | `flow-npm-release.yml` (Flow NPM Release) | From Flow Release Publish | Requires the tarball from that run to match the GitHub Release's manifest. Dispatched by Flow Release Publish, it publishes on that run's approval: it checks that GitHub Actions dispatched it, that the run is for this tag, and, for a stable release, that GitHub's approvals record shows `release` approved. Dispatched by hand, it waits for `npm-release` first. `publish` runs in environment `npm-publish`: npm trusted publishing with provenance, to the channel's dist-tag. Then it verifies what npm serves, attaches the post-publish evidence and makes the GitHub Release public. For a stable release or correction it starts Flow Release Closeout. |
 | `flow-release-closeout.yml` (Flow Release Closeout) | From Flow NPM Release, or by hand | openclaw/openclaw's stable main closeout. Requires every commit of the release branch that `main` lacks to be the release commit, a changelog commit or a `-x` cherry-pick of a `main` commit. On branch `release/<version>-main-closeout` from `main`, it copies the version's changelog files and sets `package.json` to the shipped version (unless `main` is newer), then opens `chore(release): close out <version> on main` and starts its checks. It does not merge. |
@@ -99,9 +99,8 @@ Release tags (`v20*`) cannot be moved or deleted
 deleted or force-pushed (`.github/rulesets/release-branches.json`). Each job
 that builds or publishes checks out the tag itself, never a commit handed on
 from an earlier job, and stops if the tag no longer points at the commit the
-checks proved (`test/release-workflows.test.js` holds this rule). A tag
-from before release branches is lightweight or unsigned, so it is never
-published again: fix forward with a new version.
+checks proved (`test/release-workflows.test.js` holds this rule). A lightweight tag
+(every tag from before release branches) is never published again: fix forward with a new version.
 
 `main`'s CI health never gates a release: validation and publication run on
 the release branch. A red `main` is fixed on `main`, in parallel.
@@ -133,14 +132,16 @@ flip-github → sync-beta → closeout`. State lives in
 continues from the first phase not completed, `--from <phase>` starts again
 from a phase, `--status` prints the table, and `--dry-run` prints every
 command that would change anything without running it. Every refusal prints
-`Next:` with the exact commands to run before resuming. It answers only
-two questions, each with a flag: confirm the cut (`--confirm-cut-sha <sha>`)
+`Next:` with the exact commands to run before resuming. It waits for no
+person: the maintainer's one step is the installation's own deploy. For now
+that is on purpose, so releases stay fast. `--hold` adds openclaw's two
+stops for when they are wanted: confirm the cut (`--confirm-cut-sha <sha>`)
 and approve publication (`--approve-publication`, which also merges the
 closeout).
 
 1. **cut.** The command picks the newest `main` commit that Flow Full Release
-   Validation proved (or `--cut-sha`), and refuses until that commit is
-   confirmed and the version's notes exist. Write them at the cut
+   Validation proved (or `--cut-sha`), and refuses until the version's notes
+   exist (and, with `--hold`, until that commit is confirmed). Write them at the cut
    (`.agents/skills/flow-changelog-update/SKILL.md`), with 5 to 8 highlights:
 
    ```bash
@@ -151,13 +152,13 @@ closeout).
    ```
 
    Commit `CHANGELOG/` on any branch, push it, and run the command again
-   with `--confirm-cut-sha <cut> --notes-ref <branch>`. Flow Release Branch
+   with `--notes-ref <branch>`. Flow Release Branch
    cuts `release/2026.10.34` with the release commit: the version and the
    notes, in one commit. The notes never go through a pull request to
    `main`; the closeout brings them there.
 2. **validate.** Flow Full Release Validation runs on the branch's head.
-3. **publish.** With `--approve-publication`, Flow Release Prepare tags the
-   head (signed), Flow Release Publish and Flow NPM Release run, and the
+3. **publish.** Flow Release Prepare tags the head (signed when a key is
+   set), Flow Release Publish and Flow NPM Release run, and the
    phase ends when npm serves the version.
 4. **flip-github.** The GitHub Release is public and GitHub's latest.
 5. **sync-beta.** npm `beta` moves up to the release when it is behind
@@ -253,7 +254,9 @@ settings:
 - The rulesets on `main` and on release tags (`CONTRIBUTING.md`, "Merging to
   main").
 
-Still to do, by Samuel, before the first release from a release branch:
+Ready for when releases go more secure, by Samuel; not needed now, and no
+release waits for them (decided 20 Oct 2026: releases stay fast, with the
+installation's deploy as the one step):
 
 1. **The release branch ruleset.** Settings → Rules → Rulesets → New ruleset
    → New branch ruleset. Name `Protect Flow release branches`, enforcement
@@ -274,6 +277,8 @@ Still to do, by Samuel, before the first release from a release branch:
      verified, signed by you, and Flow Release Checks refuses any tag it
      does not show so.
    - Delete both files from your computer.
+   - Then set the repository variable `RELEASE_REQUIRE_SIGNED_TAGS` to
+     `true`, so a missing or bad signature stops a release.
 
    Prepare tags as `IAMSamuelRodda <7961255+IAMSamuelRodda@users.noreply.github.com>`;
    a repository variable `RELEASE_TAGGER` (`Name <email>`) names another

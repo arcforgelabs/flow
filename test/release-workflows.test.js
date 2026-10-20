@@ -69,20 +69,22 @@ test("main is validated every 3 hours, and Prepare tags only a commit on a relea
   assert.match(workflow("flow-full-release-validation.yml"), /cron: "7 \*\/3 \* \* \*"/);
   const prepare = workflow("flow-release-prepare.yml");
   assert.match(prepare, /is not on \$\{BRANCH\}\. Only commits on a release branch are released\./);
-  assert.ok(prepare.indexOf("require-validation.mjs") < prepare.indexOf("- name: Create the signed tag"));
+  assert.ok(prepare.indexOf("require-validation.mjs") < prepare.indexOf("- name: Create the release tag"));
   assert.match(workflow("flow-release-checks.yml"), /Only release-branch commits are released\./);
 });
 
-test("release tags are signed when created and verified before anything is checked out", () => {
+test("release tags are signed when a key is set, and the signature is required only when the maintainer turns it on", () => {
   const prepare = workflow("flow-release-prepare.yml");
   assert.match(prepare, /git tag --sign "\$TAG"/);
   assert.match(prepare, /git tag --verify "\$TAG"/);
-  assert.doesNotMatch(prepare, /git tag --annotate/);
+  assert.match(prepare, /if \[\[ -z "\$SIGNING_KEY" \]\]; then\n\s+git tag --annotate "\$TAG"/);
+  assert.match(prepare, /-z "\$SIGNING_KEY" && "\$REQUIRE_SIGNED" == "true"/);
   const checks = steps("flow-release-checks.yml");
-  const verify = checks.findIndex((step) => title(step) === "- name: Require a signed release tag");
+  const verify = checks.findIndex((step) => title(step) === "- name: Require an annotated release tag");
   const checkout = checks.findIndex((step) => /uses: actions\/checkout@/.test(step));
-  assert.ok(verify >= 0 && verify < checkout, "the signature is verified before the first checkout");
-  assert.match(checks[verify], /\.verification\.verified/);
+  assert.ok(verify >= 0 && verify < checkout, "the tag is checked before the first checkout");
+  assert.match(checks[verify], /\.object\.type <<< "\$ref"\)" != "tag"/);
+  assert.match(checks[verify], /"\$verified" != "true" && "\$REQUIRE_SIGNED" == "true"/);
 });
 
 test("blocker fixes reach a release branch only as -x cherry-picks of main commits", () => {

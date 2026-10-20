@@ -271,7 +271,7 @@ test("Prepare verifies the changelog before it tags, and Publish uses it and che
   const workflow = (name) => readFileSync(join(root, ".github/workflows", name), "utf8");
   const prepare = workflow("flow-release-prepare.yml");
   const verify = prepare.indexOf("changelog.mjs verify --version");
-  assert.ok(verify > 0 && verify < prepare.indexOf("- name: Create the signed tag"), "Prepare verifies the changelog before it tags");
+  assert.ok(verify > 0 && verify < prepare.indexOf("- name: Create the release tag"), "Prepare verifies the changelog before it tags");
   assert.match(prepare, /- name: Require the changelog\n/);
   const publish = workflow("flow-release-publish.yml");
   assert.match(publish, /changelog\.mjs notes --version "\$VERSION"/);

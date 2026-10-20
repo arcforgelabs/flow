@@ -56,23 +56,27 @@ jobs:
       npm_dist_tag: ${{ steps.tag.outputs.npm_dist_tag }}
     steps:
       # openclaw/openclaw verifies the tag's signature before it checks out
-      # anything: an annotated tag that GitHub reports as verified. A
-      # lightweight or unsigned tag (every tag before release branches) is
-      # never published again; fix forward with a new version.
-      - name: Require a signed release tag
+      # anything: an annotated tag that GitHub reports as verified. Flow
+      # requires the signature only when RELEASE_REQUIRE_SIGNED_TAGS is true
+      # (docs/RELEASING.md, One-time setup); until then an annotated tag is
+      # enough, so a release never stops on signing. A lightweight tag is
+      # never published.
+      - name: Require an annotated release tag
         id: signed
         env:
           GH_TOKEN: ${{ github.token }}
+          REQUIRE_SIGNED: ${{ vars.RELEASE_REQUIRE_SIGNED_TAGS }}
           TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail
           ref="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${TAG}")"
           if [[ "$(jq -r .object.type <<< "$ref")" != "tag" ]]; then
-            echo "::error::${TAG} must be an annotated, signed tag; a lightweight tag cannot be published." >&2
+            echo "::error::${TAG} must be an annotated tag; a lightweight tag cannot be published." >&2
             exit 1
           fi
           object="$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/$(jq -r .object.sha <<< "$ref")")"
-          if [[ "$(jq -r '.verification.verified // false' <<< "$object")" != "true" ]]; then
+          verified="$(jq -r '.verification.verified // false' <<< "$object")"
+          if [[ "$verified" != "true" && "$REQUIRE_SIGNED" == "true" ]]; then
             echo "::error::${TAG} must have a signature GitHub verifies (reason: $(jq -r '.verification.reason // "missing"' <<< "$object"))." >&2
             exit 1
           fi
@@ -81,7 +85,7 @@ jobs:
             exit 1
           fi
           echo "commit=$(jq -r .object.sha <<< "$object")" >> "$GITHUB_OUTPUT"
-          echo "${TAG}: signed, verified by GitHub ($(jq -r .tagger.name <<< "$object"))" >> "$GITHUB_STEP_SUMMARY"
+          echo "${TAG}: annotated by $(jq -r .tagger.name <<< "$object"); signature verified by GitHub: ${verified}" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Check out the tag
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
