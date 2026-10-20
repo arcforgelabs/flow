@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
+import { eq } from 'drizzle-orm';
 import { after, before, describe, test } from 'node:test';
 import { createContact, createOrganisation, createPriceItem } from '../server/core/directory.js';
 import { updateDraftInvoice } from '../server/core/invoices.js';
+import { reviewShort } from '../server/core/sending.js';
+import { billingObligations } from '../server/db/schema.js';
 import {
   diffJobLines, draftInvoiceForObligation, jobChangeFor, observeJob, recordAccountingEvidence, useSourceLines,
 } from '../server/core/ledger.js';
@@ -47,8 +50,8 @@ describe('was and now, line by line', () => {
       ['Line 2 · qty', '1', '2'],
       ['Total', '$220.00', '$295.00'],
     ]);
-    assert.equal(changeSummary(change, 4), 'The job changed in Seazona after this invoice was made. 4 changes.');
-    assert.match(changeSummary({ ...change, canAdopt: false, sent: true }, 1), /after this invoice was sent\. 1 change\./);
+    assert.equal(changeSummary(change, 4), 'Changed in Seazona. 4 changes.');
+    assert.match(changeSummary({ ...change, canAdopt: false, sent: true }, 1), /after sending\. 1 change\./);
   });
 });
 
@@ -62,10 +65,11 @@ describe('Open in Seazona', () => {
     assert.equal(orderUrlTemplate('http://lab.seazona.net/x/' + id), null, 'https only');
   });
 
-  test('the link to one order, else the lab home page from the API address, else none', () => {
+  test('the link to one order, else the lab order page from the API address, else none', () => {
     const settings = { orderUrlTemplate: 'https://lab.seazona.net/o?id={ref}', baseUrl: 'https://lab.seazonaapi.net/v1' };
     assert.deepEqual(orderLink(settings, { sourceJobRef: id }), { url: `https://lab.seazona.net/o?id=${id}`, exact: true });
-    assert.deepEqual(orderLink({ ...settings, orderUrlTemplate: null }, { sourceJobRef: id }), { url: 'https://lab.seazona.net/', exact: false });
+    assert.deepEqual(orderLink({ ...settings, orderUrlTemplate: null }, { sourceJobRef: id }), { url: `https://lab.seazona.net/OrderEdit.aspx?id=${id}`, exact: true });
+    assert.deepEqual(orderLink({ ...settings, orderUrlTemplate: null }, { sourceJobRef: '48213' }), { url: 'https://lab.seazona.net/', exact: false }, 'no order id: home page');
     assert.equal(orderLink({ orderUrlTemplate: null, baseUrl: 'https://api.example.com/v1' }, { sourceJobRef: id }), null);
   });
 });
@@ -121,6 +125,19 @@ describe('the job change on an invoice', { skip: skipWithoutDatabase }, () => {
     await observeJob(db, lab.id, { ...report, lines: [{ itemCode: 'BRG' }] });
     const change = await jobChangeFor(db, lab.id, invoice.id);
     assert.equal(change.canAdopt, false);
+    assert.equal(change.canAccept, true);
     assert.deepEqual(change.lines.map((l) => [l.change, l.was.code, l.now.code]), [['replaced', 'CRN', 'BRG']]);
+    await assert.rejects(useSourceLines(db, lab.id, change.jobId, { actor }), /changed in Flow too/);
+    const { invoice: accepted } = await useSourceLines(db, lab.id, change.jobId, { actor, accept: true });
+    assert.deepEqual(accepted.lines.map((l) => l.description), ['Bridge'], 'Accept change: the draft takes the work system lines');
+    assert.equal(await jobChangeFor(db, lab.id, invoice.id), null, 'accepted: the problem is gone');
+  });
+
+  test('the Problem list names what changed in a few words', async () => {
+    const { report, obligation } = await drafted();
+    await observeJob(db, lab.id, { ...report, lines: [{ itemCode: 'CRN', quantity: 2 }, { itemCode: 'BRG' }] });
+    const [row] = await db.select().from(billingObligations).where(eq(billingObligations.id, obligation.id));
+    assert.equal(reviewShort(row), 'Line 1 qty +1');
+    assert.equal(reviewShort({ ...row, holdReason: 'the job was deleted in the work system' }), 'Job deleted');
   });
 });

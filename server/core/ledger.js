@@ -305,20 +305,21 @@ function changedReview(obligation, compare) {
 
 // "Use new lines": a person takes the work system's new lines (and its
 // customer, when that changed) into Flow's own unsent draft. Flow writes only
-// its own draft, never another system. Refused when the draft changed too,
-// or has left Flow: those stay alerts for a person.
-export async function useSourceLines(db, organisationId, obligationId, { actor }) {
+// its own draft, never another system. Refused when the invoice has left
+// Flow. When the draft changed too, `accept` (a person's "Accept change")
+// takes the work system's value over the draft's; without it, refused.
+export async function useSourceLines(db, organisationId, obligationId, { actor, accept = false }) {
   requireActor(actor);
   return db.transaction(async (tx) => {
     const obligation = await loadObligation(tx, organisationId, obligationId, { lock: true });
     if (!obligation.invoiceId) throw new FlowError('invalid', 'the job has no invoice');
     const compare = await compareWithDraft(tx, organisationId, obligation, obligation);
-    if (compare.outcome === 'conflict') {
-      throw new FlowError('conflict', compare.sent ? 'the invoice has left Flow; change it where it is now' : 'the draft changed in Flow too; a person must compare them', { fields: compare.fields });
+    if (compare.outcome === 'conflict' && (compare.sent || compare.missing || !accept)) {
+      throw new FlowError('conflict', compare.missing ? 'the invoice was not found' : compare.sent ? 'the invoice has left Flow; change it where it is now' : 'the draft changed in Flow too; a person must compare them', { fields: compare.fields });
     }
     const changes = {};
     for (const { field, changedIn } of compare.fields) {
-      if (changedIn !== 'work') continue;
+      if (changedIn !== 'work' && !(accept && changedIn === 'both')) continue;
       if (field === 'lines') {
         changes.lines = obligation.lines.map(({ priceItemId, accountCode, description, quantity, unitAmountCents, taxCode }) => (
           { priceItemId, accountCode, description, quantity, unitAmountCents, taxCode }
@@ -338,9 +339,27 @@ export async function useSourceLines(db, organisationId, obligationId, { actor }
     const fields = { draftBasis: basisOf(obligation) };
     if (obligation.holdState === 'review' && obligation.holdReason === CHANGED_REASON) Object.assign(fields, { holdState: 'none', holdReason: null });
     const row = await update(tx, obligation, fields);
-    await addEvent(tx, row, 'source_lines_used', actor, { invoiceId: invoice.id, changed: Object.keys(changes), totalCents: invoice.totalCents });
+    await addEvent(tx, row, 'source_lines_used', actor, { invoiceId: invoice.id, changed: Object.keys(changes), totalCents: invoice.totalCents, ...(accept ? { accepted: compare.outcome } : {}) });
     await resolveReviewFor(tx, organisationId, { kind: REVIEW_CHANGED, entity: 'obligation', flowId: row.id, resolution: 'used_new_lines', actor });
     return { obligation: row, invoice };
+  });
+}
+
+// After a person rechecks a job (POST /jobs/:id/recheck): a "job changed"
+// hold whose job now matches the draft again (the work system was fixed, or
+// the draft was) is over. Answers the obligation.
+export async function settleJobChange(db, organisationId, obligationId, { actor }) {
+  requireActor(actor);
+  return db.transaction(async (tx) => {
+    const obligation = await loadObligation(tx, organisationId, obligationId, { lock: true });
+    if (!obligation.invoiceId || obligation.holdState !== 'review' || obligation.holdReason !== CHANGED_REASON) return obligation;
+    const compare = await compareWithDraft(tx, organisationId, obligation, obligation);
+    const settled = compare.fields.every(({ changedIn }) => ['none', 'same', 'flow'].includes(changedIn)) && !compare.missing;
+    if (!settled) return obligation;
+    const row = await update(tx, obligation, { holdState: 'none', holdReason: null, draftBasis: basisOf(obligation) });
+    await addEvent(tx, row, 'review_settled', actor, { invoiceId: obligation.invoiceId });
+    await resolveReviewFor(tx, organisationId, { kind: REVIEW_CHANGED, entity: 'obligation', flowId: row.id, resolution: 'job_matches_invoice', actor });
+    return row;
   });
 }
 
@@ -411,6 +430,9 @@ export async function jobChangeFor(db, organisationId, invoiceId) {
     outcome: compare.outcome,
     sent: compare.sent,
     canAdopt: compare.outcome === 'offer',
+    // "Accept change": the draft takes the work system's values, even when
+    // the draft changed too. Not once the invoice has left Flow.
+    canAccept: !compare.sent && !compare.missing,
     lines: diffJobLines(was.lines ?? [], obligation.lines ?? []),
     contact: (was.contactId ?? null) === (obligation.contactId ?? null) ? null : { was: was.contactId ?? null, now: obligation.contactId ?? null },
     total: { was: was.totalCents ?? null, now: obligation.totalCents },

@@ -5,6 +5,7 @@ import { invitePerson, seedFirstOwner } from '../server/auth/people.js';
 import { createPersonAuth } from '../server/auth/session.js';
 import { createContact, createOrganisation, createPriceItem } from '../server/core/directory.js';
 import { draftInvoiceForObligation, observeJob, recordAccountingEvidence, setReady } from '../server/core/ledger.js';
+import { linkRecord } from '../server/core/links.js';
 import { createRegistry } from '../server/integrations/port.js';
 import { createXeroAdapter } from '../server/integrations/xero/index.js';
 import { fakeClerk, request, TEST_PUBLISHABLE_KEY } from './support/clerk.js';
@@ -33,6 +34,8 @@ describe('invoicing API', { skip: skipWithoutDatabase }, () => {
   let ownerToken;
   let staffToken;
   const checked = [];
+  // What the work system answers when Flow reads one job (readWorkItem).
+  const workReads = new Map();
 
   function invoicingApp({ integrations = null } = {}) {
     const settings = { mode: 'clerk', keys: { publishableKey: TEST_PUBLISHABLE_KEY, proxyUrl: null } };
@@ -74,6 +77,9 @@ describe('invoicing API', { skip: skipWithoutDatabase }, () => {
       name: 'Work system',
       capabilities: {
         health: async () => ({ ok: true }),
+        readWorkItem: async ({ sourceJobRef }) => (workReads.has(sourceJobRef)
+          ? { state: 'read', item: { ledgerJob: { ...workReads.get(sourceJobRef), observedAt: new Date().toISOString() }, clientId: 'CLIENT-1' } }
+          : { state: 'failed', reason: 'not found' }),
         listWork: async () => ({
           items: [
             { sourceSystem: 'worksystem', sourceJobRef: 'JOB-1', caseRef: 'CASE-JOB-1', status: 'Shipped', clientName: 'Example Practice Pty', practitioner: 'Dr Example', dueOn: '2026-10-20', lines: [], totalCents: 22000 },
@@ -284,7 +290,7 @@ describe('invoicing API', { skip: skipWithoutDatabase }, () => {
     // The Reference rule's text, never the work system's case id.
     assert.equal(drafted.body.invoice.reference, 'Dr Example');
     assert.deepEqual(drafted.body.invoice.job, {
-      id: job.id, sourceSystem: 'worksystem', sourceJobRef: 'JOB-1', caseRef: 'CASE-JOB-1', practitioner: 'Dr Example', shippedOn: '2026-10-17',
+      id: job.id, sourceSystem: 'worksystem', sourceJobRef: 'JOB-1', sourceInvoiceRef: null, caseRef: 'CASE-JOB-1', practitioner: 'Dr Example', shippedOn: '2026-10-17',
       systemName: 'Work system', link: null,
     });
     // The Linked card lists each connected system.
@@ -453,5 +459,49 @@ describe('invoicing API', { skip: skipWithoutDatabase }, () => {
     const issued = await request(appWithoutCheck, `/api/invoicing/invoices/${invoice.id}/issue`, { token: ownerToken, method: 'POST', body: { organisationId: lab.id } });
     assert.equal(issued.status, 200, JSON.stringify(issued.body));
     assert.equal(issued.body.invoice.status, 'issued');
+  });
+
+  test('Recheck reads the job from the work system again; a fixed job ends the problem', async () => {
+    const report = { sourceSystem: 'worksystem', sourceJobRef: 'JOB-RECHECK', contactId: practice.id, sourceStatus: 'Shipped', lines: [{ itemCode: 'CRN' }] };
+    const job = await observeJob(handle.db, lab.id, report);
+    await recordAccountingEvidence(handle.db, lab.id, job.id, { state: 'not_found', actor: 'user:test' });
+    const { invoice } = await draftInvoiceForObligation(handle.db, lab.id, job.id, { actor: 'user:test', liveCheck: async () => ({ state: 'not_found' }) });
+    // The work system was wrong for a while, then fixed there.
+    await observeJob(handle.db, lab.id, { ...report, lines: [{ itemCode: 'CRN', quantity: 3 }] });
+    assert.ok((await call(`/invoices/${invoice.id}?organisationId=${lab.id}`)).body.invoice.jobChange);
+
+    const unread = await request(appWithoutCheck, `/api/invoicing/jobs/${job.id}/recheck`, { token: ownerToken, method: 'POST', body: { organisationId: lab.id } });
+    assert.equal(unread.status, 409, 'no work system: nothing to read');
+    await linkRecord(handle.db, lab.id, { entity: 'contact', flowId: practice.id, system: 'worksystem', externalId: 'CLIENT-1', matchedBy: 'person' });
+    workReads.set('JOB-RECHECK', report);
+    const rechecked = await call(`/jobs/${job.id}/recheck`, { method: 'POST', token: staffToken, body: { organisationId: lab.id } });
+    assert.equal(rechecked.status, 200, JSON.stringify(rechecked.body));
+    assert.equal(rechecked.body.outcome, 'read');
+    assert.equal(rechecked.body.invoice.jobChange, null, 'the job matches the draft again');
+    assert.notEqual(rechecked.body.invoice.view, 'problem');
+    const again = await call(`/jobs/${job.id}/recheck`, { method: 'POST', body: { organisationId: lab.id } });
+    assert.equal(again.body.outcome, 'fresh', 'a second click soon after makes no call');
+  });
+
+  test('Accept change takes the work system lines even when the draft changed too', async () => {
+    const report = { sourceSystem: 'worksystem', sourceJobRef: 'JOB-ACCEPT', contactId: practice.id, sourceStatus: 'Shipped', lines: [{ itemCode: 'CRN' }] };
+    const job = await observeJob(handle.db, lab.id, report);
+    await recordAccountingEvidence(handle.db, lab.id, job.id, { state: 'not_found', actor: 'user:test' });
+    const { invoice } = await draftInvoiceForObligation(handle.db, lab.id, job.id, { actor: 'user:test', liveCheck: async () => ({ state: 'not_found' }) });
+    const draft = (await call(`/invoices/${invoice.id}?organisationId=${lab.id}`)).body.invoice;
+    const extra = { description: 'Shipping', quantity: 1, unitAmountCents: 1500, taxCode: 'GST', priceItemId: crown.id };
+    const saved = await call(`/invoices/${invoice.id}`, { method: 'PATCH', body: { organisationId: lab.id, lines: [...draft.lines, extra] } });
+    assert.equal(saved.status, 200, JSON.stringify(saved.body));
+    await observeJob(handle.db, lab.id, { ...report, lines: [{ itemCode: 'CRN' }, { itemCode: 'BRG' }] });
+
+    const open = (await call(`/invoices/${invoice.id}?organisationId=${lab.id}`)).body.invoice;
+    assert.deepEqual([open.jobChange.canAdopt, open.jobChange.canAccept], [false, true]);
+    assert.equal(open.problems.find((p) => p.code === 'job_review').short, 'Line 2 added');
+    const plain = await call(`/jobs/${job.id}/use-new-lines`, { method: 'POST', body: { organisationId: lab.id } });
+    assert.equal(plain.status, 409);
+    const accepted = await call(`/jobs/${job.id}/use-new-lines`, { method: 'POST', body: { organisationId: lab.id, accept: true } });
+    assert.equal(accepted.status, 200, JSON.stringify(accepted.body));
+    assert.equal(accepted.body.invoice.jobChange, null);
+    assert.equal(accepted.body.invoice.lines.length, 2);
   });
 });

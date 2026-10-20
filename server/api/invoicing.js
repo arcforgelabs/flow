@@ -24,7 +24,7 @@ import {
 } from '../core/price-list.js';
 import {
   confirmNoInvoice, draftInvoiceForObligation, explainObligation, jobChangeFor, linkJobToInvoice, listObligations,
-  setReady, useSourceLines,
+  setReady, settleJobChange, useSourceLines,
 } from '../core/ledger.js';
 import { isHistoryHeld } from '../core/history.js';
 import { invoicePdfDocument, pdfFields, pdfFilename, renderInvoicePdf } from '../core/invoice-pdf.js';
@@ -235,7 +235,7 @@ export async function resolveOrganisation(db, raw) {
 }
 
 const jobOf = (o) => (o ? {
-  id: o.id, sourceSystem: o.sourceSystem, sourceJobRef: o.sourceJobRef, caseRef: o.caseRef, practitioner: o.practitioner, shippedOn: o.shippedOn,
+  id: o.id, sourceSystem: o.sourceSystem, sourceJobRef: o.sourceJobRef, sourceInvoiceRef: o.sourceInvoiceRef, caseRef: o.caseRef, practitioner: o.practitioner, shippedOn: o.shippedOn,
 } : null);
 
 // A job with its work system's name and its link in that system's web app
@@ -307,11 +307,16 @@ async function invoiceDetail(db, organisationId, invoiceId, accounting = null, w
   };
 }
 
+// A person's Recheck reads a job from its work system at most once in this
+// time; a second click inside it answers from Flow's copy.
+const RECHECK_GAP_MS = 10 * 1000;
+
 export function createInvoicingRouter({
   db, personAuth, log = console, liveCheckFor = () => null, accounting = () => null, work = () => [], priceSystems = () => [],
 }) {
   const router = express.Router();
   router.use(express.json({ limit: '64kb' }));
+  const rechecked = new Map();
 
   const signedIn = [personAuth.requireSession];
   const manager = [...signedIn, personAuth.requireRole('owner', 'admin')];
@@ -586,8 +591,36 @@ export function createInvoicingRouter({
   router.post('/jobs/:id/use-new-lines', ...manager, handle(log, async (req, res) => {
     const obligationId = pathId(req.params.id, 'job');
     const organisationId = await organisationOf(req);
-    const { invoice } = await useSourceLines(db, organisationId, obligationId, { actor: `person:${req.person.id}` });
+    const { invoice } = await useSourceLines(db, organisationId, obligationId, { actor: `person:${req.person.id}`, accept: req.body?.accept === true });
     res.json({ ok: true, invoice: await invoiceDetail(db, organisationId, invoice.id, accounting(), work()) });
+  }));
+
+  // "Recheck": a person thinks the work system's copy of this job is old or
+  // was wrong and has been fixed there. Flow reads this one job from the work
+  // system now (one call, its readWorkItem) into the ledger, as read before
+  // act does; a change hold whose job matches the draft again is over. Then
+  // the invoice page reloads, so every check runs again. Reads only.
+  router.post('/jobs/:id/recheck', ...signedIn, handle(log, async (req, res) => {
+    const obligationId = pathId(req.params.id, 'job');
+    const organisationId = await organisationOf(req);
+    const [obligation] = await db.select().from(billingObligations)
+      .where(and(eq(billingObligations.organisationId, organisationId), eq(billingObligations.id, obligationId)));
+    if (!obligation) throw new FlowError('not_found', 'job not found');
+    const source = work().find((a) => a.id === obligation.sourceSystem) ?? null;
+    if (typeof source?.capabilities?.readWorkItem !== 'function') throw new FlowError('not_ready', 'the work system cannot read one job');
+    // One read for each job in RECHECK_GAP_MS, whatever the clicks.
+    const last = rechecked.get(obligationId) ?? 0;
+    let outcome = 'fresh';
+    if (Date.now() - last >= RECHECK_GAP_MS) {
+      rechecked.set(obligationId, Date.now());
+      const actor = `person:${req.person.id}`;
+      const read = (await readBeforeAct(db, organisationId, [obligation], { work: source, actor, force: true })).get(obligationId);
+      outcome = 'read';
+      if (read.outcome === 'waiting') throw new FlowError('not_ready', `${source.name} could not be read: ${read.reason ?? 'try again soon'}`);
+      await settleJobChange(db, organisationId, obligationId, { actor });
+    }
+    const invoice = obligation.invoiceId ? await invoiceDetail(db, organisationId, obligation.invoiceId, accounting(), work()) : null;
+    res.json({ ok: true, outcome, invoice });
   }));
 
   // A job with no invoice whose match is unclear (ledger.js). The linking

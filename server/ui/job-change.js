@@ -1,8 +1,9 @@
 // The "job changed" problem on a draft invoice (server/core/ledger.js,
 // jobChangeFor): what the job was when the invoice was made and what the
 // work system has now, one row per changed fact, with "Open in <system>" to
-// fix it there and "Adopt <system> changes" to take the new values into
-// Flow's own draft. Flow never writes to the work system. Kept apart from
+// fix it there, "Accept change" to take the new values into Flow's own draft,
+// and a recheck button that reads the job from the work system again. Flow
+// never writes to the work system. Kept apart from
 // invoicing.js so tests can load it without a browser.
 
 // Rows shown before "Show all".
@@ -35,14 +36,14 @@ export function changeRows(change, money) {
 export function changeSummary(change, rowCount) {
   const system = change.systemName ?? 'the work system';
   const count = `${rowCount} ${rowCount === 1 ? 'change' : 'changes'}.`;
-  if (change.canAdopt) return `The job changed in ${system} after this invoice was made. ${count}`;
-  if (change.sent) return `The job changed in ${system} after this invoice was sent. ${count} Fix it in ${system} or in the accounting system.`;
-  return `The job changed in ${system}, and this draft changed too. ${count} Fix it in ${system} or in this draft.`;
+  if (change.canAdopt) return `Changed in ${system}. ${count}`;
+  if (change.sent) return `Changed in ${system} after sending. ${count}`;
+  return `Changed in ${system} and here. ${count}`;
 }
 
-// The banner. `onAdopt` runs "Adopt changes"; it is shown only when only the
-// work system changed and the draft is not sent (ledger.js, outcome offer).
-export function jobChangeBanner(ui, change, { money, onAdopt = null }) {
+// The banner. `onAccept` runs "Accept change"; it is shown while the draft
+// is not sent (ledger.js, canAccept). `onRecheck` reads the job again.
+export function jobChangeBanner(ui, change, { money, onAccept = null, onRecheck = null }) {
   const { h } = ui;
   const system = change.systemName ?? 'the work system';
   const rows = changeRows(change, money);
@@ -53,8 +54,19 @@ export function jobChangeBanner(ui, change, { money, onAdopt = null }) {
       title: change.link.exact ? `Opens this job in ${system}.` : `Opens ${system}. Find ${order ?? 'the job'} there.`,
     }, `Open in ${system} ↗`)
     : null;
-  const adopt = change.canAdopt && onAdopt
-    ? h('button', { class: 'fx-btn fx-btn--sm fx-btn--primary', type: 'button', onclick: onAdopt }, `Adopt ${system} changes`)
+  const accept = change.canAccept && onAccept
+    ? h('button', { class: 'fx-btn fx-btn--sm fx-btn--primary', type: 'button', title: `This invoice takes the Now in ${system} column.`, onclick: onAccept }, 'Accept change')
+    : null;
+  const recheck = onRecheck
+    ? h('button', {
+      class: 'fx-btn fx-btn--sm fx-btn--icon fx-change__recheck', type: 'button', title: `Check ${system} again`, 'aria-label': `Check ${system} again`,
+      onclick: async (event) => {
+        const button = event.currentTarget;
+        button.disabled = true;
+        button.classList.add('is-busy');
+        try { await onRecheck(); } finally { button.disabled = false; button.classList.remove('is-busy'); }
+      },
+    }, h('span', { class: 'fx-lucide', style: '--icon: url(/assets/icons/refresh-cw.svg)', 'aria-hidden': 'true' }))
     : null;
   const body = h('tbody', {});
   const draw = (all) => body.replaceChildren(...(all ? rows : rows.slice(0, FIRST_ROWS)).map((row) => h('tr', {},
@@ -68,8 +80,7 @@ export function jobChangeBanner(ui, change, { money, onAdopt = null }) {
   return h('section', { class: 'fx-change', role: 'alert' },
     h('div', { class: 'fx-change__head' },
       h('p', {}, h('strong', {}, 'Problem.'), ' ', changeSummary(change, rows.filter((row) => row.field !== 'Total').length)),
-      h('div', { class: 'fx-change__acts' }, link, adopt)),
-    adopt ? h('p', { class: 'fx-change__note' }, `Adopt: this invoice takes the Now in ${system} column. Nothing goes to ${system} or the accounting system.`) : null,
+      h('div', { class: 'fx-change__acts' }, link, accept, recheck)),
     !change.link && order ? h('p', { class: 'fx-change__note' }, `Find ${order} in ${system} to fix it there.`) : null,
     rows.length ? h('div', { class: 'fx-change__scroll' }, h('table', { class: 'fx-change__table' },
       h('thead', {}, h('tr', {}, h('th', { scope: 'col' }, 'Field'), h('th', { scope: 'col' }, 'Was'), h('th', { scope: 'col' }, `Now in ${system}`))),

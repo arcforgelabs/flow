@@ -8,6 +8,7 @@
 import { alertStrip } from '/assets/ui/alerts.js';
 import { bulkBar } from '/assets/ui/bulk-bar.js';
 import { draftNote, sendModeNote } from '/assets/ui/invoice-notes.js';
+import { caseNumber } from '/assets/ui/job-board.js';
 import { jobChangeBanner } from '/assets/ui/job-change.js';
 
 const STATUS_LABEL = { draft: 'Draft', issued: 'Finalised', void: 'Void' };
@@ -460,7 +461,7 @@ export async function renderInvoiceList(main, ui) {
           numbered ? h('td', {}, link(href, invoice.number ?? 'Draft')) : null,
           h('td', {}, numbered ? (invoice.contactName ?? '—') : link(href, invoice.contactName ?? 'No client')),
           showProblem
-            ? h('td', { class: 'fx-problem' }, first?.message ?? '—', invoice.problems.length > 1 ? h('span', { class: 'fx-dim' }, ` +${invoice.problems.length - 1} more`) : null)
+            ? h('td', { class: 'fx-problem', title: invoice.problems.map((p) => p.message).join(' ') }, first?.short ?? first?.message ?? '—', invoice.problems.length > 1 ? h('span', { class: 'fx-dim' }, ` +${invoice.problems.length - 1}`) : null)
             : h('td', { class: 'fx-dim' }, invoice.reference ?? '—'),
           h('td', { class: 'fx-dim' }, showDate(invoice.issueDate ?? invoice.createdAt?.slice(0, 10))),
           h('td', { class: 'fx-num fx-strong' }, formatCents(invoice.totalCents)),
@@ -605,6 +606,10 @@ function totalsBox(ui, { subtotalCents, taxCents, totalCents }) {
     h('dt', { class: 'fx-totals__grand' }, 'Total'), h('dd', { class: 'fx-totals__grand' }, formatCents(totalCents)));
 }
 
+// The job's number a person reads: its case number, else its order number.
+// A system's own record id (a UUID) is never shown (job-board.js).
+const jobRef = (job) => caseNumber(job) ?? (job.sourceInvoiceRef ? `#${job.sourceInvoiceRef}` : null);
+
 // The Linked card: this invoice's link in each connected system (linksTo).
 // A work system row names the job's order and opens it there; the
 // accounting row gives the number and state there (from Flow's copy). A
@@ -628,7 +633,7 @@ function linkedCard(ui, invoice, accountingStatus = null) {
   const rows = systems.map((system) => {
     if (system.kind === 'work') {
       return job?.sourceSystem === system.id
-        ? row(system, { tone: 'success', ref: job.caseRef ?? job.sourceJobRef, url: job.link?.url ?? null })
+        ? row(system, { tone: 'success', ref: jobRef(job), url: job.link?.url ?? null })
         : row(system, { none: 'No job linked' });
     }
     const status = accountingStatus;
@@ -949,19 +954,28 @@ function draftView(invoice, ui, context, redraw) {
   const problems = [
     jobChange ? jobChangeBanner(ui, jobChange, {
       money: formatCents,
-      // Adopting changes the draft for the business: owners and admins only.
-      onAdopt: !context.canIssue ? null : async () => {
+      // Accepting changes the draft for the business: owners and admins only.
+      onAccept: !context.canIssue ? null : async () => {
         const system = jobChange.systemName;
-        const ok = await ui.dialog({
-          title: `Adopt the ${system} changes?`,
-          body: h('p', {}, `This invoice takes the Now in ${system} column.${changed() ? ' Your unsaved changes here are lost.' : ''} Nothing goes to ${system} or the accounting system.`),
-          confirm: 'Adopt changes',
-        });
-        if (!ok) return;
+        const lost = [jobChange.outcome === 'conflict' ? 'Your own line changes here are replaced.' : null, changed() ? 'Unsaved changes are lost.' : null].filter(Boolean);
+        if (lost.length) {
+          const ok = await ui.dialog({ title: 'Accept change?', body: h('p', {}, lost.join(' ')), confirm: 'Accept change' });
+          if (!ok) return;
+        }
         try {
-          const res = await flow(`/api/invoicing/jobs/${jobChange.jobId}/use-new-lines`, { method: 'POST', body: '{}' });
-          toast(`The invoice now matches ${system}.${res.invoice.view === 'ready' ? ' It is in Ready.' : ''}`, 'success');
+          const res = await flow(`/api/invoicing/jobs/${jobChange.jobId}/use-new-lines`, { method: 'POST', body: JSON.stringify({ accept: true }) });
+          toast(`Matches ${system}.${res.invoice.view === 'ready' ? ' In Ready.' : ''}`, 'success');
           redraw(res.invoice);
+        } catch (error) {
+          toast(error.message, 'danger');
+        }
+      },
+      // Reads this one job from the work system again, then every check runs.
+      onRecheck: async () => {
+        try {
+          const res = await flow(`/api/invoicing/jobs/${jobChange.jobId}/recheck`, { method: 'POST', body: '{}' });
+          toast(res.invoice?.jobChange ? `Still changed in ${jobChange.systemName}.` : 'Fixed. It matches now.', res.invoice?.jobChange ? 'danger' : 'success');
+          if (res.invoice) redraw(res.invoice);
         } catch (error) {
           toast(error.message, 'danger');
         }
