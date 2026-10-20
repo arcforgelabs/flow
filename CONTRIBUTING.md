@@ -41,9 +41,9 @@ each release's contribution record again in `CHANGELOG/records/`. The
 layout, formats and rules are openclaw/openclaw's split changelog. The
 release owns these files:
 
-- A normal pull request never edits `CHANGELOG.md` or `CHANGELOG/`. Put the
-  release-note text in the pull request: its title and its User Impact
-  section.
+- A normal pull request never edits `CHANGELOG.md`, `CHANGELOG/` or a
+  release page in `docs/releases/`. Put the release-note text in the pull
+  request: its title and its User Impact section.
 - The release cut writes `CHANGELOG/<version>.md` from the pull requests
   in the release's range, edits the prose, and commits it on the release
   branch `release/<version>` with the version (`docs/RELEASING.md`). It

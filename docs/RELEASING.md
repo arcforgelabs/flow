@@ -41,6 +41,14 @@ and a stable release has 5 to 8 highlights. After the GitHub Release is
 published, Publish checks that its body is the file. A release tagged before
 the changelog existed keeps GitHub's generated notes.
 
+Each stable release and correction also gets a docs page,
+`docs/releases/<version>.md`, which `changelog.mjs write` writes from the
+file. The closeout brings it to `main`, and the docs site shows it at
+https://arcforgelabs.github.io/docs/flow/releases/. After the docs site
+serves it, the release's GitHub Release body becomes the roster body
+(`changelog.mjs thanks`): the numbers, the docs and changelog links, and
+every person GitHub credits.
+
 ## Versions and channels
 
 Versions are `YYYY.M.N` with no leading zeros: the year, the month, and a
@@ -127,7 +135,7 @@ npm run release:stable -- 2026.10.34
 ```
 
 It is a resumable state machine with the phases `cut → validate → publish →
-flip-github → sync-beta → closeout`. State lives in
+flip-github → sync-beta → closeout → docs → thanks`. State lives in
 `.artifacts/release-<version>/state.json`; running the command again
 continues from the first phase not completed, `--from <phase>` starts again
 from a phase, `--status` prints the table, and `--dry-run` prints every
@@ -165,8 +173,17 @@ closeout).
    (Flow Release Promote), so beta users are never behind stable.
 6. **closeout.** Flow NPM Release started Flow Release Closeout; the
    command opens its pull request if GitHub Actions could not, waits for
-   `test` and `gitleaks`, and merges it. The release is done when `main`
-   carries the shipped changelog file and version.
+   `test` and `gitleaks`, and merges it. `main` then carries the shipped
+   changelog file, its docs page and the version.
+7. **docs.** Docs Sync Publish mirrors `docs/` to `arcforgelabs/docs`, and
+   its Pages workflow deploys the site. The phase ends when
+   `https://arcforgelabs.github.io/docs/flow/releases/<version>.md` is the
+   page `main` has.
+8. **thanks.** openclaw/openclaw's step after the docs deploy: the command
+   reads the GitHub Release again, replaces only its body with
+   `node scripts/release/changelog.mjs thanks --version <version>`, and
+   reads it back (`verify --check-github --post-docs`). The release is done
+   here.
 
 A beta needs no command of its own: after the cut, start one from the
 branch. Its notes are its own file, `CHANGELOG/<version>-beta.<n>.md`, from

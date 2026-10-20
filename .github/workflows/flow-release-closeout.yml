@@ -12,7 +12,8 @@ run-name: Close out ${{ inputs.tag }} on main
 #      forward-ports it first;
 #   2. on branch release/<version>-main-closeout from main, copies the
 #      release's changelog files (its betas, the release and its
-#      corrections), writes the index again, and sets package.json to the
+#      corrections), writes the index and the docs pages
+#      (docs/releases/<version>.md) again, and sets package.json to the
 #      shipped version unless main is already newer;
 #   3. opens the pull request `chore(release): close out <version> on main`
 #      and starts CI and the secret scan on it, so its required checks run.
@@ -125,7 +126,7 @@ jobs:
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A package.json package-lock.json CHANGELOG.md CHANGELOG
+          git add -A package.json package-lock.json CHANGELOG.md CHANGELOG docs/releases
           if git diff --cached --quiet; then
             echo "main already carries ${TAG}." >> "$GITHUB_STEP_SUMMARY"
             echo "changed=false" >> "$GITHUB_OUTPUT"
@@ -150,7 +151,7 @@ jobs:
           if [[ -z "$url" ]]; then
             body="$(printf '%s\n\n%s\n\n%s\n' \
               "Before: main does not carry what ${TAG} shipped." \
-              "After: main has the ${VERSION} changelog files and the shipped version, as the release branch has them." \
+              "After: main has the ${VERSION} changelog files, its docs page and the shipped version, as the release branch has them." \
               "Opened by Flow Release Closeout (docs/RELEASING.md, Close out on main).")"
             if ! url="$(gh pr create --repo "$GITHUB_REPOSITORY" --base main --head "$BRANCH" --title "$title" --body "$body")"; then
               echo "::warning::GitHub Actions cannot open pull requests here; open ${BRANCH} into main by hand (release:stable does)."
