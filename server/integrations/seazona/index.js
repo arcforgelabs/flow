@@ -1,6 +1,10 @@
+import { guardAlerts } from '../call-guard.js';
 import { createSeazonaClient } from './client.js';
 import { listClients, listProducts, listWork, readBillableWork } from './feed.js';
+import { historyJobIssues, historySummary, readHistoryWork } from './history/index.js';
 import { readSeazonaSyncHealth, runSeazonaSync } from './lanes.js';
+import { SEAZONA_CALL_GUARD } from './governor.js';
+import { createSeazonaRouter } from './routes.js';
 import { createSeazonaScheduler } from './scheduler.js';
 import { resetFailedLanes, resetStoppedLanes } from './store.js';
 import { describeSeazonaSettings, resolveSeazonaSettings } from './settings.js';
@@ -58,6 +62,11 @@ export function createSeazonaAdapter({ env = null, fetchImpl = null, now = Date.
     bundled: true,
     schema: seazonaSchema,
     setup: SEAZONA_SETUP,
+    // The history import's routes (routes.js), under /api/seazona.
+    routes: ({ db, personAuth, log }) => createSeazonaRouter({ db: runtime?.db ?? db, personAuth, settings: current().settings, log }),
+    // Every Seazona call goes through this call guard, inside the rate
+    // governor (governor.js; docs/INTEGRATIONS.md, "Outbound calls").
+    callGuard: SEAZONA_CALL_GUARD,
 
     // `reconfigured` is true when a person saved the settings or turned
     // Seazona on (issue #101): that clears a halt after a refused API client,
@@ -102,7 +111,16 @@ export function createSeazonaAdapter({ env = null, fetchImpl = null, now = Date.
           scheduler: scheduler ? scheduler.status() : null,
           governor: await client.governor.status(),
           ...sync,
+          history: await historySummary(db),
         };
+      },
+
+      // What only a person can clear, for the Integrations page
+      // (server/core/alerts.js): a refused API client halts every call until
+      // a person saves the settings. Reads Flow's database only.
+      async alerts() {
+        if (!runtime?.client.governor) return [];
+        return guardAlerts('Seazona', await runtime.client.governor.status(), { fix: 'Check the API client in the Seazona settings, then save them.' });
       },
 
       // Billable work since a cursor: complete and shipped orders that
@@ -111,6 +129,12 @@ export function createSeazonaAdapter({ env = null, fetchImpl = null, now = Date.
       // so invoice preparation can drop them (issue #12).
       async pullWorkItems(cursor = null, options = {}) {
         return readBillableWork(current().db, { cursor, ...options });
+      },
+
+      // Past work from the history import (docs/SEAZONA.md, "History
+      // import"), as ledger jobs marked `historical`. Reads Flow's copy only.
+      async pullHistoryJobs(cursor = null, options = {}) {
+        return readHistoryWork(current().db, { cursor, ...options });
       },
 
       // Seazona clients by id and company name, for the identity map. Reads
@@ -123,6 +147,12 @@ export function createSeazonaAdapter({ env = null, fetchImpl = null, now = Date.
       // Jobs board. Reads Flow's copy only.
       async listWork() {
         return listWork(current().db, { now: now() });
+      },
+
+      // History jobs a person must decide, as issues on their job cards,
+      // each with a link to the reconciliation. Reads Flow's copy only.
+      async jobIssues({ refs = [] } = {}) {
+        return historyJobIssues(current().db, refs);
       },
 
       // Seazona's products, for the price list (server/core/price-list.js).

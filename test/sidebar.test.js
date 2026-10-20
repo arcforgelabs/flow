@@ -27,3 +27,10 @@ test('the menu button folds the sidebar on wide screens and opens it on narrow o
   // Folded, the page names stay for screen readers.
   assert.match(css, /\.fx-shell\[data-folded\] \.fx-nav__label \{ position: absolute; width: 1px;/);
 });
+
+test('Account is not in the sidebar; its page stays, with one visible heading', () => {
+  const app = read('../server/ui/app.js');
+  assert.match(app, /account: \{ label: 'Account', icon: 'person', group: 'Settings', sidebar: false, render: renderAccount \}/);
+  assert.match(app, /if \(view\.sidebar === false\) continue;/);
+  assert.match(app, /main\.append\(h\('h1', \{ class: 'fx-sr' \}, 'Account'\), host\);/);
+});

@@ -8,6 +8,7 @@ import { describePush, listPushes, MAX_BATCH, previewDrafts, pushDrafts } from '
 import { recordXeroEvidence, recordXeroPayments } from './ledger.js';
 import { queueHistoryImport, resetImport } from './import.js';
 import { MIRROR_RESOURCES, mirrorStatus, mirrorXero } from './mirror.js';
+import { accountingStatus, checkSentInvoices } from './reconcile.js';
 import { decryptToken, deleteConnection, describeConnection, readConnection, saveConnection } from './connections.js';
 import { authorizeUrl, exchangeCode, fetchConnections, revokeToken, selectConnection } from './oauth.js';
 import { writesAllowed } from './settings.js';
@@ -27,6 +28,10 @@ import { messagePage as themedMessagePage } from '../../ui/page.js';
 //                                  would make, and what stops them (no Xero calls)
 //   POST /invoices/push            owner or admin: issued invoices to Xero drafts
 //   GET  /invoices/:invoiceId/pushes?organisationId=   any signed-in person
+//   POST /invoices/status          any signed-in person: each invoice's Xero
+//                                  status and any difference, from the copy
+//   POST /invoices/:invoiceId/recheck   owner or admin: reads Xero's changes,
+//                                  then checks that one invoice again (Mark resolved)
 //   POST /obligations/:obligationId/check   owner or admin: Xero's invoice for
 //                                  a billable job, recorded on the ledger
 //   POST /payments/sync            owner or admin: Xero payments to the ledger
@@ -76,6 +81,14 @@ export const handle = (log, fn) => async (req, res) => {
 
 // `messagePage` draws the callback's answer in the installation's design
 // system (server/ui/page.js); the server's app passes it.
+// What the Xero page says about calls for one connection: stopped until a
+// person connects again (a refused connection or resource), and since when.
+export function callsState(status) {
+  const resources = status.stoppedResources.map((r) => r.resource);
+  const since = status.haltedAt ?? status.stoppedResources.map((r) => r.at).filter(Boolean).sort()[0] ?? null;
+  return { stopped: Boolean(status.haltedReason) || resources.length > 0, all: Boolean(status.haltedReason), resources, since };
+}
+
 export function createXeroRouter({ db, personAuth, runtime, log = console, messagePage = (options) => themedMessagePage({ ...options, defaultFamily: DEFAULT_FAMILY }) }) {
   const page = (title, text, tone) => messagePage({ title, text, tone });
   const { settings } = runtime;
@@ -101,6 +114,7 @@ export function createXeroRouter({ db, personAuth, runtime, log = console, messa
       connected: Boolean(connection && connection.mode === settings.mode),
       connection: describeConnection(connection),
       rateLimit: connection ? runtime.governor.status(connection.tenantId) : null,
+      calls: connection ? callsState(await runtime.guardFor(db).status(connection.tenantId)) : null,
       lastSync: await lastSync(db, organisationId),
     });
   }));
@@ -205,6 +219,25 @@ export function createXeroRouter({ db, personAuth, runtime, log = console, messa
     const organisationId = await requireOrganisation(db, req.body?.organisationId);
     const preview = await previewDrafts(db, runtime, organisationId, requireInvoiceIds(req.body?.invoiceIds));
     res.json({ ok: true, mode: settings.mode, writesAllowed: writesAllowed(settings), ...preview });
+  }));
+
+  // Xero's status of each invoice, from Flow's copy: no Xero calls.
+  router.post('/invoices/status', ...signedIn, handle(log, async (req, res) => {
+    const organisationId = await requireOrganisation(db, req.body?.organisationId);
+    const statuses = await accountingStatus(db, runtime, organisationId, requireInvoiceIds(req.body?.invoiceIds));
+    res.json({ ok: true, invoices: [...statuses.values()] });
+  }));
+
+  // Mark resolved: read Xero's changes (a few calls, through the call guard),
+  // then check this one invoice again. The item closes only when the
+  // difference is gone; otherwise it stays open with the new evidence.
+  router.post('/invoices/:invoiceId/recheck', ...manager, handle(log, async (req, res) => {
+    const organisationId = await requireOrganisation(db, req.body?.organisationId);
+    const [invoiceId] = requireInvoiceIds([req.params.invoiceId], 'invoiceId');
+    await mirrorXero(db, runtime, organisationId, { resources: ['invoices'] });
+    const result = await checkSentInvoices(db, runtime, organisationId, { invoiceIds: [invoiceId] });
+    const status = (await accountingStatus(db, runtime, organisationId, [invoiceId])).get(invoiceId) ?? null;
+    res.json({ ok: true, resolved: !status?.finding, closed: result.closed, status });
   }));
 
   router.post('/invoices/push', ...manager, handle(log, async (req, res) => {

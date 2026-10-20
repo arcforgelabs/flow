@@ -7,6 +7,7 @@
 // system's records that link to no code, with a menu to link each one, and
 // the line price setting. Everyone can read it; an owner or admin changes it.
 // The caller passes in app.js's shared pieces as `ui`.
+import { alertStrip } from '/assets/ui/alerts.js';
 
 const DOCS = 'https://github.com/arcforgelabs/flow/blob/main/docs/PRICE_LIST.md';
 const TAX_LABELS = { GST: 'GST', GST_FREE: 'GST free' };
@@ -27,7 +28,8 @@ export async function renderPriceList(main, ui) {
   const host = h('div', { class: 'fx-card', style: { padding: '8px 20px 16px' } }, h('div', { class: 'fx-skeleton' }));
   const addButton = h('button', { class: 'fx-btn fx-btn--primary', type: 'button', disabled }, 'Add code');
   const checkButton = h('button', { class: 'fx-btn fx-btn--ghost', type: 'button', disabled }, 'Check prices');
-  main.append(pageHeader('Price list', { subtitle: 'The codes and prices that Flow puts on invoice lines.', actions: [checkButton, addButton] }), host);
+  const alerts = alertStrip(ui, 'price-list');
+  main.append(pageHeader('Price list', { subtitle: 'The codes and prices that Flow puts on invoice lines.', actions: [checkButton, addButton] }), alerts.element, host);
 
   let data = null;
   let query = '';
@@ -112,6 +114,7 @@ export async function renderPriceList(main, ui) {
     if (action?.kind === 'resolve') {
       const body = await send(`/api/invoicing/price-items/${item.id}/resolve`, 'POST', {}, null);
       if (body) toast(body.state === 'agree' ? 'Prices agree now.' : 'Marked resolved.', 'success');
+      alerts.refresh();
       return load();
     }
     if (action?.kind === 'unlink') {
@@ -237,6 +240,7 @@ export async function renderPriceList(main, ui) {
     const body = await send('/api/invoicing/price-list/check', 'POST', {}, null);
     if (body) toast(body.summary.differing ? `${body.summary.differing} codes differ.` : 'Every linked price agrees.', body.summary.differing ? 'info' : 'success');
     checkButton.disabled = disabled;
+    alerts.refresh();
     await load();
   });
   await load();

@@ -11,6 +11,7 @@ import { isMissingTable, migrateAdapterSchema } from './schema.js';
 
 export const CAPABILITIES = Object.freeze([
   'pullWorkItems', // billable work since a cursor (Seazona: completed cases)
+  'pullHistoryJobs', // past work from a history import, as ledger jobs marked historical (Seazona: its API backfill)
   'pushInvoice', // send an issued invoice; the Flow record id is the idempotency key
   'pushInvoices', // send several issued invoices in one pass (Send all ready, server/core/sending.js)
   'checkDrafts', // the accounting system's problems with Flow drafts, from its copy; null while not connected
@@ -20,10 +21,12 @@ export const CAPABILITIES = Object.freeze([
   'pullPayments', // payments since a cursor, matched to invoices and bills
   'checkInvoice', // does the accounting system hold an invoice for a billable job? (the ledger's liveCheck)
   'listWork', // the work system's jobs from its copy in Flow, open and lately finished, for the Jobs board
+  'jobIssues', // open issues the integration holds for jobs, by job ref: a short phrase and the page where a person fixes it
   'listCustomers', // the system's customers, by id and name, for the identity map (Seazona: clients; Xero: contacts)
   'findInvoices', // sales invoices in the accounting system's copy, for the matcher; never a live call
   'listPriceItems', // the system's own price list from its copy in Flow, for the price list's links and check; never a live call
   'health', // connection state for Settings
+  'alerts', // what only a person can clear (a refused sign-in, stopped calls), for the Integrations page; reads Flow's data only
   'captureError', // an error Flow logged, sent to the installation's own error service (Sentry)
   'browserMonitoring', // the public settings a browser needs to report errors and problems to that service
 ]);

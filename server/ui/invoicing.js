@@ -5,6 +5,7 @@
 // are a preview with the same rule (GST 10% per line, rounded half away from
 // zero, server/core/money.js). Data comes from /api/invoicing
 // (server/api/invoicing.js). app.js passes in its shared pieces as `ui`.
+import { alertStrip } from '/assets/ui/alerts.js';
 
 const STATUS_LABEL = { draft: 'Draft', issued: 'Issued', void: 'Void' };
 const STATUS_TONE = { draft: 'info', issued: 'success', void: 'mute' };
@@ -26,6 +27,31 @@ const TICKS = { to_check: true, ready: true };
 
 const money = new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' });
 export const formatCents = (cents) => money.format((cents ?? 0) / 100);
+
+// Xero's status of an issued invoice, from Flow's copy of Xero (issue #132).
+// A finding (a difference, or a void on one side only) shows as Out of sync.
+const XERO_TONE = {
+  not_sent: 'mute', sending: 'info', not_copied: 'info', draft: 'info',
+  approved: 'success', part_paid: 'success', paid: 'success', voided: 'mute', deleted: 'mute',
+};
+const FIELD_LABEL = { contact: 'Client', subtotal: 'Subtotal', tax: 'GST', total: 'Total', 'line count': 'Lines', items: 'Items', date: 'Date' };
+
+export function xeroTag(ui, status) {
+  const { h } = ui;
+  if (!status) return null;
+  return status.finding
+    ? h('span', { class: 'fx-status', 'data-tone': 'danger', title: status.message }, 'Out of sync with Xero')
+    : h('span', { class: 'fx-status', 'data-tone': XERO_TONE[status.state] ?? 'mute' }, status.label);
+}
+
+const showField = (field, value) => (['subtotal', 'tax', 'total'].includes(field) && Number.isFinite(value) ? formatCents(value) : String(value ?? '—'));
+
+// Xero's status for some invoices, or an empty map while Xero is off.
+async function xeroStatuses(ui, organisationId, invoiceIds) {
+  if (!organisationId || !invoiceIds.length) return new Map();
+  const res = await ui.flow('/api/xero/invoices/status', { method: 'POST', body: JSON.stringify({ organisationId, invoiceIds }) }).catch(() => null);
+  return new Map((res?.invoices ?? []).map((s) => [s.invoiceId, s]));
+}
 
 function gstCents(lineAmountCents) {
   const sign = Math.sign(lineAmountCents);
@@ -76,10 +102,13 @@ export async function renderInvoiceList(main, ui) {
   const host = h('div', { class: 'fx-panel' }, h('div', { class: 'fx-skeleton' }));
   const context = await flow('/api/invoicing/context').catch(() => ({ canIssue: false }));
   let body = null;
+  const openTab = (id) => { state.status = id; state.ticked.clear(); sessionStorage.setItem('flow_invoice_tab', id); load(); };
+  const alerts = alertStrip(ui, 'invoices', { onTab: openTab });
   main.append(
     pageHeader('Invoices', {
       actions: [h('a', { class: 'fx-btn fx-btn--primary', href: '/invoices/new', onclick: go }, 'New invoice')],
     }),
+    alerts.element,
     h('div', { class: 'fx-toolbar' }, tabs, search),
     bar,
     host);
@@ -101,6 +130,7 @@ export async function renderInvoiceList(main, ui) {
           toast(...done(res));
           state.ticked.clear();
           await load();
+          alerts.refresh();
         } catch (error) {
           toast(error.message, 'danger');
           el.disabled = false;
@@ -160,7 +190,7 @@ export async function renderInvoiceList(main, ui) {
       role: 'tab',
       'aria-selected': String(state.status === id),
       ...(id === 'problem' && body.counts?.problem ? { 'data-tone': 'danger' } : {}),
-      onclick: () => { state.status = id; state.ticked.clear(); sessionStorage.setItem('flow_invoice_tab', id); load(); },
+      onclick: () => openTab(id),
     }, label, h('span', { class: 'fx-tabs__count' }, String(body.counts?.[id] ?? 0)))));
     drawBar();
     if (!body.invoices.length) {
@@ -191,6 +221,7 @@ export async function renderInvoiceList(main, ui) {
         drawBar();
       },
     });
+    const statusCells = new Map();
     host.replaceChildren(h('table', { class: 'fx-table fx-table--rows' },
       h('thead', {}, h('tr', {},
         ticks ? h('th', { class: 'fx-tick-cell' }, all) : null,
@@ -209,10 +240,23 @@ export async function renderInvoiceList(main, ui) {
             : h('td', { class: 'fx-dim' }, invoice.job?.caseRef ?? invoice.reference ?? '—'),
           h('td', { class: 'fx-dim' }, showDate(invoice.issueDate ?? invoice.createdAt?.slice(0, 10))),
           h('td', { class: 'fx-num fx-strong' }, formatCents(invoice.totalCents)),
-          h('td', {}, view
-            ? h('span', { class: 'fx-status', 'data-tone': VIEW_TONE[view] }, VIEW_LABEL[view])
-            : h('span', { class: 'fx-status', 'data-tone': STATUS_TONE[invoice.status] }, STATUS_LABEL[invoice.status])));
+          (() => {
+            const cell = h('td', { class: 'fx-status-cell' }, view
+              ? h('span', { class: 'fx-status', 'data-tone': VIEW_TONE[view] }, VIEW_LABEL[view])
+              : h('span', { class: 'fx-status', 'data-tone': STATUS_TONE[invoice.status] }, STATUS_LABEL[invoice.status]));
+            statusCells.set(invoice.id, cell);
+            return cell;
+          })());
       }))));
+    // Issued and void invoices also show Xero's status, from Flow's copy.
+    if (['issued', 'void'].includes(state.status)) {
+      const shownBody = body;
+      const statuses = await xeroStatuses(ui, context.organisations?.[0]?.id, body.invoices.map((i) => i.id));
+      if (shownBody !== body) return;
+      for (const [invoiceId, status] of statuses) {
+        if (status.state !== 'not_sent' || status.finding) statusCells.get(invoiceId)?.append(' ', xeroTag(ui, status));
+      }
+    }
   }
   await load();
 }
@@ -532,10 +576,26 @@ function issuedView(invoice, ui, context, redraw) {
       toast(error.message, 'danger');
     }
   };
+  const organisationId = context.organisations?.[0]?.id;
+  const xeroHost = h('div');
+  let xeroStatus = null;
+  const loadXero = async () => {
+    if (!context.xero) return;
+    xeroStatus = (await xeroStatuses(ui, organisationId, [invoice.id])).get(invoice.id) ?? null;
+    xeroHost.replaceChildren(xeroCard(invoice, ui, context, xeroStatus, loadXero) ?? '');
+  };
+  loadXero();
+  // Voiding in Flow never changes Xero: say so while Xero still holds it live.
+  const voidBody = () => {
+    const live = xeroStatus?.xero && !['VOIDED', 'DELETED'].includes(xeroStatus.xero.status);
+    return h('div', {},
+      h('p', {}, 'The number stays used. A void invoice cannot be issued again.'),
+      live ? h('p', { class: 'fx-problem' }, `Xero still holds it as ${xeroStatus.label.replace(/ in Xero$/, '').toLowerCase()}${xeroStatus.xero.number ? ` (${xeroStatus.xero.number})` : ''}. Flow does not change Xero: void it in Xero too.`) : null);
+  };
   const actions = invoice.status === 'issued' && context.canIssue ? [
     h('button', {
       class: 'fx-btn fx-btn--ghost fx-btn--danger', type: 'button',
-      onclick: () => act('void', `${invoice.number} is void.`, { title: `Void ${invoice.number}?`, body: h('p', {}, 'The number stays used. A void invoice cannot be issued again.'), confirm: 'Void', tone: 'danger' }),
+      onclick: () => act('void', `${invoice.number} is void.`, { title: `Void ${invoice.number}?`, body: voidBody(), confirm: 'Void', tone: 'danger' }),
     }, 'Void'),
     h('button', { class: 'fx-btn', type: 'button', onclick: () => act('revise', `${invoice.number} is a draft again.`) }, 'Revise'),
     sendToXero(invoice, ui, context),
@@ -567,6 +627,7 @@ function issuedView(invoice, ui, context, redraw) {
               h('td', { class: 'fx-num fx-strong' }, formatCents(line.lineAmountCents)))))),
           h('div', { class: 'fx-lines__foot' }, h('span'), totalsBox(ui, invoice)))),
       h('aside', { class: 'fx-invoice__aside' },
+        xeroHost,
         jobCard(ui, invoice.job),
         invoice.versions?.length ? h('section', { class: 'fx-card fx-side-card' },
           h('h3', { class: 'fx-label' }, 'History'),
@@ -574,6 +635,42 @@ function issuedView(invoice, ui, context, redraw) {
             h('span', { class: 'fx-strong' }, v.version === 1 ? 'Issued' : `Reissued (version ${v.version})`),
             h('span', { class: 'fx-dim' }, new Date(v.issuedAt).toLocaleString('en-AU', { dateStyle: 'medium', timeStyle: 'short' })))))) : null)),
   ];
+}
+
+// Xero's copy of this invoice: its status, any difference from what Flow
+// sent, and Mark resolved, which reads Xero's changes and checks again. It
+// never writes to Xero: a person fixes the difference where they choose.
+function xeroCard(invoice, ui, context, status, reload) {
+  const { h, flow, toast } = ui;
+  if (!status || (status.state === 'not_sent' && !status.finding)) return null;
+  const rows = status.differences.map((d) => h('tr', {},
+    h('td', {}, FIELD_LABEL[d.field] ?? d.field),
+    h('td', { class: 'fx-num' }, showField(d.field, d.flow)),
+    h('td', { class: 'fx-num' }, showField(d.field, d.xero))));
+  const resolve = status.finding && context.canIssue ? h('button', {
+    class: 'fx-btn fx-btn--sm', type: 'button',
+    onclick: async () => {
+      resolve.disabled = true;
+      try {
+        const res = await flow(`/api/xero/invoices/${invoice.id}/recheck`, { method: 'POST', body: JSON.stringify({ organisationId: context.organisations[0].id }) });
+        toast(res.resolved ? 'Flow and Xero agree now.' : 'Still different. Fix it in Xero or in Flow, then try again.', res.resolved ? 'success' : 'danger');
+        await reload();
+      } catch (error) {
+        toast(error.message, 'danger');
+        resolve.disabled = false;
+      }
+    },
+  }, 'Mark resolved') : null;
+  return h('section', { class: 'fx-card fx-side-card' },
+    h('h3', { class: 'fx-label' }, 'Xero'),
+    h('div', { class: 'fx-row' }, xeroTag(ui, status), status.xero?.number ? h('span', { class: 'fx-dim' }, status.xero.number) : null),
+    status.finding ? h('p', { class: 'fx-problem' }, status.message) : null,
+    rows.length ? h('table', { class: 'fx-table' },
+      h('thead', {}, h('tr', {}, h('th', {}, ''), h('th', { class: 'fx-num' }, 'Flow sent'), h('th', { class: 'fx-num' }, 'Xero now'))),
+      h('tbody', {}, rows)) : null,
+    h('div', { class: 'fx-row' },
+      status.xero?.url ? h('a', { class: 'fx-btn fx-btn--sm fx-btn--ghost', href: status.xero.url, target: '_blank', rel: 'noopener' }, 'Open in Xero') : null,
+      resolve));
 }
 
 // Send to Xero (POST /api/xero/invoices/push). The customer's send mode

@@ -120,7 +120,25 @@ export function flowClerkAppearance({ embedded = false, publicSignUp = false } =
         color: token('--t-strong', text), fontSize: '14px', fontWeight: 600,
         [NARROW]: { display: 'none' },
       },
-      userButtonPopoverCard: { border: `1px solid ${line}`, boxShadow: shadow },
+      // The account menu is as wide as its rows, between 220px and 280px, with
+      // compact rows. A long name or email ends with an ellipsis and does not
+      // make the menu wider.
+      userButtonPopoverCard: {
+        '&&': { width: 'max-content', minWidth: '220px', maxWidth: 'min(280px, calc(100vw - 16px))', border: `1px solid ${line}`, boxShadow: shadow },
+      },
+      userPreview__userButton: { '&&': { padding: '10px 12px', gap: '10px' } },
+      userPreviewAvatarContainer__userButton: { '&&, && .cl-userPreviewAvatarBox': { width: '28px', height: '28px' } },
+      userPreviewTextContainer__userButton: { '&&': { minWidth: 0, overflow: 'hidden' } },
+      userPreviewMainIdentifier__userButton: { '&&': { minWidth: 0, fontSize: '13px' } },
+      userPreviewMainIdentifierText__userButton: { '&&': { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } },
+      userPreviewSecondaryIdentifier__userButton: {
+        '&&': { display: 'block', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '12px', color: dim },
+      },
+      userButtonPopoverActionButton: { '&&': { padding: '8px 12px', gap: '10px', fontSize: '13px', color: text } },
+      userButtonPopoverActionButtonIconBox: { '&&': { flex: '0 0 28px', width: '28px' } },
+      userButtonPopoverCustomItemButton: { '&&': { padding: '8px 12px', gap: '10px', fontSize: '13px', color: text } },
+      userButtonPopoverCustomItemButtonIconBox: { '&&': { flex: '0 0 28px', width: '28px' } },
+      userButtonPopoverFooter: { '&&': { minWidth: 0 } },
       userButtonPopoverActionButtonIcon__manageAccount: gearIcon,
       footer: embedded ? { display: 'none' } : undefined,
     },
