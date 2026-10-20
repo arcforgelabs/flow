@@ -154,8 +154,10 @@ describe('connecting Xero', { skip: skipWithoutDatabase }, () => {
 
     test('health reports the mode and the connections', async () => {
       const health = await integrations.whenEnabled('xero', (adapter) => adapter.capabilities.health());
-      const { calls, ...rest } = health;
+      const { calls, copies, ...rest } = health;
       assert.deepEqual(rest, { ok: true, mode: 'replay', writesAllowed: true, connected: 1 });
+      // No copy of Xero yet: not complete, so not counted as out of date.
+      assert.deepEqual(copies.map((c) => [c.complete, c.fresh]), [[false, false]]);
       // The call guard's state for the one connected organisation.
       assert.equal(calls.length, 1);
       assert.equal(calls[0].circuit, 'closed');

@@ -207,6 +207,38 @@ export async function listPushes(db, organisationId, invoiceId) {
   return rows.map(mapPush);
 }
 
+// What the customer's Xero copy of one Flow invoice version says, from Flow's
+// copy of Xero (no calls): the stored push, and the mirror row when the
+// mirror has it. Before the version is in Xero, only who numbers it and the
+// default due days are known.
+export async function documentFacts(db, runtime, { organisationId, invoiceId, version = null }) {
+  const { settings } = runtime;
+  const facts = { system: 'Xero', sent: false, numberedBy: settings.invoiceNumber, defaultDueDays: settings.defaultDueDays };
+  if (!version) return facts;
+  const { rows: [push] } = await db.execute(sql`select xero_invoice_id, xero_invoice_number, xero_status, request_body
+    from xero_invoice_pushes
+    where organisation_id = ${organisationId} and invoice_id = ${invoiceId} and version = ${version} and xero_invoice_id is not null`);
+  if (!push) return facts;
+  const { rows: [copy] } = await db.execute(sql`select invoice_number, reference, status,
+      to_char(issued_on, 'YYYY-MM-DD') as issued_on, to_char(due_on, 'YYYY-MM-DD') as due_on
+    from xero_invoices where organisation_id = ${organisationId} and xero_invoice_id = ${push.xero_invoice_id}`);
+  let sent = {};
+  try {
+    sent = JSON.parse(push.request_body) ?? {};
+  } catch {
+    // An unreadable body leaves only the mirror and the push's own columns.
+  }
+  return {
+    ...facts,
+    sent: true,
+    number: copy?.invoice_number || push.xero_invoice_number || sent.InvoiceNumber || null,
+    reference: copy?.reference || sent.Reference || null,
+    issueDate: copy?.issued_on || sent.Date || null,
+    dueDate: copy?.due_on || sent.DueDate || null,
+    status: copy?.status || push.xero_status || null,
+  };
+}
+
 async function settle(db, id, fields) {
   const { rows } = await db.execute(sql`update xero_invoice_pushes set
       state = ${fields.state},

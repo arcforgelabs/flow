@@ -48,3 +48,13 @@ describe('Clerk appearance', () => {
     assert.match(css, /@media \(max-width: 820px\) \{\n  \.fx-shell \{ flex-direction: column; \}/);
   });
 });
+
+test('the account menu fits its rows and clips a long email', () => {
+  const { elements } = flowClerkAppearance();
+  assert.deepEqual(
+    [elements.userButtonPopoverCard['&&'].width, elements.userButtonPopoverCard['&&'].minWidth, elements.userButtonPopoverCard['&&'].maxWidth],
+    ['max-content', '220px', 'min(280px, calc(100vw - 16px))'],
+  );
+  const email = elements.userPreviewSecondaryIdentifier__userButton['&&'];
+  assert.deepEqual([email.minWidth, email.overflow, email.textOverflow, email.whiteSpace], [0, 'hidden', 'ellipsis', 'nowrap']);
+});

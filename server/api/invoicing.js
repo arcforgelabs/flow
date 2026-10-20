@@ -20,6 +20,8 @@ import {
   acceptFindings, archivePriceItem, checkPrices, createPriceItem, linkPriceItem, readCatalogues, readPriceList, unlinkPriceItem, updatePriceItem,
 } from '../core/price-list.js';
 import { draftInvoiceForObligation, explainObligation, listObligations, setReady } from '../core/ledger.js';
+import { isHistoryHeld } from '../core/history.js';
+import { invoicePdfDocument, pdfFields, pdfFilename, renderInvoicePdf } from '../core/invoice-pdf.js';
 import { invoiceView, invoiceViews, markNotReady, markReady, sendAgain, sendAllReady } from '../core/sending.js';
 import {
   billingObligations, contacts, invoices, INVOICE_STATUSES, organisations, priceItems, TAX_CODES,
@@ -37,6 +39,9 @@ import {
 //                                     accounting system { issueDate }
 //   POST  /invoices/send-again        owner or admin: queue failed sends again { invoiceIds? }
 //   GET   /invoices/:id               one invoice: lines, contact, job, issued versions
+//   GET   /invoices/:id/pdf?version=  the invoice as a PDF, drawn by Flow (server/core/invoice-pdf.js),
+//                                     with the accounting system's number and dates once it holds it;
+//                                     no accounting system calls
 //   POST  /invoices                   a new draft
 //   PATCH /invoices/:id               change a draft
 //   POST  /invoices/:id/issue         owner or admin: number it and keep the document as sent
@@ -373,6 +378,22 @@ export function createInvoicingRouter({
     res.json({ ok: true, invoice: await invoiceDetail(db, organisationId, invoiceId, accounting()) });
   }));
 
+  router.get('/invoices/:id/pdf', ...signedIn, handle(log, async (req, res) => {
+    const invoiceId = pathId(req.params.id, 'invoice');
+    const organisationId = await organisationOf(req);
+    const version = req.query.version === undefined ? null : Number(req.query.version);
+    if (version !== null && !(Number.isSafeInteger(version) && version > 0)) throw invalid('version must be a whole number above 0');
+    const source = await invoicePdfDocument(db, organisationId, invoiceId, { version, accounting: accounting() });
+    const bytes = await renderInvoicePdf(source);
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `inline; filename="${pdfFilename(pdfFields(source))}"`,
+      'Cache-Control': 'no-store',
+      'X-Content-Type-Options': 'nosniff',
+    });
+    res.end(bytes);
+  }));
+
   router.post('/invoices', ...signedIn, handle(log, async (req, res) => {
     const organisationId = await organisationOf(req);
     const body = req.body ?? {};
@@ -451,8 +472,13 @@ export function createInvoicingRouter({
     const view = text(req.query.view);
     if (view && !VIEWS.includes(view)) throw invalid(`view must be one of ${VIEWS.join(', ')}`);
     const limit = limitOf(req.query.limit, 200, 500);
-    const all = await listObligations(db, organisationId, { accounting: Boolean(liveCheckFor(organisationId)) });
+    const listedAll = await listObligations(db, organisationId, { accounting: Boolean(liveCheckFor(organisationId)) });
+    // Held history jobs (core/history.js) are left out unless asked for: they
+    // are past work, listed in the history import's own reconciliation.
+    const withHistory = req.query.history === 'include';
+    const all = withHistory ? listedAll : listedAll.filter((entry) => !isHistoryHeld(entry.obligation));
     const counts = Object.fromEntries(VIEWS.map((v) => [v, 0]));
+    counts.history = listedAll.length - listedAll.filter((entry) => !isHistoryHeld(entry.obligation)).length;
     for (const entry of all) counts[entry.view] += 1;
     const listed = (view ? all.filter((entry) => entry.view === view) : all).slice(0, limit);
     res.json({ ok: true, jobs: await describeObligations(db, organisationId, listed, { accounting: accounting() }), counts });

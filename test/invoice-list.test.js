@@ -1,7 +1,13 @@
 import assert from 'node:assert/strict';
+import { registerHooks } from 'node:module';
 import { test } from 'node:test';
 
-import { renderInvoiceList } from '../server/ui/invoicing.js';
+// The page scripts import each other by their served path (/assets/ui/...).
+const ui = new URL('../server/ui/', import.meta.url);
+registerHooks({
+  resolve: (specifier, context, next) => next(specifier.startsWith('/assets/ui/') ? new URL(specifier.slice('/assets/ui/'.length), ui).href : specifier, context),
+});
+const { renderInvoiceList } = await import('../server/ui/invoicing.js');
 
 // A small stand-in for the page: enough elements to draw the list and click
 // its tabs, with each answer from the server held until the test lets it go.
@@ -32,6 +38,7 @@ function page() {
   const asked = [];
   const flow = (path) => {
     if (path === '/api/invoicing/context') return Promise.resolve({ canIssue: true });
+    if (path.startsWith('/api/alerts')) return Promise.resolve({ alerts: [] });
     let answer;
     const promise = new Promise((resolve) => { answer = resolve; });
     asked.push({ path, answer });
@@ -55,6 +62,7 @@ const panel = (main) => main.all((el) => el.getAttribute('class') === 'fx-panel'
 
 test('a tab click selects the tab at once; only the newest answer draws; a tab seen before shows at once', async () => {
   globalThis.sessionStorage = { getItem: () => null, setItem() {} };
+  globalThis.document = { visibilityState: 'visible', addEventListener() {}, removeEventListener() {} };
   const { main, ui, asked } = page();
   const opened = renderInvoiceList(main, ui);
   await settle();

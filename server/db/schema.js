@@ -498,6 +498,20 @@ export const reviewItems = pgTable('review_items', {
   check('review_items_closed_has_resolution', sql`${t.state} = 'open' or (${t.resolution} is not null and ${t.resolvedBy} is not null and ${t.resolvedAt} is not null)`),
 ]);
 
+// Quiet alerts (issue 117, docs/ALERTS.md). An alert is worked out each time
+// from Flow's own records (server/core/alerts.js); only a person's dismissal
+// is stored. `members` are the things the alert was about when it was
+// dismissed: the alert stays hidden for that person until something new joins.
+export const alertDismissals = pgTable('alert_dismissals', {
+  organisationId: organisationId().references(() => organisations.id),
+  personId: uuid('person_id').notNull().references(() => people.id, { onDelete: 'cascade' }),
+  alertKey: text('alert_key').notNull(),
+  members: text('members').array().notNull().default(sql`'{}'::text[]`),
+  dismissedAt: timestamp('dismissed_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  primaryKey({ columns: [t.organisationId, t.personId, t.alertKey] }),
+]);
+
 // Integration settings an owner enters in Settings (server/integrations/setup.js).
 // One row per adapter for the installation. `config` holds plain settings by
 // their environment name; `secrets` holds credentials sealed with Flow's

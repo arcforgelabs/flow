@@ -1,10 +1,11 @@
 import { fileURLToPath } from 'node:url';
 import { sql } from 'drizzle-orm';
-import { checkDrafts, pushInvoice, pushInvoices } from './drafts.js';
+import { guardAlerts } from '../call-guard.js';
+import { checkDrafts, documentFacts, pushInvoice, pushInvoices } from './drafts.js';
 import { readConnection } from './connections.js';
 import { createImportWorker } from './import.js';
 import { readPayments, xeroLiveCheck } from './ledger.js';
-import { findInvoices, listCustomers, listPriceItems } from './lookup.js';
+import { findInvoices, listCustomers, listPriceItems, mirrorState } from './lookup.js';
 import { createXeroRouter } from './routes.js';
 import { createXeroRuntime, requireXeroSettings, XERO_CALL_GUARD } from './runtime.js';
 import { writesAllowed } from './settings.js';
@@ -87,11 +88,25 @@ export function createXeroAdapter({ runtime: given = null } = {}) {
     capabilities: {
       async health() {
         const { settings } = current();
-        const { rows } = await database.execute(sql`select tenant_id from xero_connections where mode = ${settings.mode}`);
+        const { rows } = await database.execute(sql`select organisation_id, tenant_id from xero_connections where mode = ${settings.mode}`);
         const guard = current().guardFor(database);
         const calls = await Promise.all(rows.map(async (r) => ({ tenantId: r.tenant_id, ...await guard.status(r.tenant_id) })));
         const stopped = calls.some((c) => c.circuit !== 'closed' || c.stoppedResources.length || c.failedToday >= c.dailyFailureBudget);
-        return { ok: !stopped, mode: settings.mode, writesAllowed: writesAllowed(settings), connected: rows.length, calls };
+        // How fresh each copy of Xero is (lookup.js): a complete copy that is
+        // not fresh stops drafts by rule (issue #131).
+        const copies = await Promise.all(rows.map(async (r) => {
+          const { complete, fresh, lastPassAt } = await mirrorState(database, r.organisation_id);
+          return { tenantId: r.tenant_id, complete, fresh, lastPassAt };
+        }));
+        const stale = copies.some((c) => c.complete && !c.fresh);
+        return { ok: !stopped && !stale, mode: settings.mode, writesAllowed: writesAllowed(settings), connected: rows.length, calls, copies };
+      },
+      // What only a person can clear, for the Integrations page
+      // (server/core/alerts.js): a refused connection stops calls.
+      async alerts({ organisationId }) {
+        const connection = await readConnection(database, organisationId);
+        if (!connection || connection.mode !== current().settings.mode) return [];
+        return guardAlerts('Xero', await current().guardFor(database).status(connection.tenantId));
       },
       // One issued invoice to a Xero draft (drafts.js). The Flow invoice id
       // and version are the idempotency key.
@@ -105,6 +120,9 @@ export function createXeroAdapter({ runtime: given = null } = {}) {
         const connection = await readConnection(database, organisationId);
         return { connected: Boolean(connection && connection.mode === settings.mode), writesAllowed: writesAllowed(settings) };
       },
+      // What the customer's Xero copy of a Flow invoice version says, from
+      // Flow's copy of Xero (drafts.js; no calls). The invoice PDF uses it.
+      documentFacts: ({ organisationId, invoiceId, version = null }) => documentFacts(database, current(), { organisationId, invoiceId, version }),
       // Sales invoice payments changed since `since` (ledger.js). The answer's
       // cursor is the next `since`.
       pullPayments: ({ organisationId, since }) => readPayments(database, current(), organisationId, { since: new Date(since) }),

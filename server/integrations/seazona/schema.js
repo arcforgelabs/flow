@@ -21,6 +21,9 @@ export const seazonaApiGovernor = pgTable('seazona_api_governor', {
   circuitOpens: integer('circuit_opens').notNull().default(0),
   haltedReason: text('halted_reason'),
   haltedAt: at('halted_at'),
+  // The call guard's stopped resources (../call-guard.js). Seazona's guard
+  // halts on any 401 or 403, so this stays empty; the shared guard needs it.
+  stoppedResources: jsonb('stopped_resources').notNull().default({}),
   updatedAt: at('updated_at').notNull().defaultNow(),
 });
 
@@ -33,6 +36,7 @@ export const seazonaApiRequests = pgTable('seazona_api_requests', {
   clientKey: text('client_key').notNull(),
   workflow: text('workflow').notNull(),
   admittedAt: at('admitted_at').notNull(),
+  resource: text('resource'),
   requestPath: text('request_path'),
   statusCode: integer('status_code'),
   failureKind: text('failure_kind'),
@@ -176,4 +180,94 @@ export const seazonaRecordReadFailures = pgTable('seazona_record_read_failures',
   quarantinedUntil: at('quarantined_until'),
 }, (t) => [
   primaryKey({ columns: [t.resource, t.recordKey] }),
+]);
+
+// History import (docs/SEAZONA.md, "History import"). Seazona's own CSV
+// export brings in the years before the API sync started, with no API call.
+// A batch is one uploaded file. Its rows are kept as Flow read them (only the
+// columns Flow knows; never an unknown column, and no patient field unless
+// SEAZONA_KEEP_PATIENT_REFERENCE is on). Its jobs are the rows grouped into
+// work, each with what reconciliation found and what a person decided.
+// Applying a batch copies its jobs into `seazona_history_jobs`, Flow's own
+// record of past work. A batch is never deleted; a cancelled one stays.
+export const seazonaHistoryBatches = pgTable('seazona_history_batches', {
+  id: bigserial('id', { mode: 'number' }).primaryKey(),
+  fileName: text('file_name'),
+  // The file's sha256: the same file uploaded twice finds its first batch.
+  fileSha256: text('file_sha256').notNull(),
+  profile: text('profile').notNull(),
+  // Flow field -> the file's column header.
+  columns: jsonb('columns').notNull().default({}),
+  // Headers Flow does not know. Only the names are kept, never the values.
+  ignoredColumns: jsonb('ignored_columns').notNull().default([]),
+  // staged -> reconciled -> applied, or cancelled.
+  status: text('status').notNull(),
+  counts: jsonb('counts').notNull().default({}),
+  createdBy: text('created_by').notNull(),
+  createdAt: at('created_at').notNull().defaultNow(),
+  reconciledAt: at('reconciled_at'),
+  appliedAt: at('applied_at'),
+  appliedBy: text('applied_by'),
+}, (t) => [
+  index('seazona_history_batches_file').on(t.fileSha256),
+]);
+
+export const seazonaHistoryRows = pgTable('seazona_history_rows', {
+  batchId: bigint('batch_id', { mode: 'number' }).notNull(),
+  rowNumber: integer('row_number').notNull(),
+  jobKey: text('job_key'),
+  fields: jsonb('fields').notNull(),
+  // Why the row cannot be read, for example `missing_date`. Empty when fine.
+  problems: jsonb('problems').notNull().default([]),
+}, (t) => [
+  primaryKey({ columns: [t.batchId, t.rowNumber] }),
+]);
+
+export const seazonaHistoryBatchJobs = pgTable('seazona_history_batch_jobs', {
+  batchId: bigint('batch_id', { mode: 'number' }).notNull(),
+  jobKey: text('job_key').notNull(),
+  job: jsonb('job').notNull(),
+  recordHash: text('record_hash').notNull(),
+  // What reconciliation found: new, same, changed, needs_person.
+  outcome: text('outcome'),
+  // Each finding: { code, blocking, detail }.
+  findings: jsonb('findings').notNull().default([]),
+  // What Seazona's API copy holds for the same work, when Flow found it.
+  mirrorOrderId: text('mirror_order_id'),
+  mirrorInvoiceNumber: text('mirror_invoice_number'),
+  clientId: text('client_id'),
+  // A person's choice: import, skip, or null (follow the outcome).
+  decision: text('decision'),
+  decidedBy: text('decided_by'),
+  decidedAt: at('decided_at'),
+}, (t) => [
+  primaryKey({ columns: [t.batchId, t.jobKey] }),
+]);
+
+export const seazonaHistoryJobs = pgTable('seazona_history_jobs', {
+  jobKey: text('job_key').primaryKey(),
+  invoiceNumber: text('invoice_number'),
+  caseRef: text('case_ref'),
+  clientId: text('client_id'),
+  company: text('company'),
+  doctorName: text('doctor_name'),
+  status: text('status'),
+  jobDate: text('job_date'),
+  dueDate: text('due_date'),
+  shippedDate: text('shipped_date'),
+  lines: jsonb('lines').notNull().default([]),
+  subtotalCents: cents('subtotal_cents'),
+  totalCents: cents('total_cents'),
+  patientReference: text('patient_reference'),
+  mirrorOrderId: text('mirror_order_id'),
+  mirrorInvoiceNumber: text('mirror_invoice_number'),
+  recordHash: text('record_hash').notNull(),
+  // The batch that last wrote the row, and the first one.
+  batchId: bigint('batch_id', { mode: 'number' }).notNull(),
+  firstBatchId: bigint('first_batch_id', { mode: 'number' }).notNull(),
+  firstImportedAt: at('first_imported_at').notNull(),
+  lastChangedAt: at('last_changed_at').notNull(),
+}, (t) => [
+  index('seazona_history_jobs_invoice').on(t.invoiceNumber),
+  index('seazona_history_jobs_changed').on(t.lastChangedAt),
 ]);
