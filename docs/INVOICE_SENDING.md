@@ -67,7 +67,14 @@ One ready invoice has its own **Send to Xero** button (**Send to Xero and
 email** when the customer's send mode is approve and email). It does the same
 steps for that invoice only. A draft that is not ready has no send button:
 mark it ready first. With no accounting system on, the invoice page shows
-**Issue invoice** instead.
+**Issue invoice** instead. **Preview** sits just left of the send button.
+
+After a send, the next invoice of the list opens. The count in the bar holds
+(1 of 35, then 2 of 35): the sent invoice stays in the bar's list until the
+person goes back. Previous opens it again, issued, with a greyed **Sent to
+Xero** button: an invoice that is queued, sent, or found in Xero cannot be
+sent twice. Back reloads the list, where the sent invoice is under Issued.
+After the last invoice of the list, the list opens.
 
 ## Records
 
