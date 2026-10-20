@@ -18,16 +18,34 @@ Settings, Custom fields is laid out like ClickUp's Custom Field Manager:
 - **Toolbar:** search (names and option names), Field type (show some
   types only), Filter (Show archived fields), and Create field.
 - **Table:** one group per type, in name order. A group's header shows the
-  type's icon, name and count, and folds the group open and closed. Folded
+  type's icon, name and count, and folds the group open and closed. An
+  owner or admin clicks the group's pill to give the group a colour. Folded
   groups stay folded in that browser; a search opens every group with a
   match. Each group ends with "Create *type* field".
-- **Row:** the field's name, its type as an icon, who made it, the day it
-  was made, and where it applies (Jobs). Under the pointer, Edit opens the
-  field's dialog: its name and, for a dropdown, its options. The ⋯ menu has
-  Edit, Rename (in place), Duplicate, Convert (not in Flow yet), Copy field
-  ID and Archive. An archived field's menu has Bring back.
+- **Row:** the field's name, its type as an icon in its colour, who made
+  it, the day it was made, and where it applies (Jobs). Rows do not show
+  options. Under the pointer, Edit opens the sidecar. The type icon picks
+  the field's colour. The ⋯ menu has Edit, Rename (in place), Colour,
+  Duplicate, Convert (not in Flow yet), Copy custom field ID, Archive and
+  Delete. An archived field's menu has Bring back and Delete.
+- **Sidecar:** like ClickUp's, a panel that slides in from the right of
+  the manager, below the toolbar: the type in its head (a new field picks
+  it there), the name, a dropdown's options as a list (each with its
+  colour dot; Add option), where the field belongs, and Delete, Cancel and
+  Save at its foot. The field's colour is not in the sidecar: the row's
+  type icon and ⋯, Colour change it. The table stays usable behind it: another row's Edit,
+  or Create, switches the sidecar at once. Save, Cancel, × and Esc close it.
+- **Colours:** every colour picker (a group, a field, an option) shows the
+  real pill in each colour, so a person sees the result before they pick.
+  A field with no colour of its own takes its group's colour.
+- **Delete:** asks first and says how many jobs have a value. Delete takes
+  the field, its values and its history for good; Archive keeps them.
 - **From *system*:** the work system's own fields (Seazona's stage), read
-  only, in their own group.
+  only, in their own group. View opens the sidecar, read only, with the
+  stages as a list, in board order, each dot in its board colour. Its Date
+  created is the day the system was connected: the first time its
+  settings were saved in Flow, or, for a system set up in the host's own
+  settings, the first time Flow saw its work.
 - On a phone the table keeps the name, the type icon and the menu.
 
 Icons come from Lucide (`lucide-static`, ISC), served one file each at
@@ -37,7 +55,7 @@ Icons come from Lucide (`lucide-static`, ISC), served one file each at
 
 | Part | What it is |
 | --- | --- |
-| Field | One row in `job_fields`: a name, a type, and for a dropdown its options in lane order. |
+| Field | One row in `job_fields`: a name, a type, a colour (or none: its group's), and for a dropdown its options in lane order. |
 | Value | One row in `job_field_values`: one job's value for one field. A job is the work system's job, `(source_system, source_job_ref)`, the same key the Jobs board uses. |
 | Event | One row in `job_field_events`: who changed a value, from what, to what, and when. |
 | System field | A work system's own field, read only. Today: each work system's job statuses (its stage), from the port's `listWork`. |
@@ -56,8 +74,9 @@ Icons come from Lucide (`lucide-static`, ISC), served one file each at
 Every lab has an **Assignee**: a person custom field Flow makes once, the
 first time the lab's custom fields are read and the lab has no person
 field (live or archived). The lab can rename it or archive it; Flow does
-not make it again. The Jobs list shows the first person custom field as
-the Assignee column, and the filter "Assignee is Me".
+not make it again, also when the lab deletes it
+(`job_field_settings.assignee_made_at`). The Jobs list shows the first
+person custom field as the Assignee column, and the filter "Assignee is Me".
 
 ## Rules
 
@@ -81,11 +100,13 @@ value. This copies OpenClaw's workboard: the server's copy wins.
 
 | Route | Who | What |
 | --- | --- | --- |
-| `GET /api/custom-fields[?archived=1]` | Signed in | Fields, system fields, the people a person field can name (active people, by name), types, groupable types, option colours |
-| `POST /api/custom-fields` | Owner, admin | Make a field: `{ name, type[, options] }` |
+| `GET /api/custom-fields[?archived=1]` | Signed in | Fields (each with `color` and `valueCount`), system fields (with `createdAt`, when the system was connected), the people a person field can name (active people, by name), types, groupable types, option colours, `groupColors` |
+| `POST /api/custom-fields` | Owner, admin | Make a field: `{ name, type[, options, color] }` |
 | `PUT /api/custom-fields/order` | Owner, admin | `{ ids }`: every live field, in the new order |
-| `PUT /api/custom-fields/:id` | Owner, admin | `{ name?, options? }` |
+| `PUT /api/custom-fields/groups/:type` | Owner, admin | `{ color }`: a type group's colour; `null` puts back its own |
+| `PUT /api/custom-fields/:id` | Owner, admin | `{ name?, options?, color? }`; `color: null` takes the group's colour |
 | `POST /api/custom-fields/:id/archive` | Owner, admin | `{ archived }` |
+| `DELETE /api/custom-fields/:id` | Owner, admin | Delete the field, its values and its history |
 | `GET /api/custom-fields/values` | Signed in | Every value of the live fields |
 | `PUT /api/custom-fields/values` | Signed in | `{ sourceSystem, sourceJobRef, fieldId, value[, expectedUpdatedAt] }` |
 | `GET /api/custom-fields/history?sourceSystem=&sourceJobRef=` | Signed in | One job's changes, newest first |
