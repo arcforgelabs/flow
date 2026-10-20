@@ -5,8 +5,30 @@ The price list is the lab's own list of codes, names, prices and tax codes
 Xero items and Seazona products link to it when those integrations are on.
 Flow never changes a price in another system.
 
-Code: `server/core/price-list.js`. Screen: Settings, Price list
-(`server/ui/price-list.js`). API: `server/api/invoicing.js`.
+Code: `server/core/price-list.js`. Screens: Settings, Price list
+(`server/ui/price-list.js`) and Price list › Reconcile
+(`server/ui/price-reconcile.js`, likely codes in `server/ui/price-match.js`).
+API: `server/api/invoicing.js`.
+
+## The screens
+
+- **Price list** shows Flow's own codes only: code, name, price and tax, with
+  Active and Archived tabs and a search. It looks the same with no
+  integration on. A row opens the code's dialog.
+- **Reconcile** shows only while an integration with a price list is on. Its
+  button on the Price list counts the records that need a person: each
+  record with no code, and each code that differs from a linked record.
+- Reconcile has the two views of Xero › Import › Review:
+  - **One at a time**: the record beside its likely Flow code, one fact per
+    row, ✓ or ≠ between them. The invoice pager steps through them. Link,
+    Other match, Find another code, Add as new code, Skip. A code that
+    differs: Edit code, Remove link (record gone), Mark resolved.
+  - **List**: every record with its likely code. Ticked rows are linked,
+    added as new codes or marked resolved from the bulk bar.
+- A likely code agrees by name (words, or a short word that starts a long
+  one), then price, then tax. A **sure** match agrees on all three, with no
+  other code as close. "Link N sure" links every sure one in one call.
+- Check prices sits on the Reconcile screen.
 
 ## The parts
 
@@ -22,8 +44,8 @@ Code: `server/core/price-list.js`. Screen: Settings, Price list
 
 - Flow links a record by itself when its code is the code of a price item
   (`matched_by` `code`).
-- A person links the rest on the price list screen (`matched_by` `person`).
-  "Add as a new code" adds the record to the list as it is, then links it.
+- A person links the rest on the Reconcile screen (`matched_by` `person`).
+  "Add as new code" adds the record to the list, then links it.
 - An accounting system (Xero) has one record for each price item at most.
   A work system (Seazona) can link many products to one price item.
 - Line mapping uses a work system link first: a Seazona line whose product
@@ -74,4 +96,5 @@ on each mapped invoice line:
 | `POST /api/invoicing/price-items/:id/archive` | owner, admin | `{ archived }`: archives a code, or brings it back. |
 | `POST /api/invoicing/price-items/:id/links` | owner, admin | `{ system, externalId }`: links a record. |
 | `POST /api/invoicing/price-items/:id/resolve` | owner, admin | Mark resolved. |
+| `POST /api/invoicing/price-links` | owner, admin | `{ links: [{ priceItemId, system, externalId }] }`: up to 500 links in one call, then one remap. |
 | `DELETE /api/invoicing/price-links/:id` | owner, admin | Removes a link. |

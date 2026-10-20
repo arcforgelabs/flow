@@ -958,14 +958,32 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
 .fx-set__control .fx-input[type="number"] { width: 96px; }
 .fx-set__control .fx-select { min-width: 220px; }
 .fx-set + .fx-set { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--fx-line); }
-/* Price list (price-list.js): a code's price and its systems' chips. */
-.fx-price__hint { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
-.fx-price__head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; }
-.fx-price__head .fx-search { margin: 0; }
+/* Price list (price-list.js): one plain table of Flow's codes. */
+.fx-price { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.fx-price__head { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 8px 16px; }
+.fx-price__head .fx-search { margin: 0 0 6px; width: 260px; }
 @media (max-width: 560px) { .fx-price__head .fx-search { width: 100%; } }
-.fx-price__systems { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; }
-.fx-set__control .fx-price__link { width: 260px; min-width: 0; }
-@media (max-width: 560px) { .fx-set__control .fx-price__link { width: 150px; } }
+.fx-price__scroll { overflow-x: auto; border: 1px solid var(--fx-line); background: var(--t-paper); }
+.fx-price__table th { position: sticky; top: 0; z-index: 1; }
+.fx-price__table td { padding-top: 9px; padding-bottom: 9px; }
+.fx-price__table td.fx-num, .fx-price__table th.fx-num { text-align: right; white-space: nowrap; }
+.fx-price__code { width: 1%; white-space: nowrap; font-family: var(--t-data); font-size: 13px; font-weight: 600; color: var(--t-strong); }
+.fx-price__settings { margin-top: 12px; }
+.fx-ph__actions .fx-tabs__count[data-tone="warn"], .fx-btn .fx-tabs__count[data-tone="warn"] { margin-left: 8px; background: var(--t-warn-bg); color: var(--t-warn); }
+/* Price list › Reconcile (price-reconcile.js): Xero › Import's two views. */
+.fx-prc .fx-pager { margin-bottom: 4px; }
+.fx-prc__finder { display: flex; flex-direction: column; gap: 4px; }
+.fx-prc__found { display: flex; flex-direction: column; }
+.fx-prc__found:empty { display: none; }
+.fx-prc__found .fx-pop__item { display: grid; grid-template-columns: 90px 1fr auto; gap: 12px; text-align: left; }
+.fx-prc { padding-bottom: 72px; }
+.fx-prc-list td { white-space: nowrap; }
+.fx-prc-list td.fx-prc-list__name { white-space: normal; min-width: 160px; }
+.fx-prc-list__flow { display: inline-flex; align-items: center; gap: 8px; }
+.fx-prc-list__sys { width: 1%; white-space: nowrap; }
+.fx-prc-list__bad { color: var(--t-warn); font-weight: 600; }
+.fx-prc-list tr[data-state="sure"] .fx-xi-list__mid { color: var(--t-success); }
+.fx-prc-list tr[data-state="differs"] .fx-xi-list__mid { color: var(--t-warn); }
 /* Custom fields (custom-fields.js): option chips with a colour dot, and the
    dialog's option lines. The option colours are fixed, like ClickUp's. */
 .fx-cf__opt { display: inline-flex; align-items: center; gap: 6px; padding: 2px 9px; border: 1px solid var(--fx-line); border-radius: 999px; font-size: 12.5px; color: var(--t-text); white-space: nowrap; }
