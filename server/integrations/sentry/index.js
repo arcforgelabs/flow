@@ -1,4 +1,5 @@
 import * as SentryNode from '@sentry/node';
+import { isReplitWorkspace } from '../../core/host.js';
 import { scrubSpan } from '../../ui/monitoring.js';
 
 // The Sentry adapter (docs/SENTRY.md). It sends the errors Flow logs, the
@@ -40,7 +41,7 @@ export const SENTRY_SETUP = {
   },
   fields: [
     { name: 'SENTRY_DSN', label: 'DSN', kind: 'url', help: 'From the Sentry project\'s Client Keys. Browsers see it, so it is not a secret.' },
-    { name: 'SENTRY_ENVIRONMENT', label: 'Environment', help: 'How Sentry labels this installation, for example production. Empty: production.' },
+    { name: 'SENTRY_ENVIRONMENT', label: 'Environment', help: 'How Sentry labels this installation, for example production. Empty: production, or workspace in a Replit workspace.' },
     { name: 'SENTRY_FEEDBACK', label: 'Report a problem button', kind: 'onoff', help: 'On: everyone signed in can send a report, with a screenshot, to this Sentry project.' },
     { name: 'SENTRY_TRACES_SAMPLE_RATE', label: 'Traces', help: 'The share of clicks, page loads and requests timed, from 0 (off) to 1 (all). Empty: 0.2.' },
   ],
@@ -50,7 +51,9 @@ export function readSentrySettings(env) {
   const dsn = String(env.SENTRY_DSN ?? '').trim();
   if (!dsn) throw new Error('SENTRY_DSN is not set. Enter the Sentry project\'s DSN in Settings, Integrations.');
   if (!DSN_PATTERN.test(dsn)) throw new Error('SENTRY_DSN is not a Sentry DSN (https://<key>@<host>/<project id>).');
-  const environment = String(env.SENTRY_ENVIRONMENT ?? '').trim() || 'production';
+  // A Replit workspace shares the published app's secrets; its errors are
+  // labelled apart so they never read as the live app's.
+  const environment = String(env.SENTRY_ENVIRONMENT ?? '').trim() || (isReplitWorkspace(env) ? 'workspace' : 'production');
   const feedback = String(env.SENTRY_FEEDBACK ?? 'on').trim() !== 'off';
   const rate = String(env.SENTRY_TRACES_SAMPLE_RATE ?? '').trim();
   const tracesSampleRate = rate === '' ? DEFAULT_TRACES_SAMPLE_RATE : Number(rate);

@@ -111,7 +111,7 @@ export function createSeazonaAdapter({ env = null, fetchImpl = null, now = Date.
       const scheduler = settings.scheduled ? createSeazonaScheduler({ db, settings, run, now, log, timers }) : null;
       runtime = { settings, db, client, run, scheduler };
       scheduler?.start();
-      log.info?.(`[seazona] mode ${settings.mode}; background sync ${scheduler ? 'on' : 'off (live mode only)'}; ${settings.rate.requestsPerMinute} requests a minute at most`);
+      log.info?.(`[seazona] mode ${settings.mode}; background sync ${scheduler ? 'on' : settings.mode === 'live' ? 'off (FLOW_BACKGROUND_JOBS)' : 'off (live mode only)'}; ${settings.rate.requestsPerMinute} requests a minute at most`);
     },
 
     async stop() {

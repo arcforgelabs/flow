@@ -18,6 +18,11 @@ workspace of this repository.
   workspace updater"). The published
   app is built and started by `scripts/replit-deploy.sh` from a release or
   commit fetched from GitHub ("Publishing").
+- A Flow server started in the workspace by hand (from the Shell or by an
+  agent) shares the published app's Secrets. It runs no background jobs and
+  never writes to Xero, and Sentry labels its errors `workspace`
+  (`FLOW_BACKGROUND_JOBS`, `docs/SELF_HOSTING.md`). Only the published app
+  syncs and sends.
 - Runtime: Node 24 (`.replit` module `nodejs-24`), as in CI and the
   `Dockerfile`.
 - Flow keeps its records in PostgreSQL (`DATABASE_URL`) and runs its

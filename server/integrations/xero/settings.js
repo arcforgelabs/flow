@@ -11,6 +11,8 @@
 //   replay   no network: recorded, synthetic Xero responses
 //            (server/integrations/xero/fixtures). Development and CI.
 
+import { backgroundJobsOn } from '../../core/host.js';
+
 export const XERO_MODES = Object.freeze(['live', 'sandbox', 'replay']);
 
 // Xero's own public endpoints. They are the same for every installation.
@@ -154,6 +156,9 @@ export function resolveXeroSettings(env = process.env) {
     tenantId,
     tenantName,
     liveWrites: readOnOff(env, 'XERO_ALLOW_LIVE_WRITES'),
+    // Off in a Replit workspace (server/core/host.js): no history read and
+    // no writes, whatever XERO_ALLOW_LIVE_WRITES says.
+    backgroundJobs: backgroundJobsOn(env),
     dayLimit: readPositiveInteger(env, 'XERO_DAY_LIMIT', DEFAULT_XERO_DAY_LIMIT),
     usageWarningFraction: readFraction(env, 'XERO_USAGE_WARNING_FRACTION', 0.7),
     taxTypes: resolveTaxTypes(env),
@@ -177,5 +182,6 @@ export function resolveXeroSettings(env = process.env) {
 // Whether this installation may write to Xero now. Reads always may.
 export function writesAllowed(settings) {
   if (!settings) return false;
+  if (settings.backgroundJobs === false) return false;
   return settings.mode !== 'live' || settings.liveWrites === true;
 }
