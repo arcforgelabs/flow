@@ -1,6 +1,6 @@
 # Drafts, Problem, Ready and Send all ready
 
-The Invoices page has five tabs: Drafts, Problem, Ready, Issued and Void.
+The Invoices page has five tabs: Drafts, Problem, Ready, Finalised and Void. Finalised was called Issued.
 Drafts, Problem and Ready are views of the draft invoices; every draft is in
 one of them. Code: `server/core/sending.js`.
 
@@ -67,6 +67,11 @@ One press, on the Ready tab, by an owner or admin:
    customer's send mode can make it an approved invoice that Xero emails.
 6. A sent invoice leaves the queue. A refused invoice moves to Problem.
    An invoice that waits for Xero's call limits stays queued.
+7. With Xero on, the Finalised and Void tabs have a **Xero** column. Each
+   invoice has a badge: Xero's mark, Xero's invoice number and its state in
+   Xero (Draft, Approved, Paid, and so on), from Flow's link to the Xero
+   invoice and Flow's copy of Xero. The badge opens the invoice in Xero.
+   **Not sent** (amber) marks an invoice that is not in Xero.
 
 With no accounting system on, the button issues the ready drafts only.
 
@@ -93,14 +98,14 @@ After a send, the next invoice of the list opens. The count in the bar holds
 (1 of 35, then 2 of 35): the sent invoice stays in the bar's list until the
 person goes back. Previous opens it again, issued, with a greyed **Sent to
 Xero** button: an invoice that is queued, sent, or found in Xero cannot be
-sent twice. Back reloads the list, where the sent invoice is under Issued.
+sent twice. Back reloads the list, where the sent invoice is under Finalised.
 After the last invoice of the list, the list opens.
 
 Drafts work the same way. **Finalise** and **Save as draft** open the next
 invoice of the list, so a person reviews drafts one after another without
 going back. **Adopt changes** stays on the invoice, to show the result. An
 invoice opened from somewhere else (the job board, search, a link) steps
-through its own tab: Drafts, Ready, Problem, Issued or Void.
+through its own tab: Drafts, Ready, Problem, Finalised or Void.
 
 ## Records
 

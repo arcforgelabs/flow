@@ -70,15 +70,15 @@ test('a tab click selects the tab at once; only the newest answer draws; a tab s
   await opened;
   assert.equal(selected(main), 'Ready');
 
-  // Issued is selected before the server answers; the old list is dimmed.
-  tab(main, 'Issued').onclick();
-  assert.equal(selected(main), 'Issued');
+  // Finalised is selected before the server answers; the old list is dimmed.
+  tab(main, 'Finalised').onclick();
+  assert.equal(selected(main), 'Finalised');
   assert.equal(panel(main).getAttribute('aria-busy'), 'true');
   assert.ok('stale' in panel(main).dataset);
   const issued = asked.shift();
 
   // A quick click back to Ready draws its last list at once, and the late
-  // Issued answer does not replace it.
+  // Finalised answer does not replace it.
   tab(main, 'Ready').onclick();
   assert.equal(selected(main), 'Ready');
   assert.match(panel(main).text, /R-1/);
@@ -95,7 +95,7 @@ test('a tab click selects the tab at once; only the newest answer draws; a tab s
   assert.equal(panel(main).getAttribute('aria-busy'), null);
 });
 
-test('only Issued and Void show a Number column; the other tabs open on Client', async () => {
+test('only Finalised and Void show a Number column; the other tabs open on Client', async () => {
   globalThis.sessionStorage = { getItem: () => null, setItem() {}, removeItem() {} };
   globalThis.document = { visibilityState: 'visible', addEventListener() {}, removeEventListener() {} };
   const { main, ui, asked } = page();
@@ -107,9 +107,45 @@ test('only Issued and Void show a Number column; the other tabs open on Client',
   assert.ok(!heads().includes('Number'));
   assert.equal(heads()[1], 'Client');
 
-  tab(main, 'Issued').onclick();
+  tab(main, 'Finalised').onclick();
   asked.shift().answer(list('issued', ['INV-1']));
   await settle();
   assert.ok(heads().includes('Number'));
   assert.match(panel(main).text, /INV-1/);
+});
+
+test('with Xero on, Finalised shows a Xero badge on every invoice; one not in Xero stands out', async () => {
+  globalThis.sessionStorage = { getItem: () => null, setItem() {}, removeItem() {} };
+  globalThis.document = { visibilityState: 'visible', addEventListener() {}, removeEventListener() {} };
+  const { main, ui, asked } = page();
+  const flow = ui.flow;
+  ui.flow = (path, options) => (path === '/api/invoicing/context'
+    ? Promise.resolve({ canIssue: true, sendsTo: 'Xero', organisations: [{ id: 'org-1' }] })
+    : flow(path, options));
+  const opened = renderInvoiceList(main, ui);
+  await settle();
+  asked.shift().answer({ ...list('ready', [null]), sendsTo: 'Xero' });
+  await opened;
+  const heads = () => panel(main).all((el) => el.tag === 'th').map((el) => el.text);
+  assert.ok(!heads().includes('Xero'));
+
+  tab(main, 'Finalised').onclick();
+  asked.shift().answer({ ...list('issued', ['FL-1', 'FL-2']), sendsTo: 'Xero' });
+  await settle();
+  assert.deepEqual(heads().slice(-2), ['Status', 'Xero']);
+  const status = asked.shift();
+  assert.equal(status.path, '/api/xero/invoices/status');
+  status.answer({ invoices: [
+    { invoiceId: 'issued-0', state: 'draft', label: 'Draft in Xero', finding: null, xero: { number: 'INV-0451', url: 'https://go.xero.com/x' } },
+    { invoiceId: 'issued-1', state: 'not_sent', label: 'Not in Xero', finding: null, xero: null },
+  ] });
+  await settle();
+  const badges = panel(main).all((el) => el.getAttribute('class') === 'fx-xero');
+  assert.equal(badges.length, 2);
+  assert.equal(badges[0].tag, 'a');
+  assert.equal(badges[0].getAttribute('href'), 'https://go.xero.com/x');
+  assert.match(badges[0].text, /INV-0451Draft/);
+  assert.equal(badges[1].tag, 'span');
+  assert.equal(badges[1].text, 'Not sent');
+  assert.equal(badges[1].all((el) => el.getAttribute('data-tone') === 'warn').length, 1);
 });
