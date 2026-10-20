@@ -245,6 +245,13 @@ function withLink(job, systems) {
   return { ...job, systemName: source?.name ?? job.sourceSystem, link: link ?? null };
 }
 
+// The connected systems an invoice can link to: work systems, then the
+// accounting system.
+const linkedSystems = (work, accounting) => [
+  ...work.map((a) => ({ id: a.id, name: a.name, kind: 'work' })),
+  ...(accounting ? [{ id: accounting.id, name: accounting.name, kind: 'accounting' }] : []),
+];
+
 async function jobsByInvoice(db, organisationId, invoiceIds) {
   if (!invoiceIds.length) return new Map();
   const rows = await db.select().from(billingObligations)
@@ -291,7 +298,9 @@ async function invoiceDetail(db, organisationId, invoiceId, accounting = null, w
       ? { mode: await sendModeFor(db, organisationId, invoice.contactId), otherCustomers: 0, ...(await accounting.capabilities.sendStatus({ organisationId })) }
       : null,
     contact: contact ?? null,
-    job: jobs.get(invoiceId) ?? null,
+    job: withLink(jobs.get(invoiceId) ?? null, work),
+    // The Linked card: each connected system, and this invoice's link there.
+    linksTo: linkedSystems(work, accounting),
     versions: versions.map(({ version, issuedAt, issuedBy }) => ({ version, issuedAt, issuedBy })),
   };
 }
@@ -374,7 +383,7 @@ export function createInvoicingRouter({
       sendsTo: system?.name ?? null,
       sendMode: mode,
       // The Linked column: one icon for each connected system.
-      linksTo: [...systems.map((a) => ({ id: a.id, name: a.name, kind: 'work' })), ...(system ? [{ id: system.id, name: system.name, kind: 'accounting' }] : [])],
+      linksTo: linkedSystems(systems, system),
     });
   }));
 

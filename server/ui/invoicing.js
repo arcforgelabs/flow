@@ -435,16 +435,46 @@ function totalsBox(ui, { subtotalCents, taxCents, totalCents }) {
     h('dt', { class: 'fx-totals__grand' }, 'Total'), h('dd', { class: 'fx-totals__grand' }, formatCents(totalCents)));
 }
 
-// The job an invoice bills. The case id stays on the record, not on screen.
-function jobCard(ui, job) {
+// The Linked card: this invoice's link in each connected system (linksTo).
+// A work system row names the job's order and opens it there; the
+// accounting row gives the number and state there (from Flow's copy). A
+// system with no link shows a dashed row. With no system on, the card holds
+// the job's facts only.
+function linkedCard(ui, invoice, accountingStatus = null) {
   const { h } = ui;
-  if (!job) return null;
+  const job = invoice?.job ?? null;
+  const systems = invoice?.linksTo ?? [];
+  if (!job && !systems.length) return null;
+  const facts = job && (job.practitioner || job.shippedOn) ? h('dl', { class: 'fx-facts' },
+    job.practitioner ? [h('dt', {}, 'Practitioner'), h('dd', {}, job.practitioner)] : null,
+    job.shippedOn ? [h('dt', {}, 'Shipped'), h('dd', {}, showDate(job.shippedOn))] : null) : null;
+  const row = (system, { tone = null, ref = null, state = null, url = null, none = null }) => h('div', { class: 'fx-linked__row' },
+    linkIcon(ui, system, { tone, title: none ?? `${system.name}${ref ? ` ${ref}` : ''}` }),
+    h('span', { class: 'fx-strong' }, system.name),
+    ref ? h('span', { class: 'fx-linked__ref' }, ref) : null,
+    state ? h('span', { class: 'fx-status', 'data-tone': tone ?? 'mute' }, state) : null,
+    none ? h('span', { class: 'fx-dim' }, none) : null,
+    url ? h('a', { class: 'fx-linked__open', href: url, target: '_blank', rel: 'noopener', title: `Open in ${system.name}` }, 'Open ↗') : null);
+  const rows = systems.map((system) => {
+    if (system.kind === 'work') {
+      return job?.sourceSystem === system.id
+        ? row(system, { tone: 'success', ref: job.caseRef ?? job.sourceJobRef, url: job.link?.url ?? null })
+        : row(system, { none: 'No job linked' });
+    }
+    const status = accountingStatus;
+    if (!status || (status.state === 'not_sent' && !status.finding)) {
+      return row(system, { none: invoice?.status === 'draft' ? 'Goes there when sent' : `Not in ${system.name} yet` });
+    }
+    const tone = status.finding ? 'danger' : LINK_TONE[status.state] ?? 'mute';
+    const state = status.finding ? 'Out of sync' : status.label.replace(` in ${system.name}`, '');
+    return row(system, { tone, ref: status.xero?.number ?? null, state, url: status.xero?.url ?? null });
+  });
+  const workRows = systems.some((s) => s.kind === 'work');
   return h('section', { class: 'fx-card fx-side-card' },
-    h('h3', { class: 'fx-label' }, 'Job'),
-    h('dl', { class: 'fx-facts' },
-      job.practitioner ? [h('dt', {}, 'Practitioner'), h('dd', {}, job.practitioner)] : null,
-      job.shippedOn ? [h('dt', {}, 'Shipped'), h('dd', {}, showDate(job.shippedOn))] : null,
-      h('dt', {}, 'From'), h('dd', {}, job.sourceSystem === 'seazona' ? 'Seazona' : job.sourceSystem)));
+    h('h3', { class: 'fx-label' }, 'Linked'),
+    !workRows && job ? h('p', { class: 'fx-dim' }, `Job from ${job.systemName ?? job.sourceSystem}`) : null,
+    h('div', { class: 'fx-linked' }, rows),
+    facts);
 }
 
 // A draft, or a new invoice before its first save.
@@ -796,7 +826,7 @@ function draftView(invoice, ui, context, redraw) {
           h('div', { class: 'fx-lines__foot' },
             h('button', { class: 'fx-btn fx-btn--ghost fx-btn--sm', type: 'button', onclick: () => { lines.push({ description: '', quantity: 1, unitAmountCents: null, taxCode: 'GST', priceItemId: null }); drawLines(); } }, '+ Add line'),
             totalsHost))),
-      h('aside', { class: 'fx-invoice__aside' }, statusCard, jobCard(ui, invoice?.job))),
+      h('aside', { class: 'fx-invoice__aside' }, statusCard, linkedCard(ui, invoice))),
   ].map((part) => {
     // Any edit on the page shows Save changes; undoing it hides it again.
     for (const kind of ['input', 'change', 'click']) part?.addEventListener?.(kind, () => setTimeout(watchChanges));
@@ -855,12 +885,14 @@ function issuedView(invoice, ui, context, redraw) {
   };
   const organisationId = context.organisations?.[0]?.id;
   const xeroHost = h('div');
+  const linkedHost = h('div', {}, linkedCard(ui, invoice) ?? '');
   let xeroStatus = null;
   const send = invoice.status === 'issued' && context.canIssue ? sendToXero(invoice, ui, context) : null;
   const loadXero = async () => {
     if (!context.xero) return;
     xeroStatus = (await xeroStatuses(ui, organisationId, [invoice.id])).get(invoice.id) ?? null;
     xeroHost.replaceChildren(xeroCard(invoice, ui, context, xeroStatus, loadXero) ?? '');
+    linkedHost.replaceChildren(linkedCard(ui, invoice, xeroStatus) ?? '');
     if (xeroStatus && xeroStatus.state !== 'not_sent') showSent(send);
   };
   loadXero();
@@ -905,8 +937,8 @@ function issuedView(invoice, ui, context, redraw) {
               h('td', { class: 'fx-num fx-strong' }, formatCents(line.lineAmountCents)))))),
           h('div', { class: 'fx-lines__foot' }, h('span'), totalsBox(ui, invoice)))),
       h('aside', { class: 'fx-invoice__aside' },
+        linkedHost,
         xeroHost,
-        jobCard(ui, invoice.job),
         invoice.versions?.length ? h('section', { class: 'fx-card fx-side-card' },
           h('h3', { class: 'fx-label' }, 'History'),
           h('ol', { class: 'fx-timeline' }, invoice.versions.map((v) => h('li', {},
@@ -920,7 +952,9 @@ function issuedView(invoice, ui, context, redraw) {
 // never writes to Xero: a person fixes the difference where they choose.
 function xeroCard(invoice, ui, context, status, reload) {
   const { h, flow, toast } = ui;
-  if (!status || (status.state === 'not_sent' && !status.finding)) return null;
+  // The Linked card shows Xero's number and state; this card shows only a
+  // difference to resolve.
+  if (!status?.finding) return null;
   const rows = status.differences.map((d) => h('tr', {},
     h('td', {}, FIELD_LABEL[d.field] ?? d.field),
     h('td', { class: 'fx-num' }, showField(d.field, d.flow)),

@@ -285,7 +285,10 @@ describe('invoicing API', { skip: skipWithoutDatabase }, () => {
     assert.equal(drafted.body.invoice.reference, 'Dr Example');
     assert.deepEqual(drafted.body.invoice.job, {
       id: job.id, sourceSystem: 'worksystem', sourceJobRef: 'JOB-1', caseRef: 'CASE-JOB-1', practitioner: 'Dr Example', shippedOn: '2026-10-17',
+      systemName: 'Work system', link: null,
     });
+    // The Linked card lists each connected system.
+    assert.deepEqual(drafted.body.invoice.linksTo.map((s) => [s.id, s.kind]), [['worksystem', 'work']]);
     const inList = (await call('/invoices?q=Dr%20Example')).body.invoices;
     assert.equal(inList[0].job.sourceJobRef, 'JOB-1');
     const after = await call('/jobs?view=drafted');

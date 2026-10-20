@@ -234,6 +234,12 @@ a.fx-link:hover, a.fx-link:focus-visible { border-color: var(--t-strong); }
 .fx-link__dot[data-tone="success"] { background: var(--t-success); }
 .fx-link__dot[data-tone="warn"] { background: var(--t-warn); }
 .fx-link__dot[data-tone="danger"] { background: var(--t-danger); }
+.fx-linked { display: grid; }
+.fx-linked__row { display: flex; align-items: center; gap: 8px; white-space: nowrap; min-height: 44px; padding: 6px 0; border-top: 1px solid var(--fx-line-soft); }
+.fx-linked__row:first-child { border-top: 0; }
+.fx-linked__ref { font-family: var(--t-data); font-variant-numeric: tabular-nums; color: var(--t-strong); }
+.fx-linked__open { margin-left: auto; font-size: 12.5px; color: var(--t-dim); white-space: nowrap; }
+.fx-linked__open:hover { color: var(--t-strong); }
 .fx-tag {
   margin-left: 8px; padding: 1px 7px; border: 1px solid var(--fx-line); border-radius: 999px;
   color: var(--t-dim); font-size: 11.5px; font-weight: 600;
