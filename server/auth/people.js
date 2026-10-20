@@ -52,21 +52,22 @@ export async function setPersonAppearance(db, { id, appearance }) {
 }
 
 // The pages a person can keep their own view of, each with its check.
-export const VIEW_PAGES = { jobs: normaliseJobsView };
+export const VIEW_PAGES = new Map([['jobs', normaliseJobsView]]);
 
 // A person's saved views as Flow sends them: only the known pages, each
 // checked, so a view saved by an older Flow still loads.
 export function normaliseViews(input) {
   const value = input && typeof input === 'object' ? input : {};
   const out = {};
-  for (const [page, normalise] of Object.entries(VIEW_PAGES)) if (value[page]) out[page] = normalise(value[page]);
+  for (const [page, normalise] of VIEW_PAGES) if (value[page]) out[page] = normalise(value[page]);
   return out;
 }
 
 // Each person keeps their own view of a page; saving one page leaves the
 // others as they were.
 export async function setPersonView(db, { id, page, view }) {
-  const normalise = VIEW_PAGES[page];
+  // A Map, so a page name such as "constructor" never reaches Object.prototype.
+  const normalise = VIEW_PAGES.get(page);
   if (!normalise) throw new FlowError('not_found', 'no such page');
   const value = normalise(view);
   const [row] = await db.update(people)

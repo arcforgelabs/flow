@@ -71,5 +71,8 @@ describe('a saved view follows the account', { skip: skipWithoutDatabase }, () =
     assert.deepEqual(normaliseViews(row.views), { jobs: { ...DEFAULT_VIEW, sort: 'total', dir: 'desc' } });
     assert.equal(row.appearance.colorMode, 'dark');
     await assert.rejects(setPersonView(handle.db, { id: owner.id, page: 'nope', view: {} }), { code: 'not_found' });
+    for (const page of ['constructor', '__proto__', 'toString']) {
+      await assert.rejects(setPersonView(handle.db, { id: owner.id, page, view: {} }), { code: 'not_found' });
+    }
   });
 });
