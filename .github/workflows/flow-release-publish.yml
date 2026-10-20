@@ -12,7 +12,7 @@ run-name: flow ${{ inputs.tag }}
 #   image           after both: GHCR by digest,
 #                   build attestation and SBOM, smoke of the pushed digest
 #                   against PostgreSQL, then the channel's tags
-#   github-release  GitHub Release "flow <version>" with notes, manifest and
+#   github-release  GitHub Release "flow <version>" with the changelog notes, manifest and
 #                   .sha256 files
 #   npm             starts Flow NPM Release (flow-npm-release.yml) for the
 #                   tarball this run proved; it publishes on this run's
@@ -341,12 +341,19 @@ jobs:
           TARBALL: ${{ needs.checks.outputs.tarball }}
         run: |
           set -euo pipefail
+          # The notes are the release's changelog file (CHANGELOG/<version>.md,
+          # CONTRIBUTING.md). A beta without one gets GitHub's generated notes.
+          notes=(--generate-notes)
+          if [[ -f "CHANGELOG/${VERSION}.md" ]]; then
+            node scripts/release/changelog.mjs notes --version "$VERSION" > "$RUNNER_TEMP/notes.md"
+            notes=(--notes-file "$RUNNER_TEMP/notes.md")
+          fi
           cd "$RUNNER_TEMP/assets"
           cp "$RUNNER_TEMP/artifacts/npm-package/$TARBALL" .
           cp "$RUNNER_TEMP/artifacts/image-sbom/"*.spdx.json .
           cp "$RUNNER_TEMP/artifacts/sbom/flow-server.cdx.json" "flow-server-${VERSION}.cdx.json"
           for file in *; do sha256sum "$file" > "$file.sha256"; done
-          flags=(--verify-tag --title "flow ${VERSION}" --generate-notes)
+          flags=(--verify-tag --title "flow ${VERSION}" "${notes[@]}")
           if [[ "$CHANNEL" == "beta" ]]; then
             flags+=(--prerelease --latest=false)
           else
@@ -354,6 +361,9 @@ jobs:
           fi
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber ./*
+            if [[ -f "$RUNNER_TEMP/notes.md" ]]; then
+              gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file "$RUNNER_TEMP/notes.md"
+            fi
           else
             gh release create "$TAG" --repo "$GITHUB_REPOSITORY" "${flags[@]}" ./*
           fi

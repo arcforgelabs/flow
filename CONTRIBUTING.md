@@ -43,8 +43,12 @@ split layout that openclaw/openclaw uses. The release owns these files:
   release-note text in the pull request: its title and its User Impact
   section.
 - The release cut writes `CHANGELOG/<version>.md` from the pull requests
-  merged since the previous release, then edits the prose. The procedure is
-  `.agents/skills/flow-changelog-update/SKILL.md`.
+  merged since the previous release, edits the prose, and merges it in a
+  `docs(changelog): <version> notes` pull request, which has no row of its
+  own. The procedure is `.agents/skills/flow-changelog-update/SKILL.md`.
+- Flow Release Prepare refuses a stable release until its file lists every
+  pull request since the previous stable release, and the GitHub Release
+  takes its notes from the file (`docs/RELEASING.md`).
 - A stable release covers everything since the previous stable release. A
   beta covers everything since the previous release of either channel, in
   its own file.

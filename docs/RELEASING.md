@@ -27,8 +27,12 @@ Each GitHub Release has these assets, each with a `.sha256` file:
 - `flow-server-<version>.cdx.json`: an SBOM of the server's production
   dependencies.
 
-The notes are GitHub's generated notes: the pull requests merged since the
-last release.
+The notes are the release's changelog file, `CHANGELOG/<version>.md`
+(`CONTRIBUTING.md`, `.agents/skills/flow-changelog-update/SKILL.md`). A
+stable release needs one: Flow Release Prepare refuses to tag it unless the
+file's record lists every pull request since the previous stable release. A
+beta uses its file when there is one, and GitHub's generated notes when
+there is not.
 
 ## Versions and channels
 
@@ -97,15 +101,32 @@ forward with a new tag.
    `chore: release 2026.10.18`. Merge it when CI passes. Do this once per
    version; its betas reuse it. The version must be newer than the latest
    stable release, or Prepare refuses it.
-2. Start a beta:
+2. Before the beta you mean to make stable, write the stable version's
+   changelog file from the pull requests
+   merged since the previous stable release, and merge it in a pull request
+   titled `docs(changelog): <version> notes`
+   (`.agents/skills/flow-changelog-update/SKILL.md`):
+
+   ```bash
+   git fetch --unshallow --tags origin
+   node scripts/release/changelog.mjs draft --version <version> --output /tmp/section.md
+   # edit the Highlights, Changes and Fixes
+   node scripts/release/changelog.mjs write --version <version> --file /tmp/section.md
+   node scripts/release/changelog.mjs verify --version <version>
+   ```
+
+   A pull request that merges after this one is not in the record, and
+   Prepare refuses the stable release until the file is written again. So
+   the stable release is the commit of a beta that already holds the file.
+3. Start a beta:
 
    ```bash
    gh workflow run flow-release-prepare.yml --repo arcforgelabs/flow --ref main -f channel=beta
    ```
 
-3. Nothing waits for approval: when the checks pass, the beta is published to
+4. Nothing waits for approval: when the checks pass, the beta is published to
    npm `beta`, GHCR `beta` and a GitHub pre-release.
-4. Run the beta where it matters. To release that commit as stable, give it:
+5. Run the beta where it matters. To release that commit as stable, give it:
 
    ```bash
    gh workflow run flow-release-prepare.yml --repo arcforgelabs/flow --ref main -f channel=stable -f commit=<commit>

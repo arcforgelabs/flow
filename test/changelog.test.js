@@ -37,7 +37,7 @@ test("the repository's changelog follows the rules", () => {
 
 test("a squash subject gives the pull request, its type and its section", () => {
   assert.deepEqual(parseSubject("fix(xero): match jobs once invoices are copied (#99)"), {
-    number: 99, title: "fix(xero): match jobs once invoices are copied", type: "fix", breaking: false,
+    number: 99, title: "fix(xero): match jobs once invoices are copied", type: "fix", scope: "xero", breaking: false,
     description: "match jobs once invoices are copied", editorial: true, section: "Fixes",
   });
   assert.equal(parseSubject("improve: settings rows (#80)").section, "Changes");
@@ -48,12 +48,13 @@ test("a squash subject gives the pull request, its type and its section", () => 
   assert.equal(parseSubject("chore: start Flow with a new history").number, null);
 });
 
-test("direct commits get no row, and a pull request reverted in the range drops out", () => {
+test("direct commits and changelog pull requests get no row, and a pull request reverted in the range drops out", () => {
   const prs = pullRequestsIn([
     { sha: "a", subject: "chore: start Flow with a new history" },
     { sha: "b", subject: "feat: job board (#10)" },
     { sha: "c", subject: "fix: sign-in loop (#11)" },
     { sha: "d", subject: 'Revert "fix: sign-in loop (#11)" (#12)' },
+    { sha: "e", subject: "docs(changelog): 2026.10.40 notes (#13)" },
   ]);
   assert.deepEqual(prs.map((pr) => pr.number), [10]);
 });
@@ -148,4 +149,15 @@ test("draft, write and verify work from a git history", () => {
   assert.throws(() => main(["verify", "--version", "2026.10.2"], dir), /missing #3/);
   writeFileSync(join(dir, "CHANGELOG", "2026.10.9.md"), draft.replace("## 2026.10.2", "## 2026.10.9"));
   assert.throws(() => main(["check"], dir), /CHANGELOG.md is not the index/);
+});
+
+test("a stable release needs its changelog file, and the GitHub Release takes its notes from it", () => {
+  const workflow = (name) => readFileSync(join(root, ".github/workflows", name), "utf8");
+  const prepare = workflow("flow-release-prepare.yml");
+  const verify = prepare.indexOf("changelog.mjs verify --version");
+  assert.ok(verify > 0 && verify < prepare.indexOf("- name: Create the tag"), "Prepare verifies the changelog before it tags");
+  assert.match(prepare, /- name: Require the changelog for a stable release\n\s+if: inputs\.channel == 'stable'/);
+  const publish = workflow("flow-release-publish.yml");
+  assert.match(publish, /changelog\.mjs notes --version "\$VERSION"/);
+  assert.match(publish, /flags=\(--verify-tag --title "flow \$\{VERSION\}" "\$\{notes\[@\]\}"\)/);
 });

@@ -8,6 +8,7 @@ release; pull requests do not edit these files (`CONTRIBUTING.md`).
 `scripts/release/changelog.mjs` writes this index.
 
 - [Unreleased](CHANGELOG/Unreleased.md)
+- [2026.10.32](CHANGELOG/2026.10.32.md)
 - [2026.10.31](CHANGELOG/2026.10.31.md)
 - [2026.10.30](CHANGELOG/2026.10.30.md)
 - [2026.10.29](CHANGELOG/2026.10.29.md)

@@ -11,9 +11,12 @@ holds the tool and the check.
 
 ## When
 
-At the release cut, in the `chore: release <version>` pull request or a
-`docs(changelog): <version> notes` pull request merged before the tag. Never
-in a feature pull request. Write it once per version: a beta gets its own
+At the release cut, in a `docs(changelog): <version> notes` pull request,
+merged before the beta that will become stable (`docs/RELEASING.md`, Cut a
+release). That pull request has no row in the record. Never in a feature
+pull request. Flow Release Prepare refuses the stable release while the
+record misses a pull request, and Flow Release Publish uses the file as the
+GitHub Release notes. Write it once per version: a beta gets its own
 file (`CHANGELOG/<version>-beta.<n>.md`), and the stable release gets a new,
 cumulative file.
 

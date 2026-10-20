@@ -19,6 +19,7 @@
 //     for GitHub, the prose and a link to the record.
 //   node scripts/release/changelog.mjs verify --version <v> [--base <tag>] [--target <ref>]
 //     Whether the section's record lists exactly the pull requests in the range.
+//     Flow Release Prepare runs it before it tags a stable release.
 //   node scripts/release/changelog.mjs index
 //     Writes CHANGELOG.md again from the files in CHANGELOG/.
 //   node scripts/release/changelog.mjs check
@@ -85,6 +86,7 @@ export function parseSubject(subject) {
     number: pr ? Number(pr[1]) : null,
     title,
     type,
+    scope: match?.groups.scope ?? null,
     breaking,
     description: match ? match.groups.description.trim() : title,
     editorial: Boolean(type && (EDITORIAL_TYPES.has(type) || breaking)),
@@ -104,7 +106,8 @@ export function entry(pr) {
 
 // Pull requests in a list of commits ({ sha, subject }), oldest first. A
 // commit with no "(#N)" is a direct commit and has no row. A revert of a pull
-// request in the same range removes both.
+// request in the same range removes both. A `docs(changelog):` pull request
+// carries the notes themselves, so it has no row: it could not list itself.
 export function pullRequestsIn(commits) {
   const prs = [];
   const reverted = new Set();
@@ -116,6 +119,7 @@ export function pullRequestsIn(commits) {
     if (reverted.has(commit.subject.trim())) continue;
     if (/^Revert "/.test(commit.subject) && commits.some((other) => other.subject.trim() === /^Revert "(.+)"/.exec(commit.subject)[1].trim())) continue;
     const pr = parseSubject(commit.subject);
+    if (pr.type === "docs" && pr.scope === "changelog") continue;
     if (pr.number !== null && !prs.some((other) => other.number === pr.number)) prs.push({ ...pr, sha: commit.sha });
   }
   return prs;
