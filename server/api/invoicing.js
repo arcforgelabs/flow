@@ -13,9 +13,10 @@ import {
 } from '../core/line-mapping.js';
 import {
   effectiveSettings, INVOICING_DEFAULTS, readCustomerBilling, readInvoicingSettings,
-  saveCustomerBilling, saveInvoicingSettings, sendModeSummary,
+  saveCustomerBilling, saveInvoicingSettings, sendModeFor, sendModeSummary,
 } from '../core/invoicing-rules.js';
 import { boardJobs, describeObligations } from '../core/job-board.js';
+import { jobReference } from '../core/references.js';
 import {
   acceptFindings, archivePriceItem, checkPrices, createPriceItem, linkPriceItem, readCatalogues, readPriceList, unlinkPriceItem, updatePriceItem,
 } from '../core/price-list.js';
@@ -36,9 +37,9 @@ import {
 //   POST  /invoices/mark-ready        { invoiceIds }: a person checked these drafts; one with a problem stays
 //   POST  /invoices/mark-not-ready    { invoiceIds }: back to To check
 //   POST  /invoices/send-ready        owner or admin: issue every ready draft and queue it for the
-//                                     accounting system { issueDate }
+//                                     accounting system { issueDate, invoiceIds? (only these, each ready) }
 //   POST  /invoices/send-again        owner or admin: queue failed sends again { invoiceIds? }
-//   GET   /invoices/:id               one invoice: lines, contact, job, issued versions
+//   GET   /invoices/:id               one invoice: lines, contact, job, issued versions, and where it sends
 //   GET   /invoices/:id/pdf?version=  the invoice as a PDF, drawn by Flow (server/core/invoice-pdf.js),
 //                                     with the accounting system's number and dates once it holds it;
 //                                     no accounting system calls
@@ -250,6 +251,11 @@ async function invoiceDetail(db, organisationId, invoiceId, accounting = null) {
   return {
     ...invoice,
     ...(await invoiceView(db, organisationId, invoice, { accounting })),
+    // Where a draft goes when it is sent, and how: this customer's send mode.
+    sendsTo: accounting?.name ?? null,
+    sendMode: accounting && invoice.status === 'draft'
+      ? { mode: await sendModeFor(db, organisationId, invoice.contactId), otherCustomers: 0, ...(await accounting.capabilities.sendStatus({ organisationId })) }
+      : null,
     contact: contact ?? null,
     job: jobs.get(invoiceId) ?? null,
     versions: versions.map(({ version, issuedAt, issuedBy }) => ({ version, issuedAt, issuedBy })),
@@ -281,25 +287,36 @@ export function createInvoicingRouter({
     }
     const q = text(req.query.q);
     const limit = limitOf(req.query.limit, 200, 500);
-    const views = await invoiceViews(db, organisationId, { accounting: accounting() });
-    const where = [eq(invoices.organisationId, organisationId)];
-    const only = (ids) => (ids.length ? inArray(invoices.id, ids) : sql`false`);
-    if (status === 'to_check') where.push(only(views.toCheck));
-    else if (status === 'ready') where.push(only(views.ready));
-    else if (status === 'problem') where.push(only([...views.problems.keys()]));
-    else if (status) where.push(eq(invoices.status, status));
-    if (q) {
-      const pattern = containing(q);
-      where.push(or(ilike(invoices.number, pattern), ilike(invoices.reference, pattern), ilike(contacts.name, pattern)));
-    }
-    const rows = await db.select({ invoice: invoices, contactName: contacts.name }).from(invoices)
-      .leftJoin(contacts, eq(contacts.id, invoices.contactId))
-      .where(and(...where))
-      .orderBy(desc(invoices.createdAt), desc(invoices.id))
-      .limit(limit);
-    const jobs = await jobsByInvoice(db, organisationId, rows.map((r) => r.invoice.id));
-    const counted = await db.select({ status: invoices.status, n: sql`count(*)::int` }).from(invoices)
+    // Each tab switch runs this, so the independent reads run side by side;
+    // only the to-check, ready and problem lists wait on the draft checks.
+    const system = accounting();
+    const checking = invoiceViews(db, organisationId, { accounting: system });
+    const counting = db.select({ status: invoices.status, n: sql`count(*)::int` }).from(invoices)
       .where(eq(invoices.organisationId, organisationId)).groupBy(invoices.status);
+    const sendMode = system
+      ? Promise.all([sendModeSummary(db, organisationId), system.capabilities.sendStatus({ organisationId })])
+        .then(([summary, sendStatus]) => ({ ...summary, ...sendStatus }))
+      : null;
+    const listing = (async () => {
+      const views = VIEWS_OF_INVOICES.includes(status) ? await checking : null;
+      const where = [eq(invoices.organisationId, organisationId)];
+      const only = (ids) => (ids.length ? inArray(invoices.id, ids) : sql`false`);
+      if (status === 'to_check') where.push(only(views.toCheck));
+      else if (status === 'ready') where.push(only(views.ready));
+      else if (status === 'problem') where.push(only([...views.problems.keys()]));
+      else if (status) where.push(eq(invoices.status, status));
+      if (q) {
+        const pattern = containing(q);
+        where.push(or(ilike(invoices.number, pattern), ilike(invoices.reference, pattern), ilike(contacts.name, pattern)));
+      }
+      const rows = await db.select({ invoice: invoices, contactName: contacts.name }).from(invoices)
+        .leftJoin(contacts, eq(contacts.id, invoices.contactId))
+        .where(and(...where))
+        .orderBy(desc(invoices.createdAt), desc(invoices.id))
+        .limit(limit);
+      return { rows, jobs: await jobsByInvoice(db, organisationId, rows.map((r) => r.invoice.id)) };
+    })();
+    const [views, counted, { rows, jobs }, mode] = await Promise.all([checking, counting, listing, sendMode]);
     const counts = Object.fromEntries(INVOICE_STATUSES.map((s) => [s, 0]));
     for (const { status: s, n } of counted) counts[s] = n;
     counts.to_check = views.toCheck.length;
@@ -318,8 +335,8 @@ export function createInvoicingRouter({
         problems: views.problems.get(invoice.id) ?? [],
       })),
       counts,
-      sendsTo: accounting()?.name ?? null,
-      sendMode: accounting() ? { ...(await sendModeSummary(db, organisationId)), ...(await accounting().capabilities.sendStatus({ organisationId })) } : null,
+      sendsTo: system?.name ?? null,
+      sendMode: mode,
     });
   }));
 
@@ -348,7 +365,8 @@ export function createInvoicingRouter({
   router.post('/invoices/send-ready', ...manager, handle(log, async (req, res) => {
     const organisationId = await organisationOf(req);
     const issueDate = optionalDate(req.body?.issueDate, 'issueDate') ?? today();
-    const result = await sendAllReady(db, organisationId, { accounting: accounting(), personId: req.person.id, issueDate });
+    const ids = req.body?.invoiceIds === undefined ? null : invoiceIdsOf(req.body);
+    const result = await sendAllReady(db, organisationId, { accounting: accounting(), personId: req.person.id, issueDate, invoiceIds: ids });
     log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} sent all ready: ${JSON.stringify(result)}`);
     res.json({ ok: true, ...result });
   }));
@@ -488,7 +506,11 @@ export function createInvoicingRouter({
     const organisationId = await organisationOf(req);
     // With no accounting system connected, Flow's own records are the check.
     const liveCheck = liveCheckFor(organisationId) ?? null;
-    const { invoice } = await draftInvoiceForObligation(db, organisationId, obligationId, { liveCheck, actor: `person:${req.person.id}` });
+    const [obligation] = await db.select().from(billingObligations)
+      .where(and(eq(billingObligations.organisationId, organisationId), eq(billingObligations.id, obligationId)));
+    const { referenceTemplate: template } = await readInvoicingSettings(db, organisationId);
+    const reference = obligation ? await jobReference(db, organisationId, obligation, { template, work: work().find((a) => a.id === obligation.sourceSystem) ?? null }) : null;
+    const { invoice } = await draftInvoiceForObligation(db, organisationId, obligationId, { liveCheck, actor: `person:${req.person.id}`, reference });
     log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} drafted invoice ${invoice.id} from job ${obligationId}`);
     res.status(201).json({ ok: true, invoice: await invoiceDetail(db, organisationId, invoice.id) });
   }));

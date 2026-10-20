@@ -7,7 +7,7 @@ accounting system connected, Flow's own records are the only check: each job
 gets at most one invoice. The send mode is on the Xero integration page. This page
 describes the rules and the send modes. The code is in
 `server/core/invoicing-rules.js`. The settings are in Flow under Settings,
-Invoicing, and at `/api/invoicing/settings`.
+Invoice rules, and at `/api/invoicing/settings`.
 
 ## From job to customer
 
@@ -43,6 +43,29 @@ flowchart LR
    status. The matcher links the Xero invoice to the job by the Flow invoice
    that made it (`flow_invoice`). Approval, payment, void and credit notes
    then show on the job.
+
+## Reference
+
+The Reference is the text the customer reads on the invoice, next to its
+number. The lab writes it as a rule under Settings, Invoice rules, Reference
+(`referenceTemplate`), from tokens:
+
+| Token | Value |
+| --- | --- |
+| `{practitioner}` | The job's practitioner. |
+| `{patient}` | The patient name. The work system gives it only when its integration keeps patient names (Seazona: Settings, Integrations, Seazona, Keep patient names). |
+
+The default rule is `{practitioner} - {patient}`. Text between two tokens
+shows only when both have a value: with no patient name, the Reference is
+the practitioner alone. An empty rule gives no Reference; the accounting
+system then shows the invoice number. Flow never puts a work system's ids in
+the Reference. The code is in `server/core/references.js`.
+
+The automation "Reference from the rule" keeps the Reference of each draft
+made from a job up to date as the rule or the job's fields change. It never
+changes a Reference a person typed, and it does not change the draft's
+status. A job read before patient names were kept gets its name from one
+more read of the work system, at most 10 jobs each run.
 
 ## The rules
 

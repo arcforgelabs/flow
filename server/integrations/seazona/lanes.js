@@ -157,7 +157,7 @@ function judgeReads(what, attempted, failures, extra = {}) {
 
 // Reads one order's detail and applies issue #12. Returns
 // { outcome: 'read' | 'deleted' | 'failed', failure? }.
-async function readOrder(ctx, id, { listItem = null, known = null } = {}) {
+export async function readOrder(ctx, id, { listItem = null, known = null } = {}) {
   const { db, client, sync, at } = ctx;
   const mapOptions = { keepPatientReference: sync.keepPatientReference };
   try {
@@ -589,6 +589,10 @@ export async function runSeazonaSync(db, client, { settings, now = Date.now, onl
 // What /health shows for the sync: each lane's state, the failing and
 // quarantined orders by id and status, and how many orders are marked
 // deleted in Seazona. No patient data.
+//
+// Issue #143: a lane that ran before and has not succeeded within its
+// freshness limit (or two of its own cadences, if those are longer) is
+// stale, and a stale lane makes `ok` false like a failed one.
 export async function readSeazonaSyncHealth(db, settings, { now = Date.now } = {}) {
   const nowMs = Number(now());
   const states = await readLaneStates(db);
@@ -597,12 +601,14 @@ export async function readSeazonaSyncHealth(db, settings, { now = Date.now } = {
   const quarantinedRecords = await readQuarantinedRecordCounts(db, { at: new Date(nowMs) });
   const lanes = LANES.map((lane) => {
     const state = states.get(lane);
-    const { freshnessMs } = settings.sync.lanes[lane];
+    const { freshnessMs, cadenceMs } = settings.sync.lanes[lane];
+    const staleAfterMs = Math.max(freshnessMs, 2 * cadenceMs);
     const ageMs = state?.lastSuccessAt ? Math.max(0, nowMs - state.lastSuccessAt.getTime()) : null;
     return {
       lane,
       status: state?.status ?? 'never_run',
-      fresh: ageMs !== null && ageMs <= freshnessMs,
+      fresh: ageMs !== null && ageMs <= staleAfterMs,
+      stale: ageMs !== null && ageMs > staleAfterMs,
       ageMs,
       lastSuccessAt: state?.lastSuccessAt?.toISOString() ?? null,
       lastAttemptAt: state?.lastAttemptAt?.toISOString() ?? null,
@@ -616,7 +622,7 @@ export async function readSeazonaSyncHealth(db, settings, { now = Date.now } = {
     };
   });
   return {
-    ok: lanes.every((lane) => !['failed', 'held', 'stopped'].includes(lane.status)),
+    ok: lanes.every((lane) => !lane.stale && !['failed', 'held', 'stopped'].includes(lane.status)),
     lanes,
     deletedOrders: Number(deleted),
   };

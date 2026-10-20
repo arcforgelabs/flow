@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { after, before, beforeEach, describe, test } from 'node:test';
 import { sql } from 'drizzle-orm';
 import { createSeazonaClient } from '../server/integrations/seazona/client.js';
-import { createSeazonaGovernor } from '../server/integrations/seazona/governor.js';
+import { createSeazonaGovernor, pathShape } from '../server/integrations/seazona/governor.js';
 import { createReplayFetch } from '../server/integrations/seazona/replay.js';
 import { resolveSeazonaSettings } from '../server/integrations/seazona/settings.js';
 import { skipWithoutDatabase } from './support/db.js';
@@ -86,6 +86,28 @@ describe('Seazona rate governor', { skip: skipWithoutDatabase }, () => {
     assert.deepEqual(month.failures, [{ path: '/v1/orders/ORD-404', statusCode: 404, failureKind: null, requests: 3 }]);
     const { rows } = await db.execute(sql`select request_path from seazona_api_requests`);
     assert.ok(rows.every((row) => !row.request_path.includes('?') && !row.request_path.includes('replay')));
+  });
+
+  test('/health splits faults from 404s and groups failed calls by path shape, with no record ids (issue #144)', async () => {
+    const fetchImpl = createReplayFetch({ responses: [
+      { path: 'orders/ORD-404', status: 404 },
+      { path: 'orders/ORD-405', status: 404 },
+      { path: 'users/', status: 400 },
+      { path: 'orders/ORD-1', status: 200, body: { id: 'ORD-1' } },
+    ] });
+    const settings = resolveSeazonaSettings({ SEAZONA_MODE: 'replay', SEAZONA_REPLAY_FILE: 'unused.json' });
+    const client = createSeazonaClient({ settings, db, fetchImpl, now: clock.now, sleepFn: clock.sleep });
+    for (const path of ['orders/ORD-404', 'orders/ORD-405', 'users/', 'orders/ORD-1']) await client.get(path).catch(() => {});
+    clock.advance(1);
+    const { lastDay } = await client.governor.status();
+    assert.deepEqual([lastDay.requests, lastDay.failed, lastDay.faults, lastDay.notFound], [4, 3, 1, 2]);
+    assert.deepEqual(lastDay.failures, [
+      { path: '/v1/orders/:id', statusCode: 404, failureKind: null, requests: 2 },
+      { path: '/v1/users', statusCode: 400, failureKind: null, requests: 1 },
+    ]);
+    assert.ok(!JSON.stringify(lastDay).includes('ORD-'));
+    assert.equal(pathShape('/v1/clients/a1b2c3d4-1234-5678-abcd-ef0123456789'), '/v1/clients/:id');
+    assert.equal(pathShape('/v1/clients/login-exists'), '/v1/clients/login-exists');
   });
 
   test('telemetry older than the retention is removed', async () => {

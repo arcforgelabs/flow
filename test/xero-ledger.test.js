@@ -10,6 +10,9 @@ import { request } from './support/clerk.js';
 import { freshDatabase, skipWithoutDatabase } from './support/db.js';
 import { bootFlow, connectDirectly, scriptedXero, seedLab, xeroAnswer } from './support/xero.js';
 
+// The Reference rule's text for a job (server/core/references.js).
+const REFERENCE = 'Dr Example - Pat Sample';
+
 // The Xero adapter answering the billing obligation ledger (#24): the live
 // invoice check before a draft, and payments. Xero is replayed with
 // synthetic answers; each test scripts the answers it expects.
@@ -78,8 +81,8 @@ describe('Xero answers the billing ledger', { skip: skipWithoutDatabase }, () =>
     const replay = xero.script([invoicesAnswer([]), invoicesAnswer([])]);
     const checked = await recordXeroEvidence(handle.db, xero.runtime, org, obligation, { actor });
     assert.equal(checked.accountingState, 'not_found');
-    const { invoice } = await draftInvoiceForObligation(handle.db, org, obligation.id, { liveCheck: xeroLiveCheck(handle.db, xero.runtime, org), actor });
-    assert.equal(invoice.reference, obligation.caseRef);
+    const { invoice } = await draftInvoiceForObligation(handle.db, org, obligation.id, { liveCheck: xeroLiveCheck(handle.db, xero.runtime, org), actor, reference: REFERENCE });
+    assert.equal(invoice.reference, REFERENCE);
     assert.equal(replay.calls.length, 2);
     assert.match(replay.calls[0].query.where, new RegExp(`Reference=="${obligation.caseRef}"`));
   });
@@ -135,12 +138,12 @@ describe('Xero answers the billing ledger', { skip: skipWithoutDatabase }, () =>
     const obligation = await job();
     xero.script([invoicesAnswer([]), invoicesAnswer([])]);
     await recordXeroEvidence(handle.db, xero.runtime, org, obligation, { actor });
-    const { invoice } = await draftInvoiceForObligation(handle.db, org, obligation.id, { liveCheck: xeroLiveCheck(handle.db, xero.runtime, org), actor });
+    const { invoice } = await draftInvoiceForObligation(handle.db, org, obligation.id, { liveCheck: xeroLiveCheck(handle.db, xero.runtime, org), actor, reference: REFERENCE });
     await issueInvoice(handle.db, org, invoice.id, { issuedBy: actor, issueDate: '2026-10-18' });
     xero.script([
       invoicesAnswer([]),
       xeroAnswer('Invoices', { Invoices: [{ InvoiceID: 'x-flow', InvoiceNumber: 'INV-X', Status: 'DRAFT' }] }, { method: 'POST' }),
-      readBack('x-flow', { reference: obligation.caseRef }),
+      readBack('x-flow', { reference: REFERENCE }),
     ]);
     const pushed = await pushDrafts(handle.db, xero.runtime, org, [invoice.id]);
     assert.equal(pushed.invoices[0].outcome, 'created', JSON.stringify(pushed));
@@ -155,7 +158,7 @@ describe('Xero answers the billing ledger', { skip: skipWithoutDatabase }, () =>
         payment('p2', { Invoice: { InvoiceID: 'not-a-job' } }),
         payment('p3', { Status: 'DELETED' }),
       ] }),
-      readBack('x-flow', { status: 'PAID', paid: 242, reference: obligation.caseRef }),
+      readBack('x-flow', { status: 'PAID', paid: 242, reference: REFERENCE }),
       organisation,
     ]);
     const res = await request(app, '/api/xero/payments/sync', { token: lab.ownerToken, method: 'POST', body: { organisationId: org } });
@@ -178,7 +181,7 @@ describe('Xero answers the billing ledger', { skip: skipWithoutDatabase }, () =>
     assert.equal(new Date(rows[0].payments_since).toISOString(), new Date(1792300000000).toISOString());
 
     // Read again: the same payment does not count twice.
-    xero.script([xeroAnswer('Payments', { Payments: [payment('p1')] }), readBack('x-flow', { status: 'PAID', paid: 242, reference: obligation.caseRef }), organisation]);
+    xero.script([xeroAnswer('Payments', { Payments: [payment('p1')] }), readBack('x-flow', { status: 'PAID', paid: 242, reference: REFERENCE }), organisation]);
     const again = await request(app, '/api/xero/payments/sync', { token: lab.ownerToken, method: 'POST', body: { organisationId: org } });
     assert.equal(again.status, 200);
     assert.equal((await explainObligation(handle.db, org, obligation.id)).obligation.paidCents, 24200);
