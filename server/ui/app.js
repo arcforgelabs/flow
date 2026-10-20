@@ -631,8 +631,24 @@ async function renderIntegration(main, id) {
     return;
   }
   const canChange = Boolean(me.ownerActions?.allowed);
+  // The quiet alert line for this integration only (server/ui/alerts.js).
+  // While a danger alert is open, even one this person hid, the status says
+  // calls are stopped instead of the integration's state.
+  let stopped = false;
+  const statusPill = (current) => (stopped && current.state === 'ready'
+    ? h('span', { class: 'fx-status', 'data-tone': 'danger', 'data-int-status': '' }, 'Calls stopped')
+    : h('span', { class: 'fx-status', 'data-tone': STATE_TONE[current.state] ?? 'mute', 'data-int-status': '' }, STATE_LABEL[current.state] ?? current.state));
+  let shown = found;
+  const alerts = alertStrip(ui(), 'integrations', {
+    scope: id,
+    onLoad: ({ danger }) => {
+      stopped = danger;
+      for (const pill of host.querySelectorAll('[data-int-status]')) pill.replaceWith(statusPill(shown));
+    },
+  });
 
   const draw = (current, progress = null) => {
+    shown = current;
     const inputs = new Map();
     const rows = [];
     for (const field of current.fields) {
@@ -740,10 +756,11 @@ async function renderIntegration(main, id) {
           h('p', { class: 'fx-int-hero__blurb' }, entry?.blurb ?? ''),
           h('div', { class: 'fx-int-hero__actions' },
             primary,
-            on ? h('span', { class: 'fx-status', 'data-tone': STATE_TONE[current.state] ?? 'mute' }, STATE_LABEL[current.state] ?? current.state) : null,
+            on ? statusPill(current) : null,
             progress ? connectProgress(progress) : null))),
       h('div', { class: 'fx-int-page__grid' },
         h('div', { class: 'fx-int-page__main' }, ...[
+          alerts.element,
           !canChange ? notice('Changing integrations needs a verified owner sign-in: Google Workspace on the owner domain with no password, or a second factor.', 'warn', 'Read only.') : null,
           !body.secretsKey ? notice('Flow has no secrets key, so it cannot store a client secret. Ask whoever hosts Flow to set FLOW_SECRETS_KEY (64 hex characters), then restart Flow.', 'warn', 'No secrets key.') : null,
           current.state === 'failed' && current.error ? notice(current.error, 'danger', 'It could not start.') : null,
@@ -761,7 +778,7 @@ async function renderIntegration(main, id) {
         ].filter(Boolean)),
         h('aside', { class: 'fx-int-page__meta' },
           h('dl', { class: 'fx-meta' }, ...[
-            ['Status', h('span', { class: 'fx-status', 'data-tone': STATE_TONE[current.state] ?? 'mute' }, STATE_LABEL[current.state] ?? current.state)],
+            ['Status', statusPill(current)],
             ['Category', h('span', { class: 'fx-chip fx-chip--static' }, CATEGORY_LABEL[entry?.category] ?? 'Integration')],
             modeLabel ? ['Mode', modeLabel] : null,
             ['Turned on by', current.enabledBy === 'host' ? 'The host' : current.enabledBy === 'flow' ? 'An owner, here' : '—'],
@@ -776,11 +793,11 @@ async function renderIntegration(main, id) {
 // One setting, laid out the same on every settings screen: a short name, one
 // line of smaller text under it, and the control on the right. Longer help
 // lives behind a link, not here. A wide control (a grid of choices) sits on
-// its own line under the name.
-function settingRow({ label, hint, control, wide = false }) {
+// its own line under the name. `tone: 'danger'` marks a row that needs a person.
+function settingRow({ label, hint, control, wide = false, tone = null }) {
   const target = control?.matches?.('input, select, textarea') ? control : control?.querySelector?.('input:not([type=color]), select, textarea');
   const id = target ? (target.id ||= `fx-set-${++settingRow.next}`) : null;
-  return h('div', { class: `fx-setting${wide ? ' fx-setting--wide' : ''}` },
+  return h('div', { class: `fx-setting${wide ? ' fx-setting--wide' : ''}`, 'data-tone': tone },
     h('div', { class: 'fx-setting__text' },
       id ? h('label', { class: 'fx-setting__name', for: id }, label) : h('span', { class: 'fx-setting__name' }, label),
       hint ? h('p', { class: 'fx-setting__hint' }, hint) : null),
@@ -808,16 +825,25 @@ function xeroConnection(organisations, canChange) {
     (async () => {
       let hint;
       let control = null;
+      let stopped = false;
       try {
         const status = await flow(`/api/xero/status?organisationId=${organisation.id}`);
-        if (status.connected) {
+        if (status.connected && status.calls?.stopped) {
+          // A refused connection stopped calls (the call guard): say so, and
+          // make Connect again the main button, which starts them again.
+          const at = status.calls.since ? ` at ${new Date(status.calls.since).toLocaleString('en-AU', { dateStyle: 'medium', timeStyle: 'short' })}` : '';
+          hint = status.calls.all
+            ? `Xero refused Flow${at}. Flow stopped all calls.`
+            : `Xero refused Flow for ${status.calls.resources.join(', ')}${at}. Flow stopped those calls.`;
+          stopped = true;
+        } else if (status.connected) {
           const mirror = await flow(`/api/xero/mirror?organisationId=${organisation.id}`).catch(() => null);
           hint = `Connected to ${status.connection?.tenantName ?? 'Xero'}.${mirror ? ` ${mirror.counts.invoices} invoices copied.` : ''}`;
         } else {
           hint = 'Not connected.';
         }
         if (canChange) {
-          control = h('button', { class: `fx-btn fx-btn--sm${status.connected ? '' : ' fx-btn--primary'}`, type: 'button', onclick: async () => {
+          control = h('button', { class: `fx-btn fx-btn--sm${status.connected && !stopped ? '' : ' fx-btn--primary'}`, type: 'button', onclick: async () => {
             try {
               const { authorizeUrl } = await flow('/api/xero/connect', { method: 'POST', body: JSON.stringify({ organisationId: organisation.id }) });
               location.assign(authorizeUrl);
@@ -829,7 +855,7 @@ function xeroConnection(organisations, canChange) {
       } catch (error) {
         hint = error.message;
       }
-      row.replaceWith(settingRow({ label: organisation.name, hint, control }));
+      row.replaceWith(settingRow({ label: organisation.name, hint, control, tone: stopped ? 'danger' : null }));
     })();
   }
   return h('div', {}, h('h2', { class: 'fx-int-section__title' }, 'Xero organisation'), host);

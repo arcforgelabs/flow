@@ -1,7 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import { sql } from 'drizzle-orm';
 import { guardAlerts } from '../call-guard.js';
-import { checkDrafts, pushInvoice, pushInvoices } from './drafts.js';
+import { checkDrafts, documentFacts, pushInvoice, pushInvoices } from './drafts.js';
 import { readConnection } from './connections.js';
 import { createImportWorker } from './import.js';
 import { readPayments, xeroLiveCheck } from './ledger.js';
@@ -120,6 +120,9 @@ export function createXeroAdapter({ runtime: given = null } = {}) {
         const connection = await readConnection(database, organisationId);
         return { connected: Boolean(connection && connection.mode === settings.mode), writesAllowed: writesAllowed(settings) };
       },
+      // What the customer's Xero copy of a Flow invoice version says, from
+      // Flow's copy of Xero (drafts.js; no calls). The invoice PDF uses it.
+      documentFacts: ({ organisationId, invoiceId, version = null }) => documentFacts(database, current(), { organisationId, invoiceId, version }),
       // Sales invoice payments changed since `since` (ledger.js). The answer's
       // cursor is the next `since`.
       pullPayments: ({ organisationId, since }) => readPayments(database, current(), organisationId, { since: new Date(since) }),

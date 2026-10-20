@@ -111,9 +111,15 @@ async function collect(sources, page, organisationId) {
 // The alerts one person should see on one page, worst first: danger before
 // warn, then most money at risk. A dismissed alert stays hidden while every
 // member it has now was a member when it was dismissed.
-export async function alertsFor(db, organisationId, person, { page, sources }) {
+// `scope` narrows a page to one part of it: an integration's own page
+// (/integrations/xero) shows only the alerts whose key is integrations:xero:….
+// `withHidden` also answers the alerts this person dismissed, each marked
+// `hidden`, for a page that shows a state (a red status) whatever the line.
+export async function alertsFor(db, organisationId, person, { page, scope = null, sources, withHidden = false }) {
   if (!ALERT_PAGES.includes(page)) throw new FlowError('invalid', `page must be one of ${ALERT_PAGES.join(', ')}`);
-  const alerts = (await collect(sources, page, organisationId)).filter((a) => a.roles.includes(person.role));
+  const prefix = scope ? `${page}:${scope}:` : null;
+  const alerts = (await collect(sources, page, organisationId))
+    .filter((a) => a.roles.includes(person.role) && (!prefix || a.key.startsWith(prefix)));
   if (!alerts.length) return [];
   const rows = await db.select().from(alertDismissals).where(and(
     eq(alertDismissals.organisationId, organisationId),
@@ -122,7 +128,8 @@ export async function alertsFor(db, organisationId, person, { page, sources }) {
   ));
   const dismissed = new Map(rows.map((r) => [r.alertKey, new Set(r.members)]));
   return alerts
-    .filter((a) => !dismissed.has(a.key) || a.members.some((m) => !dismissed.get(a.key).has(m)))
+    .map((a) => ({ ...a, hidden: dismissed.has(a.key) && a.members.every((m) => dismissed.get(a.key).has(m)) }))
+    .filter((a) => withHidden || !a.hidden)
     .sort((a, b) => (a.tone === b.tone ? 0 : a.tone === 'danger' ? -1 : 1) || b.moneyAtRiskCents - a.moneyAtRiskCents);
 }
 
