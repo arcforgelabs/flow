@@ -19,7 +19,8 @@ import {
   caseNumber, FINAL_RANK, fixes, INVOICE_STAGES, invoiceStage, matches, NO_STATUS, orderStatuses, problemSummary, statusRank,
 } from '/assets/ui/job-board.js';
 import {
-  COLUMNS, DEFAULT_VIEW, fieldGroup, fieldIdOf, fieldLanes, filterCount, filterJobs, groupJobs, GROUPS, laneOf, normaliseJobsView, NOT_SET, sortJobs, SORTS,
+  COLUMNS, DEFAULT_VIEW, fieldGroup, fieldIdOf, fieldLanes, FILTER_FIELDS, filterCount, filterJobs, groupJobs, GROUPS, KIND_OF_TYPE, keptStatuses, laneOf,
+  normaliseJobsView, NOT_SET, OPERATORS, sortJobs, SORTS,
 } from '/assets/ui/job-view.js';
 
 const LAYOUT_KEY = 'flow_jobs_layout';
@@ -144,13 +145,9 @@ export async function renderJobs(main, ui) {
   const valueOf = (job, fieldId) => state.values.get(valueKey(job, fieldId)) ?? null;
   const groupable = () => state.fields.filter((f) => f.groupable);
   // The Assignee: the lab's first person custom field (Flow makes one,
-  // server/core/custom-fields.js ensureAssignee). "Assignee: me" keeps the
-  // jobs it names the person looking at.
+  // server/core/custom-fields.js ensureAssignee). The filter "Assignee is
+  // Me" keeps the jobs it names the person looking at.
   const assigneeField = () => state.fields.find((f) => f.type === 'person') ?? null;
-  const isMine = (job) => {
-    const field = assigneeField();
-    return Boolean(field && ui.me?.person?.id && valueOf(job, field.id)?.value === ui.me.person.id);
-  };
   // The list's columns a person can choose: Patient only when the
   // installation keeps patient names; Assignee only with a person field.
   const builtInColumns = () => Object.keys(COLUMNS).filter((id) => (id !== 'patient' || state.jobs.some((job) => job.patient))
@@ -180,13 +177,18 @@ export async function renderJobs(main, ui) {
     }, 500);
   }
 
-  // One toolbar control: a button that opens a small menu under it. The menu
-  // is a popover, so a click outside or Escape closes it.
+  // One toolbar control: a chip that opens a small panel under it, and an ×
+  // that clears what the chip sets (as ClickUp's "Clear all filters"). The
+  // panel is a popover, so a click outside or Escape closes it.
   let menuCount = 0;
-  function menu(icon, build) {
+  function menu(icon, build, { rows = false, clearLabel = 'Clear' } = {}) {
     const id = `fx-jobs-menu-${++menuCount}`;
-    const panel = h('div', { class: 'fx-pop', id, popover: 'auto', role: 'menu' });
-    const button = h('button', { type: 'button', class: 'fx-chip', popovertarget: id, 'aria-haspopup': 'menu', 'aria-expanded': 'false' });
+    const panel = h('div', { class: `fx-pop${rows ? ' fx-pop--rows' : ''}`, id, popover: 'auto', role: rows ? 'dialog' : 'menu' });
+    const button = h('button', { type: 'button', class: 'fx-chip', popovertarget: id, 'aria-haspopup': rows ? 'dialog' : 'menu', 'aria-expanded': 'false' });
+    const clear = h('button', { type: 'button', class: 'fx-chip__clear', 'aria-label': clearLabel, title: clearLabel, hidden: true }, lucide(h, 'x'));
+    const wrap = h('span', { class: 'fx-chipset' }, button, clear);
+    let onClear = null;
+    clear.addEventListener('click', () => onClear?.());
     const fill = () => panel.replaceChildren(...build(fill, () => panel.hidePopover()).filter(Boolean));
     panel.addEventListener('toggle', (event) => {
       button.setAttribute('aria-expanded', String(event.newState === 'open'));
@@ -197,10 +199,15 @@ export async function renderJobs(main, ui) {
       panel.style.left = `${Math.round(Math.max(8, Math.min(at.left, innerWidth - panel.offsetWidth - 8)))}px`;
     });
     return {
-      node: [button, panel],
-      set(label, on) {
+      node: [wrap, panel],
+      wrap,
+      fill: () => { if (panel.matches(':popover-open')) fill(); },
+      set(label, on, clearIt = null) {
         button.replaceChildren(svg(icon), h('span', {}, label));
+        wrap.classList.toggle('fx-chipset--on', on);
         button.classList.toggle('fx-chip--on', on);
+        onClear = clearIt;
+        clear.hidden = !clearIt;
       },
     };
   }
@@ -209,49 +216,217 @@ export async function renderJobs(main, ui) {
   const option = (text, checked, onclick, role = 'menuitemradio') => h('button', {
     type: 'button', class: 'fx-pop__item', role, 'aria-checked': String(checked), onclick,
   }, h('span', { class: 'fx-pop__tick' }, checked ? svg(TICK_ICON) : null), h('span', {}, text));
-  const heading = (text) => h('p', { class: 'fx-pop__head' }, text);
   const DATE_WORDS = ['Oldest first', 'Newest first'];
-  const DIR_WORDS = { total: ['Low to high', 'High to low'], due: DATE_WORDS, ordered: DATE_WORDS, shipped: DATE_WORDS, board: ['As the lab system has it', 'Reversed'] };
+  const NUMBER_WORDS = ['Low to high', 'High to low'];
+  const DIR_WORDS = { total: NUMBER_WORDS, due: DATE_WORDS, ordered: DATE_WORDS, shipped: DATE_WORDS };
+  const TYPE_WORDS = { date: DATE_WORDS, number: NUMBER_WORDS };
+  const dirWords = (by) => DIR_WORDS[by] ?? TYPE_WORDS[fieldById(fieldIdOf(by))?.type] ?? ['A to Z', 'Z to A'];
+  const fieldById = (id) => state.fields.find((f) => f.id === id) ?? null;
 
-  const groupMenu = menu(GROUP_ICON, (_redraw, close) => [
-    heading('Group by'),
-    ...Object.entries(GROUPS).map(([id, text]) => option(text, state.view.group === id, () => { change({ group: id }); close(); })),
-    groupable().length ? h('div', { class: 'fx-pop__sep' }) : null,
-    groupable().length ? heading('Custom fields') : null,
-    ...groupable().map((f) => option(f.name, state.view.group === fieldGroup(f.id), () => { change({ group: fieldGroup(f.id) }); close(); })),
-  ]);
+  // The parts of a row panel (Group by, Sort, Filters): a title, rows of
+  // selects with a bin at the end, and a foot with "Add" and "Clear all".
+  const title = (text) => h('p', { class: 'fx-rows__title' }, text);
+  const choose = (label, value, options, onchange, extra = {}) => h('select', {
+    class: 'fx-select fx-select--sm', 'aria-label': label, onchange: (event) => onchange(event.target.value), ...extra,
+  }, options.map((o) => (o.group
+    ? (o.options.length ? h('optgroup', { label: o.group }, o.options.map((x) => h('option', { value: x.value, selected: x.value === value }, x.label))) : null)
+    : h('option', { value: o.value, selected: o.value === value, disabled: o.disabled }, o.label))));
+  const bin = (label, onclick) => h('button', { type: 'button', class: 'fx-rows__bin', 'aria-label': label, title: label, onclick }, lucide(h, 'trash-2'));
+  const addButton = (text, onclick) => h('button', { type: 'button', class: 'fx-btn fx-btn--ghost fx-btn--sm fx-rows__add', onclick }, lucide(h, 'plus'), text);
+  const rowsFoot = (...parts) => h('div', { class: 'fx-rows__foot' }, ...parts);
+  const clearAll = (onclick) => h('button', { type: 'button', class: 'fx-btn fx-btn--ghost fx-btn--sm', onclick }, 'Clear all');
+
+  // ── Group by ──
+  // One row: what to group by, the group order, and a bin that takes the
+  // groups away (the list only: the board always has lanes).
+  const groupOptions = () => [
+    ...Object.entries(GROUPS).filter(([id]) => id !== 'none').map(([value, label]) => ({ value, label })),
+    { group: 'Custom fields', options: groupable().map((f) => ({ value: fieldGroup(f.id), label: f.name })) },
+  ];
+  const groupMenu = menu(GROUP_ICON, (redraw) => {
+    const list = state.view.layout === 'list';
+    const group = state.view.group === 'none' && !list ? 'status' : state.view.group;
+    const none = group === 'none';
+    return [
+      title('Group by'),
+      h('div', { class: 'fx-rows' }, h('div', { class: 'fx-rows__row fx-rows__row--group' },
+        choose('Group by', none ? '' : group, [...(none ? [{ value: '', label: 'Choose…', disabled: true }] : []), ...groupOptions()], (value) => { change({ group: value }); redraw(); }),
+        choose('Group order', state.view.groupDir, [{ value: 'asc', label: 'Ascending' }, { value: 'desc', label: 'Descending' }], (value) => { change({ groupDir: value }); redraw(); }, { disabled: none }),
+        list && !none ? bin('Remove the grouping', () => { change({ group: 'none' }); redraw(); }) : h('span', { class: 'fx-rows__gap' }))),
+    ];
+  }, { rows: true, clearLabel: 'Remove the grouping' });
+
+  // ── Sort ──
+  // Rows of sorts, each applied in turn. In the list, a column's head sorts
+  // too.
+  const sortOptions = () => [
+    ...Object.entries(SORTS).map(([value, label]) => ({ value, label })),
+    { group: 'Custom fields', options: state.fields.map((f) => ({ value: fieldGroup(f.id), label: f.name })) },
+  ];
+  const setSorts = (sorts) => change({ sorts });
   const sortMenu = menu(SORT_ICON, (redraw) => {
-    const [up, down] = DIR_WORDS[state.view.sort] ?? ['A to Z', 'Z to A'];
+    const { sorts } = state.view;
+    const unused = sortOptions().flatMap((o) => o.options ?? [o]).filter((o) => !sorts.some((s) => s.by === o.value));
     return [
-      heading('Sort by'),
-      ...Object.entries(SORTS).map(([id, text]) => option(text, state.view.sort === id, () => { change({ sort: id }); redraw(); })),
-      h('div', { class: 'fx-pop__sep' }),
-      option(up, state.view.dir === 'asc', () => { change({ dir: 'asc' }); redraw(); }),
-      option(down, state.view.dir === 'desc', () => { change({ dir: 'desc' }); redraw(); }),
+      title('Sort'),
+      sorts.length ? h('div', { class: 'fx-rows' }, sorts.map((s, i) => {
+        const [up, down] = dirWords(s.by);
+        const others = sorts.filter((_, n) => n !== i).map((x) => x.by);
+        const options = sortOptions().map((o) => (o.group ? { ...o, options: o.options.filter((x) => !others.includes(x.value)) } : o)).filter((o) => o.group || !others.includes(o.value));
+        return h('div', { class: 'fx-rows__row fx-rows__row--sort' },
+          h('span', { class: 'fx-rows__lead' }, i ? 'then' : 'Sort by'),
+          choose('Sort by', s.by, options, (by) => { setSorts(sorts.map((x, n) => (n === i ? { by, dir: x.dir } : x))); redraw(); }),
+          choose('Order', s.dir, [{ value: 'asc', label: up }, { value: 'desc', label: down }], (dir) => { setSorts(sorts.map((x, n) => (n === i ? { ...x, dir } : x))); redraw(); }),
+          bin('Remove this sort', () => { setSorts(sorts.filter((_, n) => n !== i)); redraw(); }));
+      })) : h('p', { class: 'fx-rows__empty' }, 'No sort. Jobs show in the lab system’s order.'),
+      rowsFoot(
+        sorts.length < 5 && unused.length ? addButton('Add sort', () => { setSorts([...sorts, { by: unused[0].value, dir: 'asc' }]); redraw(); }) : h('span'),
+        sorts.length ? clearAll(() => { setSorts([]); redraw(); }) : null),
     ];
-  });
+  }, { rows: true, clearLabel: 'Clear the sort' });
+
+  // ── Filters ──
+  // Rows of field, operator and value, with a bin on each, "Add filter",
+  // and "Clear all". The second row's And / Or applies to every row.
+  const filterFields = () => [
+    ...Object.entries(FILTER_FIELDS).filter(([id]) => id !== 'assignee' || assigneeField())
+      .map(([value, f]) => ({ value, label: value === 'assignee' ? assigneeField().name : f.label })),
+    { group: 'Custom fields', options: customColumns().map((f) => ({ value: fieldGroup(f.id), label: f.name })) },
+  ];
+  const kindOf = (field) => {
+    if (field === 'assignee') return assigneeField() ? 'person' : null;
+    if (Object.hasOwn(FILTER_FIELDS, field)) return FILTER_FIELDS[field].kind;
+    return KIND_OF_TYPE[fieldById(fieldIdOf(field))?.type] ?? null;
+  };
+  const PROBLEM_OPS = { yes: 'has one', no: 'has none' };
+  const opsOf = (field) => (field === 'problem' ? PROBLEM_OPS : OPERATORS[kindOf(field)] ?? {});
+  // The choices a choice or person filter offers: [{ value, label }].
+  function choicesOf(field) {
+    const people = () => [{ value: 'me', label: 'Me' }, ...state.people.map((p) => ({ value: p.id, label: p.name }))];
+    const labels = (list) => [...new Set(list.filter(Boolean))].sort((a, b) => a.localeCompare(b)).map((v) => ({ value: v, label: v }));
+    if (field === 'status') return orderStatuses(state.statuses, state.jobs).map((v) => ({ value: v, label: v }));
+    if (field === 'stage') return Object.values(STAGE_GROUPS).map((v) => ({ value: v, label: v }));
+    if (field === 'client') return labels(state.jobs.map(clientOf));
+    if (field === 'practitioner') return labels(state.jobs.map((job) => job.practitioner));
+    if (field === 'assignee') return people();
+    const custom = fieldById(fieldIdOf(field));
+    if (custom?.type === 'person') return people();
+    return (custom?.options ?? []).map((o) => ({ value: o.id, label: o.archived ? `${o.name} (archived)` : o.name }));
+  }
+  // A job's value for a filter field, as the filter compares it.
+  function filterValue(job, field) {
+    switch (field) {
+      case 'status': return statusOf(job);
+      case 'stage': return STAGE_GROUPS[invoiceStage(job.obligation) ?? 'in_work'];
+      case 'client': return clientOf(job);
+      case 'practitioner': return job.practitioner ?? null;
+      case 'assignee': return assigneeField() ? valueOf(job, assigneeField().id)?.value ?? null : null;
+      case 'due': return job.dueOn ?? null;
+      case 'ordered': return job.orderedOn ?? null;
+      case 'shipped': return job.shippedOn ?? null;
+      case 'total': return job.totalCents == null ? null : job.totalCents / 100;
+      case 'problem': return problemsOf(job).length > 0;
+      default: return valueOf(job, fieldIdOf(field))?.value ?? null;
+    }
+  }
+  // A row's value when its operator changes: kept when it still fits.
+  function valueFor(field, op, old) {
+    const kind = kindOf(field);
+    if (['is', 'not'].includes(op) && ['choice', 'person'].includes(kind)) return Array.isArray(old) ? old : [];
+    if (['before', 'after', 'on'].includes(op)) return typeof old === 'string' && /^\d{4}-/.test(old) ? old : today();
+    if (['eq', 'gt', 'lt'].includes(op)) return typeof old === 'number' ? old : null;
+    if (['has', 'is'].includes(op)) return typeof old === 'string' ? old : '';
+    return null;
+  }
+  const setFilters = (filters) => change({ filters });
+  const setRow = (i, patch) => setFilters(state.view.filters.map((f, n) => (n === i ? { ...f, ...patch } : f)));
+  // A choice row's value: a button that opens a list of choices to tick,
+  // with a search when the list is long.
+  function choiceValue(i, filter) {
+    const choices = choicesOf(filter.field);
+    const named = () => {
+      const on = choices.filter((c) => filter.value.includes(c.value)).map((c) => c.label);
+      return on.length ? on.join(', ') : 'Choose…';
+    };
+    const id = `fx-jobs-choice-${i}`;
+    const button = h('button', { type: 'button', class: 'fx-select fx-select--sm fx-rows__value', popovertarget: id, title: named() }, named());
+    const pop = h('div', { class: 'fx-pop fx-pop--choices', id, popover: 'auto', role: 'menu' });
+    const find = choices.length > 8 ? h('input', { class: 'fx-input fx-input--sm', type: 'search', placeholder: 'Find', 'aria-label': 'Find a choice' }) : null;
+    const items = h('div', {});
+    const drawItems = () => {
+      const q = find?.value.trim().toLowerCase() ?? '';
+      items.replaceChildren(...choices.filter((c) => !q || c.label.toLowerCase().includes(q)).map((c) => option(c.label, filter.value.includes(c.value), () => {
+        filter = { ...filter, value: filter.value.includes(c.value) ? filter.value.filter((v) => v !== c.value) : [...filter.value, c.value] };
+        setRow(i, { value: filter.value });
+        button.textContent = named();
+        button.title = named();
+        drawItems();
+      }, 'menuitemcheckbox')));
+    };
+    find?.addEventListener('input', drawItems);
+    pop.append(...[find, items].filter(Boolean));
+    pop.addEventListener('toggle', (event) => {
+      if (event.newState !== 'open') return;
+      drawItems();
+      const at = button.getBoundingClientRect();
+      pop.style.top = `${Math.round(at.bottom + 4)}px`;
+      pop.style.left = `${Math.round(Math.max(8, Math.min(at.left, innerWidth - pop.offsetWidth - 8)))}px`;
+      find?.focus();
+    });
+    return [button, pop];
+  }
+  function valueControl(i, filter) {
+    const kind = kindOf(filter.field);
+    const { op } = filter;
+    if (['is', 'not'].includes(op) && ['choice', 'person'].includes(kind)) return choiceValue(i, filter);
+    if (['before', 'after', 'on'].includes(op)) {
+      return h('input', { class: 'fx-input fx-input--sm fx-rows__value', type: 'date', 'aria-label': 'Date', value: filter.value ?? '', onchange: (event) => setRow(i, { value: event.target.value || null }) });
+    }
+    if (['eq', 'gt', 'lt'].includes(op)) {
+      return h('input', {
+        class: 'fx-input fx-input--sm fx-rows__value', type: 'number', step: 'any', inputmode: 'decimal', 'aria-label': 'Number', value: filter.value ?? '',
+        oninput: (event) => setRow(i, { value: event.target.value === '' ? null : Number(event.target.value) }),
+      });
+    }
+    if (['has', 'is'].includes(op)) {
+      return h('input', { class: 'fx-input fx-input--sm fx-rows__value', type: 'text', 'aria-label': 'Text', value: filter.value ?? '', oninput: (event) => setRow(i, { value: event.target.value }) });
+    }
+    return h('span', { class: 'fx-rows__value fx-rows__value--none' });
+  }
   const filterMenu = menu(FILTER_ICON, (redraw) => {
-    const hidden = new Set(state.view.hide);
+    const { filters, match } = state.view;
+    const fields = filterFields();
     return [
-      heading('Show only'),
-      option('Late jobs', state.view.late, () => { change({ late: !state.view.late }); redraw(); }, 'menuitemcheckbox'),
-      option('Jobs with a problem', state.view.problems, () => { change({ problems: !state.view.problems }); redraw(); }, 'menuitemcheckbox'),
-      assigneeField() ? option(`${assigneeField().name}: me`, state.view.mine, () => { change({ mine: !state.view.mine }); redraw(); }, 'menuitemcheckbox') : null,
-      h('div', { class: 'fx-pop__sep' }),
-      heading('Statuses'),
-      ...orderStatuses(state.statuses, state.jobs).map((label) => option(label, !hidden.has(label), () => {
-        const next = new Set(hidden);
-        if (next.has(label)) next.delete(label); else next.add(label);
-        change({ hide: [...next] });
-        redraw();
-      }, 'menuitemcheckbox')),
-      filterCount(state.view) ? h('div', { class: 'fx-pop__foot' }, h('button', {
-        type: 'button', class: 'fx-btn fx-btn--ghost fx-btn--sm', onclick: () => { change({ hide: [], late: false, problems: false, mine: false }); redraw(); },
-      }, 'Clear filters')) : null,
+      title('Filters'),
+      filters.length ? h('div', { class: 'fx-rows' }, filters.map((filter, i) => {
+        const known = kindOf(filter.field);
+        const lead = i === 0 ? h('span', { class: 'fx-rows__lead' }, 'Where')
+          : i === 1 ? choose('Match', match, [{ value: 'all', label: 'And' }, { value: 'any', label: 'Or' }], (value) => { change({ match: value }); redraw(); })
+            : h('span', { class: 'fx-rows__lead' }, match === 'any' ? 'Or' : 'And');
+        if (!known) {
+          return h('div', { class: 'fx-rows__row' }, lead, h('span', { class: 'fx-rows__gone' }, 'A custom field that was deleted'), bin('Remove this filter', () => { setFilters(filters.filter((_, n) => n !== i)); redraw(); }));
+        }
+        const ops = opsOf(filter.field);
+        return h('div', { class: 'fx-rows__row' },
+          lead,
+          choose('Field', filter.field, fields, (field) => {
+            const op = Object.keys(opsOf(field))[0];
+            setRow(i, { field, op, value: valueFor(field, op, null) });
+            redraw();
+          }),
+          choose('Operator', filter.op, Object.entries(ops).map(([value, label]) => ({ value, label })), (op) => { setRow(i, { op, value: valueFor(filter.field, op, filter.value) }); redraw(); }),
+          valueControl(i, filter),
+          bin('Remove this filter', () => { setFilters(filters.filter((_, n) => n !== i)); redraw(); }));
+      })) : h('p', { class: 'fx-rows__empty' }, 'No filters. Every job shows.'),
+      rowsFoot(
+        filters.length < 20 ? addButton('Add filter', () => { setFilters([...filters, { field: 'status', op: 'is', value: [] }]); redraw(); }) : h('span'),
+        filters.length ? clearAll(() => { setFilters([]); redraw(); }) : null),
     ];
-  });
+  }, { rows: true, clearLabel: 'Clear all filters' });
+
   // Columns (the list only): Client always shows; each other column can be
   // shown or hidden. Custom fields are columns too.
+  const heading = (text) => h('p', { class: 'fx-pop__head' }, text);
   const columnsMenu = menu(COLUMNS_ICON, (redraw) => {
     const on = new Set(state.view.columns);
     const flip = (id) => {
@@ -271,18 +446,27 @@ export async function renderJobs(main, ui) {
   });
   controls.append(...groupMenu.node, ...sortMenu.node, ...filterMenu.node, ...columnsMenu.node);
 
+  // A sort's name: a built-in key or a custom field.
+  const sortName = (by) => SORTS[by] ?? fieldById(fieldIdOf(by))?.name ?? 'Custom field';
   function drawControls() {
-    const { group, sort, dir } = state.view;
+    const { group, sorts, layout } = state.view;
+    const list = layout === 'list';
     const field = fieldOfGroup(group);
     // The board has no "None": it shows the status lanes.
-    const shown = group === 'none' && state.view.layout === 'board' ? 'status' : group;
-    groupMenu.set(`Group: ${field?.name ?? GROUPS[shown] ?? GROUPS.status}`, shown !== DEFAULT_VIEW.group && (Boolean(field) || Boolean(GROUPS[shown])));
-    const sorted = sort !== DEFAULT_VIEW.sort || dir !== DEFAULT_VIEW.dir;
-    sortMenu.set(sorted ? `Sort: ${SORTS[sort]}${dir === 'desc' ? ' ↓' : ''}` : 'Sort', sorted);
+    const shown = group === 'none' && !list ? 'status' : group;
+    const label = shown === 'none' ? 'Group: None' : `Group: ${field?.name ?? GROUPS[shown] ?? GROUPS.status}`;
+    const grouped = list ? shown !== 'none' : shown !== 'status';
+    groupMenu.set(label, shown !== DEFAULT_VIEW.group, grouped ? () => change({ group: list ? 'none' : 'status' }) : null);
+    // In the list, the column heads sort; the Sort chip shows there only
+    // while a sort is on, so it can be seen and cleared.
+    const [first] = sorts;
+    sortMenu.set(sorts.length > 1 ? `Sort · ${sorts.length}` : first ? `Sort: ${sortName(first.by)} ${first.dir === 'desc' ? '↓' : '↑'}` : 'Sort', sorts.length > 0,
+      sorts.length ? () => change({ sorts: [] }) : null);
+    sortMenu.wrap.hidden = list && !sorts.length;
     const count = filterCount(state.view);
-    filterMenu.set(count ? `Filter · ${count}` : 'Filter', count > 0);
+    filterMenu.set(count ? `${count} ${count === 1 ? 'Filter' : 'Filters'}` : 'Filter', count > 0, state.view.filters.length ? () => change({ filters: [], match: 'all' }) : null);
     columnsMenu.set('Columns', false);
-    columnsMenu.node[0].hidden = state.view.layout !== 'list';
+    columnsMenu.wrap.hidden = !list;
   }
   drawControls();
 
@@ -295,8 +479,8 @@ export async function renderJobs(main, ui) {
       return;
     }
     const found = filterJobs(state.jobs.filter((job) => matches(job, state.q)), state.view,
-      { status: statusOf, late: isLate, problem: (job) => problemsOf(job).length > 0, mine: isMine });
-    const groups = grouped(sortJobs(found, state.view));
+      { valueOf: filterValue, kindOf, late: isLate, me: ui.me?.person?.id ?? null, today: today() });
+    const groups = grouped(sortJobs(found, state.view, sortKey));
     main.classList.toggle('fx-main--board', state.view.layout === 'board');
     // A tick on a job the search or filter now hides goes.
     const shown = new Set(found.map(jobKey));
@@ -379,7 +563,12 @@ export async function renderJobs(main, ui) {
   // A group's `drop` says what a card dropped in it changes: a custom
   // field's value, or the job's stage in the work system. No `drop`: cards
   // cannot be dropped there (invoice stage, client, practitioner).
+  // "Descending" shows the groups in the other order.
   function grouped(jobs) {
+    const groups = groupsOf(jobs);
+    return state.view.groupDir === 'desc' ? groups.reverse() : groups;
+  }
+  function groupsOf(jobs) {
     const { group } = state.view;
     const field = fieldOfGroup(group);
     if (field) {
@@ -393,8 +582,7 @@ export async function renderJobs(main, ui) {
     }
     if (group === 'none' && state.view.layout === 'list') return [{ label: null, jobs, rank: 'plain' }];
     if (group === 'status' || group === 'none' || !GROUPS[group]) {
-      const hidden = new Set(state.view.hide);
-      return groupJobs(jobs, orderStatuses(state.statuses, state.jobs).filter((label) => !hidden.has(label)), laneStatusOf)
+      return groupJobs(jobs, keptStatuses(state.view, orderStatuses(state.statuses, state.jobs)), laneStatusOf)
         .map((g) => ({ ...g, rank: statusRank(g.label), drop: g.label === NO_STATUS ? null : { kind: 'stage', status: g.label } }));
     }
     if (group === 'stage') {
@@ -656,7 +844,65 @@ export async function renderJobs(main, ui) {
   // A column's menu (a click on its head, or a right-click): sort by it,
   // move it, hide it. Client always shows. `column` null is the + menu: the
   // hidden columns, to add one back.
-  const SORT_OF = { practitioner: 'practitioner', due: 'due', ordered: 'ordered', shipped: 'shipped', total: 'total' };
+  // What a column's head sorts by: a built-in key, or the column's custom
+  // field (Assignee is the lab's person field).
+  const SORT_OF = { client: 'client', practitioner: 'practitioner', due: 'due', ordered: 'ordered', shipped: 'shipped', total: 'total' };
+  const sortOf = (columnId) => SORT_OF[columnId]
+    ?? (columnId === 'assignee' && assigneeField() ? fieldGroup(assigneeField().id) : fieldIdOf(columnId) ? columnId : null);
+  // A custom field's sort key: a person's name, an option's place in the
+  // list, ticked first or last, or the value.
+  function sortKey(job, by) {
+    const field = fieldById(fieldIdOf(by));
+    const value = field ? valueOf(job, field.id)?.value ?? null : null;
+    if (!field || value == null) return null;
+    if (field.type === 'person') return (state.people.find((p) => p.id === value)?.name ?? '').toLowerCase() || null;
+    if (field.type === 'dropdown') {
+      const at = (field.options ?? []).findIndex((o) => o.id === value);
+      return at < 0 ? null : at;
+    }
+    if (field.type === 'checkbox') return value === true ? 1 : 0;
+    return typeof value === 'string' ? value.toLowerCase() : value;
+  }
+  // A column head's sort button, as ClickUp's: it shows on hover, or
+  // always while it sorts. A click sorts one way, again the other way, and
+  // a third time takes the sort off. A right-click on a sorting head opens
+  // a small menu: change the direction, or clear the sort.
+  function sortButton(columnId, label) {
+    const by = sortOf(columnId);
+    if (!by) return null;
+    const { sorts } = state.view;
+    const at = sorts.findIndex((s) => s.by === by);
+    const on = at >= 0 ? sorts[at] : null;
+    const [up, down] = dirWords(by);
+    const next = () => {
+      if (!on) change({ sorts: [{ by, dir: 'asc' }] });
+      else if (on.dir === 'asc') change({ sorts: sorts.map((s, n) => (n === at ? { ...s, dir: 'desc' } : s)) });
+      else change({ sorts: sorts.filter((_, n) => n !== at) });
+    };
+    const words = on ? `Sorted ${on.dir === 'asc' ? up : down}. Click to ${on.dir === 'asc' ? `sort ${down}` : 'clear the sort'}` : `Sort by ${label}`;
+    return h('button', {
+      type: 'button', class: `fx-th-sort${on ? ' fx-th-sort--on' : ''}`, 'aria-label': words, title: words,
+      onclick: (event) => { event.stopPropagation(); next(); },
+      oncontextmenu: (event) => {
+        if (!on) return;
+        event.preventDefault();
+        event.stopPropagation();
+        onRightButton(event, () => sortMenuAt(event, by, label, on, at));
+      },
+    }, lucide(h, on ? (on.dir === 'asc' ? 'arrow-up' : 'arrow-down') : 'chevrons-up-down'),
+    on && sorts.length > 1 ? h('span', { class: 'fx-th-sort__n' }, String(at + 1)) : null);
+  }
+  function sortMenuAt(event, by, label, on, at) {
+    const close = () => columnPop.hidePopover?.();
+    const { sorts } = state.view;
+    const flip = () => change({ sorts: sorts.map((s, n) => (n === at ? { ...s, dir: s.dir === 'asc' ? 'desc' : 'asc' } : s)) });
+    columnPop.replaceChildren(
+      h('button', { type: 'button', class: 'fx-pop__item', role: 'menuitemcheckbox', 'aria-checked': 'true', title: 'Change the direction', onclick: () => { close(); flip(); } },
+        h('span', { class: 'fx-pop__tick' }, lucide(h, on.dir === 'asc' ? 'arrow-up' : 'arrow-down')), h('span', {}, `Sort by ${label}`), h('span', { class: 'fx-pop__end' }, svg(TICK_ICON))),
+      h('button', { type: 'button', class: 'fx-pop__item', role: 'menuitem', onclick: () => { close(); change({ sorts: sorts.filter((_, n) => n !== at) }); } },
+        h('span', { class: 'fx-pop__tick' }, lucide(h, 'ban')), h('span', {}, 'Clear sort')));
+    placeColumnPop(event);
+  }
   const columnPop = h('div', { class: 'fx-pop', id: 'fx-jobs-colmenu', popover: 'auto', role: 'menu' });
   document.body.append(columnPop);
   // A popover opened while the right button is still down closes again on
@@ -672,11 +918,11 @@ export async function renderJobs(main, ui) {
       h('span', { class: 'fx-pop__tick' }, lucide(h, icon)), h('span', {}, text));
     const parts = [];
     if (column) {
-      const sort = SORT_OF[column.id];
+      const sort = sortOf(column.id);
       if (sort) {
-        const [up, down] = DIR_WORDS[sort] ?? ['A to Z', 'Z to A'];
-        parts.push(item('arrow-up-narrow-wide', `Sort: ${up}`, () => change({ sort, dir: 'asc' })),
-          item('arrow-down-wide-narrow', `Sort: ${down}`, () => change({ sort, dir: 'desc' })), h('div', { class: 'fx-pop__sep' }));
+        const [up, down] = dirWords(sort);
+        parts.push(item('arrow-up-narrow-wide', `Sort: ${up}`, () => change({ sorts: [{ by: sort, dir: 'asc' }] })),
+          item('arrow-down-wide-narrow', `Sort: ${down}`, () => change({ sorts: [{ by: sort, dir: 'desc' }] })), h('div', { class: 'fx-pop__sep' }));
       }
       const rest = ids.filter((c) => c !== column.id);
       parts.push(item('arrow-left-to-line', 'Move to start', () => change({ columns: [column.id, ...rest] })),
@@ -697,6 +943,9 @@ export async function renderJobs(main, ui) {
       if (!hidden.length) parts.push(h('p', { class: 'fx-pop__head' }, 'Every column shows'));
     }
     columnPop.replaceChildren(...parts);
+    placeColumnPop(event);
+  }
+  function placeColumnPop(event) {
     columnPop.showPopover?.();
     const x = event.clientX || event.currentTarget?.getBoundingClientRect?.().left || 0;
     const y = event.clientY || event.currentTarget?.getBoundingClientRect?.().bottom || 0;
@@ -809,9 +1058,11 @@ export async function renderJobs(main, ui) {
     return h('div', { class: 'fx-panel' }, h('table', { class: 'fx-table fx-table--jobs' },
       h('thead', {}, h('tr', {},
         h('th', { class: 'fx-tick-cell' }, setBox(allJobs, 'Tick every job shown')),
-        h('th', {}, 'Client'),
+        h('th', {}, h('span', { class: 'fx-th-cell' }, h('span', { class: 'fx-th fx-th--fixed' }, 'Client'), sortButton('client', 'Client'))),
         columns.map((c) => h('th', { class: c.num ? 'fx-num' : null, oncontextmenu: (event) => { event.preventDefault(); onRightButton(event, () => columnMenu(c, event)); } },
-          h('button', { type: 'button', class: 'fx-th', 'aria-haspopup': 'menu', title: 'Column menu (or right-click)', onclick: (event) => columnMenu(c, event) }, c.label))),
+          h('span', { class: 'fx-th-cell' },
+            h('button', { type: 'button', class: 'fx-th', 'aria-haspopup': 'menu', title: 'Column menu (or right-click)', onclick: (event) => columnMenu(c, event) }, c.label),
+            sortButton(c.id, c.label)))),
         h('th', { class: 'fx-th-add' }, h('button', {
           type: 'button', class: 'fx-th fx-th--add', 'aria-label': 'Show a column', title: 'Show a column', onclick: (event) => columnMenu(null, event),
         }, '+')))),
