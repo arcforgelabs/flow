@@ -130,7 +130,7 @@ describe('ready, problem and send', { skip: skipWithoutDatabase }, () => {
     const problem = await draft([]);
     await markReady(handle.db, lab.id, [ready.id], { personId: owner.id });
     const result = await sendAllReady(handle.db, lab.id, { personId: owner.id, issueDate: ISSUE_DATE });
-    assert.deepEqual(result, { issued: 1, queued: 0, remaining: 0 });
+    assert.deepEqual(result, { issued: 1, queued: 0, remaining: 0, waiting: 0 });
     assert.equal((await row(ready.id)).status, 'issued');
     assert.equal((await row(ready.id)).sendState, null);
     assert.equal((await row(problem.id)).status, 'draft');
@@ -145,7 +145,7 @@ describe('ready, problem and send', { skip: skipWithoutDatabase }, () => {
     await assert.rejects(sendAllReady(handle.db, lab.id, { personId: owner.id, issueDate: ISSUE_DATE, invoiceIds: [unchecked.id] }), { code: 'not_ready' });
     assert.equal((await row(unchecked.id)).status, 'draft');
     const result = await sendAllReady(handle.db, lab.id, { personId: owner.id, issueDate: ISSUE_DATE, invoiceIds: [one.id] });
-    assert.deepEqual(result, { issued: 1, queued: 0, remaining: 0 });
+    assert.deepEqual(result, { issued: 1, queued: 0, remaining: 0, waiting: 0 });
     assert.equal((await row(one.id)).status, 'issued');
     assert.equal((await row(other.id)).status, 'draft');
   });
@@ -172,7 +172,7 @@ describe('ready, problem and send', { skip: skipWithoutDatabase }, () => {
     fake.outcomes.set(three.id, 'not_tried');
 
     const result = await sendAllReady(handle.db, lab.id, { accounting: fake.adapter, personId: owner.id, issueDate: ISSUE_DATE });
-    assert.deepEqual(result, { issued: 3, queued: 3, remaining: 0 });
+    assert.deepEqual(result, { issued: 3, queued: 3, remaining: 0, waiting: 0 });
     for (const id of [one.id, two.id, three.id]) {
       const r = await row(id);
       assert.equal(r.status, 'issued');

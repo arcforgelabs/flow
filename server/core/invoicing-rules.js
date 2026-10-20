@@ -5,6 +5,7 @@ import {
 import { FlowError, notFound } from './errors.js';
 import { listRules, ruleReasons } from './invoice-rules.js';
 import { draftInvoiceForObligation } from './ledger.js';
+import { needsRead, readBeforeAct, READS_PER_PASS } from './read-before-act.js';
 import { checkReferenceTemplate, DEFAULT_REFERENCE, jobReference } from './references.js';
 
 // Invoicing rules (docs/INVOICING_RULES.md). They are the checks a job that
@@ -228,7 +229,7 @@ export function copyCheck(accounting, organisationId) {
 // With `accounting` null no accounting system is connected: Flow's own records
 // are the only check, as for a person's draft (ledger.js, ledgerView).
 export async function autoDraftJobs(db, organisationId, { accounting = null, work = null, now = new Date(), limit = DRAFT_BATCH, actor = ACTOR }) {
-  const result = { drafted: 0, waiting: 0, off: 0, refused: 0 };
+  const result = { drafted: 0, waiting: 0, off: 0, refused: 0, readFirst: 0 };
   const settings = await readInvoicingSettings(db, organisationId);
   const rules = await listRules(db, organisationId);
   if (accounting) {
@@ -252,15 +253,34 @@ export async function autoDraftJobs(db, organisationId, { accounting = null, wor
   const liveCheck = accounting ? copyCheck(accounting, organisationId) : null;
   const invoiceDate = isoDay(now);
 
-  for (const obligation of candidates) {
-    const effective = effectiveSettings(settings, customers.get(obligation.contactId));
+  for (const candidate of candidates) {
+    let effective = effectiveSettings(settings, customers.get(candidate.contactId));
     if (!effective.autoDraft) {
       result.off += 1;
       continue;
     }
-    if (ruleBlockers(obligation, effective, { now, rules }).length) {
+    if (ruleBlockers(candidate, effective, { now, rules }).length) {
       result.waiting += 1;
       continue;
+    }
+    // Issue #141: an old report is read again first. The rules then check
+    // what the work system says now; the ledger checks the rest.
+    if (result.readFirst >= READS_PER_PASS && needsRead(candidate, { work, now })) {
+      result.waiting += 1;
+      continue;
+    }
+    const { outcome, obligation } = (await readBeforeAct(db, organisationId, [candidate], { work, now, actor })).get(candidate.id);
+    if (outcome !== 'fresh') result.readFirst += 1;
+    if (outcome === 'waiting' || outcome === 'review') {
+      result.waiting += 1;
+      continue;
+    }
+    if (obligation !== candidate) {
+      effective = effectiveSettings(settings, customers.get(obligation.contactId));
+      if (!effective.autoDraft || ruleBlockers(obligation, effective, { now, rules }).length) {
+        result.waiting += 1;
+        continue;
+      }
     }
     try {
       await draftInvoiceForObligation(db, organisationId, obligation.id, {

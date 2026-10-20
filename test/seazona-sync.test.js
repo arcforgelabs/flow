@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { after, before, beforeEach, describe, test } from 'node:test';
 import { eq, sql } from 'drizzle-orm';
+import { createActReader } from '../server/integrations/seazona/act.js';
 import { createSeazonaClient } from '../server/integrations/seazona/client.js';
 import { readSeazonaSyncHealth, runSeazonaSync } from '../server/integrations/seazona/lanes.js';
 import { DELETED_STATUS, orderStatusLabel } from '../server/integrations/seazona/map.js';
@@ -298,6 +299,31 @@ describe('Seazona sync lanes', { skip: skipWithoutDatabase }, () => {
     const health = await readSeazonaSyncHealth(db, settingsFor(), { now: clock.now });
     assert.equal(health.ok, false);
     assert.equal((await resetFailedLanes(db, { at: new Date(clock.now()) })).length, 5);
+  });
+
+  // Issue #141.
+  test('a read before act reads one order now and answers it as the feed would', async () => {
+    await seed(['ORD-6001', 'ORD-6002', 'ORD-6003']);
+    const settings = settingsFor({ SEAZONA_API_MAX_RETRIES: '0', SEAZONA_CIRCUIT_FAILURES: '100' });
+    const reader = createActReader({ now: clock.now });
+    const readWith = async (responses, id) => {
+      const fetchImpl = createReplayFetch({ responses });
+      const client = createSeazonaClient({ settings, db, fetchImpl, now: clock.now, sleepFn: clock.sleep, random: () => 0 });
+      return { answer: await reader.read({ db, client, settings }, id), calls: fetchImpl.calls };
+    };
+    const shipped = await readWith([{ path: 'orders/ORD-6001', body: orderDetail('ORD-6001', 'Shipped') }], 'ORD-6001');
+    assert.equal(shipped.calls.length, 1);
+    assert.equal(shipped.answer.state, 'read');
+    assert.equal(shipped.answer.item.ledgerJob.sourceJobRef, 'ORD-6001');
+    assert.equal((await getOrder('ORD-6001')).status, 'Shipped');
+    const gone = await readWith([{ path: 'orders/ORD-6002', status: 404 }], 'ORD-6002');
+    assert.equal(gone.answer.state, 'withdrawn');
+    assert.equal(gone.answer.ledgerWithdrawn.deleted, true);
+    const working = await readWith([{ path: 'orders/ORD-6003', body: orderDetail('ORD-6003') }], 'ORD-6003');
+    assert.deepEqual([working.answer.state, working.answer.reason, working.answer.ledgerWithdrawn.deleted], ['withdrawn', 'not_billable', false]);
+    const failed = await readWith([{ path: 'orders/ORD-6003', status: 500 }], 'ORD-6003');
+    assert.equal(failed.answer.state, 'unavailable');
+    assert.deepEqual(reader.status(), { day: '2026-10-01', reads: 4, changed: 1, withdrawn: 2, unavailable: 1 });
   });
 
   test('an invoice that keeps failing is quarantined and no longer holds the cursor', async () => {
