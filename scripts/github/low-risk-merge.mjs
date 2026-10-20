@@ -168,6 +168,14 @@ const SMALL_SIZES = new Set(["size: XS", "size: S", "size: M"]);
 // refactor and chore are not fixes. test has no type there but is used.
 const LOW_RISK_TYPES = new Set(["fix", "improve", "docs", "test"]);
 const TRUSTED_AUTHORS = new Set(["OWNER", "MEMBER", "COLLABORATOR"]);
+// The Docs Agent (.github/workflows/docs-agent.yml) opens its pull requests
+// as a bot from this branch; they count as a maintainer's when they touch
+// only the paths the agent may change (docs/AI_BOTS.md).
+export const DOCS_AGENT_BRANCH = "docs-agent/refresh";
+const isDocsPath = (filename) => filename.startsWith("docs/") || filename === "README.md";
+export function isDocsAgentPull({ headRef, authorIsBot, sameRepo, files }) {
+  return Boolean(authorIsBot && sameRepo && headRef === DOCS_AGENT_BRANCH && files.length && files.every((f) => isDocsPath(f.filename)));
+}
 
 export function titleType(title) {
   return /^([a-z]+)(\([^)]*\))?!?:/.exec(title ?? "")?.[1] ?? null;
@@ -175,7 +183,7 @@ export function titleType(title) {
 
 // What the lane decides for one pull request. `risks` are the merge-risk
 // labels its files carry; `holds` say why it is not in the lane.
-export function classify({ title, files, labels = [], authorAssociation, baseRef, defaultBranch, sameRepo }) {
+export function classify({ title, files, labels = [], authorAssociation, baseRef, defaultBranch, sameRepo, headRef, authorIsBot = false }) {
   const risks = new Map();
   for (const { filename } of files) {
     if (isTestFile(filename)) continue;
@@ -191,7 +199,8 @@ export function classify({ title, files, labels = [], authorAssociation, baseRef
   const type = titleType(title);
   const holds = [];
   if (!sameRepo) holds.push("it comes from a fork");
-  if (!TRUSTED_AUTHORS.has(authorAssociation)) holds.push("its author is not a maintainer");
+  const trusted = TRUSTED_AUTHORS.has(authorAssociation) || isDocsAgentPull({ headRef, authorIsBot, sameRepo, files });
+  if (!trusted) holds.push("its author is not a maintainer");
   if (baseRef !== defaultBranch) holds.push(`its base is ${baseRef}, not ${defaultBranch}`);
   if (!LOW_RISK_TYPES.has(type)) {
     holds.push(
@@ -303,6 +312,8 @@ export async function run({ github, merger = github, context, core, mergeEnabled
       baseRef: pr.base.ref,
       defaultBranch,
       sameRepo: pr.head.repo?.full_name === pr.base.repo.full_name,
+      headRef: pr.head.ref,
+      authorIsBot: pr.user?.type === "Bot",
     });
 
     // Labels: add the merge risks found; the lane label follows the decision.

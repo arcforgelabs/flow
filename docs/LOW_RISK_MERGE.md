@@ -27,7 +27,9 @@ removes the label after reading the change.
 All of these must be true:
 
 1. A maintainer (owner, member or collaborator) opened it, from a branch of
-   this repository (not a fork), against `main`.
+   this repository (not a fork), against `main`. A Docs Agent pull request
+   (`docs/AI_BOTS.md`) counts too: a bot opened it from `docs-agent/refresh`
+   and it changes only `docs/**` and `README.md`.
 2. The title type is `fix`, `improve`, `docs` or `test`. `feat` is a new
    feature; `refactor` and `chore` are not fixes.
 3. The size is `XS`, `S` or `M` (under 500 lines).
