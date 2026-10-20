@@ -2,8 +2,8 @@
 // issue #3). The adapter does not import the ledger: the core reads the
 // billing feed and passes these shapes to it.
 //
-//   item.ledgerJob       -> observeJob(db, organisationId, { ...item.ledgerJob, contactId })
-//   withdrawn.ledgerHold -> setHold(db, organisationId, <obligation id>, { ...ledgerHold, actor })
+//   item.ledgerJob            -> observeJob(db, organisationId, { ...item.ledgerJob, contactId })
+//   withdrawn.ledgerWithdrawn -> observeWithdrawn(db, organisationId, withdrawn.ledgerWithdrawn)
 //
 // One Seazona order is one billable job. The contact is Flow's, so the core
 // resolves it (from item.client) and adds contactId; the ledger keeps a job
@@ -56,15 +56,20 @@ export function toLedgerJob(item) {
   };
 }
 
-// An order deleted in Seazona sends its obligation, if there is one, to
-// review: a person decides what happens to any invoice already made. An order
-// that only stopped being billable needs nothing from the ledger.
-export function toLedgerHold(entry) {
-  if (entry.reason !== 'deleted_in_seazona') return null;
+// observeWithdrawn's input for an order that is no longer billable. An
+// order deleted in Seazona sends its obligation, if there is one, to review:
+// a person decides what happens to any invoice already made. An order whose
+// status moved back (for example from Shipped to In Production) loses an
+// unsent ready mark, and goes to review when its invoice was made.
+export function toLedgerWithdrawn(entry) {
+  const deleted = entry.reason === 'deleted_in_seazona';
   return {
     sourceSystem: SEAZONA_SOURCE_SYSTEM,
     sourceJobRef: entry.sourceId,
-    holdState: 'review',
-    reason: 'the order was deleted in Seazona',
+    sourceStatus: entry.status ?? null,
+    deleted,
+    reason: deleted ? 'the order was deleted in Seazona' : null,
+    observedAt: entry.syncedAt ?? null,
+    actor: `system:${SEAZONA_SOURCE_SYSTEM}`,
   };
 }

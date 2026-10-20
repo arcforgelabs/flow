@@ -7,7 +7,7 @@ import { readOrder } from './lanes.js';
 // any lane read. The answer is the order as the feed gives it:
 //
 //   { state: 'read', item }               billable; `item` is a feed item
-//   { state: 'withdrawn', ledgerHold, reason }
+//   { state: 'withdrawn', ledgerWithdrawn, reason }
 //                                          deleted in Seazona, or no longer
 //                                          billable
 //   { state: 'unavailable', reason }      the read failed or calls are stopped
@@ -39,7 +39,7 @@ export function createActReader({ now }) {
     if (!entry) return unavailable('Flow has no copy of the order');
     if (entry.withdrawn) {
       count('withdrawn');
-      return { state: 'withdrawn', ledgerHold: entry.withdrawn.ledgerHold, reason: entry.withdrawn.reason };
+      return { state: 'withdrawn', ledgerWithdrawn: entry.withdrawn.ledgerWithdrawn, reason: entry.withdrawn.reason };
     }
     return { state: 'read', item: entry.item };
   }

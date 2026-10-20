@@ -99,7 +99,7 @@ describe('read before act', { skip: skipWithoutDatabase }, () => {
     const row = await readyJob();
     answers.set(row.sourceJobRef, {
       state: 'withdrawn', reason: 'deleted_in_seazona',
-      ledgerHold: { sourceSystem: 'seazona', sourceJobRef: row.sourceJobRef, holdState: 'review', reason: 'the order was deleted in Seazona' },
+      ledgerWithdrawn: { sourceSystem: 'seazona', sourceJobRef: row.sourceJobRef, deleted: true, reason: 'the order was deleted in Seazona', observedAt: LATER },
     });
     await autoDraftJobs(db, lab.id, { work, now: LATER });
     const held = await reload(row);
@@ -114,7 +114,10 @@ describe('read before act', { skip: skipWithoutDatabase }, () => {
     const [keepInvoice, dropInvoice] = [(await reload(keep)).invoiceId, (await reload(drop)).invoiceId];
     await markReady(db, lab.id, [keepInvoice, dropInvoice], { personId: null });
     answers.set(keep.sourceJobRef, item(keep.sourceJobRef, [crown], LATER));
-    answers.set(drop.sourceJobRef, { state: 'withdrawn', reason: 'not_billable', ledgerHold: null });
+    answers.set(drop.sourceJobRef, {
+      state: 'withdrawn', reason: 'not_billable',
+      ledgerWithdrawn: { sourceSystem: 'seazona', sourceJobRef: drop.sourceJobRef, sourceStatus: 'In Production', deleted: false, observedAt: LATER },
+    });
     const result = await sendAllReady(db, lab.id, { work, personId: 'test', issueDate: '2026-10-19', invoiceIds: null, now: LATER });
     assert.equal((await getInvoice(db, lab.id, keepInvoice)).status, 'issued');
     assert.equal((await getInvoice(db, lab.id, dropInvoice)).status, 'draft');

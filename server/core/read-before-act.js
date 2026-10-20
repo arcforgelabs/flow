@@ -1,7 +1,7 @@
 import { and, eq } from 'drizzle-orm';
 import { billingObligations } from '../db/schema.js';
 import { FlowError } from './errors.js';
-import { observeJob, setHold } from './ledger.js';
+import { observeJob, observeWithdrawn } from './ledger.js';
 import { workJobMaker } from './pipeline.js';
 
 // Read before act (issue #141). Flow drafts and sends from its own copy of
@@ -11,9 +11,10 @@ import { workJobMaker } from './pipeline.js';
 // the read finds goes into the ledger as any report does (observeJob), so a
 // change after the invoice was made sends the job to review there.
 //
-// A job the work system deleted, or that is no longer billable after its
-// invoice was made, goes to review. A read that cannot run leaves the job
-// waiting: Flow never drafts or sends from an old copy.
+// A job the work system deleted, or that is no longer billable, goes through
+// the ledger's observeWithdrawn like a feed report: review when it was
+// deleted or already has its invoice. A job that is not billable now, or a
+// read that cannot run, waits: Flow never drafts or sends from an old copy.
 //
 // The lanes re-report each job they read at most once an hour
 // (seazona/feed.js), so most reports are under two hours old and cost no
@@ -50,17 +51,14 @@ export async function readBeforeAct(db, organisationId, obligations, { work, now
       const fresh = await reload(db, organisationId, obligation.id);
       outcomes.set(obligation.id, { outcome: fresh.holdState === 'review' ? 'review' : 'read', obligation: fresh });
     } else if (answer?.state === 'withdrawn') {
-      const hold = answer.ledgerHold ?? (obligation.invoiceId ? { holdState: 'review', reason: NO_LONGER_BILLABLE } : null);
-      if (!hold) {
-        // Not billable now and no invoice yet: the job waits for the work
-        // system to report it billable again.
-        outcomes.set(obligation.id, { outcome: 'waiting', obligation, reason: NO_LONGER_BILLABLE });
-        continue;
-      }
-      const row = obligation.holdState === hold.holdState
-        ? obligation
-        : await setHold(db, organisationId, obligation.id, { holdState: hold.holdState, reason: hold.reason, actor });
-      outcomes.set(obligation.id, { outcome: 'review', obligation: row, reason: hold.reason });
+      // The ledger decides as for the feed (observeWithdrawn): deleted, or
+      // moved back after its invoice, goes to review; moved back while only
+      // ready clears the ready mark.
+      if (answer.ledgerWithdrawn) await observeWithdrawn(db, organisationId, { ...answer.ledgerWithdrawn, actor });
+      const row = await reload(db, organisationId, obligation.id);
+      outcomes.set(obligation.id, row.holdState === 'review'
+        ? { outcome: 'review', obligation: row, reason: row.holdReason }
+        : { outcome: 'waiting', obligation: row, reason: NO_LONGER_BILLABLE });
     } else {
       outcomes.set(obligation.id, { outcome: 'waiting', obligation, reason: answer?.reason || 'the work system read failed' });
     }

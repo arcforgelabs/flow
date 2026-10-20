@@ -170,6 +170,56 @@ The Seazona tables are installation-wide today. Phase 2 adds
 so the identity map can join them. An adapter migration adds the column; no
 row is dropped.
 
+## Who owns each field
+
+Each fact about a billed job has one owner. Flow compares only the work
+fields when a job changes, and never writes to another system to settle a
+difference. The table is `FIELD_OWNERS` in `server/core/ledger.js`.
+
+| Field | Owner | Flow's part |
+| --- | --- | --- |
+| Lines (codes, quantities, amounts) | Work system | Copies them; a person can take new ones into Flow's own draft |
+| Customer (`contactId`) | Work system | Resolves the Flow contact from the work system's client |
+| Job status | Work system | Reads it; a status that moves back holds the job |
+| Invoice text (Reference), due date | Flow | Owns them |
+| Send | Flow | Sends Flow's draft to the accounting system |
+| Approval, payment, void | Accounting system | Reads them back |
+
+## When a job changes after its invoice
+
+When Flow drafts an invoice it keeps the job facts it used on the obligation
+(`draft_basis`: lines, totals, customer, status, time of the report). This is
+the merge base. When the work system reports a change later, Flow compares
+three sides, field by field (`compareThreeWays`):
+
+```mermaid
+flowchart LR
+  base[Basis<br/>facts at draft] --> cmp{Compare<br/>each work field}
+  work[Work system now] --> cmp
+  draft[Flow draft now] --> cmp
+  cmp -- work system only, draft not sent --> offer[Review + alert<br/>Use new lines]
+  cmp -- both, or invoice sent --> conflict[Review + alert only]
+  cmp -- Flow only, or back to basis --> none[Nothing]
+```
+
+| Case | Result |
+| --- | --- |
+| Only the work system changed, draft not sent | Review hold, a `job.changed` alert. **Use new lines** puts the job's lines (and customer) on Flow's own draft, keeps them as the new basis, and closes the alert. |
+| Both changed differently, or the invoice left Flow (issued, queued, sent, or in the accounting system) | Review hold, a `job.changed` alert only. **Use new lines** is refused. |
+| Only Flow changed, or the job changed back to the basis | Nothing. A hold from an earlier change is released. |
+
+A job whose status moves back from a billable status (`observeWithdrawn`):
+
+| The job | Result |
+| --- | --- |
+| Has an invoice | Review hold, a `job.status_back` alert |
+| Is ready, with no invoice | The ready mark is cleared and a `job.status_back` alert opens. It closes when the job is billable again. |
+| Is neither | The status is stored |
+
+The status is stored, so the same status reported again does nothing, and a
+hold a person released stays released. An invoice drafted before the basis
+was kept uses the last report as its basis.
+
 ## Rules
 
 - Every table above is append-friendly: a row changes state, and is never

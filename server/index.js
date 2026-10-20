@@ -11,6 +11,7 @@ import {
 } from './import/at-start.js';
 import { createMonitoredLog } from './core/monitoring.js';
 import { createPipelineWorker } from './core/pipeline.js';
+import { createReconcileWorker } from './core/reconcile.js';
 import { createSendWorker } from './core/sending.js';
 import { resolveSecretsKey } from './core/secrets.js';
 import { adapters as shippedAdapters } from './integrations/adapters.js';
@@ -97,6 +98,10 @@ console.log(`[integrations] on: ${integrationsOn.join(', ') || 'none'}; secrets 
 if (process.env.FLOW_PIPELINE !== 'off') {
   createPipelineWorker({ db: database.db, integrations, log }).start();
 }
+// The daily reconcile (server/core/reconcile.js) compares Flow's own copies
+// and opens a review item for a day that does not agree. It never calls or
+// writes to another system.
+createReconcileWorker({ db: database.db, integrations, log }).start();
 // The send worker (server/core/sending.js) sends only what a person queued
 // with Send all ready, to the accounting integration that is on.
 createSendWorker({ db: database.db, integrations, log }).start();

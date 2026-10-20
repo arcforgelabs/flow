@@ -4,6 +4,7 @@ import { createSeazonaClient } from './client.js';
 import { listClients, listProducts, listWork, readBillableWork } from './feed.js';
 import { historyJobIssues, historySummary, readHistoryWork } from './history/index.js';
 import { readSeazonaSyncHealth, runSeazonaSync } from './lanes.js';
+import { readBillableJobs } from './reconcile.js';
 import { SEAZONA_CALL_GUARD } from './governor.js';
 import { createSeazonaRouter } from './routes.js';
 import { orderPatient } from './patients.js';
@@ -185,6 +186,12 @@ export function createSeazonaAdapter({ env = null, fetchImpl = null, now = Date.
       // import"), as ledger jobs marked `historical`. Reads Flow's copy only.
       async pullHistoryJobs(cursor = null, options = {}) {
         return readHistoryWork(current().db, { cursor, ...options });
+      },
+
+      // Billable jobs by day, for the daily reconcile
+      // (server/core/reconcile.js). Reads Flow's copy only.
+      async billableJobs({ from = null, to = null } = {}) {
+        return readBillableJobs(current().db, { from, to });
       },
 
       // Seazona clients by id and company name, for the identity map. Reads

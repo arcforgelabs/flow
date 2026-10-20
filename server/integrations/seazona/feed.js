@@ -1,5 +1,5 @@
 import { and, desc, eq, gte, isNull, or, sql } from 'drizzle-orm';
-import { ledgerLinesFor, toLedgerHold, toLedgerJob } from './ledger.js';
+import { ledgerLinesFor, toLedgerJob, toLedgerWithdrawn } from './ledger.js';
 import { isFinalStatus, orderStatusLabel, parseSeazonaDate } from './map.js';
 import { seazonaClients, seazonaInvoices, seazonaOrders, seazonaReference } from './schema.js';
 
@@ -60,7 +60,8 @@ function toFeedEntry({ order, invoice, client, invoiceOrderCount }) {
       status: orderStatusLabel(order),
       reason: order.deletedInSourceAt ? 'deleted_in_seazona' : 'not_billable',
     };
-    return { withdrawn: { ...entry, ledgerHold: toLedgerHold(entry) } };
+    const syncedAt = order.lastSyncedAt?.toISOString() ?? null;
+    return { withdrawn: { ...entry, ledgerWithdrawn: toLedgerWithdrawn({ ...entry, syncedAt }) } };
   }
   const item = {
     source: 'seazona',
