@@ -98,6 +98,10 @@ test("a stable release is closed out on main after npm is verified, and the GitH
   const npm = workflow("flow-npm-release.yml");
   assert.match(npm, /gh workflow run flow-release-closeout\.yml/);
   assert.match(npm, /--draft=false/);
+  // The release is a draft until npm is verified, so the manifest travels as an artifact of the Publish run.
+  assert.match(npm, /gh run download "\$RUN_ID" --repo "\$GITHUB_REPOSITORY" --name release-manifest/);
+  assert.doesNotMatch(npm, /gh release download/);
+  assert.match(workflow("flow-release-publish.yml"), /name: release-manifest\n/);
   assert.match(workflow("flow-release-publish.yml"), /--verify-tag --draft/);
   assert.match(workflow("flow-release-closeout.yml"), /chore\(release\): close out \$\{VERSION\} on main/);
 });
