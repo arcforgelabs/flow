@@ -227,9 +227,13 @@ export async function renderInvoiceList(main, ui) {
     // The invoice page steps through this list, in this order (navBar).
     saveNav({ tab: state.status, q: state.q, ids: body.invoices.map((i) => i.id) });
     const open = (href) => { saveNav({ ...readNav(), scrollY: window.scrollY }); go(href); };
+    const link = (href, label) => h('a', { class: 'fx-strong', href, onclick: (event) => { event.preventDefault(); event.stopPropagation(); open(href); } }, label);
     const ticks = TICKS[state.status];
     const showProblem = state.status === 'problem';
     const created = ['to_check', 'problem', 'ready'].includes(state.status);
+    // An invoice gets its number when it is sent or issued, so only the
+    // Issued and Void tabs show a Number column; the others open on Client.
+    const numbered = !created;
     const boxes = [];
     const tickBox = (invoice) => {
       const box = h('input', {
@@ -253,7 +257,7 @@ export async function renderInvoiceList(main, ui) {
     host.replaceChildren(h('table', { class: 'fx-table fx-table--rows' },
       h('thead', {}, h('tr', {},
         ticks ? h('th', { class: 'fx-tick-cell' }, all) : null,
-        h('th', {}, 'Number'), h('th', {}, 'Client'), h('th', {}, showProblem ? 'Problem' : 'Reference'),
+        numbered ? h('th', {}, 'Number') : null, h('th', {}, 'Client'), h('th', {}, showProblem ? 'Problem' : 'Reference'),
         h('th', {}, created ? 'Created' : 'Issued'), h('th', { class: 'fx-num' }, 'Total'), h('th', {}, 'Status'))),
       h('tbody', {}, body.invoices.map((invoice) => {
         const href = `/invoices/${invoice.id}`;
@@ -261,8 +265,8 @@ export async function renderInvoiceList(main, ui) {
         const view = invoice.status === 'void' ? null : invoice.view;
         return h('tr', { tabindex: '0', onclick: () => open(href), onkeydown: (event) => { if (event.key === 'Enter') open(href); } },
           ticks ? h('td', { class: 'fx-tick-cell', onclick: (event) => event.stopPropagation() }, tickBox(invoice)) : null,
-          h('td', {}, h('a', { class: 'fx-strong', href, onclick: (event) => { event.preventDefault(); event.stopPropagation(); open(href); } }, invoice.number ?? 'Draft')),
-          h('td', {}, invoice.contactName ?? '—'),
+          numbered ? h('td', {}, link(href, invoice.number ?? 'Draft')) : null,
+          h('td', {}, numbered ? (invoice.contactName ?? '—') : link(href, invoice.contactName ?? 'No client')),
           showProblem
             ? h('td', { class: 'fx-problem' }, first?.message ?? '—', invoice.problems.length > 1 ? h('span', { class: 'fx-dim' }, ` +${invoice.problems.length - 1} more`) : null)
             : h('td', { class: 'fx-dim' }, invoice.reference ?? '—'),
@@ -390,6 +394,8 @@ function draftView(invoice, ui, context, redraw) {
   const lines = (invoice?.lines ?? []).map((line) => ({ ...line }));
   if (!lines.length) lines.push({ description: '', quantity: 1, unitAmountCents: null, taxCode: 'GST', priceItemId: null });
   let contact = invoice?.contact ?? null;
+  // Issue invoice waits for a client and a due date (syncIssue, below).
+  let onContact = () => {};
 
   // Client: type to find a customer.
   const clientInput = h('input', { class: 'fx-input', type: 'text', autocomplete: 'off', placeholder: 'Type a client name', value: contact?.name ?? '', 'aria-label': 'Client' });
@@ -411,6 +417,7 @@ function draftView(invoice, ui, context, redraw) {
             contact = c;
             clientInput.value = c.name;
             clientList.hidden = true;
+            onContact();
           },
         }, c.name, c.email ? h('span', { class: 'fx-dim' }, c.email) : null)) : [h('p', { class: 'fx-dim fx-suggest__none' }, 'No client by that name.')]));
         clientList.hidden = false;
@@ -421,7 +428,7 @@ function draftView(invoice, ui, context, redraw) {
   });
   clientInput.addEventListener('blur', () => { setTimeout(() => { clientList.hidden = true; }, 120); });
 
-  const reference = h('input', { class: 'fx-input', type: 'text', value: invoice?.reference ?? '', placeholder: 'Case or order number' });
+  const reference = h('input', { class: 'fx-input', type: 'text', value: invoice?.reference ?? '', placeholder: 'Practitioner - Patient' });
   const dueDate = h('input', { class: 'fx-input', type: 'date', value: invoice?.dueDate ?? '' });
 
   // Lines.
@@ -555,8 +562,8 @@ function draftView(invoice, ui, context, redraw) {
   const watchChanges = () => { if (!isNew) saveButton.hidden = !changed(); };
   // With an accounting system on, a ready invoice is sent there: Flow issues
   // it and queues it, the same as Send all ready. With none, Flow issues it
-  // and keeps it. A draft that is not ready has no send: mark it ready first.
-  const to = invoice?.sendsTo ?? null;
+  // and keeps it. A draft that is not ready has no send: move it to Ready first.
+  const to = invoice?.sendsTo ?? context.sendsTo ?? null;
   const ready = invoice?.view === 'ready';
   const nextNumber = `${context.organisations[0]?.invoicePrefix ?? ''}${String(context.organisations[0]?.nextInvoiceNumber ?? '').padStart(4, '0')}`;
   const emails = invoice?.sendMode?.mode === 'approve_and_email';
@@ -604,6 +611,28 @@ function draftView(invoice, ui, context, redraw) {
       }
     },
   }, 'Issue invoice') : null;
+  // Issue needs a client and a due date: until both are set it is greyed.
+  const syncIssue = () => {
+    if (!issueButton) return;
+    const missing = [contact ? null : 'a client', dueDate.value ? null : 'a due date'].filter(Boolean);
+    issueButton.disabled = missing.length > 0;
+    issueButton.title = missing.length ? `Choose ${missing.join(' and ')} first.` : '';
+  };
+  onContact = syncIssue;
+  clientInput.addEventListener('input', syncIssue);
+  dueDate.addEventListener('input', syncIssue);
+  dueDate.addEventListener('change', syncIssue);
+  syncIssue();
+
+  // A new invoice can start from a job that has no invoice yet: a quiet
+  // strip above the form says so. Flow drafts it the way the invoicing rules
+  // do (client, Reference, lines) and links it to the job. An invoice with
+  // no job is fine too.
+  const fromJob = isNew && context.canIssue ? h('section', { class: 'fx-fromjob' },
+    h('div', { class: 'fx-fromjob__text' },
+      h('span', { class: 'fx-strong' }, 'Billing a job?'),
+      h('span', { class: 'fx-dim' }, 'Flow fills in the details.')),
+    h('button', { class: 'fx-btn', type: 'button', onclick: () => pickJob(ui) }, 'Choose a job')) : null;
 
   // Move to Ready: the draft is saved, then Flow checks it and moves it to
   // the Ready tab; nothing is sent. One with a problem stays a draft. Move to
@@ -679,6 +708,7 @@ function draftView(invoice, ui, context, redraw) {
         h('p', { class: 'fx-ph__sub' }, draftNote(to, invoice, ready))),
       h('div', { class: 'fx-ph__actions' }, saveButton, markReadyButton, isNew ? null : previewButton(ui, invoice.id, 'Shows the saved invoice.'), sendButton ?? issueButton)),
     ...problems,
+    fromJob,
     h('div', { class: 'fx-invoice__grid' },
       h('div', { class: 'fx-invoice__main' },
         h('section', { class: 'fx-card fx-invoice__head' },
@@ -901,4 +931,52 @@ function showSent(button) {
   button.disabled = true;
   button.textContent = 'Sent to Xero';
   button.title = 'Flow sent this invoice to Xero.';
+}
+
+// The jobs a new invoice can start from: no invoice yet, newest first.
+const PICKABLE = new Set(['in_work', 'ready', 'pending']);
+
+async function pickJob(ui) {
+  const { h, flow, toast, go } = ui;
+  let jobs;
+  try {
+    jobs = (await flow('/api/invoicing/jobs?limit=500')).jobs.filter((job) => PICKABLE.has(job.view) && !job.invoiceId);
+  } catch (error) {
+    toast(error.message, 'danger');
+    return;
+  }
+  const search = h('input', { class: 'fx-input', type: 'search', placeholder: 'Find a client or practitioner', 'aria-label': 'Find a job' });
+  const rows = jobs.map((job) => {
+    const label = h('label', { class: 'fx-pick__row' },
+      h('input', { type: 'radio', name: 'job', value: job.id, required: true }),
+      h('span', { class: 'fx-pick__main' },
+        h('span', { class: 'fx-strong' }, job.contactName ?? 'No client yet'),
+        h('span', { class: 'fx-dim' }, [job.practitioner, job.shippedOn ? showDate(job.shippedOn) : null].filter(Boolean).join(' · '))),
+      h('span', { class: 'fx-num fx-strong' }, job.totalCents == null ? '—' : formatCents(job.totalCents)));
+    label.dataset.find = `${job.contactName ?? ''} ${job.practitioner ?? ''}`.toLowerCase();
+    return label;
+  });
+  const list = h('div', { class: 'fx-pick', role: 'radiogroup', 'aria-label': 'Jobs' },
+    rows.length ? rows : h('p', { class: 'fx-dim' }, 'Every job has an invoice already.'));
+  search.addEventListener('input', () => {
+    const q = search.value.trim().toLowerCase();
+    for (const row of rows) row.hidden = Boolean(q) && !row.dataset.find.includes(q);
+  });
+  const picked = await ui.dialog({
+    title: 'New invoice from a job',
+    body: h('div', { class: 'fx-pick__body' },
+      h('p', { class: 'fx-dim' }, 'Flow fills in the client, Reference and lines from the invoice rules, and links the invoice to the job.'),
+      search, list),
+    confirm: 'Make draft',
+  });
+  const jobId = picked?.get('job');
+  if (!jobId) return;
+  try {
+    const { invoice } = await flow(`/api/invoicing/jobs/${jobId}/draft`, { method: 'POST', body: '{}' });
+    toast('Draft invoice made from the job.', 'success');
+    go(`/invoices/${invoice.id}`, { replace: true });
+  } catch (error) {
+    const reasons = error.details?.reasons;
+    toast(reasons?.length ? `Not drafted: ${reasons.join('; ')}.` : error.message, 'danger');
+  }
 }

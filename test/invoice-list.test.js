@@ -50,7 +50,7 @@ function page() {
 }
 
 const list = (status, numbers) => ({
-  invoices: numbers.map((number, i) => ({ id: `${status}-${i}`, number, status: status === 'issued' ? 'issued' : 'draft', totalCents: 100, createdAt: '2026-01-01' })),
+  invoices: numbers.map((number, i) => ({ id: `${status}-${i}`, number, contactName: `Client ${number}`, status: status === 'issued' ? 'issued' : 'draft', totalCents: 100, createdAt: '2026-01-01' })),
   counts: { ready: 1, to_check: 0, problem: 0, issued: 1, void: 0 },
   sendsTo: null,
   sendMode: null,
@@ -93,4 +93,23 @@ test('a tab click selects the tab at once; only the newest answer draws; a tab s
   await settle();
   assert.match(panel(main).text, /R-2/);
   assert.equal(panel(main).getAttribute('aria-busy'), null);
+});
+
+test('only Issued and Void show a Number column; the other tabs open on Client', async () => {
+  globalThis.sessionStorage = { getItem: () => null, setItem() {}, removeItem() {} };
+  globalThis.document = { visibilityState: 'visible', addEventListener() {}, removeEventListener() {} };
+  const { main, ui, asked } = page();
+  const opened = renderInvoiceList(main, ui);
+  await settle();
+  asked.shift().answer(list('ready', [null]));
+  await opened;
+  const heads = () => panel(main).all((el) => el.tag === 'th').map((el) => el.text);
+  assert.ok(!heads().includes('Number'));
+  assert.equal(heads()[1], 'Client');
+
+  tab(main, 'Issued').onclick();
+  asked.shift().answer(list('issued', ['INV-1']));
+  await settle();
+  assert.ok(heads().includes('Number'));
+  assert.match(panel(main).text, /INV-1/);
 });

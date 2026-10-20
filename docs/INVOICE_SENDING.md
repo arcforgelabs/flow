@@ -71,6 +71,19 @@ email** when the customer's send mode is approve and email). It does the same
 steps for that invoice only. A draft that is not ready has no send button:
 move it to Ready first. With no accounting system on, the invoice page shows
 **Issue invoice** instead. **Preview** sits just left of the send button.
+Issue invoice is greyed until the invoice has a client and a due date. A new
+invoice with an accounting system on has no Issue invoice: save the draft,
+move it to Ready, then send it.
+
+## New invoice from a job
+
+A new invoice can start blank or from a job. A strip above the form says
+"Billing a job?". Its **Choose a job** button lists the jobs with no invoice
+yet (client, practitioner, shipped date, total), with a search. Picking one makes its draft the way the
+invoicing rules do (`POST /api/invoicing/jobs/:id/draft`): the client, the
+Reference from the Reference rule, and the job's lines, linked to the job. A
+job the rules refuse is not drafted, and the toast names the reason. An
+invoice with no job stays allowed.
 
 After a send, the next invoice of the list opens. The count in the bar holds
 (1 of 35, then 2 of 35): the sent invoice stays in the bar's list until the
