@@ -216,7 +216,7 @@ const ICON_PATHS = {
   person: '<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-7 8-7s8 3 8 7"/>',
   flag: '<path d="M5 21V4M5 4h11l-2 4 2 4H5"/>',
   search: '<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/>',
-  menu: '<path d="M4 6h16M4 12h16M4 18h16"/>',
+  sidebar: '<rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M9.5 4v16"/>',
   palette: '<path d="M12 3a9 9 0 100 18c1.1 0 1.5-.8 1.5-1.6 0-1-.8-1.4-.8-2.4 0-.9.7-1.5 1.6-1.5H17a4 4 0 004-4c0-4.7-4-8.5-9-8.5z"/><circle cx="7.5" cy="11" r="1"/><circle cx="10" cy="7" r="1"/><circle cx="15" cy="7" r="1"/>',
 };
 
@@ -226,10 +226,12 @@ function icon(name) {
   return node;
 }
 
-// The menu button at the top of the sidebar. On a wide screen it folds the
-// sidebar to its icons and back, and the choice stays in this browser. On a
-// narrow screen the sidebar is a bar across the top, and the button opens
-// the menu below it; choosing a page, Escape or a click outside closes it.
+// The sidebar button at the top of the sidebar (a panel icon, not a
+// hamburger; folded or narrow, the logo stands in for it). On a wide screen it folds the sidebar to its icons and back,
+// and the choice stays in this browser. On a narrow screen the sidebar is a
+// bar across the top, and the button slides the menu in from the left as a
+// drawer over a dimmed page; choosing a page, Escape or a click on the page
+// closes it.
 const NARROW = window.matchMedia('(max-width: 820px)');
 const FOLDED_KEY = 'flow_sidebar_folded';
 
@@ -243,7 +245,7 @@ function drawMenu() {
   shell.toggleAttribute('data-folded', folded);
   const open = NARROW.matches ? shell.hasAttribute('data-menu-open') : !folded;
   const toggle = $('menu-toggle');
-  const label = NARROW.matches ? (open ? 'Close the menu' : 'Open the menu') : (folded ? 'Show the menu' : 'Fold the menu');
+  const label = NARROW.matches ? (open ? 'Close the menu' : 'Open the menu') : (folded ? 'Show the sidebar' : 'Hide the sidebar');
   toggle.setAttribute('aria-expanded', String(open));
   toggle.setAttribute('aria-label', label);
   toggle.title = label;
@@ -384,7 +386,13 @@ function renderShell() {
   const report = h('button', { type: 'button', class: 'fx-nav__report', 'data-nav': 'report', 'data-label': 'Report a problem', hidden: true },
     icon('flag'), h('span', { class: 'fx-nav__label' }, 'Report a problem'));
   nav.replaceChildren(...items, report);
-  $('menu-toggle').replaceChildren(icon('menu'));
+  // Folded or narrow, the logo is the sidebar button: it shows the mark and
+  // turns into the sidebar icon under the pointer or keyboard focus.
+  const mark = h('span', { class: 'fx-toggle__mark', 'aria-hidden': 'true' });
+  mark.innerHTML = document.querySelector('.fx-side__head .fx-brand svg')?.outerHTML ?? '';
+  const sidebar = icon('sidebar');
+  sidebar.classList.add('fx-toggle__icon');
+  $('menu-toggle').replaceChildren(mark, sidebar);
   $('menu-toggle').onclick = toggleMenu;
   drawMenu();
   // The sidebar foot shows who is signed in: photo or initial, then the name
