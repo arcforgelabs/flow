@@ -723,12 +723,14 @@ export async function confirmNoInvoice(db, organisationId, obligationId, { actor
 // The job then has its invoice: Flow drafts no other. A job held on unclear
 // accounting evidence is settled by it; whether the Flow invoice matches one
 // in the accounting system is that integration's own work, not the job's.
-export async function linkJobToInvoice(db, organisationId, obligationId, { invoiceId, actor }) {
+// `accountingRef` is given by an accounting integration that made the Flow
+// invoice from the accounting invoice the job is tied to already.
+export async function linkJobToInvoice(db, organisationId, obligationId, { invoiceId, accountingRef = null, actor }) {
   requireActor(actor);
   return db.transaction(async (tx) => {
     const obligation = await loadObligation(tx, organisationId, obligationId, { lock: true });
     if (obligation.invoiceId) throw new FlowError('invalid', 'the job has an invoice already');
-    if (obligation.accountingRef) throw new FlowError('invalid', 'the job is linked to an accounting invoice already');
+    if (obligation.accountingRef && obligation.accountingRef !== accountingRef) throw new FlowError('invalid', 'the job is linked to an accounting invoice already');
     const [invoice] = await tx.select({ id: invoices.id, status: invoices.status, contactId: invoices.contactId }).from(invoices)
       .where(and(eq(invoices.organisationId, organisationId), eq(invoices.id, invoiceId)));
     if (!invoice) throw notFound('invoice');

@@ -51,7 +51,7 @@ const BODY = `<div class="fx-app">
   <div id="toasts" class="fx-toasts" aria-live="polite"></div>
 </div>`;
 
-export const APP_PATHS = ['/sign-in', '/jobs', '/invoices', '/invoices/:id', '/reconcile', '/reconcile/:id', '/people', '/integrations', '/integrations/:id', '/account', '/appearance', '/invoicing-settings', '/price-list', '/custom-fields'];
+export const APP_PATHS = ['/sign-in', '/jobs', '/invoices', '/invoices/:id', '/reconcile', '/reconcile/:id', '/xero-import', '/people', '/integrations', '/integrations/:id', '/account', '/appearance', '/invoicing-settings', '/price-list', '/custom-fields'];
 
 export function appPage({ defaultFamily }) {
   return renderPage({

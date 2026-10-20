@@ -6,6 +6,7 @@ import { lastSync, listContacts, listItems, syncCatalogue } from './catalogue.js
 import { createXeroClient } from './client.js';
 import { describePush, listPushes, MAX_BATCH, previewDrafts, pushDrafts } from './drafts.js';
 import { recordXeroEvidence, recordXeroPayments } from './ledger.js';
+import { IMPORT_STATES, importOverview, linkXeroInvoice, makeFlowInvoice, matchXero, saveImportSettings } from './links.js';
 import { queueHistoryImport, resetImport } from './import.js';
 import { MIRROR_RESOURCES, mirrorStatus, mirrorXero } from './mirror.js';
 import { accountingStatus, checkSentInvoices } from './reconcile.js';
@@ -305,6 +306,47 @@ export function createXeroRouter({ db, personAuth, runtime, log = console, messa
   router.get('/mirror', ...signedIn, handle(log, async (req, res) => {
     const organisationId = await requireOrganisation(db, req.query.organisationId);
     res.json({ ok: true, ...(await mirrorStatus(db, organisationId)) });
+  }));
+
+  // The Import page (links.js): each Xero sales invoice in Flow's copy against
+  // Flow's own invoices. Reads Flow's database only.
+  router.get('/import', ...signedIn, handle(log, async (req, res) => {
+    const organisationId = await requireOrganisation(db, req.query.organisationId);
+    const show = typeof req.query.show === 'string' && [...IMPORT_STATES, 'all'].includes(req.query.show) ? req.query.show : 'all';
+    const q = typeof req.query.q === 'string' ? req.query.q.slice(0, 200) : '';
+    const offset = Math.max(0, Math.min(Number.parseInt(req.query.offset, 10) || 0, 1_000_000));
+    const limit = Math.max(1, Math.min(Number.parseInt(req.query.limit, 10) || 50, 100));
+    res.json({ ok: true, ...(await importOverview(db, organisationId, { show, q, limit, offset })) });
+  }));
+
+  router.post('/import/match', ...manager, handle(log, async (req, res) => {
+    const organisationId = await requireOrganisation(db, req.body?.organisationId);
+    const result = await matchXero(db, organisationId, { actor: `person:${req.person.id}` });
+    log.info?.(`[xero] organisation ${organisationId}: person ${req.person.id} matched Xero invoices: ${JSON.stringify(result)}`);
+    res.json({ ok: true, ...result });
+  }));
+
+  router.put('/import/settings', ...manager, handle(log, async (req, res) => {
+    const organisationId = await requireOrganisation(db, req.body?.organisationId);
+    res.json({ ok: true, settings: await saveImportSettings(db, organisationId, { makeUnmatched: req.body?.makeUnmatched, actor: `person:${req.person.id}` }) });
+  }));
+
+  const xeroId = (raw) => {
+    if (typeof raw !== 'string' || !UUID.test(raw)) throw Object.assign(new FlowError('not_found', 'Xero invoice not found'), { status: 404 });
+    return raw;
+  };
+
+  router.post('/import/:xeroInvoiceId/link', ...manager, handle(log, async (req, res) => {
+    const organisationId = await requireOrganisation(db, req.body?.organisationId);
+    const [invoiceId] = requireInvoiceIds([req.body?.invoiceId], 'invoiceId');
+    res.json({ ok: true, ...(await linkXeroInvoice(db, organisationId, xeroId(req.params.xeroInvoiceId), { invoiceId, actor: `person:${req.person.id}` })) });
+  }));
+
+  router.post('/import/:xeroInvoiceId/make', ...manager, handle(log, async (req, res) => {
+    const organisationId = await requireOrganisation(db, req.body?.organisationId);
+    const jobId = req.body?.jobId == null ? null : requireInvoiceIds([req.body.jobId], 'jobId')[0];
+    const { invoice } = await makeFlowInvoice(db, organisationId, xeroId(req.params.xeroInvoiceId), { jobId, actor: `person:${req.person.id}` });
+    res.json({ ok: true, invoice: { id: invoice.id, number: invoice.number } });
   }));
 
   return router;

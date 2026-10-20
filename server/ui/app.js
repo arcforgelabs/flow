@@ -16,6 +16,7 @@ import { renderPriceList } from '/assets/ui/price-list.js';
 import { renderCustomFields } from '/assets/ui/custom-fields.js';
 import { renderJobs } from '/assets/ui/jobs.js';
 import { renderReconcile } from '/assets/ui/reconcile.js';
+import { renderXeroImport } from '/assets/ui/xero-import.js';
 import { startMonitoring } from '/assets/ui/monitoring.js';
 import { openSearch } from '/assets/ui/search.js';
 import { alertStrip } from '/assets/ui/alerts.js';
@@ -206,6 +207,8 @@ const VIEWS = {
   integrations: { label: 'Integrations', icon: 'plug', group: 'Settings', ownerOnly: true, render: (main, id) => (id ? renderIntegration(main, id) : renderIntegrations(main)) },
   // Not in the sidebar: "Manage account" in the account menu opens the same
   // Clerk profile. The page stays for links and Search.
+  // Opened from the Xero integration page: Xero invoices against Flow's own.
+  'xero-import': { label: 'Xero import', icon: 'plug', group: 'Settings', sidebar: false, render: (main) => renderXeroImport(main, ui()) },
   account: { label: 'Account', icon: 'person', group: 'Settings', sidebar: false, render: renderAccount },
   appearance: { label: 'Appearance', icon: 'palette', group: 'Settings', render: renderAppearance },
 };
@@ -785,6 +788,7 @@ async function renderIntegration(main, id) {
           current.id === 'xero' && current.state === 'ready' ? h('section', { class: 'fx-int-section' }, xeroConnection(body.organisations, canChange)) : null,
           current.id === 'seazona' ? h('section', { class: 'fx-int-section fx-card', style: { padding: '8px 20px 16px' } }, automationSection(ui(), 'seazona', 'Ready to invoice')) : null,
           on && current.state === 'ready' ? personSettingsSection(current) : null,
+          current.id === 'xero' && current.state === 'ready' ? xeroImportSection(body.organisations) : null,
           current.id === 'xero' ? h('section', { class: 'fx-int-section fx-card', style: { padding: '8px 20px 16px' } }, sendModeSection(ui())) : null,
           guide ? h('section', { class: 'fx-int-section' },
             h('h2', { class: 'fx-int-section__title' }, 'Set up'),
@@ -862,6 +866,24 @@ function connectProgress({ steps, started }) {
     h('ol', {}, steps.map((step) => h('li', { 'data-state': step.state },
       h('span', { class: 'fx-progress__mark', 'aria-hidden': 'true' }, step.state === 'done' ? '✓' : step.state === 'failed' ? '!' : ''),
       step.label))));
+}
+
+// Xero › Import: how many Xero invoices still need a Flow invoice. The counts
+// come from Flow's copy of Xero; the page itself is server/ui/xero-import.js.
+function xeroImportSection(organisations) {
+  const counts = h('p', { class: 'fx-dim' }, 'Counting…');
+  const section = h('section', { class: 'fx-int-section fx-card fx-xi-card' },
+    h('h2', { class: 'fx-int-section__title' }, 'Import'),
+    h('p', {}, 'Each Xero invoice, and the Flow invoice it is. Link it, or make the Flow invoice from it.'),
+    counts,
+    h('a', { class: 'fx-btn fx-btn--sm', href: '/xero-import', onclick: navigate }, 'Open import'));
+  const organisationId = organisations?.[0]?.id;
+  if (organisationId) {
+    flow(`/api/xero/import?organisationId=${organisationId}&show=linked&limit=1`)
+      .then(({ counts: c }) => counts.replaceChildren(`${c.linked} linked · ${c.job_fits} a job fits · ${c.invoice_fits} a Flow invoice fits · ${c.none} nothing fits`))
+      .catch(() => counts.replaceChildren(''));
+  } else counts.replaceChildren('');
+  return section;
 }
 
 // Once Xero is on: each organisation's connection, the history copy, and
