@@ -5,6 +5,7 @@ import { historyJobIssues, historySummary, readHistoryWork } from './history/ind
 import { readSeazonaSyncHealth, runSeazonaSync } from './lanes.js';
 import { SEAZONA_CALL_GUARD } from './governor.js';
 import { createSeazonaRouter } from './routes.js';
+import { orderPatient } from './patients.js';
 import { createSeazonaScheduler } from './scheduler.js';
 import { resetFailedLanes, resetStoppedLanes } from './store.js';
 import { describeSeazonaSettings, resolveSeazonaSettings } from './settings.js';
@@ -44,6 +45,7 @@ export const SEAZONA_SETUP = {
     { name: 'SEAZONA_API_BASE_URL', label: 'API address', kind: 'url', help: 'The API root of your account, https://…' },
     { name: 'SEAZONA_API_CLIENT_ID', label: 'Client id' },
     { name: 'SEAZONA_API_CLIENT_SECRET', label: 'Client secret', secret: true, help: 'Stored encrypted. Flow never shows it again.' },
+    { name: 'SEAZONA_KEEP_PATIENT_REFERENCE', label: 'Keep patient names', kind: 'onoff', help: 'On: Flow keeps the patient name of each job for the invoice Reference.' },
   ],
 };
 
@@ -147,6 +149,13 @@ export function createSeazonaAdapter({ env = null, fetchImpl = null, now = Date.
       // Jobs board. Reads Flow's copy only.
       async listWork() {
         return listWork(current().db, { now: now() });
+      },
+
+      // The fields a job gives the invoice Reference: the patient name, when
+      // this installation keeps patient names (patients.js).
+      async jobReferenceFields({ sourceJobRef, read = false }) {
+        const { db, client, settings } = current();
+        return orderPatient({ db, client, settings, now }, sourceJobRef, { read });
       },
 
       // History jobs a person must decide, as issues on their job cards,

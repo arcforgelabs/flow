@@ -116,10 +116,9 @@ describe('ready, problem and send', { skip: skipWithoutDatabase }, () => {
     assert.deepEqual(views.toCheck, []);
     assert.deepEqual(views.problems.get(missing.id).map((p) => p.code), ['xero_contact_missing']);
 
-    // A change, or Back to drafts, needs a new check.
+    // A saved change keeps it ready; Move to Drafts takes it back.
     await updateDraftInvoice(handle.db, lab.id, one.id, { reference: 'CASE-2' });
-    assert.equal((await row(one.id)).readyAt, null);
-    await markReady(handle.db, lab.id, [one.id], { personId: owner.id });
+    assert.notEqual((await row(one.id)).readyAt, null);
     assert.deepEqual(await markNotReady(handle.db, lab.id, [one.id]), { moved: 1 });
     assert.equal((await row(one.id)).readyAt, null);
     await assert.rejects(markReady(handle.db, lab.id, [one.id, crown.id], { personId: owner.id }), { code: 'not_draft' });
@@ -136,6 +135,19 @@ describe('ready, problem and send', { skip: skipWithoutDatabase }, () => {
     assert.equal((await row(ready.id)).sendState, null);
     assert.equal((await row(problem.id)).status, 'draft');
     assert.equal((await row(unchecked.id)).status, 'draft');
+  });
+
+  test('Send on one invoice issues that ready draft only, and refuses one that is not ready', async () => {
+    const one = await good();
+    const other = await good();
+    const unchecked = await good();
+    await markReady(handle.db, lab.id, [one.id, other.id], { personId: owner.id });
+    await assert.rejects(sendAllReady(handle.db, lab.id, { personId: owner.id, issueDate: ISSUE_DATE, invoiceIds: [unchecked.id] }), { code: 'not_ready' });
+    assert.equal((await row(unchecked.id)).status, 'draft');
+    const result = await sendAllReady(handle.db, lab.id, { personId: owner.id, issueDate: ISSUE_DATE, invoiceIds: [one.id] });
+    assert.deepEqual(result, { issued: 1, queued: 0, remaining: 0 });
+    assert.equal((await row(one.id)).status, 'issued');
+    assert.equal((await row(other.id)).status, 'draft');
   });
 
   test('an accounting system that is not connected or takes no writes stops the send before anything is issued', async () => {

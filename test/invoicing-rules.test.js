@@ -200,7 +200,7 @@ describe('drafts by rule', { skip: skipWithoutDatabase }, () => {
     const list = await listAutomations(handle.db, lab.id);
     assert.deepEqual(list.map((a) => [a.key, a.place, a.enabled]), [
       ['map_lines', 'seazona', true], ['mark_ready_from_work_status', 'seazona', true], ['draft_when_ready', 'invoicing', true],
-      ['ready_when_drafted', 'invoicing', true]]);
+      ['ready_when_drafted', 'invoicing', true], ['reference_from_rule', 'invoicing', true]]);
     await assert.rejects(saveAutomation(handle.db, lab.id, 'mark_ready_from_work_status', { config: { statuses: [] } }), /statuses/);
     await assert.rejects(saveAutomation(handle.db, lab.id, 'mark_ready_from_work_status', { enabled: 'yes' }), /true or false/);
     await assert.rejects(saveAutomation(handle.db, lab.id, 'nothing', { enabled: true }), { code: 'not_found' });
@@ -219,7 +219,7 @@ describe('drafts by rule', { skip: skipWithoutDatabase }, () => {
     await saveAutomation(handle.db, lab.id, 'draft_when_ready', { enabled: false });
     const first = await runAutomations(handle.db, lab.id, { accounting, now: NOW });
     // This job, and the shipped job an earlier test left in work.
-    assert.deepEqual(first, { mark_ready_from_work_status: { marked: 2 }, ready_when_drafted: { marked: 0 } });
+    assert.deepEqual(first, { mark_ready_from_work_status: { marked: 2 }, ready_when_drafted: { marked: 0 }, reference_from_rule: { updated: 0 } });
     const marked = await explainObligation(handle.db, lab.id, shipped.id);
     assert.equal(marked.view, 'ready');
     assert.equal(marked.events.find((e) => e.kind === 'ready').actor, 'automation:mark_ready_from_work_status');

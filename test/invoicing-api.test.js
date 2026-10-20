@@ -281,11 +281,12 @@ describe('invoicing API', { skip: skipWithoutDatabase }, () => {
     const drafted = await call(`/jobs/${job.id}/draft`, { method: 'POST', body: {} });
     assert.equal(drafted.status, 201);
     assert.deepEqual(checked, [[lab.id, 'JOB-1']]);
-    assert.equal(drafted.body.invoice.reference, 'CASE-JOB-1');
+    // The Reference rule's text, never the work system's case id.
+    assert.equal(drafted.body.invoice.reference, 'Dr Example');
     assert.deepEqual(drafted.body.invoice.job, {
       id: job.id, sourceSystem: 'worksystem', sourceJobRef: 'JOB-1', caseRef: 'CASE-JOB-1', practitioner: 'Dr Example', shippedOn: '2026-10-17',
     });
-    const inList = (await call('/invoices?q=CASE-JOB-1')).body.invoices;
+    const inList = (await call('/invoices?q=Dr%20Example')).body.invoices;
     assert.equal(inList[0].job.sourceJobRef, 'JOB-1');
     const after = await call('/jobs?view=drafted');
     assert.equal(after.body.jobs.find((j) => j.id === job.id).invoiceId, drafted.body.invoice.id);

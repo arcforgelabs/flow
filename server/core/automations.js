@@ -1,9 +1,10 @@
 import { and, eq, sql } from 'drizzle-orm';
 import { automations, billingObligations, invoices } from '../db/schema.js';
 import { FlowError, notFound } from './errors.js';
-import { autoDraftJobs } from './invoicing-rules.js';
+import { autoDraftJobs, readInvoicingSettings } from './invoicing-rules.js';
 import { MAPPING_DEFAULTS, readMappingConfig, remapJobs } from './line-mapping.js';
 import { setReady } from './ledger.js';
+import { refreshReferences } from './references.js';
 
 // Automations (docs/AUTOMATIONS.md): Flow's routines. Each one watches Flow's
 // own records and moves them on, and each is on or off with its own settings,
@@ -19,6 +20,8 @@ import { setReady } from './ledger.js';
 //     rules (invoicing-rules.js) gets a draft invoice in Flow.
 //   ready_when_drafted: a draft the draft routine made goes straight to Ready
 //     on the Invoices page, until a person changes it or moves it back.
+//   reference_from_rule: a draft made from a job keeps the Reference the
+//     lab's Reference rule gives (references.js), as the job's fields arrive.
 
 const BATCH = 500;
 
@@ -89,6 +92,14 @@ export const AUTOMATIONS = Object.freeze([
     place: 'invoicing',
     name: 'Ready when drafted',
     hint: 'An automatic draft goes straight to Ready. A draft a person changed stays in Drafts.',
+    defaults: { enabled: true, config: {} },
+    readConfig: () => ({}),
+  },
+  {
+    key: 'reference_from_rule',
+    place: 'invoicing',
+    name: 'Reference from the rule',
+    hint: 'A draft made from a job gets its Reference from the Reference rule. A Reference a person typed stays.',
     defaults: { enabled: true, config: {} },
     readConfig: () => ({}),
   },
@@ -169,16 +180,19 @@ async function readyWhenDrafted(db, organisationId) {
 
 // Runs every routine that is on. `accounting` is the integration whose copy
 // the draft routine checks; without one, Flow's own records are the check.
-export async function runAutomations(db, organisationId, { accounting = null, now = new Date() } = {}) {
+export async function runAutomations(db, organisationId, { accounting = null, work = null, now = new Date() } = {}) {
   const summary = {};
   for (const automation of await listAutomations(db, organisationId)) {
     if (!automation.enabled) continue;
     if (automation.key === 'mark_ready_from_work_status') {
       summary[automation.key] = await markReadyFromWorkStatus(db, organisationId, automation.config);
     } else if (automation.key === 'draft_when_ready') {
-      summary[automation.key] = await autoDraftJobs(db, organisationId, { accounting, now, actor: actorOf(automation.key) });
+      summary[automation.key] = await autoDraftJobs(db, organisationId, { accounting, work, now, actor: actorOf(automation.key) });
     } else if (automation.key === 'ready_when_drafted') {
       summary[automation.key] = await readyWhenDrafted(db, organisationId);
+    } else if (automation.key === 'reference_from_rule') {
+      const { referenceTemplate: template } = await readInvoicingSettings(db, organisationId);
+      summary[automation.key] = await refreshReferences(db, organisationId, { template, work });
     }
   }
   return summary;

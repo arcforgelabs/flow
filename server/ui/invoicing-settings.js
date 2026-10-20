@@ -66,7 +66,9 @@ export async function renderInvoicingSettings(main, ui) {
   host.replaceChildren(...[
     disabled ? notice('Only an owner or admin can change these.', 'info') : null,
     section('Drafts',
-      row('Payment terms', 'Days from invoice to due date.', days('paymentTermsDays', 'Payment terms in days'))),
+      row('Payment terms', 'Days from invoice to due date.', days('paymentTermsDays', 'Payment terms in days')),
+      row('Reference', 'The Reference on each invoice. Use {practitioner} and {patient}.',
+        box('referenceTemplate', 'Reference rule', { placeholder: '{practitioner} - {patient}' }))),
     lineMappingSection(ui),
     automationSection(ui, 'invoicing', 'Automations'),
     rulesSection(ui),
