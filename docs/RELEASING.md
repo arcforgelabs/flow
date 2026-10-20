@@ -283,6 +283,28 @@ Still to do, by Samuel, before the first release from a release branch:
    pull requests**, so Flow Release Closeout opens its pull request. Without
    it, `release:stable` opens the pull request itself.
 
+Later, when Flow has many paying clients and becomes a target: sign each
+tag with a key that a person holds, as openclaw/openclaw's maintainers do.
+This is not for now (decided 20 Oct 2026); the CI key stays until then. A
+touch on a hardware security key (FIDO2, for example a YubiKey) is the
+control: no tag without a touch.
+
+1. Make the key on the hardware key: `ssh-keygen -t ed25519-sk -O resident
+   -O verify-required -C "flow release tags"`, and add its `.pub` line to
+   your GitHub account as a **Signing Key**.
+2. `release:stable` stops before the tag and prints one command. The
+   maintainer runs it on their own computer, touches the key, and pushes the
+   signed tag: `git tag --sign v<version> <commit> && git push origin
+   v<version>`.
+3. Flow Release Prepare takes the existing tag in place of making one.
+   Flow Release Checks already refuses a tag that GitHub does not verify.
+4. Delete the `RELEASE_TAG_SIGNING_KEY` secret.
+
+Until hardware keys are in use, a key held in the computer's secure chip,
+with a fingerprint check on each use, gives the same control (on macOS, for
+example, the Secretive app keeps it in the Secure Enclave). Browser and
+phone passkeys cannot sign git tags: OpenSSH cannot use them.
+
 Done before the first beta (18 Oct 2026):
 
 npm (an npm owner of the `@arcforgelabs` scope does this on npmjs.com, with
