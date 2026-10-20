@@ -393,6 +393,8 @@ function draftView(invoice, ui, context, redraw) {
   const lines = (invoice?.lines ?? []).map((line) => ({ ...line }));
   if (!lines.length) lines.push({ description: '', quantity: 1, unitAmountCents: null, taxCode: 'GST', priceItemId: null });
   let contact = invoice?.contact ?? null;
+  // Issue invoice waits for a client and a due date (syncIssue, below).
+  let onContact = () => {};
 
   // Client: type to find a customer.
   const clientInput = h('input', { class: 'fx-input', type: 'text', autocomplete: 'off', placeholder: 'Type a client name', value: contact?.name ?? '', 'aria-label': 'Client' });
@@ -414,6 +416,7 @@ function draftView(invoice, ui, context, redraw) {
             contact = c;
             clientInput.value = c.name;
             clientList.hidden = true;
+            onContact();
           },
         }, c.name, c.email ? h('span', { class: 'fx-dim' }, c.email) : null)) : [h('p', { class: 'fx-dim fx-suggest__none' }, 'No client by that name.')]));
         clientList.hidden = false;
@@ -424,7 +427,7 @@ function draftView(invoice, ui, context, redraw) {
   });
   clientInput.addEventListener('blur', () => { setTimeout(() => { clientList.hidden = true; }, 120); });
 
-  const reference = h('input', { class: 'fx-input', type: 'text', value: invoice?.reference ?? '', placeholder: 'Case or order number' });
+  const reference = h('input', { class: 'fx-input', type: 'text', value: invoice?.reference ?? '', placeholder: 'Practitioner - Patient' });
   const dueDate = h('input', { class: 'fx-input', type: 'date', value: invoice?.dueDate ?? '' });
 
   // Lines.
@@ -559,7 +562,7 @@ function draftView(invoice, ui, context, redraw) {
   // With an accounting system on, a ready invoice is sent there: Flow issues
   // it and queues it, the same as Send all ready. With none, Flow issues it
   // and keeps it. A draft that is not ready has no send: mark it ready first.
-  const to = invoice?.sendsTo ?? null;
+  const to = invoice?.sendsTo ?? context.sendsTo ?? null;
   const ready = invoice?.view === 'ready';
   const nextNumber = `${context.organisations[0]?.invoicePrefix ?? ''}${String(context.organisations[0]?.nextInvoiceNumber ?? '').padStart(4, '0')}`;
   const emails = invoice?.sendMode?.mode === 'approve_and_email';
@@ -604,6 +607,28 @@ function draftView(invoice, ui, context, redraw) {
       }
     },
   }, 'Issue invoice') : null;
+  // Issue needs a client and a due date: until both are set it is greyed.
+  const syncIssue = () => {
+    if (!issueButton) return;
+    const missing = [contact ? null : 'a client', dueDate.value ? null : 'a due date'].filter(Boolean);
+    issueButton.disabled = missing.length > 0;
+    issueButton.title = missing.length ? `Choose ${missing.join(' and ')} first.` : '';
+  };
+  onContact = syncIssue;
+  clientInput.addEventListener('input', syncIssue);
+  dueDate.addEventListener('input', syncIssue);
+  dueDate.addEventListener('change', syncIssue);
+  syncIssue();
+
+  // A new invoice can start from a job that has no invoice yet: a quiet
+  // strip above the form says so. Flow drafts it the way the invoicing rules
+  // do (client, Reference, lines) and links it to the job. An invoice with
+  // no job is fine too.
+  const fromJob = isNew && context.canIssue ? h('section', { class: 'fx-fromjob' },
+    h('div', { class: 'fx-fromjob__text' },
+      h('span', { class: 'fx-strong' }, 'Billing a job?'),
+      h('span', { class: 'fx-dim' }, 'Flow fills in the details.')),
+    h('button', { class: 'fx-btn', type: 'button', onclick: () => pickJob(ui) }, 'Choose a job')) : null;
 
   // Mark ready: the draft is saved, then Flow checks it; one with a problem
   // stays a draft. Move to Drafts, on the Status card, undoes it.
@@ -652,6 +677,7 @@ function draftView(invoice, ui, context, redraw) {
         h('p', { class: 'fx-ph__sub' }, draftNote(to, invoice, ready))),
       h('div', { class: 'fx-ph__actions' }, saveButton, markReadyButton, isNew ? null : previewButton(ui, invoice.id, 'Shows the saved invoice.'), sendButton ?? issueButton)),
     problems,
+    fromJob,
     h('div', { class: 'fx-invoice__grid' },
       h('div', { class: 'fx-invoice__main' },
         h('section', { class: 'fx-card fx-invoice__head' },
@@ -874,4 +900,52 @@ function showSent(button) {
   button.disabled = true;
   button.textContent = 'Sent to Xero';
   button.title = 'Flow sent this invoice to Xero.';
+}
+
+// The jobs a new invoice can start from: no invoice yet, newest first.
+const PICKABLE = new Set(['in_work', 'ready', 'pending']);
+
+async function pickJob(ui) {
+  const { h, flow, toast, go } = ui;
+  let jobs;
+  try {
+    jobs = (await flow('/api/invoicing/jobs?limit=500')).jobs.filter((job) => PICKABLE.has(job.view) && !job.invoiceId);
+  } catch (error) {
+    toast(error.message, 'danger');
+    return;
+  }
+  const search = h('input', { class: 'fx-input', type: 'search', placeholder: 'Find a client or practitioner', 'aria-label': 'Find a job' });
+  const rows = jobs.map((job) => {
+    const label = h('label', { class: 'fx-pick__row' },
+      h('input', { type: 'radio', name: 'job', value: job.id, required: true }),
+      h('span', { class: 'fx-pick__main' },
+        h('span', { class: 'fx-strong' }, job.contactName ?? 'No client yet'),
+        h('span', { class: 'fx-dim' }, [job.practitioner, job.shippedOn ? showDate(job.shippedOn) : null].filter(Boolean).join(' · '))),
+      h('span', { class: 'fx-num fx-strong' }, job.totalCents == null ? '—' : formatCents(job.totalCents)));
+    label.dataset.find = `${job.contactName ?? ''} ${job.practitioner ?? ''}`.toLowerCase();
+    return label;
+  });
+  const list = h('div', { class: 'fx-pick', role: 'radiogroup', 'aria-label': 'Jobs' },
+    rows.length ? rows : h('p', { class: 'fx-dim' }, 'Every job has an invoice already.'));
+  search.addEventListener('input', () => {
+    const q = search.value.trim().toLowerCase();
+    for (const row of rows) row.hidden = Boolean(q) && !row.dataset.find.includes(q);
+  });
+  const picked = await ui.dialog({
+    title: 'New invoice from a job',
+    body: h('div', { class: 'fx-pick__body' },
+      h('p', { class: 'fx-dim' }, 'Flow fills in the client, Reference and lines from the invoice rules, and links the invoice to the job.'),
+      search, list),
+    confirm: 'Make draft',
+  });
+  const jobId = picked?.get('job');
+  if (!jobId) return;
+  try {
+    const { invoice } = await flow(`/api/invoicing/jobs/${jobId}/draft`, { method: 'POST', body: '{}' });
+    toast('Draft invoice made from the job.', 'success');
+    go(`/invoices/${invoice.id}`, { replace: true });
+  } catch (error) {
+    const reasons = error.details?.reasons;
+    toast(reasons?.length ? `Not drafted: ${reasons.join('; ')}.` : error.message, 'danger');
+  }
 }

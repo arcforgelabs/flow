@@ -277,7 +277,8 @@ export function createInvoicingRouter({
     const rows = await db.select({
       id: organisations.id, name: organisations.name, invoicePrefix: organisations.invoicePrefix, nextInvoiceNumber: organisations.nextInvoiceNumber,
     }).from(organisations).orderBy(asc(organisations.name));
-    res.json({ ok: true, organisations: rows, canIssue: ['owner', 'admin'].includes(req.person.role) });
+    // sendsTo: the accounting system a sent invoice goes to, or null.
+    res.json({ ok: true, organisations: rows, canIssue: ['owner', 'admin'].includes(req.person.role), sendsTo: accounting()?.name ?? null });
   }));
 
   router.get('/invoices', ...signedIn, handle(log, async (req, res) => {

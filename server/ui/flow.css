@@ -837,3 +837,20 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
 .fx-pager__step { display: inline-grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 1px solid var(--fx-line-soft); border-radius: 999px; background: transparent; color: var(--t-text); cursor: pointer; transition: background 120ms var(--fx-ease), border-color 120ms var(--fx-ease); }
 .fx-pager__step:hover:not(:disabled) { background: var(--fx-hover); border-color: var(--fx-line); }
 .fx-pager__step:disabled { opacity: 0.35; cursor: default; }
+
+/* New invoice from a job: a quiet strip above the form, and a searchable
+   list of jobs with no invoice. */
+.fx-fromjob {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px;
+  padding: 12px 16px; border: 1px dashed var(--fx-line); border-radius: var(--t-radius);
+}
+.fx-fromjob__text { display: grid; gap: 2px; font-size: 14px; }
+.fx-dialog:has(.fx-pick__body) { width: min(620px, calc(100vw - 32px)); }
+.fx-pick__body { display: grid; gap: 12px; }
+.fx-pick { display: grid; max-height: min(420px, 55vh); overflow-y: auto; border: 1px solid var(--fx-line); border-radius: var(--t-radius); }
+.fx-pick__row { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 12px; padding: 10px 14px; border-bottom: 1px solid var(--fx-line); cursor: pointer; }
+.fx-pick__row:last-child { border-bottom: 0; }
+.fx-pick__row:hover, .fx-pick__row:has(input:checked) { background: var(--fx-hover); }
+.fx-pick__row[hidden] { display: none; }
+.fx-pick__main { display: grid; gap: 2px; min-width: 0; }
+.fx-pick > .fx-dim { padding: 14px; }
