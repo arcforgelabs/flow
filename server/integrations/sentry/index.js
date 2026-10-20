@@ -51,7 +51,7 @@ export function sentryRelease(env) {
   return release ? `flow@${release.replace(/^v/, '')}` : revision ? `flow@${revision.slice(0, 12)}` : null;
 }
 
-// `sdk` is for tests: anything with init, captureMessage, captureException
+// `sdk` is for tests: anything with init, captureEvent, captureException
 // and close, as @sentry/node has.
 export function createSentryAdapter({ sdk = SentryNode, env: hostEnv = process.env } = {}) {
   let settings = null;
@@ -90,7 +90,10 @@ export function createSentryAdapter({ sdk = SentryNode, env: hostEnv = process.e
         if (!settings) return;
         const scope = { level: 'error', tags: { source } };
         if (error instanceof Error) sdk.captureException(error, { ...scope, extra: { log: message } });
-        else sdk.captureMessage(message, scope);
+        // Not captureMessage: the SDK adds a stack to it, and Sentry then
+        // names the issue after its top frame ("Object.captureError"), not
+        // the line Flow logged. A plain event keeps the line as the title.
+        else sdk.captureEvent({ message, ...scope });
       },
       // What the browser needs to report to the same project. The DSN is
       // meant for browsers.
