@@ -67,11 +67,12 @@ One press, on the Ready tab, by an owner or admin:
    customer's send mode can make it an approved invoice that Xero emails.
 6. A sent invoice leaves the queue. A refused invoice moves to Problem.
    An invoice that waits for Xero's call limits stays queued.
-7. With Xero on, the Finalised and Void tabs have a **Xero** column. Each
-   invoice has a badge: Xero's mark, Xero's invoice number and its state in
-   Xero (Draft, Approved, Paid, and so on), from Flow's link to the Xero
-   invoice and Flow's copy of Xero. The badge opens the invoice in Xero.
-   **Not sent** (amber) marks an invoice that is not in Xero.
+7. With an integration on, every tab has a **Linked** column: one icon for
+   each connected system (Seazona, Xero), never one column per system. A dot
+   gives the state of this invoice's link: green linked and in step, amber
+   not in Xero yet, red out of step with Xero. A dashed grey icon means no
+   link. The Xero icon shows on finalised and void invoices; its title gives
+   Xero's number and state. An icon with a link opens the record there.
 
 With no accounting system on, the button issues the ready drafts only.
 

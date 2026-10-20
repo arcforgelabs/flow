@@ -114,7 +114,7 @@ test('only Finalised and Void show a Number column; the other tabs open on Clien
   assert.match(panel(main).text, /INV-1/);
 });
 
-test('with Xero on, Finalised shows a Xero badge on every invoice; one not in Xero stands out', async () => {
+test('with integrations on, a Linked column shows one icon per system; one not in Xero stands out', async () => {
   globalThis.sessionStorage = { getItem: () => null, setItem() {}, removeItem() {} };
   globalThis.document = { visibilityState: 'visible', addEventListener() {}, removeEventListener() {} };
   const { main, ui, asked } = page();
@@ -122,17 +122,24 @@ test('with Xero on, Finalised shows a Xero badge on every invoice; one not in Xe
   ui.flow = (path, options) => (path === '/api/invoicing/context'
     ? Promise.resolve({ canIssue: true, sendsTo: 'Xero', organisations: [{ id: 'org-1' }] })
     : flow(path, options));
+  const linksTo = [{ id: 'seazona', name: 'Seazona', kind: 'work' }, { id: 'xero', name: 'Xero', kind: 'accounting' }];
   const opened = renderInvoiceList(main, ui);
   await settle();
-  asked.shift().answer({ ...list('ready', [null]), sendsTo: 'Xero' });
+  asked.shift().answer({ ...list('ready', [null]), sendsTo: 'Xero', linksTo });
   await opened;
   const heads = () => panel(main).all((el) => el.tag === 'th').map((el) => el.text);
-  assert.ok(!heads().includes('Xero'));
+  const icons = () => panel(main).all((el) => /^fx-link( |$)/.test(el.getAttribute('class') ?? ''));
+  // A draft shows its work system link only.
+  assert.equal(heads().at(-1), 'Linked');
+  assert.equal(icons().length, 1);
+  assert.equal(icons()[0].getAttribute('class'), 'fx-link fx-link--none');
 
   tab(main, 'Finalised').onclick();
-  asked.shift().answer({ ...list('issued', ['FL-1', 'FL-2']), sendsTo: 'Xero' });
+  const finalised = list('issued', ['FL-1', 'FL-2']);
+  finalised.invoices[0].job = { sourceSystem: 'seazona', sourceJobRef: '48213', caseRef: '48213', link: { url: 'https://lab.seazona.net/' } };
+  asked.shift().answer({ ...finalised, sendsTo: 'Xero', linksTo });
   await settle();
-  assert.deepEqual(heads().slice(-2), ['Status', 'Xero']);
+  assert.deepEqual(heads().slice(-2), ['Status', 'Linked']);
   const status = asked.shift();
   assert.equal(status.path, '/api/xero/invoices/status');
   status.answer({ invoices: [
@@ -140,12 +147,15 @@ test('with Xero on, Finalised shows a Xero badge on every invoice; one not in Xe
     { invoiceId: 'issued-1', state: 'not_sent', label: 'Not in Xero', finding: null, xero: null },
   ] });
   await settle();
-  const badges = panel(main).all((el) => el.getAttribute('class') === 'fx-xero');
-  assert.equal(badges.length, 2);
-  assert.equal(badges[0].tag, 'a');
-  assert.equal(badges[0].getAttribute('href'), 'https://go.xero.com/x');
-  assert.match(badges[0].text, /INV-0451Draft/);
-  assert.equal(badges[1].tag, 'span');
-  assert.equal(badges[1].text, 'Not sent');
-  assert.equal(badges[1].all((el) => el.getAttribute('data-tone') === 'warn').length, 1);
+  const shown = icons();
+  assert.equal(shown.length, 4);
+  const [sea, xero, noSea, noXero] = shown;
+  assert.equal(sea.tag, 'a');
+  assert.equal(sea.getAttribute('href'), 'https://lab.seazona.net/');
+  assert.equal(xero.tag, 'a');
+  assert.equal(xero.getAttribute('href'), 'https://go.xero.com/x');
+  assert.match(xero.getAttribute('title'), /Xero INV-0451: Draft in Xero/);
+  assert.equal(noSea.getAttribute('class'), 'fx-link fx-link--none');
+  assert.equal(noXero.tag, 'span');
+  assert.equal(noXero.all((el) => el.getAttribute('data-tone') === 'warn').length, 1);
 });
