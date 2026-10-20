@@ -20,6 +20,7 @@ import {
   acceptFindings, archivePriceItem, checkPrices, createPriceItem, linkPriceItem, readCatalogues, readPriceList, unlinkPriceItem, updatePriceItem,
 } from '../core/price-list.js';
 import { draftInvoiceForObligation, explainObligation, listObligations, setReady } from '../core/ledger.js';
+import { isHistoryHeld } from '../core/history.js';
 import { invoiceView, invoiceViews, markNotReady, markReady, sendAgain, sendAllReady } from '../core/sending.js';
 import {
   billingObligations, contacts, invoices, INVOICE_STATUSES, organisations, priceItems, TAX_CODES,
@@ -440,8 +441,13 @@ export function createInvoicingRouter({
     const view = text(req.query.view);
     if (view && !VIEWS.includes(view)) throw invalid(`view must be one of ${VIEWS.join(', ')}`);
     const limit = limitOf(req.query.limit, 200, 500);
-    const all = await listObligations(db, organisationId, { accounting: Boolean(liveCheckFor(organisationId)) });
+    const listedAll = await listObligations(db, organisationId, { accounting: Boolean(liveCheckFor(organisationId)) });
+    // Held history jobs (core/history.js) are left out unless asked for: they
+    // are past work, listed in the history import's own reconciliation.
+    const withHistory = req.query.history === 'include';
+    const all = withHistory ? listedAll : listedAll.filter((entry) => !isHistoryHeld(entry.obligation));
     const counts = Object.fromEntries(VIEWS.map((v) => [v, 0]));
+    counts.history = listedAll.length - listedAll.filter((entry) => !isHistoryHeld(entry.obligation)).length;
     for (const entry of all) counts[entry.view] += 1;
     const listed = (view ? all.filter((entry) => entry.view === view) : all).slice(0, limit);
     res.json({ ok: true, jobs: await describeObligations(db, organisationId, listed, { accounting: accounting() }), counts });

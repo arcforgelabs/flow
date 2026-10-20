@@ -29,11 +29,11 @@ export const exampleAdapter = {
 };
 ```
 
-The capabilities are `pullWorkItems`, `pushInvoice`, `pushBill`,
+The capabilities are `pullWorkItems`, `pullHistoryJobs`, `pushInvoice`, `pushBill`,
 `pullPayments`, `checkInvoice`, `listCustomers`, `findInvoices`, `listWork`,
-`listPriceItems`, `captureError`, `browserMonitoring`, `alerts` and `health`.
-`alerts({ organisationId })` answers what only a person can clear, for the
-quiet alert on the Integrations page (docs/ALERTS.md).
+`listPriceItems`, `jobIssues`, `captureError`, `browserMonitoring`, `alerts` and
+`health`. `alerts({ organisationId })` answers what only a person can clear,
+for the quiet alert on the Integrations page (docs/ALERTS.md).
 `listPriceItems({ organisationId })` answers the system's own price list from
 the adapter's copy, never a live call: `{ kind, syncedAt, items }`, `kind`
 `accounting` or `work`, each item `{ id, code, name, unitAmountCents,
@@ -42,7 +42,10 @@ answers the work system's jobs for the Jobs board from the adapter's own copy,
 never a live call: `{ items, statuses }`, each item with its `sourceSystem`,
 `sourceJobRef`, `status`, `clientName`, `practitioner`, dates, lines and
 total (Seazona: open orders and orders finished in the last 30 days, never
-one deleted in Seazona). `captureError({ message,
+one deleted in Seazona). `jobIssues({ refs })` answers the integration's
+open issues for those job refs, `{ [ref]: [{ integration, phrase, href }] }`:
+one short phrase and the page where a person fixes it; the Jobs board shows
+them on each job (Seazona: history jobs a person must decide). `captureError({ message,
 source, error })` takes each error Flow logs, and `browserMonitoring()`
 answers the public settings a browser needs; the Sentry adapter has both
 (`docs/SENTRY.md`).
@@ -252,9 +255,17 @@ To follow the pattern, an adapter:
 `test/integration-call-guard.test.js` fails when a shipped adapter has no
 call guard and is not listed as exempt with a reason, and runs the same
 contract suite (`test/support/call-guard-contract.js`) against each guarded
-adapter's tables and policy. Xero uses the guard. Seazona has the same
-guards in its own governor and moves onto the shared guard next. Sentry is
+adapter's tables and policy. Xero and Seazona use the guard. Sentry is
 exempt: its SDK follows Sentry's own limits.
+
+An adapter that admits each call in its own transaction (Seazona's rate
+governor writes the call row when it admits a call) passes `lockName` so the
+guard takes the same lock, calls `guard.stoppedNow(tx, key)` inside that
+transaction, and passes the row's id as `callId` to `record`. Its existing
+tables keep their names: `columns` maps `key` and `at` (Seazona:
+`client_key`, `admitted_at`), and `callDefaults` fills other required
+columns of a new row. `report: false` is for an adapter that already reports
+each stop once at a higher level (Seazona's lanes).
 
 ## Health
 

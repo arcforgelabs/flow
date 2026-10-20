@@ -1,0 +1,2 @@
+ALTER TABLE "seazona_api_governor" ADD COLUMN IF NOT EXISTS "stopped_resources" jsonb DEFAULT '{}'::jsonb NOT NULL;--> statement-breakpoint
+ALTER TABLE "seazona_api_requests" ADD COLUMN IF NOT EXISTS "resource" text;

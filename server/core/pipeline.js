@@ -10,6 +10,7 @@ import { observeJob, recordAccountingEvidence, setHold } from './ledger.js';
 import { loadMappingContext, mapLines } from './line-mapping.js';
 import { checkPrices, readCatalogues } from './price-list.js';
 import { linkRecord, priorLinkFor } from './links.js';
+import { HISTORY_ACTOR, HISTORY_HOLD_REASON, isHistoryHeld } from './history.js';
 import { deadHoldSince, deadSince, enqueueJob, runNextJob } from './queue.js';
 
 // The pipeline (docs/DATA_SPINE.md, issue 58). It joins what the integrations
@@ -167,6 +168,66 @@ export async function ingestWork(db, organisationId, { adapter, restart = false,
       if (!obligation || obligation.holdState === holdState) continue;
       await setHold(db, organisationId, obligation.id, { holdState, reason, actor: `system:${adapter.id}` });
       result.sentToReview += 1;
+    }
+    cursor = next;
+    await writeCursor(db, organisationId, name, cursor);
+    if (!more) return result;
+  }
+  result.more = true;
+  return result;
+}
+
+// Reads the work system's past jobs (a history import, docs/SEAZONA.md) into
+// the ledger. A job new to the ledger is held with reason `history_import`:
+// it is history, most likely invoiced long ago, so it never drafts until a
+// person releases it, and the matcher still links it to its invoice. A job
+// the ledger already has from the live feed is left as it is: its hold, ready
+// mark and invoice never change here. A held history job that only history
+// has reported takes a later import's changes.
+export async function ingestHistory(db, organisationId, { adapter, pages = WORK_PAGES }) {
+  const name = `${adapter.id}.history`;
+  let cursor = await readCursor(db, organisationId, name);
+  const links = await activeLinks(db, organisationId, { system: adapter.id, entity: 'contact' });
+  const contactOf = new Map(links.map((l) => [l.externalId, l.flowId]));
+  const result = { held: 0, updated: 0, alreadyLive: 0, skipped: 0, more: false };
+  const mapping = (await listAutomations(db, organisationId)).find((a) => a.key === 'map_lines');
+  const context = mapping?.enabled ? await loadMappingContext(db, organisationId, mapping.config) : null;
+  for (let page = 0; page < pages; page += 1) {
+    const { items, cursor: next, more } = await adapter.capabilities.pullHistoryJobs(cursor, { limit: 200 });
+    for (const item of items) {
+      const contactId = contactOf.get(String(item.clientId ?? '')) ?? null;
+      const base = { ...item.ledgerJob, actor: HISTORY_ACTOR };
+      const job = context ? { ...base, lines: mapLines(base.lines ?? [], context) } : base;
+      const [existing] = await db.select().from(billingObligations).where(and(
+        eq(billingObligations.organisationId, organisationId),
+        eq(billingObligations.sourceSystem, job.sourceSystem),
+        eq(billingObligations.sourceJobRef, job.sourceJobRef),
+      ));
+      if (existing) {
+        const [live] = existing && isHistoryHeld(existing)
+          ? await db.select({ id: obligationEvents.id }).from(obligationEvents).where(and(
+            eq(obligationEvents.organisationId, organisationId),
+            eq(obligationEvents.obligationId, existing.id),
+            inArray(obligationEvents.kind, ['observed', 'source_changed']),
+            sql`${obligationEvents.actor} <> ${HISTORY_ACTOR}`,
+          )).limit(1)
+          : [{ id: 'live' }];
+        if (live) {
+          result.alreadyLive += 1;
+          continue;
+        }
+        await observeJob(db, organisationId, { ...job, contactId: contactId ?? existing.contactId });
+        result.updated += 1;
+        continue;
+      }
+      try {
+        const row = await observeJob(db, organisationId, { ...job, contactId });
+        await setHold(db, organisationId, row.id, { holdState: 'held', reason: HISTORY_HOLD_REASON, actor: HISTORY_ACTOR });
+        result.held += 1;
+      } catch (error) {
+        if (!(error instanceof FlowError) || error.code !== 'invalid') throw error;
+        result.skipped += 1;
+      }
     }
     cursor = next;
     await writeCursor(db, organisationId, name, cursor);
@@ -436,6 +497,10 @@ export async function runPipelineOnce(db, integrations, { now = new Date() } = {
       restart ||= summary.workCustomers.linked > 0;
     }
     summary.work = await ingestWork(db, organisationId, { adapter: work, restart });
+    // After the live feed, so a job both report is the live one.
+    if (typeof work.capabilities.pullHistoryJobs === 'function') {
+      summary.history = await ingestHistory(db, organisationId, { adapter: work });
+    }
   }
   if (accounting) {
     if (typeof accounting.capabilities.listCustomers === 'function') {
