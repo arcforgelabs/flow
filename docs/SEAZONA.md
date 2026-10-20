@@ -67,7 +67,7 @@ workspace live credentials.
 | `SEAZONA_API_TIMEOUT_MS` | Time limit for one request. Default 30000. |
 | `SEAZONA_API_MAX_WAIT_MS` | How long a request may wait for a free slot. Default 120000. |
 | `SEAZONA_API_TELEMETRY_RETENTION_DAYS` | How long request telemetry is kept. Default 35, so last month's question from Seazona can be answered. Maximum 90. |
-| `SEAZONA_KEEP_PATIENT_REFERENCE` | `on` keeps Seazona's patient field on orders and invoices as the patient reference an invoice prints. Default off: no patient field is stored. |
+| `SEAZONA_KEEP_PATIENT_REFERENCE` | `on` keeps Seazona's patient field on orders and invoices as the patient reference an invoice prints (the `{patient}` token of the Reference rule). Default off: no patient field is stored. Also on the Seazona integration screen as "Keep patient names". |
 | `SEAZONA_INVOICE_CADENCE_MS`, `SEAZONA_ORDER_CADENCE_MS`, `SEAZONA_ACTIVE_ORDER_CADENCE_MS`, `SEAZONA_CLIENT_CADENCE_MS`, `SEAZONA_REFERENCE_CADENCE_MS` | How often each lane runs in live mode. Defaults below. |
 | `SEAZONA_ORDER_LOOKBACK_DAYS` | How far back the recent-order lane reads. Default 30. |
 | `SEAZONA_ORDER_DAYS_PER_RUN` | Days the recent-order lane reads per run. Default 6. |
@@ -504,9 +504,15 @@ shows it under `integrations`:
 - `governor`: requests in the last minute, any 429 cooldown, the last
   day's requests, failures, 429s and retries, the circuit (`closed`, `open`,
   `half_open`, `halted`) with `circuitOpenUntil` and `haltedReason`, and
-  `failedToday` against `dailyFailureBudget`;
+  `failedToday` against `dailyFailureBudget`. The last day's failures are
+  split into `faults` (what the call guard counts) and `notFound` (404s),
+  and `failures` lists the top 10 groups by path shape (record ids shown as
+  `:id`), status and kind (issue #144);
+- `scheduler`: the next run, the last run, and `stuckSince` while a run has
+  not ended after 20 minutes. The scheduler then reports it once and goes on
+  with the next run without it (issue #143);
 - `lanes`: for each lane its status (`ok`, `failed`, `held`, `stopped`,
-  `processing`, `never_run`), whether it is fresh, its last success and
+  `processing`, `never_run`), whether it is fresh or `stale`, its last success and
   error, and the failing orders by id and status; `orders_active` also lists
   the quarantined orders, and `invoices` and `clients` show
   `quarantinedRecords`;
@@ -517,8 +523,14 @@ shows it under `integrations`:
   high-water mark for invoices and clients (`sourceLastModified`,
   `laneReadsFrom`, `gapMs`, `seazonaAhead`).
 
-`ok` is false while a lane is failed, held or stopped. An integration problem never
-fails Flow's own health check. None of it holds a host, a credential or
+`ok` is false while a lane is failed, held, stopped or stale, or a run is
+stuck. A lane is stale when it ran before and has not succeeded within its
+freshness limit, or two of its cadences if that is longer (issue #143). An
+integration problem never fails Flow's own health check.
+
+`alerts()` tells owners and admins on the Integrations page what the sync
+cannot fix by itself: a refused API client, a read Seazona refused (a
+stopped lane), and reads that are late (stale lanes). None of it holds a host, a credential or
 patient data.
 
 ## Replay files

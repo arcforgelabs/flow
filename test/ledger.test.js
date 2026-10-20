@@ -93,11 +93,13 @@ describe('billing obligation ledger', { skip: skipWithoutDatabase }, () => {
     const checked = [];
     const { invoice } = await draftInvoiceForObligation(db, lab.id, obligation.id, {
       actor,
+      reference: 'Dr Example - Pat Sample',
       liveCheck: async (o) => { checked.push(o.sourceJobRef); return { state: 'not_found' }; },
     });
     assert.deepEqual(checked, [obligation.sourceJobRef]);
     assert.equal(invoice.totalCents, 24200);
-    assert.equal((await getInvoice(db, lab.id, invoice.id)).reference, obligation.caseRef);
+    // The Reference is the rule's text (references.js), never the job's id.
+    assert.equal((await getInvoice(db, lab.id, invoice.id)).reference, 'Dr Example - Pat Sample');
     assert.equal((await explainObligation(db, lab.id, obligation.id)).view, 'drafted');
     await assert.rejects(
       draftInvoiceForObligation(db, lab.id, obligation.id, { actor, liveCheck: notFound }),

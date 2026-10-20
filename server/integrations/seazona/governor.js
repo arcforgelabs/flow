@@ -68,6 +68,30 @@ export class SeazonaCallsStopped extends CallsStopped {
   }
 }
 
+// A request path with its record ids taken out, so /health can say which
+// calls failed and never names a record: /v1/orders/5591234 is
+// /v1/orders/:id. A name is lowercase words joined by hyphens, or a version.
+export function pathShape(path) {
+  const name = /^(v\d+|[a-z]+(-[a-z]+)*)$/;
+  return `/${String(path || '').split('/').filter(Boolean).map((part) => (name.test(part) ? part : ':id')).join('/')}`;
+}
+
+// Issue #144: the last day's failed calls split into faults (what the call
+// guard counts, and a vendor may count against the API client) and 404s
+// (a record that is gone), and the top groups by path shape, status and
+// kind.
+function failureKinds(day, top = 10) {
+  const groups = new Map();
+  for (const row of day.failures) {
+    const group = { path: pathShape(row.path), statusCode: row.statusCode ?? null, failureKind: row.failureKind ?? null };
+    const key = JSON.stringify(group);
+    groups.set(key, { ...group, requests: (groups.get(key)?.requests ?? 0) + row.requests });
+  }
+  const sorted = [...groups.values()].sort((a, b) => b.requests - a.requests).slice(0, top);
+  // Every failed call is a fault but a 404 (countsAsFailure, call-guard.js).
+  return { faults: day.failed - day.notFound, notFound: day.notFound, failures: sorted };
+}
+
 export function createSeazonaGovernor({
   db,
   clientKey,
@@ -171,7 +195,7 @@ export function createSeazonaGovernor({
     const calls = await guard.status(key);
     const [{ lastMinute }] = await db.select({ lastMinute: count() }).from(seazonaApiRequests)
       .where(and(eq(seazonaApiRequests.clientKey, key), gte(seazonaApiRequests.admittedAt, new Date(nowMs - WINDOW_MS))));
-    const day = await summarise({ from: new Date(nowMs - 24 * 60 * 60_000), to: new Date(nowMs) });
+    const day = await summarise({ from: new Date(nowMs - 24 * 60 * 60_000), to: new Date(nowMs), topFailures: 500 });
     const cooldownUntil = state && state.cooldownUntil.getTime() > nowMs ? state.cooldownUntil.toISOString() : null;
     return {
       limitPerMinute: limit,
@@ -184,7 +208,7 @@ export function createSeazonaGovernor({
       haltedAt: calls.haltedAt,
       failedToday: calls.failedToday,
       dailyFailureBudget: calls.dailyFailureBudget,
-      lastDay: { requests: day.requests, failed: day.failed, rateLimited: day.rateLimited, retries: day.retries },
+      lastDay: { requests: day.requests, failed: day.failed, rateLimited: day.rateLimited, retries: day.retries, ...failureKinds(day) },
     };
   }
 
@@ -201,6 +225,7 @@ export function createSeazonaGovernor({
       failed: sql`count(*) filter (where ${seazonaApiRequests.statusCode} is null or ${seazonaApiRequests.statusCode} >= 400)`,
       rateLimited: sql`count(*) filter (where ${seazonaApiRequests.statusCode} = 429)`,
       retries: sql`count(*) filter (where ${seazonaApiRequests.isRetry})`,
+      notFound: sql`count(*) filter (where ${seazonaApiRequests.statusCode} = 404)`,
     }).from(seazonaApiRequests).where(range);
     const failures = await db.select({
       path: seazonaApiRequests.requestPath,
@@ -219,6 +244,7 @@ export function createSeazonaGovernor({
       failed: Number(totals.failed),
       rateLimited: Number(totals.rateLimited),
       retries: Number(totals.retries),
+      notFound: Number(totals.notFound),
       failures: failures.map((row) => ({ ...row, requests: Number(row.requests) })),
     };
   }

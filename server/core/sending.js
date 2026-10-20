@@ -13,8 +13,8 @@ import { deadHoldSince, deadSince, enqueueJob, runNextJob } from './queue.js';
 // charge, an account) on every line. When an accounting
 // system is connected, its own checks are added (for Xero: the customer
 // matches one Xero contact, every item is in Xero). A draft with a problem is
-// in Problem. A person marks a draft without one ready; any later change to
-// the draft sends it back to be checked again.
+// in Problem. A person marks a draft without one ready. A saved change keeps
+// it ready; only Move to Drafts (markNotReady) takes it back.
 //
 // Send all ready issues every ready draft (each gets its number) and, when an
 // accounting system is connected, queues it to go there. The send worker
@@ -147,10 +147,16 @@ async function assertCanSend(accounting, organisationId) {
 }
 
 // Send all ready: issues each ready draft, then queues it for the accounting
-// system. Answers { issued, queued, remaining }.
-export async function sendAllReady(db, organisationId, { accounting = null, personId, issueDate }) {
+// system. With `invoiceIds`, only those drafts, and each must be ready (the
+// Send button on one invoice). Answers { issued, queued, remaining }.
+export async function sendAllReady(db, organisationId, { accounting = null, personId, issueDate, invoiceIds = null }) {
   await assertCanSend(accounting, organisationId);
-  const { ready } = await invoiceViews(db, organisationId, { accounting });
+  let { ready } = await invoiceViews(db, organisationId, { accounting });
+  if (invoiceIds) {
+    const wanted = new Set(invoiceIds);
+    ready = ready.filter((id) => wanted.has(id));
+    if (ready.length !== wanted.size) throw new FlowError('not_ready', 'Only a ready invoice can be sent. Mark it ready first.');
+  }
   const batch = ready.slice(0, SEND_BATCH);
   let issued = 0;
   for (const invoiceId of batch) {

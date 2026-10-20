@@ -6,6 +6,7 @@ import { lastSync, syncCatalogue } from './catalogue.js';
 import { mirrorState } from './lookup.js';
 import { MIRROR_RESOURCES, mirrorXero } from './mirror.js';
 import { checkSentInvoices } from './reconcile.js';
+import { runWebhookWork, WEBHOOK_REFRESH_MS, webhooksActive } from './webhooks.js';
 
 // The history import, then the reads of changes. When an owner connects Xero,
 // Flow copies the organisation's invoices, credit notes and payments into the
@@ -13,8 +14,9 @@ import { checkSentInvoices } from './reconcile.js';
 // job reads in slices; a slice that stops at the day's budget or its page
 // limit queues the next slice. When every resource is read to its end, the
 // same job is queued again for REFRESH_MS later and reads only what changed
-// since its cursor (issue #131), so the copy stays fresh (lookup.js). It only
-// reads from Xero.
+// since its cursor (issue #131), so the copy stays fresh (lookup.js). While
+// Xero's webhooks arrive (webhooks.js), it waits WEBHOOK_REFRESH_MS instead.
+// It only reads from Xero.
 
 export const IMPORT_KIND = 'xero.import';
 const IMPORT_KEY = 'history';
@@ -98,7 +100,9 @@ export async function runImportOnce(db, runtime, { workerId = `xero-import-${ran
   } else if (ran?.outcome === 'succeeded' && !ran.job.result?.stoppedBy) {
     // Read to the end: read the changes again later. A stop only a person
     // clears queues nothing; connecting or saving the settings queues it.
-    await queueChangesRead(db, ran.job.organisationId, { runAfter: new Date(Number(now()) + REFRESH_MS) });
+    // While Xero's webhooks arrive, the poll is only the safety net (issue #45).
+    const every = await webhooksActive(db, runtime, ran.job.organisationId, { now: Number(now()) }) ? WEBHOOK_REFRESH_MS : REFRESH_MS;
+    await queueChangesRead(db, ran.job.organisationId, { runAfter: new Date(Number(now()) + every) });
   }
   return ran;
 }
@@ -192,6 +196,7 @@ export function createImportWorker({ db, runtime, log = console, timers = { setT
   const workerId = `xero-import-${randomUUID()}`;
   const startedAtMs = Date.now();
   const stale = new Set();
+  const holds = new Map();
   let timer = null;
   let running = null;
   let stopped = true;
@@ -211,6 +216,7 @@ export function createImportWorker({ db, runtime, log = console, timers = { setT
         await refreshStaleCatalogues(db, runtime, { log });
         await keepReadsQueued(db, runtime, { startedAtMs });
         await reportStaleCopies(db, runtime, { stale, log });
+        await runWebhookWork(db, runtime, { log, holds });
         const ran = await runImportOnce(db, runtime, { workerId });
         if (ran) {
           busy = true;

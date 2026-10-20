@@ -399,7 +399,7 @@ function draftBlockers(o, { now, sourceMaxAgeMs, accounting = true }) {
 // the write, finds no invoice for the job. Any doubt refuses the draft, and
 // the refusal is recorded.
 export async function draftInvoiceForObligation(db, organisationId, obligationId, {
-  liveCheck, actor, now = new Date(), sourceMaxAgeMs = SOURCE_MAX_AGE_MS, dueDate = null,
+  liveCheck, actor, now = new Date(), sourceMaxAgeMs = SOURCE_MAX_AGE_MS, dueDate = null, reference = null,
 }) {
   requireActor(actor);
   // A null liveCheck says no accounting system is connected (ledgerView).
@@ -423,7 +423,8 @@ export async function draftInvoiceForObligation(db, organisationId, obligationId
     }
     const invoice = await createDraftInvoice(tx, organisationId, {
       contactId: obligation.contactId,
-      reference: obligation.caseRef ?? obligation.sourceJobRef,
+      // The Reference rule's text (references.js), never a work system id.
+      reference,
       dueDate,
       lines: obligation.lines.map(({ priceItemId, accountCode, description, quantity, unitAmountCents, taxCode }) => (
         { priceItemId, accountCode, description, quantity, unitAmountCents, taxCode }

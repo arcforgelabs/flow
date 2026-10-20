@@ -5,6 +5,7 @@ import { historyJobIssues, historySummary, readHistoryWork } from './history/ind
 import { readSeazonaSyncHealth, runSeazonaSync } from './lanes.js';
 import { SEAZONA_CALL_GUARD } from './governor.js';
 import { createSeazonaRouter } from './routes.js';
+import { orderPatient } from './patients.js';
 import { createSeazonaScheduler } from './scheduler.js';
 import { readSweepHealth } from './sweep.js';
 import { resetFailedLanes, resetStoppedLanes } from './store.js';
@@ -45,8 +46,21 @@ export const SEAZONA_SETUP = {
     { name: 'SEAZONA_API_BASE_URL', label: 'API address', kind: 'url', help: 'The API root of your account, https://…' },
     { name: 'SEAZONA_API_CLIENT_ID', label: 'Client id' },
     { name: 'SEAZONA_API_CLIENT_SECRET', label: 'Client secret', secret: true, help: 'Stored encrypted. Flow never shows it again.' },
+    { name: 'SEAZONA_KEEP_PATIENT_REFERENCE', label: 'Keep patient names', kind: 'onoff', help: 'On: Flow keeps the patient name of each job for the invoice Reference.' },
   ],
 };
+
+// What a person reads for each lane: the Seazona records it copies.
+const READ_NAMES = {
+  invoices: 'invoices',
+  orders_recent: 'new orders',
+  orders_active: 'open orders',
+  clients: 'practices',
+  products: 'products',
+  users: 'lab users',
+  history: 'past orders',
+};
+const readNames = (lanes) => lanes.map((lane) => READ_NAMES[lane.lane] ?? lane.lane).join(', ');
 
 export function createSeazonaAdapter({ env = null, fetchImpl = null, now = Date.now, timers } = {}) {
   let runtime = null; // { settings, db, client, scheduler }
@@ -106,10 +120,11 @@ export function createSeazonaAdapter({ env = null, fetchImpl = null, now = Date.
         if (!runtime) return { ok: false, reason: 'not_started', ...describeSeazonaSettings(null) };
         const { settings, db, client, scheduler } = runtime;
         const sync = await readSeazonaSyncHealth(db, settings, { now });
+        const schedulerStatus = scheduler ? scheduler.status() : null;
         return {
-          ok: sync.ok,
+          ok: sync.ok && !schedulerStatus?.stuckSince,
           ...describeSeazonaSettings(settings),
-          scheduler: scheduler ? scheduler.status() : null,
+          scheduler: schedulerStatus,
           governor: await client.governor.status(),
           ...sync,
           history: await historySummary(db),
@@ -122,7 +137,31 @@ export function createSeazonaAdapter({ env = null, fetchImpl = null, now = Date.
       // a person saves the settings. Reads Flow's database only.
       async alerts() {
         if (!runtime?.client.governor) return [];
-        return guardAlerts('Seazona', await runtime.client.governor.status(), { fix: 'Check the API client in the Seazona settings, then save them.' });
+        const status = await runtime.client.governor.status();
+        const alerts = guardAlerts('Seazona', status, { fix: 'Check the API client in the Seazona settings, then save them.' });
+        // Issue #143: what the lanes cannot fix by themselves. A refused API
+        // client already has its own alert above, so it stops no lane here.
+        if (!runtime.settings.scheduled) return alerts;
+        const { lanes } = await readSeazonaSyncHealth(runtime.db, runtime.settings, { now });
+        const stopped = status.haltedReason ? [] : lanes.filter((lane) => lane.status === 'stopped');
+        if (stopped.length) {
+          alerts.push({
+            id: 'reads-stopped',
+            tone: 'danger',
+            title: `Seazona refused Flow's request for ${readNames(stopped)}. Flow stopped reading them. Check the Seazona settings, then save them.`,
+            members: stopped.map((lane) => `${lane.lane}:${lane.lastAttemptAt ?? ''}`),
+          });
+        }
+        const stale = lanes.filter((lane) => lane.stale && lane.status !== 'stopped');
+        if (stale.length) {
+          alerts.push({
+            id: 'reads-late',
+            tone: 'warn',
+            title: `Flow has not read ${readNames(stale)} from Seazona on time. Jobs and invoices may show old Seazona data.`,
+            members: stale.map((lane) => `${lane.lane}:${lane.lastSuccessAt ?? ''}`),
+          });
+        }
+        return alerts;
       },
 
       // Billable work since a cursor: complete and shipped orders that
@@ -149,6 +188,13 @@ export function createSeazonaAdapter({ env = null, fetchImpl = null, now = Date.
       // Jobs board. Reads Flow's copy only.
       async listWork() {
         return listWork(current().db, { now: now() });
+      },
+
+      // The fields a job gives the invoice Reference: the patient name, when
+      // this installation keeps patient names (patients.js).
+      async jobReferenceFields({ sourceJobRef, read = false }) {
+        const { db, client, settings } = current();
+        return orderPatient({ db, client, settings, now }, sourceJobRef, { read });
       },
 
       // History jobs a person must decide, as issues on their job cards,
