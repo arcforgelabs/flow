@@ -324,11 +324,11 @@ The waits each adapter declares:
 | `POST /api/xero/invoices/:id/recheck` (Mark resolved) | `recheck` | 30 seconds per invoice |
 | `POST /api/xero/obligations/:id/check` | `obligationCheck` | 30 seconds per job |
 | `POST /api/xero/invoices/push` (Send to Xero) | `push` | one at a time; backs off after a failure; no budget |
-| `POST /api/invoicing/price-list/check` (Check prices) | `priceCheck` | 15 seconds; reads Flow's copies only |
 | `POST /api/invoicing/invoices/send-ready`, `send-again` | `sendReady`, `sendAgain` | one at a time; backs off; no budget |
 | `POST /api/invoicing/jobs/:id/draft` | `draftJob` | 10 seconds per job; no budget |
 
-The Seazona routes call nothing at a press (a backfill is paced by the rate
+Check prices (`POST /api/invoicing/price-list/check`) reads Flow's copies
+only, so it has no action. The Seazona routes call nothing at a press (a backfill is paced by the rate
 governor), so they have no action. A new route that calls an outside system
 at a press declares an action. The state is in memory: one Flow process
 serves one lab, as for the request limit (`server/rate-limit.js`); the call

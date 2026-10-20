@@ -310,11 +310,10 @@ async function invoiceDetail(db, organisationId, invoiceId, accounting = null, w
 
 // The buttons here that may call a connected system, and how long each waits
 // before it runs again (the action guard, server/integrations/call-guard.js).
-// Check prices reads Flow's copies only; its wait keeps a press from
-// repeating a whole check. A send or a draft is one at a time, and a draft
-// waits per job, so ticking many jobs still works.
+// A send or a draft is one at a time, and a draft waits per job, so ticking
+// many jobs still works. Check prices reads Flow's copies only, so it has no
+// wait.
 export const INVOICING_ACTIONS = Object.freeze({
-  priceCheck: { cooldownMs: 15_000 },
   sendReady: { cooldownMs: 0, budget: false },
   sendAgain: { cooldownMs: 0, budget: false },
   draftJob: { cooldownMs: 10_000, budget: false },
@@ -809,7 +808,7 @@ export function createInvoicingRouter({
     res.json({ ok: true, ...(await readPriceList(db, organisationId, { catalogues: await catalogues(organisationId) })) });
   }));
 
-  router.post('/price-list/check', ...manager, act('priceCheck'), handle(log, async (req, res) => {
+  router.post('/price-list/check', ...manager, handle(log, async (req, res) => {
     const organisationId = await organisationOf(req);
     const summary = await checkPrices(db, organisationId, { catalogues: await catalogues(organisationId), actor: `person:${req.person.id}` });
     res.json({ ok: true, summary });

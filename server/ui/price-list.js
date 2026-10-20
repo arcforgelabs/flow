@@ -235,7 +235,7 @@ export async function renderPriceList(main, ui) {
   }
 
   addButton.addEventListener('click', () => edit(null));
-  // The server makes a press wait after a check; the button shows the wait.
+  // Check prices reads Flow's copies only: no Xero or Seazona call.
   checkButton.addEventListener('click', async () => {
     checkButton.disabled = true;
     let wait = 0;

@@ -161,9 +161,9 @@ test('the rules', () => {
   assert.equal(actionCooldownMs(20, { cooldownMs: 30_000, maxCooldownMs: 60_000 }), 60_000);
 });
 
-test('every button that calls Xero, and Check prices, has a wait', () => {
+test('every button that calls Xero has a wait; Check prices calls nothing and has none', () => {
   assert.deepEqual(Object.keys(XERO_ACTIONS).sort(), ['mirror', 'obligationCheck', 'paymentsSync', 'push', 'recheck', 'sync']);
   assert.ok(XERO_ACTIONS.sync.cooldownMs >= 60_000, 'a full copy of contacts and items waits minutes');
-  assert.ok(INVOICING_ACTIONS.priceCheck.cooldownMs > 0);
+  assert.equal(INVOICING_ACTIONS.priceCheck, undefined);
   for (const name of ['sendReady', 'sendAgain', 'draftJob']) assert.equal(INVOICING_ACTIONS[name].budget, false, `${name} works one record at a time`);
 });
