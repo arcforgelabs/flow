@@ -56,7 +56,7 @@ export const UNRELEASED = "Unreleased";
 export const GITHUB_BODY_LIMIT = 125_000;
 // Handles the changelog never thanks: the maintainer, the organization and
 // the agents that write most pull requests. Bots ([bot], app/) are refused too.
-export const EXCLUDED_HANDLES = new Set(["iamsamuelrodda", "arcforgelabs", "claude", "codex", "copilot", "github-actions", "dependabot"]);
+export const EXCLUDED_HANDLES = new Set(["iamsamuelrodda", "arcforgelabs", "claude", "codex", "copilot", "github-actions", "dependabot", "clawsweeper", "arc-forge-clawsweeper", "flow-docs-agent"]);
 
 const PROSE = ["Highlights", "Changes", "Fixes"];
 const RECORD = "Complete contribution record";
