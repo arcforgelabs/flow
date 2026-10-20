@@ -195,6 +195,45 @@ describe('drafts by rule', { skip: skipWithoutDatabase }, () => {
     assert.equal((await reload(row)).invoiceId, null);
   });
 
+  test('the accounting system reads its changes once before the first draft; a failed read drafts nothing', async () => {
+    copy = { state: { complete: true, fresh: true, changedAt: new Date(NOW.getTime() - 60_000) }, invoices: [] };
+    let reads = 0;
+    let answer = { state: 'unavailable', reason: 'Xero calls are stopped' };
+    let meanwhile = async () => {};
+    const reading = { ...accounting, capabilities: { ...accounting.capabilities, readChanges: async () => { reads += 1; await meanwhile(); return answer; } } };
+
+    const first = await cleared();
+    const second = await cleared();
+    let result = await autoDraftJobs(handle.db, lab.id, { accounting: reading, now: NOW });
+    assert.equal(reads, 1, 'one read for the pass');
+    assert.equal(result.accountingRead, 'waiting');
+    assert.equal(result.drafted, 0);
+    assert.equal((await reload(first)).invoiceId, null);
+
+    // Someone invoiced the first job in the accounting system meanwhile: the
+    // read finds it, so only the second job is drafted.
+    reads = 0;
+    answer = { state: 'read', changed: 0 };
+    meanwhile = async () => handle.db.update(billingObligations).set({ accountingState: 'authorised' }).where(eq(billingObligations.id, first.id));
+    result = await autoDraftJobs(handle.db, lab.id, { accounting: reading, now: NOW });
+    assert.equal(reads, 1);
+    assert.equal(result.accountingRead, 'read');
+    assert.equal((await reload(first)).invoiceId, null);
+    assert.ok((await reload(second)).invoiceId);
+
+    // A read that changed the copy runs the matcher before the draft.
+    meanwhile = async () => {};
+    answer = { state: 'read', changed: 1 };
+    copy.state.changedAt = new Date(NOW.getTime() + 1000);
+    const third = await cleared();
+    const later = new Date(NOW.getTime() + 5000);
+    await autoDraftJobs(handle.db, lab.id, { accounting: reading, now: later });
+    const after = await reload(third);
+    assert.equal(after.accountingCheckedAt.getTime(), later.getTime(), 'the matcher checked the job again');
+    assert.ok(after.invoiceId);
+    copy.state.changedAt = new Date(NOW.getTime() - 60_000);
+  });
+
   test('the automations mark jobs ready from their status, then draft them; each is on or off', async () => {
     copy = { state: { complete: true, fresh: true, changedAt: new Date(NOW.getTime() - 60_000) }, invoices: [] };
     const list = await listAutomations(handle.db, lab.id);

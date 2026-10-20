@@ -4,7 +4,7 @@ import { billingObligations, invoiceLines, invoices } from '../db/schema.js';
 import { FlowError } from './errors.js';
 import { issueInvoice } from './invoices.js';
 import { soleOrganisation } from './pipeline.js';
-import { needsRead, readBeforeAct, READS_PER_PASS } from './read-before-act.js';
+import { needsRead, readAccountingFirst, readBeforeAct, READS_PER_PASS } from './read-before-act.js';
 import { deadHoldSince, deadSince, enqueueJob, runNextJob } from './queue.js';
 
 // Drafts, Problem, Ready and Send all ready (docs/INVOICE_SENDING.md).
@@ -178,15 +178,22 @@ async function readJobsFirst(db, organisationId, invoiceIds, { work, now, person
 // before act. Answers { issued, queued, remaining, waiting }.
 export async function sendAllReady(db, organisationId, { accounting = null, work = null, personId, issueDate, invoiceIds = null, now = new Date() }) {
   await assertCanSend(accounting, organisationId);
-  let { ready } = await invoiceViews(db, organisationId, { accounting });
+  // Issue #45: the accounting copy reads its latest changes first, so the
+  // draft checks below see an invoice someone made there meanwhile.
+  let views = await invoiceViews(db, organisationId, { accounting });
+  const accountingRead = views.ready.length ? await readAccountingFirst(db, organisationId, { accounting, now }) : { outcome: 'fresh' };
+  if (accountingRead.changed) views = await invoiceViews(db, organisationId, { accounting });
+  let { ready } = views;
   if (invoiceIds) {
     const wanted = new Set(invoiceIds);
     ready = ready.filter((id) => wanted.has(id));
     if (ready.length !== wanted.size) throw new FlowError('not_ready', 'Only a ready invoice can be sent. Mark it ready first.');
   }
-  const { go, waiting } = await readJobsFirst(db, organisationId, ready.slice(0, SEND_BATCH), { work, now, personId });
+  const { go, waiting } = accountingRead.outcome === 'waiting'
+    ? { go: [], waiting: ready.slice(0, SEND_BATCH) }
+    : await readJobsFirst(db, organisationId, ready.slice(0, SEND_BATCH), { work, now, personId });
   if (invoiceIds && waiting.length) {
-    throw new FlowError('not_ready', 'Flow could not confirm the job with the work system just now, or the job changed. Nothing was sent. Look at the invoice, then try again.');
+    throw new FlowError('not_ready', 'Flow could not confirm the job with the work system or the accounting system just now, or the job changed. Nothing was sent. Look at the invoice, then try again.');
   }
   const batch = go;
   let issued = 0;

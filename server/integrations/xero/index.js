@@ -9,6 +9,7 @@ import { findInvoices, listCustomers, listPriceItems, mirrorState } from './look
 import { createXeroRouter } from './routes.js';
 import { createXeroRuntime, requireXeroSettings, XERO_CALL_GUARD } from './runtime.js';
 import { writesAllowed } from './settings.js';
+import { readChangesFirst } from './webhooks.js';
 
 // The Xero adapter (docs/XERO.md). FLOW_INTEGRATIONS=xero turns it on and
 // XERO_MODE says which Xero it acts on. Its tables are created only while it
@@ -131,6 +132,9 @@ export function createXeroAdapter({ runtime: given = null } = {}) {
       // Xero's invoice for one billable job, looked up live (ledger.js): the
       // `liveCheck` for draftInvoiceForObligation.
       checkInvoice: ({ organisationId, obligation }) => xeroLiveCheck(database, current(), organisationId)(obligation),
+      // Xero's latest changes into the copy just before Flow drafts by rule or
+      // sends (webhooks.js); no call when the copy is current.
+      readChanges: ({ organisationId }) => readChangesFirst(database, current(), organisationId),
       // Active Xero contacts, from Flow's copy (lookup.js).
       listCustomers: ({ organisationId }) => listCustomers(database, organisationId),
       // Sales invoices from the mirror, with the mirror's state (lookup.js).
