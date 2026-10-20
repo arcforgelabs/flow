@@ -91,7 +91,7 @@ function reasonFix(reason, acct) {
   if (reason === 'the work system report is out of date') {
     return { label: 'Out of date', text: 'Flow has no news of this job from the work system for more than a day.', todo: 'Check the work system under Settings, Integrations.' };
   }
-  if (reason === 'the job changed after its invoice was made') return fix('Job changed', 'Compare the invoice with the job, then correct the invoice. If only the job changed, use its new lines.');
+  if (reason === 'the job changed after its invoice was made') return fix('Job changed', 'Open the invoice to see what changed. Fix the job in the work system, or adopt its changes on the draft.');
   if (reason === 'the job status moved back after its invoice was made') return fix('Status moved back', 'Check the job in the work system. Void or hold its invoice if the work is not done.');
   if (/deleted in /i.test(reason)) return fix('Deleted', 'Check the job in the work system. Void its invoice if it has one.');
   if (/^the accounting evidence is ambiguous/.test(reason)) return fix(`${acct} match unclear`, `Find the invoice for this job in ${acct}, then link it.`);

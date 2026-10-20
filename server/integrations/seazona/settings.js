@@ -55,6 +55,39 @@ export function normaliseBaseUrl(value) {
   return `${url.origin}${path}/v1`;
 }
 
+// SEAZONA_ORDER_PAGE_URL: a link to one order in Seazona's own web app, as
+// a person copies it from the browser. Seazona's API guide gives no order
+// page link, and each lab has its own web address, so Flow learns the link
+// from an example: the order id in it (a GUID) becomes {order}. A link may
+// also carry {order} or {invoice} (the order's invoice number) itself.
+// Answers the template, or null when the link has no order id Flow can find.
+// It never throws: a link Flow cannot read only turns the link off.
+const ORDER_ID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+
+export function orderPageTemplate(value) {
+  const raw = text(value);
+  if (!/^https:\/\//i.test(raw)) return null;
+  if (raw.includes('{order}') || raw.includes('{invoice}')) return raw;
+  return ORDER_ID.test(raw) ? raw.replace(ORDER_ID, '{order}') : null;
+}
+
+// The link to one order for "Open in Seazona": the order page when the
+// installation set one, else the home page of the lab's Seazona web app when
+// the API address names it (https://{lab}.seazonaapi.net), else null.
+// `exact` is true only for the order page itself.
+export function orderLink(settings, { sourceJobRef, sourceInvoiceRef = null } = {}) {
+  const template = settings?.orderPageUrl ?? null;
+  if (template && sourceJobRef && (!template.includes('{invoice}') || sourceInvoiceRef)) {
+    const url = template
+      .replaceAll('{order}', encodeURIComponent(sourceJobRef))
+      .replaceAll('{invoice}', encodeURIComponent(sourceInvoiceRef ?? ''));
+    return { url, exact: true };
+  }
+  const host = settings?.baseUrl ? new URL(settings.baseUrl).hostname : '';
+  const lab = /^([a-z0-9-]+)\.seazonaapi\.net$/i.exec(host)?.[1];
+  return lab ? { url: `https://${lab}.seazona.net/`, exact: false } : null;
+}
+
 // Returns the resolved settings, or throws SeazonaSettingsError. `mode` is
 // null when SEAZONA_MODE is unset: the adapter is then not configured.
 export function resolveSeazonaSettings(env = process.env) {
@@ -158,6 +191,8 @@ export function resolveSeazonaSettings(env = process.env) {
     baseUrl: '',
     credentials: null,
     replayFile: '',
+    // The order page link pattern for "Open in Seazona", or null.
+    orderPageUrl: orderPageTemplate(env.SEAZONA_ORDER_PAGE_URL),
     rate,
     // The scheduler starts only in live mode (issue #10).
     scheduled: mode === 'live',

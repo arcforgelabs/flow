@@ -21,7 +21,9 @@ import { jobReference } from '../core/references.js';
 import {
   acceptFindings, archivePriceItem, checkPrices, createPriceItem, linkPriceItem, readCatalogues, readPriceList, unlinkPriceItem, updatePriceItem,
 } from '../core/price-list.js';
-import { draftInvoiceForObligation, explainObligation, listObligations, setReady, useSourceLines } from '../core/ledger.js';
+import {
+  draftInvoiceForObligation, explainObligation, jobChangeFor, listObligations, setReady, useSourceLines,
+} from '../core/ledger.js';
 import { isHistoryHeld } from '../core/history.js';
 import { invoicePdfDocument, pdfFields, pdfFilename, renderInvoicePdf } from '../core/invoice-pdf.js';
 import { invoiceView, invoiceViews, markNotReady, markReady, sendAgain, sendAllReady } from '../core/sending.js';
@@ -241,15 +243,37 @@ async function jobsByInvoice(db, organisationId, invoiceIds) {
   return new Map(rows.map((o) => [o.invoiceId, jobOf(o)]));
 }
 
-async function invoiceDetail(db, organisationId, invoiceId, accounting = null) {
+// The job changed after its invoice was made (ledger.js, jobChangeFor): what
+// changed, with customer names, and the work system's link to the job.
+async function jobChangeDetail(db, organisationId, invoiceId, work) {
+  const change = await jobChangeFor(db, organisationId, invoiceId);
+  if (!change) return null;
+  let contact = null;
+  if (change.contact) {
+    const ids = [change.contact.was, change.contact.now].filter(Boolean);
+    const rows = ids.length ? await db.select({ id: contacts.id, name: contacts.name }).from(contacts)
+      .where(and(eq(contacts.organisationId, organisationId), inArray(contacts.id, ids))) : [];
+    const nameOf = (id) => rows.find((r) => r.id === id)?.name ?? null;
+    contact = { was: nameOf(change.contact.was), now: nameOf(change.contact.now) };
+  }
+  const source = work.find((a) => a.id === change.sourceSystem) ?? null;
+  const link = typeof source?.capabilities.jobLink === 'function'
+    ? source.capabilities.jobLink({ sourceJobRef: change.sourceJobRef, sourceInvoiceRef: change.sourceInvoiceRef })
+    : null;
+  return { ...change, contact, systemName: source?.name ?? change.sourceSystem, link: link ?? null };
+}
+
+async function invoiceDetail(db, organisationId, invoiceId, accounting = null, work = []) {
   const invoice = await getInvoice(db, organisationId, invoiceId);
-  const [[contact], versions, jobs] = await Promise.all([
+  const [[contact], versions, jobs, jobChange] = await Promise.all([
     db.select({ id: contacts.id, name: contacts.name, email: contacts.email }).from(contacts)
       .where(and(eq(contacts.organisationId, organisationId), eq(contacts.id, invoice.contactId))),
     listInvoiceVersions(db, organisationId, invoiceId),
     jobsByInvoice(db, organisationId, [invoiceId]),
+    jobChangeDetail(db, organisationId, invoiceId, work),
   ]);
   return {
+    jobChange,
     ...invoice,
     ...(await invoiceView(db, organisationId, invoice, { accounting })),
     // Where a draft goes when it is sent, and how: this customer's send mode.
@@ -385,7 +409,7 @@ export function createInvoicingRouter({
   router.get('/invoices/:id', ...signedIn, handle(log, async (req, res) => {
     const invoiceId = pathId(req.params.id, 'invoice');
     const organisationId = await organisationOf(req);
-    res.json({ ok: true, invoice: await invoiceDetail(db, organisationId, invoiceId, accounting()) });
+    res.json({ ok: true, invoice: await invoiceDetail(db, organisationId, invoiceId, accounting(), work()) });
   }));
 
   router.get('/invoices/:id/pdf', ...signedIn, handle(log, async (req, res) => {
@@ -414,7 +438,7 @@ export function createInvoicingRouter({
       lines: body.lines === undefined ? [] : readLines(body.lines),
     });
     log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} made draft invoice ${draft.id}`);
-    res.status(201).json({ ok: true, invoice: await invoiceDetail(db, organisationId, draft.id, accounting()) });
+    res.status(201).json({ ok: true, invoice: await invoiceDetail(db, organisationId, draft.id, accounting(), work()) });
   }));
 
   router.patch('/invoices/:id', ...signedIn, handle(log, async (req, res) => {
@@ -428,7 +452,7 @@ export function createInvoicingRouter({
     if (body.lines !== undefined) changes.lines = readLines(body.lines);
     if (!Object.keys(changes).length) throw invalid('nothing to change: send contactId, reference, dueDate or lines');
     await updateDraftInvoice(db, organisationId, invoiceId, changes);
-    res.json({ ok: true, invoice: await invoiceDetail(db, organisationId, invoiceId, accounting()) });
+    res.json({ ok: true, invoice: await invoiceDetail(db, organisationId, invoiceId, accounting(), work()) });
   }));
 
   router.post('/invoices/:id/issue', ...manager, handle(log, async (req, res) => {
@@ -437,7 +461,7 @@ export function createInvoicingRouter({
     const issueDate = optionalDate(req.body?.issueDate, 'issueDate') ?? today();
     const issued = await issueInvoice(db, organisationId, invoiceId, { issuedBy: `person:${req.person.id}`, issueDate });
     log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} issued invoice ${issued.number} (version ${issued.issuedVersion})`);
-    res.json({ ok: true, invoice: await invoiceDetail(db, organisationId, invoiceId, accounting()) });
+    res.json({ ok: true, invoice: await invoiceDetail(db, organisationId, invoiceId, accounting(), work()) });
   }));
 
   router.post('/invoices/:id/revise', ...manager, handle(log, async (req, res) => {
@@ -445,7 +469,7 @@ export function createInvoicingRouter({
     const organisationId = await organisationOf(req);
     await reviseInvoice(db, organisationId, invoiceId);
     log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} opened invoice ${invoiceId} for revision`);
-    res.json({ ok: true, invoice: await invoiceDetail(db, organisationId, invoiceId, accounting()) });
+    res.json({ ok: true, invoice: await invoiceDetail(db, organisationId, invoiceId, accounting(), work()) });
   }));
 
   router.post('/invoices/:id/void', ...manager, handle(log, async (req, res) => {
@@ -453,7 +477,7 @@ export function createInvoicingRouter({
     const organisationId = await organisationOf(req);
     await voidInvoice(db, organisationId, invoiceId);
     log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} voided invoice ${invoiceId}`);
-    res.json({ ok: true, invoice: await invoiceDetail(db, organisationId, invoiceId, accounting()) });
+    res.json({ ok: true, invoice: await invoiceDetail(db, organisationId, invoiceId, accounting(), work()) });
   }));
 
   router.get('/contacts', ...signedIn, handle(log, async (req, res) => {
@@ -524,7 +548,7 @@ export function createInvoicingRouter({
     const reference = obligation ? await jobReference(db, organisationId, obligation, { template, work: source }) : null;
     const { invoice } = await draftInvoiceForObligation(db, organisationId, obligationId, { liveCheck, actor: `person:${req.person.id}`, reference });
     log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} drafted invoice ${invoice.id} from job ${obligationId}`);
-    res.status(201).json({ ok: true, invoice: await invoiceDetail(db, organisationId, invoice.id) });
+    res.status(201).json({ ok: true, invoice: await invoiceDetail(db, organisationId, invoice.id, accounting(), work()) });
   }));
 
   // "Use new lines": the job changed in the work system after its draft was
@@ -533,7 +557,7 @@ export function createInvoicingRouter({
     const obligationId = pathId(req.params.id, 'job');
     const organisationId = await organisationOf(req);
     const { invoice } = await useSourceLines(db, organisationId, obligationId, { actor: `person:${req.person.id}` });
-    res.json({ ok: true, invoice: await invoiceDetail(db, organisationId, invoice.id) });
+    res.json({ ok: true, invoice: await invoiceDetail(db, organisationId, invoice.id, accounting(), work()) });
   }));
 
   router.post('/jobs/:id/ready', ...signedIn, handle(log, async (req, res) => {

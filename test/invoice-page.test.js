@@ -18,7 +18,7 @@ test('the Ready note follows the send mode', () => {
 test('one invoice says what Send does with it', () => {
   const ready = { sendMode: { ...on, mode: 'accounting_draft' } };
   assert.equal(draftNote('Xero', ready, true), 'Flow sends this invoice to Xero as a draft. You approve and send it in Xero.');
-  assert.equal(draftNote('Xero', ready, false), 'Mark it ready, then send it to Xero.');
+  assert.equal(draftNote('Xero', ready, false), 'Move it to Ready, then send it to Xero.');
   assert.equal(draftNote(null, {}, true), 'A person checked it. A saved change keeps it ready.');
   assert.equal(draftNote(null, {}, false), 'Flow gives it a number when you issue it.');
 });

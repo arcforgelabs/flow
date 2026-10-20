@@ -337,6 +337,79 @@ export async function useSourceLines(db, organisationId, obligationId, { actor }
   });
 }
 
+// What changed in a job after its invoice was made, for the invoice page:
+// each line as it was (the draft basis) and as the work system has it now.
+// Lines pair by price item, else item code, account or description; an
+// unpaired old line and an unpaired new line at the same place pair as a
+// replaced item. Answers [{ change, position, was, now, fields }], where
+// `change` is changed, replaced, added or removed and `fields` names what
+// differs on a changed or replaced line (item, description, quantity, price).
+export function diffJobLines(wasLines = [], nowLines = []) {
+  const keyOf = (l) => l.priceItemId ?? l.itemCode ?? l.accountCode ?? String(l.description ?? '').trim().toLowerCase();
+  const show = (l) => ({
+    code: l.itemCode ?? l.accountCode ?? null, description: l.description ?? '', quantity: Number(l.quantity), unitAmountCents: l.unitAmountCents ?? null,
+  });
+  const differs = (a, b) => [
+    keyOf(a) !== keyOf(b) ? 'item' : null,
+    String(a.description ?? '').trim() !== String(b.description ?? '').trim() && keyOf(a) === keyOf(b) ? 'description' : null,
+    Number(a.quantity) !== Number(b.quantity) ? 'quantity' : null,
+    (a.unitAmountCents ?? null) !== (b.unitAmountCents ?? null) ? 'price' : null,
+  ].filter(Boolean);
+  const wasLeft = wasLines.map((line, index) => ({ line, index }));
+  const pairs = [];
+  const added = [];
+  nowLines.forEach((line, index) => {
+    const at = wasLeft.findIndex((w) => keyOf(w.line) === keyOf(line));
+    if (at === -1) { added.push({ line, index }); return; }
+    pairs.push({ was: wasLeft.splice(at, 1)[0], now: { line, index } });
+  });
+  // What is left over: an old line and a new line in the same place are one
+  // replaced item; the rest were added or removed.
+  for (const now of [...added]) {
+    const at = wasLeft.findIndex((w) => w.index === now.index);
+    if (at === -1) continue;
+    pairs.push({ was: wasLeft.splice(at, 1)[0], now });
+    added.splice(added.indexOf(now), 1);
+  }
+  const changes = [];
+  for (const { was, now } of pairs) {
+    const fields = differs(was.line, now.line);
+    if (!fields.length) continue;
+    changes.push({ change: fields.includes('item') ? 'replaced' : 'changed', position: now.index + 1, was: show(was.line), now: show(now.line), fields });
+  }
+  for (const { line, index } of added) changes.push({ change: 'added', position: index + 1, was: null, now: show(line), fields: [] });
+  for (const { line, index } of wasLeft) changes.push({ change: 'removed', position: index + 1, was: show(line), now: null, fields: [] });
+  return changes.sort((a, b) => a.position - b.position || (a.change === 'removed' ? -1 : 1));
+}
+
+// The open "job changed" problem of an invoice, for the invoice page, or
+// null: the job as it was when the invoice was made, as the work system has
+// it now, and whether a person can adopt the change into Flow's own draft
+// ("Adopt changes", useSourceLines). An invoice drafted before the basis was
+// kept compares with the invoice's own lines.
+export async function jobChangeFor(db, organisationId, invoiceId) {
+  const [obligation] = await db.select().from(billingObligations)
+    .where(and(eq(billingObligations.organisationId, organisationId), eq(billingObligations.invoiceId, invoiceId),
+      eq(billingObligations.holdState, 'review'), eq(billingObligations.holdReason, CHANGED_REASON)));
+  if (!obligation) return null;
+  const compare = await compareWithDraft(db, organisationId, obligation, obligation);
+  const was = obligation.draftBasis
+    ?? (compare.flow ? { lines: compare.flow.lines, contactId: compare.flow.contactId, totalCents: null } : basisOf(obligation));
+  return {
+    jobId: obligation.id,
+    sourceSystem: obligation.sourceSystem,
+    sourceJobRef: obligation.sourceJobRef,
+    sourceInvoiceRef: obligation.sourceInvoiceRef,
+    seenAt: obligation.sourceSeenAt,
+    outcome: compare.outcome,
+    sent: compare.sent,
+    canAdopt: compare.outcome === 'offer',
+    lines: diffJobLines(was.lines ?? [], obligation.lines ?? []),
+    contact: (was.contactId ?? null) === (obligation.contactId ?? null) ? null : { was: was.contactId ?? null, now: obligation.contactId ?? null },
+    total: { was: was.totalCents ?? null, now: obligation.totalCents },
+  };
+}
+
 // Records that a job the ledger knows is no longer billable in the work
 // system: deleted there, or its status moved back (for example from Shipped
 // to In production). Flow writes nothing to another system:
