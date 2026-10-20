@@ -55,3 +55,11 @@ test('a person lands on Invoices, Ready tab, after sign-in and at / or an unknow
   // A new browser tab has no saved tab, so the list opens on Ready.
   assert.match(read('../server/ui/invoicing.js'), /\? saved : 'ready'/);
 });
+
+test('folded, a click on the sidebar empty space opens it; a click on a page, the account photo or Search does not', () => {
+  const app = read('../server/ui/app.js');
+  assert.match(app, /if \(NARROW\.matches \|\| !readFolded\(\) \|\| !event\.target\.closest\?\.\('\.fx-side'\)\) return;/);
+  assert.match(app, /event\.target\.closest\('a, button, input, select, textarea, \[role="button"\], \[role="menuitem"\], #user-button'\)\) return;\n  toggleMenu\(\);/);
+  const css = read('../server/ui/flow.css');
+  assert.match(css, /\.fx-shell\[data-folded\] \.fx-side \{ width: 64px; padding-inline: 10px; cursor: e-resize; \}/);
+});

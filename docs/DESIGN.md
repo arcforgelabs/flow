@@ -126,12 +126,15 @@ The page at `/sign-in`, `/people`, `/account` and `/appearance`
   the left, and search and Board/List at the right. Each person's view is
   saved with their account (`people.views`, `PUT /api/me/views/jobs`,
   server/ui/job-view.js), so it follows them to every device.
-- **People** (owners): page header with one primary action, Invite someone
-  (a dialog: email and role). A table of people with initials, the role as a
-  select, access as a status pill (Active, Invited, Waiting for approval,
-  Turned off) and the row's actions (Approve, Turn off or Turn on, Remove
-  behind a confirm dialog). Results show as toasts. Without a verified owner
-  sign-in the page says so and the list stays closed.
+- **People** (owners): a title with one primary action, Invite (a dialog:
+  email, and role with its one-line hint). One row per person: initials, the
+  name (the email under it only when there is a name), the role as a select
+  (its hint as a tooltip), a status pill only when access is not plain
+  Active (Invited, Waiting for approval, Turned off), and a ⋯ menu (Email
+  invite again, Turn off or Turn on, Remove behind a confirm dialog).
+  Approve stays a visible button. No column headings and no role key under
+  the table. Results show as toasts. Without a verified owner sign-in the
+  page says so and the list stays closed.
 - **Account**: Clerk's profile. Its own card heading is the only visible
   title.
 - **Appearance**: mode, design system cards (each drawn in its own family)
