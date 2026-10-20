@@ -1,12 +1,12 @@
 # Replit settings for a workspace imported from this repository
 # (docs/REPLIT.md). The workspace's Run button builds what the next publish
-# will build and brings the workspace's database up to it, so publishing only
-# ever offers to add tables. The deployment builds and runs a release or
-# commit fetched from GitHub:
-# FLOW_DEPLOY_REF=stable, beta, a release tag or a commit; main when unset
-# (scripts/replit-deploy.sh). onBoot starts the workspace updater, which does
-# what Run does by itself whenever FLOW_DEPLOY_REF names a new commit, so the
-# workspace's database never falls behind production. Keep every secret in
+# will build and, with that build's tools, brings the workspace's database to
+# exactly the migrations production runs (scripts/replit-workspace-db.js), so
+# publishing shows no "Development database changes detected". If it does,
+# press Cancel. The deployment builds and runs a release or commit fetched
+# from GitHub: FLOW_DEPLOY_REF=stable, beta, a release tag or a commit; main
+# when unset (scripts/replit-deploy.sh). onBoot starts the workspace updater,
+# which does what Run does by itself, every 10 minutes. Keep every secret in
 # Replit Secrets.
 modules = ["nodejs-24", "bash"]
 run = ["bash", "scripts/replit-deploy.sh", "update-workspace"]

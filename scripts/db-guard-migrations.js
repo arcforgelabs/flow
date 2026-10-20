@@ -1,13 +1,12 @@
 #!/usr/bin/env node
 // Makes Flow's new migrations safe to run on a database that already has
-// their tables and columns (docs/REPLIT.md, "Updates go to the workspace
-// first").
-//
-// On Replit, the workspace database takes each release first. Publishing then
-// offers to add the same tables and columns to production, and when that is
-// approved, Flow's own migration finds them already there. Every statement
-// in the core migrations from GUARD_FROM on, and in every adapter's
-// migrations, therefore skips what exists:
+// their tables and columns. A second safety net (docs/REPLIT.md, "The
+// workspace database"): on Replit, the workspace database follows production
+// and the answer to "Development database changes detected" is Cancel, but if
+// that prompt is approved by mistake, Replit adds a release's tables to
+// production before Flow starts, and Flow's own migration finds them already
+// there. Every statement in the core migrations from GUARD_FROM on, and in
+// every adapter's migrations, therefore skips what exists:
 //
 //   CREATE TABLE "t"            -> CREATE TABLE IF NOT EXISTS "t"
 //   CREATE [UNIQUE] INDEX "i"   -> CREATE [UNIQUE] INDEX IF NOT EXISTS "i"

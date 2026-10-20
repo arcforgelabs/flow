@@ -60,17 +60,16 @@ echo "checks=\${FLOW_DEPLOYED_CHECKS:-}"
 echo "release=\${FLOW_DEPLOYED_RELEASE:-}"
 `;
 
-// The fetched commit's database module: its migration records which build
-// migrated which database, or fails when the test asks it to.
+// The fetched commit's workspace sync (scripts/replit-workspace-db.js): it
+// records which build's tools synced which database, fails, or reports the
+// workspace ahead of production when the test asks it to.
 const FIXTURE_PACKAGE = `{ "type": "module" }\n`;
-const FIXTURE_DB = `import { readFileSync, writeFileSync } from "node:fs";
-export function openDatabase() {
-  return { db: process.env.DATABASE_URL, close: async () => {} };
-}
-export async function migrateDatabase(url) {
-  if (process.env.FIXTURE_MIGRATION_FAILS) throw new Error("column already exists");
-  writeFileSync("migrated.txt", readFileSync("version.txt", "utf8").trim() + " " + url + "\\n");
-}
+const FIXTURE_SYNC = `import { readFileSync, writeFileSync } from "node:fs";
+if (process.argv[2] !== "sync") process.exit(9);
+if (process.env.FIXTURE_MIGRATION_FAILS) { console.log(JSON.stringify({ ok: false, error: "production did not answer" })); process.exit(1); }
+if (process.env.FIXTURE_AHEAD) { console.log(JSON.stringify({ ok: false, state: "ahead" })); process.exit(3); }
+writeFileSync("migrated.txt", readFileSync("version.txt", "utf8").trim() + " " + process.env.DATABASE_URL + "\\n");
+console.log(JSON.stringify({ ok: true, state: "level" }));
 `;
 
 // A GitHub stand-in with main at v2, a tag v1 at v1, a branch whose build
@@ -90,7 +89,7 @@ function fixture(t) {
   mkdirSync(join(upstream, "server"), { recursive: true });
   copyFileSync(RELEASE_CHANNEL, join(upstream, "server/release-channel.js"));
   write(join(upstream, "package.json"), FIXTURE_PACKAGE);
-  write(join(upstream, "server/db/index.js"), FIXTURE_DB);
+  write(join(upstream, "scripts/replit-workspace-db.js"), FIXTURE_SYNC);
   write(join(upstream, "version.txt"), "v1\n");
   git(upstream, "add", "-A");
   git(upstream, "commit", "-q", "-m", "v1");
@@ -496,16 +495,18 @@ test("a channel that cannot be resolved, or a manifest that does not check out, 
   }
 });
 
-test("update-workspace builds what a publish would and migrates the workspace database to it", async (t) => {
+test("update-workspace builds what a publish would, then brings the workspace database to production with its tools", async (t) => {
   const { workspace, remote, v2 } = fixture(t);
   const api = await checksApi(t);
   const before = snapshot(workspace);
   const result = await deploy(workspace, "update-workspace", { DATABASE_URL: "postgres://workspace-db" }, { remote, api });
   assert.equal(result.status, 0, result.output);
   assert.equal(out(workspace, ".flow-revision"), v2);
+  // The build's own scripts/replit-workspace-db.js ran, from inside the build.
   assert.equal(out(workspace, "migrated.txt"), "v2 postgres://workspace-db");
-  assert.match(result.output, /migrating the workspace database to main/);
-  assert.match(result.output, /the workspace database is at main\. Publish now/);
+  assert.match(result.output, /bringing the workspace database to the migrations production runs/);
+  assert.match(result.output, /the workspace database matches production\. Publish: Replit shows no database changes/);
+  assert.doesNotMatch(result.output, /approve/i);
   assert.deepEqual(snapshot(workspace), before);
 });
 
@@ -519,17 +520,32 @@ test("update-workspace needs DATABASE_URL and stops on a failed migration", asyn
 
   const failed = await deploy(workspace, "update-workspace", { DATABASE_URL: "postgres://workspace-db", FIXTURE_MIGRATION_FAILS: "1" }, { remote, api });
   assert.notEqual(failed.status, 0, failed.output);
-  assert.match(failed.output, /column already exists/);
-  assert.match(failed.output, /FAILED: the migration of the workspace database to main failed\. Do not publish/);
+  assert.match(failed.output, /production did not answer/);
+  assert.match(failed.output, /FAILED: the workspace database could not follow production \(above\)\. If Replit shows 'Development database changes detected', press Cancel/);
   assert.equal(existsSync(join(workspace, ".flow-deploy/migrated.txt")), false);
 });
 
-test("update-workspace records the commit the workspace database is at", async (t) => {
-  const { workspace, remote, v2 } = fixture(t);
+test("update-workspace changes nothing and says Cancel when the workspace database is ahead of production", async (t) => {
+  const { workspace, remote } = fixture(t);
   const api = await checksApi(t);
-  const result = await deploy(workspace, "update-workspace", { DATABASE_URL: "postgres://workspace-db" }, { remote, api });
-  assert.equal(result.status, 0, result.output);
-  assert.equal(readFileSync(join(workspace, ".flow-workspace/workspace-db"), "utf8").trim(), v2);
+  const result = await deploy(workspace, "update-workspace", { DATABASE_URL: "postgres://workspace-db", FIXTURE_AHEAD: "1" }, { remote, api });
+  assert.equal(result.status, 3, result.output);
+  assert.match(result.output, /WARNING: the workspace database is not production's/);
+  assert.match(result.output, /press Cancel/);
+  assert.equal(existsSync(join(workspace, ".flow-deploy/migrated.txt")), false);
+});
+
+test("a build without the workspace sync cannot move the workspace database", async (t) => {
+  const fx = fixture(t);
+  const api = await checksApi(t);
+  git(fx.upstream, "switch", "-q", "-c", "no-sync", "main");
+  git(fx.upstream, "rm", "-q", "scripts/replit-workspace-db.js");
+  git(fx.upstream, "commit", "-q", "-m", "no sync");
+  git(fx.upstream, "push", "-q", fx.bare, "no-sync");
+  git(fx.upstream, "switch", "-q", "main");
+  const result = await deploy(fx.workspace, "update-workspace", { FLOW_DEPLOY_REF: "no-sync", DATABASE_URL: "postgres://workspace-db" }, { remote: fx.remote, api });
+  assert.notEqual(result.status, 0, result.output);
+  assert.match(result.output, /has no scripts\/replit-workspace-db\.js, so the workspace database cannot follow production/);
 });
 
 // A branch on the stand-in GitHub whose deploy helper differs: `edit` gets
@@ -549,14 +565,13 @@ test("the fetched commit's own deploy helper builds and migrates, so its fixes n
   const api = await checksApi(t);
   const newer = branchWithHelper(fx, "newer-helper", (text) =>
     text.replace('log "building $source $ref', 'log "the newer helper builds"; log "building $source $ref')
-      .replace('log "migrating the workspace database to $built"', 'log "the newer helper migrates"; log "migrating the workspace database to $built"'));
+      .replace('log "bringing the workspace database', 'log "the newer helper migrates"; log "bringing the workspace database'));
   const result = await deploy(fx.workspace, "update-workspace", { FLOW_DEPLOY_REF: newer, DATABASE_URL: "postgres://workspace-db" }, { remote: fx.remote, api });
   assert.equal(result.status, 0, result.output);
   assert.match(result.output, /builds itself/);
   assert.match(result.output, /the newer helper builds/);
   assert.match(result.output, /the newer helper migrates/);
   assert.equal(out(fx.workspace, ".flow-revision"), newer);
-  assert.equal(readFileSync(join(fx.workspace, ".flow-workspace/workspace-db"), "utf8").trim(), newer);
 });
 
 test("a fetched commit whose helper cannot take over is built by the workspace's helper, as before", async (t) => {
@@ -571,20 +586,22 @@ test("a fetched commit whose helper cannot take over is built by the workspace's
   assert.equal(out(fx.workspace, ".flow-revision"), older);
 });
 
-test("the workspace updater updates the workspace database when the ref moves, and only then", async (t) => {
+test("the workspace updater follows production at each step, and builds again only when the ref moves", async (t) => {
   const { workspace, remote, v2 } = fixture(t);
   const api = await checksApi(t);
   const env = { DATABASE_URL: "postgres://workspace-db", FLOW_WORKSPACE_UPDATE_ONCE: "1" };
   const first = await deploy(workspace, "follow", env, { remote, api });
   assert.equal(first.status, 0, first.output);
-  assert.match(first.output, new RegExp(`main is at ${v2}; the workspace database is at an unknown commit\\. Updating it`));
+  assert.match(first.output, new RegExp(`main is at ${v2}; building it for its tools`));
   assert.equal(out(workspace, "migrated.txt"), "v2 postgres://workspace-db");
 
+  // Production may have moved since: each step syncs again, with no new build.
   rmSync(join(workspace, ".flow-deploy/migrated.txt"));
   const second = await deploy(workspace, "follow", env, { remote, api });
   assert.equal(second.status, 0, second.output);
-  assert.match(second.output, new RegExp(`the workspace database is at main \\(${v2}\\)`));
-  assert.equal(existsSync(join(workspace, ".flow-deploy/migrated.txt")), false, "nothing was migrated again");
+  assert.doesNotMatch(second.output, /building it for its tools/);
+  assert.match(second.output, /the workspace database matches production/);
+  assert.equal(out(workspace, "migrated.txt"), "v2 postgres://workspace-db");
 
   // A failed check is logged; the updater carries on.
   const failed = await deploy(workspace, "follow", { ...env, FLOW_DEPLOY_REF: "no-such-branch" }, { remote, api });
@@ -615,7 +632,7 @@ test("boot starts the workspace updater in the background, unless it is turned o
   assert.equal(started.status, 0, started.output);
   assert.match(started.output, /the workspace updater started/);
   const migrated = join(workspace, ".flow-deploy/migrated.txt");
-  for (let i = 0; i < 100 && !existsSync(join(workspace, ".flow-workspace/workspace-db")); i++) {
+  for (let i = 0; i < 100 && !existsSync(migrated); i++) {
     await new Promise((wait) => setTimeout(wait, 200));
   }
   assert.equal(readFileSync(migrated, "utf8").trim(), "v2 postgres://workspace-db");

@@ -183,8 +183,10 @@ installation low maintenance.
    migration needs the same; `test/migrations-guarded.test.js` fails without
    it. The guard was added to migrations `0010` on and to every adapter's
    migrations after they shipped; it changes nothing for a database that ran
-   them before. On Replit, publishing can add a release's tables before Flow
-   starts (`docs/REPLIT.md`, "Updates go to the workspace first"). Removal
+   them before. It is a second safety net: on Replit, if a person approves
+   "Development database changes detected" by mistake, publishing adds a
+   release's tables before Flow starts, and Flow still starts
+   (`docs/REPLIT.md`, "The workspace database"). Removal
    is planned as expand, then contract (`docs/REPLIT.md`, "Later: removing a
    table or column").
 6. `flow-server doctor` checks a database against the build: each journal's

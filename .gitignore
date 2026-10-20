@@ -13,4 +13,6 @@ attached_assets/
 # scripts/replit-deploy.sh
 .flow-deploy/
 .flow-workspace/
+# scripts/replit-workspace-db.js
+.flow-workspace-db/
 .flow-revision

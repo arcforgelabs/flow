@@ -3,10 +3,9 @@ import { adapters as shipped } from '../integrations/adapters.js';
 import { migrateAdapterSchema } from '../integrations/schema.js';
 
 // Brings a database up to this build: the core migrations, then the tables
-// of every adapter this build ships, whether or not it is on. On Replit the
-// workspace's database runs this before a publish (scripts/replit-deploy.sh
-// update-workspace), so it holds every table production can hold and
-// publishing never offers to drop one (docs/REPLIT.md).
+// of every adapter this build ships, whether or not it is on
+// (`flow-server migrate`). Not for a Replit workspace: its database follows
+// production instead (scripts/replit-workspace-db.js, docs/REPLIT.md).
 export async function migrateEverything(db, { adapters = shipped, log = () => {} } = {}) {
   await migrateDatabase(db);
   for (const adapter of adapters) {
