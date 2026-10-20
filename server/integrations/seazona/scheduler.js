@@ -45,6 +45,8 @@ export function createSeazonaScheduler({
         reported.delete(lane);
         const count = newlyQuarantined(outcome);
         if (count) log.error?.(`[seazona] ${lane}: records quarantined after repeated failed reads`);
+        // Issue #126: what the sweep found, once per run that found it.
+        for (const line of outcome.reports ?? []) log.error?.(`[seazona] ${lane}: ${line}`);
         continue;
       }
       if (reported.get(lane) === outcome.code) {

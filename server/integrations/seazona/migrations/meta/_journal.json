@@ -36,6 +36,13 @@
       "when": 1792453111948,
       "tag": "0004_history_import",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1792458162655,
+      "tag": "0005_sweep_findings",
+      "breakpoints": true
     }
   ]
 }
