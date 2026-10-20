@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { canFit, scoreFit, sureFits } from '../server/integrations/xero/fit.js';
+import { canFit, markRivals, scoreFit, sureFits } from '../server/integrations/xero/fit.js';
 
 // How sure a Xero invoice is one Flow invoice (server/integrations/xero/fit.js).
 // Synthetic data only.
@@ -40,4 +40,17 @@ test('sure needs a clear lead both ways', () => {
   assert.deepEqual([...sureFits([{ xeroId: 'X1', flowId: 'F1', score: 13 }, { xeroId: 'X2', flowId: 'F1', score: 8 }, { xeroId: 'X2', flowId: 'F2', score: 13 }])], [['X1', 'F1'], ['X2', 'F2']]);
   assert.deepEqual([...sureFits([{ xeroId: 'X1', flowId: 'F1', score: 6, hard: 'job_tied' }])], [['X1', 'F1']]);
   assert.equal(sureFits([{ xeroId: 'X1', flowId: 'F1', score: 16, hard: 'job_tied' }, { xeroId: 'X1', flowId: 'F2', score: 6, hard: 'job_tied' }]).size, 0, 'two hard ties wait');
+});
+
+test('a fit dated well away loses to a closer rival; fits a day apart stay level', () => {
+  const pairs = [
+    { xeroId: 'X1', flowId: 'F1', apart: 0, fit: { score: 13 } },
+    { xeroId: 'X2', flowId: 'F1', apart: 12, fit: { score: 12 } },
+    { xeroId: 'X3', flowId: 'F2', apart: 0, fit: { score: 13 } },
+    { xeroId: 'X4', flowId: 'F2', apart: 1, fit: { score: 13 } },
+  ];
+  markRivals(pairs);
+  assert.deepEqual(pairs.map((p) => [p.fit.score, Boolean(p.fit.rival)]), [[13, false], [8, true], [13, false], [13, false]]);
+  const sure = sureFits(pairs.map((p) => ({ xeroId: p.xeroId, flowId: p.flowId, score: p.fit.score })));
+  assert.deepEqual([...sure], [['X1', 'F1']]);
 });

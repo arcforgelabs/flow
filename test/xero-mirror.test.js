@@ -114,10 +114,10 @@ describe('Xero mirror', { skip: skipWithoutDatabase }, () => {
     assert.deepEqual(headers, [null, '2024-01-01T23:59:59', '2024-01-02T23:59:59']);
 
     const { rows: [row] } = await handle.db.execute(sql`select reference, total_cents, amount_due_cents, issued_on::text, lines from xero_invoices where xero_invoice_id = 'i1'`);
-    assert.equal(row.reference, null, 'no patient text without XERO_KEEP_REFERENCE');
+    assert.equal(row.reference, 'Example Dentist - Example Patient', 'References are kept by default');
     assert.equal(row.total_cents, '22000');
     assert.equal(row.issued_on, '2024-03-01');
-    assert.equal(row.lines[0].description, null);
+    assert.equal(row.lines[0].description, 'Crown for Example Patient');
   });
 
   test('a later copy reads only changes, from where the last one ended', async () => {

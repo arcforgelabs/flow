@@ -5,7 +5,7 @@ import { FlowError } from '../../core/errors.js';
 import { createDraftInvoice, issueInvoice } from '../../core/invoices.js';
 import { linkJobToInvoice } from '../../core/ledger.js';
 import { normaliseName } from './catalogue.js';
-import { canFit, scoreFit, sureFits } from './fit.js';
+import { canFit, markRivals, scoreFit, sureFits } from './fit.js';
 
 // The Import page (docs/XERO_IMPORT.md): each sales invoice in Flow's copy of
 // Xero against Flow's own invoices. Flow's own records are the ones it works
@@ -80,7 +80,7 @@ async function classify(db, organisationId) {
     where i.organisation_id = ${organisationId} and i.status <> 'void'`);
   const open = flowInvoices.filter((i) => !linkedInvoices.has(i.id));
   const { rows: jobs } = await db.execute(sql`
-    select o.id, o.contact_id, o.total_cents, o.job_date, o.practitioner, o.case_ref, o.accounting_ref, o.source_invoice_ref
+    select o.id, o.contact_id, o.total_cents, o.job_date, o.practitioner, o.case_ref, o.accounting_ref, o.source_invoice_ref, o.lines
     from billing_obligations o
     where o.organisation_id = ${organisationId} and o.invoice_id is null`);
   const jobByRef = new Map(jobs.filter((j) => j.accounting_ref).map((j) => [j.accounting_ref, j]));
@@ -116,6 +116,7 @@ async function classify(db, organisationId) {
       row.link = { invoiceId: link.invoice_id, number: invoice?.number ?? null, matchedBy: link.matched_by };
       return { ...row, state: 'linked' };
     }
+    row.itemCodes = [...new Set((x.lines ?? []).map((l) => l.itemCode).filter(Boolean))];
     const xeroFit = { id: x.xero_invoice_id, number: x.invoice_number, contactId, totalCents: row.totalCents, issuedOn: row.issuedOn,
       itemCodes: (x.lines ?? []).map((l) => l.itemCode).filter(Boolean), reference: x.reference };
     row.invoices = open.map((i) => {
@@ -123,22 +124,43 @@ async function classify(db, organisationId) {
         itemCodes: i.item_codes ?? [], reference: i.reference, jobs: i.jobs ?? [] };
       const scored = scoreFit(xeroFit, flowFit);
       return canFit(xeroFit, flowFit, scored)
-        ? { id: i.id, number: i.number, status: i.status, date: day(i.date), totalCents: num(i.total_cents), score: scored.score, hard: scored.hard }
+        ? { id: i.id, number: i.number, status: i.status, date: day(i.date), totalCents: num(i.total_cents), reference: i.reference, itemCodes: flowFit.itemCodes,
+          score: scored.score, hard: scored.hard, apart: daysApart(day(i.date), row.issuedOn) ?? 99 }
         : null;
-    }).filter(Boolean).sort((a, b) => b.score - a.score);
-    if (row.invoices.length) return { ...row, state: 'invoice_fits' };
+    }).filter(Boolean);
     const tied = jobByRef.get(x.xero_invoice_id) ?? (x.invoice_number ? jobByNumber.get(workNumber(x.invoice_number)) : null) ?? null;
     const fits = tied ? [tied] : contactId
       ? jobs.filter((j) => !j.accounting_ref && j.contact_id === contactId && num(j.total_cents) === row.totalCents && near(day(j.job_date), row.issuedOn))
       : [];
-    row.jobs = fits.map((j) => ({ id: j.id, jobDate: day(j.job_date), practitioner: j.practitioner, caseRef: j.case_ref, totalCents: num(j.total_cents), tied: j === tied }));
-    return { ...row, state: row.jobs.length ? 'job_fits' : 'none' };
+    row.jobs = fits.map((j) => ({ id: j.id, jobDate: day(j.job_date), practitioner: j.practitioner, caseRef: j.case_ref, totalCents: num(j.total_cents), tied: j === tied,
+      itemCodes: [...new Set((j.lines ?? []).map((l) => l.itemCode).filter(Boolean))] }));
+    return row;
   });
+  // A Flow invoice dated closer to another Xero invoice more likely is that
+  // one (the job matcher's closer_job lesson): those fits lose points.
+  markRivals(rows.flatMap((r) => r.invoices.map((i) => ({ xeroId: r.xeroInvoiceId, flowId: i.id, apart: i.apart, fit: i }))));
+  for (const r of rows) {
+    if (r.state === 'linked') continue;
+    r.invoices.sort((a, b) => b.score - a.score);
+    const hard = r.invoices.some((i) => i.hard);
+    const tiedJob = r.jobs.some((j) => j.tied);
+    const plain = r.invoices.some((i) => !i.rival);
+    // Hard evidence wins; a job tied to this Xero invoice beats a plain fit;
+    // a Flow invoice that is closer to another Xero invoice yields to a job.
+    if (hard || (!tiedJob && (plain || !r.jobs.length) && r.invoices.length)) r.state = 'invoice_fits';
+    else if (r.jobs.length) {
+      r.state = 'job_fits';
+      r.invoices = [];
+    } else r.state = 'none';
+    if (r.state === 'invoice_fits') r.jobs = [];
+  }
   // Sure only when it is clearly the one fit both ways (fit.js).
-  const sure = sureFits(rows.flatMap((r) => r.invoices.map((i) => ({ xeroId: r.xeroInvoiceId, flowId: i.id, score: i.score, hard: i.hard }))));
+  const sure = sureFits(rows.filter((r) => r.state === 'invoice_fits')
+    .flatMap((r) => r.invoices.map((i) => ({ xeroId: r.xeroInvoiceId, flowId: i.id, score: i.score, hard: i.hard }))));
   for (const r of rows) {
     r.sure = r.state === 'invoice_fits' && sure.has(r.xeroInvoiceId);
     if (r.sure) r.invoices.sort((a, b) => (b.id === sure.get(r.xeroInvoiceId)) - (a.id === sure.get(r.xeroInvoiceId)));
+    for (const i of r.invoices) { delete i.apart; delete i.rival; }
   }
   return rows;
 }

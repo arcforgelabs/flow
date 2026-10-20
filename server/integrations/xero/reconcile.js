@@ -51,8 +51,7 @@ const day = (value) => (value instanceof Date ? value.toISOString().slice(0, 10)
 const codes = (lines) => [...(lines ?? []).map((l) => l.itemCode ?? '')].sort().join(',');
 
 // What differs between the Xero copy and the version Flow sent. Free text
-// (reference, descriptions) is not compared: the copy keeps it only when the
-// lab turns that on (XERO_KEEP_REFERENCE).
+// (reference, descriptions) is not compared yet.
 export function sentDifferences(sent, document, copy) {
   const found = [];
   const add = (field, flow, xero) => found.push({ field, flow, xero });

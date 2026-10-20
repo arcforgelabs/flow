@@ -38,9 +38,10 @@ function readEnv(env, name) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
-function readOnOff(env, name) {
+function readOnOff(env, name, fallback = false) {
   const raw = readEnv(env, name).toLowerCase();
-  if (raw === '' || raw === 'off') return false;
+  if (raw === '') return fallback;
+  if (raw === 'off') return false;
   if (raw === 'on') return true;
   throw new Error(`${name} must be "on", "off" or unset`);
 }
@@ -166,9 +167,9 @@ export function resolveXeroSettings(env = process.env) {
     defaultDueDays: readPositiveInteger(env, 'XERO_DEFAULT_DUE_DAYS', DEFAULT_DUE_DAYS),
     invoiceNumber,
     replayFixtures: readEnv(env, 'XERO_REPLAY_FIXTURES') || null,
-    // Free text on Xero records (references, line descriptions) can name a
-    // patient. Flow keeps it only when the lab turns this on (VISION.md).
-    keepReference: readOnOff(env, 'XERO_KEEP_REFERENCE'),
+    // Free text on Xero records (references, line descriptions) is the lab's
+    // own data, and the Import matches on it. On unless the lab turns it off.
+    keepReference: readOnOff(env, 'XERO_KEEP_REFERENCE', true),
     mirrorPageSize: Math.min(readPositiveInteger(env, 'XERO_MIRROR_PAGE_SIZE', DEFAULT_MIRROR_PAGE_SIZE), MAX_MIRROR_PAGE_SIZE),
     // The share of the day's calls the mirror leaves for drafts and people.
     mirrorReserveFraction: readFraction(env, 'XERO_MIRROR_RESERVE_FRACTION', 0.3),

@@ -43,7 +43,7 @@ export function scoreFit(xero, flow) {
   const apart = daysApart(xero.issuedOn, flow.date);
   if (apart !== null && apart <= 3) add('date_close', 2);
   else if (apart !== null && apart <= POOL_DAYS) add('date_near', 1);
-  // A Reference is in the copy only with XERO_KEEP_REFERENCE on.
+  // A Reference is in the copy unless XERO_KEEP_REFERENCE is off.
   if (xero.reference && flow.reference) {
     if (words(xero.reference) === words(flow.reference)) add('reference_same', 3);
     else add('reference_differs', -2);
@@ -60,6 +60,24 @@ export function canFit(xero, flow, scored) {
   const amount = scored.signals.some((s) => s.signal === 'total' || s.signal === 'total_gst');
   const near = scored.signals.some((s) => s.signal === 'date_close' || s.signal === 'date_near');
   return Boolean(xero.contactId && xero.contactId === flow.contactId && amount && near);
+}
+
+// pairs: [{ xeroId, flowId, apart, fit }], `fit` being the candidate with its
+// score. A fit loses RIVAL_WEIGHT, and is marked `rival`, when the same Flow
+// invoice has another Xero invoice dated at least RIVAL_DAYS closer to it, or
+// the same Xero invoice has another Flow invoice that much closer. Fits a day
+// or two apart stay level, so a person picks.
+export const RIVAL_WEIGHT = 4;
+export const RIVAL_DAYS = 3;
+export function markRivals(pairs) {
+  for (const p of pairs) {
+    if (p.fit.hard) continue;
+    const closer = pairs.some((o) => o !== p && o.apart + RIVAL_DAYS <= p.apart && (o.flowId === p.flowId || o.xeroId === p.xeroId));
+    if (closer) {
+      p.fit.score -= RIVAL_WEIGHT;
+      p.fit.rival = true;
+    }
+  }
 }
 
 // pairs: [{ xeroId, flowId, score, hard }]. Answers the set of `xeroId` whose
