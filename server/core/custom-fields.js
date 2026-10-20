@@ -133,6 +133,24 @@ export async function createField(db, organisationId, raw, { personId = null } =
   });
 }
 
+// Every lab gets an Assignee: a person field, made once, the first time
+// the lab's fields are read and it has no person field at all (live or
+// archived). The lab can then rename it or archive it like any field, and
+// Flow does not make it again. A field already named Assignee of another
+// type is left alone.
+export const ASSIGNEE = { name: 'Assignee', type: 'person' };
+export async function ensureAssignee(db, organisationId) {
+  const [{ count }] = await db.select({ count: sql`count(*)`.mapWith(Number) }).from(jobFields)
+    .where(and(eq(jobFields.organisationId, organisationId), eq(jobFields.type, 'person')));
+  if (count > 0) return null;
+  try {
+    return await createField(db, organisationId, ASSIGNEE);
+  } catch (error) {
+    if (error.code === 'conflict' || error.code === 'invalid' || error.code === '23505') return null;
+    throw error;
+  }
+}
+
 export async function updateField(db, organisationId, id, raw, { personId = null } = {}) {
   const previous = await readRow(db, organisationId, id);
   if (previous.archivedAt) throw new FlowError('conflict', 'the field is archived; bring it back first');

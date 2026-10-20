@@ -5,10 +5,24 @@
 // (test/job-view.test.js). server/ui/jobs.js draws the page.
 
 export const LAYOUTS = ['board', 'list'];
-export const GROUPS = { status: 'Status', stage: 'Invoice stage', client: 'Client', practitioner: 'Practitioner' };
-export const SORTS = { board: 'Lab system order', due: 'Date', client: 'Client', practitioner: 'Practitioner', total: 'Total' };
+// 'none' is one plain list with no group heads. The board has a lane per
+// group, so there it shows the status lanes.
+export const GROUPS = { status: 'Status', stage: 'Invoice stage', client: 'Client', practitioner: 'Practitioner', none: 'None' };
+export const SORTS = { board: 'Lab system order', due: 'Date', ordered: 'Requested', shipped: 'Shipped', client: 'Client', practitioner: 'Practitioner', total: 'Total' };
 export const DIRS = ['asc', 'desc'];
-export const DEFAULT_VIEW = Object.freeze({ layout: 'board', group: 'status', sort: 'board', dir: 'asc', hide: [], late: false, problems: false });
+// The list's columns, in order. Client is always the first column. One
+// column holds one field: each date has its own column. A custom field is
+// a column too ('field:<field id>'). Patient shows only when the
+// installation keeps patient names; Assignee only when the lab has a
+// person field.
+export const COLUMNS = {
+  case: 'Case', practitioner: 'Practitioner', patient: 'Patient', stage: 'Stage', assignee: 'Assignee',
+  ordered: 'Requested', due: 'Due', shipped: 'Shipped', total: 'Total',
+};
+export const DEFAULT_COLUMNS = Object.freeze(['practitioner', 'patient', 'stage', 'assignee', 'due', 'total']);
+export const DEFAULT_VIEW = Object.freeze({
+  layout: 'board', group: 'status', sort: 'board', dir: 'asc', hide: [], late: false, problems: false, mine: false, columns: DEFAULT_COLUMNS,
+});
 
 // Group by one of the lab's custom fields (docs/CUSTOM_FIELDS.md):
 // 'field:<field id>'. Only dropdown, person and checkbox fields make lanes.
@@ -17,6 +31,7 @@ export const fieldGroup = (fieldId) => `field:${fieldId}`;
 export const fieldIdOf = (group) => (FIELD_GROUP.test(group ?? '') ? group.slice(6) : null);
 
 const MAX_HIDDEN = 100;
+const MAX_COLUMNS = 40;
 const MAX_LABEL = 120;
 
 // A view as Flow stores it: only the known keys, each checked. Anything else
@@ -35,27 +50,35 @@ export function normaliseJobsView(input) {
     hide,
     late: value.late === true,
     problems: value.problems === true,
+    mine: value.mine === true,
+    columns: Array.isArray(value.columns)
+      ? [...new Set(value.columns.filter((c) => Object.hasOwn(COLUMNS, c) || FIELD_GROUP.test(c ?? '')))].slice(0, MAX_COLUMNS)
+      : [...DEFAULT_COLUMNS],
   };
 }
 
 // How many filters are on: shown on the Filter button.
 export function filterCount(view) {
-  return view.hide.length + (view.late ? 1 : 0) + (view.problems ? 1 : 0);
+  return view.hide.length + (view.late ? 1 : 0) + (view.problems ? 1 : 0) + (view.mine ? 1 : 0);
 }
 
 // The jobs the filter keeps. `status` is a job's status label; `late` and
-// `problem` say if a job is late or has a problem (jobs.js knows how).
-export function filterJobs(jobs, view, { status, late, problem }) {
+// `problem` say if a job is late or has a problem; `mine` says if it is
+// assigned to the person looking (jobs.js knows how).
+export function filterJobs(jobs, view, { status, late, problem, mine = () => true }) {
   const hidden = new Set(view.hide);
   return jobs.filter((job) => !hidden.has(status(job))
     && (!view.late || late(job))
-    && (!view.problems || problem(job)));
+    && (!view.problems || problem(job))
+    && (!view.mine || mine(job)));
 }
 
 const dayOf = (job) => job.dueOn ?? job.orderedOn ?? job.jobDate ?? null;
 const text = (value) => (value ?? '').toString().toLowerCase();
 const KEYS = {
   due: dayOf,
+  ordered: (job) => job.orderedOn ?? null,
+  shipped: (job) => job.shippedOn ?? null,
   client: (job) => text(job.clientName) || null,
   practitioner: (job) => text(job.practitioner) || null,
   total: (job) => job.totalCents ?? null,

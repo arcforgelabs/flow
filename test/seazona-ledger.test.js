@@ -97,6 +97,8 @@ describe('Seazona work in the billing ledger', { skip: skipWithoutDatabase }, ()
     assert.deepEqual(items.map((i) => [i.sourceJobRef, i.status]), [['ORD-1002', 'In Production']]);
     // The last read of this order had no client: the board says so.
     assert.equal(items[0].clientName, null);
+    // No patient unless the installation keeps patient names.
+    assert.equal(items[0].patient, null);
     // The Seazona client's name comes first; the order's own company is next.
     await db.update(seazonaOrders).set({ clientId: 'CL-1', company: 'Order Company' }).where(eq(seazonaOrders.id, 'ORD-1002'));
     assert.equal((await listWork(db, { now: clock.now() })).items[0].clientName, 'Example Practice');

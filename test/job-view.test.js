@@ -22,9 +22,26 @@ test('a saved view keeps only known values; anything else falls back to the defa
   assert.deepEqual(normaliseJobsView([]), DEFAULT_VIEW);
   assert.deepEqual(normaliseJobsView({
     layout: 'list', group: 'client', sort: 'total', dir: 'desc', hide: ['Shipped', 'Shipped', 7, '', 'x'.repeat(200)], late: true, problems: 'yes', extra: 1,
-  }), { layout: 'list', group: 'client', sort: 'total', dir: 'desc', hide: ['Shipped'], late: true, problems: false });
+  }), { ...DEFAULT_VIEW, layout: 'list', group: 'client', sort: 'total', dir: 'desc', hide: ['Shipped'], late: true, problems: false });
   assert.deepEqual(normaliseJobsView({ layout: 'grid', group: 'colour', sort: 'size', dir: 'up' }), DEFAULT_VIEW);
   assert.equal(normaliseJobsView({ hide: Array.from({ length: 300 }, (_, i) => `S${i}`) }).hide.length, 100);
+});
+
+test('a view keeps its known columns and custom field columns, once each', () => {
+  const id = '6f1c2a4e-1b2c-4d3e-8f9a-0b1c2d3e4f5a';
+  assert.deepEqual(normaliseJobsView({ columns: ['due', 'ordered', 'due', 'colour', `field:${id}`, 'field:x'] }).columns, ['due', 'ordered', `field:${id}`]);
+  assert.deepEqual(normaliseJobsView({ columns: [] }).columns, []);
+  assert.deepEqual(normaliseJobsView({}).columns, [...DEFAULT_VIEW.columns]);
+});
+
+test('"Assigned to me" keeps only the jobs the person has', () => {
+  const view = normaliseJobsView({ mine: true });
+  assert.equal(filterCount(view), 1);
+  assert.deepEqual(ids(filterJobs(jobs, view, { status: (j) => j.status, late: () => true, problem: () => true, mine: (j) => j.id === 3 })), [3]);
+});
+
+test('a view can have no grouping: one plain list', () => {
+  assert.equal(normaliseJobsView({ layout: 'list', group: 'none' }).group, 'none');
 });
 
 test('the account sends back only the pages Flow knows', () => {
