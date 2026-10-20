@@ -11,6 +11,28 @@ Jobs page, a job's panel shows its fields to change, and the board can be
 grouped by a dropdown, person or checkbox field and moved by drag
 (`docs/JOB_BOARD_MOVES.md`).
 
+## The screen
+
+Settings, Custom fields is laid out like ClickUp's Custom Field Manager:
+
+- **Toolbar:** search (names and option names), Field type (show some
+  types only), Filter (Show archived fields), and Create field.
+- **Table:** one group per type, in name order. A group's header shows the
+  type's icon, name and count, and folds the group open and closed. Folded
+  groups stay folded in that browser; a search opens every group with a
+  match. Each group ends with "Create *type* field".
+- **Row:** the field's name, its type as an icon, who made it, the day it
+  was made, and where it applies (Jobs). Under the pointer, Edit opens the
+  field's dialog: its name and, for a dropdown, its options. The ⋯ menu has
+  Edit, Rename (in place), Duplicate, Convert (not in Flow yet), Copy field
+  ID and Archive. An archived field's menu has Bring back.
+- **From *system*:** the work system's own fields (Seazona's stage), read
+  only, in their own group.
+- On a phone the table keeps the name, the type icon and the menu.
+
+Icons come from Lucide (`lucide-static`, ISC), served one file each at
+`/assets/icons/<name>.svg`, so any page can use any Lucide icon.
+
 ## The parts
 
 | Part | What it is |
