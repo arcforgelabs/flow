@@ -40,9 +40,15 @@ function manualTimers() {
     clearTimeout: (timer) => {
       if (timer) timer.cleared = true;
     },
+    // The next timer that is still set.
+    next() {
+      while (pending[0]?.cleared) pending.shift();
+      return pending[0];
+    },
     async fire() {
-      const timer = pending.shift();
-      if (timer && !timer.cleared) await timer.fn();
+      const timer = this.next();
+      pending.shift();
+      if (timer) await timer.fn();
     },
   };
 }
@@ -67,13 +73,50 @@ test('the scheduler runs, then sleeps until the next lane is due, one run at a t
     },
   });
   scheduler.start();
-  assert.equal(timers.pending[0].ms, 5_000);
+  assert.equal(timers.next().ms, 5_000);
   await timers.fire();
   assert.equal(runs, 1);
-  assert.equal(timers.pending[0].ms, 15_000, 'a lane that never ran is due now; the floor is 15 seconds');
+  assert.equal(timers.next().ms, 15_000, 'a lane that never ran is due now; the floor is 15 seconds');
   assert.equal(scheduler.status().lastRun.ok, true);
   await scheduler.stop();
-  assert.equal(timers.pending[0].cleared, true);
+  assert.equal(timers.next(), undefined, 'stop clears the next run');
+});
+
+test('a run that never ends is reported once, and the next run starts without it (issue #143)', async () => {
+  const clock = fakeClock();
+  const timers = manualTimers();
+  const errors = [];
+  const log = { info() {}, warn() {}, error: (line) => errors.push(line) };
+  const db = { select: () => ({ from: async () => [] }) };
+  let release;
+  let runs = 0;
+  const scheduler = createSeazonaScheduler({
+    db, now: clock.now, log, timers, firstDelayMs: 1, stuckMs: 20 * 60_000,
+    run: () => {
+      runs += 1;
+      if (runs === 1) return new Promise((resolve) => { release = () => resolve({ ok: true, results: {} }); });
+      return Promise.resolve({ ok: true, results: { invoices: { ok: true } } });
+    },
+  });
+  scheduler.start();
+  const hung = timers.fire(); // the first run starts and never ends
+  await new Promise((resolve) => setImmediate(resolve));
+  const watchdog = timers.next();
+  assert.equal(watchdog.ms, 20 * 60_000);
+  await timers.fire();
+  assert.deepEqual(errors, ['[seazona] a sync run has not ended after 20 minutes; the next run starts without it']);
+  assert.ok(scheduler.status().stuckSince);
+  assert.equal(timers.next().ms, 15_000, 'the next run is scheduled');
+
+  await timers.fire(); // the second run ends as normal
+  assert.equal(runs, 2);
+  assert.equal(scheduler.status().stuckSince, null);
+  const scheduled = timers.pending.filter((t) => !t.cleared).length;
+  release();
+  await hung;
+  assert.equal(timers.pending.filter((t) => !t.cleared).length, scheduled, 'the late run schedules nothing');
+  assert.equal(errors.length, 1);
+  await scheduler.stop();
 });
 
 test('the scheduler reports a lane failure once, and again only when it changes', async () => {
@@ -238,5 +281,33 @@ describe('Seazona adapter on the integration port', { skip: skipWithoutDatabase 
     } finally {
       server.close();
     }
+  });
+
+  test('a lane that ran before and is late makes health not ok, and a person sees it (issue #143)', async () => {
+    const liveTimers = manualTimers();
+    await boot(LIVE_ENV, { timers: liveTimers, fetchImpl: createReplayFetch({ responses: [] }) });
+    await db.execute(sql`truncate seazona_lane_state, seazona_api_governor`);
+    const hoursAgo = (h) => new Date(Date.now() - h * 3_600_000);
+    await db.execute(sql`insert into seazona_lane_state (lane, status, failure_count, last_success_at, last_attempt_at) values
+      ('invoices', 'ok', 0, ${hoursAgo(3)}, ${hoursAgo(3)}),
+      ('clients', 'stopped', 1, ${hoursAgo(0.1)}, ${hoursAgo(0.1)}),
+      ('orders_recent', 'ok', 0, ${hoursAgo(0.01)}, ${hoursAgo(0.01)})`);
+    const [live] = registry.with('health');
+    const health = await live.capabilities.health();
+    assert.equal(health.ok, false);
+    const lane = (name) => health.lanes.find((entry) => entry.lane === name);
+    assert.deepEqual([lane('invoices').stale, lane('invoices').fresh], [true, false]);
+    assert.equal(lane('orders_recent').stale, false);
+    assert.equal(lane('history').stale, false, 'a lane that never ran is not late');
+
+    const alerts = await live.capabilities.alerts();
+    assert.deepEqual(alerts.map((a) => [a.id, a.tone]), [['reads-stopped', 'danger'], ['reads-late', 'warn']]);
+    assert.match(alerts[0].title, /^Seazona refused Flow's request for practices\./);
+    assert.match(alerts[1].title, /^Flow has not read invoices from Seazona on time\./);
+    assert.ok(!/lane|orders_recent/.test(alerts.map((a) => a.title).join(' ')), 'no engine words');
+
+    await db.execute(sql`update seazona_lane_state set last_success_at = now(), status = 'ok'`);
+    assert.equal((await live.capabilities.health()).ok, true);
+    assert.deepEqual(await live.capabilities.alerts(), []);
   });
 });

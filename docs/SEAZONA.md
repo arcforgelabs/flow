@@ -470,16 +470,28 @@ shows it under `integrations`:
 - `governor`: requests in the last minute, any 429 cooldown, the last
   day's requests, failures, 429s and retries, the circuit (`closed`, `open`,
   `half_open`, `halted`) with `circuitOpenUntil` and `haltedReason`, and
-  `failedToday` against `dailyFailureBudget`;
+  `failedToday` against `dailyFailureBudget`. The last day's failures are
+  split into `faults` (what the call guard counts) and `notFound` (404s),
+  and `failures` lists the top 10 groups by path shape (record ids shown as
+  `:id`), status and kind (issue #144);
+- `scheduler`: the next run, the last run, and `stuckSince` while a run has
+  not ended after 20 minutes. The scheduler then reports it once and goes on
+  with the next run without it (issue #143);
 - `lanes`: for each lane its status (`ok`, `failed`, `held`, `stopped`,
-  `processing`, `never_run`), whether it is fresh, its last success and
+  `processing`, `never_run`), whether it is fresh or `stale`, its last success and
   error, and the failing orders by id and status; `orders_active` also lists
   the quarantined orders, and `invoices` and `clients` show
   `quarantinedRecords`;
 - `deletedOrders`: how many orders are marked deleted in Seazona.
 
-`ok` is false while a lane is failed, held or stopped. An integration problem never
-fails Flow's own health check. None of it holds a host, a credential or
+`ok` is false while a lane is failed, held, stopped or stale, or a run is
+stuck. A lane is stale when it ran before and has not succeeded within its
+freshness limit, or two of its cadences if that is longer (issue #143). An
+integration problem never fails Flow's own health check.
+
+`alerts()` tells owners and admins on the Integrations page what the sync
+cannot fix by itself: a refused API client, a read Seazona refused (a
+stopped lane), and reads that are late (stale lanes). None of it holds a host, a credential or
 patient data.
 
 ## Replay files

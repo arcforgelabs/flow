@@ -49,6 +49,18 @@ export const SEAZONA_SETUP = {
   ],
 };
 
+// What a person reads for each lane: the Seazona records it copies.
+const READ_NAMES = {
+  invoices: 'invoices',
+  orders_recent: 'new orders',
+  orders_active: 'open orders',
+  clients: 'practices',
+  products: 'products',
+  users: 'lab users',
+  history: 'past orders',
+};
+const readNames = (lanes) => lanes.map((lane) => READ_NAMES[lane.lane] ?? lane.lane).join(', ');
+
 export function createSeazonaAdapter({ env = null, fetchImpl = null, now = Date.now, timers } = {}) {
   let runtime = null; // { settings, db, client, scheduler }
 
@@ -107,10 +119,11 @@ export function createSeazonaAdapter({ env = null, fetchImpl = null, now = Date.
         if (!runtime) return { ok: false, reason: 'not_started', ...describeSeazonaSettings(null) };
         const { settings, db, client, scheduler } = runtime;
         const sync = await readSeazonaSyncHealth(db, settings, { now });
+        const schedulerStatus = scheduler ? scheduler.status() : null;
         return {
-          ok: sync.ok,
+          ok: sync.ok && !schedulerStatus?.stuckSince,
           ...describeSeazonaSettings(settings),
-          scheduler: scheduler ? scheduler.status() : null,
+          scheduler: schedulerStatus,
           governor: await client.governor.status(),
           ...sync,
           history: await historySummary(db),
@@ -122,7 +135,31 @@ export function createSeazonaAdapter({ env = null, fetchImpl = null, now = Date.
       // a person saves the settings. Reads Flow's database only.
       async alerts() {
         if (!runtime?.client.governor) return [];
-        return guardAlerts('Seazona', await runtime.client.governor.status(), { fix: 'Check the API client in the Seazona settings, then save them.' });
+        const status = await runtime.client.governor.status();
+        const alerts = guardAlerts('Seazona', status, { fix: 'Check the API client in the Seazona settings, then save them.' });
+        // Issue #143: what the lanes cannot fix by themselves. A refused API
+        // client already has its own alert above, so it stops no lane here.
+        if (!runtime.settings.scheduled) return alerts;
+        const { lanes } = await readSeazonaSyncHealth(runtime.db, runtime.settings, { now });
+        const stopped = status.haltedReason ? [] : lanes.filter((lane) => lane.status === 'stopped');
+        if (stopped.length) {
+          alerts.push({
+            id: 'reads-stopped',
+            tone: 'danger',
+            title: `Seazona refused Flow's request for ${readNames(stopped)}. Flow stopped reading them. Check the Seazona settings, then save them.`,
+            members: stopped.map((lane) => `${lane.lane}:${lane.lastAttemptAt ?? ''}`),
+          });
+        }
+        const stale = lanes.filter((lane) => lane.stale && lane.status !== 'stopped');
+        if (stale.length) {
+          alerts.push({
+            id: 'reads-late',
+            tone: 'warn',
+            title: `Flow has not read ${readNames(stale)} from Seazona on time. Jobs and invoices may show old Seazona data.`,
+            members: stale.map((lane) => `${lane.lane}:${lane.lastSuccessAt ?? ''}`),
+          });
+        }
+        return alerts;
       },
 
       // Billable work since a cursor: complete and shipped orders that
