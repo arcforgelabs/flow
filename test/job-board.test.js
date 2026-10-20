@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
-  fixes, invoiceStage, matches, NO_STATUS, orderStatuses, problemSummary,
+  caseNumber, fixes, GO, invoiceStage, matches, NO_STATUS, orderStatuses, problemSummary,
 } from '../server/ui/job-board.js';
 
 // The Jobs board's rules (server/ui/job-board.js). Synthetic data only.
@@ -47,10 +47,11 @@ test('each problem is a short label, what is wrong, and what to do', () => {
     waitingFor: [],
     invoiceProblems: [],
   };
-  const found = fixes(pending, { accountingName: 'Xero' });
-  assert.deepEqual(found.map((f) => f.label), ['Not checked in Xero', 'No price code', 'Client not linked']);
+  const found = fixes(pending);
+  assert.deepEqual(found.map((f) => f.label), ['Not checked yet', 'No price code', 'Client not linked']);
   assert.ok(found.every((f) => f.text.endsWith('.') && f.todo.endsWith('.')));
-  assert.equal(problemSummary(found), 'Not checked in Xero +2');
+  assert.ok(found.every((f) => f.go === null || GO.includes(f.go)));
+  assert.equal(problemSummary(found), 'Not checked yet +2');
 
   const draft = {
     view: 'drafted', invoiceStatus: 'draft', invoiceView: 'problem', reasons: ['a draft invoice exists'], waitingFor: [],
@@ -60,10 +61,35 @@ test('each problem is a short label, what is wrong, and what to do', () => {
       { code: 'xero_contact_missing', message: 'No Xero contact is named "Example".' },
     ],
   };
-  const drafted = fixes(draft, { accountingName: 'Xero' });
-  assert.deepEqual(drafted.map((f) => f.label), ['No price code', 'No price code', 'Client not in Xero']);
+  const drafted = fixes(draft);
+  assert.deepEqual(drafted.map((f) => f.label), ['No price code', 'No price code', 'Invoice problem']);
+  assert.ok(drafted.every((f) => f.go === 'invoice'), 'each invoice problem opens the invoice');
   assert.equal(problemSummary(drafted), 'No price code +1', 'the same label counts once');
   assert.deepEqual(fixes({ ...draft, invoiceView: 'to_check' }), [], 'no problem, nothing to fix');
+});
+
+test('a job fix points to Flow\'s invoice or the work system, never an accounting system', () => {
+  const review = (reason) => fixes({ view: 'review_required', reasons: [reason], waitingFor: [], invoiceProblems: [] })[0];
+  const unclear = review('the accounting evidence is ambiguous');
+  assert.equal(unclear.label, 'Invoice unclear');
+  assert.equal(unclear.go, 'work');
+  assert.equal(review('the accounting evidence is conflict').go, 'work');
+  assert.equal(review('invoice INV-1 was voided').go, 'invoice');
+  assert.equal(review('the job changed after its invoice was made').go, 'invoice');
+  const sent = fixes({
+    view: 'drafted', invoiceStatus: 'draft', invoiceView: 'problem', reasons: [], waitingFor: [],
+    invoiceProblems: [{ code: 'xero_item_missing', message: 'No Xero item has code NGH.' }, { code: 'xero_push_failed', message: 'Xero said no.' }],
+  });
+  assert.deepEqual(sent.map((f) => f.label), ['Invoice problem', 'Not sent']);
+  for (const f of [unclear, ...sent, ...fixes({ view: 'pending', reasons: ['the accounting system was not checked', 'the accounting system reports authorised'], waitingFor: [], invoiceProblems: [] })]) {
+    assert.doesNotMatch(`${f.label} ${f.text} ${f.todo}`, /xero|accounting/i, f.label);
+  }
+});
+
+test('a case number is never a record id', () => {
+  assert.equal(caseNumber({ caseRef: 'CASE-77' }), 'CASE-77');
+  assert.equal(caseNumber({ caseRef: null, sourceJobRef: 'JOB-9' }), 'JOB-9');
+  assert.equal(caseNumber({ caseRef: 'd19937a7-fdea-47d5-9fbc-35a29a68c12f' }), null);
 });
 
 test('search finds a job by case, client or practitioner', () => {
