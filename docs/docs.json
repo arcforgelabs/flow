@@ -1,0 +1,28 @@
+{
+  "name": "Flow",
+  "description": "Job management, invoicing, bill approval and a financial dashboard for labs that make work to order.",
+  "redirects": [],
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Guides",
+        "groups": [
+          { "group": "Get started", "pages": ["index", "self-hosting", "replit"] },
+          {
+            "group": "Invoicing",
+            "pages": ["invoice-sending", "invoice-rules", "invoicing-rules", "job-invoice-links", "line-mapping", "price-list", "automations", "alerts"]
+          },
+          { "group": "Data", "pages": ["data-model", "data-spine", "reconcile"] },
+          { "group": "Integrations", "pages": ["integrations", "xero", "seazona", "sentry"] }
+        ]
+      },
+      {
+        "tab": "Project",
+        "groups": [
+          { "group": "Contributing", "pages": ["design", "releasing"] },
+          { "group": "Releases", "pages": ["releases"] }
+        ]
+      }
+    ]
+  }
+}
