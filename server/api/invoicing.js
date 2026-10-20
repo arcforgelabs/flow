@@ -22,7 +22,8 @@ import {
   acceptFindings, archivePriceItem, checkPrices, createPriceItem, linkPriceItem, readCatalogues, readPriceList, unlinkPriceItem, updatePriceItem,
 } from '../core/price-list.js';
 import {
-  draftInvoiceForObligation, explainObligation, jobChangeFor, listObligations, setReady, useSourceLines,
+  confirmNoInvoice, draftInvoiceForObligation, explainObligation, jobChangeFor, linkJobInvoice, linkSuggestionsFor, listObligations,
+  setReady, useSourceLines,
 } from '../core/ledger.js';
 import { isHistoryHeld } from '../core/history.js';
 import { invoicePdfDocument, pdfFields, pdfFilename, renderInvoicePdf } from '../core/invoice-pdf.js';
@@ -586,6 +587,51 @@ export function createInvoicingRouter({
     const organisationId = await organisationOf(req);
     const { invoice } = await useSourceLines(db, organisationId, obligationId, { actor: `person:${req.person.id}` });
     res.json({ ok: true, invoice: await invoiceDetail(db, organisationId, invoice.id, accounting(), work()) });
+  }));
+
+  // A job with no invoice whose match is unclear (ledger.js). The linking
+  // tool lists the matcher's suggestions, read from the accounting copy;
+  // "Make invoice" says there is none yet; "Link" picks one of them.
+  const linkSystem = () => {
+    const system = accounting();
+    if (typeof system?.capabilities?.findInvoices !== 'function') throw new FlowError('not_ready', 'no accounting system is connected');
+    return system;
+  };
+  async function suggestedInvoices(organisationId, obligationId, system) {
+    const suggestions = (await linkSuggestionsFor(db, organisationId, obligationId)).filter((s) => s.system === system.id);
+    if (!suggestions.length) return [];
+    const { invoices } = await system.capabilities.findInvoices({ organisationId, invoiceIds: suggestions.map((s) => s.externalId) });
+    const byId = new Map(invoices.map((i) => [i.id, i]));
+    return suggestions.filter((s) => byId.has(s.externalId)).map((s) => {
+      const i = byId.get(s.externalId);
+      return { id: i.id, number: i.number, issuedOn: i.issuedOn, totalCents: i.totalCents, state: i.state };
+    });
+  }
+
+  router.get('/jobs/:id/link-options', ...signedIn, handle(log, async (req, res) => {
+    const obligationId = pathId(req.params.id, 'job');
+    const organisationId = await organisationOf(req);
+    res.json({ ok: true, invoices: await suggestedInvoices(organisationId, obligationId, linkSystem()) });
+  }));
+
+  router.post('/jobs/:id/no-invoice', ...manager, handle(log, async (req, res) => {
+    const obligationId = pathId(req.params.id, 'job');
+    const organisationId = await organisationOf(req);
+    const job = await confirmNoInvoice(db, organisationId, obligationId, { system: linkSystem().id, actor: `person:${req.person.id}` });
+    res.json({ ok: true, job: { id: job.id, accountingState: job.accountingState } });
+  }));
+
+  router.post('/jobs/:id/link', ...manager, handle(log, async (req, res) => {
+    const obligationId = pathId(req.params.id, 'job');
+    const organisationId = await organisationOf(req);
+    const invoiceId = text(req.body?.invoiceId);
+    if (!invoiceId) throw invalid('invoiceId is required');
+    const system = linkSystem();
+    // Only an invoice the matcher suggested for this job can be linked here.
+    const invoice = (await suggestedInvoices(organisationId, obligationId, system)).find((i) => i.id === invoiceId);
+    if (!invoice) throw invalid('that invoice is not a suggestion for this job');
+    const job = await linkJobInvoice(db, organisationId, obligationId, { system: system.id, invoice, actor: `person:${req.person.id}` });
+    res.json({ ok: true, job: { id: job.id, accountingState: job.accountingState } });
   }));
 
   router.post('/jobs/:id/ready', ...signedIn, handle(log, async (req, res) => {

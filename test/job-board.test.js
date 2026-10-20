@@ -71,8 +71,7 @@ test('each problem is a short label, what is wrong, and what to do', () => {
 test('a job fix points to Flow\'s invoice or the work system, never an accounting system', () => {
   const review = (reason) => fixes({ view: 'review_required', reasons: [reason], waitingFor: [], invoiceProblems: [] })[0];
   const unclear = review('the accounting evidence is ambiguous');
-  assert.equal(unclear.label, 'Invoice unclear');
-  assert.equal(unclear.go, 'work');
+  assert.deepEqual(unclear, { label: 'No invoice', text: 'This job has no invoice.', todo: null, go: 'choose' }, 'one line; the buttons are the instruction');
   assert.equal(review('the accounting evidence is conflict').go, 'work');
   assert.equal(review('invoice INV-1 was voided').go, 'invoice');
   assert.equal(review('the job changed after its invoice was made').go, 'invoice');
@@ -82,7 +81,7 @@ test('a job fix points to Flow\'s invoice or the work system, never an accountin
   });
   assert.deepEqual(sent.map((f) => f.label), ['Invoice problem', 'Not sent']);
   for (const f of [unclear, ...sent, ...fixes({ view: 'pending', reasons: ['the accounting system was not checked', 'the accounting system reports authorised'], waitingFor: [], invoiceProblems: [] })]) {
-    assert.doesNotMatch(`${f.label} ${f.text} ${f.todo}`, /xero|accounting/i, f.label);
+    assert.doesNotMatch(`${f.label} ${f.text} ${f.todo ?? ''}`, /xero|accounting/i, f.label);
   }
 });
 

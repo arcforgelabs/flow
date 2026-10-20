@@ -615,6 +615,10 @@ a.fx-strong:hover { text-decoration: underline; }
 .fx-task__fix h3 { padding: 12px 14px 4px; color: var(--t-warn); }
 .fx-task__fixrow { padding: 9px 14px; border-top: 1px solid var(--fx-line-soft); color: var(--t-strong); font-size: 13.5px; }
 .fx-task__fixrow:first-of-type { border-top: 0; }
+.fx-task__choose { scroll-margin-top: 16px; margin-top: 22px; display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 12px 14px; border: 1px solid var(--fx-line-soft); border-radius: var(--t-radius); color: var(--t-strong); font-size: 13.5px; }
+.fx-task__choose > span { flex: 1 1 200px; }
+.fx-task__choices { display: flex; flex-wrap: wrap; gap: 10px; }
+.fx-task__none { color: var(--t-warn); }
 .fx-task__custom { margin-top: 24px; }
 .fx-task__custom h3 { margin: 0 0 4px; color: var(--t-dim); font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
 .fx-task__input { width: 100%; min-width: 0; }

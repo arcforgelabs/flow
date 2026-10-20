@@ -98,6 +98,21 @@ offers that pair again.
 The amount of an invoice that linked jobs already account for is taken. An
 invoice whose whole total is taken is not a candidate for another job.
 
+### A person settles it
+
+A job with no invoice whose evidence is `ambiguous` shows one line on its
+panel, "This job has no invoice.", and two buttons.
+
+| Button | What Flow does |
+| --- | --- |
+| Make invoice | Rejects every open suggestion, records the job as `not_found` (by a person), then drafts its invoice. The live check before the draft still runs. |
+| Link invoice | Opens the linking tool: the open suggestions, best first. The person picks one. Flow accepts it, rejects the others, and links it (`person`, an exact match). |
+
+API: `GET /api/invoicing/jobs/:id/link-options`, `POST /api/invoicing/jobs/:id/no-invoice`
+and `POST /api/invoicing/jobs/:id/link` (`{ invoiceId }`, only a suggestion).
+The two POSTs need an owner or admin. Code: `confirmNoInvoice` and
+`linkJobInvoice` in `server/core/ledger.js`.
+
 ### Old jobs
 
 A job with no invoice whose job date is more than 90 days ago is held, once,
@@ -106,7 +121,6 @@ it has decided, and the matcher does not hold it again.
 
 ## What comes next
 
-- A screen and an API to accept a suggestion, reject one, and find an invoice
-  by hand (step 2 of the plan).
+- Find an invoice by hand in the linking tool, beyond the suggestions.
 - Credit notes and payments on the linked job (step 3).
 - Draft rules and send modes are built: `docs/INVOICING_RULES.md`.

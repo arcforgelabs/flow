@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import {
-  billingObligations, invoices, obligationEvents, obligationPayments, obligationWritebacks, priceItems,
+  billingObligations, invoices, linkRejections, linkSuggestions, obligationEvents, obligationPayments, obligationWritebacks, priceItems,
 } from '../db/schema.js';
 import { FlowError, notFound } from './errors.js';
 import { createDraftInvoice, getInvoice, updateDraftInvoice } from './invoices.js';
@@ -665,6 +665,75 @@ export async function setHold(db, organisationId, obligationId, { holdState, rea
       from: obligation.holdState, reason: row.holdReason,
     });
     return row;
+  });
+}
+
+// A job with no invoice of its own whose accounting evidence is ambiguous:
+// the matcher found invoices that may be this job's, but none exactly. A
+// person settles it here, one of two ways (the job panel's "Make invoice"
+// and "Link invoice").
+const unlinked = (o) => o.accountingState === 'ambiguous' && !o.invoiceId && !o.accountingRef;
+
+// The matcher's open suggestions for one job, best first.
+export async function linkSuggestionsFor(db, organisationId, obligationId) {
+  return db.select({
+    system: linkSuggestions.system, externalId: linkSuggestions.externalId, externalNumber: linkSuggestions.externalNumber,
+    score: linkSuggestions.score, signals: linkSuggestions.signals,
+  }).from(linkSuggestions).where(and(
+    eq(linkSuggestions.organisationId, organisationId),
+    eq(linkSuggestions.obligationId, obligationId),
+    eq(linkSuggestions.state, 'open'),
+  )).orderBy(asc(linkSuggestions.rank));
+}
+
+async function decideSuggestions(tx, obligation, { system, accepted = null, actor }) {
+  const open = await tx.select().from(linkSuggestions).where(and(
+    eq(linkSuggestions.organisationId, obligation.organisationId),
+    eq(linkSuggestions.obligationId, obligation.id),
+    eq(linkSuggestions.system, system),
+    eq(linkSuggestions.state, 'open'),
+  ));
+  for (const suggestion of open) {
+    const state = suggestion.externalId === accepted ? 'accepted' : 'rejected';
+    await tx.update(linkSuggestions).set({ state, decidedBy: actor, decidedAt: sql`now()`, updatedAt: sql`now()` })
+      .where(eq(linkSuggestions.id, suggestion.id));
+    // "Not this one": the matcher never suggests the pair again.
+    if (state === 'rejected') {
+      await tx.insert(linkRejections)
+        .values({ organisationId: obligation.organisationId, obligationId: obligation.id, system, externalId: suggestion.externalId, actor })
+        .onConflictDoNothing();
+    }
+  }
+  return open.map((s) => s.externalId);
+}
+
+// "Make invoice": a person says the job has no invoice yet. Every suggestion
+// is rejected and the job is recorded as not found, so it can draft. The
+// live check before the draft still runs (draftInvoiceForObligation).
+export async function confirmNoInvoice(db, organisationId, obligationId, { system, actor }) {
+  requireActor(actor);
+  return db.transaction(async (tx) => {
+    const obligation = await loadObligation(tx, organisationId, obligationId, { lock: true });
+    if (!unlinked(obligation)) throw new FlowError('invalid', 'the job is not waiting for a person to settle its invoice');
+    const rejected = await decideSuggestions(tx, obligation, { system, actor });
+    const row = await update(tx, obligation, { accountingState: 'not_found', accountingCheckedAt: sql`now()` });
+    await addEvent(tx, row, 'accounting_checked', actor, { reported: 'not_found', state: 'not_found', matchedBy: 'person', rejected });
+    return row;
+  });
+}
+
+// "Link invoice": a person picks the invoice that is this job's. `invoice` is
+// the accounting system's copy of it ({ id, state, url }), read just before.
+export async function linkJobInvoice(db, organisationId, obligationId, { system, invoice, actor }) {
+  requireActor(actor);
+  if (!invoice?.id || !LINKED_STATES.includes(invoice.state)) throw new FlowError('invalid', 'the invoice to link was not found');
+  return db.transaction(async (tx) => {
+    const obligation = await loadObligation(tx, organisationId, obligationId, { lock: true });
+    if (!unlinked(obligation)) throw new FlowError('invalid', 'the job is not waiting for a person to settle its invoice');
+    await decideSuggestions(tx, obligation, { system, accepted: invoice.id, actor });
+    return recordAccountingEvidence(tx, organisationId, obligationId, {
+      state: invoice.state, accountingRef: invoice.id, accountingUrl: invoice.url ?? null, matchedBy: 'person', actor,
+    });
   });
 }
 

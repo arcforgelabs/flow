@@ -667,6 +667,7 @@ export async function renderJobs(main, ui) {
     const o = job.obligation;
     const stage = invoiceStage(o);
     const found = problemsOf(job);
+    const choose = found.find((f) => f.go === 'choose') ?? null;
     const system = SYSTEM_NAME[job.sourceSystem] ?? job.sourceSystem;
     const status = job.status ?? NO_STATUS;
     const late = isLate(job);
@@ -678,10 +679,74 @@ export async function renderJobs(main, ui) {
     const invoiceText = o?.invoiceId
       ? link({ href: `/invoices/${o.invoiceId}`, onclick: (event) => { close(); ui.go(event); } },
         `${o.invoiceStatus === 'draft' ? 'Draft' : 'Invoice'} ${o.invoiceNumber ?? ''}`.trim() + (stage ? ` · ${INVOICE_STAGES[stage]}` : ''))
-      : stage ? INVOICE_STAGES[stage] : o ? 'Not ready to invoice' : 'No invoice yet';
-    const fixBox = found.length ? h('section', { class: 'fx-task__fix', 'aria-label': 'Fix' },
+      : choose ? h('span', { class: 'fx-task__none' }, 'None yet')
+        : stage ? INVOICE_STAGES[stage] : o ? 'Not ready to invoice' : 'No invoice yet';
+    const rest = found.filter((f) => f.go !== 'choose');
+    const fixBox = rest.length ? h('section', { class: 'fx-task__fix', 'aria-label': 'Fix' },
       h('h3', {}, 'Fix'),
-      found.map((f) => h('div', { class: 'fx-task__fixrow' }, h('span', {}, `${f.text} ${f.todo}`), fixLink(f.go)))) : null;
+      rest.map((f) => h('div', { class: 'fx-task__fixrow' }, h('span', {}, [f.text, f.todo].filter(Boolean).join(' ')), fixLink(f.go)))) : null;
+    // No invoice, and the match is unclear: one line and two buttons. The
+    // possible matches are in the linking tool, not here.
+    const chooseBox = choose ? h('section', { class: 'fx-task__choose', 'aria-label': 'Invoice' },
+      h('span', {}, choose.text),
+      state.canDraft ? h('div', { class: 'fx-task__choices' },
+        h('button', { class: 'fx-btn fx-btn--primary', type: 'button', onclick: (event) => makeInvoice(event.currentTarget) }, 'Make invoice'),
+        h('button', { class: 'fx-btn', type: 'button', onclick: (event) => linkInvoice(event.currentTarget) }, 'Link invoice')) : null) : null;
+    // "Make invoice": the person says the job has no invoice yet, then Flow
+    // drafts it (the live check before the draft still runs).
+    async function makeInvoice(button) {
+      if (button) button.disabled = true;
+      try {
+        await flow(`/api/invoicing/jobs/${o.id}/no-invoice`, { method: 'POST', body: '{}' });
+        const { invoice } = await flow(`/api/invoicing/jobs/${o.id}/draft`, { method: 'POST', body: '{}' });
+        ui.toast('Draft invoice made.', 'success');
+        close();
+        ui.go(`/invoices/${invoice.id}`);
+      } catch (error) {
+        const reasons = error.details?.reasons;
+        ui.toast(reasons?.length ? `Not drafted: ${reasons.join('; ')}.` : error.message, 'danger');
+        close();
+        await load();
+      }
+    }
+    // "Link invoice": the linking tool. It lists the invoices Flow found that
+    // may be this job's; the person picks one.
+    async function linkInvoice(button) {
+      button.disabled = true;
+      let invoices;
+      try {
+        ({ invoices } = await flow(`/api/invoicing/jobs/${o.id}/link-options`));
+      } catch (error) {
+        ui.toast(error.message, 'danger');
+        button.disabled = false;
+        return;
+      }
+      button.disabled = false;
+      if (!invoices.length) {
+        const make = await ui.dialog({ title: 'Link invoice', body: h('p', {}, 'Flow found no invoice that may be for this job.'), confirm: 'Make invoice' });
+        if (make) await makeInvoice(null);
+        return;
+      }
+      // The same picker as "New invoice from a job" (invoicing.js).
+      const body = h('div', { class: 'fx-pick__body' },
+        h('p', { class: 'fx-dim' }, 'Invoices that may be for this job, best match first.'),
+        h('div', { class: 'fx-pick', role: 'radiogroup', 'aria-label': 'Invoices' }, invoices.map((i, index) => h('label', { class: 'fx-pick__row' },
+          h('input', { type: 'radio', name: 'invoice', value: i.id, required: true, checked: index === 0 }),
+          h('span', { class: 'fx-pick__main' },
+            h('span', { class: 'fx-strong' }, i.number ?? 'No number'),
+            h('span', { class: 'fx-dim' }, i.issuedOn ? fullDate(i.issuedOn) : '')),
+          h('span', { class: 'fx-num fx-strong' }, i.totalCents == null ? '—' : formatCents(i.totalCents))))));
+      const picked = await ui.dialog({ title: 'Link invoice', body, confirm: 'Link' });
+      if (!picked) return;
+      try {
+        await flow(`/api/invoicing/jobs/${o.id}/link`, { method: 'POST', body: JSON.stringify({ invoiceId: picked.get('invoice') }) });
+        ui.toast('Invoice linked.', 'success');
+      } catch (error) {
+        ui.toast(error.message, 'danger');
+      }
+      close();
+      await load();
+    }
     // Each fix's link: Flow's own invoice, the job in the work system, or
     // the Flow page where the fix is made (job-board.js GO).
     function fixLink(go) {
@@ -718,6 +783,7 @@ export async function renderJobs(main, ui) {
           // The job links to Flow's invoice only. The invoice page shows its
           // link to an accounting system (its Linked card).
           field('Invoice', invoiceText)),
+        chooseBox,
         fixBox,
         state.fields.length ? h('section', { class: 'fx-task__custom', 'aria-label': 'Custom fields' },
           h('h3', {}, 'Fields'),
@@ -745,7 +811,7 @@ export async function renderJobs(main, ui) {
     element.addEventListener('close', () => element.remove());
     document.body.append(element);
     element.showModal();
-    if (atFix && fixBox) fixBox.scrollIntoView({ block: 'start' });
+    if (atFix && (chooseBox ?? fixBox)) (chooseBox ?? fixBox).scrollIntoView({ block: 'start' });
     if (!o) return;
     const when = (iso) => new Date(iso).toLocaleString('en-AU', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
     flow(`/api/invoicing/jobs/${o.id}/activity`).then(({ events }) => {
