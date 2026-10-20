@@ -155,7 +155,8 @@ body:is([data-state="off"], [data-state="error"], [data-state="no-access"]) .fx-
 /* Folded (wide screens only): the sidebar keeps its icons, the menu button
    and the account photo; each page's name is still read out. */
 @media (min-width: 821px) {
-  .fx-shell[data-folded] .fx-side { width: 64px; padding-inline: 10px; }
+  .fx-shell[data-folded] .fx-side { width: 64px; padding-inline: 10px; cursor: e-resize; }
+  .fx-shell[data-folded] .fx-side :is(a, button, #user-button) { cursor: pointer; }
   .fx-shell[data-folded] .fx-side__head { flex-direction: column; gap: 10px; padding: 0 0 14px; }
   .fx-shell[data-folded] .fx-side__head .fx-brand { display: none; }
   .fx-shell[data-folded] .fx-nav__group { height: 1px; margin: 10px 6px; padding: 0; overflow: hidden; background: var(--fx-line); color: transparent; }
