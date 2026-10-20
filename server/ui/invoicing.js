@@ -646,7 +646,7 @@ function draftView(invoice, ui, context, redraw) {
       h('div', { class: 'fx-ph__text' },
         h('h1', { class: 'fx-title' }, isNew ? 'New invoice' : ready ? 'Ready invoice' : 'Draft invoice'),
         h('p', { class: 'fx-ph__sub' }, draftNote(to, invoice, ready))),
-      h('div', { class: 'fx-ph__actions' }, saveButton, markReadyButton, sendButton ?? issueButton)),
+      h('div', { class: 'fx-ph__actions' }, isNew ? null : previewButton(ui, invoice.id, 'Shows the saved invoice.'), saveButton, markReadyButton, sendButton ?? issueButton)),
     problems,
     h('div', { class: 'fx-invoice__grid' },
       h('div', { class: 'fx-invoice__main' },
@@ -671,6 +671,39 @@ function draftView(invoice, ui, context, redraw) {
     for (const kind of ['input', 'change', 'click']) part?.addEventListener?.(kind, () => setTimeout(watchChanges));
     return part;
   });
+}
+
+// Preview: the invoice as a PDF in a new tab (GET /api/invoicing/invoices/:id/pdf).
+// The tab opens at once, because a browser blocks a tab opened after a wait,
+// and shows the PDF when it is ready. If Flow cannot make it, the tab closes
+// and a toast says why.
+function previewButton(ui, invoiceId, title = 'Shows the invoice as a PDF.') {
+  const { h, toast } = ui;
+  return h('button', {
+    class: 'fx-btn', type: 'button', title,
+    onclick: async () => {
+      const tab = window.open('', '_blank');
+      if (tab) {
+        tab.document.title = 'Preparing PDF';
+        tab.document.body.textContent = 'Preparing PDF…';
+      }
+      try {
+        const token = await window.Clerk.session?.getToken();
+        const res = await fetch(`/api/invoicing/invoices/${invoiceId}/pdf`, { headers: { Authorization: `Bearer ${token}` } });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body.error || `HTTP ${res.status}`);
+        }
+        const url = URL.createObjectURL(await res.blob());
+        if (tab) tab.location.href = url;
+        else window.location.assign(url);
+        setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      } catch (error) {
+        tab?.close();
+        toast(`The PDF could not be made. ${error.message}`, 'danger');
+      }
+    },
+  }, 'Preview');
 }
 
 // An issued or void invoice: the document as sent, and what can happen next.
@@ -721,7 +754,7 @@ function issuedView(invoice, ui, context, redraw) {
           h('h1', { class: 'fx-title' }, invoice.number),
           h('span', { class: 'fx-status', 'data-tone': STATUS_TONE[invoice.status] }, STATUS_LABEL[invoice.status])),
         h('p', { class: 'fx-ph__sub' }, `${invoice.contact?.name ?? ''} · issued ${showDate(invoice.issueDate)}`)),
-      h('div', { class: 'fx-ph__actions' }, actions)),
+      h('div', { class: 'fx-ph__actions' }, previewButton(ui, invoice.id), actions)),
     h('div', { class: 'fx-invoice__grid' },
       h('div', { class: 'fx-invoice__main' },
         h('section', { class: 'fx-card fx-doc' },
