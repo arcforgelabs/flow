@@ -1,8 +1,8 @@
 name: Docs Agent
 
 # Copied from openclaw/openclaw's docs-agent.yml (docs/AI_BOTS.md). After CI
-# passes on main, an AI agent refreshes docs/ and README.md and pushes the
-# result to main, at most once an hour. Its model calls go through ClawRouter,
+# passes on main, an AI agent refreshes docs/ and README.md and opens a
+# docs pull request, at most once an hour. Its model calls go through ClawRouter,
 # which holds the provider key and the monthly budget; the job summary shows
 # what each run cost. Differences from upstream are listed in docs/AI_BOTS.md.
 
@@ -79,6 +79,7 @@ jobs:
     permissions:
       actions: read
       contents: write
+      pull-requests: write
     # Only admitted write jobs occupy this slot; skipped events cannot replace
     # pending documentation work.
     concurrency:
@@ -291,12 +292,29 @@ jobs:
           npm ci
           npm test
 
-      - name: Commit docs updates
+      # Flow's main ruleset takes no bot pushes (GitHub refuses the workflow
+      # token as a bypass actor in an organization), so the agent opens a
+      # docs pull request. The Barnacle App token, when set, lets that pull
+      # request start CI; the low-risk lane merges it once green.
+      - name: Create pull request token
+        id: app-token
+        if: steps.gate.outputs.run_agent == 'true' && vars.BARNACLE_APP_ID != ''
+        continue-on-error: true
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          app-id: ${{ vars.BARNACLE_APP_ID }}
+          private-key: ${{ secrets.BARNACLE_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Open docs pull request
         if: steps.gate.outputs.run_agent == 'true'
         env:
           BASE_SHA: ${{ steps.gate.outputs.base_sha }}
-          GITHUB_TOKEN: ${{ github.token }}
-          TARGET_BRANCH: main
+          GH_TOKEN: ${{ steps.app-token.outputs.token || github.token }}
+          DOCS_BRANCH: docs-agent/refresh
         run: |
           set -euo pipefail
 
@@ -307,24 +325,20 @@ jobs:
 
           git config user.name "flow-docs-agent[bot]"
           git config user.email "flow-docs-agent[bot]@users.noreply.github.com"
+          git switch -c "$DOCS_BRANCH"
           git add docs README.md
           git commit --no-verify -m "docs: refresh documentation"
-          for attempt in 1 2 3 4 5; do
-            if ! git fetch --no-tags origin "$TARGET_BRANCH"; then
-              echo "Fetch attempt $attempt failed; retrying."
-              sleep $((attempt * 2))
-              continue
-            fi
-            if git push "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:${TARGET_BRANCH}"; then
-              exit 0
-            fi
-            remote_main="$(git rev-parse "origin/${TARGET_BRANCH}")"
-            if [ "$remote_main" != "$BASE_SHA" ]; then
-              echo "main advanced from $BASE_SHA to $remote_main; skipping stale docs update."
-              exit 0
-            fi
-            echo "Docs update attempt $attempt failed; retrying."
-            sleep $((attempt * 2))
-          done
-          echo "Failed to push docs updates after retries." >&2
-          exit 1
+          git push --force "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:refs/heads/${DOCS_BRANCH}"
+
+          open_pr="$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$DOCS_BRANCH" --state open --json number --jq '.[0].number // empty')"
+          if [ -n "$open_pr" ]; then
+            echo "Updated docs pull request #$open_pr."
+            exit 0
+          fi
+          body="$(printf '%s\n' \
+            "## What Problem This Solves" "" "Docs drifted from the code merged on main since ${BASE_SHA}." "" \
+            "## User Impact" "" "Docs and README.md match main again." "" \
+            "## Why This Change Was Made" "" "The Docs Agent (docs/AI_BOTS.md) reviewed the commits since the last docs run." "" \
+            "## Evidence" "" "Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}. npm test passed on the patch in that run; only docs/** and README.md changed.")"
+          gh pr create --repo "$GITHUB_REPOSITORY" --base main --head "$DOCS_BRANCH" \
+            --title "docs: refresh documentation" --body "$body"

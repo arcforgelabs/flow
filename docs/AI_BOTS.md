@@ -9,7 +9,7 @@ budget and records what each call cost.
 | Bot | Runs when | Writes | Configured in |
 | --- | --- | --- | --- |
 | ClawSweeper | An issue or pull request opens or changes, or a maintainer comments `@clawsweeper review` | One review comment per item, edited in place | The Arc Forge ClawSweeper deployment (`arcforgelabs/clawsweeper`), its GitHub App and its target list |
-| Docs Agent | CI passes on `main`, at most once an hour, or a maintainer runs it | A `docs: refresh documentation` commit on `main`, limited to `docs/**` and `README.md` | `.github/workflows/docs-agent.yml` and `.github/codex/prompts/docs-agent.md` |
+| Docs Agent | CI passes on `main`, at most once an hour, or a maintainer runs it | A `docs: refresh documentation` pull request, limited to `docs/**` and `README.md` | `.github/workflows/docs-agent.yml` and `.github/codex/prompts/docs-agent.md` |
 
 ## ClawSweeper
 
@@ -36,8 +36,13 @@ The Docs Agent runs `openai/codex-action` with the prompt in
    commit since the last reviewed one;
 3. fails when the agent creates, deletes or renames a file, or touches a path
    outside `docs/**` and `README.md`;
-4. runs `npm test`, then pushes the commit to `main` as
-   `flow-docs-agent[bot]`.
+4. runs `npm test`, then pushes the commit as `flow-docs-agent[bot]` to the
+   branch `docs-agent/refresh` and opens one pull request from it, or updates
+   the one already open. A maintainer merges it like any other.
+
+With the Barnacle App (`BARNACLE_APP_ID`, `BARNACLE_APP_PRIVATE_KEY`) the
+pull request is opened by the App, so CI runs on it; with the workflow token
+alone, CI does not start on it.
 
 ## Cost
 
@@ -68,10 +73,6 @@ model is set in ClawRouter, on that key's policy.
 2. In ClawRouter, issue a key for the Docs Agent with a monthly budget and the
    two models allowed, and save it as the Actions secret
    `FLOW_DOCS_AGENT_OPENAI_API_KEY`.
-3. Add GitHub Actions as a bypass actor on the `main` ruleset, so the Docs
-   Agent's commit can land on `main` as upstream's does.
-
-Without step 3 the push is refused and the run fails; nothing reaches `main`.
 
 ## Differences from OpenClaw
 
@@ -81,5 +82,6 @@ Without step 3 the push is refused and the run fails; nothing reaches `main`.
 | Codex calls OpenAI directly with an OpenAI key | Codex calls ClawRouter's native OpenAI route with a ClawRouter key | One place for the provider key, the budget and the cost record. |
 | Admission needs CI's `openclaw/ci-gate` job | Admission needs CI's `test` job | `test` is Flow's gate job; the main ruleset requires it by name. |
 | CI also runs on an hourly schedule | CI runs on push only | Flow's CI has no schedule; each merge starts one run, and the hourly limit still holds. |
+| The agent pushes its commit straight to `main` | The agent opens a docs pull request | GitHub refuses the workflow token as a ruleset bypass actor in an organization (`Actor GitHub Actions integration must be part of the ruleset source or owner organization`), and Flow's `main` ruleset takes no bot pushes. The pull request passes the same checks as any change. |
 | `pnpm check:docs` before the push | `npm test` before the push | Flow has no separate docs check; its test suite holds the doc rules. |
 | The agent may regenerate `CHANGELOG/` docs mirrors | The agent never edits the changelog | Flow has no docs mirror of its release notes. |
