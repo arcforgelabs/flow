@@ -55,6 +55,16 @@ export function normaliseBaseUrl(value) {
   return `${url.origin}${path}/v1`;
 }
 
+function orderUrlTemplate(value) {
+  const raw = text(value);
+  if (!raw.includes('{ref}')) return null;
+  try {
+    return new URL(raw.replaceAll('{ref}', 'x')).protocol === 'https:' ? raw : null;
+  } catch {
+    return null;
+  }
+}
+
 // Returns the resolved settings, or throws SeazonaSettingsError. `mode` is
 // null when SEAZONA_MODE is unset: the adapter is then not configured.
 export function resolveSeazonaSettings(env = process.env) {
@@ -161,6 +171,10 @@ export function resolveSeazonaSettings(env = process.env) {
     rate,
     // The scheduler starts only in live mode (issue #10).
     scheduled: mode === 'live',
+    // The address of one order in Seazona's own screens, with {ref} for the
+    // order number, for "Open in Seazona" on a stage move. Optional; one
+    // without {ref} is ignored.
+    orderUrlTemplate: orderUrlTemplate(env.SEAZONA_ORDER_URL),
   };
 
   if (mode === 'live' || mode === 'sandbox') {

@@ -799,6 +799,18 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
 .fx-price__systems { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; }
 .fx-set__control .fx-price__link { width: 260px; min-width: 0; }
 @media (max-width: 560px) { .fx-set__control .fx-price__link { width: 150px; } }
+/* Custom fields (custom-fields.js): option chips with a colour dot, and the
+   dialog's option lines. The option colours are fixed, like ClickUp's. */
+.fx-cf__opt { display: inline-flex; align-items: center; gap: 6px; padding: 2px 9px; border: 1px solid var(--fx-line); border-radius: 999px; font-size: 12.5px; color: var(--t-text); white-space: nowrap; }
+.fx-cf__opt::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--cf); flex: none; }
+[data-color="gray"] { --cf: #8a8f98; } [data-color="blue"] { --cf: #3b82f6; } [data-color="teal"] { --cf: #14b8a6; }
+[data-color="green"] { --cf: #22a35a; } [data-color="amber"] { --cf: #e0a019; } [data-color="red"] { --cf: #e5484d; }
+[data-color="purple"] { --cf: #8b5cf6; } [data-color="pink"] { --cf: #e5469a; }
+.fx-cf__options { display: grid; gap: 8px; }
+.fx-cf__line { display: grid; grid-template-columns: minmax(0, 1fr) 120px auto auto; gap: 8px; align-items: center; }
+.fx-cf__line .fx-input, .fx-cf__line .fx-select { width: 100%; min-width: 0; }
+.fx-cf__color { border-left: 4px solid var(--cf); }
+@media (max-width: 560px) { .fx-cf__line { grid-template-columns: minmax(0, 1fr) 96px; } }
 /* Invoice rules (invoice-rules.js): a row's Edit button and switch, and the
    rule dialog's condition lines. */
 .fx-rule__controls { align-items: center; gap: 10px; }

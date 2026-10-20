@@ -136,6 +136,8 @@ export async function boardJobs(db, organisationId, { work = [], accounting = nu
         totalCents: o?.totalCents ?? item.totalCents ?? null,
         lines: o ? ledgerLines(o.lines)
           : (item.lines ?? []).map((l) => ({ code: l.code ?? null, description: l.description, amountCents: l.amountCents ?? null, mapped: Boolean(l.code && codes.has(l.code)) })),
+        // A stage move the work system has not made yet (moveWork).
+        pendingMove: item.pendingMove ?? null,
         obligation: o,
       });
     }

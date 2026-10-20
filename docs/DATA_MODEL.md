@@ -32,6 +32,9 @@ erDiagram
   organisations ||--o{ invoice_rules : "checks ready jobs by"
   contacts ||--o| customer_billing_settings : "overrides rules by"
   organisations ||--o{ automations : "runs"
+  organisations ||--o{ job_fields : "describes its jobs by"
+  job_fields ||--o{ job_field_values : "holds"
+  job_fields ||--o{ job_field_events : "is explained by"
 ```
 
 `external_links`, `background_jobs`, `outbox` and `review_items` are the data
@@ -52,6 +55,11 @@ system's status. `automations` holds each organisation's choices for Flow's
 routines, such as marking a job ready from that status (`docs/AUTOMATIONS.md`).
 `invoice_rules` holds the checks each lab builds on a ready job: When, If,
 Then (`docs/INVOICE_RULES.md`).
+
+`job_fields`, `job_field_values` and `job_field_events` hold the lab's custom
+fields for its jobs, each job's values, and who changed them
+(`docs/CUSTOM_FIELDS.md`). A value is keyed by the work system's job,
+`(source_system, source_job_ref)`, so a job needs no obligation to have one.
 
 `people` lists who may sign in and their role (`owner`, `admin`, `staff`).
 One installation serves one lab, so it is installation-wide.
