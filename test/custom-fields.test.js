@@ -5,7 +5,8 @@ import { invitePerson, seedFirstOwner } from '../server/auth/people.js';
 import { createPersonAuth } from '../server/auth/session.js';
 import { createOrganisation } from '../server/core/directory.js';
 import {
-  archiveField, createField, ensureAssignee, jobFieldHistory, listFields, listJobFieldValues, readField, readOptions, setJobFieldValue, updateField,
+  archiveField, createField, deleteField, ensureAssignee, integrationConnectedAt, jobFieldHistory, listFields, listJobFieldValues, readField, readGroupColors,
+  readOptions, setGroupColor, setJobFieldValue, TYPE_COLORS, updateField,
 } from '../server/core/custom-fields.js';
 import { createRegistry } from '../server/integrations/port.js';
 import { fakeClerk, request, TEST_PUBLISHABLE_KEY } from './support/clerk.js';
@@ -20,7 +21,10 @@ const workSystem = {
   id: 'worksystem', name: 'Work system',
   capabilities: {
     health: async () => ({ ok: true }),
-    listWork: async () => ({ items: [], statuses: [{ label: 'In lab', final: false }, { label: 'Shipped', final: true }] }),
+    listWork: async () => ({
+      items: [],
+      statuses: [{ label: 'In lab', final: false, firstSeenAt: '2026-03-02T00:00:00.000Z' }, { label: 'Shipped', final: true, firstSeenAt: '2026-03-04T00:00:00.000Z' }],
+    }),
   },
 };
 
@@ -34,6 +38,9 @@ test('a field is checked before it is saved', () => {
   assert.throws(() => readField({ name: 'X', type: 'formula' }), /type/);
   assert.throws(() => readField({ name: 'X', type: 'dropdown', options: [{ name: 'A' }, { name: 'a' }] }), /two options are named/);
   assert.throws(() => readField({ type: 'text' }, { partial: true, previous: { type: 'dropdown', options: [] } }), /type/);
+  assert.equal(readField({ name: 'X', type: 'text', color: 'pink' }).color, 'pink');
+  assert.equal(readField({ color: null }, { partial: true, previous: { type: 'text' } }).color, null);
+  assert.throws(() => readField({ name: 'X', type: 'text', color: 'orange' }), /color/);
 });
 
 test('an option a person drops is kept as archived, so old values still read', () => {
@@ -123,6 +130,9 @@ describe('custom fields against PostgreSQL', { skip: skipWithoutDatabase }, () =
     assert.equal(read.status, 200);
     assert.deepEqual(read.body.systemFields.map((f) => [f.id, f.readOnly, f.options.map((o) => o.name)]),
       [['worksystem:stage', true, ['In lab', 'Shipped']]]);
+    // Set up in the host's settings: connected when Flow first saw its work.
+    assert.equal(read.body.systemFields[0].createdAt, '2026-03-02T00:00:00.000Z');
+    assert.equal(read.body.groupColors.dropdown, TYPE_COLORS.dropdown);
     // A person field can name every active person, by name.
     assert.deepEqual(read.body.people.map((p) => p.name).sort(), ['owner', 'staff']);
 
@@ -154,6 +164,48 @@ describe('custom fields against PostgreSQL', { skip: skipWithoutDatabase }, () =
     const archived = await call(`/${id}/archive`, { method: 'POST', body: { archived: true } });
     assert.equal(archived.body.field.archived, true);
     assert.equal((await call('/nope', { method: 'PUT', body: { name: 'X' } })).status, 404);
+
+    const coloured = await call(`/${id}`, { method: 'PUT', body: { color: 'red' } });
+    assert.equal(coloured.status, 409); // archived: bring it back first
+    await call(`/${id}/archive`, { method: 'POST', body: { archived: false } });
+    assert.equal((await call(`/${id}`, { method: 'PUT', body: { color: 'red' } })).body.field.color, 'red');
+    assert.equal((await call('/groups/checkbox', { method: 'PUT', token: staffToken, body: { color: 'pink' } })).status, 403);
+    assert.equal((await call('/groups/checkbox', { method: 'PUT', body: { color: 'pink' } })).body.groupColors.checkbox, 'pink');
+    assert.equal((await call('/groups/formula', { method: 'PUT', body: { color: 'pink' } })).status, 404);
+
+    assert.equal((await call(`/${id}`, { method: 'DELETE', token: staffToken })).status, 403);
+    const deleted = await call(`/${id}`, { method: 'DELETE' });
+    assert.deepEqual([deleted.status, deleted.body.deleted.valuesDeleted], [200, 1]);
+    assert.ok(!(await call('/values')).body.values.some((v) => v.fieldId === id));
+    assert.equal((await call(`/${id}`, { method: 'DELETE' })).status, 404);
+  });
+
+  test('delete takes a field, its values and its history; archive keeps them', async () => {
+    const field = await createField(handle.db, lab.id, { name: 'Shelf', type: 'text' });
+    const otherJob = { sourceSystem: 'worksystem', sourceJobRef: 'CASE-2002' };
+    await setJobFieldValue(handle.db, lab.id, { ...otherJob, fieldId: field.id, value: 'B3' });
+    assert.equal((await listFields(handle.db, lab.id)).find((f) => f.id === field.id).valueCount, 1);
+    const gone = await deleteField(handle.db, lab.id, field.id);
+    assert.deepEqual([gone.name, gone.valuesDeleted], ['Shelf', 1]);
+    assert.equal((await listJobFieldValues(handle.db, lab.id, { jobs: [otherJob] })).length, 0);
+    assert.equal((await jobFieldHistory(handle.db, lab.id, otherJob)).length, 0);
+    await assert.rejects(deleteField(handle.db, lab.id, field.id), /not found/);
+  });
+
+  test('a group colour is the lab\'s own choice, and null puts back the type\'s colour', async () => {
+    await setGroupColor(handle.db, lab.id, 'date', 'red');
+    assert.equal((await readGroupColors(handle.db, lab.id)).date, 'red');
+    await setGroupColor(handle.db, lab.id, 'date', null);
+    assert.equal((await readGroupColors(handle.db, lab.id)).date, TYPE_COLORS.date);
+    await assert.rejects(setGroupColor(handle.db, lab.id, 'date', 'orange'), /color/);
+  });
+
+  test('an integration is connected when its settings were first saved, else when Flow first saw its work', async () => {
+    assert.equal(await integrationConnectedAt(handle.db, 'nothing-here'), null);
+    assert.equal(await integrationConnectedAt(handle.db, 'nothing-here', '2026-01-05T00:00:00.000Z'), '2026-01-05T00:00:00.000Z');
+    await handle.pool.query("insert into integration_settings (adapter_id, enabled, created_at) values ('worksystem', true, '2025-12-01T00:00:00Z')");
+    assert.equal(await integrationConnectedAt(handle.db, 'worksystem', '2026-01-05T00:00:00.000Z'), '2025-12-01T00:00:00.000Z');
+    await handle.pool.query("delete from integration_settings where adapter_id = 'worksystem'");
   });
 
   // Last: a second organisation makes the API ask which one.
@@ -165,6 +217,10 @@ describe('custom fields against PostgreSQL', { skip: skipWithoutDatabase }, () =
     await archiveField(handle.db, other.id, made.id);
     assert.equal(await ensureAssignee(handle.db, other.id), null);
     assert.deepEqual(await listFields(handle.db, other.id), []);
+    // Deleted, it does not come back either.
+    await deleteField(handle.db, other.id, made.id);
+    assert.equal(await ensureAssignee(handle.db, other.id), null);
+    assert.deepEqual(await listFields(handle.db, other.id, { archived: true }), []);
   });
 
 });

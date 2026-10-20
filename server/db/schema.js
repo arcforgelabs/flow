@@ -784,6 +784,8 @@ export const jobFields = pgTable('job_fields', {
   name: text('name').notNull(),
   type: text('type').notNull(),
   options: jsonb('options').notNull().default(sql`'[]'::jsonb`),
+  // The field's colour, one of the option colours; null is its type's colour.
+  color: text('color'),
   position: integer('position').notNull(),
   archivedAt: timestamp('archived_at', { withTimezone: true }),
   createdBy: uuid('created_by').references(() => people.id, { onDelete: 'set null' }),
@@ -794,7 +796,19 @@ export const jobFields = pgTable('job_fields', {
   unique('job_fields_org_id').on(t.organisationId, t.id),
   check('job_fields_type_valid', sql`${t.type} in ('dropdown', 'person', 'checkbox', 'date', 'number', 'text')`),
   check('job_fields_name_valid', sql`length(${t.name}) between 1 and 60`),
+  check('job_fields_color_valid', sql`${t.color} is null or ${t.color} in ('gray', 'blue', 'teal', 'green', 'amber', 'red', 'purple', 'pink')`),
 ]);
+
+// One row per organisation for Settings, Custom fields: each type group's
+// colour ({ dropdown: 'red' }; a type not named keeps its own colour), and
+// when Flow made the Assignee, so a lab that deletes it does not get it back.
+export const jobFieldSettings = pgTable('job_field_settings', {
+  organisationId: uuid('organisation_id').primaryKey().references(() => organisations.id),
+  groupColors: jsonb('group_colors').notNull().default(sql`'{}'::jsonb`),
+  assigneeMadeAt: timestamp('assignee_made_at', { withTimezone: true }),
+  updatedBy: uuid('updated_by').references(() => people.id, { onDelete: 'set null' }),
+  updatedAt: updatedAt(),
+});
 
 // A job's value for one custom field. A job is the work system's job
 // (source_system, source_job_ref), the same key the Jobs board uses, so a

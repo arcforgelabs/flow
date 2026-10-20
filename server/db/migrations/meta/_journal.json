@@ -141,6 +141,13 @@
       "when": 1792474607940,
       "tag": "0019_people_views",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1792507133665,
+      "tag": "0020_custom_field_colours",
+      "breakpoints": true
     }
   ]
 }

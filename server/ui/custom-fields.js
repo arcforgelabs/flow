@@ -3,11 +3,16 @@
 // ClickUp's Custom Field Manager: one table, with a group per type that folds
 // open and closed, and one row per field with its type icon, who made it,
 // when, and where it applies. Search, a type filter and Filter (archived
-// fields) sit above it. A row's Edit opens the field's dialog (name and
-// options); its ⋯ menu has Rename, Duplicate, Copy field ID and Archive. The
-// work systems' own fields (Seazona's stage) sit in their own group, read
-// only. Everyone can read the page; an owner or admin changes it. The caller
+// fields) sit above it. A row's Edit opens the field's dialog (name, colour
+// and options); its ⋯ menu has Rename, Colour, Duplicate, Copy field ID,
+// Archive and Delete. A group's pill picks the group's colour. Each colour
+// picker shows the real pill in every colour, so a person sees what they
+// get. The work systems' own fields (Seazona's stage) sit in their own
+// group, read only, with their stages and the day the system was connected.
+// Everyone can read the page; an owner or admin changes it. The caller
 // passes in app.js's shared pieces as `ui`.
+
+import { orderStatuses, statusRank } from '/assets/ui/job-board.js';
 
 const DOCS = 'https://github.com/arcforgelabs/flow/blob/main/docs/CUSTOM_FIELDS.md';
 const TYPE_LABELS = {
@@ -21,12 +26,53 @@ const TYPE_HINTS = {
   number: 'A number, for example units.',
   text: 'A short note.',
 };
-// Each type's icon (Lucide, served at /assets/icons/) and group colour.
+// Each type's icon (Lucide, served at /assets/icons/). Group colours come
+// from the server (groupColors); a field's own colour wins over its group's.
 const TYPE_ICONS = {
   dropdown: 'square-chevron-down', person: 'user-round', checkbox: 'square-check', date: 'calendar', number: 'hash', text: 'type',
 };
-const TYPE_COLORS = { dropdown: 'green', person: 'blue', checkbox: 'purple', date: 'teal', number: 'amber', text: 'gray' };
 const FOLDED_KEY = 'flow_custom_fields_folded';
+// A row shows this many options; the rest are "+N".
+const SHOWN_OPTIONS = 6;
+const colorName = (c) => c[0].toUpperCase() + c.slice(1);
+let pickerCount = 0;
+
+// A colour picker: a button that shows `sample()` (the real pill) in the
+// colour now chosen, and a popover with the same pill in every colour.
+// `onpick(color)` gets the choice; the button follows it unless onpick
+// answers false.
+export function colorPicker(h, { colors, value, sample, label, onpick, disabled = false }) {
+  let current = value;
+  const id = `fx-cf-colour-${++pickerCount}`;
+  const button = h('button', {
+    class: 'fx-cf__swatch', type: 'button', 'aria-label': label, 'aria-haspopup': 'dialog', popovertarget: id, disabled, title: disabled ? null : 'Change colour',
+  });
+  const panel = h('div', { class: 'fx-pop fx-cf__palette', id, popover: 'auto', role: 'dialog', 'aria-label': label });
+  const draw = () => button.replaceChildren(sample(current), disabled ? null : lucide(h, 'chevron-down'));
+  const choose = async (color) => {
+    panel.hidePopover();
+    if (await onpick(color) === false) return;
+    current = color;
+    draw();
+  };
+  panel.addEventListener('toggle', (event) => {
+    button.setAttribute('aria-expanded', String(event.newState === 'open'));
+    if (event.newState !== 'open') return;
+    panel.replaceChildren(h('p', { class: 'fx-pop__head' }, 'Colour'), h('div', { class: 'fx-cf__grid', role: 'radiogroup', 'aria-label': label },
+      colors.map((c) => h('button', {
+        type: 'button', class: 'fx-cf__choice', role: 'radio', 'aria-checked': String(c === current), title: colorName(c), onclick: () => choose(c),
+      }, sample(c), h('span', { class: 'fx-cf__choice-name' }, colorName(c)), c === current ? lucide(h, 'check') : null))));
+    const at = button.getBoundingClientRect();
+    panel.style.top = `${Math.round(Math.min(at.bottom + 6, innerHeight - panel.offsetHeight - 8))}px`;
+    panel.style.left = `${Math.round(Math.max(8, Math.min(at.left, innerWidth - panel.offsetWidth - 8)))}px`;
+    panel.querySelector('[aria-checked="true"]')?.focus();
+  });
+  draw();
+  return { button, panel, open: () => panel.showPopover(), set: (c) => { current = c; draw(); } };
+}
+
+// A dropdown option as it shows on a job and on the board.
+export const optionPill = (h, name, color) => h('span', { class: 'fx-cf__opt', 'data-color': color }, name || 'Option');
 
 // A Lucide icon as a mask, so it takes the text colour.
 export function lucide(h, name, label = null) {
@@ -57,10 +103,14 @@ export async function renderCustomFields(main, ui) {
   const { h, flow, toast, notice, dialog, pageHeader, me } = ui;
   const disabled = !['owner', 'admin'].includes(me?.person.role);
   const host = h('div', { class: 'fx-card fx-cfm__card' }, h('div', { class: 'fx-skeleton' }));
-  const addButton = h('button', { class: 'fx-btn fx-btn--primary fx-btn--sm', type: 'button', disabled }, 'Create field');
+  const addButton = h('button', { class: 'fx-btn fx-btn--primary fx-btn--sm', type: 'button', disabled }, 'Create custom field');
   main.append(pageHeader('Custom fields', { subtitle: 'Fields for your jobs. They stay in Flow and never change Seazona or Xero.' }), host);
 
   let data = null;
+  const groupColor = (type) => data?.groupColors?.[type] ?? 'gray';
+  const colorOfField = (field) => field.color ?? groupColor(field.type);
+  // A field as a pill: its type icon and name, in its colour.
+  const fieldPill = (type, text, color) => h('span', { class: 'fx-cfm__pill', 'data-color': color }, lucide(h, TYPE_ICONS[type]), text);
 
   async function send(path, method, payload, done = 'Saved.') {
     try {
@@ -84,15 +134,16 @@ export async function renderCustomFields(main, ui) {
       list.replaceChildren(...options.map((o, i) => {
         const name = h('input', { class: 'fx-input', maxlength: '40', value: o.name, 'aria-label': `Option ${i + 1}`, placeholder: 'Option name' });
         name.addEventListener('input', () => { o.name = name.value; });
-        const color = h('select', { class: 'fx-select fx-cf__color', 'aria-label': `Colour of option ${i + 1}`, 'data-color': o.color },
-          data.colors.map((c) => h('option', { value: c }, c[0].toUpperCase() + c.slice(1))));
-        color.value = o.color ?? 'gray';
-        color.addEventListener('change', () => { o.color = color.value; color.dataset.color = color.value; });
+        const color = colorPicker(h, {
+          colors: data.colors, value: o.color ?? 'gray', label: `Colour of option ${i + 1}`,
+          sample: (c) => optionPill(h, o.name.trim(), c), onpick: (c) => { o.color = c; },
+        });
+        name.addEventListener('input', () => color.set(o.color ?? 'gray'));
         const up = h('button', { class: 'fx-btn fx-btn--ghost fx-btn--sm', type: 'button', 'aria-label': `Move option ${i + 1} up`, disabled: i === 0 }, '↑');
         up.addEventListener('click', () => { [options[i - 1], options[i]] = [options[i], options[i - 1]]; draw(); });
         const remove = h('button', { class: 'fx-btn fx-btn--ghost fx-btn--sm fx-rule__delete', type: 'button', 'aria-label': `Remove option ${i + 1}` }, 'Remove');
         remove.addEventListener('click', () => { options.splice(i, 1); draw(); });
-        return h('div', { class: 'fx-cf__line' }, name, color, up, remove);
+        return h('div', { class: 'fx-cf__line' }, name, color.button, color.panel, up, remove);
       }));
       if (!options.length) list.append(h('span', { class: 'fx-dim' }, 'No options yet.'));
     }
@@ -112,7 +163,7 @@ export async function renderCustomFields(main, ui) {
   // fixed once the field exists.
   async function edit(field, draft = field) {
     const label = (text, control, hint) => h('div', { class: 'fx-field' }, h('span', { class: 'fx-label' }, text), control, hint ?? null);
-    const name = h('input', { class: 'fx-input', required: true, maxlength: '60', value: draft?.name ?? '', 'aria-label': 'Field name', placeholder: 'For example Priority' });
+    const name = h('input', { class: 'fx-input', required: true, maxlength: '60', value: draft?.name ?? '', 'aria-label': 'Custom field name', placeholder: 'For example Priority' });
     const type = h('select', { class: 'fx-select', 'aria-label': 'Type', disabled: Boolean(field) },
       data.types.map((t) => h('option', { value: t }, TYPE_LABELS[t] ?? t)));
     type.value = draft?.type ?? 'dropdown';
@@ -122,29 +173,38 @@ export async function renderCustomFields(main, ui) {
     ]);
     const optionsField = label('Options', editor.element, h('span', { class: 'fx-dim' }, 'Board lanes follow this order. A removed option is kept for old jobs.'));
     const showOptions = () => { optionsField.hidden = type.value !== 'dropdown'; typeHint.textContent = TYPE_HINTS[type.value]; };
-    type.addEventListener('change', showOptions);
+    // The field's colour: its type icon in that colour, with its name.
+    let fieldColor = draft?.color ?? null;
+    const colorOf = () => fieldColor ?? groupColor(type.value);
+    const color = colorPicker(h, {
+      colors: data.colors, value: colorOf(), label: 'Custom field colour',
+      sample: (c) => fieldPill(type.value, name.value.trim() || 'Custom field', c), onpick: (c) => { fieldColor = c; },
+    });
+    name.addEventListener('input', () => color.set(colorOf()));
+    type.addEventListener('change', () => { showOptions(); color.set(colorOf()); });
     showOptions();
 
     let action = null;
-    const parts = [label('Name', name), label('Type', type, typeHint), optionsField];
+    const parts = [label('Name', name), label('Type', type, typeHint), label('Colour', h('div', {}, color.button, color.panel)), optionsField];
     if (field) {
-      const archive = h('button', { class: 'fx-btn fx-btn--ghost fx-btn--sm fx-rule__delete', type: 'button' }, 'Archive field');
+      const archive = h('button', { class: 'fx-btn fx-btn--ghost fx-btn--sm', type: 'button' }, lucide(h, 'archive'), 'Archive');
       archive.addEventListener('click', () => { action = 'archive'; archive.closest('dialog').close(); });
-      parts.push(archive);
+      const remove = h('button', { class: 'fx-btn fx-btn--ghost fx-btn--sm fx-rule__delete', type: 'button' }, lucide(h, 'trash-2'), 'Delete');
+      remove.addEventListener('click', () => { action = 'delete'; remove.closest('dialog').close(); });
+      parts.push(h('div', { class: 'fx-cf__danger' }, archive, remove));
     }
-    const ok = await dialog({ title: field ? `Edit ${field.name}` : 'Create field', body: h('div', { class: 'fx-fields fx-rule__dialog' }, ...parts), confirm: field ? 'Save' : 'Create field' });
-    if (action === 'archive') {
-      if (await send(`/api/custom-fields/${field.id}/archive`, 'POST', { archived: true }, 'Archived. Its values are kept.')) return load();
-      return null;
-    }
+    const ok = await dialog({ title: field ? `Edit ${field.name}` : 'Create custom field', body: h('div', { class: 'fx-fields fx-rule__dialog' }, ...parts), confirm: field ? 'Save' : 'Create custom field' });
+    if (action === 'archive') return setArchived(field, true);
+    if (action === 'delete') return remove(field);
     if (!ok) return null;
     const payload = { name: name.value };
     if (!field) payload.type = type.value;
+    if (fieldColor !== (field?.color ?? null)) payload.color = fieldColor;
     if (type.value === 'dropdown') payload.options = editor.value();
     const body = field
       ? await send(`/api/custom-fields/${field.id}`, 'PUT', payload)
-      : await send('/api/custom-fields', 'POST', payload, 'Field created.');
-    if (!body) return edit(field, { ...draft, ...payload, type: type.value });
+      : await send('/api/custom-fields', 'POST', payload, 'Custom field created.');
+    if (!body) return edit(field, { ...draft, ...payload, color: fieldColor, type: type.value });
     return load();
   }
 
@@ -173,7 +233,7 @@ export async function renderCustomFields(main, ui) {
     type: 'button', class: 'fx-pop__item', role, disabled: off, title, onclick, ...(checked === null ? {} : { 'aria-checked': String(checked) }),
   }, h('span', { class: 'fx-pop__tick' }, iconName ? lucide(h, iconName) : null), h('span', {}, text));
 
-  const search = h('input', { class: 'fx-input fx-cfm__search', type: 'search', placeholder: 'Search fields…', 'aria-label': 'Search fields' });
+  const search = h('input', { class: 'fx-input fx-cfm__search', type: 'search', placeholder: 'Search custom fields…', 'aria-label': 'Search custom fields' });
   search.addEventListener('input', () => { view.q = search.value.trim().toLowerCase(); draw(); });
   const typeButton = h('button', { class: 'fx-chip fx-cfm__tool', type: 'button' });
   const typeMenu = popMenu(typeButton, (close) => [
@@ -186,7 +246,7 @@ export async function renderCustomFields(main, ui) {
   ]);
   const filterButton = h('button', { class: 'fx-chip fx-cfm__tool fx-cfm__tool--dashed', type: 'button' });
   const filterMenu = popMenu(filterButton, (close) => [
-    item(view.archived ? 'check' : null, 'Show archived fields', () => { view.archived = !view.archived; close(); draw(); }, { role: 'menuitemcheckbox', checked: view.archived }),
+    item(view.archived ? 'check' : null, 'Show archived custom fields', () => { view.archived = !view.archived; close(); draw(); }, { role: 'menuitemcheckbox', checked: view.archived }),
   ]);
   const toolbar = h('div', { class: 'fx-cfm__bar' }, search, typeButton, typeMenu, filterButton, filterMenu, h('span', { class: 'fx-cfm__gap' }), addButton);
   const table = h('div', { class: 'fx-cfm', role: 'table', 'aria-label': 'Custom fields' });
@@ -216,9 +276,9 @@ export async function renderCustomFields(main, ui) {
   async function copyId(field) {
     try {
       await navigator.clipboard.writeText(field.id);
-      toast('Field ID copied.', 'success');
+      toast('Custom field ID copied.', 'success');
     } catch {
-      toast(`Field ID: ${field.id}`, 'info');
+      toast(`Custom field ID: ${field.id}`, 'info');
     }
   }
 
@@ -226,25 +286,85 @@ export async function renderCustomFields(main, ui) {
     if (await send(`/api/custom-fields/${field.id}/archive`, 'POST', { archived }, archived ? 'Archived. Its values are kept.' : 'Brought back.')) await load();
   }
 
-  function rowMenu(field) {
+  async function setColor(field, color) {
+    if (!await send(`/api/custom-fields/${field.id}`, 'PUT', { color }, null)) return false;
+    await load();
+    return true;
+  }
+
+  async function setGroupColor(type, color) {
+    const body = await send(`/api/custom-fields/groups/${type}`, 'PUT', { color }, null);
+    if (!body) return false;
+    data.groupColors = body.groupColors;
+    draw();
+    return true;
+  }
+
+  // Delete for good, after the person says yes. Archive is the step that
+  // keeps the values.
+  async function remove(field) {
+    const jobs = field.valueCount ?? 0;
+    const body = h('div', { class: 'fx-fields' },
+      h('p', {}, jobs ? `${jobs} ${jobs === 1 ? 'job has' : 'jobs have'} a value in ${field.name}. Delete removes the custom field, these values and their history.` : `Delete removes ${field.name} and its history.`),
+      h('p', { class: 'fx-dim' }, 'You cannot undo this. To keep the values, archive the custom field.'));
+    if (!await dialog({ title: `Delete ${field.name}?`, body, confirm: 'Delete', tone: 'danger' })) return null;
+    if (await send(`/api/custom-fields/${field.id}`, 'DELETE', null, `Deleted ${field.name}.`)) return load();
+    return null;
+  }
+
+  function rowMenu(field, picker) {
     const button = h('button', { class: 'fx-cfm__more', type: 'button', 'aria-label': `More for ${field.name}` }, lucide(h, 'ellipsis'));
+    const deleteItem = (close) => {
+      const node = item('trash-2', 'Delete', () => { close(); remove(field); }, { disabled });
+      node.dataset.tone = 'danger';
+      return node;
+    };
     const panel = popMenu(button, (close) => (field.archived
-      ? [item('archive-restore', 'Bring back', () => { close(); setArchived(field, false); }, { disabled })]
+      ? [item('archive-restore', 'Bring back', () => { close(); setArchived(field, false); }, { disabled }), h('div', { class: 'fx-pop__sep' }), deleteItem(close)]
       : [
         item('square-pen', 'Edit', () => { close(); edit(field); }, { disabled }),
         item('pencil', 'Rename', () => { close(); view.renaming = field.id; draw(); }, { disabled }),
+        item('palette', 'Colour', () => { close(); picker?.open(); }, { disabled: disabled || !picker }),
         item('copy', 'Duplicate', () => { close(); duplicate(field); }, { disabled }),
         item('repeat', 'Convert', null, { disabled: true, title: 'Changing a field\'s type is not in Flow yet.' }),
-        item('clipboard-copy', 'Copy field ID', () => { close(); copyId(field); }),
+        item('clipboard-copy', 'Copy custom field ID', () => { close(); copyId(field); }),
         h('div', { class: 'fx-pop__sep' }),
         item('archive', 'Archive', () => { close(); setArchived(field, true); }, { disabled }),
+        deleteItem(close),
       ]));
     return [button, panel];
   }
 
+  // The options a row shows under its name: a dropdown's options as their
+  // pills, a work system's stages as the board's stage pills, in board order.
+  function optionStrip(field) {
+    let pills;
+    if (field.source) {
+      pills = orderStatuses(field.options.map((o) => ({ label: o.name, firstSeenAt: o.firstSeenAt })))
+        .map((label) => h('span', { class: 'fx-stage', 'data-rank': String(statusRank(label)) }, h('span', { class: 'fx-stage__label' }, label)));
+    } else if (field.type === 'dropdown') {
+      pills = field.options.filter((o) => !o.archived).map((o) => optionPill(h, o.name, o.color));
+    } else return null;
+    if (!pills.length) return h('div', { class: 'fx-cfm__options fx-dim' }, field.source ? 'No stages read yet.' : 'No options.');
+    const more = pills.length - SHOWN_OPTIONS;
+    return h('div', { class: 'fx-cfm__options', 'aria-label': field.source ? 'Stages' : 'Options' },
+      ...pills.slice(0, more > 0 ? SHOWN_OPTIONS : pills.length),
+      more > 0 ? h('button', { class: 'fx-cfm__moreopts', type: 'button', onclick: () => viewOptions(field) }, `+${more}`) : null);
+  }
+
+  // Every option of a field, read only (a work system's stages, or a long list).
+  function viewOptions(field) {
+    const strip = field.source
+      ? orderStatuses(field.options.map((o) => ({ label: o.name, firstSeenAt: o.firstSeenAt })))
+        .map((label) => h('span', { class: 'fx-stage', 'data-rank': String(statusRank(label)) }, h('span', { class: 'fx-stage__label' }, label)))
+      : field.options.filter((o) => !o.archived).map((o) => optionPill(h, o.name, o.color));
+    const note = field.source ? `${field.sourceLabel} owns these stages. Flow reads them; the Jobs board shows one lane for each.` : null;
+    dialog({ title: field.name, body: h('div', { class: 'fx-fields' }, h('div', { class: 'fx-cfm__options fx-cfm__options--all' }, strip), note ? h('p', { class: 'fx-dim' }, note) : null), confirm: 'Close' });
+  }
+
   function nameCell(field) {
     if (view.renaming === field.id) {
-      const input = h('input', { class: 'fx-input fx-cfm__rename', value: field.name, maxlength: '60', 'aria-label': 'Field name' });
+      const input = h('input', { class: 'fx-input fx-cfm__rename', value: field.name, maxlength: '60', 'aria-label': 'Custom field name' });
       input.addEventListener('keydown', (event) => {
         if (event.key === 'Enter') input.blur();
         if (event.key === 'Escape') { view.renaming = null; draw(); }
@@ -255,25 +375,36 @@ export async function renderCustomFields(main, ui) {
     }
     const editButton = field.archived || disabled || field.source ? null
       : h('button', { class: 'fx-cfm__edit', type: 'button', onclick: () => edit(field) }, 'Edit', lucide(h, 'panel-right'));
+    const viewButton = field.source ? h('button', { class: 'fx-cfm__edit', type: 'button', onclick: () => viewOptions(field) }, 'View', lucide(h, 'eye')) : null;
     return h('div', { class: 'fx-cfm__name', role: 'cell' },
-      field.source ? lucide(h, 'lock', 'Read only') : null,
-      h('span', { class: 'fx-cfm__label', title: field.name }, field.name), editButton);
+      h('div', { class: 'fx-cfm__title' },
+        field.source ? lucide(h, 'lock', 'Read only') : null,
+        h('span', { class: 'fx-cfm__label', title: field.name }, field.name), editButton, viewButton),
+      optionStrip(field));
   }
 
   function fieldRow(field) {
     const by = field.source ? field.sourceLabel : personName(field.createdBy);
+    const color = field.source ? 'gray' : colorOfField(field);
+    const icon = lucide(h, TYPE_ICONS[field.type], TYPE_LABELS[field.type]);
+    // A manager changes a field's colour from its type icon (or ⋯, Colour).
+    const picker = field.source || field.archived || disabled ? null : colorPicker(h, {
+      colors: data.colors, value: color, label: `Colour of ${field.name}`,
+      sample: (c) => h('span', { class: 'fx-cfm__icon', 'data-color': c }, lucide(h, TYPE_ICONS[field.type], TYPE_LABELS[field.type])),
+      onpick: (c) => setColor(field, c),
+    });
     return h('div', { class: 'fx-cfm__row', role: 'row', 'data-archived': field.archived ? 'true' : null },
       nameCell(field),
-      h('div', { class: 'fx-cfm__type', role: 'cell', 'data-color': TYPE_COLORS[field.type] }, lucide(h, TYPE_ICONS[field.type], TYPE_LABELS[field.type])),
+      h('div', { class: 'fx-cfm__type', role: 'cell' }, picker ? [picker.button, picker.panel] : h('span', { class: 'fx-cfm__icon', 'data-color': color }, icon)),
       h('div', { class: 'fx-cfm__by', role: 'cell' }, by ? h('span', { class: 'fx-cfm__avatar', title: by }, field.source ? lucide(h, 'plug') : initials(by)) : h('span', { class: 'fx-dim' }, '—')),
-      h('div', { class: 'fx-cfm__date', role: 'cell' }, field.source ? h('span', { class: 'fx-dim' }, '—') : createdDay(field.createdAt)),
+      h('div', { class: 'fx-cfm__date', role: 'cell', title: field.source ? `${field.sourceLabel} connected` : null }, field.createdAt ? createdDay(field.createdAt) : h('span', { class: 'fx-dim' }, '—')),
       h('div', { class: 'fx-cfm__where', role: 'cell' }, field.source ? `${field.sourceLabel} jobs` : 'Jobs'),
-      h('div', { class: 'fx-cfm__end', role: 'cell' }, field.source ? null : rowMenu(field)));
+      h('div', { class: 'fx-cfm__end', role: 'cell' }, field.source ? null : rowMenu(field, picker)));
   }
 
   // One group: a header that folds it, its rows, and "Create … field". A
   // search opens every group that has a match.
-  function group(key, pill, rows, { create = null } = {}) {
+  function group(key, pill, rows, { create = null, type = null } = {}) {
     const open = Boolean(view.q) || !view.folded.has(key);
     const toggle = h('button', { class: 'fx-cfm__fold', type: 'button', 'aria-expanded': String(open), 'aria-label': `${open ? 'Fold' : 'Open'} ${pill.text}` }, lucide(h, 'chevron-down'));
     toggle.addEventListener('click', () => {
@@ -281,8 +412,13 @@ export async function renderCustomFields(main, ui) {
       saveFolded(view.folded);
       draw();
     });
+    const groupPill = (c) => h('span', { class: 'fx-cfm__pill', 'data-color': c }, pill.icon ? lucide(h, pill.icon) : null, pill.text);
+    // A type group's pill picks the group's colour.
+    const picker = type && !disabled ? colorPicker(h, {
+      colors: data.colors, value: pill.color, label: `Colour of the ${pill.text} group`, sample: groupPill, onpick: (c) => setGroupColor(type, c),
+    }) : null;
     const head = h('div', { class: 'fx-cfm__group', role: 'row' }, toggle,
-      h('span', { class: 'fx-cfm__pill', 'data-color': pill.color }, pill.icon ? lucide(h, pill.icon) : null, pill.text),
+      picker ? [picker.button, picker.panel] : groupPill(pill.color),
       h('span', { class: 'fx-cfm__count' }, String(rows.length)));
     if (!open) return [head];
     const out = [head, ...rows.map(fieldRow)];
@@ -292,7 +428,7 @@ export async function renderCustomFields(main, ui) {
 
   function draw() {
     if (!data) return;
-    typeButton.replaceChildren(lucide(h, 'layers'), h('span', {}, view.types.size === 1 ? TYPE_LABELS[[...view.types][0]] : view.types.size ? `${view.types.size} types` : 'Field type'), lucide(h, 'chevron-down'));
+    typeButton.replaceChildren(lucide(h, 'layers'), h('span', {}, view.types.size === 1 ? TYPE_LABELS[[...view.types][0]] : view.types.size ? `${view.types.size} types` : 'Type'), lucide(h, 'chevron-down'));
     typeButton.classList.toggle('fx-chip--on', view.types.size > 0);
     filterButton.replaceChildren(lucide(h, 'list-filter'), h('span', {}, view.archived ? 'Archived shown' : 'Filter'), lucide(h, 'chevron-down'));
     filterButton.classList.toggle('fx-chip--on', view.archived);
@@ -315,7 +451,7 @@ export async function renderCustomFields(main, ui) {
       count += fields.length;
       const create = view.q || disabled ? null : h('button', { class: 'fx-cfm__create', type: 'button', onclick: () => edit(null, { type, name: '', options: undefined }) },
         lucide(h, 'plus'), `Create ${TYPE_LABELS[type].toLowerCase()} field`);
-      parts.push(...group(type, { text: TYPE_LABELS[type], icon: TYPE_ICONS[type], color: TYPE_COLORS[type] }, fields, { create }));
+      parts.push(...group(type, { text: TYPE_LABELS[type], icon: TYPE_ICONS[type], color: groupColor(type) }, fields, { create, type }));
     }
     // The work systems' own fields: one read-only group per system.
     for (const source of [...new Set(data.systemFields.map((f) => f.source))]) {
@@ -330,12 +466,13 @@ export async function renderCustomFields(main, ui) {
       count += fields.length;
       parts.push(...group('archived', { text: 'Archived', icon: 'archive', color: 'gray' }, fields));
     }
-    if (!count && (view.q || view.types.size)) parts.push(h('p', { class: 'fx-cfm__empty' }, 'No field matches.'));
+    if (!count && (view.q || view.types.size)) parts.push(h('p', { class: 'fx-cfm__empty' }, 'No custom field matches.'));
     if (!data.fields.length && !view.q && !view.types.size) {
-      parts.push(h('p', { class: 'fx-cfm__empty' }, 'No fields yet. Create one, for example Priority or Technician, to group the Jobs board by it.'));
+      parts.push(h('p', { class: 'fx-cfm__empty' }, 'No custom fields yet. Create one, for example Priority or Technician, to group the Jobs board by it.'));
     }
     table.replaceChildren(...parts);
-    foot.replaceChildren(h('span', {}, `${data.fields.length} ${data.fields.length === 1 ? 'field' : 'fields'}`),
+    // The count is what the table shows, the work systems' fields too.
+    foot.replaceChildren(h('span', {}, `${count} ${count === 1 ? 'custom field' : 'custom fields'}`),
       h('a', { href: DOCS, target: '_blank', rel: 'noopener' }, 'How custom fields work'));
   }
   const foot = h('div', { class: 'fx-cfm__foot' });
