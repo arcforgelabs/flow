@@ -5,17 +5,20 @@
 #   scripts/replit-deploy.sh start   # start Flow from .flow-deploy/
 #   scripts/replit-deploy.sh update-workspace
 #                                    # build as above, then bring the workspace's
-#                                    # database up to that build (the Run button)
+#                                    # database to the migrations production runs
+#                                    # (the Run button)
 #   scripts/replit-deploy.sh boot    # start the workspace updater in the background (.replit onBoot)
-#   scripts/replit-deploy.sh follow  # the workspace updater: update-workspace whenever
-#                                    # FLOW_DEPLOY_REF names a new commit, checked every
+#   scripts/replit-deploy.sh follow  # the workspace updater: the same, checked every
 #                                    # FLOW_WORKSPACE_UPDATE_SECONDS (600)
 #
-# The workspace updater keeps the workspace's database at the release the
-# next publish deploys, so Replit's publish step never finds it behind
-# production (docs/REPLIT.md, "The workspace updater"). It writes only
-# .flow-deploy/ and .flow-workspace/ (its log, locks and the commit the
-# workspace's database is at). FLOW_WORKSPACE_UPDATER=off stops it starting.
+# The workspace updater keeps the workspace's database at exactly the
+# migrations production runs (scripts/replit-workspace-db.js, which reads
+# production's GET /health), never ahead of it. The two databases then match,
+# so Replit's publish step shows no "Development database changes detected";
+# if it does, the answer is Cancel (docs/REPLIT.md, "The workspace
+# database"). It writes only .flow-deploy/, .flow-workspace/ (its log and
+# locks) and .flow-workspace-db/ (production's migrations).
+# FLOW_WORKSPACE_UPDATER=off stops it starting.
 #
 # This script fetches and checks the commit. When the fetched commit's own
 # copy of this script can take over (it carries the FLOW_DEPLOY_DRIVER line
@@ -248,12 +251,11 @@ cmd_start() {
   exec bash "$OUT/scripts/replit-start.sh"
 }
 
-# The workspace's Run button (.replit run), and each step of the workspace
-# updater. It builds what the next publish will build, then runs that build's
-# migrations on the workspace's database and stops; it starts no server.
-# Publishing compares the workspace's tables with production's, so afterwards
-# it can only offer to add what the release adds (docs/REPLIT.md, "Updates go
-# to the workspace first"). One at a time: a second run waits for the first.
+# The workspace's Run button (.replit run). It builds what the next publish
+# will build, then, with that build's tools, brings the workspace's database
+# to the migrations production runs, and stops; it starts no server and never
+# migrates the workspace past production (docs/REPLIT.md, "The workspace
+# database"). One at a time: a second run waits for the first.
 cmd_update_workspace() {
   [ -n "${DATABASE_URL:-}" ] || die "DATABASE_URL is not set; add the workspace's Replit PostgreSQL database"
   mkdir -p "$STATE"
@@ -262,41 +264,36 @@ cmd_update_workspace() {
     flock -w 1800 9 || die "another update of the workspace is still running"
   fi
   cmd_build
+  follow_production
+}
+
+# Runs migrate-workspace with the build's own copy of this script when it can
+# take over, else with this one.
+follow_production() {
   if takes_over; then
     handed_over migrate-workspace || exit $?
   else
     cmd_migrate_workspace
   fi
-  local revision
-  revision="$(cat "$OUT/.flow-revision" 2>/dev/null || true)"
-  if [ -n "$revision" ]; then printf '%s\n' "$revision" > "$STATE/workspace-db"; fi
 }
 
-# Runs the build's migrations on the workspace's database, then its doctor.
+# Brings the workspace's database to the migrations production runs, with
+# the build's scripts/replit-workspace-db.js (it needs the build's packages).
+# The name is kept for the workspace copies that hand this step over
+# (FLOW_DEPLOY_DRIVER=2); it no longer migrates to the build.
 cmd_migrate_workspace() {
-  local built
+  local built status=0
   built="$(cat "$OUT/.flow-deploy-release" 2>/dev/null || cat "$OUT/.flow-deploy-ref")"
-  log "migrating the workspace database to $built"
-  # server/db/migrate-all.js also creates every shipped adapter's tables; a
-  # release from before it has only the core migrations.
-  (cd "$OUT" && if [ -f server/db/migrate-all.js ]; then
-    node server/db/migrate-all.js
-  else
-    node --input-type=module -e "
-      const { openDatabase, migrateDatabase } = await import('./server/db/index.js');
-      const handle = openDatabase({ max: 1 });
-      try { await migrateDatabase(handle.db); } finally { await handle.close(); }
-    "
-  fi) || die "the migration of the workspace database to $built failed. Do not publish; production would fail the same way"
-  # The doctor (server/db/doctor.js) checks the result, and with the live
-  # app's address, says what the publish step will offer.
-  if [ -f "$OUT/server/db/commands.js" ]; then
-    local live=()
-    if [ -n "${FLOW_PUBLIC_ORIGIN:-}" ]; then live=(--live "$FLOW_PUBLIC_ORIGIN"); fi
-    (cd "$OUT" && node server/flow-server.js doctor "${live[@]}") \
-      || die "the workspace database is not at $built after its migration. Do not publish"
-  fi
-  log "the workspace database is at $built. Publish now: Replit may offer to add tables and columns, and must never offer to drop one"
+  [ -f "$OUT/scripts/replit-workspace-db.js" ] \
+    || die "$built has no scripts/replit-workspace-db.js, so the workspace database cannot follow production. Set FLOW_DEPLOY_REF to stable"
+  log "bringing the workspace database to the migrations production runs"
+  (cd "$OUT" && node scripts/replit-workspace-db.js sync) || status=$?
+  case "$status" in
+    0) log "the workspace database matches production. Publish: Replit shows no database changes. If it shows 'Development database changes detected', press Cancel" ;;
+    3) log "WARNING: the workspace database is not production's (above). Nothing was changed. If Replit shows 'Development database changes detected', press Cancel"
+       return 3 ;;
+    *) die "the workspace database could not follow production (above). If Replit shows 'Development database changes detected', press Cancel" ;;
+  esac
 }
 
 # Which commit FLOW_DEPLOY_REF names now, without fetching it.
@@ -315,25 +312,25 @@ target_revision() {
   fi
 }
 
-# One step of the workspace updater: update the workspace when
-# FLOW_DEPLOY_REF names a commit the workspace's database is not at.
+# One step of the workspace updater: bring the workspace's database to the
+# migrations production runs. It builds FLOW_DEPLOY_REF again only when that
+# names a new commit; the build supplies the tools.
 cmd_sync_workspace() {
   if [ -z "${DATABASE_URL:-}" ]; then log "no DATABASE_URL, so there is no workspace database to update"; return 0; fi
   if [ "${FLOW_DEPLOY_FROM_WORKSPACE:-}" = "1" ]; then log "FLOW_DEPLOY_FROM_WORKSPACE=1: the workspace updater does nothing"; return 0; fi
-  local target at
+  local target
   target="$(target_revision)" || { log "could not tell which commit ${FLOW_DEPLOY_REF:-main} names now; trying again later"; return 1; }
-  at="$(cat "$STATE/workspace-db" 2>/dev/null || true)"
-  if [ "$at" = "$target" ] && [ -f "$OUT/.flow-revision" ] && [ "$(cat "$OUT/.flow-revision")" = "$target" ]; then
-    # Still check the database itself: someone may have reset it.
-    if [ ! -f "$OUT/server/db/commands.js" ] || (cd "$OUT" && node server/flow-server.js doctor >/dev/null 2>&1); then
-      log "the workspace database is at ${FLOW_DEPLOY_REF:-main} ($target)"
-      return 0
+  if [ -f "$OUT/.flow-revision" ] && [ "$(cat "$OUT/.flow-revision")" = "$target" ]; then
+    mkdir -p "$STATE"
+    if command -v flock >/dev/null 2>&1; then
+      exec 9>"$STATE/update.lock"
+      flock -w 1800 9 || die "another update of the workspace is still running"
     fi
-    log "the workspace database is not at $target any more; updating it again"
+    follow_production
   else
-    log "${FLOW_DEPLOY_REF:-main} is at $target; the workspace database is at ${at:-an unknown commit}. Updating it"
+    log "${FLOW_DEPLOY_REF:-main} is at $target; building it for its tools"
+    cmd_update_workspace
   fi
-  cmd_update_workspace
 }
 
 # The workspace updater. One per workspace; each step runs on its own, so a
