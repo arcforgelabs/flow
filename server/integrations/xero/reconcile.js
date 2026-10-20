@@ -51,8 +51,7 @@ const day = (value) => (value instanceof Date ? value.toISOString().slice(0, 10)
 const codes = (lines) => [...(lines ?? []).map((l) => l.itemCode ?? '')].sort().join(',');
 
 // What differs between the Xero copy and the version Flow sent. Free text
-// (reference, descriptions) is not compared: the copy keeps it only when the
-// lab turns that on (XERO_KEEP_REFERENCE).
+// (reference, descriptions) is not compared yet.
 export function sentDifferences(sent, document, copy) {
   const found = [];
   const add = (field, flow, xero) => found.push({ field, flow, xero });
@@ -90,12 +89,12 @@ const MESSAGES = {
 // from Flow invoice id to { state, label, xero, differences, finding, message }.
 export async function accountingStatus(db, runtime, organisationId, invoiceIds = null) {
   const only = invoiceIds ? sql`and i.id = any(${sql.param([...new Set(invoiceIds.map(String))])}::uuid[])` : sql``;
-  // Without ids: only invoices Flow sent, for the check after each read.
-  const sentOnly = invoiceIds ? sql`` : sql`and p.id is not null`;
+  // Without ids: only invoices Flow sent or linked, for the check after each read.
+  const sentOnly = invoiceIds ? sql`` : sql`and (p.id is not null or l.xero_invoice_id is not null)`;
   const { rows } = await db.execute(sql`
     select i.id, i.status, i.issued_version, i.total_cents,
       p.version as sent_version, p.state as push_state, p.request_body, p.xero_invoice_id, p.xero_invoice_number,
-      v.document,
+      v.document, l.xero_invoice_id as linked_xero_id, l.matched_by as linked_by,
       x.status as x_status, x.invoice_number as x_number, x.xero_contact_id, x.subtotal_cents, x.tax_cents,
       x.total_cents as x_total_cents, x.amount_paid_cents, x.amount_due_cents, x.lines, x.issued_on
     from invoices i
@@ -105,13 +104,17 @@ export async function accountingStatus(db, runtime, organisationId, invoiceIds =
       order by version desc limit 1
     ) p on true
     left join invoice_versions v on v.invoice_id = i.id and v.version = p.version
-    left join xero_invoices x on x.organisation_id = i.organisation_id and x.xero_invoice_id = p.xero_invoice_id
+    -- A Flow invoice the Import page linked to a Xero invoice (links.js).
+    left join xero_invoice_links l on l.organisation_id = i.organisation_id and l.invoice_id = i.id
+    left join xero_invoices x on x.organisation_id = i.organisation_id and x.xero_invoice_id = coalesce(p.xero_invoice_id, l.xero_invoice_id)
     where i.organisation_id = ${organisationId} ${only} ${sentOnly}`);
   const web = runtime.settings.endpoints?.web ?? 'https://go.xero.com';
   const out = new Map();
   for (const r of rows) {
     let state;
-    if (!r.push_state) state = 'not_sent';
+    const linked = !r.push_state && Boolean(r.linked_xero_id);
+    if (linked) state = r.x_status ? xeroState({ status: r.x_status, amount_paid_cents: r.amount_paid_cents }) : 'not_copied';
+    else if (!r.push_state) state = 'not_sent';
     else if (['dispatching', 'ambiguous'].includes(r.push_state)) state = 'sending';
     else if (!r.x_status) state = 'not_copied';
     else state = xeroState({ status: r.x_status, amount_paid_cents: r.amount_paid_cents });
@@ -121,23 +124,26 @@ export async function accountingStatus(db, runtime, organisationId, invoiceIds =
     } catch {
       sent = null;
     }
+    const xeroInvoiceId = r.xero_invoice_id ?? r.linked_xero_id;
     const xero = r.x_status ? {
-      invoiceId: r.xero_invoice_id,
+      invoiceId: xeroInvoiceId,
       number: r.x_number ?? r.xero_invoice_number ?? null,
       status: r.x_status,
       totalCents: num(r.x_total_cents),
       amountDueCents: num(r.amount_due_cents),
-      url: `${web}/AccountsReceivable/View.aspx?InvoiceID=${encodeURIComponent(r.xero_invoice_id)}`,
+      url: `${web}/AccountsReceivable/View.aspx?InvoiceID=${encodeURIComponent(xeroInvoiceId)}`,
     } : null;
     const status = {
       invoiceId: r.id,
       flowStatus: r.status,
       sentVersion: r.sent_version ?? null,
-      current: r.sent_version !== null && r.sent_version === r.issued_version,
+      // A linked invoice was never sent: it is the Xero invoice, as it stands.
+      current: linked || (r.sent_version !== null && r.sent_version === r.issued_version),
+      linkedBy: linked ? r.linked_by : null,
       state,
       label: LABELS[state],
       xero,
-      differences: xero && r.document && !GONE.has(r.x_status) ? sentDifferences(sent, r.document, { ...r, total_cents: r.x_total_cents }) : [],
+      differences: !linked && xero && r.document && !GONE.has(r.x_status) ? sentDifferences(sent, r.document, { ...r, total_cents: r.x_total_cents }) : [],
       flowTotalCents: num(r.total_cents),
     };
     status.finding = findingFor(status);

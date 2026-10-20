@@ -15,6 +15,8 @@ import { renderInvoicingSettings, sendModeSection } from '/assets/ui/invoicing-s
 import { renderPriceList } from '/assets/ui/price-list.js';
 import { lucide, renderCustomFields } from '/assets/ui/custom-fields.js';
 import { renderJobs } from '/assets/ui/jobs.js';
+import { renderReconcile } from '/assets/ui/reconcile.js';
+import { renderXeroImport } from '/assets/ui/xero-import.js';
 import { startMonitoring } from '/assets/ui/monitoring.js';
 import { openSearch } from '/assets/ui/search.js';
 import { alertStrip } from '/assets/ui/alerts.js';
@@ -200,6 +202,7 @@ let me = null;
 const VIEWS = {
   jobs: { label: 'Jobs', icon: 'jobs', group: 'Work', render: (main) => renderJobs(main, ui()) },
   invoices: { label: 'Invoices', icon: 'invoices', group: 'Work', render: (main, id) => (id ? renderInvoice(main, ui(), id) : renderInvoiceList(main, ui())) },
+  reconcile: { label: 'Reconcile', icon: 'reconcile', group: 'Work', render: (main, id) => renderReconcile(main, ui(), id) },
   'invoicing-settings': { label: 'Invoice rules', icon: 'invoices', group: 'Settings', render: (main) => renderInvoicingSettings(main, ui()) },
   'price-list': { label: 'Price list', icon: 'tag', group: 'Settings', render: (main) => renderPriceList(main, ui()) },
   'custom-fields': { label: 'Custom fields', icon: 'fields', group: 'Settings', render: (main) => renderCustomFields(main, ui()) },
@@ -207,6 +210,8 @@ const VIEWS = {
   integrations: { label: 'Integrations', icon: 'plug', group: 'Settings', ownerOnly: true, render: (main, id) => (id ? renderIntegration(main, id) : renderIntegrations(main)) },
   // Not in the sidebar: "Manage account" in the account menu opens the same
   // Clerk profile. The page stays for links and Search.
+  // Opened from the Xero integration page: Xero invoices against Flow's own.
+  'xero-import': { label: 'Xero import', icon: 'plug', group: 'Settings', sidebar: false, render: (main) => renderXeroImport(main, ui()) },
   account: { label: 'Account', icon: 'person', group: 'Settings', sidebar: false, render: renderAccount },
   appearance: { label: 'Appearance', icon: 'palette', group: 'Settings', render: renderAppearance },
 };
@@ -215,6 +220,7 @@ const VIEWS = {
 const ICON_PATHS = {
   jobs: '<rect x="3" y="4" width="5" height="16" rx="1"/><rect x="10" y="4" width="5" height="11" rx="1"/><rect x="17" y="4" width="4" height="14" rx="1"/>',
   invoices: '<path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 13h7M9 17h5"/>',
+  reconcile: '<path d="M4 8h13M13 4l4 4-4 4M20 16H7M11 12l-4 4 4 4"/>',
   people: '<circle cx="9" cy="8" r="3"/><path d="M3 20c0-3.5 2.7-6 6-6s6 2.5 6 6"/><path d="M16 5a3 3 0 010 6M21 20c0-3-1.6-5-4-5.7"/>',
   tag: '<path d="M3 12V4h8l10 10-8 8z"/><circle cx="7.5" cy="8.5" r="1.5"/>',
   fields: '<rect x="3" y="4" width="18" height="5" rx="1.5"/><rect x="3" y="13" width="18" height="5" rx="1.5"/><path d="M7 6.5h4M7 15.5h7"/>',
@@ -825,6 +831,7 @@ async function renderIntegration(main, id) {
           current.id === 'xero' && current.state === 'ready' ? h('section', { class: 'fx-int-section' }, xeroConnection(body.organisations, canChange)) : null,
           current.id === 'seazona' ? h('section', { class: 'fx-int-section fx-card', style: { padding: '8px 20px 16px' } }, automationSection(ui(), 'seazona', 'Ready to invoice')) : null,
           on && current.state === 'ready' ? personSettingsSection(current) : null,
+          current.id === 'xero' && current.state === 'ready' ? xeroImportSection(body.organisations) : null,
           current.id === 'xero' ? h('section', { class: 'fx-int-section fx-card', style: { padding: '8px 20px 16px' } }, sendModeSection(ui())) : null,
           guide ? h('section', { class: 'fx-int-section' },
             h('h2', { class: 'fx-int-section__title' }, 'Set up'),
@@ -902,6 +909,53 @@ function connectProgress({ steps, started }) {
     h('ol', {}, steps.map((step) => h('li', { 'data-state': step.state },
       h('span', { class: 'fx-progress__mark', 'aria-hidden': 'true' }, step.state === 'done' ? '✓' : step.state === 'failed' ? '!' : ''),
       step.label))));
+}
+
+// Xero › Import, in settings rows: how many Xero invoices to check (Review
+// opens them one at a time), the two import settings, and the history. The
+// counts come from Flow's copy of Xero; the pages are server/ui/xero-import.js.
+function xeroImportSection(organisations) {
+  const organisationId = organisations?.[0]?.id;
+  const canAct = ['owner', 'admin'].includes(me?.person?.role);
+  const count = h('span', { class: 'fx-num fx-xi-count' }, '…');
+  const copied = h('span', {}, 'Every Xero invoice Flow copied. Search it with no Xero call.');
+  const switchFor = (name, label) => {
+    const button = h('button', { class: 'fx-switch', type: 'button', role: 'switch', 'aria-label': label, 'aria-checked': 'false', disabled: true });
+    button.addEventListener('click', async () => {
+      const on = button.getAttribute('aria-checked') !== 'true';
+      button.disabled = true;
+      try {
+        const { settings } = await flow('/api/xero/import/settings', { method: 'PUT', body: JSON.stringify({ organisationId, [name]: on }) });
+        button.setAttribute('aria-checked', String(settings[name]));
+        toast('Saved.', 'success');
+      } catch (error) {
+        toast(error.message, 'danger');
+      }
+      button.disabled = !canAct;
+    });
+    return button;
+  };
+  const autoLink = switchFor('autoLink', 'Link sure matches');
+  const makeUnmatched = switchFor('makeUnmatched', 'Make Flow invoices for the rest');
+  const section = h('section', { class: 'fx-set fx-int-section fx-card', style: { padding: '8px 20px 16px' } },
+    h('h2', { class: 'fx-set__title' }, 'Import'),
+    settingRow({ label: 'To check', hint: 'Xero invoices that fit a Flow invoice or a Flow job.',
+      control: h('span', { class: 'fx-row' }, count, h('a', { class: 'fx-btn fx-btn--sm fx-btn--primary', href: '/xero-import', onclick: navigate }, 'Review')) }),
+    settingRow({ label: 'Link sure matches', hint: 'Same client, total and week, and only one fit. Flow links them.', control: autoLink }),
+    settingRow({ label: 'Make Flow invoices for the rest', hint: 'Off: they stay in the Xero history.', control: makeUnmatched }),
+    settingRow({ label: 'Xero history', hint: copied, control: h('a', { class: 'fx-btn fx-btn--sm', href: '/xero-import?show=all', onclick: navigate }, 'Search') }));
+  if (organisationId) {
+    flow(`/api/xero/import?organisationId=${organisationId}&show=check&limit=1`)
+      .then(({ counts: c, settings }) => {
+        count.replaceChildren(String(c.job_fits + c.invoice_fits));
+        copied.replaceChildren(`${Object.values(c).reduce((a, b) => a + b, 0)} Xero invoices copied, ${c.linked} in Flow. Search with no Xero call.`);
+        autoLink.setAttribute('aria-checked', String(settings.autoLink));
+        makeUnmatched.setAttribute('aria-checked', String(settings.makeUnmatched));
+        autoLink.disabled = makeUnmatched.disabled = !canAct;
+      })
+      .catch(() => count.replaceChildren('—'));
+  }
+  return section;
 }
 
 // Once Xero is on: each organisation's connection, the history copy, and

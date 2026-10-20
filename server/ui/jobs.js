@@ -25,7 +25,7 @@ const SYSTEM_NAME = { seazona: 'Seazona', xero: 'Xero' };
 // A job's events (server/core/ledger.js), in plain words.
 const ACTIVITY = {
   observed: 'Flow read the job', source_changed: 'The job changed in the lab system', ready: 'Marked ready to invoice',
-  in_work: 'Put back in work', drafted: 'Draft invoice made', draft_refused: 'Draft invoice refused',
+  in_work: 'Put back in work', drafted: 'Draft invoice made', draft_refused: 'Draft invoice refused', invoice_linked: 'Linked to an invoice',
   accounting_checked: 'Checked in the accounting system', payment_recorded: 'Payment recorded', paid: 'Paid in full',
   held: 'Put on hold', review: 'Sent to review', released: 'Hold removed',
   status_moved_back: 'The job status moved back in the lab system', source_lines_used: 'New job lines used on the draft',
@@ -667,6 +667,7 @@ export async function renderJobs(main, ui) {
     const o = job.obligation;
     const stage = invoiceStage(o);
     const found = problemsOf(job);
+    const choose = found.find((f) => f.go === 'choose') ?? null;
     const system = SYSTEM_NAME[job.sourceSystem] ?? job.sourceSystem;
     const status = job.status ?? NO_STATUS;
     const late = isLate(job);
@@ -678,10 +679,37 @@ export async function renderJobs(main, ui) {
     const invoiceText = o?.invoiceId
       ? link({ href: `/invoices/${o.invoiceId}`, onclick: (event) => { close(); ui.go(event); } },
         `${o.invoiceStatus === 'draft' ? 'Draft' : 'Invoice'} ${o.invoiceNumber ?? ''}`.trim() + (stage ? ` · ${INVOICE_STAGES[stage]}` : ''))
-      : stage ? INVOICE_STAGES[stage] : o ? 'Not ready to invoice' : 'No invoice yet';
-    const fixBox = found.length ? h('section', { class: 'fx-task__fix', 'aria-label': 'Fix' },
+      : choose ? h('span', { class: 'fx-task__none' }, svg(WARN_ICON), 'Needs invoice')
+        : stage ? INVOICE_STAGES[stage] : o ? 'Not ready to invoice' : 'No invoice yet';
+    const rest = found.filter((f) => f.go !== 'choose');
+    const fixBox = rest.length ? h('section', { class: 'fx-task__fix', 'aria-label': 'Fix' },
       h('h3', {}, 'Fix'),
-      found.map((f) => h('div', { class: 'fx-task__fixrow' }, h('span', {}, `${f.text} ${f.todo}`), fixLink(f.go)))) : null;
+      rest.map((f) => h('div', { class: 'fx-task__fixrow' }, h('span', {}, [f.text, f.todo].filter(Boolean).join(' ')), fixLink(f.go)))) : null;
+    // No invoice, and the match is unclear: one line and two buttons. The
+    // possible matches are compared on the Reconcile page, not here.
+    const chooseBox = choose ? h('section', { class: 'fx-task__choose', 'aria-label': 'Invoice' },
+      svg(WARN_ICON),
+      h('span', {}, choose.text),
+      h('div', { class: 'fx-task__choices' },
+        state.canDraft ? h('button', { class: 'fx-btn fx-btn--primary', type: 'button', onclick: (event) => makeInvoice(event.currentTarget) }, 'Make invoice') : null,
+        h('a', { class: 'fx-btn', href: `/reconcile/${o.id}`, onclick: (event) => { close(); ui.go(event); } }, 'Reconcile'))) : null;
+    // "Make invoice": the person says the job has no invoice yet, then Flow
+    // drafts it (the live check before the draft still runs).
+    async function makeInvoice(button) {
+      if (button) button.disabled = true;
+      try {
+        await flow(`/api/invoicing/jobs/${o.id}/no-invoice`, { method: 'POST', body: '{}' });
+        const { invoice } = await flow(`/api/invoicing/jobs/${o.id}/draft`, { method: 'POST', body: '{}' });
+        ui.toast('Draft invoice made.', 'success');
+        close();
+        ui.go(`/invoices/${invoice.id}`);
+      } catch (error) {
+        const reasons = error.details?.reasons;
+        ui.toast(reasons?.length ? `Not drafted: ${reasons.join('; ')}.` : error.message, 'danger');
+        close();
+        await load();
+      }
+    }
     // Each fix's link: Flow's own invoice, the job in the work system, or
     // the Flow page where the fix is made (job-board.js GO).
     function fixLink(go) {
@@ -718,6 +746,7 @@ export async function renderJobs(main, ui) {
           // The job links to Flow's invoice only. The invoice page shows its
           // link to an accounting system (its Linked card).
           field('Invoice', invoiceText)),
+        chooseBox,
         fixBox,
         state.fields.length ? h('section', { class: 'fx-task__custom', 'aria-label': 'Custom fields' },
           h('h3', {}, 'Fields'),
@@ -745,7 +774,7 @@ export async function renderJobs(main, ui) {
     element.addEventListener('close', () => element.remove());
     document.body.append(element);
     element.showModal();
-    if (atFix && fixBox) fixBox.scrollIntoView({ block: 'start' });
+    if (atFix && (chooseBox ?? fixBox)) (chooseBox ?? fixBox).scrollIntoView({ block: 'start' });
     if (!o) return;
     const when = (iso) => new Date(iso).toLocaleString('en-AU', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
     flow(`/api/invoicing/jobs/${o.id}/activity`).then(({ events }) => {
