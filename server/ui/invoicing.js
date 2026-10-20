@@ -580,8 +580,11 @@ function draftView(invoice, ui, context, redraw) {
       }
     },
   }, emails ? `Send to ${to} and email` : `Send to ${to}`) : null;
+  // With no accounting system, Issue invoice gives the draft its number and
+  // locks it. A changed job blocks it, as it blocks Move to Ready.
   const issueButton = context.canIssue && !to ? h('button', {
-    class: 'fx-btn fx-btn--primary', type: 'button',
+    class: 'fx-btn fx-btn--primary', type: 'button', disabled: Boolean(invoice?.jobChange),
+    title: invoice?.jobChange ? 'Fix the problem first.' : 'Gives this invoice the next number and locks it.',
     onclick: async () => {
       const saved = await save();
       if (!saved) return;

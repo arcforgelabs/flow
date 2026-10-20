@@ -459,6 +459,12 @@ export function createInvoicingRouter({
     const invoiceId = pathId(req.params.id, 'invoice');
     const organisationId = await organisationOf(req);
     const issueDate = optionalDate(req.body?.issueDate, 'issueDate') ?? today();
+    // A draft whose job changed after it was made waits for a person to fix
+    // the job at its source or adopt the change (ledger.js), as Move to
+    // Ready and Send do.
+    const { problems } = await invoiceView(db, organisationId, await getInvoice(db, organisationId, invoiceId));
+    const held = problems.find((p) => p.code === 'job_review');
+    if (held) throw new FlowError('not_ready', `${held.message} Nothing was issued.`);
     const issued = await issueInvoice(db, organisationId, invoiceId, { issuedBy: `person:${req.person.id}`, issueDate });
     log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} issued invoice ${issued.number} (version ${issued.issuedVersion})`);
     res.json({ ok: true, invoice: await invoiceDetail(db, organisationId, invoiceId, accounting(), work()) });
