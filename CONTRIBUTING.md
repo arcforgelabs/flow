@@ -77,6 +77,9 @@ checks `test` (CI) and `gitleaks` (Secret Scan), and blocks force pushes and
 deletion of `main`. The ruleset in `.github/rulesets/release-tags.json` stops
 anyone from deleting, moving or force-pushing a release tag (`v20*`).
 
+A small fix with no merge risk merges itself when its checks are green; all
+other pull requests wait for a maintainer (`docs/LOW_RISK_MERGE.md`).
+
 Both rulesets are live (applied 18 Oct 2026). To apply them again, for
 example on a fork:
 
