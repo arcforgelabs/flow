@@ -46,3 +46,12 @@ test('Account is not in the sidebar; its page stays, with one visible heading', 
   assert.match(app, /if \(view\.sidebar === false\) continue;/);
   assert.match(app, /main\.append\(h\('h1', \{ class: 'fx-sr' \}, 'Account'\), host\);/);
 });
+
+test('a person lands on Invoices, Ready tab, after sign-in and at / or an unknown path', () => {
+  const app = read('../server/ui/app.js');
+  assert.match(app, /const START_VIEW = 'invoices';/);
+  assert.match(app, /return \[START_VIEW, null\];/);
+  assert.doesNotMatch(app, /return \['jobs', null\];/);
+  // A new browser tab has no saved tab, so the list opens on Ready.
+  assert.match(read('../server/ui/invoicing.js'), /\? saved : 'ready'/);
+});

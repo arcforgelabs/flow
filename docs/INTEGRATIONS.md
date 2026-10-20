@@ -32,7 +32,7 @@ export const exampleAdapter = {
 The capabilities are `pullWorkItems`, `pullHistoryJobs`, `pushInvoice`, `pushBill`,
 `pullPayments`, `checkInvoice`, `listCustomers`, `findInvoices`, `listWork`,
 `billableJobs`, `listPriceItems`, `jobIssues`, `moveWork`, `cancelMove`, `personSettings`,
-`setPersonSetting`, `captureError`, `browserMonitoring`, `alerts` and
+`setPersonSetting`, `captureError`, `browserMonitoring`, `traceSpan`, `traceRequest`, `alerts` and
 `health`. `alerts({ organisationId })` answers what only a person can clear,
 for the quiet alert on the Integrations page (docs/ALERTS.md).
 `listPriceItems({ organisationId })` answers the system's own price list from
@@ -61,8 +61,11 @@ adapter's own copy whose job day is in that range, never a live call:
 `{ jobs }`, each `{ ref, day, subtotalCents }` (`subtotalCents` null when a
 line has no amount); the daily reconcile counts them (`docs/RECONCILE.md`). `captureError({ message,
 source, error })` takes each error Flow logs, and `browserMonitoring()`
-answers the public settings a browser needs; the Sentry adapter has both
-(`docs/SENTRY.md`).
+answers the public settings a browser needs. `traceSpan({ name, op,
+attributes }, work)` runs work inside a span of the current performance
+trace, and `traceRequest()` answers a function that names the request's
+trace by its route (`server/core/tracing.js`). The Sentry adapter has all
+four (`docs/SENTRY.md`).
 `listCustomers({ organisationId })` answers the system's customers as
 `{ id, name }`. `findInvoices({ organisationId, invoiceIds, numbers,
 flowInvoiceIds, contactId, from, to })` answers sales invoices from the

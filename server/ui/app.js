@@ -312,11 +312,15 @@ function reportMenuItem(openReport) {
   };
 }
 
+// The page a person lands on after sign-in, and for / or an unknown path.
+// Invoices opens on its Ready tab. A home page can take this over later.
+const START_VIEW = 'invoices';
+
 // The view and, for one record, its id: /invoices/<id> is ['invoices', '<id>'].
 function currentView() {
   const [name, id = null] = location.pathname.replace(/^\/+|\/+$/g, '').split('/');
   if (VIEWS[name] && (!VIEWS[name].ownerOnly || me?.person.role === 'owner')) return [name, id];
-  return ['jobs', null];
+  return [START_VIEW, null];
 }
 
 async function route() {
@@ -536,7 +540,7 @@ const STATE_TONE = { ready: 'success', disabled: 'mute', failed: 'danger', resta
 const CATALOGUE = {
   xero: { maker: 'Xero', category: 'accounting', blurb: 'Send invoices to Xero as drafts and bring payments back.', logo: 'xero.svg' },
   seazona: { maker: 'Seazona', category: 'lab', blurb: 'Bring lab cases and orders into Flow as jobs.', logo: 'seazona.svg' },
-  sentry: { maker: 'Sentry', category: 'monitoring', blurb: 'Send errors and problem reports to your own Sentry project.', logo: 'sentry.svg' },
+  sentry: { maker: 'Sentry', category: 'monitoring', blurb: 'Send errors, problem reports and speed traces to your own Sentry project.', logo: 'sentry.svg' },
 };
 const CATEGORIES = [['all', 'All'], ['accounting', 'Accounting'], ['lab', 'Lab software'], ['monitoring', 'Monitoring']];
 const CATEGORY_LABEL = Object.fromEntries(CATEGORIES);

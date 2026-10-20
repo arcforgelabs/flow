@@ -59,7 +59,7 @@ export async function renderJobs(main, ui) {
   main.classList.add('fx-main--wide');
   main.append(
     pageHeader('Jobs', { subtitle: 'Every job in the lab system, by its status there.' }),
-    h('div', { class: 'fx-toolbar fx-toolbar--plain' }, search, toggle),
+    h('div', { class: 'fx-toolbar fx-toolbar--plain fx-toolbar--end' }, search, toggle),
     host);
 
   const drawToggle = () => toggle.replaceChildren(...[['board', 'Board'], ['list', 'List']].map(([id, label]) => h('button', {
@@ -73,12 +73,14 @@ export async function renderJobs(main, ui) {
 
   function draw() {
     if (!state.jobs.length) {
+      main.classList.remove('fx-main--board');
       host.replaceChildren(h('div', { class: 'fx-panel fx-empty' },
         h('p', {}, 'No jobs yet. Jobs appear here once the lab system is connected under Integrations.'),
         h('a', { class: 'fx-btn', href: '/invoices/new', onclick: ui.go }, 'Make an invoice by hand')));
       return;
     }
     const shown = state.jobs.filter((job) => matches(job, state.q));
+    main.classList.toggle('fx-main--board', state.layout === 'board');
     host.replaceChildren(state.layout === 'list' ? list(shown) : board(shown));
   }
 
