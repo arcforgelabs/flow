@@ -14,7 +14,7 @@ import { writesAllowed } from './settings.js';
 // XERO_MODE says which Xero it acts on. Its tables are created only while it
 // is on (docs/INTEGRATIONS.md).
 
-export const XERO_TABLES = Object.freeze(['xero_connections', 'xero_contacts', 'xero_items', 'xero_sync_runs', 'xero_invoice_pushes', 'xero_payment_cursors', 'xero_invoices', 'xero_credit_notes', 'xero_payments', 'xero_mirror_cursors', 'xero_call_guard', 'xero_calls']);
+export const XERO_TABLES = Object.freeze(['xero_connections', 'xero_contacts', 'xero_items', 'xero_sync_runs', 'xero_invoice_pushes', 'xero_payment_cursors', 'xero_invoices', 'xero_credit_notes', 'xero_payments', 'xero_mirror_cursors', 'xero_call_guard', 'xero_calls', 'xero_webhook_events', 'xero_daily_checks']);
 
 // What an owner enters in Settings, Integrations (server/integrations/setup.js).
 // The refresh token's key comes from Flow's secrets key.
@@ -29,6 +29,7 @@ export const XERO_SETUP = {
       'Redirect URI: copy it from below, exactly.',
       'Open the app\'s Configuration. Copy the client id. Generate a secret and copy it: Xero shows it once.',
       'Paste both below, choose the mode, name your Xero organisation, and turn Xero on.',
+      'Optional, for changes in seconds: open the app\'s Webhooks page. Delivery URL: this installation\'s address plus /api/xero/webhooks. Tick Contacts and Invoices, and Credit notes when Xero offers it. Copy the webhook key into "Webhook key" below and save, then press Send "Intent to receive" in Xero.',
     ],
   },
   fields: [
@@ -38,6 +39,7 @@ export const XERO_SETUP = {
     { name: 'XERO_CLIENT_SECRET', label: 'Client secret', secret: true, help: 'Stored encrypted. Flow never shows it again.' },
     { name: 'XERO_TENANT_NAME', label: 'Xero organisation name', help: 'Live mode connects only the organisation with this exact name.' },
     { name: 'XERO_ALLOW_LIVE_WRITES', label: 'Create draft invoices in live Xero', kind: 'onoff', help: 'Off: Flow only reads from Xero.' },
+    { name: 'XERO_WEBHOOK_KEY', label: 'Webhook key', secret: true, help: 'From the Xero app\'s Webhooks page. Empty: Flow reads Xero\'s changes every 15 minutes instead.' },
   ],
   derivedKeys: ['XERO_TOKEN_KEY'],
 };

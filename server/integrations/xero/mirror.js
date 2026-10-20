@@ -182,6 +182,20 @@ const UPSERT = {
 const MAPPERS = { invoices: mapInvoice, credit_notes: mapCreditNote, payments: mapPayment };
 const ID_OF = { invoices: 'xeroInvoiceId', credit_notes: 'xeroCreditNoteId', payments: 'xeroPaymentId' };
 
+// Xero records as the copy's rows.
+export const mapRecords = (resource, raw, settings) => raw.map((record) => MAPPERS[resource](record, settings)).filter((r) => r[ID_OF[resource]]);
+
+// Writes each mapped row to the copy. `tx` is a transaction or the database.
+// Adds to `counts` (inserted, changed, unchanged).
+export async function storeRows(tx, organisationId, resource, rows, counts) {
+  for (const row of rows) {
+    const { rows: written } = await tx.execute(UPSERT[resource](organisationId, row, hashOf(row)));
+    if (!written.length) counts.unchanged += 1;
+    else if (written[0].inserted) counts.inserted += 1;
+    else counts.changed += 1;
+  }
+}
+
 async function readCursor(db, organisationId, resource) {
   await db.execute(sql`insert into xero_mirror_cursors (organisation_id, resource) values (${organisationId}, ${resource})
     on conflict do nothing`);
@@ -213,7 +227,6 @@ export function nextPosition({ modifiedSince, page }, rows, pageSize) {
 export async function mirrorResource(db, runtime, organisationId, resource, { maxPages = 50 } = {}) {
   if (!MIRROR_RESOURCES.includes(resource)) throw new TypeError(`unknown Xero mirror resource: ${resource}`);
   const { settings } = runtime;
-  const map = MAPPERS[resource];
   const pageSize = settings.mirrorPageSize;
   const counts = { pages: 0, read: 0, inserted: 0, changed: 0, unchanged: 0 };
   return withXeroLane('sync', async () => {
@@ -233,15 +246,10 @@ export async function mirrorResource(db, runtime, organisationId, resource, { ma
           where organisation_id = ${organisationId} and resource = ${resource}`);
         throw error;
       }
-      const rows = raw.map((record) => map(record, settings)).filter((r) => r[ID_OF[resource]]);
+      const rows = mapRecords(resource, raw, settings);
       const next = nextPosition(position, rows, pageSize);
       await db.transaction(async (tx) => {
-        for (const row of rows) {
-          const { rows: written } = await tx.execute(UPSERT[resource](organisationId, row, hashOf(row)));
-          if (!written.length) counts.unchanged += 1;
-          else if (written[0].inserted) counts.inserted += 1;
-          else counts.changed += 1;
-        }
+        await storeRows(tx, organisationId, resource, rows, counts);
         await tx.execute(sql`update xero_mirror_cursors set
           modified_since = ${next.modifiedSince}, page = ${next.page}, rows_read = rows_read + ${raw.length},
           last_read_at = now(), last_error = null,

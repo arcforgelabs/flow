@@ -167,6 +167,9 @@ export function resolveXeroSettings(env = process.env) {
     mirrorPageSize: Math.min(readPositiveInteger(env, 'XERO_MIRROR_PAGE_SIZE', DEFAULT_MIRROR_PAGE_SIZE), MAX_MIRROR_PAGE_SIZE),
     // The share of the day's calls the mirror leaves for drafts and people.
     mirrorReserveFraction: readFraction(env, 'XERO_MIRROR_RESERVE_FRACTION', 0.3),
+    // The key Xero signs each webhook with (issue #45), from the Xero app's
+    // Webhooks page. Unset, Flow answers no webhook and reads by polling only.
+    webhookKey: readEnv(env, 'XERO_WEBHOOK_KEY') || null,
     endpoints: XERO_ENDPOINTS,
   };
 }

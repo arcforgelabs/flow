@@ -68,6 +68,7 @@ credentials. Tests use replay only and never call the real Xero API.
 | `XERO_KEEP_REFERENCE` | configuration | `on` keeps free text from Xero records in the mirror: invoice and payment references and line descriptions. They can name a patient. Default off: those fields are stored empty. |
 | `XERO_MIRROR_PAGE_SIZE` | configuration | Records per mirror call. Default 200, at most 1000. |
 | `XERO_MIRROR_RESERVE_FRACTION` | configuration | The share of the day's calls the mirror leaves for drafts and people. Default 0.3. |
+| `XERO_WEBHOOK_KEY` | secret | The webhook key from the Xero app's Webhooks page. Set: Flow takes Xero's change events at `/api/xero/webhooks`. Unset: Flow reads changes by polling only. |
 
 Errors name a setting, never its value.
 
@@ -331,6 +332,51 @@ flowchart LR
   what Flow stores; `last_changed_at` moves only with it.
 - **No patient text by default.** References and line descriptions are kept
   only with `XERO_KEEP_REFERENCE=on`.
+
+### Webhooks and the daily check
+
+The poll is late by up to 15 minutes, and Xero calls polling its second
+choice. Xero's webhooks tell Flow which record changed within seconds. Xero,
+Intuit, Shopify and Stripe all say a webhook can be lost, so the poll stays as
+the safety net, and a daily check proves the copy is complete (issue #45).
+
+```mermaid
+flowchart LR
+  xero[Xero] -- event: id only --> hook[POST /api/xero/webhooks<br/>check signature<br/>save id, answer 200]
+  hook --> inbox[(xero_webhook_events)]
+  daily[Daily check<br/>summary of every invoice] -- rows that differ --> inbox
+  inbox --> read[Read by id<br/>50 invoices a call]
+  read --> copy[(Xero copy)]
+  poll[Changes poll<br/>15 min, or 1 h<br/>while webhooks arrive] --> copy
+  copy --> compare[Sent invoices<br/>compared again]
+```
+
+- **Receive.** Xero signs each delivery with the webhook key
+  (`x-xero-signature`, HMAC-SHA256 of the raw body, base64). A good signature
+  gets 200 with no body; a bad one gets 401; that is also Xero's "intent to
+  receive" test. Without `XERO_WEBHOOK_KEY` the route answers 404.
+- **Save, then read.** Each event's record id waits in `xero_webhook_events`,
+  one row per record, so a repeat event costs nothing. The import worker reads
+  waiting invoices by id, 50 a call, into the copy, then compares the sent
+  invoices again. Credit note events read the credit note changes; contact
+  events read contacts and items again, at most once an hour. Other events
+  need no read.
+- **The poll slows down.** While a webhook arrived in the last day, the poll
+  waits an hour (`WEBHOOK_REFRESH_MS`). If webhooks stop, it goes back to 15
+  minutes by itself.
+- **The daily check.** Once a day, for a complete copy, one summary read of
+  every invoice (1,000 a call) finds each copy row whose status, money or
+  change time differs from Xero, each invoice the copy lacks, and each live
+  row Xero no longer lists. Those wait in the inbox and are read by id: at
+  most 250 a day. This catches a part payment that did not move Xero's change
+  time, and a lost webhook.
+- **Calls.** Every read goes through the call guard and the governor's sync
+  lane, and leaves the mirror's reserve. A failed read waits 1 minute, then 2,
+  4 and up to an hour; it is logged once as an error, then as warnings.
+- **Set it up.** On the Xero app's Webhooks page, set the delivery URL to this
+  installation's address plus `/api/xero/webhooks`, and tick Contacts,
+  Invoices, and Credit notes when Xero offers it. Paste the webhook key into Flow's Xero settings
+  ("Webhook key"), save, then press "Send Intent to receive" in Xero.
 
 ## Sent invoices against the copy
 
