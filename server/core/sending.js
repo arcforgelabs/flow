@@ -8,15 +8,14 @@ import { soleOrganisation } from './pipeline.js';
 import { needsRead, readAccountingFirst, readBeforeAct, READS_PER_PASS } from './read-before-act.js';
 import { deadHoldSince, deadSince, enqueueJob, runNextJob } from './queue.js';
 
-// Drafts, Problem, Ready and Send all ready (docs/INVOICE_SENDING.md).
+// Pending, Ready and Send all ready (docs/INVOICE_SENDING.md).
 //
 // Flow checks every draft. It checks its own data first: the draft has lines,
 // a total above zero, and a price item (or, for a line such as a rush
 // charge, an account) on every line. When an accounting
 // system is connected, its own checks are added (for Xero: the customer
 // matches one Xero contact, every item is in Xero). A draft with a problem is
-// in Problem. A person marks a draft without one ready. A saved change keeps
-// it ready; only Move to Drafts (markNotReady) takes it back.
+// Pending (the "problem" view). A draft without one is Ready.
 //
 // Send all ready issues every ready draft (each gets its number) and, when an
 // accounting system is connected, queues it to go there. The send worker
@@ -97,8 +96,8 @@ async function checkDrafts(db, organisationId, drafts, accounting) {
 }
 
 // The views of the Invoices page. `accounting` is the accounting adapter, or
-// null. Every draft is in one view: Problem (a check failed), Ready (a person
-// marked it ready) or To check (the rest). An issued invoice is Sending while
+// null. Every draft is in one view: Problem (a check failed; the Pending tab)
+// or Ready (its checks pass). An issued invoice is Sending while
 // queued, and a Problem when the accounting system refused it. Answers
 // { toCheck: [ids], ready: [ids], problems: Map(id -> problems), sending: Set(ids) }.
 export async function invoiceViews(db, organisationId, { accounting = null } = {}) {
@@ -115,10 +114,12 @@ export async function invoiceViews(db, organisationId, { accounting = null } = {
     if (row.sendState === 'queued') sending.add(row.id);
     else problems.set(row.id, [row.sendError ?? problem('send_failed', 'Sending failed.', 'Send failed')]);
   }
+  // A draft whose checks pass is ready (Samuel, 2026-10-20): no person
+  // needs to mark it. toCheck stays for callers that still read it.
   const clean = drafts.filter((d) => !problems.has(d.id));
   return {
-    toCheck: clean.filter((d) => !d.readyAt).map((d) => d.id),
-    ready: clean.filter((d) => d.readyAt).map((d) => d.id),
+    toCheck: [],
+    ready: clean.map((d) => d.id),
     problems,
     sending,
   };
@@ -133,7 +134,7 @@ export async function invoiceView(db, organisationId, invoice, { accounting = nu
     return { view: null, problems: [] };
   }
   const found = (await checkDrafts(db, organisationId, [invoice], accounting)).get(invoice.id) ?? [];
-  return { view: found.length ? 'problem' : invoice.readyAt ? 'ready' : 'to_check', problems: found };
+  return { view: found.length ? 'problem' : 'ready', problems: found };
 }
 
 // Mark ready: a person checked these drafts. A draft with a problem stays

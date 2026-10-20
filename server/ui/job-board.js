@@ -42,7 +42,7 @@ export function orderStatuses(statuses = [], jobs = []) {
 }
 
 export const INVOICE_STAGES = {
-  drafted: 'Drafted', problem: 'Problem', ready: 'Ready to invoice', invoiced: 'Invoiced', paid: 'Paid',
+  drafted: 'Drafted', problem: 'Pending', ready: 'Ready to invoice', invoiced: 'Invoiced', paid: 'Paid',
 };
 
 const PROBLEM_VIEWS = ['pending', 'review_required', 'held'];

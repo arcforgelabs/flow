@@ -50,8 +50,8 @@ function page() {
 }
 
 const list = (status, numbers) => ({
-  invoices: numbers.map((number, i) => ({ id: `${status}-${i}`, number, contactName: `Client ${number}`, status: status === 'issued' ? 'issued' : 'draft', totalCents: 100, createdAt: '2026-01-01' })),
-  counts: { ready: 1, to_check: 0, problem: 0, issued: 1, void: 0 },
+  invoices: numbers.map((number, i) => ({ id: `${status}-${i}`, number, contactName: `Client ${number}`, status: status === 'issued' ? 'issued' : 'draft', tab: status === 'issued' ? 'approved' : status, totalCents: 100, createdAt: '2026-01-01' })),
+  counts: { pending: 0, ready: 1, draft: 0, approved: 1, sent: 0, void: 0 },
   sendsTo: null,
   sendMode: null,
 });
@@ -70,15 +70,15 @@ test('a tab click selects the tab at once; only the newest answer draws; a tab s
   await opened;
   assert.equal(selected(main), 'Ready');
 
-  // Finalised is selected before the server answers; the old list is dimmed.
-  tab(main, 'Finalised').onclick();
-  assert.equal(selected(main), 'Finalised');
+  // Approved is selected before the server answers; the old list is dimmed.
+  tab(main, 'Approved').onclick();
+  assert.equal(selected(main), 'Approved');
   assert.equal(panel(main).getAttribute('aria-busy'), 'true');
   assert.ok('stale' in panel(main).dataset);
   const issued = asked.shift();
 
   // A quick click back to Ready draws its last list at once, and the late
-  // Finalised answer does not replace it.
+  // Approved answer does not replace it.
   tab(main, 'Ready').onclick();
   assert.equal(selected(main), 'Ready');
   assert.match(panel(main).text, /R-1/);
@@ -95,7 +95,7 @@ test('a tab click selects the tab at once; only the newest answer draws; a tab s
   assert.equal(panel(main).getAttribute('aria-busy'), null);
 });
 
-test('only Finalised and Void show a Number column; the other tabs open on Client', async () => {
+test('only Draft, Approved, Sent and Void show a Number column; the other tabs open on Client', async () => {
   globalThis.sessionStorage = { getItem: () => null, setItem() {}, removeItem() {} };
   globalThis.document = { visibilityState: 'visible', addEventListener() {}, removeEventListener() {} };
   const { main, ui, asked } = page();
@@ -107,7 +107,7 @@ test('only Finalised and Void show a Number column; the other tabs open on Clien
   assert.ok(!heads().includes('Number'));
   assert.equal(heads()[1], 'Client');
 
-  tab(main, 'Finalised').onclick();
+  tab(main, 'Approved').onclick();
   asked.shift().answer(list('issued', ['INV-1']));
   await settle();
   assert.ok(heads().includes('Number'));
@@ -134,10 +134,10 @@ test('with integrations on, a Linked column shows one icon per system; one not i
   assert.equal(icons().length, 1);
   assert.equal(icons()[0].getAttribute('class'), 'fx-link fx-link--none');
 
-  tab(main, 'Finalised').onclick();
-  const finalised = list('issued', ['FL-1', 'FL-2']);
-  finalised.invoices[0].job = { sourceSystem: 'seazona', sourceJobRef: '48213', caseRef: '48213', link: { url: 'https://lab.seazona.net/' } };
-  asked.shift().answer({ ...finalised, sendsTo: 'Xero', linksTo });
+  tab(main, 'Approved').onclick();
+  const approved = list('issued', ['FL-1', 'FL-2']);
+  approved.invoices[0].job = { sourceSystem: 'seazona', sourceJobRef: '48213', caseRef: '48213', link: { url: 'https://lab.seazona.net/' } };
+  asked.shift().answer({ ...approved, sendsTo: 'Xero', linksTo });
   await settle();
   assert.deepEqual(heads().slice(-2), ['Status', 'Linked']);
   const status = asked.shift();
@@ -173,27 +173,18 @@ test('ticked rows bring up the bulk bar: N selected, the tab\'s actions, and × 
   const words = () => acts().map((el) => el.getAttribute('data-tip') ?? el.text);
   assert.equal(bulk().hidden, true);
 
-  // Tick two rows: the bar shows the count, Finalise first, then Drafts.
+  // Tick two rows: the bar shows the count, Approve first.
   const boxes = panel(main).all((el) => el.tag === 'input' && /^Tick /.test(el.getAttribute('aria-label') ?? '') && el.getAttribute('aria-label') !== 'Tick every invoice shown');
   for (const box of boxes.slice(0, 2)) { box.checked = true; box.onchange(); }
   assert.equal(bulk().hidden, false);
   assert.match(bulk().text, /^2 selected/);
-  assert.deepEqual(words(), ['Finalise', 'Drafts', 'Copy references', 'Export CSV', 'More']);
+  assert.deepEqual(words(), ['Approve', 'Copy references', 'Export CSV', 'More']);
   assert.match(acts()[0].getAttribute('class'), /--primary/);
-  // The old send bar button is gone.
-  assert.doesNotMatch(main.text, /Move 2 to Drafts/);
-
-  // Drafts moves the ticked rows back, by id.
-  acts()[1].onclick();
-  await settle();
-  const move = asked.shift();
-  assert.equal(move.path, '/api/invoicing/invoices/mark-not-ready');
+  // Ready has no Move to Drafts: a clean draft is ready by itself.
+  assert.doesNotMatch(main.text, /Drafts/);
 
   // × clears the ticks and hides the bar.
-  move.answer({ moved: 2 });
-  await settle();
-  asked.shift().answer(list('ready', ['R-1', 'R-2', 'R-3']));
-  await settle();
+  bulk().all((el) => el.getAttribute('aria-label') === 'Clear the ticks')[0].onclick();
   assert.equal(bulk().hidden, true);
   const again = panel(main).all((el) => el.tag === 'input' && el.getAttribute('aria-label')?.startsWith('Tick R-'));
   again[0].checked = true; again[0].onchange();
@@ -201,8 +192,8 @@ test('ticked rows bring up the bulk bar: N selected, the tab\'s actions, and × 
   bulk().all((el) => el.getAttribute('aria-label') === 'Clear the ticks')[0].onclick();
   assert.equal(bulk().hidden, true);
 
-  // Finalised rows can be ticked too; there the bar has Void, not Finalise.
-  tab(main, 'Finalised').onclick();
+  // Approved rows can be ticked too; there the bar has Void, not Approve.
+  tab(main, 'Approved').onclick();
   asked.shift().answer(list('issued', ['FL-1']));
   await settle();
   const fl = panel(main).all((el) => el.tag === 'input' && el.getAttribute('aria-label')?.startsWith('Tick FL-1'))[0];

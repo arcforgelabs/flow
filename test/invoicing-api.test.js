@@ -238,9 +238,12 @@ describe('invoicing API', { skip: skipWithoutDatabase }, () => {
 
     const all = await call('/invoices');
     const { counts } = all.body;
-    assert.equal(counts.draft, all.body.invoices.filter((i) => i.status === 'draft').length);
-    assert.equal(counts.issued, all.body.invoices.filter((i) => i.status === 'issued').length);
+    // Each invoice is on one tab. With no accounting system, an issued
+    // invoice is Approved.
+    assert.equal(counts.pending + counts.ready, all.body.invoices.filter((i) => i.status === 'draft').length);
+    assert.equal(counts.approved, all.body.invoices.filter((i) => i.status === 'issued').length);
     assert.equal(counts.void, 1);
+    assert.ok(all.body.invoices.every((i) => i.tab === { draft: i.problems.length ? 'pending' : 'ready', issued: 'approved', void: 'void' }[i.status]));
     assert.equal((await call('/invoices?limit=1')).body.invoices.length, 1);
   });
 
@@ -315,7 +318,7 @@ describe('invoicing API', { skip: skipWithoutDatabase }, () => {
     assert.deepEqual([shipped.sourceJobRef, shipped.status, shipped.clientName, shipped.workClientName], ['JOB-1', 'Shipped', 'Example Practice', 'Example Practice Pty']);
     assert.equal(shipped.obligation.view, 'drafted');
     assert.equal(shipped.obligation.invoiceStatus, 'draft');
-    assert.equal(shipped.obligation.invoiceView, 'to_check');
+    assert.equal(shipped.obligation.invoiceView, 'ready');
     assert.deepEqual(shipped.obligation.invoiceProblems, []);
     assert.equal(shipped.totalCents, 24200, 'the ledger total wins over the work system copy');
     assert.deepEqual(shipped.lines, [{ code: 'CRN', description: 'Crown', amountCents: 22000, mapped: true }]);
