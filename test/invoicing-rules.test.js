@@ -259,7 +259,7 @@ describe('drafts by rule', { skip: skipWithoutDatabase }, () => {
     const first = await runAutomations(handle.db, lab.id, { accounting, now: NOW });
     // This job, and the shipped job an earlier test left in work.
     assert.deepEqual(first, { mark_ready_from_work_status: { marked: 2 }, ready_when_drafted: { marked: 0 }, reference_from_rule: { updated: 0 } });
-    const marked = await explainObligation(handle.db, lab.id, shipped.id);
+    const marked = await explainObligation(handle.db, lab.id, shipped.id, { now: NOW });
     assert.equal(marked.view, 'ready');
     assert.equal(marked.events.find((e) => e.kind === 'ready').actor, 'automation:mark_ready_from_work_status');
     assert.equal((await reload(inLab)).readyAt, null);
