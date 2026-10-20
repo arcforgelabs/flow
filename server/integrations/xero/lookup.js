@@ -72,14 +72,10 @@ export async function mirrorState(db, organisationId, { now = new Date() } = {})
 
 const ids = (list) => sql.param([...new Set(list.map(String))]);
 
-// `web` is Xero's web address (settings endpoints.web), for the invoice's
-// page in Xero.
-function invoiceRow(r, { web = 'https://go.xero.com' } = {}) {
+function invoiceRow(r) {
   return {
     id: r.xero_invoice_id,
     number: r.invoice_number,
-    // Kept only while XERO_KEEP_REFERENCE is on (mirror.js), else null.
-    reference: r.reference ?? null,
     contactId: r.xero_contact_id,
     status: r.status,
     // The ledger's accounting state for this invoice.
@@ -91,8 +87,6 @@ function invoiceRow(r, { web = 'https://go.xero.com' } = {}) {
     amountPaidCents: r.amount_paid_cents === null ? null : Number(r.amount_paid_cents),
     amountCreditedCents: r.amount_credited_cents === null ? null : Number(r.amount_credited_cents),
     itemCodes: [...new Set((r.lines ?? []).map((l) => l.itemCode).filter(Boolean))],
-    lines: (r.lines ?? []).map((l) => ({ itemCode: l.itemCode ?? null, description: l.description ?? null, amountCents: l.lineAmountCents ?? null })),
-    url: `${web}/AccountsReceivable/View.aspx?InvoiceID=${encodeURIComponent(r.xero_invoice_id)}`,
     flowInvoiceId: r.flow_invoice_id ?? null,
     changedAt: r.last_changed_at,
   };
@@ -101,7 +95,7 @@ function invoiceRow(r, { web = 'https://go.xero.com' } = {}) {
 // Sales invoices from the mirror, by any of: Xero ids, invoice numbers, the
 // Flow invoices Flow sent, or one customer within a date range. Answers the
 // mirror's state with them, and the latest change time it holds.
-export async function findInvoices(db, organisationId, query = {}, { web } = {}) {
+export async function findInvoices(db, organisationId, query = {}) {
   const { invoiceIds = [], numbers = [], flowInvoiceIds = [], contactId = null, from = null, to = null } = query;
   const where = [];
   if (invoiceIds.length) where.push(sql`i.xero_invoice_id = any(${ids(invoiceIds)}::text[])`);
@@ -126,5 +120,5 @@ export async function findInvoices(db, organisationId, query = {}, { web } = {})
       and (${sql.join(where, sql` or `)})
     order by i.issued_on, i.xero_invoice_id
     limit 500`);
-  return { ...state, invoices: rows.map((r) => invoiceRow(r, { web })) };
+  return { ...state, invoices: rows.map(invoiceRow) };
 }

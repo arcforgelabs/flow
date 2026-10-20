@@ -17,13 +17,13 @@ import {
 } from '../core/invoicing-rules.js';
 import { boardJobs, describeObligations } from '../core/job-board.js';
 import { readBeforeAct } from '../core/read-before-act.js';
-import { jobMatchDetail, listUnlinkedJobs } from '../core/job-match.js';
+import { invoiceMatchDetail, jobMatchDetail, listReconcile } from '../core/job-match.js';
 import { jobReference } from '../core/references.js';
 import {
   acceptFindings, archivePriceItem, checkPrices, createPriceItem, linkPriceItem, readCatalogues, readPriceList, unlinkPriceItem, updatePriceItem,
 } from '../core/price-list.js';
 import {
-  confirmNoInvoice, draftInvoiceForObligation, explainObligation, jobChangeFor, linkJobInvoice, linkSuggestionsFor, listObligations,
+  confirmNoInvoice, draftInvoiceForObligation, explainObligation, jobChangeFor, linkJobToInvoice, listObligations,
   setReady, useSourceLines,
 } from '../core/ledger.js';
 import { isHistoryHeld } from '../core/history.js';
@@ -593,33 +593,17 @@ export function createInvoicingRouter({
   // A job with no invoice whose match is unclear (ledger.js). The linking
   // tool lists the matcher's suggestions, read from the accounting copy;
   // "Make invoice" says there is none yet; "Link" picks one of them.
-  const linkSystem = () => {
-    const system = accounting();
-    if (typeof system?.capabilities?.findInvoices !== 'function') throw new FlowError('not_ready', 'no accounting system is connected');
-    return system;
-  };
-  async function suggestedInvoices(organisationId, obligationId, system) {
-    const suggestions = (await linkSuggestionsFor(db, organisationId, obligationId)).filter((s) => s.system === system.id);
-    if (!suggestions.length) return [];
-    const { invoices } = await system.capabilities.findInvoices({ organisationId, invoiceIds: suggestions.map((s) => s.externalId) });
-    const byId = new Map(invoices.map((i) => [i.id, i]));
-    return suggestions.filter((s) => byId.has(s.externalId)).map((s) => {
-      const i = byId.get(s.externalId);
-      return { id: i.id, number: i.number, issuedOn: i.issuedOn, totalCents: i.totalCents, state: i.state };
-    });
-  }
-
-  // The Reconcile page: the jobs to settle, and one job beside its possible
-  // invoices (core/job-match.js).
+  // The Reconcile page: Flow's jobs with no Flow invoice, Flow invoices with
+  // no job, and one of them beside its possible other side
+  // (core/job-match.js). Flow's own records only; no integration is called.
   router.get('/reconcile', ...signedIn, handle(log, async (req, res) => {
     const organisationId = await organisationOf(req);
-    res.json({ ok: true, jobs: await listUnlinkedJobs(db, organisationId) });
+    res.json({ ok: true, ...await listReconcile(db, organisationId) });
   }));
 
   router.get('/jobs/:id/reconcile', ...signedIn, handle(log, async (req, res) => {
     const obligationId = pathId(req.params.id, 'job');
     const organisationId = await organisationOf(req);
-    const system = linkSystem();
     const [obligation] = await db.select().from(billingObligations)
       .where(and(eq(billingObligations.organisationId, organisationId), eq(billingObligations.id, obligationId)));
     if (!obligation) throw new FlowError('not_found', 'job not found');
@@ -627,30 +611,30 @@ export function createInvoicingRouter({
     const { referenceTemplate: template } = await readInvoicingSettings(db, organisationId);
     const source = work().find((a) => a.id === obligation.sourceSystem) ?? null;
     const reference = await jobReference(db, organisationId, obligation, { template, work: source });
-    const detail = await jobMatchDetail(db, organisationId, obligationId, { accounting: system, reference });
-    const link = source && typeof source.capabilities.jobLink === 'function'
-      ? await Promise.resolve().then(() => source.capabilities.jobLink({ organisationId, sourceJobRef: obligation.sourceJobRef })).catch(() => null) : null;
-    res.json({ ok: true, ...detail, job: { ...detail.job, link }, accountingName: system.name });
+    const detail = await jobMatchDetail(db, organisationId, obligationId, { reference, q: text(req.query.q) ?? '' });
+    res.json({ ok: true, ...detail, job: { ...detail.job, sourceName: source?.name ?? null } });
+  }));
+
+  router.get('/invoices/:id/reconcile', ...signedIn, handle(log, async (req, res) => {
+    const invoiceId = pathId(req.params.id, 'invoice');
+    const organisationId = await organisationOf(req);
+    res.json({ ok: true, ...await invoiceMatchDetail(db, organisationId, invoiceId, { q: text(req.query.q) ?? '' }) });
   }));
 
   router.post('/jobs/:id/no-invoice', ...manager, handle(log, async (req, res) => {
     const obligationId = pathId(req.params.id, 'job');
     const organisationId = await organisationOf(req);
-    const job = await confirmNoInvoice(db, organisationId, obligationId, { system: linkSystem().id, actor: `person:${req.person.id}` });
+    const job = await confirmNoInvoice(db, organisationId, obligationId, { actor: `person:${req.person.id}` });
     res.json({ ok: true, job: { id: job.id, accountingState: job.accountingState } });
   }));
 
+  // Links a job to a Flow invoice that already exists.
   router.post('/jobs/:id/link', ...manager, handle(log, async (req, res) => {
     const obligationId = pathId(req.params.id, 'job');
     const organisationId = await organisationOf(req);
-    const invoiceId = text(req.body?.invoiceId);
-    if (!invoiceId) throw invalid('invoiceId is required');
-    const system = linkSystem();
-    // Only an invoice the matcher suggested for this job can be linked here.
-    const invoice = (await suggestedInvoices(organisationId, obligationId, system)).find((i) => i.id === invoiceId);
-    if (!invoice) throw invalid('that invoice is not a suggestion for this job');
-    const job = await linkJobInvoice(db, organisationId, obligationId, { system: system.id, invoice, actor: `person:${req.person.id}` });
-    res.json({ ok: true, job: { id: job.id, accountingState: job.accountingState } });
+    const invoiceId = pathId(text(req.body?.invoiceId) ?? '', 'invoice');
+    const job = await linkJobToInvoice(db, organisationId, obligationId, { invoiceId, actor: `person:${req.person.id}` });
+    res.json({ ok: true, job: { id: job.id, invoiceId: job.invoiceId } });
   }));
 
   router.post('/jobs/:id/ready', ...signedIn, handle(log, async (req, res) => {

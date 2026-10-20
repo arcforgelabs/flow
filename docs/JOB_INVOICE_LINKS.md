@@ -109,33 +109,52 @@ buttons.
 | Make invoice | Rejects every open suggestion, records the job as `not_found` (by a person), then drafts its invoice. The live check before the draft still runs. |
 | Reconcile | Opens the Reconcile page at this job. |
 
-The Reconcile page (`/reconcile`, under Work) is the queue of these jobs,
-oldest job date first. For one job it shows the job and its possible invoices
-side by side, best match first. Each fact of an invoice has a mark against
-the job's: ✓ same, ≠ different, none when one side does not know.
+### Reconcile
 
-| Fact | Compared with the job's |
+The Reconcile page (`/reconcile`, under Work) matches Flow's own records:
+Flow jobs against Flow invoices. It calls no integration. Whether a Flow
+invoice matches an invoice in an accounting system is that integration's own
+work, on its own page.
+
+It has two queues, oldest first.
+
+| Queue | A gap is |
 | --- | --- |
-| Client | The invoice's contact. |
-| Reference | The Reference Flow would give the job's invoice. The accounting copy keeps references only where the install keeps them. |
+| Job, no invoice | A job marked ready, with no Flow invoice, not held, and not tied to an accounting invoice by the matcher. |
+| Invoice, no job | A Flow invoice, not void, that no job is linked to. |
+
+For one gap the page shows the record beside its possible other side, best
+first: the same client within 60 days, ranked by total, lines, Reference and
+date. A search box finds any other: Flow invoices by number, client,
+Reference or amount; jobs by client, practitioner or case. Each fact has a
+mark against the record's: ✓ same, ≠ different, none when one side does not
+know.
+
+| Fact | Compared |
+| --- | --- |
+| Client | The same contact. |
+| Reference | The Reference Flow would give the job's invoice, against the invoice's. |
 | Date | Days between the job date and the invoice date. ✓ within 3 days. |
-| Lines | Item codes and amounts, in any order. |
-| Total | Equal, or equal with tax. |
-| Other jobs | Jobs already linked to the invoice, or a closer job the matcher found. |
-| Status | The invoice's status. No mark. |
+| Lines | Price items and amounts before tax, in any order. |
+| Total | Equal. |
+| Other jobs | Jobs already linked to the invoice. |
+| Status | The invoice's status, or the job's stage. No mark. |
 
-"Link this invoice" accepts that suggestion, rejects the others, and links it
-(`person`, an exact match). "No invoice · Make invoice" is the panel's Make
-invoice. After either, the next job opens. Skip opens the next job and
-changes nothing. A phone shows one card per invoice instead of the table.
+"Link this invoice" (or "Link this job") sets the job's Flow invoice. Every
+open matcher suggestion for the job is rejected, and a job held on an unclear
+accounting match is settled. "Make invoice" drafts the job's Flow invoice;
+for an unclear job it first records "no invoice" (`confirmNoInvoice`). After
+either, the next gap opens. Skip changes nothing. A phone shows one card per
+candidate instead of the table.
 
-API: `GET /api/invoicing/reconcile` (the queue), `GET
-/api/invoicing/jobs/:id/reconcile` (one job and its candidates),
-`POST /api/invoicing/jobs/:id/no-invoice` and `POST
-/api/invoicing/jobs/:id/link` (`{ invoiceId }`, only a suggestion). The two
-POSTs need an owner or admin. Code: `listUnlinkedJobs` and `jobMatchDetail`
-in `server/core/job-match.js`; `confirmNoInvoice` and `linkJobInvoice` in
-`server/core/ledger.js`.
+API: `GET /api/invoicing/reconcile` (both queues), `GET
+/api/invoicing/jobs/:id/reconcile` and `GET
+/api/invoicing/invoices/:id/reconcile` (one record and its candidates; `?q=`
+searches), `POST /api/invoicing/jobs/:id/no-invoice` and `POST
+/api/invoicing/jobs/:id/link` (`{ invoiceId }`, a Flow invoice). The two POSTs
+need an owner or admin. Code: `listReconcile`, `jobMatchDetail` and
+`invoiceMatchDetail` in `server/core/job-match.js`; `confirmNoInvoice` and
+`linkJobToInvoice` in `server/core/ledger.js`.
 
 ### Old jobs
 
