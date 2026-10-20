@@ -5,6 +5,7 @@
 // are a preview with the same rule (GST 10% per line, rounded half away from
 // zero, server/core/money.js). Data comes from /api/invoicing
 // (server/api/invoicing.js). app.js passes in its shared pieces as `ui`.
+import { alertStrip } from '/assets/ui/alerts.js';
 
 const STATUS_LABEL = { draft: 'Draft', issued: 'Issued', void: 'Void' };
 const STATUS_TONE = { draft: 'info', issued: 'success', void: 'mute' };
@@ -101,10 +102,13 @@ export async function renderInvoiceList(main, ui) {
   const host = h('div', { class: 'fx-panel' }, h('div', { class: 'fx-skeleton' }));
   const context = await flow('/api/invoicing/context').catch(() => ({ canIssue: false }));
   let body = null;
+  const openTab = (id) => { state.status = id; state.ticked.clear(); sessionStorage.setItem('flow_invoice_tab', id); load(); };
+  const alerts = alertStrip(ui, 'invoices', { onTab: openTab });
   main.append(
     pageHeader('Invoices', {
       actions: [h('a', { class: 'fx-btn fx-btn--primary', href: '/invoices/new', onclick: go }, 'New invoice')],
     }),
+    alerts.element,
     h('div', { class: 'fx-toolbar' }, tabs, search),
     bar,
     host);
@@ -126,6 +130,7 @@ export async function renderInvoiceList(main, ui) {
           toast(...done(res));
           state.ticked.clear();
           await load();
+          alerts.refresh();
         } catch (error) {
           toast(error.message, 'danger');
           el.disabled = false;
@@ -185,7 +190,7 @@ export async function renderInvoiceList(main, ui) {
       role: 'tab',
       'aria-selected': String(state.status === id),
       ...(id === 'problem' && body.counts?.problem ? { 'data-tone': 'danger' } : {}),
-      onclick: () => { state.status = id; state.ticked.clear(); sessionStorage.setItem('flow_invoice_tab', id); load(); },
+      onclick: () => openTab(id),
     }, label, h('span', { class: 'fx-tabs__count' }, String(body.counts?.[id] ?? 0)))));
     drawBar();
     if (!body.invoices.length) {

@@ -1,7 +1,9 @@
 import express from 'express';
+import { createAlertsRouter } from './api/alerts.js';
 import { createConnectorApi } from './api/connector.js';
 import { createInvoicingRouter } from './api/invoicing.js';
 import { createSignInRouter } from './auth/routes.js';
+import { integrationAlertsSource, invoiceProblemsSource, priceDifferencesSource } from './core/alerts.js';
 import { appliedMigrationCounts } from './db/doctor.js';
 import { deployedBuildStatus } from './deployed-build.js';
 import { integrationsHealth } from './integrations/health.js';
@@ -130,6 +132,18 @@ export function createApp({
     // items, Seazona products).
     const priceSystems = () => integrations?.with('listPriceItems') ?? [];
     app.use('/api/invoicing', createInvoicingRouter({ db: database.db, personAuth: auth.personAuth, log, liveCheckFor, accounting, work, priceSystems }));
+    // Quiet alerts (server/core/alerts.js): what needs a person on each page.
+    // Integrations add their own through the `alerts` capability.
+    app.use('/api/alerts', createAlertsRouter({
+      db: database.db,
+      personAuth: auth.personAuth,
+      log,
+      sources: {
+        invoices: [invoiceProblemsSource(database.db, { accounting })],
+        'price-list': [priceDifferencesSource(database.db)],
+        integrations: [integrationAlertsSource(() => integrations?.with('alerts') ?? [])],
+      },
+    }));
   }
   // What a signed-in browser needs to report its errors and problems to the
   // installation's own error service (docs/SENTRY.md): the first integration

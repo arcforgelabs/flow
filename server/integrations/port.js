@@ -25,6 +25,7 @@ export const CAPABILITIES = Object.freeze([
   'findInvoices', // sales invoices in the accounting system's copy, for the matcher; never a live call
   'listPriceItems', // the system's own price list from its copy in Flow, for the price list's links and check; never a live call
   'health', // connection state for Settings
+  'alerts', // what only a person can clear (a refused sign-in, stopped calls), for the Integrations page; reads Flow's data only
   'captureError', // an error Flow logged, sent to the installation's own error service (Sentry)
   'browserMonitoring', // the public settings a browser needs to report errors and problems to that service
 ]);

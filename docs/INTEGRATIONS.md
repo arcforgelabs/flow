@@ -31,7 +31,9 @@ export const exampleAdapter = {
 
 The capabilities are `pullWorkItems`, `pullHistoryJobs`, `pushInvoice`, `pushBill`,
 `pullPayments`, `checkInvoice`, `listCustomers`, `findInvoices`, `listWork`,
-`listPriceItems`, `jobIssues`, `captureError`, `browserMonitoring` and `health`.
+`listPriceItems`, `jobIssues`, `captureError`, `browserMonitoring`, `alerts` and
+`health`. `alerts({ organisationId })` answers what only a person can clear,
+for the quiet alert on the Integrations page (docs/ALERTS.md).
 `listPriceItems({ organisationId })` answers the system's own price list from
 the adapter's copy, never a live call: `{ kind, syncedAt, items }`, `kind`
 `accounting` or `work`, each item `{ id, code, name, unitAmountCents,
@@ -247,7 +249,8 @@ To follow the pattern, an adapter:
    `reconfigured` is true.
 4. Treats `CallsStopped` as "wait", not as a failure: a background job does
    not spend its attempts on it, and a batch stops at the first one.
-5. Shows `guard.status(key)` in its `health()`.
+5. Shows `guard.status(key)` in its `health()`, and answers
+   `guardAlerts(name, await guard.status(key))` from `alerts()`.
 
 `test/integration-call-guard.test.js` fails when a shipped adapter has no
 call guard and is not listed as exempt with a reason, and runs the same
