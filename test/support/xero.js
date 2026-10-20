@@ -68,7 +68,8 @@ export async function bootFlow(handle, { on = true, runtime, log = quietLog() } 
   const clerk = fakeClerk();
   const personAuth = createPersonAuth({ db: handle.db, clerk, ownerGoogleDomains: ['example.test'], log });
   const settings = { mode: 'clerk', keys: { publishableKey: TEST_PUBLISHABLE_KEY, proxyUrl: null } };
-  const app = createApp({ database: handle, auth: { settings, clerk, personAuth }, integrations, log });
+  // Tests press one route many times; test/action-guard.test.js tests the waits.
+  const app = createApp({ database: handle, auth: { settings, clerk, personAuth }, integrations, log, buttonCooldowns: false });
   return { app, clerk, integrations };
 }
 

@@ -151,7 +151,7 @@ export function defineAdapter(adapter) {
     // integration id, its two tables, and its policy. An adapter that calls
     // an outside system declares it (docs/INTEGRATIONS.md, "Outbound calls").
     callGuard: callGuard ? Object.freeze({ ...callGuard }) : null,
-    // Optional HTTP routes: routes({ db, personAuth, log, messagePage }) returns a router
+    // Optional HTTP routes: routes({ db, personAuth, log, messagePage, buttonCooldowns }) returns a router
     // mounted at /api/<id> (registry.routes).
     routes: routes ?? null,
     // Optional: the settings an owner may enter in Settings, Integrations
@@ -318,7 +318,7 @@ export function createRegistry({ log = console, env = process.env } = {}) {
         .filter((a) => ready(a) && typeof a.capabilities[capability] === 'function');
     },
     // The adapters' own HTTP routes, each under /api/<id>. `context` is
-    // { db, personAuth, log, messagePage }. An enabled, ready adapter's router is built
+    // { db, personAuth, log, messagePage, buttonCooldowns }. An enabled, ready adapter's router is built
     // once, here; a request to an adapter that is off gets its turned-off
     // answer (503), so a turned-off adapter never reads its settings or
     // tables.

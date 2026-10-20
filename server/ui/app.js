@@ -13,6 +13,7 @@ import { renderInvoice, renderInvoiceList } from '/assets/ui/invoicing.js';
 import { automationSection } from '/assets/ui/automations.js';
 import { renderInvoicingSettings, sendModeSection } from '/assets/ui/invoicing-settings.js';
 import { renderPriceList } from '/assets/ui/price-list.js';
+import { renderPriceReconcile } from '/assets/ui/price-reconcile.js';
 import { lucide, renderCustomFields } from '/assets/ui/custom-fields.js';
 import { renderJobs } from '/assets/ui/jobs.js';
 import { renderReconcile } from '/assets/ui/reconcile.js';
@@ -126,8 +127,39 @@ async function flow(path, options = {}) {
     headers: { Authorization: `Bearer ${token}`, ...(options.body ? { 'Content-Type': 'application/json' } : {}) },
   });
   const body = await res.json().catch(() => ({ ok: false, error: `HTTP ${res.status}` }));
-  if (!res.ok) throw Object.assign(new Error(body.error || `HTTP ${res.status}`), { status: res.status, code: body.code, details: body.details });
+  // A button that calls Xero or Seazona waits between presses (the action
+  // guard): a press too soon says how long (retryAfterMs), and a good run
+  // says its own wait (Flow-Cooldown-Ms). holdButton shows the wait.
+  if (!res.ok) throw Object.assign(new Error(body.error || `HTTP ${res.status}`), { status: res.status, code: body.code, details: body.details, retryAfterMs: body.retryAfterMs });
+  const cooldownMs = Number(res.headers.get('Flow-Cooldown-Ms'));
+  if (cooldownMs > 0 && body && typeof body === 'object') body.cooldownMs = cooldownMs;
   return body;
+}
+
+// Keeps a button off for `ms`, with the time left on it, then puts it back.
+function holdButton(button, ms) {
+  if (!button || !(ms > 0)) return;
+  clearInterval(button.fxHold);
+  const label = button.dataset.label ?? button.textContent;
+  button.dataset.label = label;
+  const until = Date.now() + ms;
+  const draw = () => {
+    const left = Math.ceil((until - Date.now()) / 1000);
+    if (left <= 0) {
+      clearInterval(button.fxHold);
+      button.textContent = label;
+      delete button.dataset.label;
+      button.removeAttribute('title');
+      button.disabled = false;
+      return;
+    }
+    const time = left < 60 ? `${left}s` : `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`;
+    button.disabled = true;
+    button.textContent = `${label} · ${time}`;
+    button.title = `Flow waits before it asks again, to protect the connected system's limits. Ready in ${time}.`;
+  };
+  draw();
+  button.fxHold = setInterval(draw, 1000);
 }
 
 // ── Shared pieces ──────────────────────────────────────────────────────────
@@ -204,7 +236,7 @@ const VIEWS = {
   invoices: { label: 'Invoices', icon: 'invoices', group: 'Work', render: (main, id) => (id ? renderInvoice(main, ui(), id) : renderInvoiceList(main, ui())) },
   reconcile: { label: 'Reconcile', icon: 'reconcile', group: 'Work', render: (main, id) => renderReconcile(main, ui(), id) },
   'invoicing-settings': { label: 'Invoice rules', icon: 'invoices', group: 'Settings', render: (main) => renderInvoicingSettings(main, ui()) },
-  'price-list': { label: 'Price list', icon: 'tag', group: 'Settings', render: (main) => renderPriceList(main, ui()) },
+  'price-list': { label: 'Price list', icon: 'tag', group: 'Settings', render: (main, id) => (id === 'reconcile' ? renderPriceReconcile(main, ui()) : renderPriceList(main, ui())) },
   'custom-fields': { label: 'Custom fields', icon: 'fields', group: 'Settings', render: (main) => renderCustomFields(main, ui()) },
   people: { label: 'People', icon: 'people', group: 'Settings', ownerOnly: true, render: renderPeople },
   integrations: { label: 'Integrations', icon: 'plug', group: 'Settings', ownerOnly: true, render: (main, id) => (id ? renderIntegration(main, id) : renderIntegrations(main)) },
@@ -371,7 +403,7 @@ function navigate(event) {
 // The shared pieces a view module (invoicing.js) builds with. Its `go`
 // takes a path, or a link's click event.
 const ui = () => ({
-  h, flow, toast, notice, pageHeader, dialog, me,
+  h, flow, toast, notice, pageHeader, dialog, me, holdButton,
   go: (target, options) => (typeof target === 'string' ? go(target, options) : navigate(target)),
 });
 

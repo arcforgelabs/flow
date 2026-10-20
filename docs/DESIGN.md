@@ -120,11 +120,22 @@ The page at `/sign-in`, `/people`, `/account` and `/appearance`
   button opens the pages as a panel below the bar.
 - **Jobs**: the board (one lane per group, about a phone wide, filling the
   window to its bottom edge, each lane scrolling inside itself) or the list.
-  The toolbar has Group (status, invoice stage, client, practitioner, or
-  None: one plain list; the board then shows status lanes), Sort
-  (lab system order, date, client, practitioner, total; either direction)
-  and Filter (only late jobs, only jobs with a problem, statuses to show) at
-  the left, and search and Board/List at the right. Each person's view is
+  The toolbar has Group, Sort and Filter at the left, and search and
+  Board/List at the right. Each opens a panel of rows, laid out as
+  ClickUp's, in Flow's own look; each row has a bin that deletes it, and
+  an active chip has an × that clears it ("Clear all filters").
+  Group by is one row: status, invoice stage, client, practitioner or a
+  groupable custom field, and Ascending or Descending (the group order).
+  Its bin takes the groups away: one plain list (the board always has
+  lanes: status lanes). Sort is rows applied in turn (due, requested,
+  shipped, client, practitioner, total or any custom field, each in
+  either direction), with "Add sort"; no sort keeps the lab system's
+  order. Filters are rows of field, operator and value (status, invoice
+  stage, client, practitioner, Assignee, due, requested, shipped, total,
+  problem, or any custom field; operators such as is, is not, is set,
+  is overdue, is before, contains, is more than), with "Add filter",
+  "Clear all", and And / Or for all rows. A row still being filled in
+  filters nothing. Each person's view is
   saved with their account (`people.views`, `PUT /api/me/views/jobs`,
   server/ui/job-view.js), so it follows them to every device.
   In the list, Columns chooses the columns (saved with the view; Client
@@ -133,11 +144,18 @@ The page at `/sign-in`, `/people`, `/account` and `/appearance`
   and each custom field. One column holds one field: each date has its own
   column, short (Today, Tomorrow, Yesterday, else day/month; the full date
   on hover), and a late Due date shows in red. A person column shows each
-  person's badge (initials; the name on hover). A click or right-click on
-  a column head opens its menu: sort by it (when it sorts), move it to the
-  start or end, Edit custom field (owners and admins), Hide column. + at
-  the end of the head lists the hidden columns; a click adds one back. Filter has
-  "Assignee: me".
+  person's badge (initials; the name on hover). In the list, sorting
+  starts on the column heads, as ClickUp's: a sort button shows on hover
+  (and always while the column sorts, as a filled circle with the
+  arrow). A click sorts one way, a second click the other way, a third
+  click takes the sort off. A right-click on a sorting button opens
+  "Sort by <column>" (changes the direction) and "Clear sort". The Sort
+  chip shows in the list only while a sort is on. A click or right-click
+  on a column's name opens its menu: sort by it (when it sorts), move it
+  to the start or end, Edit custom field (owners and admins), Hide
+  column. + at the end of the head lists the hidden columns; a click adds
+  one back. The filter "Assignee is Me" keeps the jobs assigned to the
+  person looking.
   The Stage column shows each status as its coloured label. A
   tick column is at the left; a group head ticks every job in its group,
   and a click on the head folds the group or opens it (folds stay in the

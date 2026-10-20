@@ -288,6 +288,53 @@ tables keep their names: `columns` maps `key` and `at` (Seazona:
 columns of a new row. `report: false` is for an adapter that already reports
 each stop once at a higher level (Seazona's lanes).
 
+## Button presses
+
+A person's button press that calls an outside system (a copy, a recheck, a
+send) is one **action**. Pressed again and again, it spends the provider's
+rate limit, and can trip the call guard. So each such route also goes
+through the **action guard** (`createActionGuard` in
+`server/integrations/call-guard.js`), after sign-in and before the handler.
+
+```
+press ──> sign-in ──> action guard ──> handler ──> call guard ──> provider
+                          │                                         │
+                          └── too soon: 429 + wait, no call          └── answer sets the next wait
+```
+
+| Rule | Answer |
+|---|---|
+| One run at a time per action, organisation and key | `429 action_running` |
+| A wait after each run (`cooldownMs`) | `429 action_cooldown` |
+| After a failed run (5xx, 429, a stopped call): twice the wait each time, at most `maxCooldownMs`; a good run resets it. A longer `Retry-After` from the call guard wins | `429 action_cooldown` |
+| One budget per integration: 30 runs in 10 minutes for all its actions, except an action with `budget: false` | `429 action_budget` |
+| A refused request (another 4xx) | no wait, no budget spent |
+
+Every `429` carries `Retry-After` and `retryAfterMs`. A good run says its
+wait in the `Flow-Cooldown-Ms` header. The page shows the wait on the button
+(`holdButton` in `server/ui/app.js`), so a person sees when it is ready.
+
+The waits each adapter declares:
+
+| Route | Action | Wait |
+|---|---|---|
+| `POST /api/xero/sync` | `sync` | 5 minutes |
+| `POST /api/xero/mirror` | `mirror` | 2 minutes |
+| `POST /api/xero/payments/sync` | `paymentsSync` | 5 minutes |
+| `POST /api/xero/invoices/:id/recheck` (Mark resolved) | `recheck` | 30 seconds per invoice |
+| `POST /api/xero/obligations/:id/check` | `obligationCheck` | 30 seconds per job |
+| `POST /api/xero/invoices/push` (Send to Xero) | `push` | one at a time; backs off after a failure; no budget |
+| `POST /api/invoicing/invoices/send-ready`, `send-again` | `sendReady`, `sendAgain` | one at a time; backs off; no budget |
+| `POST /api/invoicing/jobs/:id/draft` | `draftJob` | 10 seconds per job; no budget |
+
+Check prices (`POST /api/invoicing/price-list/check`) reads Flow's copies
+only, so it has no action. The Seazona routes call nothing at a press (a backfill is paced by the rate
+governor), so they have no action. A new route that calls an outside system
+at a press declares an action. The state is in memory: one Flow process
+serves one lab, as for the request limit (`server/rate-limit.js`); the call
+guard still protects every process. `createApp({ buttonCooldowns: false })`
+turns the waits off for tests only (`test/action-guard.test.js` tests them).
+
 ## Health
 
 `GET /health` lists every adapter under `integrations` with `enabled` and

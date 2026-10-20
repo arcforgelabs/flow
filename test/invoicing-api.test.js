@@ -40,7 +40,7 @@ describe('invoicing API', { skip: skipWithoutDatabase }, () => {
   function invoicingApp({ integrations = null } = {}) {
     const settings = { mode: 'clerk', keys: { publishableKey: TEST_PUBLISHABLE_KEY, proxyUrl: null } };
     const personAuth = createPersonAuth({ db: handle.db, clerk, ownerGoogleDomains: ['example.test'], log: quiet });
-    return createApp({ database: handle, auth: { settings, clerk, personAuth }, integrations, log: quiet });
+    return createApp({ database: handle, auth: { settings, clerk, personAuth }, integrations, log: quiet, buttonCooldowns: false });
   }
 
   before(async () => {

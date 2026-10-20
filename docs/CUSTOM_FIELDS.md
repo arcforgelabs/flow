@@ -57,7 +57,7 @@ Every lab has an **Assignee**: a person custom field Flow makes once, the
 first time the lab's custom fields are read and the lab has no person
 field (live or archived). The lab can rename it or archive it; Flow does
 not make it again. The Jobs list shows the first person custom field as
-the Assignee column, and Filter has "Assignee: me".
+the Assignee column, and the filter "Assignee is Me".
 
 ## Rules
 
