@@ -245,7 +245,7 @@ that changed since the cursor, oldest change first, up to 200:
   dropped. An order deleted in Seazona is never an item, from any cursor.
 - `cursor`: pass it to the next call. `more` is true when the page was full.
 
-Each item also carries `ledgerJob` and each withdrawn entry `ledgerHold`,
+Each item also carries `ledgerJob` and each withdrawn entry `ledgerWithdrawn`,
 shaped for the billing obligation ledger (below).
 
 A change to an order or to its Seazona invoice puts the order at the end of
@@ -266,8 +266,8 @@ issue #3). One Seazona order is one billable job
 for (const item of page.items) {
   await observeJob(db, organisationId, { ...item.ledgerJob, contactId: contactFor(item.client) });
 }
-for (const { ledgerHold } of page.withdrawn) {
-  if (ledgerHold) await setHold(db, organisationId, obligationIdFor(ledgerHold), { ...ledgerHold, actor });
+for (const { ledgerWithdrawn } of page.withdrawn) {
+  await observeWithdrawn(db, organisationId, ledgerWithdrawn);
 }
 ```
 
@@ -284,7 +284,10 @@ for (const { ledgerHold } of page.withdrawn) {
 
 Amounts are tax-exclusive, as Seazona reports them, and the ledger adds GST
 per line. An order deleted in Seazona sends its obligation to review
-(`ledgerHold`); a person decides what happens to any invoice already made.
+(`ledgerWithdrawn`); a person decides what happens to any invoice already
+made. An order whose status moves back (for example from Shipped to In
+Production) loses an unsent ready mark, and goes to review when its invoice
+was made (docs/DATA_SPINE.md, "When a job changes after its invoice").
 The ledger's "paid" write-back to Seazona is not built: this adapter only
 reads.
 

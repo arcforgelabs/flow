@@ -20,7 +20,7 @@ import { jobReference } from '../core/references.js';
 import {
   acceptFindings, archivePriceItem, checkPrices, createPriceItem, linkPriceItem, readCatalogues, readPriceList, unlinkPriceItem, updatePriceItem,
 } from '../core/price-list.js';
-import { draftInvoiceForObligation, explainObligation, listObligations, setReady } from '../core/ledger.js';
+import { draftInvoiceForObligation, explainObligation, listObligations, setReady, useSourceLines } from '../core/ledger.js';
 import { isHistoryHeld } from '../core/history.js';
 import { invoicePdfDocument, pdfFields, pdfFilename, renderInvoicePdf } from '../core/invoice-pdf.js';
 import { invoiceView, invoiceViews, markNotReady, markReady, sendAgain, sendAllReady } from '../core/sending.js';
@@ -513,6 +513,15 @@ export function createInvoicingRouter({
     const { invoice } = await draftInvoiceForObligation(db, organisationId, obligationId, { liveCheck, actor: `person:${req.person.id}`, reference });
     log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} drafted invoice ${invoice.id} from job ${obligationId}`);
     res.status(201).json({ ok: true, invoice: await invoiceDetail(db, organisationId, invoice.id) });
+  }));
+
+  // "Use new lines": the job changed in the work system after its draft was
+  // made, and only there. Flow changes its own draft; no other system.
+  router.post('/jobs/:id/use-new-lines', ...manager, handle(log, async (req, res) => {
+    const obligationId = pathId(req.params.id, 'job');
+    const organisationId = await organisationOf(req);
+    const { invoice } = await useSourceLines(db, organisationId, obligationId, { actor: `person:${req.person.id}` });
+    res.json({ ok: true, invoice: await invoiceDetail(db, organisationId, invoice.id) });
   }));
 
   router.post('/jobs/:id/ready', ...signedIn, handle(log, async (req, res) => {

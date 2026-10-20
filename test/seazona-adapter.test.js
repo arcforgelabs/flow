@@ -226,7 +226,12 @@ describe('Seazona adapter on the integration port', { skip: skipWithoutDatabase 
     assert.equal(crown.invoice.totalCents, 24200);
     assert.equal(crown.client.email, 'accounts@example.test');
     assert.equal(crown.patientReference, null);
-    assert.deepEqual(first.withdrawn, [{ sourceId: 'ORD-1002', status: 'In Production', reason: 'not_billable', ledgerHold: null }]);
+    assert.deepEqual(first.withdrawn.map(({ ledgerWithdrawn, ...entry }) => entry), [{ sourceId: 'ORD-1002', status: 'In Production', reason: 'not_billable' }]);
+    const { observedAt, ...notBillable } = first.withdrawn[0].ledgerWithdrawn;
+    assert.ok(observedAt, 'the ledger gets the time of the last read');
+    assert.deepEqual(notBillable, {
+      sourceSystem: 'seazona', sourceJobRef: 'ORD-1002', sourceStatus: 'In Production', deleted: false, reason: null, actor: 'system:seazona',
+    });
 
     // Nothing changed: the next page is empty.
     const again = await adapter.capabilities.pullWorkItems(first.cursor);
@@ -237,11 +242,13 @@ describe('Seazona adapter on the integration port', { skip: skipWithoutDatabase 
     await sync([{ path: 'orders/ORD-1001', status: 404 }], ['orders_active']);
     const afterDelete = await adapter.capabilities.pullWorkItems(again.cursor);
     assert.deepEqual(afterDelete.items, []);
-    assert.deepEqual(afterDelete.withdrawn, [{
+    assert.deepEqual(afterDelete.withdrawn.map(({ ledgerWithdrawn: { observedAt, ...withdrawn }, ...entry }) => ({ ...entry, withdrawn })), [{
       sourceId: 'ORD-1001',
       status: 'Deleted in Seazona',
       reason: 'deleted_in_seazona',
-      ledgerHold: { sourceSystem: 'seazona', sourceJobRef: 'ORD-1001', holdState: 'review', reason: 'the order was deleted in Seazona' },
+      withdrawn: {
+        sourceSystem: 'seazona', sourceJobRef: 'ORD-1001', sourceStatus: 'Deleted in Seazona', deleted: true, reason: 'the order was deleted in Seazona', actor: 'system:seazona',
+      },
     }]);
     const everything = await adapter.capabilities.pullWorkItems(null);
     assert.ok(!everything.items.some((item) => item.sourceId === 'ORD-1001'), 'a deleted order is out of billing from any cursor');

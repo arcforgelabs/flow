@@ -6,7 +6,7 @@ import {
 import { FlowError } from './errors.js';
 import { listAutomations, runAutomations } from './automations.js';
 import { readInvoicingSettings } from './invoicing-rules.js';
-import { observeJob, recordAccountingEvidence, setHold } from './ledger.js';
+import { observeJob, observeWithdrawn, recordAccountingEvidence, setHold } from './ledger.js';
 import { loadMappingContext, mapLines } from './line-mapping.js';
 import { checkPrices, readCatalogues } from './price-list.js';
 import { linkRecord, priorLinkFor } from './links.js';
@@ -137,7 +137,7 @@ export async function ingestWork(db, organisationId, { adapter, restart = false,
   let cursor = restart ? null : await readCursor(db, organisationId, name);
   const links = await activeLinks(db, organisationId, { system: adapter.id, entity: 'contact' });
   const contactOf = new Map(links.map((l) => [l.externalId, l.flowId]));
-  const result = { observed: 0, withoutCustomer: 0, skipped: 0, sentToReview: 0, unmappedLines: 0, more: false };
+  const result = { observed: 0, withoutCustomer: 0, skipped: 0, sentToReview: 0, readyCleared: 0, unmappedLines: 0, more: false };
   // Line mapping (line-mapping.js): each line finds its price item first.
   const mapping = (await listAutomations(db, organisationId)).find((a) => a.key === 'map_lines');
   const context = mapping?.enabled ? await loadMappingContext(db, organisationId, mapping.config, { system: adapter.id }) : null;
@@ -157,17 +157,12 @@ export async function ingestWork(db, organisationId, { adapter, restart = false,
         result.skipped += 1;
       }
     }
+    // A job no longer billable: deleted, or its status moved back (ledger.js).
     for (const entry of withdrawn) {
-      if (!entry.ledgerHold) continue;
-      const { sourceSystem, sourceJobRef, holdState, reason } = entry.ledgerHold;
-      const [obligation] = await db.select().from(billingObligations).where(and(
-        eq(billingObligations.organisationId, organisationId),
-        eq(billingObligations.sourceSystem, sourceSystem),
-        eq(billingObligations.sourceJobRef, sourceJobRef),
-      ));
-      if (!obligation || obligation.holdState === holdState) continue;
-      await setHold(db, organisationId, obligation.id, { holdState, reason, actor: `system:${adapter.id}` });
-      result.sentToReview += 1;
+      if (!entry.ledgerWithdrawn) continue;
+      const { action } = await observeWithdrawn(db, organisationId, { ...entry.ledgerWithdrawn, actor: `system:${adapter.id}` });
+      if (action === 'review') result.sentToReview += 1;
+      if (action === 'ready_cleared') result.readyCleared += 1;
     }
     cursor = next;
     await writeCursor(db, organisationId, name, cursor);

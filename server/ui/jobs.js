@@ -18,6 +18,7 @@ const ACTIVITY = {
   in_work: 'Put back in work', drafted: 'Draft invoice made', draft_refused: 'Draft invoice refused',
   accounting_checked: 'Checked in the accounting system', payment_recorded: 'Payment recorded', paid: 'Paid in full',
   held: 'Put on hold', review: 'Sent to review', released: 'Hold removed',
+  status_moved_back: 'The job status moved back in the lab system', source_lines_used: 'New job lines used on the draft',
   writeback_sent: 'Status sent to the lab system', writeback_failed: 'Status not sent to the lab system',
   writeback_not_supported: 'The lab system does not take the status',
 };
@@ -172,7 +173,24 @@ export async function renderJobs(main, ui) {
     if (!o) return [];
     if (o.invoiceId) {
       const label = o.invoiceStatus === 'draft' ? 'Open draft invoice' : `Open invoice ${o.invoiceNumber ?? ''}`.trim();
-      return [h('a', { class: 'fx-btn', href: `/invoices/${o.invoiceId}`, onclick: (event) => { close(); ui.go(event); } }, label)];
+      const open = h('a', { class: 'fx-btn', href: `/invoices/${o.invoiceId}`, onclick: (event) => { close(); ui.go(event); } }, label);
+      // Only the job changed and the draft is not sent (ledger.js): one tap
+      // puts the job's new lines on Flow's own draft.
+      if (!o.canUseNewLines) return [open];
+      return [h('button', {
+        class: 'fx-btn fx-btn--primary', type: 'button',
+        onclick: async (event) => {
+          event.currentTarget.disabled = true;
+          try {
+            await flow(`/api/invoicing/jobs/${o.id}/use-new-lines`, { method: 'POST', body: '{}' });
+            ui.toast('The draft has the new job lines.', 'success');
+          } catch (error) {
+            ui.toast(error.message, 'danger');
+          }
+          close();
+          await load();
+        },
+      }, 'Use new lines'), open];
     }
     // Flow's own stage: a person marks a job ready to invoice, or an
     // automation does (Settings, Automations).
