@@ -26,7 +26,7 @@ import { pathToFileURL } from "node:url";
 export const PACKAGE = "@arcforgelabs/flow";
 export const DEFAULT_REPOSITORY = "arcforgelabs/flow";
 export const RELEASE_WORKFLOW = ".github/workflows/flow-npm-release.yml";
-const VERSION = /^20\d{2}\.(?:[1-9]|1[0-2])\.(?:[1-9]|[12]\d|3[01])(?:-beta\.[1-9]\d*)?$/;
+const VERSION = /^20\d{2}\.(?:[1-9]|1[0-2])\.[1-9]\d*(?:-beta\.[1-9]\d*)?$/;
 const SLSA_V1 = "https://slsa.dev/provenance/v1";
 
 export class VerifyError extends Error {}
