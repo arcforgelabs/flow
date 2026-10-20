@@ -22,22 +22,26 @@ Settings, Custom fields is laid out like ClickUp's Custom Field Manager:
   owner or admin clicks the group's pill to give the group a colour. Folded
   groups stay folded in that browser; a search opens every group with a
   match. Each group ends with "Create *type* field".
-- **Row:** the field's name (with a dropdown's options under it, as their
-  pills), its type as an icon in its colour, who made it, the day it was
-  made, and where it applies (Jobs). Under the pointer, Edit opens the
-  field's dialog: its name, colour and, for a dropdown, its options. The
-  type icon picks the field's colour. The ⋯ menu has Edit, Rename (in
-  place), Colour, Duplicate, Convert (not in Flow yet), Copy custom field
-  ID, Archive and Delete. An archived field's menu has Bring back and
-  Delete.
+- **Row:** the field's name, its type as an icon in its colour, who made
+  it, the day it was made, and where it applies (Jobs). Rows do not show
+  options. Under the pointer, Edit opens the sidecar. The type icon picks
+  the field's colour. The ⋯ menu has Edit, Rename (in place), Colour,
+  Duplicate, Convert (not in Flow yet), Copy custom field ID, Archive and
+  Delete. An archived field's menu has Bring back and Delete.
+- **Sidecar:** like ClickUp's, a panel that slides in from the right of
+  the manager, below the toolbar: the type in its head (a new field picks
+  it there), the name, the colour, a dropdown's options (each with its
+  colour dot; Add option), where the field belongs, and Delete, Cancel and
+  Save at its foot. The table stays usable behind it: another row's Edit,
+  or Create, switches the sidecar at once. Save, Cancel, × and Esc close it.
 - **Colours:** every colour picker (a group, a field, an option) shows the
   real pill in each colour, so a person sees the result before they pick.
   A field with no colour of its own takes its group's colour.
 - **Delete:** asks first and says how many jobs have a value. Delete takes
   the field, its values and its history for good; Archive keeps them.
 - **From *system*:** the work system's own fields (Seazona's stage), read
-  only, in their own group. The row shows the stages as the Jobs board's
-  stage pills, in board order (View lists all of them), and its Date
+  only, in their own group. View opens the sidecar, read only, with the
+  stages as the Jobs board's stage pills, in board order. Its Date
   created is the day the system was connected: the first time its
   settings were saved in Flow, or, for a system set up in the host's own
   settings, the first time Flow saw its work.
