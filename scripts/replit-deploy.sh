@@ -146,7 +146,7 @@ cmd_build() {
       valid_ref "$release" || die "the $ref channel named '$release', which is not a tag"
       fetch_ref="refs/tags/$release"
       log "the $ref channel is $release"
-    elif [[ "$ref" =~ ^v20[0-9]{2}\.[0-9]{1,2}\.[0-9]{1,2}(-beta\.[0-9]+)?$ ]]; then
+    elif [[ "$ref" =~ ^v20[0-9]{2}\.[0-9]{1,2}\.[0-9]+(-beta\.[0-9]+|-[0-9]+)?$ ]]; then
       release="$ref"
     fi
     log "fetching ${release:-$ref} from $repo"

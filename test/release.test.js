@@ -4,7 +4,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { buildManifest, checkTag, compareBase, parseTag, planTag } from "../scripts/release/release.mjs";
+import { buildManifest, checkTag, compareBase, compareTags, parseBranch, parseTag, planTag, releaseBranch } from "../scripts/release/release.mjs";
 
 const script = join(import.meta.dirname, "../scripts/release/release.mjs");
 const packageVersion = JSON.parse(readFileSync(join(import.meta.dirname, "../package.json"), "utf8")).version;
@@ -15,12 +15,15 @@ test("package.json holds a stable calendar version", () => {
 
 test("release tags are vYYYY.M.D or vYYYY.M.D-beta.N, without leading zeros", () => {
   assert.deepEqual(parseTag("v2026.10.14"), {
-    tag: "v2026.10.14", version: "2026.10.14", base: "2026.10.14", channel: "stable", beta: null, npmDistTag: "latest", prerelease: false,
+    tag: "v2026.10.14", version: "2026.10.14", base: "2026.10.14", channel: "stable", beta: null, correction: null, branch: "release/2026.10.14", npmDistTag: "latest", prerelease: false,
   });
   assert.deepEqual(parseTag("v2026.10.14-beta.2"), {
-    tag: "v2026.10.14-beta.2", version: "2026.10.14-beta.2", base: "2026.10.14", channel: "beta", beta: 2, npmDistTag: "beta", prerelease: true,
+    tag: "v2026.10.14-beta.2", version: "2026.10.14-beta.2", base: "2026.10.14", channel: "beta", beta: 2, correction: null, branch: "release/2026.10.14", npmDistTag: "beta", prerelease: true,
   });
-  for (const bad of ["2026.10.14", "v2026.01.14", "v2026.10.04", "v2026.13.1", "v2026.10.0", "v2026.10.14-beta.0", "v2026.10.14-rc.1", "v2026.10.14-1", "v1999.1.1"]) {
+  assert.deepEqual(parseTag("v2026.10.14-1"), {
+    tag: "v2026.10.14-1", version: "2026.10.14-1", base: "2026.10.14", channel: "stable", beta: null, correction: 1, branch: "release/2026.10.14", npmDistTag: "latest", prerelease: false,
+  });
+  for (const bad of ["2026.10.14", "v2026.01.14", "v2026.10.04", "v2026.13.1", "v2026.10.0", "v2026.10.14-beta.0", "v2026.10.14-rc.1", "v2026.10.14-0", "v2026.10.14-01", "v1999.1.1"]) {
     assert.throws(() => parseTag(bad), /not a release tag/, bad);
   }
 });
@@ -45,12 +48,33 @@ test("a stable tag is package.json's version, and must be newer than every stabl
   assert.equal(planTag({ packageVersion: "2026.10.14", channel: "stable", tags: ["v2026.10.2", "v2026.10.14-beta.2"] }).tag, "v2026.10.14");
   assert.throws(() => planTag({ packageVersion: "2026.10.14", channel: "stable", tags: ["v2026.10.14"] }), /not newer than the latest stable release v2026.10.14/);
   assert.throws(() => planTag({ packageVersion: "2026.10.2", channel: "beta", tags: ["v2026.10.14"] }), /not newer/);
-  assert.throws(() => planTag({ packageVersion: "2026.10.14", channel: "nightly", tags: [] }), /beta or stable/);
+  assert.throws(() => planTag({ packageVersion: "2026.10.14", channel: "nightly", tags: [] }), /beta, stable or correction/);
   assert.throws(() => planTag({ packageVersion: "0.1.0", channel: "beta", tags: [] }), /not a calendar version/);
+});
+
+test("a correction fixes the newest stable release with the next free number", () => {
+  const tags = ["v2026.10.13", "v2026.10.14-beta.1", "v2026.10.14", "v2026.10.14-1"];
+  assert.equal(planTag({ packageVersion: "2026.10.14", channel: "correction", tags }).tag, "v2026.10.14-2");
+  assert.equal(planTag({ packageVersion: "2026.10.14", channel: "correction", tags: tags.slice(0, 3) }).tag, "v2026.10.14-1");
+  assert.throws(() => planTag({ packageVersion: "2026.10.15", channel: "correction", tags }), /v2026.10.15 is not released/);
+  assert.throws(() => planTag({ packageVersion: "2026.10.13", channel: "correction", tags }), /v2026.10.14-1 is newer than v2026.10.13/);
+  // A new version after a correction is still newer than the corrected release.
+  assert.equal(planTag({ packageVersion: "2026.10.15", channel: "stable", tags }).tag, "v2026.10.15");
+  assert.throws(() => planTag({ packageVersion: "2026.10.14", channel: "beta", tags }), /not newer/);
+});
+
+test("each version has one release branch, and tags sort beta, stable, corrections", () => {
+  assert.equal(releaseBranch("2026.10.14"), "release/2026.10.14");
+  assert.equal(parseBranch("refs/heads/release/2026.10.14"), "2026.10.14");
+  assert.throws(() => parseBranch("release/2026.10.14-1"), /not a release branch/);
+  assert.throws(() => releaseBranch("2026.10.14-beta.1"), /not a calendar version/);
+  const sorted = ["v2026.10.14-1", "v2026.10.15-beta.1", "v2026.10.14", "v2026.10.14-beta.2", "v2026.10.14-10", "v2026.10.14-2"].sort(compareTags);
+  assert.deepEqual(sorted, ["v2026.10.14-beta.2", "v2026.10.14", "v2026.10.14-1", "v2026.10.14-2", "v2026.10.14-10", "v2026.10.15-beta.1"]);
 });
 
 test("the publish workflow refuses a tag that does not match package.json at its commit", () => {
   assert.equal(checkTag({ tag: "v2026.10.14-beta.1", packageVersion: "2026.10.14" }).version, "2026.10.14-beta.1");
+  assert.equal(checkTag({ tag: "v2026.10.14-2", packageVersion: "2026.10.14" }).npmDistTag, "latest");
   assert.throws(() => checkTag({ tag: "v2026.10.15", packageVersion: "2026.10.14" }), /does not match package.json's version 2026.10.14/);
 });
 

@@ -8,9 +8,11 @@ import {
   listPeople,
   normaliseEmail,
   normaliseAppearance,
+  normaliseViews,
   publicPerson,
   removePerson,
   setPersonAppearance,
+  setPersonView,
   updatePerson,
 } from './people.js';
 import { isPlainEmail } from './settings.js';
@@ -99,6 +101,7 @@ export function createSignInRouter({ settings, db, clerk, personAuth, defaultFam
       body.ownerActions = { allowed: Boolean(check.verified), by: check.by ?? null };
     }
     body.appearance = req.person.appearance ? normaliseAppearance(req.person.appearance) : null;
+    body.views = normaliseViews(req.person.views);
     res.json(body);
   });
 
@@ -107,6 +110,17 @@ export function createSignInRouter({ settings, db, clerk, personAuth, defaultFam
     try {
       const appearance = await setPersonAppearance(db, { id: req.person.id, appearance: req.body });
       res.json({ ok: true, appearance });
+    } catch (error) {
+      sendError(res, error, log);
+    }
+  });
+
+  // Each person sets their own view of a page (how Jobs groups, sorts and
+  // filters); it follows their account.
+  router.put('/api/me/views/:page', requireSession, express.json({ limit: '8kb' }), async (req, res) => {
+    try {
+      const view = await setPersonView(db, { id: req.person.id, page: req.params.page, view: req.body });
+      res.json({ ok: true, view });
     } catch (error) {
       sendError(res, error, log);
     }

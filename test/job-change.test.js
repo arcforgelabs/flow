@@ -5,7 +5,7 @@ import { updateDraftInvoice } from '../server/core/invoices.js';
 import {
   diffJobLines, draftInvoiceForObligation, jobChangeFor, observeJob, recordAccountingEvidence, useSourceLines,
 } from '../server/core/ledger.js';
-import { orderLink, orderPageTemplate } from '../server/integrations/seazona/settings.js';
+import { orderLink, orderUrlTemplate } from '../server/integrations/seazona/settings.js';
 import { changeRows, changeSummary } from '../server/ui/job-change.js';
 import { freshDatabase, skipWithoutDatabase } from './support/db.js';
 
@@ -55,18 +55,18 @@ describe('was and now, line by line', () => {
 describe('Open in Seazona', () => {
   const id = '3f9c2b10-1d2e-4a5b-8c7d-0e1f2a3b4c5d';
 
-  test('the order id in a pasted link becomes the pattern', () => {
-    assert.equal(orderPageTemplate(`https://lab.seazona.net/Orders/View.aspx?id=${id}`), 'https://lab.seazona.net/Orders/View.aspx?id={order}');
-    assert.equal(orderPageTemplate('https://lab.seazona.net/order/{invoice}'), 'https://lab.seazona.net/order/{invoice}');
-    assert.equal(orderPageTemplate('https://lab.seazona.net/home'), null, 'no order id: no pattern');
-    assert.equal(orderPageTemplate('http://lab.seazona.net/x/' + id), null, 'https only');
+  test('the order id in a pasted address becomes {ref}', () => {
+    assert.equal(orderUrlTemplate(`https://lab.seazona.net/Orders/View.aspx?id=${id}`), 'https://lab.seazona.net/Orders/View.aspx?id={ref}');
+    assert.equal(orderUrlTemplate('https://lab.seazona.net/order/{ref}'), 'https://lab.seazona.net/order/{ref}');
+    assert.equal(orderUrlTemplate('https://lab.seazona.net/home'), null, 'no order id: no pattern');
+    assert.equal(orderUrlTemplate('http://lab.seazona.net/x/' + id), null, 'https only');
   });
 
   test('the link to one order, else the lab home page from the API address, else none', () => {
-    const settings = { orderPageUrl: 'https://lab.seazona.net/o?id={order}', baseUrl: 'https://lab.seazonaapi.net/v1' };
+    const settings = { orderUrlTemplate: 'https://lab.seazona.net/o?id={ref}', baseUrl: 'https://lab.seazonaapi.net/v1' };
     assert.deepEqual(orderLink(settings, { sourceJobRef: id }), { url: `https://lab.seazona.net/o?id=${id}`, exact: true });
-    assert.deepEqual(orderLink({ ...settings, orderPageUrl: null }, { sourceJobRef: id }), { url: 'https://lab.seazona.net/', exact: false });
-    assert.equal(orderLink({ orderPageUrl: null, baseUrl: 'https://api.example.com/v1' }, { sourceJobRef: id }), null);
+    assert.deepEqual(orderLink({ ...settings, orderUrlTemplate: null }, { sourceJobRef: id }), { url: 'https://lab.seazona.net/', exact: false });
+    assert.equal(orderLink({ orderUrlTemplate: null, baseUrl: 'https://api.example.com/v1' }, { sourceJobRef: id }), null);
   });
 });
 

@@ -67,7 +67,7 @@ workspace live credentials.
 | `SEAZONA_API_TIMEOUT_MS` | Time limit for one request. Default 30000. |
 | `SEAZONA_API_MAX_WAIT_MS` | How long a request may wait for a free slot. Default 120000. |
 | `SEAZONA_API_TELEMETRY_RETENTION_DAYS` | How long request telemetry is kept. Default 35, so last month's question from Seazona can be answered. Maximum 90. |
-| `SEAZONA_ORDER_PAGE_URL` | A link to any one order in Seazona's own web app, copied from the browser. Flow finds the order id in it and uses the link for **Open in Seazona** on a changed job. A link may carry `{order}` (the order id) or `{invoice}` (its invoice number) itself. Not set, or no order id in it: Open in Seazona opens the lab's Seazona home page when the API address is `https://{lab}.seazonaapi.net`. Also on the Seazona integration screen as "Order page link". |
+| `SEAZONA_ORDER_URL` | Optional. The address of one order in Seazona's own screens, with `{ref}` where the order number goes, for example `https://<your Seazona>/orders/{ref}`. A person may instead paste the address of any one order as the browser shows it: Flow turns the order id in it (a GUID) into `{ref}`. A stage move on the Jobs board opens it, and so does **Open in Seazona** on a changed job. Must use https and hold `{ref}` or an order id; otherwise Flow ignores it: the Jobs board shows the order number to copy, and Open in Seazona opens the lab's Seazona home page when the API address is `https://{lab}.seazonaapi.net`. Also on the Seazona integration screen as "Order address". |
 | `SEAZONA_KEEP_PATIENT_REFERENCE` | `on` keeps Seazona's patient field on orders and invoices as the patient reference an invoice prints (the `{patient}` token of the Reference rule). Default off: no patient field is stored. Also on the Seazona integration screen as "Keep patient names". |
 | `SEAZONA_INVOICE_CADENCE_MS`, `SEAZONA_ORDER_CADENCE_MS`, `SEAZONA_ACTIVE_ORDER_CADENCE_MS`, `SEAZONA_CLIENT_CADENCE_MS`, `SEAZONA_REFERENCE_CADENCE_MS` | How often each lane runs in live mode. Defaults below. |
 | `SEAZONA_ORDER_LOOKBACK_DAYS` | How far back the recent-order lane reads. Default 30. |
@@ -571,6 +571,31 @@ request:
 A replay file holds synthetic data only: no real lab, practice, dentist or
 patient (`CONTRIBUTING.md`).
 
+## Stage moves
+
+Seazona's API has no call that changes an order's status. So when a person
+moves a job to another Seazona stage on the Jobs board, Flow never calls
+Seazona. The move becomes a hand-off (`stage-moves.js`):
+
+1. Flow records the move in `seazona_stage_moves` as `waiting`, and answers
+   what to do: the order number, the new stage, and "Open in Seazona" when
+   `SEAZONA_ORDER_URL` is set.
+2. The card shows in the new lane with "Waiting for Seazona" (`listWork`
+   gives it `pendingMove`).
+3. The person changes the status in Seazona. The next sync reads the order,
+   and the move settles as `done`. Any new status settles it: Seazona has the
+   last word.
+4. After a day with no change, the move is `expired`. The card goes back to
+   Seazona's stage, and a quiet alert on the Integrations page names it for
+   a week.
+5. A person can take a waiting move back (`cancelled`).
+
+Each person chooses whether the board asks before a stage move: "Ask before
+stage moves" under Your settings on the Seazona integration screen
+(`seazona_person_settings`, on by default). When Seazona adds an API call
+that changes a status, `moveWork` can make the change itself, and the
+hand-off stays only for a failed call (`docs/JOB_BOARD_MOVES.md`).
+
 ## Tables
 
 The adapter owns its tables (issue #13). They are created only while the
@@ -595,6 +620,8 @@ installation-wide.
 | `seazona_history_batch_jobs` | Each job of an upload: what reconciliation found and what a person decided |
 | `seazona_history_jobs` | Flow's own record of past work from applied uploads |
 | `seazona_sweep_findings` | What the sweep found that the lanes missed, per record and kind, and the `missing` marks (issue #126) |
+| `seazona_stage_moves` | The latest stage move per order that a person must make in Seazona, and how it settled |
+| `seazona_person_settings` | Each person's own Seazona choices, such as "Ask before stage moves" |
 
 To change them, edit `server/integrations/seazona/schema.js` and run:
 

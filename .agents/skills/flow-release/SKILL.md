@@ -1,0 +1,67 @@
+---
+name: flow-release
+description: Run a Flow stable, beta or correction release from a release branch with npm run release:stable. Use when the maintainer asks for a release, when a release check fails, or when a fix must reach an open release branch.
+---
+
+# Flow release
+
+This is openclaw/openclaw's release-agent procedure, with Flow's names.
+`docs/RELEASING.md` holds the workflows and the commands; this file holds
+the rules an agent follows while it runs them.
+
+## Start
+
+1. Get the full history: `git fetch --unshallow --tags origin` (or
+   `git fetch --tags origin`).
+2. Pick the version: `YYYY.M.N`, where `N` is the count of releases this
+   month (`node scripts/release/release.mjs plan --channel stable` prints
+   it).
+3. Run `npm run release:stable -- <version>`. It refuses until the cut is
+   confirmed and prints `Next:` with the exact commands. Follow them.
+
+## The cut
+
+- A release ships what `main` holds at the cut. There is no milestone and
+  no wait for a pull request that has not merged.
+- The cut is the newest `main` commit that Flow Full Release Validation
+  proved (it runs every 3 hours). Main's health at a later commit never
+  gates the release.
+- Write the notes at the cut with `.agents/skills/flow-changelog-update`,
+  and pass their branch as `--notes-ref`.
+- Cut once. Never cut again on newer `main` to pick up a fix, and never cut
+  again without the maintainer's word.
+
+## Failed checks
+
+Every failed check gets a written decision, blocker or flake, with the
+evidence (the job, the error, the commit).
+
+- Blocker: a required lane that fails deterministically on the branch, or
+  an install, update or publish defect. Fix it on `main` first, then pick
+  it onto the branch with Flow Release Branch `cherry-pick` (it uses
+  `git cherry-pick -x`). Draft the notes again at the branch's head.
+- Flake: rerun on the same commit at most twice, and fix it on `main` in
+  parallel. A flake never goes onto the branch.
+- A dependency advisory is not a blocker. Only known malware stops a
+  release.
+- Never skip, disable or quarantine a test to get green.
+
+## Publication
+
+- `--approve-publication` needs the maintainer's word for this release (a
+  tapped card counts). Without it, stop at the refusal and ask.
+- The tag is signed by Flow Release Prepare and checked by Flow Release
+  Checks. The GitHub Release stays a draft until npm serves the version.
+- The release is done when the closeout pull request has merged and `main`
+  carries the shipped changelog file and version.
+
+## Corrections
+
+A published stable release that needs a fix gets `<version>-<n>` on the
+same branch (`docs/RELEASING.md`, Correct a stable release). Only the
+newest stable release takes a correction.
+
+## Words
+
+The repository is public. No customer, lab, practice or person names in
+notes, commits, comments or workflow inputs.

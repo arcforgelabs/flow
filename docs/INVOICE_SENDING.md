@@ -134,7 +134,7 @@ the work system. Flow never writes to the work system.
 
 | Button | What it does |
 | --- | --- |
-| **Open in Seazona** | Opens the job in Seazona's own web app, to fix it there. It needs the Seazona setting **Order page link** (docs/SEAZONA.md); without it, it opens the lab's Seazona home page when the API address names it. |
+| **Open in Seazona** | Opens the job in Seazona's own web app, to fix it there. It needs the Seazona setting **Order address** (docs/SEAZONA.md), the same one the Jobs board uses; without it, it opens the lab's Seazona home page when the API address names it. |
 | **Adopt Seazona changes** | Only when the work system alone changed and the draft is not sent. The draft takes the Now column, and the problem closes. Nothing goes to Seazona or the accounting system. |
 
 A fix made in the work system closes the problem when Flow next reads the job.

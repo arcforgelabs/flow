@@ -127,6 +127,20 @@
       "when": 1792458167234,
       "tag": "0017_sync_basis",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1792472460808,
+      "tag": "0018_custom_fields",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1792474607940,
+      "tag": "0019_people_views",
+      "breakpoints": true
     }
   ]
 }

@@ -292,3 +292,29 @@ export const seazonaSweepFindings = pgTable('seazona_sweep_findings', {
   primaryKey({ columns: [t.resource, t.recordKey, t.kind] }),
   index('seazona_sweep_findings_found').on(t.lastFoundAt),
 ]);
+
+// A person's stage move on the Jobs board that Seazona must make, because
+// Seazona's API cannot change an order's status (docs/SEAZONA.md, "Stage
+// moves"). One row per order: the latest move. `state` is waiting until the
+// sync reads the new status (done), a day passes (expired), or the person
+// takes it back (cancelled). Statuses only; never patient data.
+export const seazonaStageMoves = pgTable('seazona_stage_moves', {
+  orderId: text('order_id').primaryKey(),
+  fromStatus: text('from_status'),
+  toStatus: text('to_status').notNull(),
+  requestedBy: text('requested_by'),
+  requestedAt: at('requested_at').notNull(),
+  expiresAt: at('expires_at').notNull(),
+  state: text('state').notNull().default('waiting'),
+  settledAt: at('settled_at'),
+}, (t) => [
+  index('seazona_stage_moves_state').on(t.state, t.expiresAt),
+]);
+
+// Each person's own Seazona choices. `ask_before_stage_moves`: show the
+// "Move in Seazona" dialog before a stage move on the Jobs board.
+export const seazonaPersonSettings = pgTable('seazona_person_settings', {
+  personId: text('person_id').primaryKey(),
+  askBeforeStageMoves: boolean('ask_before_stage_moves').notNull().default(true),
+  updatedAt: at('updated_at').notNull(),
+});

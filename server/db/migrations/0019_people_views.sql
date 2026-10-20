@@ -1,0 +1,1 @@
+ALTER TABLE "people" ADD COLUMN IF NOT EXISTS "views" jsonb;

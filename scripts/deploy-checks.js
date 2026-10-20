@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-// Did this commit pass GitHub CI? Flow Release Prepare
-// (scripts/release/require-checks.mjs) asks before it tags a release, and a
-// Replit deploy asks before it builds, so only a commit whose CI passed is
-// released or deployed.
+// Did this commit pass GitHub CI? A Replit deploy asks before it builds, so
+// only a commit whose CI passed is deployed. Flow Release Branch starts CI
+// and the secret scan on each release-branch commit, so a release commit has
+// these checks too.
 //
 //   node scripts/deploy-checks.js <repository-url> <commit>
 //
