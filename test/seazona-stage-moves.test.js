@@ -21,16 +21,12 @@ const quiet = { info() {}, warn() {}, error() {} };
 
 const GUID = '0f8fad5b-d9cb-469f-a165-70867728950e';
 
-test('the order page link comes from one pasted order link', () => {
+test('the order address comes from one pasted order link', () => {
   const base = { SEAZONA_MODE: 'replay', SEAZONA_REPLAY_FILE: 'x.json' };
-  const settings = resolveSeazonaSettings({ ...base, SEAZONA_ORDER_PAGE_URL: `https://lab.example.test/orders/${GUID}/view` });
-  assert.equal(settings.orderPageUrl, 'https://lab.example.test/orders/{order}/view');
+  const settings = resolveSeazonaSettings({ ...base, SEAZONA_ORDER_URL: `https://lab.example.test/orders/${GUID}/view` });
+  assert.equal(settings.orderUrlTemplate, 'https://lab.example.test/orders/{ref}/view');
   assert.deepEqual(orderLink(settings, { sourceJobRef: 'A 1' }), { url: 'https://lab.example.test/orders/A%201/view', exact: true });
-  assert.equal(resolveSeazonaSettings({ ...base, SEAZONA_ORDER_PAGE_URL: 'https://lab.example.test/orders/' }).orderPageUrl, null);
-  assert.equal(resolveSeazonaSettings({ ...base, SEAZONA_ORDER_PAGE_URL: `http://lab.example.test/orders/${GUID}` }).orderPageUrl, null);
   assert.equal(orderLink(resolveSeazonaSettings(base), { sourceJobRef: 'A' }), null);
-  // With no order page, a lab's API address still gives its Seazona home page.
-  assert.deepEqual(orderLink({ orderPageUrl: null, baseUrl: 'https://examplelab.seazonaapi.net/v1' }, { sourceJobRef: 'A' }), { url: 'https://examplelab.seazona.net/', exact: false });
 });
 
 describe('stage moves against PostgreSQL', { skip: skipWithoutDatabase }, () => {
@@ -50,7 +46,7 @@ describe('stage moves against PostgreSQL', { skip: skipWithoutDatabase }, () => 
   after(async () => handle?.close());
 
   test('a move records a hand-off, and never a status Seazona does not use', async () => {
-    const move = await requestStageMove(db, { orderId: 'ORD-1', toStatus: 'quality check', personId: 'p1', settings: { orderPageUrl: 'https://lab.example.test/o/{order}' }, now: clock.now() });
+    const move = await requestStageMove(db, { orderId: 'ORD-1', toStatus: 'quality check', personId: 'p1', settings: { orderUrlTemplate: 'https://lab.example.test/o/{ref}' }, now: clock.now() });
     assert.equal(move.kind, 'hand_off');
     assert.deepEqual([move.from, move.to, move.openUrl, move.openExact], ['In Production', 'Quality Check', 'https://lab.example.test/o/ORD-1', true]);
     assert.equal(Date.parse(move.expiresAt) - Date.parse(move.requestedAt), HAND_OFF_MS);

@@ -12,23 +12,33 @@ holds the tool, the format check (`check`) and the history check
 
 ## When
 
-At the release cut, in a `docs(changelog): <version> notes` pull request,
-merged before Flow Release Prepare runs (`docs/RELEASING.md`, Cut a
-release). That pull request has no row in the record. Never in a feature
-pull request. Prepare refuses a release while its file misses a pull
-request, misses GitHub's credit or breaks the highlight budget. Publish
-uses the file as the GitHub Release body and checks the published body.
-Each beta gets its own file (`CHANGELOG/<version>-beta.<n>.md`), never a
-copy of the stable file; the stable release gets a new, cumulative file.
+At the release cut, before Flow Release Branch cuts `release/<version>`
+(`docs/RELEASING.md`, Release a stable version). Commit the files on any
+branch and pass it as `notes_ref`: the cut puts them on the release branch
+in the release commit. They never go through a pull request to `main`;
+Flow Release Closeout brings them there after the stable release. Never in
+a feature pull request. Draft again at the branch's head after a blocker
+pick, and put the refreshed files on the branch with Flow Release Branch
+`notes` (or in the same `cherry-pick` run). Prepare refuses a release while
+its file misses a pull request, misses GitHub's credit or breaks the
+highlight budget. Publish uses the file as the GitHub Release body and
+checks the published body. Each beta gets its own file
+(`CHANGELOG/<version>-beta.<n>.md`), never a copy of the stable file; the
+stable release gets a new, cumulative file, and a correction
+(`CHANGELOG/<version>-<n>.md`) the same range plus its fix.
 
 ## Inputs
 
-- Stable base: the previous stable release tag that the target contains.
+- Stable base: the newest stable release tag older than the version, on
+  any branch. When it is not in the target's history (it shipped from its
+  own release branch), the range starts at their merge base and leaves out
+  the pull requests that release already shipped, picks included.
 - Beta base: the version npm's `beta` tag selects before the beta
   publishes. `draft` reads it with `npm view @arcforgelabs/flow
   dist-tags.beta`. If npm already selects this beta or a newer one, pass the
   tag you captured before publishing with `--base`.
-- Target: the commit the release will tag (`HEAD` before the tag exists).
+- Target: the commit the release will tag: the cut commit on `main` before
+  the branch exists, then the branch's head (`origin/release/<version>`).
   The record's target may be an older commit of that history; any pull
   request merged after it makes `verify` fail until you draft again.
 
@@ -79,7 +89,8 @@ copy of the stable file; the stable release gets a new, cumulative file.
    ```
 
 5. Commit `CHANGELOG/<version>.md`, `CHANGELOG/records/<version>.md` and
-   `CHANGELOG.md` together.
+   `CHANGELOG.md` together on your branch, push it, and give it to the cut
+   or to Flow Release Branch `notes` as `notes_ref`.
 
 6. After Publish, it runs the body check itself. To run it by hand:
 

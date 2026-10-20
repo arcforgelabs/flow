@@ -189,6 +189,30 @@ body:is([data-state="off"], [data-state="error"], [data-state="no-access"]) .fx-
 .fx-notice[data-tone="danger"] { border-color: var(--t-danger-brd); background: var(--t-danger-bg); color: var(--t-danger); }
 .fx-panel > .fx-notice { margin: 12px; }
 
+/* The job changed after its invoice was made (job-change.js): was / now per
+   changed fact. Was is struck through; Now is the work system's value. */
+.fx-change {
+  display: grid; gap: 10px; padding: 12px 14px;
+  border: 1px solid var(--t-danger-brd); border-radius: var(--t-radius);
+  background: var(--t-danger-bg); color: var(--t-text); font-size: 14px;
+}
+.fx-change p { margin: 0; }
+.fx-change strong { color: var(--t-danger); }
+.fx-change__head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; }
+.fx-change__acts { display: flex; flex-wrap: wrap; gap: 8px; }
+.fx-change__note { font-size: 13px; color: var(--t-dim); }
+.fx-change__scroll { overflow-x: auto; }
+.fx-change__table { width: 100%; border-collapse: collapse; background: var(--t-paper); border: 1px solid var(--t-brd); font-size: 13.5px; }
+.fx-change__table th, .fx-change__table td { padding: 8px 12px; border-bottom: 1px solid var(--t-brd); text-align: left; vertical-align: top; }
+.fx-change__table thead th {
+  font-size: var(--t-label-size, 12px); font-weight: var(--t-label-weight, 600); letter-spacing: var(--t-label-spacing, .08em);
+  text-transform: var(--t-label-case, uppercase); color: var(--t-dim);
+}
+.fx-change__table tbody th { font-weight: 400; color: var(--t-dim); white-space: nowrap; }
+.fx-change__was { background: color-mix(in srgb, var(--t-danger) 9%, transparent); text-decoration: line-through; text-decoration-thickness: 1px; }
+.fx-change__now { background: color-mix(in srgb, var(--t-success) 11%, transparent); color: var(--t-strong); font-weight: 600; }
+.fx-change__table .fx-num { text-align: left; font-family: var(--t-data); font-variant-numeric: tabular-nums; }
+
 .fx-status {
   display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px;
   border-radius: 999px; font-size: 12.5px; font-weight: 600; white-space: nowrap;

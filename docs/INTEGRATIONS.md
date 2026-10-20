@@ -47,7 +47,7 @@ one deleted in Seazona). An item may carry `link`, `{ url, exact }`, which
 opens the job in the work system's own web app (`exact` is false for only its
 home page), and `pendingMove`, `{ to, from, requestedAt, expiresAt, openUrl,
 openExact }`: a stage move the work system has not made yet.
-`jobLink({ sourceJobRef, sourceInvoiceRef })` answers that same link for one
+`jobLink({ sourceJobRef })` answers that same link for one
 job, or null; it never calls the system.
 `moveWork({ sourceJobRef, toStatus, personId })` takes a person's move of a
 job to another stage on the Jobs board and answers what happens; an

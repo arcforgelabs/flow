@@ -197,15 +197,15 @@ flowchart LR
   base[Basis<br/>facts at draft] --> cmp{Compare<br/>each work field}
   work[Work system now] --> cmp
   draft[Flow draft now] --> cmp
-  cmp -- work system only, draft not sent --> offer[Review + alert<br/>Use new lines]
+  cmp -- work system only, draft not sent --> offer[Review + alert<br/>Adopt changes]
   cmp -- both, or invoice sent --> conflict[Review + alert only]
   cmp -- Flow only, or back to basis --> none[Nothing]
 ```
 
 | Case | Result |
 | --- | --- |
-| Only the work system changed, draft not sent | Review hold, a `job.changed` alert. **Use new lines** puts the job's lines (and customer) on Flow's own draft, keeps them as the new basis, and closes the alert. |
-| Both changed differently, or the invoice left Flow (issued, queued, sent, or in the accounting system) | Review hold, a `job.changed` alert only. **Use new lines** is refused. |
+| Only the work system changed, draft not sent | Review hold, a `job.changed` alert. **Adopt changes** (`POST /api/invoicing/jobs/:id/use-new-lines`) puts the job's lines (and customer) on Flow's own draft, keeps them as the new basis, and closes the alert. |
+| Both changed differently, or the invoice left Flow (issued, queued, sent, or in the accounting system) | Review hold, a `job.changed` alert only. **Adopt changes** is refused. |
 | Only Flow changed, or the job changed back to the basis | Nothing. A hold from an earlier change is released. |
 
 A job whose status moves back from a billable status (`observeWithdrawn`):

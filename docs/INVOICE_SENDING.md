@@ -10,14 +10,21 @@ one of them. Code: `server/core/sending.js`.
 | Problem | A check failed. |
 | Ready | A person marked it ready, and no check fails. |
 
-## Mark ready
+## Ready
 
-A person checks a draft, then presses **Mark ready** on the invoice, or ticks
-drafts in the list and presses **Mark N ready**. Anyone who may draft may mark
-ready. A draft with a problem is not marked; it shows in Problem. A saved
-change keeps a draft ready; Flow's checks still run on it. **Move to Drafts**,
-on the invoice's Status card or for ticked rows in the list, takes it back.
-`invoices.ready_at` and `ready_by` record who marked it and when.
+A draft the draft routine made from a job ready to invoice goes to Ready on
+its own while no person has changed it (server/core/automations.js), and so
+does a draft whose job change a person adopted. Any other draft waits in
+Drafts. On the invoice the buttons are, left to right, **Preview**, **Save as
+draft** and **Finalise**. With an accounting system on, **Finalise** saves the
+draft, checks it and moves it to the Ready tab; nothing is sent until **Send
+all ready**. In the list, a person ticks drafts and presses **Move N to
+Ready**. A draft with a problem stays where it is and shows in Problem. While
+the draft's job changed after it was made (below), Finalise is off: fix the
+job at its source, or adopt the change. A saved change keeps a draft ready;
+Flow's checks still run on it. **Move to Drafts**, on the invoice's Status
+card or for ticked rows in the list, takes it back. `invoices.ready_at` and
+`ready_by` record who marked it and when.
 
 ## Checks
 
@@ -66,11 +73,11 @@ With no accounting system on, the button issues the ready drafts only.
 One ready invoice has its own **Send to Xero** button (**Send to Xero and
 email** when the customer's send mode is approve and email). It does the same
 steps for that invoice only. A draft that is not ready has no send button:
-mark it ready first. With no accounting system on, the invoice page shows
-**Issue invoice** instead. **Preview** sits just left of the send button.
-Issue invoice is greyed until the invoice has a client and a due date. A new
-invoice with an accounting system on has no Issue invoice: save the draft,
-mark it ready, then send it.
+finalise it first. With no accounting system on, **Finalise** gives the
+invoice the next number and locks it, and sends nothing. **Preview** comes
+first, then **Save as draft**, then Finalise or the send button. With no
+accounting system, Finalise is greyed until the invoice has a client and a due
+date. Finalise is also greyed while the draft's job change is open.
 
 ## New invoice from a job
 
@@ -88,6 +95,12 @@ person goes back. Previous opens it again, issued, with a greyed **Sent to
 Xero** button: an invoice that is queued, sent, or found in Xero cannot be
 sent twice. Back reloads the list, where the sent invoice is under Issued.
 After the last invoice of the list, the list opens.
+
+Drafts work the same way. **Finalise** and **Save as draft** open the next
+invoice of the list, so a person reviews drafts one after another without
+going back. **Adopt changes** stays on the invoice, to show the result. An
+invoice opened from somewhere else (the job board, search, a link) steps
+through its own tab: Drafts, Ready, Problem, Issued or Void.
 
 ## Records
 
@@ -109,3 +122,19 @@ Revising an issued invoice clears both.
 - `POST /api/invoicing/invoices/send-ready` `{ issueDate, invoiceIds? }`:
   with `invoiceIds`, only those drafts, and each must be ready (`not_ready`).
 - `POST /api/invoicing/invoices/send-again` `{ invoiceIds? }`.
+
+## The job changed after the draft was made
+
+When the work system's job changes after Flow made its draft
+(docs/DATA_SPINE.md, three-way compare), the draft is in Problem and the
+invoice page shows a banner: one row for each changed fact (client, a line's
+item, description, quantity or price, an added or removed line, and the
+total), with what it **Was** when the draft was made and what it is **Now in**
+the work system. Flow never writes to the work system.
+
+| Button | What it does |
+| --- | --- |
+| **Open in Seazona** | Opens the job in Seazona's own web app, to fix it there. It needs the Seazona setting **Order address** (docs/SEAZONA.md), the same one the Jobs board uses; without it, it opens the lab's Seazona home page when the API address names it. |
+| **Adopt Seazona changes** | Only when the work system alone changed and the draft is not sent. The draft takes the Now column, and the problem closes. Nothing goes to Seazona or the accounting system. |
+
+A fix made in the work system closes the problem when Flow next reads the job.
