@@ -31,7 +31,7 @@ export const exampleAdapter = {
 
 The capabilities are `pullWorkItems`, `pullHistoryJobs`, `pushInvoice`, `pushBill`,
 `pullPayments`, `checkInvoice`, `listCustomers`, `findInvoices`, `listWork`,
-`listPriceItems`, `jobIssues`, `captureError`, `browserMonitoring`, `alerts` and
+`billableJobs`, `listPriceItems`, `jobIssues`, `captureError`, `browserMonitoring`, `alerts` and
 `health`. `alerts({ organisationId })` answers what only a person can clear,
 for the quiet alert on the Integrations page (docs/ALERTS.md).
 `listPriceItems({ organisationId })` answers the system's own price list from
@@ -45,7 +45,11 @@ total (Seazona: open orders and orders finished in the last 30 days, never
 one deleted in Seazona). `jobIssues({ refs })` answers the integration's
 open issues for those job refs, `{ [ref]: [{ integration, phrase, href }] }`:
 one short phrase and the page where a person fixes it; the Jobs board shows
-them on each job (Seazona: history jobs a person must decide). `captureError({ message,
+them on each job (Seazona: history jobs a person must decide).
+`billableJobs({ organisationId, from, to })` answers the billable jobs in the
+adapter's own copy whose job day is in that range, never a live call:
+`{ jobs }`, each `{ ref, day, subtotalCents }` (`subtotalCents` null when a
+line has no amount); the daily reconcile counts them (`docs/RECONCILE.md`). `captureError({ message,
 source, error })` takes each error Flow logs, and `browserMonitoring()`
 answers the public settings a browser needs; the Sentry adapter has both
 (`docs/SENTRY.md`).
