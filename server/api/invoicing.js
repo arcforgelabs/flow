@@ -20,7 +20,7 @@ import { readBeforeAct } from '../core/read-before-act.js';
 import { invoiceMatchDetail, jobMatchDetail, listReconcile } from '../core/job-match.js';
 import { jobReference } from '../core/references.js';
 import {
-  acceptFindings, archivePriceItem, checkPrices, createPriceItem, linkPriceItem, readCatalogues, readPriceList, unlinkPriceItem, updatePriceItem,
+  acceptFindings, archivePriceItem, checkPrices, createPriceItem, linkPriceItem, linkPriceItems, MAX_LINKS_AT_ONCE, readCatalogues, readPriceList, unlinkPriceItem, updatePriceItem,
 } from '../core/price-list.js';
 import {
   confirmNoInvoice, draftInvoiceForObligation, explainObligation, jobChangeFor, linkJobToInvoice, listObligations,
@@ -81,6 +81,7 @@ import {
 //   POST  /price-items/:id/links      owner or admin: { system, externalId } link a record of a system's list
 //   POST  /price-items/:id/resolve    owner or admin: Mark resolved: check again, accept what still differs
 //   DELETE /price-links/:id           owner or admin: remove a link
+//   POST  /price-links                owner or admin: { links: [{ priceItemId, system, externalId }] } many links at once
 //   GET   /automations?place=         Flow's routines, each on or off (server/core/automations.js)
 //   PUT   /automations/:key           owner or admin: { enabled, config }
 //   GET   /work-statuses              the work system's job statuses, with job counts
@@ -836,6 +837,21 @@ export function createInvoicingRouter({
     const link = await linkPriceItem(db, organisationId, itemId, { system, externalId }, { catalogues: await catalogues(organisationId), personId: req.person.id });
     log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} linked price item ${itemId} to ${system}`);
     res.status(201).json({ ok: true, link: { id: link.id, system: link.system, externalId: link.externalId, externalCode: link.externalCode, matchedBy: link.matchedBy } });
+  }));
+
+  router.post('/price-links', ...manager, handle(log, async (req, res) => {
+    const organisationId = await organisationOf(req);
+    const raw = req.body?.links;
+    if (!Array.isArray(raw) || !raw.length || raw.length > MAX_LINKS_AT_ONCE) throw invalid(`links must be a list of 1 to ${MAX_LINKS_AT_ONCE} links`);
+    const links = raw.map((l, at) => {
+      const system = text(l?.system);
+      const externalId = text(l?.externalId);
+      if (!system || !externalId) throw invalid(`links[${at}]: system and externalId are required`);
+      return { priceItemId: pathId(l?.priceItemId, 'price item'), system, externalId };
+    });
+    const made = await linkPriceItems(db, organisationId, links, { catalogues: await catalogues(organisationId), personId: req.person.id });
+    log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} made ${made.length} price links`);
+    res.status(201).json({ ok: true, linked: made.length });
   }));
 
   router.post('/price-items/:id/resolve', ...manager, handle(log, async (req, res) => {

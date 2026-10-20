@@ -13,6 +13,7 @@ import { renderInvoice, renderInvoiceList } from '/assets/ui/invoicing.js';
 import { automationSection } from '/assets/ui/automations.js';
 import { renderInvoicingSettings, sendModeSection } from '/assets/ui/invoicing-settings.js';
 import { renderPriceList } from '/assets/ui/price-list.js';
+import { renderPriceReconcile } from '/assets/ui/price-reconcile.js';
 import { lucide, renderCustomFields } from '/assets/ui/custom-fields.js';
 import { renderJobs } from '/assets/ui/jobs.js';
 import { renderReconcile } from '/assets/ui/reconcile.js';
@@ -204,7 +205,7 @@ const VIEWS = {
   invoices: { label: 'Invoices', icon: 'invoices', group: 'Work', render: (main, id) => (id ? renderInvoice(main, ui(), id) : renderInvoiceList(main, ui())) },
   reconcile: { label: 'Reconcile', icon: 'reconcile', group: 'Work', render: (main, id) => renderReconcile(main, ui(), id) },
   'invoicing-settings': { label: 'Invoice rules', icon: 'invoices', group: 'Settings', render: (main) => renderInvoicingSettings(main, ui()) },
-  'price-list': { label: 'Price list', icon: 'tag', group: 'Settings', render: (main) => renderPriceList(main, ui()) },
+  'price-list': { label: 'Price list', icon: 'tag', group: 'Settings', render: (main, id) => (id === 'reconcile' ? renderPriceReconcile(main, ui()) : renderPriceList(main, ui())) },
   'custom-fields': { label: 'Custom fields', icon: 'fields', group: 'Settings', render: (main) => renderCustomFields(main, ui()) },
   people: { label: 'People', icon: 'people', group: 'Settings', ownerOnly: true, render: renderPeople },
   integrations: { label: 'Integrations', icon: 'plug', group: 'Settings', ownerOnly: true, render: (main, id) => (id ? renderIntegration(main, id) : renderIntegrations(main)) },
