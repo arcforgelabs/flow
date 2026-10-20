@@ -623,7 +623,7 @@ function draftView(invoice, ui, context, redraw) {
   const fromJob = isNew && context.canIssue ? h('section', { class: 'fx-fromjob' },
     h('div', { class: 'fx-fromjob__text' },
       h('span', { class: 'fx-strong' }, 'Billing a job?'),
-      h('span', { class: 'fx-dim' }, 'Choose it, and Flow fills in the client, Reference and lines.')),
+      h('span', { class: 'fx-dim' }, 'Flow fills in the details.')),
     h('button', { class: 'fx-btn', type: 'button', onclick: () => pickJob(ui) }, 'Choose a job')) : null;
 
   // Mark ready: the draft is saved, then Flow checks it; one with a problem
