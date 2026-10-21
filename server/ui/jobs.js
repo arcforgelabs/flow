@@ -1148,8 +1148,9 @@ export async function renderJobs(main, ui) {
   // and its lines. At the side (below on a phone), the sidecar: Activity,
   // and Review when the job changed after its draft (what changed, and
   // Accept change). The sidecar closes, and the main area takes its room.
-  // Esc, the X or a click outside closes the panel. `atFix` scrolls to what
-  // to fix, and opens Review when there is one. The job's custom fields can
+  // Esc, the X or a click outside closes the panel. `atFix` opens Review
+  // when the job changed, else the Fix card (or scrolls to the invoice
+  // choice). The job's custom fields can
   // be changed here (in Flow only), and its stage moved (a hand-off to the
   // work system).
   function openJob(job, { atFix = false } = {}) {
@@ -1173,14 +1174,27 @@ export async function renderJobs(main, ui) {
       : choose ? h('span', { class: 'fx-task__none' }, svg(WARN_ICON), 'Needs invoice')
         : stage ? INVOICE_STAGES[stage] : o ? 'Not ready to invoice' : 'No invoice yet';
     const rest = found.filter((f) => f.go !== 'choose');
-    // One short line a fix: its label, what is wrong, and its link. What to
-    // do is the link's tip.
-    const fixBox = rest.length ? h('section', { class: 'fx-task__fix', 'aria-label': 'Fix' },
-      h('h3', {}, 'Fix'),
+    // What to fix is a chip beside the stage ("Job changed", "+1" for more),
+    // so the panel keeps one layout with or without a fix. Hover or focus
+    // shows a card: one line a fix, with its link; what to do is the link's
+    // tip. A click opens Review when the job changed, else holds the card
+    // open (a phone has no hover).
+    const review = rest.some((f) => f.go === 'review') && reviewable;
+    const fixCard = rest.length ? h('div', { class: 'fx-task__fixcard', role: 'group', 'aria-label': 'Fix' },
       rest.map((f) => {
         const go = fixLink(f.go, f.todo);
         return h('div', { class: 'fx-task__fixrow', title: go ? null : f.todo }, h('strong', {}, f.label), h('span', {}, f.text), go);
       })) : null;
+    const fixChip = rest.length ? h('div', { class: 'fx-task__fix' },
+      h('button', {
+        class: 'fx-task__fixchip', type: 'button', 'aria-expanded': 'false',
+        onclick: (event) => {
+          if (review) { side.open('review'); return; }
+          const button = event.currentTarget;
+          button.setAttribute('aria-expanded', String(button.getAttribute('aria-expanded') !== 'true'));
+        },
+      }, lucide(h, 'triangle-alert'), problemSummary(rest)),
+      fixCard) : null;
     // No invoice, and the match is unclear: one line and two buttons. The
     // possible matches are compared on the Reconcile page, not here.
     const chooseBox = choose ? h('section', { class: 'fx-task__choose', 'aria-label': 'Invoice' },
@@ -1275,7 +1289,7 @@ export async function renderJobs(main, ui) {
           h('div', { class: 'fx-task__tools' }, sideButton,
             h('button', { class: 'fx-btn fx-btn--ghost fx-btn--icon', type: 'button', 'aria-label': 'Close', title: 'Close', onclick: close }, '✕'))),
         h('h2', { class: 'fx-task__title' }, clientOf(job)),
-        h('div', { class: 'fx-task__stage' }, stagePill(status)),
+        h('div', { class: 'fx-task__stage' }, stagePill(status), fixChip),
         h('dl', { class: 'fx-task__fields' },
           field('Practitioner', job.practitioner),
           field(job.dueOn ? 'Due' : 'Ordered', job.dueOn ? fullDate(job.dueOn) : job.orderedOn ? fullDate(job.orderedOn) : null, late ? { class: 'fx-task__late' } : {}),
@@ -1290,7 +1304,6 @@ export async function renderJobs(main, ui) {
           // link to an accounting system (its Linked card).
           field('Invoice', invoiceText)),
         chooseBox,
-        fixBox,
         state.fields.length ? h('section', { class: 'fx-task__custom', 'aria-label': 'Custom fields' },
           h('h3', {}, 'Custom fields'),
           h('dl', { class: 'fx-task__fields' }, state.fields.map((f) => h('div', {}, h('dt', {}, f.name), h('dd', {}, fieldControl(job, f)))))) : null,
@@ -1312,13 +1325,18 @@ export async function renderJobs(main, ui) {
         h('div', { class: 'fx-task__actions' }, actions(job, close))),
       side.element));
     element.addEventListener('click', (event) => { if (event.target === element) close(); });
+    // A click away from the Fix chip puts its card away.
+    element.addEventListener('click', (event) => {
+      if (fixChip && !fixChip.contains(event.target)) fixChip.firstChild.setAttribute('aria-expanded', 'false');
+    });
     element.addEventListener('close', () => element.remove());
     document.body.append(element);
     element.showModal();
     const last = readSide();
     if (atFix && reviewable) side.open('review');
     else if (last !== 'closed') side.open(last === 'review' && reviewable ? 'review' : 'activity');
-    if (atFix && (chooseBox ?? fixBox)) (chooseBox ?? fixBox).scrollIntoView({ block: 'start' });
+    if (atFix && chooseBox) chooseBox.scrollIntoView({ block: 'start' });
+    if (atFix && fixChip && !review) fixChip.firstChild.setAttribute('aria-expanded', 'true');
     if (!o) return;
     const when = (iso) => new Date(iso).toLocaleString('en-AU', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
     flow(`/api/invoicing/jobs/${o.id}/activity`).then(({ events }) => {

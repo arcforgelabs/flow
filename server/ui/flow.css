@@ -715,12 +715,21 @@ th:hover .fx-th-sort, .fx-th-sort:focus-visible, .fx-th-sort--on { opacity: 1; }
 .fx-task__late { color: var(--t-danger) !important; }
 .fx-task__link { color: var(--t-accent); text-decoration: none; border-bottom: 1px solid color-mix(in srgb, var(--t-accent) 40%, transparent); }
 .fx-task__link:hover { border-bottom-color: currentColor; }
-.fx-task__fix { scroll-margin-top: 16px; margin-top: 22px; border: 1px solid var(--t-warn-brd, var(--t-warn)); border-radius: var(--t-radius); background: var(--t-warn-bg); }
-.fx-task__fix h3, .fx-task__lines h3 { margin: 0; color: var(--t-dim); font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
-.fx-task__fix h3 { padding: 12px 14px 4px; color: var(--t-warn); }
+.fx-task__lines h3 { margin: 0; color: var(--t-dim); font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+/* What to fix: a chip beside the stage, and its card on hover, focus or a
+   click (jobs.js openJob). The panel keeps one layout with or without it. */
+.fx-task__stage { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.fx-task__fix { position: relative; }
+.fx-task__fixchip { all: unset; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 10px; border: 1px solid var(--t-warn-brd, var(--t-warn)); border-radius: 999px; background: var(--t-warn-bg); color: var(--t-warn); font-size: 12.5px; font-weight: 600; }
+.fx-task__fixchip .fx-lucide { width: 14px; height: 14px; }
+.fx-task__fixchip:hover { border-color: var(--t-warn); }
+.fx-task__fixchip:focus-visible { box-shadow: var(--fx-focus); }
+.fx-task__fixcard { position: absolute; top: calc(100% + 6px); left: 0; z-index: 6; display: none; width: max-content; min-width: 260px; max-width: min(420px, calc(100vw - 48px)); border: 1px solid var(--fx-line); border-radius: var(--t-radius); background: var(--t-paper); box-shadow: 0 12px 32px rgba(0, 0, 0, .28); }
+.fx-task__fix:hover .fx-task__fixcard, .fx-task__fix:focus-within .fx-task__fixcard, .fx-task__fixchip[aria-expanded="true"] + .fx-task__fixcard { display: block; }
 .fx-task__fixrow { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; padding: 9px 14px; border-top: 1px solid var(--fx-line-soft); color: var(--t-strong); font-size: 13.5px; }
 .fx-task__fixrow > strong { font-weight: 600; }
 .fx-task__fixrow > span { flex: 1 1 160px; color: var(--t-text); }
+.fx-task__fix:hover::after { content: ""; position: absolute; top: 100%; left: 0; right: 0; height: 8px; }
 .fx-task__linkbtn { all: unset; cursor: pointer; color: var(--t-accent); border-bottom: 1px solid color-mix(in srgb, var(--t-accent) 40%, transparent); }
 .fx-task__linkbtn:hover { border-bottom-color: currentColor; }
 .fx-task__linkbtn:focus-visible { box-shadow: var(--fx-focus); }
@@ -804,6 +813,9 @@ th:hover .fx-th-sort, .fx-th-sort:focus-visible, .fx-th-sort--on { opacity: 1; }
   .fx-task__grid { grid-template-columns: minmax(0, 1fr); }
   .fx-task__main { padding: 16px; }
   .fx-task__fields { grid-template-columns: minmax(0, 1fr); }
+  .fx-task__stage { position: relative; }
+  .fx-task__fix { position: static; }
+  .fx-task__fixcard { right: 0; width: auto; min-width: 0; max-width: none; }
   .fx-task__grid:has(> .fx-sidecar [data-tab="review"][aria-selected="true"]) { grid-template-columns: minmax(0, 1fr); }
   .fx-task__side { border-top: 1px solid var(--fx-line); border-left: 0; }
 }
