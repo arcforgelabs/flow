@@ -17,15 +17,46 @@ function loadScript({ src, integrity }) {
   });
 }
 
-// "Notify me": the form's email field (Sentry's own words) starts with the
-// signed-in person's email. A report sent with an address asks to hear back;
-// Flow tags it notify=yes, so the support desk sees it on the task. A person
-// who clears the field sends notify=no.
-// Sentry's form has no tick box of its own; this keeps to its stock options.
-export function tagNotify(event) {
+// "Request a response": a tick box under the form's email field, off by
+// default. The email field (Sentry's own words) starts with the signed-in
+// person's email, but an address alone does not ask for a reply. A report
+// sent with the box ticked and an address is tagged notify=yes, so the
+// support desk replies (fixed, planned or won't fix). Every other report
+// sends notify=no. Sentry's form has no tick box of its own (SDK 11.4.0),
+// so Flow adds one to it (addResponseBox).
+export function tagNotify(event, wantsResponse = false) {
   if (event?.type !== 'feedback') return;
   const email = String(event.contexts?.feedback?.contact_email ?? '').trim();
-  event.tags = { ...event.tags, notify: email ? 'yes' : 'no' };
+  event.tags = { ...event.tags, notify: wantsResponse && email ? 'yes' : 'no' };
+}
+
+export const RESPONSE_LABEL = 'Request a response';
+
+// The tick box goes under the email field inside the form's shadow root, so
+// flow.css cannot reach it: its look comes from the form's own variables,
+// which flow.css sets from the --t-* tokens (#sentry-feedback). Ticked, the
+// email is required. No email field (or no form yet): no box.
+const RESPONSE_STYLE = `
+.form__response { display: flex; flex-direction: row; align-items: center; gap: 8px; margin: 0; cursor: pointer; }
+.form__response input { margin: 0; width: 16px; height: 16px; accent-color: var(--accent-background); cursor: pointer; }`;
+function addResponseBox(root, onChange) {
+  const email = root?.querySelector('input[name="email"]:not([type="hidden"])');
+  if (!email || root.querySelector('.form__response')) return Boolean(email);
+  const style = document.createElement('style');
+  style.textContent = RESPONSE_STYLE;
+  const box = document.createElement('input');
+  box.type = 'checkbox';
+  box.name = 'response';
+  box.addEventListener('change', () => {
+    email.required = box.checked;
+    onChange(box.checked);
+  });
+  const label = document.createElement('label');
+  label.className = 'form__response';
+  label.append(box, RESPONSE_LABEL);
+  (email.closest('label') ?? email).after(label);
+  root.append(style);
+  return true;
 }
 
 // A path as a pattern: each id in it becomes ":id", so every invoice's page
@@ -101,7 +132,9 @@ export async function startMonitoring({ flow, person }) {
     beforeSendSpan: scrubSpan,
     initialScope: { tags: config.tags ?? {} },
   });
-  Sentry.getClient()?.on('beforeSendFeedback', tagNotify);
+  // Read when the report is sent: the tick box of the form open now.
+  let wantsResponse = false;
+  Sentry.getClient()?.on('beforeSendFeedback', (event) => tagNotify(event, wantsResponse));
   // Who reported or met the error, so the lab can follow up.
   Sentry.setUser({ id: person.id, email: person.email, username: person.name || undefined });
   const feedback = config.feedback ? Sentry.getFeedback() : null;
@@ -112,8 +145,18 @@ export async function startMonitoring({ flow, person }) {
   let form = null;
   return async () => {
     form?.removeFromDom();
+    wantsResponse = false;
     form = await feedback.createForm();
     form.appendToDom();
     form.open();
+    // The form draws itself a moment after open(); add the tick box once its
+    // email field is there.
+    const root = document.getElementById('sentry-feedback')?.shadowRoot;
+    const onChange = (checked) => { wantsResponse = checked; };
+    if (!addResponseBox(root, onChange) && root) {
+      const watch = new MutationObserver(() => { if (addResponseBox(root, onChange)) watch.disconnect(); });
+      watch.observe(root, { childList: true, subtree: true });
+      setTimeout(() => watch.disconnect(), 5000);
+    }
   };
 }
