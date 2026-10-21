@@ -10,6 +10,7 @@ import { bulkBar } from '/assets/ui/bulk-bar.js';
 import { draftNote, sendModeNote } from '/assets/ui/invoice-notes.js';
 import { caseNumber } from '/assets/ui/job-board.js';
 import { jobChangeBanner } from '/assets/ui/job-change.js';
+import { findBox } from '/assets/ui/view-bar.js';
 
 // The tabs, left to right (server/api/invoicing.js, TABS): Pending (a
 // person must look), Ready (checks pass), then the accounting system's
@@ -118,7 +119,14 @@ export async function renderInvoiceList(main, ui) {
   sessionStorage.removeItem(NAV_BACK);
   const state = { status: TABS.some(([id]) => id === saved) ? saved : 'ready', q: returning ? back?.q ?? '' : '', ticked: new Set() };
   const tabs = h('div', { class: 'fx-tabs', role: 'tablist' });
-  const search = h('input', { class: 'fx-input fx-search', type: 'search', placeholder: 'Find a number, client or reference', 'aria-label': 'Find an invoice', value: state.q });
+  let timer;
+  const find = findBox(h, {
+    label: 'Find a number, client or reference', value: state.q,
+    oninput: (words) => {
+      clearTimeout(timer);
+      timer = setTimeout(() => { state.q = words.trim(); load(); }, 200);
+    },
+  });
   const host = h('div', { class: 'fx-panel' }, h('div', { class: 'fx-skeleton' }));
   const bulk = bulkBar(ui);
   const context = await flow('/api/invoicing/context').catch(() => ({ canIssue: false }));
@@ -128,7 +136,7 @@ export async function renderInvoiceList(main, ui) {
   // The tabs and search stay at the top while the rows scroll up under them;
   // the bulk bar floats at the foot (ClickUp's layout). Sending is a bulk
   // action: tick rows (the head tick takes every row shown), then Send.
-  const head = h('div', { class: 'fx-listhead' }, h('div', { class: 'fx-toolbar' }, tabs, search));
+  const head = h('div', { class: 'fx-listhead' }, h('div', { class: 'fx-toolbar' }, tabs, find.element));
   const edge = h('div', { class: 'fx-listhead__edge', 'aria-hidden': 'true' });
   main.append(
     pageHeader('Invoices', {
@@ -144,11 +152,6 @@ export async function renderInvoiceList(main, ui) {
     new IntersectionObserver(([entry]) => head.toggleAttribute('data-stuck', !entry.isIntersecting), { rootMargin: `-${head.offsetTop > 0 && window.matchMedia?.('(max-width: 820px)').matches ? 61 : 1}px 0px 0px 0px` }).observe(edge);
   }
 
-  let timer;
-  search.addEventListener('input', () => {
-    clearTimeout(timer);
-    timer = setTimeout(() => { state.q = search.value.trim(); load(); }, 200);
-  });
 
   const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
   // The bulk bar for the ticked rows: what a person can do with this view.
