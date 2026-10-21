@@ -208,9 +208,10 @@ let rowMenus = 0;
 
 // A row's ⋯ menu, as on the Custom fields page. The menu lines up with the
 // button's right edge; `align: 'start'` lines it up with its left edge.
-export function rowMenu(label, items, { align = 'end' } = {}) {
+// `trigger` swaps the ⋯ icon for the given contents (the sidebar's More).
+export function rowMenu(label, items, { trigger = null, className = 'fx-cfm__more', align = 'end' } = {}) {
   const id = `fx-row-menu-${++rowMenus}`;
-  const button = h('button', { class: 'fx-cfm__more', type: 'button', 'aria-label': label, popovertarget: id, 'aria-haspopup': 'menu', 'aria-expanded': 'false' }, lucide(h, 'ellipsis'));
+  const button = h('button', { class: className, type: 'button', 'aria-label': label, popovertarget: id, 'aria-haspopup': 'menu', 'aria-expanded': 'false' }, trigger ?? lucide(h, 'ellipsis'));
   const panel = h('div', { class: 'fx-pop', id, popover: 'auto', role: 'menu' });
   panel.addEventListener('toggle', (event) => {
     button.setAttribute('aria-expanded', String(event.newState === 'open'));

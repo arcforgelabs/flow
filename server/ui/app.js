@@ -142,23 +142,26 @@ function roleSelect(value, attrs = {}) {
 
 let me = null;
 
-// The sidebar lists the views in this order, under their group's heading.
+// Where each view sits: the sidebar, in this order, daily work first (no
+// `place`); the sidebar's More menu (`place: 'more'`, `more` names its Lucide
+// icon); the account menu (`place: 'account'`). `sidebar: false` views open
+// by link and Search only.
 const VIEWS = {
-  jobs: { label: 'Jobs', icon: 'jobs', group: 'Work', render: (main) => renderJobs(main, ui()) },
-  invoices: { label: 'Invoices', icon: 'invoices', group: 'Work', render: (main, id) => (id ? renderInvoice(main, ui(), id) : renderInvoiceList(main, ui())) },
-  reconcile: { label: 'Reconcile', icon: 'reconcile', group: 'Work', render: (main, id) => renderReconcile(main, ui(), id) },
-  'invoicing-settings': { label: 'Rules', icon: 'rules', group: 'Settings', render: (main, id) => renderInvoicingSettings(main, ui(), id) },
-  automations: { label: 'Automations', icon: 'bolt', group: 'Settings', render: (main) => renderAutomations(main, ui()) },
-  'price-list': { label: 'Price list', icon: 'tag', group: 'Settings', render: (main, id) => (id === 'reconcile' ? renderPriceReconcile(main, ui()) : renderPriceList(main, ui())) },
-  'custom-fields': { label: 'Custom fields', icon: 'fields', group: 'Settings', render: (main) => renderCustomFields(main, ui()) },
-  people: { label: 'People', icon: 'people', group: 'Settings', ownerOnly: true, render: renderPeople },
-  integrations: { label: 'Integrations', icon: 'plug', group: 'Settings', ownerOnly: true, render: (main, id) => (id ? renderIntegration(main, id) : renderIntegrations(main)) },
+  jobs: { label: 'Jobs', icon: 'jobs', render: (main) => renderJobs(main, ui()) },
+  invoices: { label: 'Invoices', icon: 'invoices', render: (main, id) => (id ? renderInvoice(main, ui(), id) : renderInvoiceList(main, ui())) },
+  reconcile: { label: 'Reconcile', icon: 'reconcile', render: (main, id) => renderReconcile(main, ui(), id) },
+  'price-list': { label: 'Price list', icon: 'tag', render: (main, id) => (id === 'reconcile' ? renderPriceReconcile(main, ui()) : renderPriceList(main, ui())) },
+  'invoicing-settings': { label: 'Rules', icon: 'rules', render: (main, id) => renderInvoicingSettings(main, ui(), id) },
+  automations: { label: 'Automations', icon: 'bolt', place: 'more', more: 'zap', render: (main) => renderAutomations(main, ui()) },
+  'custom-fields': { label: 'Custom fields', icon: 'fields', place: 'more', more: 'form-input', render: (main) => renderCustomFields(main, ui()) },
+  integrations: { label: 'Integrations', icon: 'plug', place: 'more', more: 'plug', ownerOnly: true, render: (main, id) => (id ? renderIntegration(main, id) : renderIntegrations(main)) },
+  people: { label: 'People', icon: 'people', place: 'account', ownerOnly: true, render: renderPeople },
   // Not in the sidebar: "Manage account" in the account menu opens the same
   // Clerk profile. The page stays for links and Search.
   // Opened from the Xero integration page: Xero invoices against Flow's own.
-  'xero-import': { label: 'Xero import', icon: 'plug', group: 'Settings', sidebar: false, render: (main) => renderXeroImport(main, ui()) },
-  account: { label: 'Account', icon: 'person', group: 'Settings', sidebar: false, render: renderAccount },
-  appearance: { label: 'Appearance', icon: 'palette', group: 'Settings', render: renderAppearance },
+  'xero-import': { label: 'Xero import', icon: 'plug', sidebar: false, render: (main) => renderXeroImport(main, ui()) },
+  account: { label: 'Account', icon: 'person', sidebar: false, render: renderAccount },
+  appearance: { label: 'Appearance', icon: 'palette', place: 'account', render: renderAppearance },
 };
 
 // Line icons for the sidebar, drawn on a 24-unit grid in the text colour.
@@ -176,6 +179,7 @@ const ICON_PATHS = {
   flag: '<path d="M5 21V4M5 4h11l-2 4 2 4H5"/>',
   search: '<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/>',
   sidebar: '<rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M9.5 4v16"/>',
+  more: '<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>',
   palette: '<path d="M12 3a9 9 0 100 18c1.1 0 1.5-.8 1.5-1.6 0-1-.8-1.4-.8-2.4 0-.9.7-1.5 1.6-1.5H17a4 4 0 004-4c0-4.7-4-8.5-9-8.5z"/><circle cx="7.5" cy="11" r="1"/><circle cx="10" cy="7" r="1"/><circle cx="15" cy="7" r="1"/>',
 };
 
@@ -238,7 +242,7 @@ document.addEventListener('keydown', (event) => {
   }
 });
 document.addEventListener('click', (event) => {
-  if (!event.target.closest?.('.fx-side') || event.target.closest?.('[data-nav]')) closeMenu();
+  if (!event.target.closest?.('.fx-side') || event.target.closest?.('[data-nav]:not([data-nav="more"])')) closeMenu();
 });
 // Folded, a click on the sidebar's empty space opens it out again, as in
 // Claude. A click on a page, the account photo or Search still does its job.
@@ -266,13 +270,17 @@ document.addEventListener('keydown', (event) => {
 
 // "Report a problem" in Clerk's account menu, between "Manage account" and
 // "Sign out". Clerk mounts and unmounts the icon itself.
-function reportMenuItem(openReport) {
+function accountMenuItem(label, iconName, onClick) {
   return {
-    label: 'Report a problem',
-    onClick: () => { openReport().catch((error) => toast(error.message, 'danger')); },
-    mountIcon: (element) => element.replaceChildren(icon('flag')),
+    label,
+    onClick,
+    mountIcon: (element) => element.replaceChildren(icon(iconName)),
     unmountIcon: (element) => element.replaceChildren(),
   };
+}
+
+function reportMenuItem(openReport) {
+  return accountMenuItem('Report a problem', 'flag', () => { openReport().catch((error) => toast(error.message, 'danger')); });
 }
 
 // The page a person lands on after sign-in, and for / or an unknown path.
@@ -295,6 +303,8 @@ async function route() {
   for (const link of document.querySelectorAll('a[data-nav]')) {
     link.setAttribute('aria-current', link.dataset.nav === view ? 'page' : 'false');
   }
+  // More shows as current while one of its pages is open.
+  document.querySelector('[data-nav="more"]')?.setAttribute('aria-current', VIEWS[view].place === 'more' ? 'page' : 'false');
   main.replaceChildren();
   main.className = 'fx-main';
   document.title = `${VIEWS[view].label} · Flow`;
@@ -352,14 +362,17 @@ function renderShell() {
   document.body.dataset.state = 'signed-in';
   const nav = $('nav');
   const items = [];
-  let group = null;
+  const more = [];
   for (const [name, view] of Object.entries(VIEWS)) {
     if (view.ownerOnly && me?.person.role !== 'owner') continue;
-    if (view.sidebar === false) continue;
-    if (view.group && view.group !== group) items.push(h('span', { class: 'fx-nav__group' }, view.group));
-    group = view.group;
-    items.push(h('a', { href: `/${name}`, 'data-nav': name, 'data-label': view.label, onclick: navigate }, icon(view.icon), h('span', { class: 'fx-nav__label' }, view.label)));
+    if (view.sidebar === false || view.place === 'account') continue;
+    if (view.place === 'more') more.push({ icon: view.more, text: view.label, run: () => { closeMenu(); go(`/${name}`); } });
+    else items.push(h('a', { href: `/${name}`, 'data-nav': name, 'data-label': view.label, onclick: navigate }, icon(view.icon), h('span', { class: 'fx-nav__label' }, view.label)));
   }
+  // The rest of the setup pages, behind More (the shared ⋯ menu).
+  const [moreButton, morePanel] = rowMenu('More', more, { trigger: [icon('more'), h('span', { class: 'fx-nav__label' }, 'More')], className: 'fx-nav__more', align: 'start' });
+  Object.assign(moreButton.dataset, { nav: 'more', label: 'More' });
+  items.push(moreButton, morePanel);
   // "Report a problem" sits at the foot of the menu, above the account chip,
   // while Sentry and its report form are on (monitoring.js).
   const report = h('button', { type: 'button', class: 'fx-nav__report', 'data-nav': 'report', 'data-label': 'Report a problem', hidden: true },
@@ -376,7 +389,11 @@ function renderShell() {
   drawMenu();
   // The sidebar foot shows who is signed in: photo or initial, then the name
   // (the email when the account has no name). It opens the account menu.
-  const userButton = { afterSignOutUrl: '/sign-in', showName: true };
+  // People (owners) and Appearance live in the account menu.
+  const accountItems = Object.entries(VIEWS)
+    .filter(([, view]) => view.place === 'account' && (!view.ownerOnly || me?.person.role === 'owner'))
+    .map(([name, view]) => accountMenuItem(view.label, view.icon, () => go(`/${name}`)));
+  const userButton = { afterSignOutUrl: '/sign-in', showName: true, customMenuItems: accountItems };
   $('search').replaceChildren(icon('search'));
   $('search').onclick = search;
   mountClerk('userButton', $('user-button'), userButton);
@@ -389,7 +406,7 @@ function renderShell() {
       report.hidden = false;
       report.onclick = () => { openReport().catch((error) => toast(error.message, 'danger')); };
       unmountClerk($('user-button'));
-      mountClerk('userButton', $('user-button'), { ...userButton, customMenuItems: [reportMenuItem(openReport)] });
+      mountClerk('userButton', $('user-button'), { ...userButton, customMenuItems: [...accountItems, reportMenuItem(openReport)] });
     })
     .catch((error) => console.warn(`[monitoring] ${error.message}`));
   window.addEventListener('popstate', route);
