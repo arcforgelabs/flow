@@ -20,6 +20,7 @@ import {
   journalFolders,
   journalTable,
   overallState,
+  outOfOrder,
   productionJournals,
   productionOrigin,
   readJournal,
@@ -108,6 +109,40 @@ test('each journal follows only as far as production applied it; an integration 
   assert.deepEqual(journals.seazona.production, []);
   assert.deepEqual(journals.seazona.release, [A]);
   assert.throws(() => productionJournals({ core: [A] }, { core: 2 }), /reports 2 core migrations, but the commit it runs has 1/);
+});
+
+test('an out-of-order entry production skipped: production has every other entry, and a workspace row for it is not extra', () => {
+  // D was written after C but carries an older `when`: a database that had C
+  // first never applies D.
+  const D = entry('0003_d', 250);
+  const E = entry('0004_e', 400);
+  assert.deepEqual(outOfOrder([A, B, C, D, E]), [D]);
+  assert.deepEqual(outOfOrder([A, B, C]), []);
+
+  const journals = productionJournals({ core: [A, B, C, D, E] }, { core: 4 });
+  assert.deepEqual(journals.core.production, [A, B, C, E]);
+  assert.deepEqual(journals.core.skipped, [D]);
+  // A count that does not fit that reading is the first entries, as before.
+  assert.deepEqual(productionJournals({ core: [A, B, C, D, E] }, { core: 3 }).core.production, [A, B, C]);
+  assert.deepEqual(productionJournals({ core: [A, B, C, D, E] }, { core: 5 }).core.skipped, []);
+
+  // The workspace applied D before C and lacks E: behind, not diverged.
+  const { production, skipped } = journals.core;
+  const behind = compareMigrations({ release: production, applied: [row(A), row(B), row(D), row(C)], known: journals.core.release, tolerated: skipped });
+  assert.equal(behind.state, 'behind');
+  assert.deepEqual(behind.missing, [E.tag]);
+  assert.deepEqual(behind.extra, []);
+  assert.equal(compareMigrations({ release: production, applied: [row(A), row(B), row(D), row(C), row(E)], tolerated: skipped }).state, 'level');
+  assert.equal(compareMigrations({ release: production, applied: [row(A), row(B), row(C), row(E)], tolerated: skipped }).state, 'level');
+  // A row for D with other contents is still extra.
+  assert.equal(compareMigrations({ release: production, applied: [row(A), row(B), { hash: 'other', created_at: D.when }, row(C), row(E)], tolerated: skipped }).state, 'ahead');
+});
+
+test('a new migration is always later than the ones before it (0013 is the one known exception)', () => {
+  for (const [id, folder] of Object.entries(journalFolders(REPO_ROOT))) {
+    const late = outOfOrder(readJournal(folder)).map((e) => e.tag);
+    assert.deepEqual(late, id === 'core' ? ['0013_line_mappings'] : [], `${id} journal`);
+  }
 });
 
 test('every journal of a Flow tree is found, with the drizzle table it records into', () => {
@@ -264,13 +299,13 @@ describe('the workspace sync on PostgreSQL', { skip: skipWithoutDatabase }, () =
     assert.equal(again.summary.appliedNow, 0);
   });
 
-  test('ahead: the workspace has a core migration production does not; nothing changes', async () => {
-    const production = { ...counts(), seazona: 0, core: counts().core - 1 };
+  test('ahead: the workspace has core migrations production does not; nothing changes', async () => {
+    const production = { ...counts(), seazona: 0, core: counts().core - 2 };
     const result = await syncWith('sync', production);
     assert.equal(result.exitCode, EXIT.attention);
     assert.equal(result.summary.state, 'ahead');
     const tags = readJournal(join(REPO_ROOT, 'server/db/migrations')).map((e) => e.tag);
-    assert.deepEqual(result.summary.extra, { core: [tags.at(-1)] });
+    assert.deepEqual(result.summary.extra, { core: tags.slice(-2) });
     assert.match(result.summary.message, /press Cancel/);
   });
 
@@ -295,6 +330,39 @@ describe('the workspace sync on PostgreSQL', { skip: skipWithoutDatabase }, () =
     assert.equal(result.exitCode, EXIT.attention);
     assert.equal(result.summary.state, 'diverged');
     assert.equal(result.summary.mismatched.xero.length, 1);
+  });
+
+  test('production skipped core 0013 (out of order): a workspace without the newest migration is behind, and sync applies it', async (t) => {
+    await empty();
+    const core = join(REPO_ROOT, 'server/db/migrations');
+    const entries = readJournal(core);
+    const late = outOfOrder(entries);
+    assert.deepEqual(late.map((e) => e.tag), ['0013_line_mappings']);
+    // The workspace applied every core migration but the newest, as an
+    // install did before the newest release.
+    const older = mkdtempSync(join(tmpdir(), 'flow-older-core-'));
+    t.after(() => rmSync(older, { recursive: true, force: true }));
+    cpSync(core, older, { recursive: true });
+    const journal = JSON.parse(readFileSync(join(older, 'meta/_journal.json'), 'utf8'));
+    journal.entries = journal.entries.slice(0, -1);
+    writeFileSync(join(older, 'meta/_journal.json'), JSON.stringify(journal));
+    const handle = openDatabase({ url: testDatabaseUrl, max: 2 });
+    try {
+      await migrateDatabase(handle.db, { folder: older });
+    } finally {
+      await handle.close();
+    }
+    const newest = entries.at(-1).tag;
+    // Production has every core migration but 0013, so it reports one fewer.
+    const production = { ...counts(), seazona: 0, xero: 0, core: entries.length - late.length };
+    const status = await syncWith('status', production);
+    assert.equal(status.summary.state, 'behind', JSON.stringify(status.summary));
+    assert.deepEqual(status.summary.missing, { core: [newest] });
+
+    const synced = await syncWith('sync', production);
+    assert.equal(synced.exitCode, EXIT.ok, JSON.stringify(synced.summary));
+    assert.equal(synced.summary.state, 'level');
+    assert.equal(await tableExists('public.job_field_settings'), true);
   });
 
   test('production stopped part-way through a journal: the workspace does not copy that', async () => {

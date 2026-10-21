@@ -610,6 +610,24 @@ test("the workspace updater follows production at each step, and builds again on
   assert.match(failed.output, /this check failed/);
 });
 
+test("when the ref moves, the workspace updater follows production with the build it has before it builds again", async (t) => {
+  const fx = fixture(t);
+  const api = await checksApi(t);
+  const env = { DATABASE_URL: "postgres://workspace-db", FLOW_WORKSPACE_UPDATE_ONCE: "1" };
+  const first = await deploy(fx.workspace, "follow", { ...env, FLOW_DEPLOY_REF: "v1" }, { remote: fx.remote, api });
+  assert.equal(first.status, 0, first.output);
+  assert.equal(out(fx.workspace, ".flow-revision"), fx.v1);
+
+  // A publish may come while the new build runs: the database is level first.
+  const moved = await deploy(fx.workspace, "follow", env, { remote: fx.remote, api });
+  assert.equal(moved.status, 0, moved.output);
+  const followed = moved.output.indexOf("the workspace database matches production");
+  const building = moved.output.indexOf(`main is at ${fx.v2}; building it for its tools`);
+  assert.ok(followed >= 0 && building > followed, moved.output);
+  assert.equal(out(fx.workspace, ".flow-revision"), fx.v2);
+  assert.equal(out(fx.workspace, "migrated.txt"), "v2 postgres://workspace-db");
+});
+
 test("the workspace updater follows the stable channel's release", async (t) => {
   const { workspace, remote, v1, v2 } = fixture(t);
   const api = await checksApi(t, { releases: releaseWorld({ v1, v2 }) });
