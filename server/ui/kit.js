@@ -158,20 +158,17 @@ function inPlace(event) {
 
 // A card that opens a page. Large (Integrations): its mark (a logo node, or a
 // Lucide icon name), the name, a status pill, two lines at most (only when
-// they help), and the action. `row` is the smaller card of a tileSection,
-// like Claude's Customize page: the mark at the left, the name, two lines, a
-// dim `meta` line, and the status or an arrow at the right.
+// they help), and the action. `row` is the one-line card of a tileSection,
+// like Claude's Customize categories: the mark at the left, the name, and a
+// short dim `meta` value or the status pill at the right.
 export function tileCard({ href, mark, title, status, blurb, meta, action = 'Manage', row = false }) {
   const logo = typeof mark === 'string' ? h('span', { class: 'fx-logo fx-logo--icon', 'aria-hidden': 'true' }, lucide(h, mark)) : mark;
   const pill = status ? h('span', { class: 'fx-status', 'data-tone': status.tone ?? 'mute' }, status.label) : null;
   if (row) {
     return h('a', { class: 'fx-tile', href, onclick: inPlace },
       logo,
-      h('div', { class: 'fx-tile__body' },
-        h('h3', {}, title),
-        blurb ? h('p', { class: 'fx-tile__blurb' }, blurb) : null,
-        meta ? h('span', { class: 'fx-tile__meta' }, meta) : null),
-      pill ?? h('span', { class: 'fx-tile__go' }, lucide(h, 'chevron-right')));
+      h('h3', {}, title),
+      pill ?? (meta ? h('span', { class: 'fx-tile__meta' }, meta) : null));
   }
   return h('a', { class: `fx-int-card${blurb ? '' : ' fx-int-card--bare'}`, href, onclick: inPlace },
     h('header', { class: 'fx-int-card__head' }, logo, h('h3', {}, title), pill),
@@ -179,7 +176,7 @@ export function tileCard({ href, mark, title, status, blurb, meta, action = 'Man
     h('span', { class: 'fx-int-card__btn' }, action));
 }
 
-// A titled group of row cards in two columns, with "Show all" at the right
+// A titled group of one-line cards, three columns where they fit, with "Show all" at the right
 // when `href` is given (Claude's Customize page).
 export function tileSection(title, cards, { href, more = 'Show all' } = {}) {
   return h('section', { class: 'fx-tiles' },

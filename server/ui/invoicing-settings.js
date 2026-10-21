@@ -10,7 +10,7 @@
 // or admin changes them. The full rules are in docs/INVOICING_RULES.md.
 // app.js passes in its shared pieces as `ui`.
 
-import { ruleSummary, rulesSection } from '/assets/ui/invoice-rules.js';
+import { rulesSection } from '/assets/ui/invoice-rules.js';
 import { lineMappingSection } from '/assets/ui/line-mappings.js';
 
 const DOCS = 'https://github.com/arcforgelabs/flow/blob/main/docs/INVOICING_RULES.md';
@@ -27,11 +27,11 @@ const PARTS = [
   { key: 'price-codes', title: 'Price codes', mount: (ui) => lineMappingSection(ui) },
 ];
 
-// What a rule does, as its card's mark and meta line.
+// What a rule does, as its card's mark: Pending, Waits, Never drafted.
 const KIND = {
-  pending: { mark: 'flag', label: 'Pending' },
-  wait: { mark: 'clock', label: 'Waits' },
-  skip: { mark: 'ban', label: 'Never drafted' },
+  pending: { mark: 'flag' },
+  wait: { mark: 'clock' },
+  skip: { mark: 'ban' },
 };
 const SHOWN = 6;
 
@@ -43,8 +43,8 @@ export function renderInvoicingSettings(main, ui, id) {
       part ? h('div', { class: 'fx-card', style: { padding: '8px 20px 16px' } }, part.mount(ui)) : notice('No such part of Rules.', 'danger'));
     return;
   }
-  // The landing is Claude's Customize page: a section for each part, two
-  // columns of cards, and "Show all" to the part's own page.
+  // The landing is Claude's Customize page: a section for each part, one-line
+  // cards, and "Show all" to the part's own page, a list.
   const host = h('div', { style: { display: 'grid', gap: '20px' } }, h('div', { class: 'fx-skeleton' }));
   main.append(pageHeader('Rules'), host);
   const page = (key) => `/invoicing-settings/${key}`;
@@ -52,34 +52,28 @@ export function renderInvoicingSettings(main, ui, id) {
     let settings;
     let labels;
     let rules;
-    let meta;
     try {
-      [{ settings }, { labels }, { rules }, meta] = await Promise.all([
-        flow('/api/invoicing/settings'), flow('/api/invoicing/line-labels'), flow('/api/invoicing/rules'), flow('/api/invoicing/rule-fields')]);
+      [{ settings }, { labels }, { rules }] = await Promise.all([
+        flow('/api/invoicing/settings'), flow('/api/invoicing/line-labels'), flow('/api/invoicing/rules')]);
     } catch (error) {
       host.replaceChildren(notice(error.message, 'danger'));
       return;
     }
-    const ruleCard = (rule) => {
-      const kind = KIND[rule.action.kind] ?? { mark: 'list-checks', label: rule.action.kind };
-      return tileCard({
-        row: true, href: page('invoices'), mark: kind.mark, title: rule.name,
-        blurb: ruleSummary(rule, meta).split(' · ')[0],
-        meta: `${kind.label} · ${rule.enabled ? 'On' : 'Off'}`,
-      });
-    };
+    const ruleCard = (rule) => tileCard({
+      row: true, href: page('invoices'), mark: (KIND[rule.action.kind] ?? { mark: 'list-checks' }).mark, title: rule.name,
+      meta: rule.enabled ? 'On' : 'Off',
+    });
     const waiting = labels.filter((l) => l.unmapped > 0).length;
     host.replaceChildren(
       tileSection('Invoices', rules.length ? rules.slice(0, SHOWN).map(ruleCard) : [h('p', { class: 'fx-dim' }, 'No rules yet.')],
         { href: page('invoices'), more: rules.length > SHOWN ? `Show all ${rules.length}` : 'Show all' }),
       tileSection('Drafts', [
-        tileCard({ row: true, href: page('drafts'), mark: 'calendar-clock', title: 'Payment terms', blurb: `Due ${settings.paymentTermsDays} days after the invoice date.` }),
-        tileCard({ row: true, href: page('drafts'), mark: 'text-cursor-input', title: 'Reference', blurb: settings.referenceTemplate || '{practitioner} - {patient}' }),
+        tileCard({ row: true, href: page('drafts'), mark: 'calendar-clock', title: 'Payment terms', meta: `${settings.paymentTermsDays} days` }),
+        tileCard({ row: true, href: page('drafts'), mark: 'text-cursor-input', title: 'Reference' }),
       ], { href: page('drafts') }),
       tileSection('Price codes', [
         tileCard({
           row: true, href: page('price-codes'), mark: 'tag', title: 'Line labels',
-          blurb: waiting ? `${waiting} with no price item.` : 'Every line has a price item.',
           status: waiting ? { label: `${waiting} wait`, tone: 'warn' } : { label: 'All mapped', tone: 'success' },
         }),
       ], { href: page('price-codes') }),
