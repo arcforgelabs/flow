@@ -14,6 +14,7 @@
 // passes in app.js's shared pieces as `ui`.
 
 import { orderStatuses, statusRank } from '/assets/ui/job-board.js';
+import { sidecar } from '/assets/ui/sidecar.js';
 
 const DOCS = 'https://github.com/arcforgelabs/flow/blob/main/docs/CUSTOM_FIELDS.md';
 const TYPE_LABELS = {
@@ -157,17 +158,19 @@ export async function renderCustomFields(main, ui) {
   // the manager. Edit on a row (or Create) opens it; another row's Edit
   // switches it at once, so a person moves between fields quickly. The
   // table stays usable behind it. Save closes it; so do Cancel, × and Esc.
-  const side = h('aside', { class: 'fx-cfs', 'aria-label': 'Custom field', hidden: true });
-  let sideFor = null;
-  function closeSide() {
-    side.hidden = true;
-    side.replaceChildren();
-    sideFor = null;
-    table.querySelector('.fx-cfm__row[data-open]')?.removeAttribute('data-open');
-  }
-  document.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape' && side.isConnected && !side.hidden && !document.querySelector('dialog[open], .fx-pop:popover-open')) closeSide();
+  // The shared sidecar (sidecar.js), over the table.
+  const panel = sidecar(h, {
+    label: 'Custom field', overlay: true, escape: true,
+    onChange: (tab) => {
+      if (tab !== null) return;
+      sideFor = null;
+      table.querySelector('.fx-cfm__row[data-open]')?.removeAttribute('data-open');
+    },
   });
+  const side = panel.element;
+  side.classList.add('fx-cfs');
+  let sideFor = null;
+  const closeSide = () => panel.close();
 
   // Open the sidecar for a field (null: a new one; `draft` fills it after a
   // failed save). A work system's field opens read only.
@@ -188,7 +191,7 @@ export async function renderCustomFields(main, ui) {
     // lies over the label, so the label shows and the browser's list opens.
     const typeText = h('span', {}, TYPE_LABELS[type.value]);
     const headType = field ? typeLabel() : h('label', { class: 'fx-cfs__typepick' }, lucide(h, TYPE_ICONS[type.value]), typeText, lucide(h, 'chevron-down'), type);
-    const close = h('button', { class: 'fx-cfs__close', type: 'button', 'aria-label': 'Close', onclick: closeSide }, lucide(h, 'x'));
+    const close = panel.closeButton();
 
     const name = h('input', { class: 'fx-cfs__name', required: true, maxlength: '60', value: draft?.name ?? '', 'aria-label': 'Custom field name', placeholder: 'For example Priority', readonly: readOnly });
     name.addEventListener('input', changed);
@@ -245,10 +248,9 @@ export async function renderCustomFields(main, ui) {
       await load();
     });
     fit();
-    side.replaceChildren(form);
+    panel.show(form);
     // Below the toolbar, so search and Create stay in reach.
     side.style.top = `${toolbar.offsetHeight}px`;
-    side.hidden = false;
     table.querySelector('.fx-cfm__row[data-open]')?.removeAttribute('data-open');
     if (field) table.querySelector(`.fx-cfm__row[data-id="${CSS.escape(field.id)}"]`)?.setAttribute('data-open', 'true');
     (readOnly ? close : name).focus({ preventScroll: true });

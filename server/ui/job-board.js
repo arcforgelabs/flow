@@ -93,7 +93,10 @@ function reasonFix(reason) {
   if (reason === 'the work system report is out of date') {
     return { label: 'Out of date', text: 'Flow has no news of this job from the work system for more than a day.', todo: 'Check the work system under Settings, Integrations.', go: 'integrations' };
   }
-  if (reason === 'the job changed after its invoice was made') return fix('Job changed', 'Open the invoice to see what changed. Fix the job in the work system, or adopt its changes on the draft.', 'invoice');
+  // Review opens the job's own sidecar: what changed, and Accept change.
+  if (reason === 'the job changed after its invoice was made') {
+    return { label: 'Job changed', text: 'Changed after the draft was made.', todo: 'Fix it in the work system, or accept the change.', go: 'review' };
+  }
   if (reason === 'the job status moved back after its invoice was made') return fix('Status moved back', 'Check the job in the work system. Void or hold its invoice if the work is not done.', 'work');
   if (/deleted in /i.test(reason)) return fix('Deleted', 'Check the job in the work system. Void its invoice if it has one.', 'work');
   // The matcher found invoices that may be this job's, but no exact link.
@@ -134,13 +137,15 @@ function draftFix(problem) {
 }
 
 // Where a fix's link goes: Flow's invoice, the job in the work system, a
-// Flow settings page, or `choose`: Make invoice and Link invoice buttons
-// (jobs.js draws them).
-export const GO = ['invoice', 'work', 'price-list', 'invoicing-settings', 'integrations', 'choose'];
+// Flow settings page, `review`: the job's Review sidecar, or `choose`: Make
+// invoice and Link invoice buttons (jobs.js draws them).
+export const GO = ['invoice', 'work', 'price-list', 'invoicing-settings', 'integrations', 'review', 'choose'];
 
 // What a person must fix on a job, in order: [{ label, text, todo, go }];
 // `todo` is null when the buttons are the instruction.
-// Empty unless invoiceStage is Problem.
+// Empty unless invoiceStage is Problem. One fact is one fix: a job in review
+// already says why, so its draft's copy of that hold (sending.js,
+// `job_review`) is left out, and two fixes with the same words show once.
 export function fixes(o) {
   if (invoiceStage(o) !== 'problem') return [];
   const found = [];
@@ -153,8 +158,15 @@ export function fixes(o) {
   if (o.invoiceStatus === 'void') {
     found.push({ label: 'Invoice void', text: 'The invoice for this job is void.', todo: 'Make a new invoice, or close the job.', go: 'invoice' });
   }
-  found.push(...(o.invoiceProblems ?? []).map((p) => draftFix(p)));
-  return found;
+  const held = o.view === 'review_required' && o.holdState === 'review';
+  found.push(...(o.invoiceProblems ?? []).filter((p) => !(held && p.code === 'job_review')).map((p) => draftFix(p)));
+  const seen = new Set();
+  return found.filter((f) => {
+    const key = `${f.label}\u0000${f.text}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 // The short words for a job's problems: the first label, and "+N" for more.

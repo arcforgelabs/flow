@@ -187,3 +187,16 @@ the work system. Flow never writes to the work system.
 | Recheck (round arrow icon) | Reads this job from Seazona again now, for when Seazona was wrong and is fixed. When it matches the draft, the problem closes. |
 
 A fix made in the work system closes the problem when Flow next reads the job.
+
+The Jobs page shows the same review. A changed job's panel has one Fix line,
+**Job changed**, with a **Review** link. Review opens the panel's sidecar on
+the right (in place of Activity) with this banner, its buttons included, so a
+person checks and accepts the change without leaving the job. The sidecar has
+tabs (Activity, Review) and closes with ×; closed, the job's details take the
+full width. The panel icon at the top reopens it.
+
+The job and its draft hold one fact: the job is in review. Flow stores it once
+(the job's hold, and one open review item for each job; a second report
+updates that item). The panel shows it once: the draft's copy of the hold
+(`job_review`) is left out, as on the invoice page. Accept change, a recheck
+that matches, or a fix in the work system clears the hold and closes the item.
