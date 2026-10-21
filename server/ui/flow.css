@@ -1410,7 +1410,7 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
    rows per page, the range, numbered pages. The page shown is filled. */
 .fx-pages { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; color: var(--t-dim); font-size: 13px; font-variant-numeric: tabular-nums; }
 .fx-pages__rows { display: inline-flex; align-items: center; gap: 6px; }
-.fx-pages__size { width: auto; min-height: 28px; padding-block: 2px; font-size: 13px; }
+.fx-pages__size { width: 76px; min-height: 28px; padding-block: 2px; font-size: 13px; }
 .fx-pages__range { color: var(--t-text); }
 .fx-pages__steps { display: inline-flex; align-items: center; gap: 4px; }
 .fx-pages__step, .fx-pages__num { display: inline-grid; place-items: center; min-width: 28px; height: 28px; padding: 0 6px; border: 1px solid var(--fx-line-soft); border-radius: 999px; background: transparent; color: var(--t-text); font: inherit; cursor: pointer; transition: background 120ms var(--fx-ease), border-color 120ms var(--fx-ease); }

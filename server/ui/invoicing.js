@@ -204,6 +204,8 @@ export async function renderInvoiceList(main, ui) {
       if (limit !== state.limit) { try { localStorage.setItem(SIZE_KEY, String(limit)); } catch { /* it forgets */ } }
       Object.assign(state, { offset, limit });
       state.ticked.clear();
+      // A new page opens at its first row.
+      globalThis.scrollTo?.(0, 0);
       load();
     },
   });
