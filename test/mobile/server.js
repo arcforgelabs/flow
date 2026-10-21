@@ -7,11 +7,11 @@ import { createDraftInvoice, issueInvoice } from '../../server/core/invoices.js'
 import { createRegistry } from '../../server/integrations/port.js';
 import { fakeClerk, TEST_PUBLISHABLE_KEY } from '../support/clerk.js';
 import { freshDatabase } from '../support/db.js';
-import { THEMES } from './themes.js';
+import { ENGINES, SIZES, THEMES } from './themes.js';
 
 // The phone suite's Flow (docs/MOBILE_TESTS.md): the real app on a fresh
 // database with synthetic data only, and one signed-in owner per theme so
-// projects that run at once never change each other's appearance. Playwright
+// projects that run at once never change each other's state. Playwright
 // runs this before the tests (globalSetup); the tests read MOBILE_* from the
 // environment. Every name here is made up.
 
@@ -60,18 +60,26 @@ export async function startFlow({ port = 0 } = {}) {
       : { name, type: 'checkbox' });
   }
 
+  // One owner per project (size, engine, theme): a page keeps state with
+  // the account (the Jobs layout, column widths), so projects never share
+  // one.
   const clerk = fakeClerk();
   const tokens = {};
   let firstOwner = null;
-  for (const [index, theme] of THEMES.entries()) {
-    const email = `owner-${theme.id}@example.test`;
-    const person = index === 0
-      ? await seedFirstOwner(db, email)
-      : await invitePerson(db, { email, name: `Owner ${theme.label}`, role: 'owner', invitedBy: firstOwner.id });
-    firstOwner ??= person;
-    await setPersonAppearance(db, { id: person.id, appearance: { colorMode: theme.mode, themeFamily: theme.family } });
-    // Long enough for a whole run.
-    tokens[theme.id] = clerk.signIn(clerk.addUser({ email, google: true, password: false }), { expiresIn: 6 * 3600 });
+  for (const size of SIZES) {
+    for (const engine of ENGINES) {
+      for (const theme of THEMES) {
+        const project = `${size.id}-${engine}-${theme.id}`;
+        const email = `owner-${project}@example.test`;
+        const person = firstOwner
+          ? await invitePerson(db, { email, name: `Owner ${theme.label}`, role: 'owner', invitedBy: firstOwner.id })
+          : await seedFirstOwner(db, email);
+        firstOwner ??= person;
+        await setPersonAppearance(db, { id: person.id, appearance: { colorMode: theme.mode, themeFamily: theme.family } });
+        // Long enough for a whole run.
+        tokens[project] = clerk.signIn(clerk.addUser({ email, google: true, password: false }), { expiresIn: 6 * 3600 });
+      }
+    }
   }
 
   // Invoices on several tabs: drafts with lines, drafts with none (Pending),

@@ -32,7 +32,9 @@ export default defineConfig({
   testDir: '.',
   testMatch: '*.spec.js',
   globalSetup: './server.js',
-  fullyParallel: true,
+  // A project's screens run in order on one worker, so its account's state
+  // (the Jobs layout) never changes under a screen; projects run in parallel.
+  fullyParallel: false,
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 1 : 0,
   workers: process.env.CI ? 2 : undefined,

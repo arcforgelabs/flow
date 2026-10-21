@@ -25,7 +25,7 @@ async function open(page, project, screen) {
   const tokens = JSON.parse(process.env.MOBILE_TOKENS);
   await page.clock.setFixedTime(TODAY);
   await page.route('https://clerk.example.test/**', (route) => {
-    const body = route.request().url().endsWith('clerk.browser.js') ? clerkStub(tokens[theme.id], theme) : '';
+    const body = route.request().url().endsWith('clerk.browser.js') ? clerkStub(tokens[project.name], project.name, theme) : '';
     return route.fulfill({ status: 200, contentType: 'text/javascript', body });
   });
   const path = typeof screen.path === 'function' ? screen.path() : screen.path;
@@ -45,8 +45,8 @@ async function open(page, project, screen) {
 
 // A stand-in for Clerk's browser script: signed in, with a session token the
 // fake Clerk on the server knows (test/support/clerk.js).
-function clerkStub(token, theme) {
-  const email = `owner-${theme.id}@example.test`;
+function clerkStub(token, name, theme) {
+  const email = `owner-${name}@example.test`;
   return `window.Clerk = {
     user: { id: 'u', fullName: 'Owner ${theme.label}', primaryEmailAddress: { emailAddress: '${email}' } },
     session: { getToken: async () => '${token}' },

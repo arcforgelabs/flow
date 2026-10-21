@@ -6,8 +6,8 @@ const tab = (name) => async (page) => {
   await page.waitForLoadState('networkidle');
 };
 
-// The Jobs page opens on the layout the account used last, and projects of
-// one theme share an account, so wait for either.
+// The Jobs page opens on the layout the account used last, so wait for
+// either.
 const JOBS = '.fx-board, .fx-table';
 
 export const SCREENS = [
