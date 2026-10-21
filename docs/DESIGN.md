@@ -132,7 +132,8 @@ The page at `/sign-in`, `/people`, `/account` and `/appearance`
   the choice stays in the browser. On narrow screens the sidebar is a bar
   across the top (menu button, Flow mark, account photo, Search), and the menu
   button opens the pages as a panel below the bar.
-- **Jobs**: the board (one lane per group, about a phone wide, filling the
+- **Jobs**: the board (one lane per group, a fixed phone width that never
+  stretches, with empty space past the last lane on a wide screen, filling the
   window to its bottom edge, each lane scrolling inside itself) or the list.
   The toolbar has Group, Sort and Filter at the left, and the search icon
   (it opens into a box, `findBox`) and Board/List at the right. Each opens a panel of rows, laid out as
