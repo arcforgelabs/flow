@@ -1374,6 +1374,8 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
 
 /* A list's own search (view-bar.js findBox): an icon that opens into a box. */
 .fx-find { display: inline-flex; align-items: center; }
+/* On a tab bar the icon sits level with the tab names, not on the line. */
+.fx-toolbar > .fx-find { align-self: center; }
 .fx-find__button { display: inline-grid; place-items: center; width: 32px; height: 32px; padding: 0; }
 .fx-find__button .fx-lucide { width: 15px; height: 15px; }
 .fx-find__input { display: none; width: min(240px, 60vw); height: 32px; padding: 0 10px; }
