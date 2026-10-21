@@ -25,11 +25,8 @@
 //   rows     the <tbody> nodes (rowCells builds a row's cells)
 //   lead     <th> nodes before the columns (the tick column)
 import { lucide } from '/assets/ui/custom-fields.js';
-import { MAX_WIDTH, minWidth, moveColumn, widthOf } from '/assets/ui/job-view.js';
+import { endWidth, LEAD_WIDTH, MAX_WIDTH, minWidth, moveColumn, TAIL_WIDTH, tableWidth, widthOf } from '/assets/ui/job-view.js';
 
-// The tick column at the start and the + column at the end.
-const LEAD_WIDTH = 44;
-const TAIL_WIDTH = 40;
 
 // A row's cells for the shown columns: a class per kind, the label for
 // the phone layout, the full text as the cell's name on hover.
@@ -110,23 +107,42 @@ export function columnTable(h, config) {
 
   function table({ columns, rows, lead = [], className = '' }) {
     const saved = widths();
-    // Each column keeps its own width: the table is as wide as its columns,
-    // never stretched to the page. Space left over stays empty at the right.
-    // A resize changes the table only; the tools stay put.
+    // Each column keeps its own width: never stretched to the page. As
+    // HubSpot's, the head and every row still run to the right edge: the
+    // end column (+ at its right) takes the space after the last column, so
+    // a row looks whole, not cut off. A resize changes the table only; the
+    // tools stay put.
     const cols = columns.map((c) => h('col', { style: { width: `${widthOf(c, saved)}px` } }));
     const leadCols = lead.map(() => h('col', { style: { width: `${LEAD_WIDTH}px` } }));
+    const endCol = h('col', { style: { width: `${TAIL_WIDTH}px` } });
     const tail = config.hidden ? h('th', { class: 'fx-th-add' }, h('button', {
       type: 'button', class: 'fx-th fx-th--add', 'aria-label': 'Show a column', title: 'Show a column', onclick: (event) => openMenu(null, event),
     }, '+')) : h('th', { class: 'fx-th-end', 'aria-hidden': 'true' });
     const heads = columns.map((c, n) => head(c, n));
     const node = h('table', { class: `fx-table fx-table--sized ${className}`.trim() },
-      h('colgroup', {}, leadCols, cols, h('col', { style: { width: `${TAIL_WIDTH}px` } })),
+      h('colgroup', {}, leadCols, cols, endCol),
       h('thead', {}, h('tr', {}, lead, heads, tail)),
       rows);
-    // The table is as wide as its columns; past the page it scrolls sideways.
-    const fit = () => { node.style.width = `${columns.reduce((sum, c) => sum + widthOf(c, widths()), 0) + lead.length * LEAD_WIDTH + TAIL_WIDTH}px`; };
+    const box = h('div', { class: 'fx-table-scroll' }, node);
+    // The width the columns need; past the window the table scrolls
+    // sideways. A browser shares spare width among fixed columns, so the
+    // end column is sized here, and again when the window changes size.
+    let need = tableWidth(columns, saved, lead.length);
+    const fit = () => {
+      const end = endWidth(need, box.getBoundingClientRect?.().width ?? 0);
+      endCol.style.width = `${end}px`;
+      node.style.width = `${need - TAIL_WIDTH + end}px`;
+    };
     fit();
-    return h('div', { class: 'fx-table-scroll' }, node);
+    if (typeof ResizeObserver === 'function') {
+      // Once the table has left the page (a redraw), stop watching.
+      let shown = false;
+      const watch = new ResizeObserver(() => {
+        if (box.isConnected) { shown = true; fit(); } else if (shown) watch.disconnect();
+      });
+      watch.observe(box);
+    }
+    return box;
 
     function head(c, n) {
       const button = h('button', {
@@ -167,12 +183,13 @@ export function columnTable(h, config) {
         grip.setPointerCapture(event.pointerId);
         const from = event.clientX;
         const start = col.getBoundingClientRect().width || widthOf(c, widths());
-        const base = node.getBoundingClientRect().width;
+        const base = need;
         let w = start;
         node.dataset.resizing = '';
         const move = (e) => {
           w = set(start + e.clientX - from);
-          node.style.width = `${base + w - start}px`;
+          need = base + w - start;
+          fit();
         };
         const up = () => {
           grip.removeEventListener('pointermove', move);

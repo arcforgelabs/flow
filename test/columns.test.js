@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
-  cleanColumnIds, cleanWidths, COLUMN_MIN, INVOICE_COLUMNS, MAX_WIDTH, moveColumn, normaliseJobsView, normaliseListView, RECONCILE_COLUMNS, widthOf,
+  cleanColumnIds, cleanWidths, COLUMN_MIN, endWidth, INVOICE_COLUMNS, LEAD_WIDTH, MAX_WIDTH, moveColumn, normaliseJobsView, normaliseListView, RECONCILE_COLUMNS, TAIL_WIDTH, tableWidth, widthOf,
 } from '../server/ui/job-view.js';
 import { normaliseViews } from '../server/auth/people.js';
 
@@ -14,6 +14,19 @@ test('a column is never narrower than its kind allows, nor wider than the most',
   assert.equal(widthOf({ id: 'client', kind: 'client' }, { client: 90 }), COLUMN_MIN.client);
   assert.equal(widthOf({ id: 'note', kind: 'text' }, { note: 5000 }), MAX_WIDTH);
   assert.equal(widthOf({ id: 'note', kind: 'text' }, { note: 211.6 }), 212);
+});
+
+test('the end column fills the row to the window edge; the other columns keep their widths', () => {
+  const columns = [{ id: 'client', kind: 'client' }, { id: 'due', kind: 'date' }];
+  const need = tableWidth(columns, { client: 300 }, 1);
+  assert.equal(need, 300 + 120 + LEAD_WIDTH + TAIL_WIDTH);
+  // A wide window: the end column takes the rest, so the table is exactly the window.
+  assert.equal(endWidth(need, 1718.6), 1718 - (need - TAIL_WIDTH));
+  assert.equal(need - TAIL_WIDTH + endWidth(need, 1718.6), 1718);
+  // A narrow window, or one not drawn yet: the end column keeps its least
+  // width and the table scrolls sideways.
+  assert.equal(endWidth(need, 400), TAIL_WIDTH);
+  assert.equal(endWidth(need, 0), TAIL_WIDTH);
 });
 
 test('saved widths keep only column ids and pixel counts in range', () => {
