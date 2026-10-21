@@ -733,13 +733,14 @@ th:hover > .fx-th-grip::after { background: var(--t-brd-hi); }
 .fx-avatar--sm { width: 24px; height: 24px; font-size: 10px; }
 .fx-c-date time { font-variant-numeric: tabular-nums; }
 .fx-stage[data-rank="plain"] { --stage: var(--t-dim); }
-/* The board is one row of lanes (one per group), each about a phone wide.
-   Lanes share the width when they fit; more lanes scroll sideways inside
-   the board, never as a second row. On a wide, tall screen the board fills
+/* The board is one row of lanes (one per group), each a fixed phone width
+   (--fx-lane), as HubSpot's: lanes never stretch to fill a wide screen, so
+   the space past the last lane stays empty. More lanes scroll sideways
+   inside the board, never as a second row. On a wide, tall screen the board fills
    the page down to its bottom edge, the page itself does not scroll, and
    each lane scrolls inside itself (jobs.js sets fx-main--board while the
    board shows). */
-.fx-board { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(min(85vw, 272px), 1fr); gap: 12px; align-items: start; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: thin; padding-bottom: 4px; }
+.fx-board { --fx-lane: min(85vw, 272px); display: grid; grid-auto-flow: column; grid-auto-columns: var(--fx-lane); justify-content: start; gap: 12px; align-items: start; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: thin; padding-bottom: 4px; }
 .fx-board__col { display: flex; flex-direction: column; gap: 8px; min-width: 0; min-height: 0; padding: 10px 6px 6px 8px; border-radius: var(--t-radius-lg); background: var(--t-s1); }
 .fx-board__head { display: flex; flex: none; align-items: center; gap: 8px; min-width: 0; padding: 2px 4px 4px 2px; }
 .fx-board__sum { flex: none; margin-left: auto; color: var(--t-dim); font-size: 12px; font-variant-numeric: tabular-nums; }
