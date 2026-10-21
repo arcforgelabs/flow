@@ -22,7 +22,7 @@ import { startMonitoring } from '/assets/ui/monitoring.js';
 import { openSearch } from '/assets/ui/search.js';
 import { alertStrip } from '/assets/ui/alerts.js';
 import { startTips } from '/assets/ui/tip.js';
-import { dialog, edgeFade, h, holdButton, listFrame, listHead, notice, pageHeader, rowMenu, sectionTitle, settingRow, toast } from '/assets/ui/kit.js';
+import { crumbs, dialog, edgeFade, h, holdButton, linksOpenWith, listFrame, listHead, notice, pageHeader, rowMenu, sectionTitle, settingRow, tileCard, tileSection, toast } from '/assets/ui/kit.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -170,7 +170,6 @@ const VIEWS = {
 const ICON_PATHS = {
   jobs: '<rect x="3" y="4" width="5" height="16" rx="1"/><rect x="10" y="4" width="5" height="11" rx="1"/><rect x="17" y="4" width="4" height="14" rx="1"/>',
   invoices: '<path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 13h7M9 17h5"/>',
-  draft: '<path d="M14 3H6v18h5M14 3l4 4v3M14 3v4h4"/><path d="M13 21v-2.5l6-6 2.5 2.5-6 6z"/>',
   bolt: '<path d="M13 3L5 13h6l-1 8 8-10h-6z"/>',
   rules: '<path d="M3 6l2 2 4-4M3 16l2 2 4-4M13 6h8M13 12h8M13 18h8"/>',
   reconcile: '<path d="M4 8h13M13 4l4 4-4 4M20 16H7M11 12l-4 4 4 4"/>',
@@ -309,6 +308,8 @@ async function route() {
 }
 
 // Opens a path in place; the address changes, the page stays.
+linksOpenWith((path) => go(path));
+
 function go(path, { replace = false } = {}) {
   if (path !== location.pathname + location.search) history[replace ? 'replaceState' : 'pushState'](null, '', path);
   route();
@@ -324,7 +325,7 @@ function navigate(event) {
 // The shared pieces a view module (invoicing.js) builds with. Its `go`
 // takes a path, or a link's click event.
 const ui = () => ({
-  h, flow, toast, notice, pageHeader, listHead, listFrame, edgeFade, sectionTitle, dialog, me, holdButton, tileCard, crumbs,
+  h, flow, toast, notice, pageHeader, listHead, listFrame, edgeFade, sectionTitle, dialog, me, holdButton, tileCard, tileSection, crumbs,
   go: (target, options) => (typeof target === 'string' ? go(target, options) : navigate(target)),
 });
 
@@ -608,27 +609,6 @@ function integrationTile(integration) {
   });
 }
 
-// One card in a grid of choices (Integrations, Rules): its mark (a node, or
-// an ICON_PATHS name), the name, a status pill, two lines at most (only when
-// they help), and the action. The whole card is the link.
-function tileCard({ href, mark, title, status, blurb, action = 'Manage' }) {
-  const logo = typeof mark === 'string' ? h('span', { class: 'fx-logo fx-logo--icon', 'aria-hidden': 'true' }, icon(mark)) : mark;
-  return h('a', { class: `fx-int-card${blurb ? '' : ' fx-int-card--bare'}`, href, onclick: navigate },
-    h('header', { class: 'fx-int-card__head' },
-      logo,
-      h('h3', {}, title),
-      status ? h('span', { class: 'fx-status', 'data-tone': status.tone ?? 'mute' }, status.label) : null),
-    blurb ? h('p', { class: 'fx-int-card__blurb' }, blurb) : null,
-    h('span', { class: 'fx-int-card__btn' }, action));
-}
-
-// The trail above a page one level down: crumbs(['/integrations', 'Integrations'], 'Xero').
-function crumbs(...trail) {
-  const here = trail.pop();
-  return h('nav', { class: 'fx-crumbs', 'aria-label': 'Breadcrumb' },
-    ...trail.flatMap(([href, label]) => [h('a', { href, onclick: navigate }, label), h('span', { 'aria-hidden': 'true' }, '›')]),
-    h('span', {}, here));
-}
 
 // One integration's page (/integrations/<id>): its logo and maker, Connect
 // with each step shown as it happens, the setup steps, its settings, and the
