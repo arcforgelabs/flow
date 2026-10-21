@@ -164,7 +164,7 @@ export function iconCss() {
   }
   const found = [...names].filter((n) => existsSync(join(iconDir, `${n}.svg`))).sort();
   return found.map((n) => {
-    const svg = readFileSync(join(iconDir, `${n}.svg`), 'utf8').replace(/<!--[\s\S]*?-->/g, '').replace(/\s+/g, ' ').trim();
+    const svg = readFileSync(join(iconDir, `${n}.svg`), 'utf8').replace(/\s+/g, ' ').trim();
     const uri = `data:image/svg+xml,${encodeURIComponent(svg).replace(/'/g, '%27')}`;
     return `.fx-lucide[style*="/icons/${n}.svg"] { --icon: url("${uri}") !important; }`;
   }).join('\n');
