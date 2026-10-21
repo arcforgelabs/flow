@@ -21,6 +21,7 @@ import { renderXeroImport } from '/assets/ui/xero-import.js';
 import { startMonitoring } from '/assets/ui/monitoring.js';
 import { openSearch } from '/assets/ui/search.js';
 import { alertStrip } from '/assets/ui/alerts.js';
+import { initialsOf, personLabel } from '/assets/ui/person.js';
 import { startTips } from '/assets/ui/tip.js';
 import { crumbs, dialog, h, holdButton, linksOpenWith, notice, pageHeader, rowMenu, sectionTitle, settingRow, tileCard, tileSection, toast } from '/assets/ui/kit.js';
 
@@ -123,12 +124,6 @@ async function flow(path, options = {}) {
 }
 
 // ── Shared pieces ──────────────────────────────────────────────────────────
-
-function initials(person) {
-  const source = (person.name || person.email || '?').replace(/@.*/, '');
-  const parts = source.split(/[\s._-]+/).filter(Boolean);
-  return ((parts[0]?.[0] ?? '?') + (parts[1]?.[0] ?? '')).toUpperCase();
-}
 
 function statusPill(person) {
   if (person.status === 'pending') return h('span', { class: 'fx-status', 'data-tone': 'warn' }, 'Waiting for approval');
@@ -464,9 +459,9 @@ function personRow(person, host) {
   };
   const patch = (body) => flow(`/api/people/${person.id}`, { method: 'PATCH', body: JSON.stringify(body) });
   const who = h('div', { class: 'fx-person' },
-    h('span', { class: 'fx-avatar', 'aria-hidden': 'true' }, initials(person)),
+    h('span', { class: 'fx-avatar', 'aria-hidden': 'true' }, initialsOf(person)),
     h('span', { class: 'fx-person__text' },
-      h('span', { class: 'fx-person__name' }, person.name || person.email, self ? h('span', { class: 'fx-tag' }, 'You') : null),
+      h('span', { class: 'fx-person__name' }, personLabel(person), self ? h('span', { class: 'fx-tag' }, 'You') : null),
       person.name ? h('span', { class: 'fx-person__email' }, person.email) : null));
   const role = self
     ? h('span', { title: ROLE_HINT[person.role] }, ROLE_LABEL[person.role])

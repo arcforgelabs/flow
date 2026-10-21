@@ -133,8 +133,8 @@ describe('custom fields against PostgreSQL', { skip: skipWithoutDatabase }, () =
     // Set up in the host's settings: connected when Flow first saw its work.
     assert.equal(read.body.systemFields[0].createdAt, '2026-03-02T00:00:00.000Z');
     assert.equal(read.body.groupColors.dropdown, TYPE_COLORS.dropdown);
-    // A person field can name every active person, by name.
-    assert.deepEqual(read.body.people.map((p) => p.name).sort(), ['owner', 'staff']);
+    // A person field can name every active person: full name, else the whole email.
+    assert.deepEqual(read.body.people.map((p) => p.name).sort(), ['owner@example.test', 'staff@example.test']);
 
     const refused = await call('', { method: 'POST', token: staffToken, body: { name: 'Rush', type: 'checkbox' } });
     assert.equal(refused.status, 403);
