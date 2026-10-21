@@ -651,11 +651,12 @@ th:hover .fx-th-sort, .fx-th-sort:focus-visible, .fx-th-sort--on { opacity: 1; }
 .fx-th-sort__n { font: 700 10px/1 var(--t-body); }
 @media (hover: none) { .fx-th-sort { opacity: 1; } }
 /* A sized list (columns.js): each column has its width, the table is as
-   wide as its columns and scrolls sideways past the page. A head's right
+   wide as its columns (never stretched; space left over stays empty) and
+   scrolls sideways past the page. A head's right
    edge is a grip that resizes the column; a head drags to move it, and a
    line shows where it lands. */
 .fx-table-scroll { overflow-x: auto; scrollbar-width: thin; }
-.fx-table.fx-table--sized { table-layout: fixed; min-width: 100%; }
+.fx-table.fx-table--sized { table-layout: fixed; }
 .fx-table--sized th, .fx-table--sized td { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fx-table--sized th { position: relative; }
 .fx-table--sized .fx-th-cell { max-width: 100%; }
