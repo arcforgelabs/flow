@@ -1,0 +1,11 @@
+<!-- @dsCard group="Actions" height=90 -->
+<div class="fds-row" id="root"></div>
+<script>
+const { rowMenu, toast } = window.FlowDesignSystem;
+document.getElementById('root').append(...rowMenu('More for Alex', [
+  { icon: 'mail', text: 'Email invite again', run: () => toast('Invite sent.', 'success') },
+  { icon: 'power', text: 'Turn off', run: () => toast('Turned off.') },
+  '-',
+  { icon: 'trash-2', text: 'Remove', tone: 'danger', run: () => toast('Removed.') },
+]));
+</script>

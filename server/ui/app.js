@@ -14,32 +14,17 @@ import { automationSection } from '/assets/ui/automations.js';
 import { renderInvoicingSettings, sendModeSection } from '/assets/ui/invoicing-settings.js';
 import { renderPriceList } from '/assets/ui/price-list.js';
 import { renderPriceReconcile } from '/assets/ui/price-reconcile.js';
-import { lucide, renderCustomFields } from '/assets/ui/custom-fields.js';
+import { renderCustomFields } from '/assets/ui/custom-fields.js';
 import { renderJobs } from '/assets/ui/jobs.js';
 import { renderReconcile } from '/assets/ui/reconcile.js';
 import { renderXeroImport } from '/assets/ui/xero-import.js';
 import { startMonitoring } from '/assets/ui/monitoring.js';
 import { openSearch } from '/assets/ui/search.js';
 import { alertStrip } from '/assets/ui/alerts.js';
-import { named, startTips } from '/assets/ui/tip.js';
+import { startTips } from '/assets/ui/tip.js';
+import { dialog, h, holdButton, notice, pageHeader, rowMenu, sectionTitle, settingRow, toast } from '/assets/ui/kit.js';
 
 const $ = (id) => document.getElementById(id);
-
-// h('p', { class: 'x', onclick }, 'text', child) — children are text or nodes.
-function h(tag, attrs = {}, ...children) {
-  const node = document.createElement(tag);
-  for (const [key, value] of Object.entries(attrs ?? {})) {
-    if (value == null || value === false) continue;
-    if (key.startsWith('on')) node.addEventListener(key.slice(2), value);
-    else if (key === 'style' && typeof value === 'object') Object.assign(node.style, value);
-    else node.setAttribute(key, value === true ? '' : String(value));
-  }
-  for (const child of children.flat()) {
-    if (child == null || child === false) continue;
-    node.append(child instanceof Node ? child : document.createTextNode(String(child)));
-  }
-  return node;
-}
 
 const ROLE_LABEL = { owner: 'Owner', admin: 'Admin', staff: 'Staff' };
 const ROLE_HINT = {
@@ -137,90 +122,7 @@ async function flow(path, options = {}) {
   return body;
 }
 
-// Keeps a button off for `ms`, with the time left on it, then puts it back.
-function holdButton(button, ms) {
-  if (!button || !(ms > 0)) return;
-  clearInterval(button.fxHold);
-  const label = button.dataset.label ?? button.textContent;
-  button.dataset.label = label;
-  const until = Date.now() + ms;
-  const draw = () => {
-    const left = Math.ceil((until - Date.now()) / 1000);
-    if (left <= 0) {
-      clearInterval(button.fxHold);
-      button.textContent = label;
-      delete button.dataset.label;
-      button.removeAttribute('title');
-      button.disabled = false;
-      return;
-    }
-    const time = left < 60 ? `${left}s` : `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`;
-    button.disabled = true;
-    button.textContent = `${label} · ${time}`;
-    button.title = `Flow waits before it asks again, to protect the connected system's limits. Ready in ${time}.`;
-  };
-  draw();
-  button.fxHold = setInterval(draw, 1000);
-}
-
 // ── Shared pieces ──────────────────────────────────────────────────────────
-
-// The page's name and nothing under it: the page shows what it is for.
-// `count` is a live number beside the name (2 to check); `help` is a docs
-// link, an icon with its name as a tip.
-function pageHeader(title, { count = null, help = null, actions = [] } = {}) {
-  return h('header', { class: 'fx-ph' },
-    h('div', { class: 'fx-ph__text' },
-      h('h1', { class: 'fx-title' }, title),
-      count != null ? h('span', { class: 'fx-ph__count' }, count) : null,
-      help ? helpLink(help) : null),
-    actions.length ? h('div', { class: 'fx-ph__actions' }, actions) : null);
-}
-
-// A docs link as a small "?" icon whose tip names it (How sending works).
-function helpLink({ href, label }) {
-  return named(h('a', { class: 'fx-help', href, target: '_blank', rel: 'noopener' }, lucide(h, 'circle-help')), label);
-}
-
-// A settings section's heading, with its docs link beside it.
-function sectionTitle(text, help = null) {
-  return h('h2', { class: 'fx-set__title' }, text, help ? helpLink(help) : null);
-}
-
-function notice(text, tone = 'info', title = null) {
-  return h('div', { class: 'fx-notice', 'data-tone': tone, role: tone === 'danger' ? 'alert' : 'status' },
-    title ? h('strong', {}, title) : null,
-    h('span', {}, text));
-}
-
-function toast(text, tone = 'info') {
-  const region = $('toasts');
-  const item = h('div', { class: 'fx-toast', 'data-tone': tone, role: 'status' }, text);
-  region.append(item);
-  setTimeout(() => item.remove(), 4200);
-}
-
-// A modal built on <dialog>: resolves with the button's value, or null.
-function dialog({ title, body, confirm, tone = 'primary' }) {
-  return new Promise((resolve) => {
-    const form = h('form', { method: 'dialog', class: 'fx-dialog__form' },
-      h('h2', { class: 'fx-dialog__title' }, title),
-      body,
-      h('div', { class: 'fx-dialog__actions' },
-        h('button', { class: 'fx-btn fx-btn--ghost', value: 'cancel', type: 'submit', formnovalidate: true }, 'Cancel'),
-        h('button', { class: `fx-btn fx-btn--${tone}`, value: 'ok', type: 'submit' }, confirm)));
-    const element = h('dialog', { class: 'fx-dialog' }, form);
-    element.addEventListener('close', () => {
-      const ok = element.returnValue === 'ok';
-      const data = ok ? new FormData(form) : null;
-      element.remove();
-      resolve(ok ? data : null);
-    });
-    document.body.append(element);
-    element.showModal();
-    element.querySelector('input, select, button[value="ok"]')?.focus();
-  });
-}
 
 function initials(person) {
   const source = (person.name || person.email || '?').replace(/@.*/, '');
@@ -542,28 +444,6 @@ async function refreshPeople(host) {
       h('thead', { class: 'fx-sr' }, h('tr', {}, h('th', {}, 'Person'), h('th', {}, 'Role'), h('th', {}, 'Access'), h('th', {}, 'Actions'))),
       h('tbody', {}, rows)),
   ].filter(Boolean));
-}
-
-let peopleMenus = 0;
-
-// A row's ⋯ menu, as on the Custom fields page.
-function rowMenu(label, items) {
-  const id = `fx-people-menu-${++peopleMenus}`;
-  const button = h('button', { class: 'fx-cfm__more', type: 'button', 'aria-label': label, popovertarget: id, 'aria-haspopup': 'menu', 'aria-expanded': 'false' }, lucide(h, 'ellipsis'));
-  const panel = h('div', { class: 'fx-pop', id, popover: 'auto', role: 'menu' });
-  panel.addEventListener('toggle', (event) => {
-    button.setAttribute('aria-expanded', String(event.newState === 'open'));
-    if (event.newState !== 'open') return;
-    const close = () => panel.hidePopover();
-    panel.replaceChildren(...items.map((entry) => (entry === '-'
-      ? h('div', { class: 'fx-pop__sep' })
-      : h('button', { type: 'button', class: 'fx-pop__item', role: 'menuitem', 'data-tone': entry.tone, onclick: () => { close(); entry.run(); } },
-        h('span', { class: 'fx-pop__tick' }, lucide(h, entry.icon)), h('span', {}, entry.text)))));
-    const at = button.getBoundingClientRect();
-    panel.style.top = `${Math.round(at.bottom + 6)}px`;
-    panel.style.left = `${Math.round(Math.max(8, Math.min(at.right - panel.offsetWidth, innerWidth - panel.offsetWidth - 8)))}px`;
-  });
-  return [button, panel];
 }
 
 function personRow(person, host) {
@@ -934,22 +814,6 @@ function personSettingsSection(integration) {
   return section;
 }
 
-// One setting, laid out the same on every settings screen: a short name, one
-// line of smaller text under it, and the control on the right. Longer help
-// lives behind a link, not here. A wide control (a grid of choices) sits on
-// its own line under the name. `tone: 'danger'` marks a row that needs a person.
-function settingRow({ label, hint, control, wide = false, tone = null }) {
-  const target = control?.matches?.('input, select, textarea') ? control : control?.querySelector?.('input:not([type=color]), select, textarea');
-  const id = target ? (target.id ||= `fx-set-${++settingRow.next}`) : null;
-  return h('div', { class: `fx-setting${wide ? ' fx-setting--wide' : ''}`, 'data-tone': tone },
-    h('div', { class: 'fx-setting__text' },
-      id ? h('label', { class: 'fx-setting__name', for: id }, label) : h('span', { class: 'fx-setting__name' }, label),
-      hint ? h('p', { class: 'fx-setting__hint' }, hint) : null),
-    h('div', { class: 'fx-setting__control' }, control));
-}
-settingRow.next = 0;
-
-// The steps of a Connect, each ticked, running or crossed, with the time taken.
 function connectProgress({ steps, started }) {
   const seconds = Math.max(0, Math.round((Date.now() - started) / 1000));
   return h('div', { class: 'fx-progress', role: 'status' },

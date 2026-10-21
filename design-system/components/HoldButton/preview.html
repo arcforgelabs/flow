@@ -1,0 +1,7 @@
+<!-- @dsCard group="Actions" height=90 -->
+<div class="fds-row" id="root"></div>
+<script>
+const { h, holdButton } = window.FlowDesignSystem;
+const button = h('button', { class: 'fx-btn', type: 'button', onclick: () => holdButton(button, 5000) }, 'Sync');
+document.getElementById('root').append(button);
+</script>

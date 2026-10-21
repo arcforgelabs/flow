@@ -1,0 +1,9 @@
+<!-- @dsCard group="Feedback" height=110 -->
+<div class="fds-row" id="root"></div>
+<script>
+const { h, dialog, toast } = window.FlowDesignSystem;
+document.getElementById('root').append(h('button', { class: 'fx-btn fx-btn--primary', type: 'button', onclick: async () => {
+  const ok = await dialog({ title: 'Send 3 invoices?', body: h('p', {}, 'Xero emails each client.'), confirm: 'Send' });
+  toast(ok ? '3 invoices sent.' : 'Not sent.', ok ? 'success' : 'info');
+} }, 'Send'));
+</script>

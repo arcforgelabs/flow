@@ -1,0 +1,8 @@
+<!-- @dsCard group="Navigation" height=170 -->
+<div id="root" class="fds"></div>
+<script>
+const { h, pageHeader, lucide } = window.FlowDesignSystem;
+document.getElementById('root').append(
+  pageHeader('Invoices', { help: { href: '#', label: 'How sending works' }, actions: [h('button', { class: 'fx-btn fx-btn--primary', type: 'button' }, lucide(h, 'plus'), 'New')] }),
+  pageHeader('Reconcile', { count: '3 to check' }));
+</script>

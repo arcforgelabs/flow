@@ -1,0 +1,14 @@
+<!-- @dsCard group="Lists" height=140 -->
+<div id="root" style="min-height:110px"></div>
+<script>
+const { bulkBar, ui, toast } = window.FlowDesignSystem;
+const bar = bulkBar(ui(), { label: 'Ticked invoices' });
+document.getElementById('root').append(bar.element);
+const draw = (count) => bar.draw({
+  count, onClear: () => draw(0),
+  groups: [[{ icon: 'send', label: 'Send', title: 'Send the ticked invoices to Xero', primary: true, run: () => toast(`${count} invoices sent.`, 'success') }],
+    [{ icon: 'copy', label: 'Copy', title: 'Copy references', run: () => toast('Copied.') }, { icon: 'download', label: 'Export', title: 'Export CSV', run: () => toast('Exported.') }]],
+  more: [{ head: 'Selection', actions: [{ icon: 'x', label: 'Clear', title: 'Clear the ticks', run: () => draw(0) }] }],
+});
+draw(3);
+</script>

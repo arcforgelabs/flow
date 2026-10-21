@@ -1,0 +1,9 @@
+<!-- @dsCard group="Feedback" height=190 -->
+<div id="root" class="fds"></div>
+<script>
+const { notice } = window.FlowDesignSystem;
+document.getElementById('root').append(
+  notice('Xero is not connected. Connect it on the Xero page.', 'warn'),
+  notice('2 invoices could not be sent. Open each one to see why.', 'danger', 'Problem.'),
+  notice('Every job has an invoice.', 'success'));
+</script>

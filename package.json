@@ -36,7 +36,8 @@
     "theme:contrast": "node scripts/theme-contrast.mjs",
     "db:generate": "drizzle-kit generate && node scripts/db-guard-migrations.js",
     "db:follow-production": "node scripts/replit-workspace-db.js sync",
-    "db:follow-production:status": "node scripts/replit-workspace-db.js status"
+    "db:follow-production:status": "node scripts/replit-workspace-db.js status",
+    "design-system": "node scripts/design-system/build.mjs"
   },
   "dependencies": {
     "@clerk/backend": "3.25.0",
@@ -60,7 +61,8 @@
     "pg": "8.23.1"
   },
   "devDependencies": {
-    "drizzle-kit": "0.31.11"
+    "drizzle-kit": "0.31.11",
+    "esbuild": "0.25.12"
   },
   "overrides": {
     "@esbuild-kit/core-utils": {
