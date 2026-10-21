@@ -659,7 +659,21 @@ th:hover .fx-th-sort, .fx-th-sort:focus-visible, .fx-th-sort--on { opacity: 1; }
    the window's height and does not scroll itself: the frame fills it, and
    on the board each lane scrolls inside itself. */
 .fx-frame { display: flex; flex-direction: column; min-width: 0; border: 1px solid var(--fx-line); border-radius: var(--t-radius-lg); background: var(--t-paper); box-shadow: var(--t-shadow); overflow: hidden; }
+.fx-frame__view { display: flex; flex-direction: column; min-height: 0; }
 .fx-frame__body { min-height: 0; overflow: auto; scrollbar-width: thin; }
+/* edgeFade() in kit.js: a soft fade over each edge with more content past
+   it, in the colour under the rows (--fx-fade). */
+.fx-fades { position: relative; --fx-fade: var(--t-paper); }
+.fx-fade { position: absolute; z-index: 3; pointer-events: none; opacity: 0; transition: opacity .15s; }
+.fx-fade[data-edge="top"] { inset: 0 0 auto; height: 24px; background: linear-gradient(to bottom, var(--fx-fade), transparent); }
+.fx-fade[data-edge="bottom"] { inset: auto 0 0; height: 24px; background: linear-gradient(to top, var(--fx-fade), transparent); }
+.fx-fade[data-edge="left"] { inset: 0 auto 0 0; width: 24px; background: linear-gradient(to right, var(--fx-fade), transparent); }
+.fx-fade[data-edge="right"] { inset: 0 0 0 auto; width: 24px; background: linear-gradient(to left, var(--fx-fade), transparent); }
+.fx-fades[data-fade~="top"] > .fx-fade[data-edge="top"], .fx-fades[data-fade~="bottom"] > .fx-fade[data-edge="bottom"],
+.fx-fades[data-fade~="left"] > .fx-fade[data-edge="left"], .fx-fades[data-fade~="right"] > .fx-fade[data-edge="right"] { opacity: 1; }
+.fx-main--board .fx-frame__view { --fx-fade: var(--t-bg); }
+.fx-board__col.fx-fades { --fx-fade: var(--t-s1); }
+.fx-board__col > .fx-fade[data-edge="bottom"] { border-radius: 0 0 var(--t-radius-lg) var(--t-radius-lg); }
 .fx-frame__body .fx-panel { border: 0; border-radius: 0; box-shadow: none; overflow: visible; }
 .fx-frame__body .fx-empty { padding: 24px; }
 .fx-frame .fx-table-scroll { overflow: visible; }
@@ -671,7 +685,7 @@ th:hover .fx-th-sort, .fx-th-sort:focus-visible, .fx-th-sort--on { opacity: 1; }
   .fx-main--frame { height: 100vh; height: 100dvh; padding-bottom: 16px; display: flex; flex-direction: column; }
   .fx-main--frame > * { flex: none; }
   .fx-main--frame > .fx-frame { flex: 1; min-height: 0; }
-  .fx-main--frame .fx-frame__body { flex: 1; }
+  .fx-main--frame .fx-frame__view, .fx-main--frame .fx-frame__body { flex: 1; }
   .fx-main--board .fx-frame__body { display: flex; overflow: hidden; }
   .fx-main--board .fx-jobs { flex: 1; min-width: 0; min-height: 0; }
   .fx-main--board .fx-board { height: 100%; overflow-y: hidden; align-items: stretch; }

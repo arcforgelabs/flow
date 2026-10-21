@@ -108,7 +108,7 @@ const CHEVRON_ICON = '<svg width="14" height="14" viewBox="0 0 16 16" aria-hidde
 const CALENDAR_ICON = '<svg width="13" height="13" viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="3" width="12" height="11" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M2 6.5h12M5.5 1.5v3M10.5 1.5v3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>';
 
 export async function renderJobs(main, ui) {
-  const { h, flow, listHead, listFrame, notice } = ui;
+  const { h, flow, listHead, listFrame, edgeFade, notice } = ui;
   // Search (search.js) opens a job with no invoice as /jobs?q=<case>.
   const asked = new URLSearchParams(location.search).get('q') ?? '';
   // The person's own view (job-view.js), saved with their account. Before
@@ -469,6 +469,9 @@ export async function renderJobs(main, ui) {
         h('span', { class: 'fx-board__sum' }, jobs.length ? formatCents(totalOf(jobs)) : '')),
       h('div', { class: 'fx-board__cards' }, jobs.length ? jobs.map(jobCard) : h('p', { class: 'fx-board__none' }, 'None')))));
     if (groups.some((g) => g.drop)) enableDrag(element, groups);
+    // Lanes past the frame's sides, and cards past a lane's foot, fade.
+    edgeFade(element, { target: frame.view, edges: ['left', 'right'] });
+    element.querySelectorAll('.fx-board__cards').forEach((cards) => edgeFade(cards, { target: cards.parentElement, edges: ['top', 'bottom'] }));
     return element;
   }
 

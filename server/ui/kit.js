@@ -84,14 +84,52 @@ export function listHead(title, { count = null, help = null, actions = [], start
 // The window a list or board sits in under listHead, as HubSpot's: on a
 // desktop it fills the page to the bottom and scrolls inside itself both
 // ways, so nothing runs off the page, with a foot bar for the count and its
-// tools. It makes `main` the window's height (fx-main--frame).
+// tools. It makes `main` the window's height (fx-main--frame). Rows fade
+// under an edge they scroll past (edgeFade); the sticky table head is the
+// top edge's own break.
 export function listFrame(main, content) {
   main.classList.add('fx-main--frame');
   const count = h('span', { class: 'fx-frame__count', role: 'status' });
   const tools = h('div', { class: 'fx-frame__tools' });
   const body = h('div', { class: 'fx-frame__body' }, content);
-  const element = h('section', { class: 'fx-frame' }, body, h('footer', { class: 'fx-frame__foot' }, count, tools));
-  return { element, body, tools, count: (text) => { count.textContent = text ?? ''; } };
+  const view = h('div', { class: 'fx-frame__view' }, body);
+  const element = h('section', { class: 'fx-frame' }, view, h('footer', { class: 'fx-frame__foot' }, count, tools));
+  edgeFade(body, { target: view, edges: ['bottom', 'left', 'right'] });
+  return { element, body, view, tools, count: (text) => { count.textContent = text ?? ''; } };
+}
+
+// A soft fade at each edge of `target` that `scroller` has more content
+// past, so rows and cards fade under it instead of vanishing. No fade on
+// an edge a scrollbar already marks (the bottom under a sideways bar, the
+// right beside a down bar). `target` holds the fades and must not scroll.
+const fading = typeof ResizeObserver === 'function'
+  ? new ResizeObserver((entries) => entries.forEach(({ target }) => (target.isConnected ? target.fxFade?.() : fading.unobserve(target))))
+  : null;
+export function edgeFade(scroller, { target = scroller.parentElement, edges = ['top', 'bottom', 'left', 'right'] } = {}) {
+  target.classList.add('fx-fades');
+  for (const edge of edges) {
+    if (!target.querySelector(`:scope > .fx-fade[data-edge="${edge}"]`)) target.append(h('span', { class: 'fx-fade', 'data-edge': edge, 'aria-hidden': 'true' }));
+  }
+  const update = () => {
+    const { scrollTop, scrollLeft, scrollHeight, scrollWidth, clientHeight, clientWidth, offsetHeight, offsetWidth } = scroller;
+    const more = {
+      top: scrollTop > 1,
+      bottom: scrollTop + clientHeight < scrollHeight - 1 && offsetHeight - clientHeight === 0,
+      left: scrollLeft > 1,
+      right: scrollLeft + clientWidth < scrollWidth - 1 && offsetWidth - clientWidth === 0,
+    };
+    // Several scrollers can share a target (the board in the frame): it
+    // fades each edge any of them has more past.
+    target.fxFades ??= new Map();
+    target.fxFades.set(scroller, edges.filter((edge) => more[edge]));
+    for (const other of target.fxFades.keys()) if (!other.isConnected) target.fxFades.delete(other);
+    target.dataset.fade = [...new Set([...target.fxFades.values()].flat())].join(' ');
+  };
+  scroller.fxFade = update;
+  scroller.addEventListener('scroll', update, { passive: true });
+  fading?.observe(scroller);
+  requestAnimationFrame(update);
+  return update;
 }
 
 // A docs link as a small "?" icon whose tip names it (How sending works).
