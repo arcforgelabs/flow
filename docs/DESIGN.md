@@ -219,14 +219,16 @@ names its card in the Flow Design System.
 | `dialog({ title, body, confirm, tone })` | `server/ui/kit.js` | Dialog | A confirm step before an action that is hard to undo |
 | `holdButton(button, ms)` | `server/ui/kit.js` | HoldButton | A button that waits between presses (Xero, Seazona) and shows the time left |
 | `settingRow({ label, hint, control })`, `sectionTitle`, `.fx-setting` | `server/ui/kit.js` | SettingRow | One setting row: short name, one hint line, the control at the right |
-| `tileCard({ href, mark, title, status, blurb, action })`, `.fx-int-grid` | `server/ui/app.js` (`ui().tileCard`) |  | A grid of cards that each open a page: Integrations, Rules. `mark` is a logo node or an icon name; leave out `blurb` unless it helps |
-| `crumbs([href, label]…, here)` | `server/ui/app.js` (`ui().crumbs`) |  | The trail above a page one level down (Rules › Invoice rules, Integrations › Xero) |
+| `tileCard({ href, mark, title, status, blurb, meta, action, row })`, `tileSection(title, cards, { href, more })` | `server/ui/kit.js` | Tiles | Cards that open a page. `row: true` with `tileSection`: one-line cards, three columns, like Claude's Customize categories (Rules). Without `row`: the large card (Integrations) |
+| `crumbs([href, label]…, here)` | `server/ui/kit.js` | Crumbs | The trail above a page one level down (Rules › Invoices, Integrations › Xero) |
 | `rowMenu(label, items, { trigger, className, align })` | `server/ui/kit.js` | RowMenu | The ⋯ menu on a row; with `trigger` and `align: 'start'`, the sidebar's More |
 | `.fx-btn` and its modifiers | `server/ui/flow.css` | Button | Every button |
 | `named`, `startTips` | `server/ui/tip.js` | Tip | An icon-only control's name, shown on hover and focus |
 | `viewBar(h)`: `menu`, `option`, `filterMenu` and the rows-panel parts | `server/ui/view-bar.js` | Filter | Group, Sort, Filter and Columns chips and their panels, on every list (Jobs, Invoices, Reconcile) |
+| `columnTable(h, { order, widths, change, hidden, extra })`, `rowCells`, `viewSaver` | `server/ui/columns.js` (rules in `job-view.js`) | Columns | A list's table: drag an edge to resize (a minimum per column kind), drag a head to move, the head menu (Move, Hide, Reset width), + for hidden columns; order and widths kept with the account. Jobs, Invoices, Reconcile |
 | `findBox(h, { label, oninput })` | `server/ui/view-bar.js` | FindBox | A list's own search: an icon that opens into a box |
 | `ICONS`, `svg`, `today` | `server/ui/view-bar.js` | | The toolbar icons, an SVG string as a node, the local day |
+| `personLabel`, `initialsOf`, `clipLabel` | `server/ui/person.js` | | A person's name everywhere (pickers, filters, lanes, badges, People): full name, else the whole email; a badge's letters; a native menu's label cut with "…" |
 | `filterJobs`, `cleanFilterView`, `sortJobs`, `groupJobs`, `OPERATORS`, `DATE_VALUES` | `server/ui/job-view.js` | | The rules behind Filter, Sort and Group (no DOM). Every list's filter uses them with its own fields |
 | `bulkBar(ui, { label })` | `server/ui/bulk-bar.js` | BulkBar | The bar at the foot while rows are ticked: icon and one word per action, More |
 | `.fx-pager` | `server/ui/flow.css` | Pager | "← Back", "n of N", previous and next over one record. Built three times today (Invoices, Reconcile, Price list › Reconcile); issue #220 makes one helper. Do not add a fourth copy |
