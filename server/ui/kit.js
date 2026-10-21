@@ -63,22 +63,28 @@ export function pageHeader(title, { count = null, help = null, actions = [] } = 
 
 // The top of a list page (Jobs, Invoices, Reconcile), laid out the same on
 // every list and in Board and List alike, so nothing moves when a person
-// switches: the title row, a row for saved view tabs (`views`: the page's
-// savedViews element, else an empty slot that stays hidden), then one toolbar with `start` at the left (tabs, Group,
-// Sort, Filter) and `end` at the right (search, Board/List), then the page's
-// `actions` (New invoice) last, as Claude's own lists do. `line` draws the
-// rule that tabs sit on; `sticky` keeps the toolbar at the top while the rows
-// scroll up under it, with a shadow once they do. Append `nodes` to the page.
-export function listHead(title, { count = null, help = null, actions = [], start = [], end = [], line = false, sticky = false, views: tabs = null } = {}) {
+// switches: the title row, then one toolbar with `start` at the left (tabs,
+// Group, Sort, Filter) and `end` at the right (search, Board/List), then the
+// page's `actions` (New invoice) last, as Claude's own lists do. `controls`
+// (the page's Group, Sort and Filter) sit with the saved view tabs at their
+// right (`views`: the page's savedViews element, else an empty slot that
+// stays hidden), at the end of `start`, or of `end` when `controlsAt` is
+// 'end'. `line` draws the rule that tabs sit on; `sticky` keeps the toolbar
+// at the top while the rows scroll up under it, with a shadow once they do.
+// Append `nodes` to the page.
+export function listHead(title, { count = null, help = null, actions = [], start = [], end = [], controls = null, controlsAt = 'start', line = false, sticky = false, views: tabs = null } = {}) {
   const views = tabs ?? h('div', { class: 'fx-views', role: 'group', 'aria-label': 'Views', hidden: true });
+  const tools = h('div', { class: 'fx-toolbar__tools' }, controls, views);
+  const left = controlsAt === 'end' ? [start].flat() : [start, tools].flat();
+  const right = controlsAt === 'end' ? [tools, end].flat() : [end].flat();
   const bar = h('div', { class: 'fx-listhead', 'data-sticky': sticky },
-    h('div', { class: `fx-toolbar${line ? '' : ' fx-toolbar--plain'}` }, start, h('div', { class: 'fx-toolbar__end' }, end, actions)));
+    h('div', { class: `fx-toolbar${line ? '' : ' fx-toolbar--plain'}` }, left, h('div', { class: 'fx-toolbar__end' }, right, actions)));
   const edge = sticky ? h('div', { class: 'fx-listhead__edge', 'aria-hidden': 'true' }) : null;
   if (edge && typeof IntersectionObserver === 'function') {
     const top = window.matchMedia?.('(max-width: 820px)').matches ? 61 : 1;
     new IntersectionObserver(([entry]) => bar.toggleAttribute('data-stuck', !entry.isIntersecting), { rootMargin: `-${top}px 0px 0px 0px` }).observe(edge);
   }
-  return { nodes: [pageHeader(title, { count, help }), views, edge, bar].filter(Boolean), views, bar };
+  return { nodes: [pageHeader(title, { count, help }), edge, bar].filter(Boolean), views, bar };
 }
 
 // The window a list or board sits in under listHead, as HubSpot's: on a

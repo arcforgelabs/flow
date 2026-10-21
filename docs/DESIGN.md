@@ -224,7 +224,7 @@ names its card in the Flow Design System.
 | --- | --- | --- | --- |
 | `h`, `ui()`: `flow`, `go`, `me` | `server/ui/kit.js` (`h`), `server/ui/app.js` (`ui()`) | | Build elements; what every view module takes: call the API, open a page, the signed-in person |
 | `pageHeader(title, { count, help, actions })`, `helpLink` | `server/ui/kit.js` | PageHeader | The page title only, a live count, a ? docs link, its actions |
-| `listHead(title, { views, start, end, actions, line, sticky })` | `server/ui/kit.js` | ListHead | The top of every list (Jobs Board and List, Invoices, Reconcile): title, the `views` row (the page's `savedViews` element), then one toolbar (`start` left, `end` and `actions` right). Same place on every list and layout. |
+| `listHead(title, { controls, views, start, end, actions, line, sticky, controlsAt })` | `server/ui/kit.js` | ListHead | The top of every list (Jobs Board and List, Invoices, Reconcile): title, then one toolbar (`start` left, `end` and `actions` right). `controls` (Group, Sort, Filter) and `views` (the page's `savedViews` element) sit together in it. Same place on every list and layout. |
 | `listFrame(main, content)`, `edgeFade(scroller, { target, edges })` | `server/ui/kit.js` | ListFrame | The window a list or board sits in under `listHead`: fills the page, scrolls inside itself both ways, sticky table head, a foot bar with the count and tools. `edgeFade`: a soft fade where content scrolls past an edge |
 | `notice` | `server/ui/kit.js` | Notice | A note on the page that stays until the cause is gone |
 | `fieldError(field, on)`, `.fx-input[aria-invalid="true"]` | `server/ui/kit.js`, `server/ui/flow.css` | FieldError | A field that fails a check glows red, like a required field, until the person types in it |
@@ -235,7 +235,7 @@ names its card in the Flow Design System.
 | `tileCard({ href, mark, title, status, blurb, meta, action, row })`, `tileSection(title, cards, { href, more })` | `server/ui/kit.js` | Tiles | Cards that open a page. `row: true` with `tileSection`: one-line cards, three columns, like Claude's Customize categories (Rules). Without `row`: the large card (Integrations) |
 | `crumbs([href, label]…, here)` | `server/ui/kit.js` | Crumbs | The trail above a page one level down (Rules › Invoices, Integrations › Xero) |
 | `rowMenu(label, items, { trigger, className, align })` | `server/ui/kit.js` | RowMenu | The ⋯ menu on a row; `align: 'start'` lines the menu up with the button's left edge; with `trigger`, the sidebar's More |
-| `savedViews(ui, { page, current, apply })` | `server/ui/saved-views.js` | SavedViews | The row of named view tabs over a list, as ClickUp's: + View, Save / Revert, and each tab's ⋯ (Set as my default, Rename, Delete). The rules are in `list-views.js` |
+| `savedViews(ui, { page, current, apply })` | `server/ui/saved-views.js` | SavedViews | The named view tabs of a list, in the toolbar beside Group, Sort and Filter, as ClickUp's: + View, Save / Revert, and each tab's ⋯ (Set as my default, Rename, Delete). The rules are in `list-views.js` |
 | `.fx-btn` and its modifiers | `server/ui/flow.css` | Button | Every button |
 | `named`, `startTips` | `server/ui/tip.js` | Tip | An icon-only control's name, shown on hover and focus |
 | `viewBar(h)`: `menu`, `option`, `filterMenu` and the rows-panel parts | `server/ui/view-bar.js` | Filter | Group, Sort, Filter and Columns chips and their panels, on every list (Jobs, Invoices, Reconcile) |

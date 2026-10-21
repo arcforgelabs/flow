@@ -237,7 +237,7 @@ export async function renderInvoiceList(main, ui) {
   // action: tick rows (the head tick takes every row shown), then Send.
   const head = listHead('Invoices', {
     actions: [h('a', { class: 'fx-btn fx-btn--primary', href: '/invoices/new', onclick: go }, 'New invoice')],
-    views: views.element, start: tabs, end: [controls, find.element], line: true, sticky: true,
+    views: views.element, start: tabs, controls, controlsAt: 'end', end: find.element, line: true, sticky: true,
   });
   const [title, ...top] = head.nodes;
   const frame = listFrame(main, host);

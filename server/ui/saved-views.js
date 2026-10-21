@@ -1,5 +1,5 @@
-// Saved views: the row of named view tabs over a list (Jobs, Invoices,
-// Reconcile), as ClickUp's. A view keeps the page's Group, Sort, Filter and
+// Saved views: the named view tabs of a list (Jobs, Invoices, Reconcile),
+// as ClickUp's, in the toolbar beside Group, Sort and Filter (listHead). A view keeps the page's Group, Sort, Filter and
 // Columns under a name. A tab shows it; "Save" and "Revert" show when the
 // page no longer matches the chosen tab; "+ View" saves the page as a new
 // view. Each tab's ⋯ menu has "Set as my default" (the view that opens
@@ -7,7 +7,7 @@
 // the person's account (PUT /api/me/saved-views/:page, list-views.js).
 //
 //   const views = savedViews(ui, { page, current, apply });
-//   views.element   the tab row, for the page to place
+//   views.element   the tabs, for listHead's `views`
 //   views.opening() the view to open on, or null: the default view on the
 //                   first visit in this browser tab, else the page's own
 //   views.draw()    call after any change to the page's view
@@ -117,7 +117,7 @@ export function savedViews(ui, { page, current, apply }) {
     });
     element.replaceChildren(...[
       ...tabs,
-      saved.list.length < MAX_SAVED_VIEWS ? h('button', { type: 'button', class: 'fx-views__add', onclick: addView }, lucide(h, 'plus'), 'View') : null,
+      saved.list.length < MAX_SAVED_VIEWS ? h('button', { type: 'button', class: 'fx-views__add', title: 'Save as a view', onclick: addView }, lucide(h, 'plus'), 'View') : null,
       changed ? h('span', { class: 'fx-views__end' },
         h('button', { type: 'button', class: 'fx-btn fx-btn--ghost fx-btn--sm', onclick: () => { apply(view.view); draw(); } }, 'Revert'),
         h('button', { type: 'button', class: 'fx-btn fx-btn--primary fx-btn--sm', onclick: () => store({ ...saved, list: saved.list.map((v) => (v.id === view.id ? { ...v, view: current() } : v)) }) }, 'Save')) : null,
