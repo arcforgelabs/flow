@@ -143,6 +143,19 @@ export async function linkPerson(db, { id, clerkUserId }) {
   return row ?? null;
 }
 
+// Fills a person's name from their sign-in account (Clerk) when Flow has
+// none, so pickers show "Jane Citizen", not an email. A name Flow already
+// holds stays.
+export async function fillPersonName(db, { id, name }) {
+  const value = String(name ?? '').trim();
+  if (!value) return null;
+  const [row] = await db.update(people)
+    .set({ name: value, updatedAt: new Date() })
+    .where(and(eq(people.id, id), isNull(people.name)))
+    .returning();
+  return row ?? null;
+}
+
 // While the installation has no owner, invite `email` as its owner (or make
 // that person the owner if they are already listed). Returns the row, or null
 // when an owner already exists.

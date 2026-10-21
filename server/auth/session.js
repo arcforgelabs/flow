@@ -1,5 +1,5 @@
 import { displayNameOf, googleWorkspaceOwner, primaryEmailOf, secondFactorVerified } from './clerk.js';
-import { findPersonByClerkId, findPersonByEmail, linkPerson, recordPendingPerson } from './people.js';
+import { fillPersonName, findPersonByClerkId, findPersonByEmail, linkPerson, recordPendingPerson } from './people.js';
 import { DEFAULT_OWNER_MFA_MAX_AGE_MINUTES, isPlainEmail } from './settings.js';
 
 // Checks the Clerk session on every person request, then maps the Clerk user
@@ -60,10 +60,29 @@ export function createPersonAuth({
   // owner requests costs one Clerk call. Failures are never cached.
   const clerkUsers = new Map();
 
+  // Clerk users already checked for a name in this run, so a person whose
+  // sign-in has no name costs one Clerk call, not one per request.
+  const nameChecked = new Set();
+
+  // The person, with their Clerk name filled in when Flow has none. Never
+  // stops a sign-in: a Clerk error keeps the person as they are.
+  async function withName(person, clerkUser = null) {
+    if (person.name?.trim() || nameChecked.has(person.clerkUserId)) return person;
+    if (nameChecked.size > 1000) nameChecked.clear();
+    nameChecked.add(person.clerkUserId);
+    try {
+      const name = displayNameOf(clerkUser ?? await cachedClerkUser(person.clerkUserId));
+      return (name && await fillPersonName(db, { id: person.id, name })) || person;
+    } catch (error) {
+      log.warn?.(`[auth] could not read the name of Flow person ${person.id}: ${error.message}`);
+      return person;
+    }
+  }
+
   // { person } or { denial }.
   async function personFor(clerkUserId) {
     const linked = await findPersonByClerkId(db, clerkUserId);
-    if (linked) return { person: linked };
+    if (linked) return { person: await withName(linked) };
 
     const clerkUser = await clerk.getUser(clerkUserId);
     const { email, verified } = primaryEmailOf(clerkUser);
@@ -76,7 +95,7 @@ export function createPersonAuth({
       const person = await linkPerson(db, { id: invited.id, clerkUserId });
       if (person) {
         log.info?.(`[auth] linked Clerk user ${clerkUserId} to Flow person ${person.id} (${person.role})`);
-        return { person };
+        return { person: await withName(person, clerkUser) };
       }
       const again = await findPersonByClerkId(db, clerkUserId);
       return again ? { person: again } : { denial: 'email_linked_elsewhere' };
