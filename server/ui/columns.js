@@ -1,8 +1,9 @@
 // A list's columns, as ClickUp's: drag a head's right edge to make the
 // column wider or narrower (never under its kind's minimum), drag a head
 // to move the column, and click or right-click a head for its menu (Move to
-// start, Move to end, Hide; + shows a hidden column again). Jobs, Invoices
-// and Reconcile build their tables here, so every list works the same.
+// start, Move to end, Hide; + shows a hidden column again). Jobs, Invoices,
+// Reconcile and the Price list build their tables here, so every list works
+// the same.
 //
 // The view a person keeps for a list (with their account, PUT
 // /api/me/views/:page) holds two keys from here:

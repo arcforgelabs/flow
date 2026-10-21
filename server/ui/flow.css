@@ -1152,6 +1152,7 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
   .fx-table.fx-table--sized { width: 100% !important; min-width: 0; table-layout: auto; }
   .fx-table--sized td { white-space: normal; }
   .fx-table--sized colgroup { display: none; }
+  .fx-table--sized td.fx-c-end { display: none; }
   .fx-table, .fx-table tbody, .fx-table tr, .fx-table td { display: block; width: 100%; }
   .fx-table tr { padding: 12px 14px; border-bottom: 1px solid var(--fx-line-soft); }
   .fx-table td { padding: 4px 0; border: 0; }
@@ -1212,7 +1213,6 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
 .fx-price__head { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 8px 16px; }
 .fx-price__head .fx-search { margin: 0 0 6px; width: 260px; }
 @media (max-width: 560px) { .fx-price__head .fx-search { width: 100%; } }
-.fx-price__scroll { overflow-x: auto; border: 1px solid var(--fx-line); background: var(--t-paper); }
 .fx-price__table th { position: sticky; top: 0; z-index: 1; }
 .fx-price__table td { padding-top: 9px; padding-bottom: 9px; }
 .fx-price__table td.fx-num, .fx-price__table th.fx-num { text-align: right; white-space: nowrap; }
