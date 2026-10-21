@@ -75,6 +75,13 @@ test('Invoices can show job dates, job facts and custom fields as columns', () =
   assert.deepEqual(invoiceColumnsView({ columns: ['client', 'shipped', field, 'field:nope', 'total'], widths: { [field]: 180 } }),
     { columns: ['client', 'shipped', field, 'total'], widths: { [field]: 180 } });
   assert.deepEqual(normaliseViews({ invoices: { columns: ['client', field] } }).invoices.columns, ['client', field]);
+  // A view saved by 2026.10.45 (its seven columns, moved and resized) loads
+  // as it was saved: same columns, same order, same widths, nothing added.
+  const saved = { columns: ['client', 'number', 'total', 'reference', 'date', 'status', 'linked'], widths: { client: 300, total: 140 } };
+  assert.deepEqual(invoiceColumnsView(saved), saved);
+  assert.deepEqual(normaliseViews({ invoices: saved }).invoices, saved);
+  // One saved with widths only still shows the same seven columns as before.
+  assert.deepEqual(invoiceColumnsView({ widths: { client: 300 } }), { columns: ['number', 'client', 'reference', 'date', 'total', 'status', 'linked'], widths: { client: 300 } });
   // Other lists do not take custom fields.
   assert.deepEqual(normaliseListView({ columns: ['code', field] }, PRICE_COLUMNS).columns, ['code']);
 });
