@@ -185,12 +185,14 @@ export function ruleReasons(rules, job, { customer = {}, now = new Date() } = {}
 // The notes of the enabled pending rules that match one draft, as problems:
 // they put the draft on Pending (sending.js). `job` is the draft's job with
 // `reference`, the draft's Reference. A pending rule never stops a draft.
+// `fields` names the fields the rule reads, so the invoice page marks the
+// one to fix (the Reference box goes red).
 export function rulePending(rules, job, { customer = {}, now = new Date() } = {}) {
   const context = { customer, now };
   return rules
     .filter((r) => r.enabled && r.trigger === 'job_ready' && r.action.kind === 'pending')
     .filter((r) => r.conditions.every((c) => matches(c, job, context)))
-    .map((r) => ({ code: 'rule', message: r.action.note, short: r.name.slice(0, 40), rule: r.id ?? null }));
+    .map((r) => ({ code: 'rule', message: r.action.note, short: r.name.slice(0, 40), rule: r.id ?? null, fields: [...new Set(r.conditions.map((c) => c.field))] }));
 }
 
 // The starter rules made from the earlier fixed settings.

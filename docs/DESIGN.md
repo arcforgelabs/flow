@@ -214,6 +214,7 @@ names its card in the Flow Design System.
 | `listHead(title, { start, end, actions, line, sticky })` | `server/ui/kit.js` | ListHead | The top of every list (Jobs Board and List, Invoices, Reconcile): title, a `views` slot for saved view tabs, then one toolbar (`start` left, `end` and `actions` right). Same place on every list and layout. |
 | `listFrame(main, content)`, `edgeFade(scroller, { target, edges })` | `server/ui/kit.js` | ListFrame | The window a list or board sits in under `listHead`: fills the page, scrolls inside itself both ways, sticky table head, a foot bar with the count and tools. `edgeFade`: a soft fade where content scrolls past an edge |
 | `notice` | `server/ui/kit.js` | Notice | A note on the page that stays until the cause is gone |
+| `fieldError(field, on)`, `.fx-input[aria-invalid="true"]` | `server/ui/kit.js`, `server/ui/flow.css` | FieldError | A field that fails a check glows red, like a required field, until the person types in it |
 | `toast` | `server/ui/kit.js` | Toast | A short result after an action |
 | `dialog({ title, body, confirm, tone })` | `server/ui/kit.js` | Dialog | A confirm step before an action that is hard to undo |
 | `holdButton(button, ms)` | `server/ui/kit.js` | HoldButton | A button that waits between presses (Xero, Seazona) and shows the time left |
