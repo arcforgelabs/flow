@@ -5,9 +5,12 @@ name: Mobile Baseline
 # the Mobile workflow uses. A person reviews the images in the pull request.
 # `budget: lower` only lowers numbers (after a fix); `budget: start` writes
 # the budget from this run (the first time, or when screens are added). It
-# never runs on main.
+# never runs on main. On a pull request, the label `mobile-baseline` runs it
+# too (start when the budget is empty, else lower); it takes the label off.
 
 on:
+  pull_request:
+    types: [labeled]
   workflow_dispatch:
     inputs:
       budget:
@@ -20,16 +23,20 @@ permissions:
   contents: read
 
 concurrency:
-  group: flow-mobile-baseline-${{ github.ref }}
+  group: flow-mobile-baseline-${{ github.head_ref || github.ref }}
 
 jobs:
   baseline:
     name: baseline
-    if: github.ref != 'refs/heads/main'
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main') ||
+      (github.event_name == 'pull_request' && github.event.label.name == 'mobile-baseline' &&
+       github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 40
     permissions:
       contents: write
+      pull-requests: write
     container:
       image: mcr.microsoft.com/playwright:v1.56.1-noble
       options: --ipc=host
@@ -51,6 +58,8 @@ jobs:
     steps:
       - name: Check out the branch
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.head_ref || github.ref_name }}
 
       - name: Set up Node
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -69,11 +78,15 @@ jobs:
       - name: Write the budget
         env:
           BUDGET: ${{ inputs.budget }}
-        run: npm run test:mobile:budget -- $([ "$BUDGET" = lower ] && echo --lower)
+        run: |
+          if [ -z "$BUDGET" ]; then
+            if [ "$(tr -d '[:space:]' < test/mobile/budget.json)" = '{}' ]; then BUDGET=start; else BUDGET=lower; fi
+          fi
+          npm run test:mobile:budget -- $([ "$BUDGET" = lower ] && echo --lower)
 
       - name: Commit to the branch
         env:
-          BRANCH: ${{ github.ref_name }}
+          BRANCH: ${{ github.head_ref || github.ref_name }}
         run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           git config user.name "github-actions[bot]"
@@ -82,3 +95,12 @@ jobs:
           if git diff --cached --quiet; then echo "Nothing changed."; exit 0; fi
           git commit -m "test(mobile): saved images and budget from Mobile Baseline"
           git push origin "HEAD:refs/heads/${BRANCH}"
+
+      - name: Take the label off
+        if: ${{ always() && github.event_name == 'pull_request' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: >-
+          curl -fsS -X DELETE -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json"
+          "https://api.github.com/repos/${GITHUB_REPOSITORY}/issues/${PR}/labels/mobile-baseline" || true

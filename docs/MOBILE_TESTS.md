@@ -70,9 +70,11 @@ The saved images and the budget are made in CI, in the same Playwright image
 the suite runs in:
 
 1. Push the pull request.
-2. Run **Mobile Baseline** (Actions) on its branch. `budget: lower` lowers
-   numbers after a fix; `budget: start` writes the budget from the run (the
-   first time, or after adding screens).
+2. Add the label `mobile-baseline` to the pull request, or run **Mobile
+   Baseline** (Actions) on its branch. `budget: lower` lowers numbers after a
+   fix; `budget: start` writes the budget from the run (the first time, or
+   after adding screens). The label starts the budget when it is empty and
+   lowers it otherwise.
 3. It commits `test/mobile/__screenshots__/` and `test/mobile/budget.json`
    to the branch. Check the changed images in the pull request.
 4. A commit made by a workflow does not start other workflows: run
