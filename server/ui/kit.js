@@ -148,6 +148,16 @@ export function notice(text, tone = 'info', title = null) {
     h('span', {}, text));
 }
 
+// A field that fails a check glows red, like a required field, until the
+// person types in it; the next check marks it again if it still fails.
+// `on` false clears it. Answers the field.
+export function fieldError(field, on = true) {
+  if (!on) { field.removeAttribute('aria-invalid'); return field; }
+  field.setAttribute('aria-invalid', 'true');
+  field.addEventListener('input', () => field.removeAttribute('aria-invalid'), { once: true });
+  return field;
+}
+
 export function toast(text, tone = 'info') {
   const region = document.getElementById('toasts');
   const item = h('div', { class: 'fx-toast', 'data-tone': tone, role: 'status' }, text);

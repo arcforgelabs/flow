@@ -23,7 +23,7 @@ test('Flow checks its own draft: lines, an amount, a price item on every line', 
   assert.deepEqual(draftProblems({ totalCents: 0 }, []).map((p) => p.code), ['no_lines']);
   assert.deepEqual(draftProblems({ totalCents: 0 }, [{ position: 1, priceItemId: 'x' }]).map((p) => p.code), ['no_amount']);
   assert.deepEqual(draftProblems({ totalCents: 100 }, [{ position: 1, priceItemId: 'x' }, { position: 2, priceItemId: null }]),
-    [{ code: 'line_no_item', message: 'Line 2 has no price item.', short: 'Line 2: no item' }]);
+    [{ code: 'line_no_item', message: 'Line 2 has no price item.', short: 'Line 2: no item', fields: ['line_item'], line: 2 }]);
   assert.deepEqual(draftProblems({ totalCents: 100 }, [{ position: 1, priceItemId: 'x' }]), []);
 });
 

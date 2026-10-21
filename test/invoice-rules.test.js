@@ -103,8 +103,8 @@ describe('one rule against one job', () => {
     const odd = job({ practitioner: 'Not Listed', reference: 'Not Listed - Ann - 13909' });
     assert.deepEqual(ruleReasons(rules, odd, { now: NOW }), []);
     assert.deepEqual(rulePending(rules, odd, { now: NOW }), [
-      { code: 'rule', message: 'Put the practitioner in the job.', short: 'Practitioner not known', rule: 'r-1' },
-      { code: 'rule', message: 'Put the practitioner in the job.', short: 'Number in Reference', rule: 'r-2' },
+      { code: 'rule', message: 'Put the practitioner in the job.', short: 'Practitioner not known', rule: 'r-1', fields: ['practitioner'] },
+      { code: 'rule', message: 'Put the practitioner in the job.', short: 'Number in Reference', rule: 'r-2', fields: ['reference'] },
     ]);
     assert.deepEqual(rulePending(rules, job({ practitioner: 'Dr Ann Lee', reference: 'Dr Ann Lee - Ben Ng' }), { now: NOW }), []);
     assert.deepEqual(rulePending([{ ...rules[0], enabled: false }], odd, { now: NOW }), []);
@@ -203,7 +203,7 @@ describe('rules a lab keeps', { skip: skipWithoutDatabase }, () => {
     assert.ok(obligation.invoiceId, 'a pending rule never stops the draft');
     let views = await invoiceViews(handle.db, lab.id);
     assert.deepEqual(views.problems.get(obligation.invoiceId), [
-      { code: 'rule', message: 'Put the practitioner in the job, then check the Reference.', short: 'Reference not known', rule: made.id },
+      { code: 'rule', message: 'Put the practitioner in the job, then check the Reference.', short: 'Reference not known', rule: made.id, fields: ['reference'] },
     ]);
     assert.equal(views.ready.includes(obligation.invoiceId), false);
     // Send is a gate: every check runs again at the press.
