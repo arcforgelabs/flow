@@ -60,7 +60,7 @@ export function listPager(h, { label = 'Pages', sizes = PAGE_SIZES, change }) {
             type: 'button', class: 'fx-pages__num', 'aria-label': `Page ${n}`,
             ...(n === at ? { 'aria-current': 'page' } : {}), onclick: () => { if (n !== at) go(n); },
           }, String(n)))),
-        step(at + 1, NEXT, 'Next page')) : null);
+        step(at + 1, NEXT, 'Next page')) : '');
   }
 
   return { element, draw };
