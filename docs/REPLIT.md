@@ -152,7 +152,16 @@ and Run call it with the tools of the build they made. It:
    (`drizzle.__drizzle_migrations`, and `drizzle.__drizzle_migrations_<id>`
    for each integration: each migration file's hash and its journal time).
    An integration production has not turned on has no migrations there, so
-   the workspace gets none of its tables either. Then it acts:
+   the workspace gets none of its tables either.
+
+   Production runs its release and migrates when it starts, so it has
+   applied every entry of each journal, except an entry whose journal time
+   is older than an entry before it (core `0013_line_mappings`) when it
+   applied the newer one first: drizzle never applies an older entry. When
+   production reports exactly that many fewer, those entries are skipped:
+   the rest are production's, and a workspace row for a skipped entry counts
+   neither way. A test keeps every new entry later than the ones before it.
+   Then it acts:
 
 | `state` | What it means | What it does |
 | --- | --- | --- |
