@@ -1065,7 +1065,7 @@ function xeroCard(invoice, ui, context, status, reload) {
 }
 
 // Send to Xero (POST /api/xero/invoices/push). The customer's send mode
-// (Settings, Invoice rules) decides what Xero gets: a draft that a person approves
+// (Settings, Rules) decides what Xero gets: a draft that a person approves
 // there, or an approved invoice that Xero emails to the customer.
 function sendToXero(invoice, ui, context) {
   const { h, flow, toast } = ui;

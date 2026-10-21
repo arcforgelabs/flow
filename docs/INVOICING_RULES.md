@@ -7,7 +7,7 @@ accounting system connected, Flow's own records are the only check: each job
 gets at most one invoice. The send mode is on the Xero integration page. This page
 describes the rules and the send modes. The code is in
 `server/core/invoicing-rules.js`. The settings are in Flow under Settings,
-Invoice rules, and at `/api/invoicing/settings`.
+Rules, and at `/api/invoicing/settings`.
 
 ## From job to customer
 
@@ -47,7 +47,7 @@ flowchart LR
 ## Reference
 
 The Reference is the text the customer reads on the invoice, next to its
-number. The lab writes it as a rule under Settings, Invoice rules, Reference
+number. The lab writes it as a rule under Settings, Rules, Reference
 (`referenceTemplate`), from tokens:
 
 | Token | Value |
@@ -87,7 +87,7 @@ once, for each organisation:
 | Rush charge share | Rush line share is not 20% | Wait for a person | `rushItemCode`, `rushPercent` (only when a code is set) |
 
 The earlier lab app held these checks in its code. In Flow they are rows the
-lab edits under Settings, Invoice rules, Rules. `GET /api/invoicing/jobs` lists the
+lab edits under Settings, Rules, Rules. `GET /api/invoicing/jobs` lists the
 rules each job without an invoice waits on (`waitingFor`).
 
 `staleDays` still sets the matcher's hold on an old job that has no

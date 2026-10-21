@@ -250,7 +250,7 @@ const VIEWS = {
   jobs: { label: 'Jobs', icon: 'jobs', group: 'Work', render: (main) => renderJobs(main, ui()) },
   invoices: { label: 'Invoices', icon: 'invoices', group: 'Work', render: (main, id) => (id ? renderInvoice(main, ui(), id) : renderInvoiceList(main, ui())) },
   reconcile: { label: 'Reconcile', icon: 'reconcile', group: 'Work', render: (main, id) => renderReconcile(main, ui(), id) },
-  'invoicing-settings': { label: 'Invoice rules', icon: 'invoices', group: 'Settings', render: (main) => renderInvoicingSettings(main, ui()) },
+  'invoicing-settings': { label: 'Rules', icon: 'rules', group: 'Settings', render: (main) => renderInvoicingSettings(main, ui()) },
   'price-list': { label: 'Price list', icon: 'tag', group: 'Settings', render: (main, id) => (id === 'reconcile' ? renderPriceReconcile(main, ui()) : renderPriceList(main, ui())) },
   'custom-fields': { label: 'Custom fields', icon: 'fields', group: 'Settings', render: (main) => renderCustomFields(main, ui()) },
   people: { label: 'People', icon: 'people', group: 'Settings', ownerOnly: true, render: renderPeople },
@@ -267,6 +267,7 @@ const VIEWS = {
 const ICON_PATHS = {
   jobs: '<rect x="3" y="4" width="5" height="16" rx="1"/><rect x="10" y="4" width="5" height="11" rx="1"/><rect x="17" y="4" width="4" height="14" rx="1"/>',
   invoices: '<path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 13h7M9 17h5"/>',
+  rules: '<path d="M3 6l2 2 4-4M3 16l2 2 4-4M13 6h8M13 12h8M13 18h8"/>',
   reconcile: '<path d="M4 8h13M13 4l4 4-4 4M20 16H7M11 12l-4 4 4 4"/>',
   people: '<circle cx="9" cy="8" r="3"/><path d="M3 20c0-3.5 2.7-6 6-6s6 2.5 6 6"/><path d="M16 5a3 3 0 010 6M21 20c0-3-1.6-5-4-5.7"/>',
   tag: '<path d="M3 12V4h8l10 10-8 8z"/><circle cx="7.5" cy="8.5" r="1.5"/>',

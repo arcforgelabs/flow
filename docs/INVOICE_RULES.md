@@ -2,7 +2,7 @@
 
 An invoice rule is a check that a lab builds on a job before Flow drafts its
 invoice. Each rule is When, If and Then. A lab owner or admin builds it from
-menus under Settings, Invoice rules, Rules. No lab's checks are fixed in Flow's
+menus under Settings, Rules, Rules. No lab's checks are fixed in Flow's
 code. The rules read only Flow's own records, so they work with or without
 an accounting integration. The code is in `server/core/invoice-rules.js`.
 
