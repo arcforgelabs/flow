@@ -216,8 +216,8 @@ names its card in the Flow Design System.
 | `dialog({ title, body, confirm, tone })` | `server/ui/kit.js` | Dialog | A confirm step before an action that is hard to undo |
 | `holdButton(button, ms)` | `server/ui/kit.js` | HoldButton | A button that waits between presses (Xero, Seazona) and shows the time left |
 | `settingRow({ label, hint, control })`, `sectionTitle`, `.fx-setting` | `server/ui/kit.js` | SettingRow | One setting row: short name, one hint line, the control at the right |
-| `tileCard({ href, mark, title, status, blurb, action })`, `.fx-int-grid` | `server/ui/app.js` (`ui().tileCard`) |  | A grid of cards that each open a page: Integrations, Rules. `mark` is a logo node or an icon name; leave out `blurb` unless it helps |
-| `crumbs([href, label]…, here)` | `server/ui/app.js` (`ui().crumbs`) |  | The trail above a page one level down (Rules › Invoice rules, Integrations › Xero) |
+| `tileCard({ href, mark, title, status, blurb, meta, action, row })`, `tileSection(title, cards, { href, more })` | `server/ui/kit.js` | Tiles | Cards that open a page. `row: true` with `tileSection`: Claude's Customize layout (Rules). Without `row`: the large card (Integrations) |
+| `crumbs([href, label]…, here)` | `server/ui/kit.js` | Crumbs | The trail above a page one level down (Rules › Invoices, Integrations › Xero) |
 | `rowMenu(label, items)` | `server/ui/kit.js` | RowMenu | The ⋯ menu on a row |
 | `.fx-btn` and its modifiers | `server/ui/flow.css` | Button | Every button |
 | `named`, `startTips` | `server/ui/tip.js` | Tip | An icon-only control's name, shown on hover and focus |

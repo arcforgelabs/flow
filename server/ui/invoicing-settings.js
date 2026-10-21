@@ -1,5 +1,6 @@
-// Settings, Rules (/invoicing-settings): a card for each part, like the
-// Integrations page, and one page for each (/invoicing-settings/<key>).
+// Settings, Rules (/invoicing-settings): a section of cards for each part,
+// like Claude's Customize page, and one page for each
+// (/invoicing-settings/<key>).
 // Drafts holds payment terms and the Reference; Price codes the lines with no
 // price item (line-mappings.js); Invoices the checks a ready job passes
 // before Flow drafts its invoice (invoice-rules.js, docs/INVOICE_RULES.md).
@@ -9,7 +10,7 @@
 // or admin changes them. The full rules are in docs/INVOICING_RULES.md.
 // app.js passes in its shared pieces as `ui`.
 
-import { rulesSection } from '/assets/ui/invoice-rules.js';
+import { ruleSummary, rulesSection } from '/assets/ui/invoice-rules.js';
 import { lineMappingSection } from '/assets/ui/line-mappings.js';
 
 const DOCS = 'https://github.com/arcforgelabs/flow/blob/main/docs/INVOICING_RULES.md';
@@ -19,43 +20,71 @@ const SEND_MODES = [
   { value: 'approve_and_email', label: 'Approved and emailed' },
 ];
 
-const onCount = (list) => ({ label: `${list.filter((x) => x.enabled).length} on`, tone: list.some((x) => x.enabled) ? 'success' : 'mute' });
-
-// Each card: its page, its mark, and its state once the data is in. No
-// blurb: the name and the state say enough.
+// The parts of Rules, each on its own page (/invoicing-settings/<key>).
 const PARTS = [
-  { key: 'drafts', title: 'Drafts', mark: 'draft', mount: (ui) => draftsSection(ui) },
-  { key: 'price-codes', title: 'Price codes', mark: 'tag', mount: (ui) => lineMappingSection(ui),
-    summary: async (flow) => {
-      const { labels } = await flow('/api/invoicing/line-labels');
-      const waiting = labels.filter((l) => l.unmapped > 0).length;
-      return waiting ? { status: { label: `${waiting} wait`, tone: 'warn' }, action: 'Fix' } : { status: { label: 'All mapped', tone: 'success' } };
-    } },
-  { key: 'invoices', title: 'Invoices', mark: 'rules', mount: (ui) => rulesSection(ui, 'Invoices'),
-    summary: async (flow) => ({ status: onCount((await flow('/api/invoicing/rules')).rules) }) },
+  { key: 'invoices', title: 'Invoices', mount: (ui) => rulesSection(ui, 'Invoices') },
+  { key: 'drafts', title: 'Drafts', mount: (ui) => draftsSection(ui) },
+  { key: 'price-codes', title: 'Price codes', mount: (ui) => lineMappingSection(ui) },
 ];
 
+// What a rule does, as its card's mark and meta line.
+const KIND = {
+  pending: { mark: 'flag', label: 'Pending' },
+  wait: { mark: 'clock', label: 'Waits' },
+  skip: { mark: 'ban', label: 'Never drafted' },
+};
+const SHOWN = 6;
+
 export function renderInvoicingSettings(main, ui, id) {
-  const { h, flow, notice, pageHeader, tileCard, crumbs } = ui;
+  const { h, flow, notice, pageHeader, tileCard, tileSection, crumbs } = ui;
   if (id) {
     const part = PARTS.find((p) => p.key === id);
     main.append(crumbs(['/invoicing-settings', 'Rules'], part?.title ?? 'Not found'),
       part ? h('div', { class: 'fx-card', style: { padding: '8px 20px 16px' } }, part.mount(ui)) : notice('No such part of Rules.', 'danger'));
     return;
   }
-  const grid = h('div', { class: 'fx-int-grid' });
-  main.append(pageHeader('Rules'), grid);
-  // Each card shows at once and fills in its state when its data comes back.
-  for (const part of PARTS) {
-    const href = `/invoicing-settings/${part.key}`;
-    const slot = tileCard({ href, mark: part.mark, title: part.title });
-    grid.append(slot);
-    if (part.summary) {
-      part.summary(flow)
-        .then((more) => slot.replaceWith(tileCard({ href, mark: part.mark, title: part.title, ...more })))
-        .catch(() => {});
+  // The landing is Claude's Customize page: a section for each part, two
+  // columns of cards, and "Show all" to the part's own page.
+  const host = h('div', { style: { display: 'grid', gap: '20px' } }, h('div', { class: 'fx-skeleton' }));
+  main.append(pageHeader('Rules'), host);
+  const page = (key) => `/invoicing-settings/${key}`;
+  (async () => {
+    let settings;
+    let labels;
+    let rules;
+    let meta;
+    try {
+      [{ settings }, { labels }, { rules }, meta] = await Promise.all([
+        flow('/api/invoicing/settings'), flow('/api/invoicing/line-labels'), flow('/api/invoicing/rules'), flow('/api/invoicing/rule-fields')]);
+    } catch (error) {
+      host.replaceChildren(notice(error.message, 'danger'));
+      return;
     }
-  }
+    const ruleCard = (rule) => {
+      const kind = KIND[rule.action.kind] ?? { mark: 'list-checks', label: rule.action.kind };
+      return tileCard({
+        row: true, href: page('invoices'), mark: kind.mark, title: rule.name,
+        blurb: ruleSummary(rule, meta).split(' · ')[0],
+        meta: `${kind.label} · ${rule.enabled ? 'On' : 'Off'}`,
+      });
+    };
+    const waiting = labels.filter((l) => l.unmapped > 0).length;
+    host.replaceChildren(
+      tileSection('Invoices', rules.length ? rules.slice(0, SHOWN).map(ruleCard) : [h('p', { class: 'fx-dim' }, 'No rules yet.')],
+        { href: page('invoices'), more: rules.length > SHOWN ? `Show all ${rules.length}` : 'Show all' }),
+      tileSection('Drafts', [
+        tileCard({ row: true, href: page('drafts'), mark: 'calendar-clock', title: 'Payment terms', blurb: `Due ${settings.paymentTermsDays} days after the invoice date.` }),
+        tileCard({ row: true, href: page('drafts'), mark: 'text-cursor-input', title: 'Reference', blurb: settings.referenceTemplate || '{practitioner} - {patient}' }),
+      ], { href: page('drafts') }),
+      tileSection('Price codes', [
+        tileCard({
+          row: true, href: page('price-codes'), mark: 'tag', title: 'Line labels',
+          blurb: waiting ? `${waiting} with no price item.` : 'Every line has a price item.',
+          status: waiting ? { label: `${waiting} wait`, tone: 'warn' } : { label: 'All mapped', tone: 'success' },
+        }),
+      ], { href: page('price-codes') }),
+    );
+  })();
 }
 
 // Payment terms and the Reference template.

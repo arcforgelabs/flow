@@ -1,6 +1,6 @@
 // The shared pieces every Flow page builds with: elements (h), the page
-// header, notes, toasts, dialogs, setting rows, the ⋯ row menu and the button
-// that waits between presses. app.js hands them to each view module in ui(),
+// header, notes, toasts, dialogs, setting rows, the ⋯ row menu, the button
+// that waits between presses, cards that open a page, and the crumbs trail. app.js hands them to each view module in ui(),
 // and the design system's cards (scripts/design-system/) render these same
 // functions, so a card is the real thing. Reuse one or give it an option;
 // never copy it into a page (AGENTS.md, "UI: reuse first").
@@ -143,4 +143,56 @@ export function rowMenu(label, items) {
     panel.style.left = `${Math.round(Math.max(8, Math.min(at.right - panel.offsetWidth, innerWidth - panel.offsetWidth - 8)))}px`;
   });
   return [button, panel];
+}
+
+// Where a link in a shared piece opens: app.js passes its own `go`, so a click
+// opens the page in place (a new tab still works). Without it, as in the
+// design system, a link is a plain link.
+let openPath = null;
+export function linksOpenWith(go) { openPath = go; }
+function inPlace(event) {
+  if (!openPath || event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return;
+  event.preventDefault();
+  openPath(event.currentTarget.getAttribute('href'));
+}
+
+// A card that opens a page. Large (Integrations): its mark (a logo node, or a
+// Lucide icon name), the name, a status pill, two lines at most (only when
+// they help), and the action. `row` is the smaller card of a tileSection,
+// like Claude's Customize page: the mark at the left, the name, two lines, a
+// dim `meta` line, and the status or an arrow at the right.
+export function tileCard({ href, mark, title, status, blurb, meta, action = 'Manage', row = false }) {
+  const logo = typeof mark === 'string' ? h('span', { class: 'fx-logo fx-logo--icon', 'aria-hidden': 'true' }, lucide(h, mark)) : mark;
+  const pill = status ? h('span', { class: 'fx-status', 'data-tone': status.tone ?? 'mute' }, status.label) : null;
+  if (row) {
+    return h('a', { class: 'fx-tile', href, onclick: inPlace },
+      logo,
+      h('div', { class: 'fx-tile__body' },
+        h('h3', {}, title),
+        blurb ? h('p', { class: 'fx-tile__blurb' }, blurb) : null,
+        meta ? h('span', { class: 'fx-tile__meta' }, meta) : null),
+      pill ?? h('span', { class: 'fx-tile__go' }, lucide(h, 'chevron-right')));
+  }
+  return h('a', { class: `fx-int-card${blurb ? '' : ' fx-int-card--bare'}`, href, onclick: inPlace },
+    h('header', { class: 'fx-int-card__head' }, logo, h('h3', {}, title), pill),
+    blurb ? h('p', { class: 'fx-int-card__blurb' }, blurb) : null,
+    h('span', { class: 'fx-int-card__btn' }, action));
+}
+
+// A titled group of row cards in two columns, with "Show all" at the right
+// when `href` is given (Claude's Customize page).
+export function tileSection(title, cards, { href, more = 'Show all' } = {}) {
+  return h('section', { class: 'fx-tiles' },
+    h('header', { class: 'fx-tiles__head' },
+      h('h2', {}, title),
+      href ? h('a', { class: 'fx-tiles__more', href, onclick: inPlace }, more, lucide(h, 'chevron-right')) : null),
+    h('div', { class: 'fx-tiles__grid' }, cards));
+}
+
+// The trail above a page one level down: crumbs(['/integrations', 'Integrations'], 'Xero').
+export function crumbs(...trail) {
+  const here = trail.pop();
+  return h('nav', { class: 'fx-crumbs', 'aria-label': 'Breadcrumb' },
+    ...trail.flatMap(([href, label]) => [h('a', { href, onclick: inPlace }, label), h('span', { 'aria-hidden': 'true' }, '›')]),
+    h('span', {}, here));
 }

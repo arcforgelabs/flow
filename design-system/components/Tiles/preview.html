@@ -1,0 +1,15 @@
+<!-- @dsCard group="Navigation" height=520 -->
+<div id="root" class="fds" style="display:grid;gap:20px"></div>
+<script>
+const { h, tileCard, tileSection } = window.FlowDesignSystem;
+document.getElementById('root').append(
+  tileSection('Invoices', [
+    tileCard({ row: true, href: '#', mark: 'flag', title: 'Practitioner not known', blurb: 'Practitioner contains not listed', meta: 'Pending · On' }),
+    tileCard({ row: true, href: '#', mark: 'clock', title: 'Old job', blurb: 'Job age (days) is more than 90', meta: 'Waits · On' }),
+  ], { href: '#', more: 'Show all 7' }),
+  tileSection('Price codes', [
+    tileCard({ row: true, href: '#', mark: 'tag', title: 'Line labels', blurb: '2 with no price item.', status: { label: '2 wait', tone: 'warn' } }),
+  ]),
+  h('div', { class: 'fx-int-grid' },
+    tileCard({ href: '#', mark: 'plug', title: 'Accounting', blurb: 'Large card, as on Integrations.', status: { label: 'Connected', tone: 'success' } })));
+</script>
