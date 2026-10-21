@@ -1,6 +1,6 @@
 # Columns
 
-The table under every list (Jobs, Invoices, Reconcile), as ClickUp's: drag a head's right edge to resize the column, drag a head to move it, click or right-click a head for its menu.
+The table under every list (Jobs, Invoices, Reconcile, Price list), as ClickUp's: drag a head's right edge to resize the column, drag a head to move it, click or right-click a head for its menu.
 
 - `columnTable(h, { order, widths, change, hidden, extra })` once per page; `table({ columns, rows, lead })` per draw.
 - A column is `{ id, label, kind, cell(row) }`. Its kind sets its start width and its minimum (`COLUMN_WIDTH`, `COLUMN_MIN` in `job-view.js`).

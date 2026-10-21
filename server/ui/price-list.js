@@ -7,6 +7,8 @@
 // records need a person and opens the work. Everyone can read it; an owner or
 // admin changes it. The caller passes in app.js's shared pieces as `ui`.
 import { alertStrip } from '/assets/ui/alerts.js';
+import { columnTable, rowCells, viewSaver } from '/assets/ui/columns.js';
+import { normaliseListView, PRICE_COLUMNS } from '/assets/ui/job-view.js';
 import { reconcileRows } from '/assets/ui/price-match.js';
 
 const DOCS = 'https://github.com/arcforgelabs/flow/blob/main/docs/PRICE_LIST.md';
@@ -15,6 +17,15 @@ const LINE_PRICES = [
   { value: 'work', label: 'Work system amount' },
   { value: 'list', label: 'Price list' },
 ];
+
+// The list's columns (columns.js): each keeps its own width, saved with the
+// person's account; + shows a hidden one again.
+const COLUMN_DEFS = {
+  code: { kind: 'number', className: 'fx-price__code', cell: (item) => item.code },
+  name: { kind: 'client', cell: (item) => item.name },
+  price: { kind: 'total', num: true, cell: (item) => money(item.unitAmountCents) },
+  tax: { kind: 'case', className: 'fx-dim', cell: (item) => TAX_LABELS[item.taxCode] ?? item.taxCode },
+};
 
 const money = (cents) => (cents === null || cents === undefined ? '' : `$${(cents / 100).toFixed(2)}`);
 const toCents = (text) => {
@@ -26,6 +37,18 @@ export async function renderPriceList(main, ui) {
   const { h, flow, toast, notice, dialog, pageHeader, me } = ui;
   const disabled = !['owner', 'admin'].includes(me?.person.role);
   const host = h('div', { class: 'fx-price' }, h('div', { class: 'fx-skeleton' }));
+  let view = normaliseListView(me?.views?.['price-list'], PRICE_COLUMNS);
+  const saveView = viewSaver(ui, 'price-list');
+  const heads = columnTable(h, {
+    order: () => view.columns,
+    widths: () => view.widths,
+    change: (patch) => {
+      view = normaliseListView({ ...view, ...patch }, PRICE_COLUMNS);
+      saveView(view);
+      draw();
+    },
+    hidden: () => Object.keys(PRICE_COLUMNS).filter((id) => !view.columns.includes(id)).map((id) => ({ id, label: PRICE_COLUMNS[id] })),
+  });
   const addButton = h('button', { class: 'fx-btn fx-btn--primary', type: 'button', disabled }, 'Add code');
   const reconcileButton = h('button', { class: 'fx-btn fx-btn--ghost', type: 'button', hidden: true, onclick: () => ui.go('/price-list/reconcile') }, 'Reconcile');
   const alerts = alertStrip(ui, 'price-list');
@@ -160,15 +183,12 @@ export async function renderPriceList(main, ui) {
     const tabs = h('div', { class: 'fx-tabs', role: 'tablist' }, [['active', 'Active', live.length], ['archived', 'Archived', archived.length]].map(([id, label, count]) => h('button', {
       type: 'button', role: 'tab', 'aria-selected': String(tab === id), onclick: () => { tab = id; draw(); },
     }, label, h('span', { class: 'fx-tabs__count' }, String(count)))));
+    const columns = view.columns.map((id) => ({ id, label: PRICE_COLUMNS[id], ...COLUMN_DEFS[id] }));
     const itemRow = (item) => h('tr', { onclick: () => edit(item), tabindex: '0', onkeydown: (event) => { if (event.key === 'Enter') edit(item); } },
-      h('td', { class: 'fx-price__code' }, item.code),
-      h('td', {}, item.name),
-      h('td', { class: 'fx-num' }, money(item.unitAmountCents)),
-      h('td', { class: 'fx-dim' }, TAX_LABELS[item.taxCode] ?? item.taxCode));
+      rowCells(h, columns, item),
+      h('td', { class: 'fx-c-end' }));
     const table = shown.length
-      ? h('div', { class: 'fx-price__scroll' }, h('table', { class: 'fx-table fx-table--rows fx-price__table' },
-        h('thead', {}, h('tr', {}, h('th', {}, 'Code'), h('th', {}, 'Name'), h('th', { class: 'fx-num' }, 'Price'), h('th', {}, 'Tax'))),
-        h('tbody', {}, shown.map(itemRow))))
+      ? h('div', { class: 'fx-panel' }, heads.table({ className: 'fx-table--rows fx-price__table', columns, rows: h('tbody', {}, shown.map(itemRow)) }))
       : h('p', { class: 'fx-empty' }, words ? 'No code matches.' : tab === 'archived' ? 'No archived codes.' : 'No codes yet. Add the first one.');
     const sections = [
       disabled ? notice('Only an owner or admin can change these.', 'info') : null,

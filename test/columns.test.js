@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
-  cleanColumnIds, cleanWidths, COLUMN_MIN, endWidth, INVOICE_COLUMNS, LEAD_WIDTH, MAX_WIDTH, moveColumn, normaliseJobsView, normaliseListView, RECONCILE_COLUMNS, TAIL_WIDTH, tableWidth, widthOf,
+  cleanColumnIds, cleanWidths, COLUMN_MIN, endWidth, INVOICE_COLUMNS, LEAD_WIDTH, MAX_WIDTH, moveColumn, normaliseJobsView, normaliseListView, PRICE_COLUMNS, RECONCILE_COLUMNS, TAIL_WIDTH, tableWidth, widthOf,
 } from '../server/ui/job-view.js';
 import { normaliseViews } from '../server/auth/people.js';
 
@@ -57,4 +57,7 @@ test('the Jobs view keeps column widths; Invoices and Reconcile keep columns and
     reconcile: { columns: ['date', 'kind'], widths: {} },
   });
   assert.ok(Object.keys(RECONCILE_COLUMNS).includes('possible'));
+  // The Price list keeps its columns and widths the same way.
+  assert.deepEqual(normaliseViews({ 'price-list': { columns: ['name', 'code', 'nope'], widths: { name: 320 } } })['price-list'], { columns: ['name', 'code'], widths: { name: 320 } });
+  assert.deepEqual(normaliseListView(null, PRICE_COLUMNS).columns, ['code', 'name', 'price', 'tax']);
 });
