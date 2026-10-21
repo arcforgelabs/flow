@@ -30,7 +30,7 @@ const LAYOUT_KEY = 'flow_jobs_layout';
 const FOLDED_KEY = 'flow_jobs_folded';
 // The job panel's sidecar: the tab last open, or closed.
 const SIDE_KEY = 'flow_job_side';
-const SIDE_TABS = ['activity', 'review', 'closed'];
+const SIDE_TABS = ['activity', 'fix', 'closed'];
 const SYSTEM_NAME = { seazona: 'Seazona', xero: 'Xero' };
 // A job's events (server/core/ledger.js), in plain words.
 const ACTIVITY = {
@@ -1104,7 +1104,7 @@ export async function renderJobs(main, ui) {
     if (!o) return [];
     if (o.invoiceId) {
       const label = o.invoiceStatus === 'draft' ? 'Open draft invoice' : `Open invoice ${o.invoiceNumber ?? ''}`.trim();
-      // A changed job is accepted in the panel's Review sidecar.
+      // A changed job is accepted in the panel's sidecar (Fix tab).
       return [h('a', { class: 'fx-btn', href: `/invoices/${o.invoiceId}`, onclick: (event) => { close(); ui.go(event); } }, label)];
     }
     // Flow's own stage: a person marks a job ready to invoice, or an
@@ -1149,10 +1149,10 @@ export async function renderJobs(main, ui) {
   // The job's page: a large panel over the board, like a task page. A
   // breadcrumb, the client's name, the stage, the job's fields, what to fix
   // and its lines. At the side (below on a phone), the sidecar: Activity,
-  // and Review when the job changed after its draft (what changed, and
-  // Accept change). The sidecar closes, and the main area takes its room.
-  // Esc, the X or a click outside closes the panel. `atFix` scrolls to what
-  // to fix, and opens Review when there is one. The job's custom fields can
+  // and Fix when the job has a problem (for a changed job: what changed,
+  // and Accept change). The sidecar closes, and the main area takes its room.
+  // Esc, the X or a click outside closes the panel. `atFix` opens the
+  // Fix tab on the first problem (or scrolls to the invoice choice). The job's custom fields can
   // be changed here (in Flow only), and its stage moved (a hand-off to the
   // work system).
   function openJob(job, { atFix = false } = {}) {
@@ -1160,7 +1160,7 @@ export async function renderJobs(main, ui) {
     const stage = invoiceStage(o);
     const found = problemsOf(job);
     const choose = found.find((f) => f.go === 'choose') ?? null;
-    // The job changed after its draft: the sidecar has a Review tab.
+    // The job changed after its draft: its Fix shows the change.
     const reviewable = Boolean(o?.invoiceId) && found.some((f) => f.go === 'review');
     const system = SYSTEM_NAME[job.sourceSystem] ?? job.sourceSystem;
     const status = job.status ?? NO_STATUS;
@@ -1176,14 +1176,24 @@ export async function renderJobs(main, ui) {
       : choose ? h('span', { class: 'fx-task__none' }, svg(WARN_ICON), 'Needs invoice')
         : stage ? INVOICE_STAGES[stage] : o ? 'Not ready to invoice' : 'No invoice yet';
     const rest = found.filter((f) => f.go !== 'choose');
-    // One short line a fix: its label, what is wrong, and its link. What to
-    // do is the link's tip.
-    const fixBox = rest.length ? h('section', { class: 'fx-task__fix', 'aria-label': 'Fix' },
-      h('h3', {}, 'Fix'),
-      rest.map((f) => {
-        const go = fixLink(f.go, f.todo);
-        return h('div', { class: 'fx-task__fixrow', title: go ? null : f.todo }, h('strong', {}, f.label), h('span', {}, f.text), go);
-      })) : null;
+    // What to fix: one chip a problem, beside the stage, so the panel keeps
+    // one layout with or without a fix. A chip is a toggle: a click opens
+    // the sidecar's Fix tab on that problem and shows the chip pressed; a
+    // second click closes the sidecar. In the tab the problem is fixed: the
+    // change and Accept change for a changed job, else what is wrong, what
+    // to do and one button.
+    const hasFix = rest.length > 0;
+    let picked = null;
+    const fixChips = rest.map((f, i) => h('button', {
+      class: 'fx-task__fixchip', type: 'button', 'aria-pressed': 'false', onclick: () => toggleFix(i),
+    }, lucide(h, 'triangle-alert'), f.label));
+    function toggleFix(i) {
+      if (picked === i && side.tab() === 'fix') { side.close(); return; }
+      picked = i;
+      side.open('fix');
+      // On a phone the sidecar is below the job: bring it into view.
+      if (matchMedia('(max-width: 720px)').matches) side.element.scrollIntoView({ block: 'start' });
+    }
     // No invoice, and the match is unclear: one line and two buttons. The
     // possible matches are compared on the Reconcile page, not here.
     const chooseBox = choose ? h('section', { class: 'fx-task__choose', 'aria-label': 'Invoice' },
@@ -1212,25 +1222,22 @@ export async function renderJobs(main, ui) {
     // Each fix's link: Flow's own invoice, the job in the work system, or
     // the Flow page where the fix is made (job-board.js GO).
     function fixLink(go, tip = null) {
-      const inFlow = (href, text) => h('a', { class: 'fx-task__link', href, title: tip, onclick: (event) => { close(); ui.go(event); } }, text);
-      if (go === 'review' && reviewable) {
-        return h('button', { class: 'fx-task__link fx-task__linkbtn', type: 'button', title: tip, onclick: () => side.open('review') }, 'Review');
-      }
-      if (go === 'review' && o?.invoiceId) return inFlow(`/invoices/${o.invoiceId}`, 'Open invoice');
-      if (go === 'invoice' && o?.invoiceId) return inFlow(`/invoices/${o.invoiceId}`, 'Open invoice');
-      if (go === 'work' && job.link?.url) {
-        return h('a', { class: 'fx-task__link', href: job.link.url, target: '_blank', rel: 'noopener' }, job.link.exact ? `Open case in ${system} ↗` : `Open ${system} ↗`);
-      }
-      if (go === 'price-list') return inFlow('/price-list', 'Open price list');
-      if (go === 'invoicing-settings') return inFlow('/invoicing-settings', 'Open invoice rules');
-      if (go === 'integrations' && ui.me?.person?.role === 'owner') return inFlow('/integrations', 'Open integrations');
+      const button = (icon, text, attrs) => h(attrs.href ? 'a' : 'button', {
+        class: 'fx-btn fx-btn--sm fx-btn--primary fx-task__fixgo', title: tip, ...(attrs.href ? {} : { type: 'button' }), ...attrs,
+      }, lucide(h, icon), text);
+      const inFlow = (icon, href, text) => button(icon, text, { href, onclick: (event) => { close(); ui.go(event); } });
+      if ((go === 'review' || go === 'invoice') && o?.invoiceId) return inFlow('file-text', `/invoices/${o.invoiceId}`, 'Invoice');
+      if (go === 'work' && job.link?.url) return button('external-link', system, { href: job.link.url, target: '_blank', rel: 'noopener' });
+      if (go === 'price-list') return inFlow('tag', '/price-list', 'Price list');
+      if (go === 'invoicing-settings') return inFlow('list-checks', '/invoicing-settings', 'Rules');
+      if (go === 'integrations' && ui.me?.person?.role === 'owner') return inFlow('plug', '/integrations', 'Integrations');
       return null;
     }
     const lines = job.lines ?? [];
     const activity = h('ol', {}, h('li', { class: 'fx-dim' }, 'Loading…'));
     const activityBody = h('div', { class: 'fx-task__activity' },
       o ? activity : h('p', { class: 'fx-dim' }, `Flow has no invoice record for this job yet. It makes one when ${system} reports the job complete.`));
-    // Review: the job's change as the invoice page shows it (job-change.js),
+    // The change: as the invoice page shows it (job-change.js),
     // read from the invoice when the sidecar first needs it.
     const reviewBody = h('div', { class: 'fx-task__review' }, h('p', { class: 'fx-dim' }, 'Loading…'));
     let reviewRead = false;
@@ -1254,19 +1261,32 @@ export async function renderJobs(main, ui) {
       close();
       if (fresh) openJob(fresh);
     }
+    // The Fix tab: the picked problem (the first when the tab itself is
+    // clicked).
+    function fixBody() {
+      const f = rest[picked ?? 0];
+      if (f.go === 'review' && reviewable) {
+        readReview();
+        return h('section', { class: 'fx-task__fixitem', 'aria-label': f.label }, reviewBody);
+      }
+      return h('section', { class: 'fx-task__fixitem', 'aria-label': f.label },
+        h('strong', {}, f.label), h('p', {}, f.text), f.todo ? h('p', { class: 'fx-dim' }, f.todo) : null, fixLink(f.go));
+    }
     const sideButton = h('button', {
       class: 'fx-btn fx-btn--ghost fx-btn--icon', type: 'button', 'aria-label': 'Side panel', title: 'Side panel', 'aria-pressed': 'false',
-      onclick: () => (side.isOpen() ? side.close() : side.open(readSide() === 'review' && reviewable ? 'review' : 'activity')),
+      onclick: () => (side.isOpen() ? side.close() : side.open(readSide() === 'fix' && hasFix ? 'fix' : 'activity')),
     }, lucide(h, 'panel-right'));
     const side = sidecar(h, {
       label: 'Job side panel',
       tabs: [
         { id: 'activity', label: 'Activity', icon: 'history', render: () => activityBody },
-        reviewable ? { id: 'review', label: 'Review', icon: 'git-compare', mark: true, render: () => { readReview(); return reviewBody; } } : null,
+        hasFix ? { id: 'fix', label: 'Fix', icon: 'triangle-alert', mark: true, render: () => { picked ??= 0; return fixBody(); } } : null,
       ].filter(Boolean),
       onChange: (tab) => {
         saveSide(tab);
         sideButton.setAttribute('aria-pressed', String(Boolean(tab)));
+        if (tab !== 'fix') picked = null;
+        fixChips.forEach((chip, i) => chip.setAttribute('aria-pressed', String(tab === 'fix' && picked === i)));
       },
     });
     side.element.classList.add('fx-task__side');
@@ -1278,7 +1298,7 @@ export async function renderJobs(main, ui) {
           h('div', { class: 'fx-task__tools' }, sideButton,
             h('button', { class: 'fx-btn fx-btn--ghost fx-btn--icon', type: 'button', 'aria-label': 'Close', title: 'Close', onclick: close }, '✕'))),
         h('h2', { class: 'fx-task__title' }, clientOf(job)),
-        h('div', { class: 'fx-task__stage' }, stagePill(status)),
+        h('div', { class: 'fx-task__stage' }, stagePill(status), fixChips),
         h('dl', { class: 'fx-task__fields' },
           field('Practitioner', job.practitioner),
           field(job.dueOn ? 'Due' : 'Ordered', job.dueOn ? fullDate(job.dueOn) : job.orderedOn ? fullDate(job.orderedOn) : null, late ? { class: 'fx-task__late' } : {}),
@@ -1293,7 +1313,6 @@ export async function renderJobs(main, ui) {
           // link to an accounting system (its Linked card).
           field('Invoice', invoiceText)),
         chooseBox,
-        fixBox,
         state.fields.length ? h('section', { class: 'fx-task__custom', 'aria-label': 'Custom fields' },
           h('h3', {}, 'Custom fields'),
           h('dl', { class: 'fx-task__fields' }, state.fields.map((f) => h('div', {}, h('dt', {}, f.name), h('dd', {}, fieldControl(job, f)))))) : null,
@@ -1319,9 +1338,9 @@ export async function renderJobs(main, ui) {
     document.body.append(element);
     element.showModal();
     const last = readSide();
-    if (atFix && reviewable) side.open('review');
-    else if (last !== 'closed') side.open(last === 'review' && reviewable ? 'review' : 'activity');
-    if (atFix && (chooseBox ?? fixBox)) (chooseBox ?? fixBox).scrollIntoView({ block: 'start' });
+    if (atFix && hasFix) toggleFix(0);
+    else if (last !== 'closed') side.open(last === 'fix' && hasFix ? 'fix' : 'activity');
+    if (atFix && chooseBox) chooseBox.scrollIntoView({ block: 'start' });
     if (!o) return;
     const when = (iso) => new Date(iso).toLocaleString('en-AU', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
     flow(`/api/invoicing/jobs/${o.id}/activity`).then(({ events }) => {

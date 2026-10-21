@@ -735,9 +735,9 @@ th:hover .fx-th-sort, .fx-th-sort:focus-visible, .fx-th-sort--on { opacity: 1; }
 .fx-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; color: var(--t-dim); overflow-wrap: anywhere; }
 .fx-dialog.fx-task { width: min(1040px, calc(100vw - 32px)); max-height: calc(100vh - 48px); overflow-y: auto; }
 .fx-task__grid { display: grid; grid-template-columns: minmax(0, 1fr) 300px; }
-/* No sidecar: the main area takes the room. Review is wider for its table. */
+/* No sidecar: the main area takes the room. Fix is wider for the change table. */
 .fx-task__grid:has(> .fx-sidecar[hidden]) { grid-template-columns: minmax(0, 1fr); }
-.fx-task__grid:has(> .fx-sidecar [data-tab="review"][aria-selected="true"]) { grid-template-columns: minmax(0, 1fr) 400px; }
+.fx-task__grid:has(> .fx-sidecar [data-tab="fix"][aria-selected="true"]) { grid-template-columns: minmax(0, 1fr) 400px; }
 .fx-task__side { background: var(--t-s1); }
 .fx-task__tools { display: flex; align-items: center; gap: 4px; }
 .fx-task__tools .fx-lucide { width: 16px; height: 16px; }
@@ -755,16 +755,22 @@ th:hover .fx-th-sort, .fx-th-sort:focus-visible, .fx-th-sort--on { opacity: 1; }
 .fx-task__late { color: var(--t-danger) !important; }
 .fx-task__link { color: var(--t-accent); text-decoration: none; border-bottom: 1px solid color-mix(in srgb, var(--t-accent) 40%, transparent); }
 .fx-task__link:hover { border-bottom-color: currentColor; }
-.fx-task__fix { scroll-margin-top: 16px; margin-top: 22px; border: 1px solid var(--t-warn-brd, var(--t-warn)); border-radius: var(--t-radius); background: var(--t-warn-bg); }
-.fx-task__fix h3, .fx-task__lines h3 { margin: 0; color: var(--t-dim); font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
-.fx-task__fix h3 { padding: 12px 14px 4px; color: var(--t-warn); }
-.fx-task__fixrow { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; padding: 9px 14px; border-top: 1px solid var(--fx-line-soft); color: var(--t-strong); font-size: 13.5px; }
-.fx-task__fixrow > strong { font-weight: 600; }
-.fx-task__fixrow > span { flex: 1 1 160px; color: var(--t-text); }
-.fx-task__linkbtn { all: unset; cursor: pointer; color: var(--t-accent); border-bottom: 1px solid color-mix(in srgb, var(--t-accent) 40%, transparent); }
-.fx-task__linkbtn:hover { border-bottom-color: currentColor; }
-.fx-task__linkbtn:focus-visible { box-shadow: var(--fx-focus); }
-.fx-task__fixrow:first-of-type { border-top: 0; }
+.fx-task__lines h3 { margin: 0; color: var(--t-dim); font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+/* What to fix: one toggle chip a problem beside the stage; its problem opens
+   in the sidecar's Fix tab (jobs.js openJob). One layout with or without. */
+.fx-task__stage { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.fx-task__fixchip { all: unset; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 10px; border: 1px solid var(--t-warn-brd, var(--t-warn)); border-radius: 999px; background: var(--t-warn-bg); color: var(--t-warn); font-size: 12.5px; font-weight: 600; }
+.fx-task__fixchip .fx-lucide { width: 14px; height: 14px; }
+.fx-task__fixchip:hover { border-color: var(--t-warn); }
+.fx-task__fixchip:focus-visible { box-shadow: var(--fx-focus); }
+/* Pressed: its problem is open in the sidecar's Fix tab. */
+.fx-task__fixchip[aria-pressed="true"] { border-color: var(--t-warn); background: var(--t-warn); color: var(--t-paper); }
+.fx-task__fixitem { display: grid; gap: 8px; justify-items: start; font-size: 13.5px; }
+.fx-task__fixitem > strong { color: var(--t-strong); }
+.fx-task__fixitem > p { margin: 0; }
+.fx-task__fixitem > .fx-task__review { justify-self: stretch; }
+.fx-task__fixgo .fx-lucide { width: 14px; height: 14px; }
+.fx-task__fixgo { display: inline-flex; align-items: center; gap: 6px; }
 .fx-task__choose { scroll-margin-top: 16px; margin-top: 22px; display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 12px 14px; border: 1px solid var(--t-warn-brd, var(--t-warn)); border-radius: var(--t-radius); background: var(--t-warn-bg); color: var(--t-strong); font-size: 13.5px; }
 .fx-task__choose > svg { flex: none; width: 20px; height: 20px; color: var(--t-warn); }
 .fx-task__choose > span { flex: 1 1 200px; }
@@ -844,7 +850,7 @@ th:hover .fx-th-sort, .fx-th-sort:focus-visible, .fx-th-sort--on { opacity: 1; }
   .fx-task__grid { grid-template-columns: minmax(0, 1fr); }
   .fx-task__main { padding: 16px; }
   .fx-task__fields { grid-template-columns: minmax(0, 1fr); }
-  .fx-task__grid:has(> .fx-sidecar [data-tab="review"][aria-selected="true"]) { grid-template-columns: minmax(0, 1fr); }
+  .fx-task__grid:has(> .fx-sidecar [data-tab="fix"][aria-selected="true"]) { grid-template-columns: minmax(0, 1fr); }
   .fx-task__side { border-top: 1px solid var(--fx-line); border-left: 0; }
 }
 
