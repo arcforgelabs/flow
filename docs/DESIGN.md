@@ -218,7 +218,8 @@ component gets a row here in the pull request that adds it.
 | `alertStrip(ui, page)` | `server/ui/alerts.js` | The slim alert line on a page (`docs/ALERTS.md`) |
 | `lucide(h, name, label)` | `server/ui/custom-fields.js` | A Lucide icon in the text colour; with `label` it is named |
 | `colorPicker`, `optionPill` | `server/ui/custom-fields.js` | A colour choice; a dropdown option as a coloured pill |
-| `jobChangeBanner(ui, change)` | `server/ui/job-change.js` | "The job changed" on a draft, with Accept change |
+| `jobChangeBanner(ui, change)`, `jobChangeReview(ui, change, { canAccept, done })` | `server/ui/job-change.js` | "The job changed" on a draft, with Accept change; `jobChangeReview` wires Accept and the recheck (invoice page, a job's Review sidecar) |
+| `sidecar(h, { label, overlay, escape, tabs })` | `server/ui/sidecar.js` | The right-hand panel: tabs with an icon and one word, ×, closed takes no room. A job's panel (Activity, Review); over a page with `overlay` (Custom fields manager) |
 | `formatCents`, `xeroTag`, `linkIcon`, `accountingIcon` | `server/ui/invoicing.js` | Money, an accounting status tag, a link to the other system |
 | `automationSection`, `rulesSection`, `sendModeSection`, `lineMappingSection` | `server/ui/automations.js`, `invoice-rules.js`, `invoicing-settings.js`, `line-mappings.js` | Settings sections a page mounts |
 

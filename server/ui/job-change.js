@@ -87,3 +87,39 @@ export function jobChangeBanner(ui, change, { money, onAccept = null, onRecheck 
       body)) : null,
     more);
 }
+
+// The banner with Accept change and the recheck wired, for the invoice page
+// and a job's Review sidecar (jobs.js). `canAccept`: the person may change
+// drafts (owners and admins). `unsaved()`: edits on the page that Accept
+// would lose. `done(invoice)` hears the invoice after Accept or a recheck.
+export function jobChangeReview(ui, change, { money, canAccept = false, unsaved = () => false, done = () => {} }) {
+  const { h, flow, toast } = ui;
+  const system = change.systemName;
+  return jobChangeBanner(ui, change, {
+    money,
+    onAccept: !canAccept ? null : async () => {
+      const lost = [change.outcome === 'conflict' ? 'Your own line changes here are replaced.' : null, unsaved() ? 'Unsaved changes are lost.' : null].filter(Boolean);
+      if (lost.length) {
+        const ok = await ui.dialog({ title: 'Accept change?', body: h('p', {}, lost.join(' ')), confirm: 'Accept change' });
+        if (!ok) return;
+      }
+      try {
+        const res = await flow(`/api/invoicing/jobs/${change.jobId}/use-new-lines`, { method: 'POST', body: JSON.stringify({ accept: true }) });
+        toast(`Matches ${system}.${res.invoice.view === 'ready' ? ' In Ready.' : ''}`, 'success');
+        await done(res.invoice);
+      } catch (error) {
+        toast(error.message, 'danger');
+      }
+    },
+    // Reads this one job from the work system again, then every check runs.
+    onRecheck: async () => {
+      try {
+        const res = await flow(`/api/invoicing/jobs/${change.jobId}/recheck`, { method: 'POST', body: '{}' });
+        toast(res.invoice?.jobChange ? `Still changed in ${system}.` : 'Fixed. It matches now.', res.invoice?.jobChange ? 'danger' : 'success');
+        if (res.invoice) await done(res.invoice);
+      } catch (error) {
+        toast(error.message, 'danger');
+      }
+    },
+  });
+}

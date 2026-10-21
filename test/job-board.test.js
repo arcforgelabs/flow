@@ -74,7 +74,7 @@ test('a job fix points to Flow\'s invoice or the work system, never an accountin
   assert.deepEqual(unclear, { label: 'No invoice', text: 'This job has no invoice.', todo: null, go: 'choose' }, 'one line; the buttons are the instruction');
   assert.equal(review('the accounting evidence is conflict').go, 'work');
   assert.equal(review('invoice INV-1 was voided').go, 'invoice');
-  assert.equal(review('the job changed after its invoice was made').go, 'invoice');
+  assert.equal(review('the job changed after its invoice was made').go, 'review', 'the job panel\'s Review sidecar');
   const sent = fixes({
     view: 'drafted', invoiceStatus: 'draft', invoiceView: 'problem', reasons: [], waitingFor: [],
     invoiceProblems: [{ code: 'xero_item_missing', message: 'No Xero item has code NGH.' }, { code: 'xero_push_failed', message: 'Xero said no.' }],
@@ -83,6 +83,25 @@ test('a job fix points to Flow\'s invoice or the work system, never an accountin
   for (const f of [unclear, ...sent, ...fixes({ view: 'pending', reasons: ['the accounting system was not checked', 'the accounting system reports authorised'], waitingFor: [], invoiceProblems: [] })]) {
     assert.doesNotMatch(`${f.label} ${f.text} ${f.todo ?? ''}`, /xero|accounting/i, f.label);
   }
+});
+
+test('a changed job shows one fix, not the hold and its draft\'s copy of it', () => {
+  // The ledger's hold (review_required) and the draft check (sending.js,
+  // job_review) are one fact.
+  const job = {
+    view: 'review_required', holdState: 'review', reasons: ['the job changed after its invoice was made'], waitingFor: [],
+    invoiceId: 'inv-1', invoiceStatus: 'draft', invoiceView: 'problem',
+    invoiceProblems: [{ code: 'job_review', message: 'The job needs a look before this invoice goes: the job changed after its invoice was made.' }],
+  };
+  const found = fixes(job);
+  assert.deepEqual(found.map((f) => [f.label, f.go]), [['Job changed', 'review']]);
+  assert.ok(found[0].text.split(' ').length <= 8, 'a short line');
+  // A real problem on the draft still shows next to it.
+  const more = fixes({ ...job, invoiceProblems: [...job.invoiceProblems, { code: 'no_lines', message: 'The invoice has no lines.' }] });
+  assert.deepEqual(more.map((f) => f.label), ['Job changed', 'No lines']);
+  // Two problems with the same words show once.
+  const twice = fixes({ ...job, invoiceProblems: [{ code: 'xero_a', message: 'x' }, { code: 'xero_b', message: 'y' }] });
+  assert.deepEqual(twice.map((f) => f.label), ['Job changed', 'Invoice problem']);
 });
 
 test('a case number is never a record id', () => {
