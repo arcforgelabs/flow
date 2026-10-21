@@ -17,6 +17,8 @@
 // /jobs/:id/no-invoice (docs/JOB_INVOICE_LINKS.md).
 import { bulkBar } from '/assets/ui/bulk-bar.js';
 import { lucide } from '/assets/ui/custom-fields.js';
+import { filterJobs, MATCHES } from '/assets/ui/job-view.js';
+import { findBox, today, viewBar } from '/assets/ui/view-bar.js';
 import { formatCents } from '/assets/ui/invoicing.js';
 
 const STATUS = { draft: 'Draft', issued: 'Approved', void: 'Void' };
@@ -90,14 +92,21 @@ function jobCandidateFacts(job) {
 
 
 const CHEVRONS = { prev: 'M14.5 6l-6 6 6 6', next: 'M9.5 6l6 6-6 6' };
-const TICK_ICON = '<svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="m3 8.5 3.2 3L13 4.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-const FILTER_ICON = '<svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 4h11M4.5 8h7M6.5 12h3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>';
-// The list's filter, kept per viewer: which kinds show, and whether they
-// have a possible match. The list a person opened a gap from, for the pager.
-const FILTER_KEY = 'flow_reconcile_filter';
+// The list's filter rows (view-bar.js), kept per viewer in this browser.
+// The list a person opened a gap from, for the pager.
+const FILTER_KEY = 'flow_reconcile_filters';
 const NAV_KEY = 'flow_reconcile_nav';
-const DEFAULT_FILTER = { job: true, invoice: true, match: 'any' };
-const MATCH_WORDS = { any: null, some: 'Has a possible match', none: 'No possible match' };
+// The fields a filter row can use. One word each; Type's choices have icons.
+const FILTER_FIELDS = {
+  type: { label: 'Type', kind: 'choice' },
+  client: { label: 'Client', kind: 'choice' },
+  practitioner: { label: 'Practitioner', kind: 'choice' },
+  date: { label: 'Date', kind: 'date' },
+  total: { label: 'Total', kind: 'number' },
+  match: { label: 'Match', kind: 'check' },
+};
+const MATCH_OPS = { yes: 'has one', no: 'has none' };
+const TYPES = [{ value: 'job', label: 'Job', icon: 'briefcase' }, { value: 'invoice', label: 'Invoice', icon: 'file-text' }];
 
 function readStored(store, key, fallback) {
   try { return JSON.parse(store.getItem(key)) ?? fallback; } catch { return fallback; }
@@ -114,11 +123,30 @@ export function reconcileRows({ jobs = [], invoices = [] }) {
   ].sort((a, b) => String(a.date ?? '9999').localeCompare(String(b.date ?? '9999')));
 }
 
-export function filterRows(rows, filter, q = '') {
+// A row's value for a filter field, as the filter compares it.
+export function rowValue(row, field) {
+  switch (field) {
+    case 'type': return row.kind;
+    case 'client': return row.client ?? null;
+    case 'practitioner': return row.kind === 'job' ? row.who ?? null : null;
+    case 'date': return row.date ?? null;
+    case 'total': return row.totalCents == null ? null : row.totalCents / 100;
+    case 'match': return row.possible > 0;
+    default: return null;
+  }
+}
+
+// The rows a view keeps: its filter rows, then the search words.
+export function keptRows(rows, view, q = '') {
   const words = q.trim().toLowerCase();
-  return rows.filter((r) => filter[r.kind] !== false
-    && (filter.match === 'some' ? r.possible > 0 : filter.match === 'none' ? !r.possible : true)
-    && (!words || [r.client, r.who, money(r.totalCents)].some((v) => String(v ?? '').toLowerCase().includes(words))));
+  return filterJobs(rows, view, { valueOf: rowValue, kindOf: (field) => FILTER_FIELDS[field]?.kind ?? null, today: today() })
+    .filter((r) => !words || [r.client, r.who, money(r.totalCents)].some((v) => String(v ?? '').toLowerCase().includes(words)));
+}
+
+function readView() {
+  const saved = readStored(localStorage, FILTER_KEY, {});
+  const filters = Array.isArray(saved.filters) ? saved.filters.filter((f) => f && Object.hasOwn(FILTER_FIELDS, f.field)) : [];
+  return { match: MATCHES.includes(saved.match) ? saved.match : 'all', filters };
 }
 
 export async function renderReconcile(main, ui, id = null) {
@@ -127,65 +155,42 @@ export async function renderReconcile(main, ui, id = null) {
 }
 
 const pathOf = (row) => `/reconcile/${row.id}${row.kind === 'invoice' ? '?kind=invoice' : ''}`;
-const KIND_ICON = { job: ['briefcase', 'Job with no invoice'], invoice: ['file-text', 'Invoice with no job'] };
+const KIND_ICON = { job: ['briefcase', 'Job'], invoice: ['file-text', 'Invoice'] };
 
 async function renderList(main, ui) {
   const { h, flow, toast, pageHeader } = ui;
   const icon = (name, label) => lucide(h, name, label);
   const canAct = ['owner', 'admin'].includes(ui.me?.person?.role);
   const back = readStored(sessionStorage, NAV_KEY, null);
-  const state = { filter: { ...DEFAULT_FILTER, ...readStored(localStorage, FILTER_KEY, {}) }, q: back?.q ?? '', ticked: new Set() };
-  const search = h('input', { class: 'fx-input fx-search', type: 'search', placeholder: 'Find a client, practitioner or amount', 'aria-label': 'Find a gap', value: state.q });
+  const state = { view: readView(), q: back?.q ?? '', ticked: new Set() };
+  const find = findBox(h, { label: 'Find a client, practitioner or amount', value: state.q, oninput: (words) => { state.q = words; draw(); } });
   const controls = h('div', { class: 'fx-viewbar', role: 'group', 'aria-label': 'Filter' });
   const host = h('div', { class: 'fx-rec' }, h('div', { class: 'fx-skeleton' }));
   const bulk = bulkBar(ui, { label: 'Ticked jobs' });
   main.append(
     pageHeader('Reconcile'),
-    h('div', { class: 'fx-toolbar fx-toolbar--plain' }, controls, h('div', { class: 'fx-toolbar__end' }, search)),
+    h('div', { class: 'fx-toolbar fx-toolbar--plain' }, controls, h('div', { class: 'fx-toolbar__end' }, find.element)),
     host, bulk.element);
 
-  // The Filter chip and its panel, as on Jobs.
-  const panel = h('div', { class: 'fx-pop', id: 'fx-rec-filter', popover: 'auto', role: 'menu' });
-  const chip = h('button', { type: 'button', class: 'fx-chip', popovertarget: 'fx-rec-filter', 'aria-haspopup': 'menu', 'aria-expanded': 'false' });
-  const clear = h('button', { type: 'button', class: 'fx-chip__clear', 'aria-label': 'Clear the filter', title: 'Clear the filter', hidden: true }, icon('x'));
-  const chipset = h('span', { class: 'fx-chipset' }, chip, clear);
-  controls.replaceChildren(chipset, panel);
-  const svg = (markup) => { const span = h('span', { class: 'fx-pop__tick' }); span.innerHTML = markup; return span; };
-  const option = (text, checked, onclick, role = 'menuitemcheckbox') => h('button', {
-    type: 'button', class: 'fx-pop__item', role, 'aria-checked': String(checked), onclick,
-  }, checked ? svg(TICK_ICON) : h('span', { class: 'fx-pop__tick' }), h('span', {}, text));
-  const setFilter = (patch) => {
-    state.filter = { ...state.filter, ...patch };
-    if (!state.filter.job && !state.filter.invoice) state.filter = { ...state.filter, job: true, invoice: true };
-    writeStored(localStorage, FILTER_KEY, state.filter);
-    fillPanel();
-    draw();
-  };
-  const fillPanel = () => panel.replaceChildren(
-    h('p', { class: 'fx-pop__head' }, 'Show'),
-    option('Jobs with no invoice', state.filter.job, () => setFilter({ job: !state.filter.job })),
-    option('Invoices with no job', state.filter.invoice, () => setFilter({ invoice: !state.filter.invoice })),
-    h('div', { class: 'fx-pop__sep' }),
-    h('p', { class: 'fx-pop__head' }, 'Possible match'),
-    ...Object.entries({ any: 'Any', some: 'Has a possible match', none: 'No possible match' })
-      .map(([value, text]) => option(text, state.filter.match === value, () => setFilter({ match: value }), 'menuitemradio')));
-  panel.addEventListener('toggle', (event) => {
-    chip.setAttribute('aria-expanded', String(event.newState === 'open'));
-    if (event.newState !== 'open') return;
-    fillPanel();
-    const at = chip.getBoundingClientRect();
-    panel.style.top = `${Math.round(at.bottom + 6)}px`;
-    panel.style.left = `${Math.round(Math.max(8, Math.min(at.left, innerWidth - panel.offsetWidth - 8)))}px`;
+  // The Filter chip: the same rows as on Jobs (view-bar.js).
+  const labels = (list) => [...new Set(list.filter(Boolean))].sort((a, b) => a.localeCompare(b)).map((v) => ({ value: v, label: v }));
+  const filterMenu = viewBar(h).filterMenu({
+    fields: () => Object.entries(FILTER_FIELDS).map(([value, f]) => ({ value, label: f.label })),
+    kindOf: (field) => FILTER_FIELDS[field]?.kind ?? null,
+    opsOf: (field) => (field === 'match' ? MATCH_OPS : null),
+    choicesOf: (field) => (field === 'type' ? TYPES
+      : field === 'client' ? labels(rows.map((r) => r.client))
+        : field === 'practitioner' ? labels(rows.filter((r) => r.kind === 'job').map((r) => r.who)) : []),
+    view: () => state.view,
+    change: (patch) => {
+      state.view = { ...state.view, ...patch };
+      writeStored(localStorage, FILTER_KEY, state.view);
+      draw();
+    },
+    first: 'type',
+    empty: 'No filters. Every job and invoice shows.',
   });
-  clear.addEventListener('click', () => setFilter({ ...DEFAULT_FILTER }));
-  const drawChip = () => {
-    const count = (state.filter.job && state.filter.invoice ? 0 : 1) + (state.filter.match === 'any' ? 0 : 1);
-    chip.replaceChildren(svg(FILTER_ICON), h('span', {}, count ? `${count} ${count === 1 ? 'Filter' : 'Filters'}` : 'Filter'));
-    chip.classList.toggle('fx-chip--on', count > 0);
-    chipset.classList.toggle('fx-chipset--on', count > 0);
-    clear.hidden = count === 0;
-  };
-  search.addEventListener('input', () => { state.q = search.value; draw(); });
+  controls.append(...filterMenu.node);
 
   let rows;
   try {
@@ -196,8 +201,8 @@ async function renderList(main, ui) {
   }
 
   function draw() {
-    drawChip();
-    const shown = filterRows(rows, state.filter, state.q);
+    filterMenu.draw();
+    const shown = keptRows(rows, state.view, state.q);
     const seen = new Set(shown.map((r) => r.id));
     for (const key of state.ticked) if (!seen.has(key)) state.ticked.delete(key);
     const remember = () => writeStored(sessionStorage, NAV_KEY, { q: state.q, rows: shown.map(({ kind, id }) => ({ kind, id })) });
@@ -250,9 +255,9 @@ async function renderList(main, ui) {
     host.replaceChildren(h('div', { class: 'fx-panel' }, h('table', { class: 'fx-table fx-table--rows fx-rec-list' },
       h('thead', {}, h('tr', {},
         canAct ? h('th', { class: 'fx-tick-cell' }, all) : null,
-        h('th', { class: 'fx-rec-list__kind' }, h('span', { class: 'fx-sr' }, 'Kind')),
+        h('th', { class: 'fx-rec-list__kind' }, h('span', { class: 'fx-sr' }, 'Type')),
         h('th', {}, 'Client'),
-        h('th', {}, 'Practitioner or invoice'),
+        h('th', {}, 'Detail'),
         h('th', {}, 'Date'),
         h('th', { class: 'fx-num' }, 'Total'),
         h('th', { class: 'fx-rec-list__mid' }, 'Possible'))),
@@ -313,23 +318,25 @@ async function renderGap(main, ui, id) {
   const sub = h('p', { class: 'fx-ph__sub' });
   const actions = h('div', { class: 'fx-ph__actions' });
   const results = h('div', { class: 'fx-rec__results' }, h('div', { class: 'fx-skeleton' }));
-  const search = h('input', {
-    class: 'fx-input fx-xi__search', type: 'search', autocomplete: 'off',
-    placeholder: kind === 'job' ? 'Find another Flow invoice: number, client, Reference, amount' : 'Find another job: client, practitioner, case',
-    'aria-label': kind === 'job' ? 'Find another Flow invoice' : 'Find another job',
+  let timer = null;
+  const find = findBox(h, {
+    label: kind === 'job' ? 'Find another invoice: number, client, Reference, amount' : 'Find another job: client, practitioner, case',
+    oninput: (words) => {
+      clearTimeout(timer);
+      timer = setTimeout(() => load(words), 300);
+    },
   });
   const card = h('section', { class: 'fx-rec fx-rec__gap', 'aria-label': 'Compare' },
     pager,
     h('header', { class: 'fx-ph' }, h('div', { class: 'fx-ph__text' }, title, sub), actions),
-    results,
-    h('div', { class: 'fx-xi__bulk' }, icon('search'), search));
+    // The search sits where it does on Jobs and Invoices: the right of the
+    // toolbar over the rows it searches.
+    h('div', { class: 'fx-toolbar fx-toolbar--plain' },
+      h('p', { class: 'fx-rows__title' }, kind === 'job' ? 'Possible invoices' : 'Possible jobs'),
+      h('div', { class: 'fx-toolbar__end' }, find.element)),
+    results);
   main.append(card);
 
-  let timer = null;
-  search.addEventListener('input', () => {
-    clearTimeout(timer);
-    timer = setTimeout(() => load(search.value), 300);
-  });
 
   async function act(run, done) {
     for (const b of card.querySelectorAll('button')) b.disabled = true;
@@ -411,7 +418,7 @@ async function renderGap(main, ui, id) {
     results.replaceChildren(...[
       job.open ? null : h('p', { class: 'fx-notice' }, 'This job has an invoice already.'),
       candidates.length ? compareView({ ours: jobFacts(job), oursTitle: 'This job', oursSub: system, candidates })
-        : h('p', { class: 'fx-empty' }, q.trim() ? 'No Flow invoice matches the search.' : 'Flow found no invoice that may be for this job. Find one below, or make it.'),
+        : h('p', { class: 'fx-empty' }, q.trim() ? 'No Flow invoice matches the search.' : 'Flow found no invoice that may be for this job. Find one, or make it.'),
     ].flat().filter(Boolean));
     actions.replaceChildren(...[
       skip(),

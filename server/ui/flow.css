@@ -710,6 +710,7 @@ th:hover .fx-th-sort, .fx-th-sort:focus-visible, .fx-th-sort--on { opacity: 1; }
 .fx-rec { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
 .fx-rec .fx-lucide { width: 16px; height: 16px; }
 .fx-rec__gap { max-width: 1180px; }
+.fx-rec__gap .fx-toolbar .fx-rows__title { margin: 0; }
 .fx-rec__gap .fx-ph__actions .fx-btn, .fx-rec__acts .fx-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
 .fx-rec__results { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
 .fx-rec__table { display: grid; grid-template-columns: 110px minmax(150px, 1fr) repeat(var(--cols), minmax(170px, 1fr)); border: 1px solid var(--fx-line); border-radius: var(--t-radius); background: var(--t-paper); overflow-x: auto; }
@@ -1372,3 +1373,11 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
 }
 .fx-xi-count { font-size: 18px; }
 .fx-xi-list td.fx-num:not(.fx-strong) { text-align: left; }
+
+/* A list's own search (view-bar.js findBox): an icon that opens into a box. */
+.fx-find { display: inline-flex; align-items: center; }
+.fx-find__button { display: inline-grid; place-items: center; width: 32px; height: 32px; padding: 0; }
+.fx-find__button .fx-lucide { width: 15px; height: 15px; }
+.fx-find__input { display: none; width: min(240px, 60vw); height: 32px; padding: 0 10px; }
+.fx-find--open .fx-find__input { display: block; }
+.fx-find--open .fx-find__button { display: none; }
