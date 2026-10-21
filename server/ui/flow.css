@@ -7,8 +7,10 @@
 
 :root {
   --fx-line: color-mix(in srgb, var(--t-text) 12%, transparent);
-  /* The side space of a page; work pages (.fx-main--work) set a slimmer one. */
-  --fx-gutter: clamp(16px, 4vw, 48px);
+  /* The side space of every page. Pages use the whole width with this slim
+     edge, as ClickUp and HubSpot do; the title, toolbar and content start at
+     one place on every page. */
+  --fx-gutter: clamp(16px, 2vw, 24px);
   --fx-line-soft: color-mix(in srgb, var(--t-text) 7%, transparent);
   --fx-hover: color-mix(in srgb, var(--t-text) 5%, transparent);
   --fx-focus: 0 0 0 3px color-mix(in srgb, var(--t-ring) 40%, transparent);
@@ -169,7 +171,7 @@ body:is([data-state="off"], [data-state="error"], [data-state="no-access"]) .fx-
   .fx-shell[data-folded] #user-button .cl-userButtonTrigger { width: auto; padding: 0; border-radius: 50%; background: transparent; box-shadow: none; }
   .fx-shell[data-folded] #user-button .cl-userButtonOuterIdentifier, .fx-shell[data-folded] #user-button .cl-userButtonBox::before { display: none; }
 }
-.fx-main { flex: 1; min-width: 0; max-width: 1180px; margin: 0 auto; padding: 32px var(--fx-gutter) 64px; display: grid; gap: 20px; align-content: start; }
+.fx-main { flex: 1; min-width: 0; padding: 32px var(--fx-gutter) 64px; display: grid; gap: 20px; align-content: start; }
 .fx-main:focus { outline: none; box-shadow: none; }
 
 /* Page header: the title only (no line under it), then the actions,
@@ -494,11 +496,6 @@ a.fx-strong:hover { text-decoration: underline; }
 }
 
 /* ── Jobs board ─────────────────────────────────────────────────────────── */
-/* Work pages (Jobs, Invoices, Reconcile: listHead) use the whole width with
-   a slim edge, as ClickUp and HubSpot do; the pages a person reads keep the
-   centred column. The title, toolbar and rows start at one place on every
-   work page, in Board and in List. */
-.fx-main--work { --fx-gutter: clamp(16px, 2vw, 24px); max-width: none; }
 .fx-main > * { min-width: 0; }
 .fx-toolbar--plain { border-bottom: 0; align-items: center; }
 .fx-toolbar--plain .fx-search { margin-bottom: 0; }
@@ -769,7 +766,6 @@ th:hover .fx-th-sort, .fx-th-sort:focus-visible, .fx-th-sort--on { opacity: 1; }
    invoice opened from Invoices (the pager on top). */
 .fx-rec { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
 .fx-rec .fx-lucide { width: 16px; height: 16px; }
-.fx-rec__gap { max-width: 1180px; }
 .fx-rec__gap .fx-toolbar .fx-rows__title { margin: 0; }
 .fx-rec__gap .fx-ph__actions .fx-btn, .fx-rec__acts .fx-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
 .fx-rec__results { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
@@ -1409,7 +1405,7 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
 /* Xero › Import (server/ui/xero-import.js): Review compares one fact per row
    with ✓ or ≠ between the sides; the list and history tick rows for the bulk
    bar. */
-.fx-xi { display: flex; flex-direction: column; gap: 16px; min-width: 0; max-width: 980px; }
+.fx-xi { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
 .fx-xi .fx-lucide { width: 16px; height: 16px; }
 .fx-xi__views { display: inline-flex; border: 1px solid var(--fx-line); }
 .fx-xi__view { display: inline-grid; place-items: center; width: 40px; height: 36px; border: 0; background: transparent; color: var(--t-dim); cursor: pointer; }

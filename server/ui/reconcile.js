@@ -184,7 +184,6 @@ async function renderList(main, ui) {
   const controls = h('div', { class: 'fx-viewbar', role: 'group', 'aria-label': 'Filter' });
   const host = h('div', { class: 'fx-rec' }, h('div', { class: 'fx-skeleton' }));
   const bulk = bulkBar(ui, { label: 'Ticked jobs' });
-  main.classList.add('fx-main--work');
   main.append(...listHead('Reconcile', { start: controls, end: find.element }).nodes, host, bulk.element);
 
   // The Filter chip: the same panel as on Jobs (view-bar.js). Job rows also

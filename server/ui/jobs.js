@@ -132,7 +132,6 @@ export async function renderJobs(main, ui) {
   const controls = h('div', { class: 'fx-viewbar', role: 'group', 'aria-label': 'Group, sort and filter' });
   // In the list, ticked rows get the same floating bar as Invoices.
   const bulk = bulkBar(ui, { label: 'Ticked jobs' });
-  main.classList.add('fx-main--work');
   main.append(...listHead('Jobs', { start: controls, end: [find.element, toggle] }).nodes, host, bulk.element);
 
   const drawToggle = () => toggle.replaceChildren(...[['board', 'Board'], ['list', 'List']].map(([id, label]) => h('button', {

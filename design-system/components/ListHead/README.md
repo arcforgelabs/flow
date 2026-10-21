@@ -8,6 +8,6 @@ The top of every list page. It is in the same place on every list, and in Board 
 - Row 3: the toolbar. `start` is at the left (tabs, Group, Sort, Filter). `end` is at the right (search, Board/List). `actions` come last (New invoice).
 - The toolbar is 40px high on every list, so the rows start at one place.
 - `line`: a rule under tabs. `sticky`: the toolbar stays at the top while rows scroll.
-- A list page is a work page: it adds `fx-main--work` to `main` and uses the whole width with a slim edge (24px). Pages a person reads keep the centred column.
+- Every page uses the whole width with a slim edge (`--fx-gutter`, 24px), so the title starts at one place on every page.
 
 Code: `listHead` in `server/ui/kit.js`; `.fx-listhead`, `.fx-views` in `server/ui/flow.css`.
