@@ -7,6 +7,7 @@ import { bulkBar } from '/assets/ui/bulk-bar.js';
 import { colorPicker, lucide, optionPill } from '/assets/ui/custom-fields.js';
 import { jobChangeBanner } from '/assets/ui/job-change.js';
 import { named, startTips } from '/assets/ui/tip.js';
+import { sidecar } from '/assets/ui/sidecar.js';
 
 // The colours of a custom field's options, read from server/core/custom-fields.js at build.
 /* global __FLOW_OPTION_COLORS__ */
@@ -25,5 +26,5 @@ else ready();
 
 export {
   bulkBar, colorPicker, dialog, findBox, h, helpLink, holdButton, ICONS, jobChangeBanner, lucide, named,
-  notice, OPTION_COLORS, optionPill, pageHeader, rowMenu, sectionTitle, settingRow, svg, toast, ui, viewBar,
+  notice, OPTION_COLORS, optionPill, pageHeader, rowMenu, sectionTitle, settingRow, sidecar, svg, toast, ui, viewBar,
 };

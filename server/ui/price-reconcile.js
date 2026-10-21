@@ -33,8 +33,7 @@ export async function renderPriceReconcile(main, ui) {
   }, icon(glyph));
   const bulk = bulkBar(ui, { label: 'Ticked records' });
   main.append(
-    h('nav', { class: 'fx-crumbs', 'aria-label': 'Breadcrumb' },
-      h('a', { href: '/price-list', onclick: (event) => ui.go(event) }, 'Price list'), h('span', { 'aria-hidden': 'true' }, '›'), h('span', {}, 'Reconcile')),
+    ui.crumbs(['/price-list', 'Price list'], 'Reconcile'),
     ui.pageHeader('Reconcile prices', {
       count: tally,
       actions: [h('div', { class: 'fx-xi__views', role: 'tablist', 'aria-label': 'View' }, toggle('card', 'One at a time', 'square'), toggle('list', 'List, tick many', 'list-checks'))],

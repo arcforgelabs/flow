@@ -9,7 +9,7 @@ import { alertStrip } from '/assets/ui/alerts.js';
 import { bulkBar } from '/assets/ui/bulk-bar.js';
 import { draftNote, sendModeNote } from '/assets/ui/invoice-notes.js';
 import { caseNumber } from '/assets/ui/job-board.js';
-import { jobChangeBanner } from '/assets/ui/job-change.js';
+import { jobChangeReview } from '/assets/ui/job-change.js';
 import { findBox } from '/assets/ui/view-bar.js';
 
 // The tabs, left to right (server/api/invoicing.js, TABS): Pending (a
@@ -850,35 +850,8 @@ function draftView(invoice, ui, context, redraw) {
   // changed. Other problems stay one line.
   const otherProblems = (invoice?.problems ?? []).filter((p) => !(jobChange && p.code === 'job_review'));
   const problems = [
-    jobChange ? jobChangeBanner(ui, jobChange, {
-      money: formatCents,
-      // Accepting changes the draft for the business: owners and admins only.
-      onAccept: !context.canIssue ? null : async () => {
-        const system = jobChange.systemName;
-        const lost = [jobChange.outcome === 'conflict' ? 'Your own line changes here are replaced.' : null, changed() ? 'Unsaved changes are lost.' : null].filter(Boolean);
-        if (lost.length) {
-          const ok = await ui.dialog({ title: 'Accept change?', body: h('p', {}, lost.join(' ')), confirm: 'Accept change' });
-          if (!ok) return;
-        }
-        try {
-          const res = await flow(`/api/invoicing/jobs/${jobChange.jobId}/use-new-lines`, { method: 'POST', body: JSON.stringify({ accept: true }) });
-          toast(`Matches ${system}.${res.invoice.view === 'ready' ? ' In Ready.' : ''}`, 'success');
-          redraw(res.invoice);
-        } catch (error) {
-          toast(error.message, 'danger');
-        }
-      },
-      // Reads this one job from the work system again, then every check runs.
-      onRecheck: async () => {
-        try {
-          const res = await flow(`/api/invoicing/jobs/${jobChange.jobId}/recheck`, { method: 'POST', body: '{}' });
-          toast(res.invoice?.jobChange ? `Still changed in ${jobChange.systemName}.` : 'Fixed. It matches now.', res.invoice?.jobChange ? 'danger' : 'success');
-          if (res.invoice) redraw(res.invoice);
-        } catch (error) {
-          toast(error.message, 'danger');
-        }
-      },
-    }) : null,
+    // Accepting changes the draft for the business: owners and admins only.
+    jobChange ? jobChangeReview(ui, jobChange, { money: formatCents, canAccept: context.canIssue, unsaved: changed, done: redraw }) : null,
     otherProblems.length ? notice(otherProblems.map((p) => p.message).join(' '), 'danger', 'Problem.') : null,
   ];
 
@@ -1065,7 +1038,7 @@ function xeroCard(invoice, ui, context, status, reload) {
 }
 
 // Send to Xero (POST /api/xero/invoices/push). The customer's send mode
-// (Settings, Invoice rules) decides what Xero gets: a draft that a person approves
+// (Settings, Rules) decides what Xero gets: a draft that a person approves
 // there, or an approved invoice that Xero emails to the customer.
 function sendToXero(invoice, ui, context) {
   const { h, flow, toast } = ui;

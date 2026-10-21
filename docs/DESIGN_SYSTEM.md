@@ -22,7 +22,7 @@ design-system/ ─────────┘                                   
 | --- | --- |
 | `tokens.json` | Every `--t-*` colour of Harbour and Meridian, light and dark (four themes), radii, the shadow, type styles, the font files |
 | `fonts/*.woff2` | The fontsource packages Flow serves (latin, variable weight) |
-| `components/bundle.js` | The real shared modules (`server/ui/kit.js`, `view-bar.js`, `bulk-bar.js`, `tip.js`, `custom-fields.js`, `job-change.js`) bundled by esbuild as `window.FlowDesignSystem` (`scripts/design-system/entry.js`) |
+| `components/bundle.js` | The real shared modules (`server/ui/kit.js`, `view-bar.js`, `bulk-bar.js`, `tip.js`, `custom-fields.js`, `job-change.js`, `sidecar.js`) bundled by esbuild as `window.FlowDesignSystem` (`scripts/design-system/entry.js`) |
 | `components/bundle.css` | `server/ui/flow.css`, every family's `--t-*` tokens as `[data-theme="<family>-<mode>"]`, and the Lucide icons the app names, inlined |
 | `components/<Card>/` | `design-system/components/<Card>/`: `preview.html` (line 1 the `@dsCard` marker) and `README.md` (first sentence the summary, a `Code:` line naming the code) |
 | `components/Themes/` | Generated: every family, light and dark |
@@ -37,7 +37,7 @@ in the artifact's asset store (Logos group).
 A pull request that adds or changes a shared component changes its card in
 `design-system/components/` too. `test/design-system.test.js` fails when an
 export of a shared module (`kit.js`, `view-bar.js`, `bulk-bar.js`, `tip.js`,
-`job-change.js`) has no card naming it, when a card has no README or marker,
+`job-change.js`, `sidecar.js`) has no card naming it, when a card has no README or marker,
 or when the build writes something the artifact cannot read.
 
 A card calls `window.FlowDesignSystem.<name>`, so it shows what the app draws.

@@ -15,6 +15,7 @@
 import { bulkBar } from '/assets/ui/bulk-bar.js';
 import { lucide } from '/assets/ui/custom-fields.js';
 import { formatCents } from '/assets/ui/invoicing.js';
+import { jobChangeReview } from '/assets/ui/job-change.js';
 import {
   caseNumber, FINAL_RANK, fixes, INVOICE_STAGES, invoiceStage, matches, NO_STATUS, orderStatuses, problemSummary, statusRank,
 } from '/assets/ui/job-board.js';
@@ -22,10 +23,14 @@ import {
   COLUMNS, DEFAULT_VIEW, fieldGroup, fieldIdOf, fieldLanes, FILTER_FIELDS, filterJobs, groupJobs, GROUPS, KIND_OF_TYPE, keptStatuses, laneOf,
   normaliseJobsView, NOT_SET, OPERATORS, sortJobs, SORTS,
 } from '/assets/ui/job-view.js';
+import { sidecar } from '/assets/ui/sidecar.js';
 import { findBox, ICONS, svg, today, viewBar } from '/assets/ui/view-bar.js';
 
 const LAYOUT_KEY = 'flow_jobs_layout';
 const FOLDED_KEY = 'flow_jobs_folded';
+// The job panel's sidecar: the tab last open, or closed.
+const SIDE_KEY = 'flow_job_side';
+const SIDE_TABS = ['activity', 'review', 'closed'];
 const SYSTEM_NAME = { seazona: 'Seazona', xero: 'Xero' };
 // A job's events (server/core/ledger.js), in plain words.
 const ACTIVITY = {
@@ -85,6 +90,17 @@ function saveFolded(folded) {
   try { localStorage.setItem(FOLDED_KEY, JSON.stringify(folded)); } catch { /* a convenience only */ }
 }
 
+function readSide() {
+  try {
+    const value = localStorage.getItem(SIDE_KEY);
+    return SIDE_TABS.includes(value) ? value : 'activity';
+  } catch { return 'activity'; }
+}
+
+function saveSide(tab) {
+  try { localStorage.setItem(SIDE_KEY, tab ?? 'closed'); } catch { /* a convenience only */ }
+}
+
 
 const WARN_ICON = '<svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5 15 14H1z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M8 6v3.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="8" cy="11.6" r=".9" fill="currentColor"/></svg>';
 const PERSON_ICON = '<svg width="13" height="13" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="5.5" r="3" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M2.5 14c.6-2.8 2.8-4.3 5.5-4.3s4.9 1.5 5.5 4.3" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>';
@@ -116,7 +132,6 @@ export async function renderJobs(main, ui) {
   const controls = h('div', { class: 'fx-viewbar', role: 'group', 'aria-label': 'Group, sort and filter' });
   // In the list, ticked rows get the same floating bar as Invoices.
   const bulk = bulkBar(ui, { label: 'Ticked jobs' });
-  main.classList.add('fx-main--wide');
   main.append(
     pageHeader('Jobs'),
     h('div', { class: 'fx-toolbar fx-toolbar--plain' }, controls, h('div', { class: 'fx-toolbar__end' }, find.element, toggle)),
@@ -1086,25 +1101,8 @@ export async function renderJobs(main, ui) {
     if (!o) return [];
     if (o.invoiceId) {
       const label = o.invoiceStatus === 'draft' ? 'Open draft invoice' : `Open invoice ${o.invoiceNumber ?? ''}`.trim();
-      const open = h('a', { class: 'fx-btn', href: `/invoices/${o.invoiceId}`, onclick: (event) => { close(); ui.go(event); } }, label);
-      // Only the job changed and the draft is not sent (ledger.js): one tap
-      // puts the job's new lines on Flow's own draft. Nothing goes elsewhere.
-      if (!o.canUseNewLines) return [open];
-      const system = SYSTEM_NAME[job.sourceSystem] ?? job.sourceSystem;
-      return [h('button', {
-        class: 'fx-btn fx-btn--primary', type: 'button',
-        onclick: async (event) => {
-          event.currentTarget.disabled = true;
-          try {
-            await flow(`/api/invoicing/jobs/${o.id}/use-new-lines`, { method: 'POST', body: '{}' });
-            ui.toast(`The draft invoice now matches ${system}.`, 'success');
-          } catch (error) {
-            ui.toast(error.message, 'danger');
-          }
-          close();
-          await load();
-        },
-      }, `Adopt ${system} changes`), open];
+      // A changed job is accepted in the panel's Review sidecar.
+      return [h('a', { class: 'fx-btn', href: `/invoices/${o.invoiceId}`, onclick: (event) => { close(); ui.go(event); } }, label)];
     }
     // Flow's own stage: a person marks a job ready to invoice, or an
     // automation does (Settings, Automations).
@@ -1147,15 +1145,20 @@ export async function renderJobs(main, ui) {
 
   // The job's page: a large panel over the board, like a task page. A
   // breadcrumb, the client's name, the stage, the job's fields, what to fix
-  // and its lines; its activity at the side (below on a phone). Esc, the X
-  // or a click outside closes it. `atFix` scrolls to what to fix. The job's
-  // custom fields can be changed here (in Flow only), and its stage moved
-  // (a hand-off to the work system).
+  // and its lines. At the side (below on a phone), the sidecar: Activity,
+  // and Review when the job changed after its draft (what changed, and
+  // Accept change). The sidecar closes, and the main area takes its room.
+  // Esc, the X or a click outside closes the panel. `atFix` scrolls to what
+  // to fix, and opens Review when there is one. The job's custom fields can
+  // be changed here (in Flow only), and its stage moved (a hand-off to the
+  // work system).
   function openJob(job, { atFix = false } = {}) {
     const o = job.obligation;
     const stage = invoiceStage(o);
     const found = problemsOf(job);
     const choose = found.find((f) => f.go === 'choose') ?? null;
+    // The job changed after its draft: the sidecar has a Review tab.
+    const reviewable = Boolean(o?.invoiceId) && found.some((f) => f.go === 'review');
     const system = SYSTEM_NAME[job.sourceSystem] ?? job.sourceSystem;
     const status = job.status ?? NO_STATUS;
     const late = isLate(job);
@@ -1170,9 +1173,14 @@ export async function renderJobs(main, ui) {
       : choose ? h('span', { class: 'fx-task__none' }, svg(WARN_ICON), 'Needs invoice')
         : stage ? INVOICE_STAGES[stage] : o ? 'Not ready to invoice' : 'No invoice yet';
     const rest = found.filter((f) => f.go !== 'choose');
+    // One short line a fix: its label, what is wrong, and its link. What to
+    // do is the link's tip.
     const fixBox = rest.length ? h('section', { class: 'fx-task__fix', 'aria-label': 'Fix' },
       h('h3', {}, 'Fix'),
-      rest.map((f) => h('div', { class: 'fx-task__fixrow' }, h('span', {}, [f.text, f.todo].filter(Boolean).join(' ')), fixLink(f.go)))) : null;
+      rest.map((f) => {
+        const go = fixLink(f.go, f.todo);
+        return h('div', { class: 'fx-task__fixrow', title: go ? null : f.todo }, h('strong', {}, f.label), h('span', {}, f.text), go);
+      })) : null;
     // No invoice, and the match is unclear: one line and two buttons. The
     // possible matches are compared on the Reconcile page, not here.
     const chooseBox = choose ? h('section', { class: 'fx-task__choose', 'aria-label': 'Invoice' },
@@ -1200,8 +1208,12 @@ export async function renderJobs(main, ui) {
     }
     // Each fix's link: Flow's own invoice, the job in the work system, or
     // the Flow page where the fix is made (job-board.js GO).
-    function fixLink(go) {
-      const inFlow = (href, text) => h('a', { class: 'fx-task__link', href, onclick: (event) => { close(); ui.go(event); } }, text);
+    function fixLink(go, tip = null) {
+      const inFlow = (href, text) => h('a', { class: 'fx-task__link', href, title: tip, onclick: (event) => { close(); ui.go(event); } }, text);
+      if (go === 'review' && reviewable) {
+        return h('button', { class: 'fx-task__link fx-task__linkbtn', type: 'button', title: tip, onclick: () => side.open('review') }, 'Review');
+      }
+      if (go === 'review' && o?.invoiceId) return inFlow(`/invoices/${o.invoiceId}`, 'Open invoice');
       if (go === 'invoice' && o?.invoiceId) return inFlow(`/invoices/${o.invoiceId}`, 'Open invoice');
       if (go === 'work' && job.link?.url) {
         return h('a', { class: 'fx-task__link', href: job.link.url, target: '_blank', rel: 'noopener' }, job.link.exact ? `Open case in ${system} ↗` : `Open ${system} ↗`);
@@ -1213,12 +1225,55 @@ export async function renderJobs(main, ui) {
     }
     const lines = job.lines ?? [];
     const activity = h('ol', {}, h('li', { class: 'fx-dim' }, 'Loading…'));
+    const activityBody = h('div', { class: 'fx-task__activity' },
+      o ? activity : h('p', { class: 'fx-dim' }, `Flow has no invoice record for this job yet. It makes one when ${system} reports the job complete.`));
+    // Review: the job's change as the invoice page shows it (job-change.js),
+    // read from the invoice when the sidecar first needs it.
+    const reviewBody = h('div', { class: 'fx-task__review' }, h('p', { class: 'fx-dim' }, 'Loading…'));
+    let reviewRead = false;
+    const readReview = () => {
+      if (reviewRead) return;
+      reviewRead = true;
+      flow(`/api/invoicing/invoices/${o.invoiceId}`).then(({ invoice }) => drawReview(invoice))
+        .catch(() => reviewBody.replaceChildren(h('p', {}, 'Flow could not read the change.')));
+    };
+    function drawReview(invoice) {
+      const change = invoice?.jobChange ?? null;
+      reviewBody.replaceChildren(change
+        ? jobChangeReview(ui, change, { money: formatCents, canAccept: state.canDraft, done: reopen })
+        : h('p', { class: 'fx-dim' }, `The draft matches ${system}.`));
+    }
+    // After Accept change or a recheck: the board reads again, and this
+    // job's panel opens again with its new facts.
+    async function reopen() {
+      await load();
+      const fresh = state.jobs.find((j) => jobKey(j) === jobKey(job));
+      close();
+      if (fresh) openJob(fresh);
+    }
+    const sideButton = h('button', {
+      class: 'fx-btn fx-btn--ghost fx-btn--icon', type: 'button', 'aria-label': 'Side panel', title: 'Side panel', 'aria-pressed': 'false',
+      onclick: () => (side.isOpen() ? side.close() : side.open(readSide() === 'review' && reviewable ? 'review' : 'activity')),
+    }, lucide(h, 'panel-right'));
+    const side = sidecar(h, {
+      label: 'Job side panel',
+      tabs: [
+        { id: 'activity', label: 'Activity', icon: 'history', render: () => activityBody },
+        reviewable ? { id: 'review', label: 'Review', icon: 'git-compare', mark: true, render: () => { readReview(); return reviewBody; } } : null,
+      ].filter(Boolean),
+      onChange: (tab) => {
+        saveSide(tab);
+        sideButton.setAttribute('aria-pressed', String(Boolean(tab)));
+      },
+    });
+    side.element.classList.add('fx-task__side');
     element.append(h('div', { class: 'fx-task__grid' },
       h('div', { class: 'fx-task__main' },
         h('header', { class: 'fx-task__head' },
           h('nav', { class: 'fx-task__crumb', 'aria-label': 'Breadcrumb' },
             h('span', {}, 'Jobs'), h('span', { class: 'fx-task__slash', 'aria-hidden': 'true' }, '/'), h('span', {}, status)),
-          h('button', { class: 'fx-btn fx-btn--ghost fx-btn--icon', type: 'button', 'aria-label': 'Close', onclick: close }, '✕')),
+          h('div', { class: 'fx-task__tools' }, sideButton,
+            h('button', { class: 'fx-btn fx-btn--ghost fx-btn--icon', type: 'button', 'aria-label': 'Close', title: 'Close', onclick: close }, '✕'))),
         h('h2', { class: 'fx-task__title' }, clientOf(job)),
         h('div', { class: 'fx-task__stage' }, stagePill(status)),
         h('dl', { class: 'fx-task__fields' },
@@ -1255,13 +1310,14 @@ export async function renderJobs(main, ui) {
               h('td', { class: 'fx-num' }, job.totalCents == null ? '—' : formatCents(job.totalCents)))))
             : h('p', { class: 'fx-dim' }, 'No lines.')),
         h('div', { class: 'fx-task__actions' }, actions(job, close))),
-      h('aside', { class: 'fx-task__activity', 'aria-label': 'Activity' },
-        h('h3', {}, 'Activity'),
-        o ? activity : h('p', { class: 'fx-dim' }, `Flow has no invoice record for this job yet. It makes one when ${system} reports the job complete.`))));
+      side.element));
     element.addEventListener('click', (event) => { if (event.target === element) close(); });
     element.addEventListener('close', () => element.remove());
     document.body.append(element);
     element.showModal();
+    const last = readSide();
+    if (atFix && reviewable) side.open('review');
+    else if (last !== 'closed') side.open(last === 'review' && reviewable ? 'review' : 'activity');
     if (atFix && (chooseBox ?? fixBox)) (chooseBox ?? fixBox).scrollIntoView({ block: 'start' });
     if (!o) return;
     const when = (iso) => new Date(iso).toLocaleString('en-AU', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });

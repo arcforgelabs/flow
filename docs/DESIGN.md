@@ -107,7 +107,8 @@ The page at `/sign-in`, `/people`, `/account` and `/appearance`
   is the page's name only (`pageHeader`), with no line under it, at one
   height on every page; a live count (2 to check) may sit beside the name,
   and a docs link is a "?" icon there (`helpLink`), not a line of text.
-  Prefer white space to filler.
+  Prefer white space to filler. Every page uses the same centred width
+  (`.fx-main`); only the Jobs board's lanes use the whole window.
 - **Tips**: every control that shows only an icon says its name on hover
   and on keyboard focus (`server/ui/tip.js`, one listener for the whole
   app). It reads `data-tip`, else the control's `aria-label` or `title`; a
@@ -208,6 +209,8 @@ names its card in the Flow Design System.
 | `dialog({ title, body, confirm, tone })` | `server/ui/kit.js` | Dialog | A confirm step before an action that is hard to undo |
 | `holdButton(button, ms)` | `server/ui/kit.js` | HoldButton | A button that waits between presses (Xero, Seazona) and shows the time left |
 | `settingRow({ label, hint, control })`, `sectionTitle`, `.fx-setting` | `server/ui/kit.js` | SettingRow | One setting row: short name, one hint line, the control at the right |
+| `tileCard({ href, mark, title, status, blurb, action })`, `.fx-int-grid` | `server/ui/app.js` (`ui().tileCard`) |  | A grid of cards that each open a page: Integrations, Rules. `mark` is a logo node or an icon name; leave out `blurb` unless it helps |
+| `crumbs([href, label]…, here)` | `server/ui/app.js` (`ui().crumbs`) |  | The trail above a page one level down (Rules › Invoice rules, Integrations › Xero) |
 | `rowMenu(label, items)` | `server/ui/kit.js` | RowMenu | The ⋯ menu on a row |
 | `.fx-btn` and its modifiers | `server/ui/flow.css` | Button | Every button |
 | `named`, `startTips` | `server/ui/tip.js` | Tip | An icon-only control's name, shown on hover and focus |
@@ -221,7 +224,8 @@ names its card in the Flow Design System.
 | `alertStrip(ui, page)` | `server/ui/alerts.js` | | The slim alert line on a page (`docs/ALERTS.md`) |
 | `lucide(h, name, label)` | `server/ui/custom-fields.js` | Icon | A Lucide icon in the text colour; with `label` it is named |
 | `colorPicker`, `optionPill` | `server/ui/custom-fields.js` | OptionPill | A colour choice; a dropdown option as a coloured pill |
-| `jobChangeBanner(ui, change)` | `server/ui/job-change.js` | JobChangeBanner | "The job changed" on a draft, with Accept change |
+| `jobChangeBanner(ui, change)`, `jobChangeReview(ui, change, { canAccept, done })` | `server/ui/job-change.js` | JobChangeBanner | "The job changed" on a draft, with Accept change; `jobChangeReview` wires Accept and the recheck (invoice page, a job's Review sidecar) |
+| `sidecar(h, { label, overlay, escape, tabs })` | `server/ui/sidecar.js` | Sidecar | The right-hand panel: tabs with an icon and one word, ×, closed takes no room. A job's panel (Activity, Review); over a page with `overlay` (Custom fields manager) |
 | `formatCents`, `xeroTag`, `linkIcon`, `accountingIcon` | `server/ui/invoicing.js` | | Money, an accounting status tag, a link to the other system |
 | `automationSection`, `rulesSection`, `sendModeSection`, `lineMappingSection` | `server/ui/automations.js`, `invoice-rules.js`, `invoicing-settings.js`, `line-mappings.js` | | Settings sections a page mounts |
 

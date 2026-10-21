@@ -66,10 +66,7 @@ export async function renderXeroImport(main, ui) {
     renderReview();
   }
   main.append(
-    h('nav', { class: 'fx-crumbs', 'aria-label': 'Breadcrumb' },
-      h('a', { href: '/integrations', onclick: (event) => ui.go(event) }, 'Integrations'), h('span', { 'aria-hidden': 'true' }, '›'),
-      h('a', { href: '/integrations/xero', onclick: (event) => ui.go(event) }, 'Xero'), h('span', { 'aria-hidden': 'true' }, '›'),
-      h('span', {}, history ? 'History' : 'Review')),
+    ui.crumbs(['/integrations', 'Integrations'], ['/integrations/xero', 'Xero'], history ? 'History' : 'Review'),
     ui.pageHeader(history ? 'Xero history' : 'Review', { count: tally, actions }),
     host);
 

@@ -1,6 +1,6 @@
 // Automation rows (server/core/automations.js, /api/invoicing/automations).
 // Each automation shows where its trigger lives: the work system's ready rule
-// on that integration's page, the draft rule on Settings, Invoicing. One row
+// on that integration's page, the invoicing ones on Settings, Automations. One row
 // for each: its name, one short line, and its switch, plus a row for each of
 // its settings. A change saves at once. Everyone can read them; an owner or
 // admin changes them. The caller passes in app.js's shared pieces as `ui`.
@@ -92,4 +92,11 @@ export function automationSection(ui, place, title) {
     }
   })();
   return section;
+}
+
+// Settings, Automations (/automations): the invoicing automations. A work
+// system's own automations stay on its integration page.
+export function renderAutomations(main, ui) {
+  const { h, pageHeader } = ui;
+  main.append(pageHeader('Automations'), h('div', { class: 'fx-card', style: { padding: '8px 20px 16px' } }, automationSection(ui, 'invoicing', 'Invoicing')));
 }

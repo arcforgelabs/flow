@@ -5,4 +5,4 @@
 - `jobChangeBanner(ui, change, { money, onAccept, onRecheck })`.
 - Accept change shows only while the draft is not sent. A conflict is an alert: a person fixes it at the source.
 
-Code: `jobChangeBanner` in `server/ui/job-change.js`.
+Code: `jobChangeBanner`, `jobChangeReview` in `server/ui/job-change.js`.
