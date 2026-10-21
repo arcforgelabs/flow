@@ -2,7 +2,7 @@
 
 Chart Lab drew 42 kinds of chart on the same subject. Samuel rated each kind: great, good, meh or poor. Use this list to pick a chart. Pick from great and good. Use meh only with the fix in its note. Do not use poor.
 
-Source: Chart Lab, https://claude.ai/artifact/RESTxZpBbDo9x2mjgWy2f8 (ratings of 2026-10-19). The page source holds a hand-drawn SVG for every kind: copy from it when `charts.js` has no renderer.
+Source: Chart Lab, `references/chart-lab.html` (ratings of 2026-10-19; the live artifact is https://claude.ai/artifact/RESTxZpBbDo9x2mjgWy2f8). The page source holds a hand-drawn SVG for every kind: copy from it when `charts.js` has no renderer.
 
 `charts.js` column: the renderer name in `kit/charts.js`, or `—` (draw it by hand).
 

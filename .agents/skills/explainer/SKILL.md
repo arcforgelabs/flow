@@ -17,6 +17,7 @@ All paths are relative to this skill folder.
 | --- | --- |
 | `references/pattern.md` | The page rules. Read it first, every time. |
 | `references/charts.md` | Every rated chart kind, its tier and its note. Pick a chart from it. |
+| `references/chart-lab.html` | Chart Lab: every rated chart kind drawn on one subject. Copy a hand-drawn SVG from it when `kit/charts.js` has no renderer. |
 | `kit/tokens.css` | Colours, fonts, radii, light and dark, and the diagram colour key. |
 | `kit/explainer.css` | The `.ex-` styles. Tokens only. |
 | `kit/charts.js` | Data-driven SVG renderers: `connection`, `container`, `capacity`, `heatmap`, `sankey`. |
@@ -25,6 +26,7 @@ All paths are relative to this skill folder.
 | `examples/explainer-kit.html` | A full page that uses every renderer. |
 | `scripts/bundle` | Inlines the kit into one self-contained HTML file. |
 | `scripts/check` | Headless check: page errors, every part opens, Facts lists work, no sideways scroll. |
+| `scripts/export-public` | Writes the public copy (no scripts, no private names or links) to a folder, for example `arcforgelabs/themes` `explainer/`. |
 
 ## Make a page
 
@@ -62,5 +64,7 @@ A small idea (one idea, five to nine parts) can be an inline widget instead of a
 
 - `references/pattern.md` copies `project/explainers.md` from the Arc Forge Design System artifact (https://claude.ai/artifact/8pZbZfefPhvV5kAHUSquEJ). `kit/explainer.css` and `kit/explainer.js` copy its `project/explainer/` files. When Samuel teaches a new rule, change both places.
 - `references/charts.md` copies the Chart Lab ratings. When a rating changes, change the table.
+- `references/chart-lab.html` copies the Chart Lab artifact page. When the artifact changes, copy it again and remove the rating form, its storage script and the Next round section.
 - The diagram colour key belongs to `arcforgelabs/themes` (`docs/diagram-colour-key.md`). Copy its values; do not change them here.
+- The public copy is `arcforgelabs/themes` `explainer/`. After a change here merges, run `scripts/export-public <themes>/explainer` and open a pull request there. Never edit the public copy by hand.
 - A new renderer in `kit/charts.js` must pass `scripts/check` in `examples/explainer-kit.html`. Add a section for it there.

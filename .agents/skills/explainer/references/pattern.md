@@ -23,7 +23,7 @@ Reference page: **OpenClaw vs Projects** (https://claude.ai/artifact/ESFw5NeVtSX
 - **Pretty, with substance**: care in the look is care for the reader. Decoration with no content is not allowed.
 - Never use a sequence diagram (lifelines with messages): rated D tier. Show a request path as a ConnectionDiagram.
 - FlowLanes (chip lanes) are low tier: they only group things. Use them for short, simple lists.
-- Chart Lab rates each kind on the same subject: https://claude.ai/artifact/RESTxZpBbDo9x2mjgWy2f8. Its ratings decide this list. The tiers are in `charts.md`.
+- Chart Lab rates each kind on the same subject: `references/chart-lab.html`. Its ratings decide this list. The tiers are in `charts.md`.
 
 ## Words
 

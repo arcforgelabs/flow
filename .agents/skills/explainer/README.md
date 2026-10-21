@@ -27,11 +27,14 @@ python3 -m http.server 8765   # then open http://localhost:8765/examples/explain
 Installed by `forge-tools skills sync --defaults` (listed in `install-defaults.json`).
 Claude sessions on claude.ai also have the account skill `explainer`; after a change
 here merges, update that account skill from `SKILL.md`.
+ChatGPT has no skill folder: build `explainer-chatgpt.zip` with
+`harnesses/chatgpt/package-chatgpt-skill` and upload it under Customize → Skills
+(see `harnesses/chatgpt/README.md`).
 
 ## Sources
 
 - Arc Forge Design System artifact: `project/explainers.md`, `project/explainer/*`
   (https://claude.ai/artifact/8pZbZfefPhvV5kAHUSquEJ).
-- Chart Lab ratings (https://claude.ai/artifact/RESTxZpBbDo9x2mjgWy2f8).
+- Chart Lab ratings (https://claude.ai/artifact/RESTxZpBbDo9x2mjgWy2f8). `references/chart-lab.html` is its page source, without the rating form, its storage code and the Next round list.
 - Diagram colour key: `arcforgelabs/themes`, `docs/diagram-colour-key.md`.
 - Tokens: OpenClaw Control UI Knot theme (MIT), as resolved by the design system.
