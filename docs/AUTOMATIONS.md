@@ -21,9 +21,9 @@ after it reads the integrations and runs the matcher, every two minutes.
 | Automation | Key | Shown on | Default | Does |
 | --- | --- | --- | --- | --- |
 | Mark ready to invoice | `mark_ready_from_work_status` | The Seazona integration page | On; statuses shipped, delivered | Marks a job in work ready to invoice when its work system status is one of the chosen statuses, in any case |
-| Draft when ready | `draft_when_ready` | Settings, Invoice rules | On | Drafts the invoice of each ready job that passes the invoicing rules. A job whose work system report is over two hours old is read again first (issue #141); one that cannot be read waits. Xero's latest changes are read once before the first draft (issue #45); when that read cannot run, nothing is drafted. With no accounting integration, Flow's own records are the check |
-| Reference from the rule | `reference_from_rule` | Settings, Invoice rules | On | Gives each draft made from a job the Reference from the Reference rule (`docs/INVOICING_RULES.md`, "Reference"). A Reference a person typed stays. The draft's status does not change |
-| Ready when drafted | `ready_when_drafted` | Settings, Invoice rules | On | Puts each draft that "Draft when ready" made in Ready on the Invoices page, so "Send all ready" sends it. A draft a person changed or moved back to Drafts stays with people. A draft with a problem shows in Problem |
+| Draft when ready | `draft_when_ready` | Settings, Rules | On | Drafts the invoice of each ready job that passes the invoicing rules. A job whose work system report is over two hours old is read again first (issue #141); one that cannot be read waits. Xero's latest changes are read once before the first draft (issue #45); when that read cannot run, nothing is drafted. With no accounting integration, Flow's own records are the check |
+| Reference from the rule | `reference_from_rule` | Settings, Rules | On | Gives each draft made from a job the Reference from the Reference rule (`docs/INVOICING_RULES.md`, "Reference"). A Reference a person typed stays. The draft's status does not change |
+| Ready when drafted | `ready_when_drafted` | Settings, Rules | On | Puts each draft that "Draft when ready" made in Ready on the Invoices page, so "Send all ready" sends it. A draft a person changed or moved back to Drafts stays with people. A draft with a problem shows in Problem |
 
 Each automation shows on the screen of the data that triggers it (`place`).
 

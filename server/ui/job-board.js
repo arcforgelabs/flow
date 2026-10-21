@@ -147,7 +147,7 @@ export function fixes(o) {
   if (PROBLEM_VIEWS.includes(o.view)) found.push(...(o.reasons ?? []).map((r) => reasonFix(r)));
   if (o.view === 'ready') {
     found.push(...(o.waitingFor ?? []).filter(isRule).map((r) => ({
-      label: 'Stopped by a rule', text: sentence(r), todo: 'Draft the invoice here, or change the rule under Settings, Invoice rules.', go: 'invoicing-settings',
+      label: 'Stopped by a rule', text: sentence(r), todo: 'Draft the invoice here, or change the rule under Settings, Rules.', go: 'invoicing-settings',
     })));
   }
   if (o.invoiceStatus === 'void') {
