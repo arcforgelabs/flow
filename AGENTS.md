@@ -23,3 +23,15 @@ Before you build a UI element, read the
 - Prefer white space to filler text. Say "Custom field", never "Field".
 - Colours, corners and strokes come from the `--t-*` tokens, never literal
   values.
+
+## Cursor Cloud
+
+`npm ci` installs dependencies. On boot the environment starts PostgreSQL 16
+and `npm start` (Getting started in `README.md`). A login shell has Node 24
+and two local databases, both `postgres://flow:flow@127.0.0.1:5432/`:
+
+- `DATABASE_URL` ends in `flow_dev`. The server listens on port 19300.
+- `FLOW_TEST_DATABASE_URL` ends in `flow_test`. `npm test` uses it.
+
+`GET /health` reports the database. Sign-in stays off until `FLOW_AUTH=clerk`
+and the Clerk keys are set (`docs/SELF_HOSTING.md`).
