@@ -724,7 +724,7 @@ function draftView(invoice, ui, context, redraw) {
   });
   clientInput.addEventListener('blur', () => { setTimeout(() => { clientList.hidden = true; }, 120); });
 
-  const reference = h('input', { class: 'fx-input', type: 'text', value: invoice?.reference ?? '', placeholder: 'Practitioner - Patient' });
+  const reference = h('input', { class: 'fx-input', type: 'text', value: invoice?.reference ?? '', placeholder: 'Type a reference', 'aria-label': 'Reference' });
   const dueDate = h('input', { class: 'fx-input', type: 'date', value: invoice?.dueDate ?? '' });
 
   // Lines.
@@ -753,7 +753,7 @@ function draftView(invoice, ui, context, redraw) {
       };
       showAmount();
       const item = h('input', {
-        class: 'fx-input', type: 'text', list: 'fx-price-items', placeholder: 'Code or name', autocomplete: 'off',
+        class: 'fx-input', type: 'text', list: 'fx-price-items', placeholder: 'Code', autocomplete: 'off',
         value: line.itemCode ?? '', 'aria-label': `Item, line ${index + 1}`,
       });
       const description = h('input', { class: 'fx-input', type: 'text', value: line.description ?? '', 'aria-label': `Description, line ${index + 1}` });
