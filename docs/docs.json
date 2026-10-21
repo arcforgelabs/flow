@@ -20,7 +20,7 @@
       {
         "tab": "Project",
         "groups": [
-          { "group": "Contributing", "pages": ["design", "design-system", "releasing", "low-risk-merge", "ai-bots"] },
+          { "group": "Contributing", "pages": ["design", "design-system", "mobile-tests", "releasing", "low-risk-merge", "ai-bots"] },
           { "group": "Releases", "pages": ["releases"] }
         ]
       }
