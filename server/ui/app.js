@@ -250,7 +250,7 @@ const VIEWS = {
   jobs: { label: 'Jobs', icon: 'jobs', group: 'Work', render: (main) => renderJobs(main, ui()) },
   invoices: { label: 'Invoices', icon: 'invoices', group: 'Work', render: (main, id) => (id ? renderInvoice(main, ui(), id) : renderInvoiceList(main, ui())) },
   reconcile: { label: 'Reconcile', icon: 'reconcile', group: 'Work', render: (main, id) => renderReconcile(main, ui(), id) },
-  'invoicing-settings': { label: 'Rules', icon: 'rules', group: 'Settings', render: (main) => renderInvoicingSettings(main, ui()) },
+  'invoicing-settings': { label: 'Rules', icon: 'rules', group: 'Settings', render: (main, id) => renderInvoicingSettings(main, ui(), id) },
   'price-list': { label: 'Price list', icon: 'tag', group: 'Settings', render: (main, id) => (id === 'reconcile' ? renderPriceReconcile(main, ui()) : renderPriceList(main, ui())) },
   'custom-fields': { label: 'Custom fields', icon: 'fields', group: 'Settings', render: (main) => renderCustomFields(main, ui()) },
   people: { label: 'People', icon: 'people', group: 'Settings', ownerOnly: true, render: renderPeople },
@@ -267,6 +267,8 @@ const VIEWS = {
 const ICON_PATHS = {
   jobs: '<rect x="3" y="4" width="5" height="16" rx="1"/><rect x="10" y="4" width="5" height="11" rx="1"/><rect x="17" y="4" width="4" height="14" rx="1"/>',
   invoices: '<path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 13h7M9 17h5"/>',
+  draft: '<path d="M14 3H6v18h5M14 3l4 4v3M14 3v4h4"/><path d="M13 21v-2.5l6-6 2.5 2.5-6 6z"/>',
+  bolt: '<path d="M13 3L5 13h6l-1 8 8-10h-6z"/>',
   rules: '<path d="M3 6l2 2 4-4M3 16l2 2 4-4M13 6h8M13 12h8M13 18h8"/>',
   reconcile: '<path d="M4 8h13M13 4l4 4-4 4M20 16H7M11 12l-4 4 4 4"/>',
   people: '<circle cx="9" cy="8" r="3"/><path d="M3 20c0-3.5 2.7-6 6-6s6 2.5 6 6"/><path d="M16 5a3 3 0 010 6M21 20c0-3-1.6-5-4-5.7"/>',
@@ -419,7 +421,7 @@ function navigate(event) {
 // The shared pieces a view module (invoicing.js) builds with. Its `go`
 // takes a path, or a link's click event.
 const ui = () => ({
-  h, flow, toast, notice, pageHeader, sectionTitle, dialog, me, holdButton,
+  h, flow, toast, notice, pageHeader, sectionTitle, dialog, me, holdButton, tileCard, crumbs,
   go: (target, options) => (typeof target === 'string' ? go(target, options) : navigate(target)),
 });
 
@@ -712,17 +714,39 @@ async function renderIntegrations(main) {
 }
 
 function integrationTile(integration) {
-  const href = `/integrations/${integration.id}`;
   const entry = CATALOGUE[integration.id];
   const on = integration.enabled;
   const attention = ['failed', 'restart_needed'].includes(integration.state);
+  return tileCard({
+    href: `/integrations/${integration.id}`,
+    mark: integrationLogo(integration),
+    title: integration.name,
+    status: on ? { label: STATE_LABEL[integration.state] ?? integration.state, tone: STATE_TONE[integration.state] } : null,
+    blurb: entry?.blurb,
+    action: attention ? 'Fix' : on ? 'Manage' : '+ Connect',
+  });
+}
+
+// One card in a grid of choices (Integrations, Rules): its mark (a node, or
+// an ICON_PATHS name), the name, a status pill, two lines at most, and the
+// action. The whole card is the link.
+function tileCard({ href, mark, title, status, blurb, action = 'Manage' }) {
+  const logo = typeof mark === 'string' ? h('span', { class: 'fx-logo fx-logo--icon', 'aria-hidden': 'true' }, icon(mark)) : mark;
   return h('a', { class: 'fx-int-card', href, onclick: navigate },
     h('header', { class: 'fx-int-card__head' },
-      integrationLogo(integration),
-      h('h3', {}, integration.name),
-      on ? h('span', { class: 'fx-status', 'data-tone': STATE_TONE[integration.state] ?? 'mute' }, STATE_LABEL[integration.state] ?? integration.state) : null),
-    h('p', { class: 'fx-int-card__blurb' }, entry?.blurb ?? ''),
-    h('span', { class: 'fx-int-card__btn' }, attention ? 'Fix' : on ? 'Manage' : '+ Connect'));
+      logo,
+      h('h3', {}, title),
+      status ? h('span', { class: 'fx-status', 'data-tone': status.tone ?? 'mute' }, status.label) : null),
+    h('p', { class: 'fx-int-card__blurb' }, blurb ?? ''),
+    h('span', { class: 'fx-int-card__btn' }, action));
+}
+
+// The trail above a page one level down: crumbs(['/integrations', 'Integrations'], 'Xero').
+function crumbs(...trail) {
+  const here = trail.pop();
+  return h('nav', { class: 'fx-crumbs', 'aria-label': 'Breadcrumb' },
+    ...trail.flatMap(([href, label]) => [h('a', { href, onclick: navigate }, label), h('span', { 'aria-hidden': 'true' }, '›')]),
+    h('span', {}, here));
 }
 
 // One integration's page (/integrations/<id>): its logo and maker, Connect
@@ -859,8 +883,7 @@ async function renderIntegration(main, id) {
         busy ? h('span', { class: 'fx-spinner fx-spinner--sm', 'aria-hidden': 'true' }) : null, busy ? 'Connecting' : 'Connect');
 
     host.replaceChildren(
-      h('nav', { class: 'fx-crumbs', 'aria-label': 'Breadcrumb' },
-        h('a', { href: '/integrations', onclick: navigate }, 'Integrations'), h('span', { 'aria-hidden': 'true' }, '›'), h('span', {}, current.name)),
+      crumbs(['/integrations', 'Integrations'], current.name),
       h('header', { class: 'fx-int-hero' },
         integrationLogo(current, 'xl'),
         h('div', { class: 'fx-int-hero__text' },

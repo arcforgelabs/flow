@@ -329,6 +329,7 @@ a.fx-link:hover, a.fx-link:focus-visible { border-color: var(--t-strong); }
   display: grid; place-items: center; flex: none; width: 44px; height: 44px; border-radius: 10px;
   background: #fff; box-shadow: inset 0 0 0 1px var(--fx-line);
 }
+.fx-logo--icon { background: var(--t-accent-bg); color: var(--t-accent); box-shadow: none; }
 .fx-logo img { width: 28px; height: 28px; object-fit: contain; }
 .fx-logo--lg { width: 52px; height: 52px; }
 .fx-logo--lg img { width: 34px; height: 34px; }

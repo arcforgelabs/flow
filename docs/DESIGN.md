@@ -206,6 +206,8 @@ component gets a row here in the pull request that adds it.
 | `notice`, `toast`, `dialog` | `server/ui/app.js` (`ui()`) | A note on the page, a short result, a confirm dialog |
 | `holdButton(button, ms)` | `server/ui/app.js` (`ui()`) | A button that waits between presses (Xero, Seazona) and shows the time left |
 | `settingRow({ label, hint, control })`, `.fx-setting` | `server/ui/app.js` | One setting row: short name, one hint line, the control at the right. Not in `ui()` yet: add it there before another module needs it |
+| `tileCard({ href, mark, title, status, blurb, action })`, `.fx-int-grid` | `server/ui/app.js` (`ui().tileCard`) | A grid of cards that each open a page: Integrations, Rules. `mark` is a logo node or an icon name |
+| `crumbs([href, label]…, here)` | `server/ui/app.js` (`ui().crumbs`) | The trail above a page one level down (Rules › Invoice rules, Integrations › Xero) |
 | `rowMenu(label, items)` | `server/ui/app.js` | The ⋯ menu on a row |
 | `viewBar(h)`: `menu`, `option`, `filterMenu` and the rows-panel parts | `server/ui/view-bar.js` | Group, Sort, Filter and Columns chips and their panels, on every list (Jobs, Reconcile) |
 | `findBox(h, { label, oninput })` | `server/ui/view-bar.js` | A list's own search: an icon that opens into a box |
