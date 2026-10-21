@@ -116,16 +116,34 @@ Flow jobs against Flow invoices. It calls no integration. Whether a Flow
 invoice matches an invoice in an accounting system is that integration's own
 work, on its own page.
 
-It has two queues, oldest first.
+It is laid out like Jobs and Invoices. `/reconcile` lists every gap, oldest
+first, jobs and invoices together:
 
-| Queue | A gap is |
+| Gap | A gap is |
 | --- | --- |
-| Job, no invoice | A job marked ready, with no Flow invoice, not held, and not tied to an accounting invoice by the matcher. |
-| Invoice, no job | A Flow invoice, not void, that no job is linked to. |
+| Job with no invoice | A job marked ready, with no Flow invoice, not held, and not tied to an accounting invoice by the matcher. |
+| Invoice with no job | A Flow invoice, not void, that no job is linked to. |
+
+The Filter chip is the one Jobs uses (`server/ui/view-bar.js`): rows of
+field, operator and value. The fields are Type (Job or Invoice), Client,
+Practitioner, Date, Total and Match (has a possible match, or none). The
+rows are kept for each viewer in the browser. The search icon at the right
+of the toolbar opens a box that finds a client, practitioner, invoice number
+or amount. Jobs and Invoices use the same icon (`findBox` in
+`server/ui/view-bar.js`); the sidebar search (Ctrl+K) stays the way to find
+anything in Flow. Ticked jobs get draft invoices from
+the bulk bar ("Make invoices"); a ticked job with a possible invoice is left
+for a person to check.
+
+A row opens that gap at `/reconcile/:id` (`?kind=invoice` for an invoice),
+as an invoice opens from Invoices: the pager on top ("← Back" to the list,
+"n of N" of the list as it was filtered, previous and next), then the gap.
+The search icon for another invoice (or job) sits at the right of the
+toolbar over the compare table.
 
 For one gap the page shows the record beside its possible other side, best
 first: the same client within 60 days, ranked by total, lines, Reference and
-date. A search box finds any other: Flow invoices by number, client,
+date. The search icon finds any other: Flow invoices by number, client,
 Reference or amount; jobs by client, practitioner or case. Each fact has a
 mark against the record's: ✓ same, ≠ different, none when one side does not
 know.

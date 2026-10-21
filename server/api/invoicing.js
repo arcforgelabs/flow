@@ -43,7 +43,8 @@ import {
 //   POST  /invoices/mark-ready        { invoiceIds }: a person checked these drafts; one with a problem stays
 //   POST  /invoices/mark-not-ready    { invoiceIds }: back to To check
 //   POST  /invoices/send-ready        owner or admin: issue every ready draft and queue it for the
-//                                     accounting system { issueDate, invoiceIds? (only these, each ready) }
+//                                     accounting system { issueDate, invoiceIds? (only these; one that fails
+//                                     a check now stays on Pending and counts as held) }
 //   POST  /invoices/send-again        owner or admin: queue failed sends again { invoiceIds? }
 //   GET   /invoices/:id               one invoice: lines, contact, job, issued versions, and where it sends
 //   GET   /invoices/:id/pdf?version=  the invoice as a PDF, drawn by Flow (server/core/invoice-pdf.js),
@@ -542,8 +543,10 @@ export function createInvoicingRouter({
     // the job at its source or adopt the change (ledger.js), as Move to
     // Ready and Send do.
     const { problems } = await invoiceView(db, organisationId, await getInvoice(db, organisationId, invoiceId));
-    const held = problems.find((p) => p.code === 'job_review');
-    if (held) throw new FlowError('not_ready', `${held.message} Nothing was approved.`);
+    // A lab's pending rule (invoice-rules.js) is a gate too: fix its cause
+    // or turn the rule off.
+    const held = problems.find((p) => p.code === 'job_review' || p.code === 'rule');
+    if (held) throw new FlowError('not_ready', `${held.message.replace(/\.?$/, '.')} Nothing was approved.`);
     const issued = await issueInvoice(db, organisationId, invoiceId, { issuedBy: `person:${req.person.id}`, issueDate });
     log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} issued invoice ${issued.number} (version ${issued.issuedVersion})`);
     res.json({ ok: true, invoice: await invoiceDetail(db, organisationId, invoiceId, accounting(), work()) });
@@ -773,7 +776,7 @@ export function createInvoicingRouter({
   // with their tests, and the values Flow already holds for each kind of menu.
   router.get('/rule-fields', ...signedIn, handle(log, async (req, res) => {
     const organisationId = await organisationOf(req);
-    const [statuses, customers, items] = await Promise.all([
+    const [statuses, customers, items, practitioners] = await Promise.all([
       workStatuses(db, organisationId),
       db.select({ value: contacts.id, label: contacts.name }).from(contacts)
         .where(and(eq(contacts.organisationId, organisationId), eq(contacts.kind, 'customer')))
@@ -781,13 +784,20 @@ export function createInvoicingRouter({
       db.select({ value: priceItems.code, label: priceItems.name }).from(priceItems)
         .where(and(eq(priceItems.organisationId, organisationId), isNull(priceItems.archivedAt)))
         .orderBy(asc(priceItems.code)).limit(1000),
+      // The practitioners on the jobs, as the work system wrote them, most used first.
+      db.select({ value: billingObligations.practitioner, n: sql`count(*)::int` }).from(billingObligations)
+        .where(and(eq(billingObligations.organisationId, organisationId), sql`coalesce(trim(${billingObligations.practitioner}), '') <> ''`))
+        .groupBy(billingObligations.practitioner).orderBy(sql`count(*) desc`, asc(billingObligations.practitioner)).limit(500),
     ]);
     res.json({
       ok: true,
-      fields: Object.entries(FIELDS).map(([key, f]) => ({ key, label: f.label, kind: f.kind, options: f.options ?? null, tests: TESTS[f.kind] })),
+      fields: Object.entries(FIELDS).map(([key, f]) => ({
+        key, label: f.label, kind: f.kind, options: f.options ?? null, tests: TESTS[f.kind], draftOnly: Boolean(f.draftOnly),
+      })),
       actions: ACTIONS,
       options: {
         statuses: statuses.map((s) => ({ value: s.value, label: s.label })),
+        practitioners: practitioners.map((p) => ({ value: p.value, label: `${p.value} (${p.n})` })),
         customers,
         items: [
           ...items.map((i) => ({ value: i.value, label: `${i.value} · ${i.label}` })),

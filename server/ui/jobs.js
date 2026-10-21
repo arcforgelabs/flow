@@ -19,9 +19,10 @@ import {
   caseNumber, FINAL_RANK, fixes, INVOICE_STAGES, invoiceStage, matches, NO_STATUS, orderStatuses, problemSummary, statusRank,
 } from '/assets/ui/job-board.js';
 import {
-  COLUMNS, DEFAULT_VIEW, fieldGroup, fieldIdOf, fieldLanes, FILTER_FIELDS, filterCount, filterJobs, groupJobs, GROUPS, KIND_OF_TYPE, keptStatuses, laneOf,
+  COLUMNS, DEFAULT_VIEW, fieldGroup, fieldIdOf, fieldLanes, FILTER_FIELDS, filterJobs, groupJobs, GROUPS, KIND_OF_TYPE, keptStatuses, laneOf,
   normaliseJobsView, NOT_SET, OPERATORS, sortJobs, SORTS,
 } from '/assets/ui/job-view.js';
+import { findBox, ICONS, svg, today, viewBar } from '/assets/ui/view-bar.js';
 
 const LAYOUT_KEY = 'flow_jobs_layout';
 const FOLDED_KEY = 'flow_jobs_folded';
@@ -84,19 +85,9 @@ function saveFolded(folded) {
   try { localStorage.setItem(FOLDED_KEY, JSON.stringify(folded)); } catch { /* a convenience only */ }
 }
 
-// The local calendar day, as yyyy-mm-dd, to mark late jobs.
-const today = () => {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-};
 
 const WARN_ICON = '<svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5 15 14H1z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M8 6v3.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="8" cy="11.6" r=".9" fill="currentColor"/></svg>';
 const PERSON_ICON = '<svg width="13" height="13" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="5.5" r="3" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M2.5 14c.6-2.8 2.8-4.3 5.5-4.3s4.9 1.5 5.5 4.3" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>';
-const GROUP_ICON = '<svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.8 14.5 5 8 8.2 1.5 5z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="m1.5 8.2 6.5 3.2 6.5-3.2M1.5 11.2 8 14.4l6.5-3.2" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>';
-const SORT_ICON = '<svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="m4.5 6 3.5-3.5L11.5 6M4.5 10 8 13.5l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-const COLUMNS_ICON = '<svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="2.5" width="12" height="11" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M6 2.5v11M10 2.5v11" stroke="currentColor" stroke-width="1.3"/></svg>';
-const FILTER_ICON = '<svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 3.5h12M4.5 8h7M7 12.5h2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>';
-const TICK_ICON = '<svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="m3 8.5 3.2 3L13 4.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 const CHEVRON_ICON = '<svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="m6 3.5 4.5 4.5L6 12.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 const CALENDAR_ICON = '<svg width="13" height="13" viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="3" width="12" height="11" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M2 6.5h12M5.5 1.5v3M10.5 1.5v3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>';
 
@@ -120,7 +111,7 @@ export async function renderJobs(main, ui) {
     ticked: new Set(), folded: readFolded(),
   };
   const toggle = h('div', { class: 'fx-seg', role: 'radiogroup', 'aria-label': 'Layout' });
-  const search = h('input', { class: 'fx-input fx-search', type: 'search', placeholder: 'Find a case, client or practitioner', 'aria-label': 'Find a job', value: asked });
+  const find = findBox(h, { label: 'Find a case, client or practitioner', value: asked, oninput: (words) => { state.q = words.trim(); draw(); } });
   const host = h('div', { class: 'fx-jobs' }, h('div', { class: 'fx-skeleton' }));
   const controls = h('div', { class: 'fx-viewbar', role: 'group', 'aria-label': 'Group, sort and filter' });
   // In the list, ticked rows get the same floating bar as Invoices.
@@ -128,7 +119,7 @@ export async function renderJobs(main, ui) {
   main.classList.add('fx-main--wide');
   main.append(
     pageHeader('Jobs'),
-    h('div', { class: 'fx-toolbar fx-toolbar--plain' }, controls, h('div', { class: 'fx-toolbar__end' }, search, toggle)),
+    h('div', { class: 'fx-toolbar fx-toolbar--plain' }, controls, h('div', { class: 'fx-toolbar__end' }, find.element, toggle)),
     host,
     bulk.element);
 
@@ -137,7 +128,6 @@ export async function renderJobs(main, ui) {
     onclick: () => { saveLayout(id); change({ layout: id }); drawToggle(); },
   }, label)));
   drawToggle();
-  search.addEventListener('input', () => { state.q = search.value.trim(); draw(); });
 
   const problemsOf = (job) => fixes(job.obligation);
   const jobKey = (job) => `${job.sourceSystem}\u0000${job.sourceJobRef}`;
@@ -177,64 +167,14 @@ export async function renderJobs(main, ui) {
     }, 500);
   }
 
-  // One toolbar control: a chip that opens a small panel under it, and an ×
-  // that clears what the chip sets (as ClickUp's "Clear all filters"). The
-  // panel is a popover, so a click outside or Escape closes it.
-  let menuCount = 0;
-  function menu(icon, build, { rows = false, clearLabel = 'Clear' } = {}) {
-    const id = `fx-jobs-menu-${++menuCount}`;
-    const panel = h('div', { class: `fx-pop${rows ? ' fx-pop--rows' : ''}`, id, popover: 'auto', role: rows ? 'dialog' : 'menu' });
-    const button = h('button', { type: 'button', class: 'fx-chip', popovertarget: id, 'aria-haspopup': rows ? 'dialog' : 'menu', 'aria-expanded': 'false' });
-    const clear = h('button', { type: 'button', class: 'fx-chip__clear', 'aria-label': clearLabel, title: clearLabel, hidden: true }, lucide(h, 'x'));
-    const wrap = h('span', { class: 'fx-chipset' }, button, clear);
-    let onClear = null;
-    clear.addEventListener('click', () => onClear?.());
-    const fill = () => panel.replaceChildren(...build(fill, () => panel.hidePopover()).filter(Boolean));
-    panel.addEventListener('toggle', (event) => {
-      button.setAttribute('aria-expanded', String(event.newState === 'open'));
-      if (event.newState !== 'open') return;
-      fill();
-      const at = button.getBoundingClientRect();
-      panel.style.top = `${Math.round(at.bottom + 6)}px`;
-      panel.style.left = `${Math.round(Math.max(8, Math.min(at.left, innerWidth - panel.offsetWidth - 8)))}px`;
-    });
-    return {
-      node: [wrap, panel],
-      wrap,
-      fill: () => { if (panel.matches(':popover-open')) fill(); },
-      set(label, on, clearIt = null) {
-        button.replaceChildren(svg(icon), h('span', {}, label));
-        wrap.classList.toggle('fx-chipset--on', on);
-        button.classList.toggle('fx-chip--on', on);
-        onClear = clearIt;
-        clear.hidden = !clearIt;
-      },
-    };
-  }
-
-  // A choice in a menu: a row with a tick when it is chosen.
-  const option = (text, checked, onclick, role = 'menuitemradio') => h('button', {
-    type: 'button', class: 'fx-pop__item', role, 'aria-checked': String(checked), onclick,
-  }, h('span', { class: 'fx-pop__tick' }, checked ? svg(TICK_ICON) : null), h('span', {}, text));
+  // The chips (view-bar.js), shared with every list page.
+  const { menu, option, title, choose, bin, addButton, rowsFoot, clearAll, filterMenu: buildFilterMenu } = viewBar(h);
   const DATE_WORDS = ['Oldest first', 'Newest first'];
   const NUMBER_WORDS = ['Low to high', 'High to low'];
   const DIR_WORDS = { total: NUMBER_WORDS, due: DATE_WORDS, ordered: DATE_WORDS, shipped: DATE_WORDS };
   const TYPE_WORDS = { date: DATE_WORDS, number: NUMBER_WORDS };
   const dirWords = (by) => DIR_WORDS[by] ?? TYPE_WORDS[fieldById(fieldIdOf(by))?.type] ?? ['A to Z', 'Z to A'];
   const fieldById = (id) => state.fields.find((f) => f.id === id) ?? null;
-
-  // The parts of a row panel (Group by, Sort, Filters): a title, rows of
-  // selects with a bin at the end, and a foot with "Add" and "Clear all".
-  const title = (text) => h('p', { class: 'fx-rows__title' }, text);
-  const choose = (label, value, options, onchange, extra = {}) => h('select', {
-    class: 'fx-select fx-select--sm', 'aria-label': label, onchange: (event) => onchange(event.target.value), ...extra,
-  }, options.map((o) => (o.group
-    ? (o.options.length ? h('optgroup', { label: o.group }, o.options.map((x) => h('option', { value: x.value, selected: x.value === value }, x.label))) : null)
-    : h('option', { value: o.value, selected: o.value === value, disabled: o.disabled }, o.label))));
-  const bin = (label, onclick) => h('button', { type: 'button', class: 'fx-rows__bin', 'aria-label': label, title: label, onclick }, lucide(h, 'trash-2'));
-  const addButton = (text, onclick) => h('button', { type: 'button', class: 'fx-btn fx-btn--ghost fx-btn--sm fx-rows__add', onclick }, lucide(h, 'plus'), text);
-  const rowsFoot = (...parts) => h('div', { class: 'fx-rows__foot' }, ...parts);
-  const clearAll = (onclick) => h('button', { type: 'button', class: 'fx-btn fx-btn--ghost fx-btn--sm', onclick }, 'Clear all');
 
   // ── Group by ──
   // One row: what to group by, the group order, and a bin that takes the
@@ -243,7 +183,7 @@ export async function renderJobs(main, ui) {
     ...Object.entries(GROUPS).filter(([id]) => id !== 'none').map(([value, label]) => ({ value, label })),
     { group: 'Custom fields', options: groupable().map((f) => ({ value: fieldGroup(f.id), label: f.name })) },
   ];
-  const groupMenu = menu(GROUP_ICON, (redraw) => {
+  const groupMenu = menu(ICONS.group, (redraw) => {
     const list = state.view.layout === 'list';
     const group = state.view.group === 'none' && !list ? 'status' : state.view.group;
     const none = group === 'none';
@@ -264,7 +204,7 @@ export async function renderJobs(main, ui) {
     { group: 'Custom fields', options: state.fields.map((f) => ({ value: fieldGroup(f.id), label: f.name })) },
   ];
   const setSorts = (sorts) => change({ sorts });
-  const sortMenu = menu(SORT_ICON, (redraw) => {
+  const sortMenu = menu(ICONS.sort, (redraw) => {
     const { sorts } = state.view;
     const unused = sortOptions().flatMap((o) => o.options ?? [o]).filter((o) => !sorts.some((s) => s.by === o.value));
     return [
@@ -329,105 +269,15 @@ export async function renderJobs(main, ui) {
       default: return valueOf(job, fieldIdOf(field))?.value ?? null;
     }
   }
-  // A row's value when its operator changes: kept when it still fits.
-  function valueFor(field, op, old) {
-    const kind = kindOf(field);
-    if (['is', 'not'].includes(op) && ['choice', 'person'].includes(kind)) return Array.isArray(old) ? old : [];
-    if (['before', 'after', 'on'].includes(op)) return typeof old === 'string' && /^\d{4}-/.test(old) ? old : today();
-    if (['eq', 'gt', 'lt'].includes(op)) return typeof old === 'number' ? old : null;
-    if (['has', 'is'].includes(op)) return typeof old === 'string' ? old : '';
-    return null;
-  }
-  const setFilters = (filters) => change({ filters });
-  const setRow = (i, patch) => setFilters(state.view.filters.map((f, n) => (n === i ? { ...f, ...patch } : f)));
-  // A choice row's value: a button that opens a list of choices to tick,
-  // with a search when the list is long.
-  function choiceValue(i, filter) {
-    const choices = choicesOf(filter.field);
-    const named = () => {
-      const on = choices.filter((c) => filter.value.includes(c.value)).map((c) => c.label);
-      return on.length ? on.join(', ') : 'Choose…';
-    };
-    const id = `fx-jobs-choice-${i}`;
-    const button = h('button', { type: 'button', class: 'fx-select fx-select--sm fx-rows__value', popovertarget: id, title: named() }, named());
-    const pop = h('div', { class: 'fx-pop fx-pop--choices', id, popover: 'auto', role: 'menu' });
-    const find = choices.length > 8 ? h('input', { class: 'fx-input fx-input--sm', type: 'search', placeholder: 'Find', 'aria-label': 'Find a choice' }) : null;
-    const items = h('div', {});
-    const drawItems = () => {
-      const q = find?.value.trim().toLowerCase() ?? '';
-      items.replaceChildren(...choices.filter((c) => !q || c.label.toLowerCase().includes(q)).map((c) => option(c.label, filter.value.includes(c.value), () => {
-        filter = { ...filter, value: filter.value.includes(c.value) ? filter.value.filter((v) => v !== c.value) : [...filter.value, c.value] };
-        setRow(i, { value: filter.value });
-        button.textContent = named();
-        button.title = named();
-        drawItems();
-      }, 'menuitemcheckbox')));
-    };
-    find?.addEventListener('input', drawItems);
-    pop.append(...[find, items].filter(Boolean));
-    pop.addEventListener('toggle', (event) => {
-      if (event.newState !== 'open') return;
-      drawItems();
-      const at = button.getBoundingClientRect();
-      pop.style.top = `${Math.round(at.bottom + 4)}px`;
-      pop.style.left = `${Math.round(Math.max(8, Math.min(at.left, innerWidth - pop.offsetWidth - 8)))}px`;
-      find?.focus();
-    });
-    return [button, pop];
-  }
-  function valueControl(i, filter) {
-    const kind = kindOf(filter.field);
-    const { op } = filter;
-    if (['is', 'not'].includes(op) && ['choice', 'person'].includes(kind)) return choiceValue(i, filter);
-    if (['before', 'after', 'on'].includes(op)) {
-      return h('input', { class: 'fx-input fx-input--sm fx-rows__value', type: 'date', 'aria-label': 'Date', value: filter.value ?? '', onchange: (event) => setRow(i, { value: event.target.value || null }) });
-    }
-    if (['eq', 'gt', 'lt'].includes(op)) {
-      return h('input', {
-        class: 'fx-input fx-input--sm fx-rows__value', type: 'number', step: 'any', inputmode: 'decimal', 'aria-label': 'Number', value: filter.value ?? '',
-        oninput: (event) => setRow(i, { value: event.target.value === '' ? null : Number(event.target.value) }),
-      });
-    }
-    if (['has', 'is'].includes(op)) {
-      return h('input', { class: 'fx-input fx-input--sm fx-rows__value', type: 'text', 'aria-label': 'Text', value: filter.value ?? '', oninput: (event) => setRow(i, { value: event.target.value }) });
-    }
-    return h('span', { class: 'fx-rows__value fx-rows__value--none' });
-  }
-  const filterMenu = menu(FILTER_ICON, (redraw) => {
-    const { filters, match } = state.view;
-    const fields = filterFields();
-    return [
-      title('Filters'),
-      filters.length ? h('div', { class: 'fx-rows' }, filters.map((filter, i) => {
-        const known = kindOf(filter.field);
-        const lead = i === 0 ? h('span', { class: 'fx-rows__lead' }, 'Where')
-          : i === 1 ? choose('Match', match, [{ value: 'all', label: 'And' }, { value: 'any', label: 'Or' }], (value) => { change({ match: value }); redraw(); })
-            : h('span', { class: 'fx-rows__lead' }, match === 'any' ? 'Or' : 'And');
-        if (!known) {
-          return h('div', { class: 'fx-rows__row' }, lead, h('span', { class: 'fx-rows__gone' }, 'A custom field that was deleted'), bin('Remove this filter', () => { setFilters(filters.filter((_, n) => n !== i)); redraw(); }));
-        }
-        const ops = opsOf(filter.field);
-        return h('div', { class: 'fx-rows__row' },
-          lead,
-          choose('Field', filter.field, fields, (field) => {
-            const op = Object.keys(opsOf(field))[0];
-            setRow(i, { field, op, value: valueFor(field, op, null) });
-            redraw();
-          }),
-          choose('Operator', filter.op, Object.entries(ops).map(([value, label]) => ({ value, label })), (op) => { setRow(i, { op, value: valueFor(filter.field, op, filter.value) }); redraw(); }),
-          valueControl(i, filter),
-          bin('Remove this filter', () => { setFilters(filters.filter((_, n) => n !== i)); redraw(); }));
-      })) : h('p', { class: 'fx-rows__empty' }, 'No filters. Every job shows.'),
-      rowsFoot(
-        filters.length < 20 ? addButton('Add filter', () => { setFilters([...filters, { field: 'status', op: 'is', value: [] }]); redraw(); }) : h('span'),
-        filters.length ? clearAll(() => { setFilters([]); redraw(); }) : null),
-    ];
-  }, { rows: true, clearLabel: 'Clear all filters' });
+  const filterMenu = buildFilterMenu({
+    fields: filterFields, kindOf, opsOf, choicesOf, first: 'status',
+    view: () => state.view, change, empty: 'No filters. Every job shows.',
+  });
 
   // Columns (the list only): Client always shows; each other column can be
   // shown or hidden. Custom fields are columns too.
   const heading = (text) => h('p', { class: 'fx-pop__head' }, text);
-  const columnsMenu = menu(COLUMNS_ICON, (redraw) => {
+  const columnsMenu = menu(ICONS.columns, (redraw) => {
     const on = new Set(state.view.columns);
     const flip = (id) => {
       const next = on.has(id) ? state.view.columns.filter((c) => c !== id) : [...state.view.columns, id];
@@ -463,8 +313,7 @@ export async function renderJobs(main, ui) {
     sortMenu.set(sorts.length > 1 ? `Sort · ${sorts.length}` : first ? `Sort: ${sortName(first.by)} ${first.dir === 'desc' ? '↓' : '↑'}` : 'Sort', sorts.length > 0,
       sorts.length ? () => change({ sorts: [] }) : null);
     sortMenu.wrap.hidden = list && !sorts.length;
-    const count = filterCount(state.view);
-    filterMenu.set(count ? `${count} ${count === 1 ? 'Filter' : 'Filters'}` : 'Filter', count > 0, state.view.filters.length ? () => change({ filters: [], match: 'all' }) : null);
+    filterMenu.draw();
     columnsMenu.set('Columns', false);
     columnsMenu.wrap.hidden = !list;
   }
@@ -898,7 +747,7 @@ export async function renderJobs(main, ui) {
     const flip = () => change({ sorts: sorts.map((s, n) => (n === at ? { ...s, dir: s.dir === 'asc' ? 'desc' : 'asc' } : s)) });
     columnPop.replaceChildren(
       h('button', { type: 'button', class: 'fx-pop__item', role: 'menuitemcheckbox', 'aria-checked': 'true', title: 'Change the direction', onclick: () => { close(); flip(); } },
-        h('span', { class: 'fx-pop__tick' }, lucide(h, on.dir === 'asc' ? 'arrow-up' : 'arrow-down')), h('span', {}, `Sort by ${label}`), h('span', { class: 'fx-pop__end' }, svg(TICK_ICON))),
+        h('span', { class: 'fx-pop__tick' }, lucide(h, on.dir === 'asc' ? 'arrow-up' : 'arrow-down')), h('span', {}, `Sort by ${label}`), h('span', { class: 'fx-pop__end' }, svg(ICONS.tick))),
       h('button', { type: 'button', class: 'fx-pop__item', role: 'menuitem', onclick: () => { close(); change({ sorts: sorts.filter((_, n) => n !== at) }); } },
         h('span', { class: 'fx-pop__tick' }, lucide(h, 'ban')), h('span', {}, 'Clear sort')));
     placeColumnPop(event);
@@ -1425,10 +1274,4 @@ export async function renderJobs(main, ui) {
   }
 
   await load();
-}
-
-function svg(markup) {
-  const span = document.createElement('span');
-  span.innerHTML = markup;
-  return span.firstChild;
 }

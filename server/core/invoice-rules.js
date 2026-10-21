@@ -9,7 +9,10 @@ import { FlowError, notFound } from './errors.js';
 //   When  job_ready: the job is ready to invoice and has no invoice yet.
 //   If    every condition matches: a field of the job, its customer or its
 //         lines, a test, and a value.
-//   Then  wait: the job waits for a person; skip: rules never draft it.
+//   Then  wait: the job waits for a person; skip: rules never draft it;
+//         pending: Flow drafts it, and the draft is Pending with the rule's
+//         note, which says what to fix (for example a Reference with no
+//         real practitioner).
 //
 // The rules read only Flow's own records, so they work with or without an
 // accounting integration. The earlier fixed settings (old job limit, required
@@ -19,6 +22,7 @@ const MAX_RULES = 100;
 const MAX_CONDITIONS = 10;
 const invalid = (message) => new FlowError('invalid', message);
 
+const MAX_NOTE = 200;
 const day = (date) => new Date(`${String(date).slice(0, 10)}T00:00:00Z`);
 const norm = (value) => String(value ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
 // A line's key: its price item code, else the label line mapping gave it (a
@@ -40,7 +44,9 @@ export const FIELDS = Object.freeze({
   job_age_days: { label: 'Job age (days)', kind: 'number', read: (j, { now }) => (j.jobDate ? Math.floor((now - day(j.jobDate)) / 86_400_000) : null) },
   job_total: { label: 'Job total', kind: 'money', read: (j) => (j.totalCents ?? 0) / 100 },
   job_status: { label: 'Job status', kind: 'choice', options: 'statuses', read: (j) => norm(j.sourceStatus) || null },
-  practitioner: { label: 'Practitioner', kind: 'text', read: (j, { customer }) => j.practitioner || customer.defaultPractitioner || null },
+  practitioner: { label: 'Practitioner', kind: 'text', options: 'practitioners', read: (j, { customer }) => j.practitioner || customer.defaultPractitioner || null },
+  // Only a draft has a Reference, so only a pending rule may read it.
+  reference: { label: 'Reference', kind: 'text', draftOnly: true, read: (j) => j.reference || null },
   customer: { label: 'Customer', kind: 'choice', options: 'customers', read: (j) => j.contactId },
   customer_billable: { label: 'Customer is billable', kind: 'boolean', read: (j, { customer }) => customer.billable !== false },
   line_item: { label: 'Line item', kind: 'items', options: 'items', read: (j) => (j.lines ?? []).flatMap((l) => [norm(l.itemCode), norm(l.label)].filter(Boolean)) },
@@ -51,13 +57,15 @@ export const TESTS = Object.freeze({
   number: ['more_than', 'at_most', 'is', 'is_not', 'is_empty'],
   money: ['more_than', 'at_most', 'is', 'is_not'],
   choice: ['is', 'is_not', 'is_one_of', 'is_empty'],
-  text: ['is', 'is_not', 'is_empty', 'is_not_empty'],
+  text: ['is', 'is_not', 'is_one_of', 'is_not_one_of', 'contains', 'does_not_contain', 'starts_with', 'does_not_start_with', 'has_number', 'one_word', 'is_empty', 'is_not_empty'],
   boolean: ['is'],
   items: ['has', 'has_not'],
   share: ['is', 'is_not'],
 });
 
-export const ACTIONS = Object.freeze(['wait', 'skip']);
+export const ACTIONS = Object.freeze(['wait', 'skip', 'pending']);
+// Tests that take no value.
+const NO_VALUE = new Set(['is_empty', 'is_not_empty', 'has_number', 'one_word']);
 
 function readCondition(raw, index) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw invalid(`condition ${index + 1} must be an object`);
@@ -65,13 +73,13 @@ function readCondition(raw, index) {
   if (!field) throw invalid(`condition ${index + 1}: unknown field ${raw.field}`);
   if (!TESTS[field.kind].includes(raw.test)) throw invalid(`condition ${index + 1}: ${field.label} takes ${TESTS[field.kind].join(', ')}`);
   const out = { field: raw.field, test: raw.test };
-  if (['is_empty', 'is_not_empty'].includes(raw.test)) return out;
+  if (NO_VALUE.has(raw.test)) return out;
   const { value } = raw;
   if (field.kind === 'boolean') {
     if (typeof value !== 'boolean') throw invalid(`condition ${index + 1}: the value must be true or false`);
   } else if (['number', 'money', 'share'].includes(field.kind)) {
     if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 1e9) throw invalid(`condition ${index + 1}: the value must be a number`);
-  } else if (raw.test === 'is_one_of') {
+  } else if (['is_one_of', 'is_not_one_of'].includes(raw.test)) {
     if (!Array.isArray(value) || !value.length || value.length > 50 || value.some((v) => typeof v !== 'string' || !v.trim() || v.length > 200)) {
       throw invalid(`condition ${index + 1}: pick 1 to 50 values`);
     }
@@ -98,7 +106,17 @@ export function readRule(raw) {
     throw invalid(`the rule needs 1 to ${MAX_CONDITIONS} conditions`);
   }
   if (!ACTIONS.includes(raw.action?.kind)) throw invalid(`the action must be one of ${ACTIONS.join(', ')}`);
-  return { name, enabled, conditions: raw.conditions.map(readCondition), action: { kind: raw.action.kind } };
+  const conditions = raw.conditions.map(readCondition);
+  const action = { kind: raw.action.kind };
+  if (action.kind === 'pending') {
+    const note = typeof raw.action.note === 'string' ? raw.action.note.trim() : '';
+    if (!note || note.length > MAX_NOTE) throw invalid(`a pending rule needs a note of ${MAX_NOTE} characters at most: what a person must fix`);
+    action.note = note;
+  } else {
+    const early = conditions.find((c) => FIELDS[c.field].draftOnly);
+    if (early) throw invalid(`${FIELDS[early.field].label} is on the draft only: use Then "Pending, with a note"`);
+  }
+  return { name, enabled, conditions, action };
 }
 
 function matches(condition, job, context) {
@@ -107,6 +125,18 @@ function matches(condition, job, context) {
   const { test, value } = condition;
   if (test === 'is_empty') return have === null || have === '' || have === undefined;
   if (test === 'is_not_empty') return !(have === null || have === '' || have === undefined);
+  if (field.kind === 'text' && !['is', 'is_not', 'is_one_of'].includes(test)) {
+    // An empty text matches no test that reads its words; is_empty finds it.
+    const left = norm(have);
+    if (!left) return false;
+    if (test === 'is_not_one_of') return !value.some((v) => norm(v) === left);
+    if (test === 'has_number') return /\d/.test(left);
+    if (test === 'one_word') return !left.includes(' ');
+    if (test === 'contains') return left.includes(norm(value));
+    if (test === 'does_not_contain') return !left.includes(norm(value));
+    if (test === 'starts_with') return left.startsWith(norm(value));
+    if (test === 'does_not_start_with') return !left.startsWith(norm(value));
+  }
   switch (field.kind) {
     case 'items': {
       const found = have.includes(norm(value));
@@ -142,11 +172,22 @@ export function ruleReasons(rules, job, { customer = {}, now = new Date() } = {}
   const context = { customer, now };
   const reasons = [];
   for (const rule of rules) {
-    if (!rule.enabled || rule.trigger !== 'job_ready') continue;
+    if (!rule.enabled || rule.trigger !== 'job_ready' || rule.action.kind === 'pending') continue;
     if (!rule.conditions.every((c) => matches(c, job, context))) continue;
     reasons.push(rule.action.kind === 'skip' ? `rule "${rule.name}": not drafted by rule` : `rule "${rule.name}": waits for a person`);
   }
   return reasons;
+}
+
+// The notes of the enabled pending rules that match one draft, as problems:
+// they put the draft on Pending (sending.js). `job` is the draft's job with
+// `reference`, the draft's Reference. A pending rule never stops a draft.
+export function rulePending(rules, job, { customer = {}, now = new Date() } = {}) {
+  const context = { customer, now };
+  return rules
+    .filter((r) => r.enabled && r.trigger === 'job_ready' && r.action.kind === 'pending')
+    .filter((r) => r.conditions.every((c) => matches(c, job, context)))
+    .map((r) => ({ code: 'rule', message: r.action.note, short: r.name.slice(0, 40), rule: r.id ?? null }));
 }
 
 // The starter rules made from the earlier fixed settings.

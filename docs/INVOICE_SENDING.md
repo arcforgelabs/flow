@@ -36,7 +36,7 @@ Approve are off: fix the job at its source, or accept the change.
 
 Ticking rows on any tab of the Invoices list brings up the bulk bar
 (server/ui/bulk-bar.js). It floats at the foot of the page, and the tabs,
-search and send bar stay at the top while the rows scroll under them. The bar
+search stay at the top while the rows scroll under them. The bar
 shows **N selected ×** (× or Esc clears the ticks), then the tab's actions in
 groups, then **More**, a searchable menu of every action plus Tick all shown,
 Invert ticks and Clear ticks. An icon-only action shows its name on hover.
@@ -44,7 +44,7 @@ Invert ticks and Clear ticks. An icon-only action shows its name on hover.
 | Tab | Actions |
 | --- | --- |
 | Pending | **Retry** (send-again for the ticked issued ones the accounting system refused), Copy references, Export CSV |
-| Ready | **Send** (send-ready for the ticked ids; **Approve** with no accounting system), Copy references, Export CSV |
+| Ready | **Send to Xero** (send-ready for the ticked ids; **Approve** with no accounting system), Copy references, Export CSV |
 | Draft, Approved, Sent | Copy numbers, Export CSV, Download PDFs, Void (asks first; Flow does not change the accounting system) |
 | Void | Copy numbers, Export CSV, Download PDFs |
 
@@ -70,7 +70,9 @@ failed). It shows the refusal until a person sends it again.
 
 ## Send all ready
 
-One press, on the Ready tab, by an owner or admin:
+On the Ready tab, an owner or admin ticks the rows (the head tick takes every
+row shown), then presses **Send to Xero** (or **Approve**) in the bulk bar. It
+asks first. There is no separate send bar. Then:
 
 1. Flow stops before it issues anything when the accounting system is on but
    not connected, or does not take writes (`XERO_ALLOW_LIVE_WRITES`).
@@ -83,6 +85,12 @@ One press, on the Ready tab, by an owner or admin:
    Then the accounting system reads its latest changes (issue #45, see
    [XERO.md](XERO.md#read-before-draft-and-send)). When that read cannot
    run, nothing is issued and every draft in the press waits.
+   Every draft check then runs again, the lab's pending rules
+   ([INVOICE_RULES.md](INVOICE_RULES.md#pending-rules)) included. A draft
+   that fails one now stays on Pending and is not sent. When a person ticked
+   drafts, the rest go and the answer counts the ones held (`held`); when
+   every ticked draft fails, nothing is sent and the answer names the first
+   problem.
 3. Each ready draft is issued and gets its number. One press takes up to 100
    drafts; the rest wait for the next press.
 4. Each issued invoice is queued for the accounting system, and shows in

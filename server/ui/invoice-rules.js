@@ -11,9 +11,13 @@ const DOCS = 'https://github.com/arcforgelabs/flow/blob/main/docs/INVOICE_RULES.
 const TEST_LABELS = {
   more_than: 'is more than', at_most: 'is at most', is: 'is', is_not: 'is not', is_one_of: 'is one of',
   is_empty: 'is empty', is_not_empty: 'is not empty', has: 'has', has_not: 'does not have',
+  is_not_one_of: 'is not one of', contains: 'contains', does_not_contain: 'does not contain',
+  starts_with: 'starts with', does_not_start_with: 'does not start with', has_number: 'has a number', one_word: 'is one word',
 };
-const ACTION_LABELS = { wait: 'Wait for a person', skip: 'Never draft' };
-const NO_VALUE = ['is_empty', 'is_not_empty'];
+const ACTION_LABELS = { wait: 'Wait for a person', skip: 'Never draft', pending: 'Pending, with a note' };
+const NO_VALUE = ['is_empty', 'is_not_empty', 'has_number', 'one_word'];
+const MANY = ['is_one_of', 'is_not_one_of'];
+const TYPED = ['contains', 'does_not_contain', 'starts_with', 'does_not_start_with'];
 
 // A rule as one short line: "Job age (days) is more than 90 · Wait for a person".
 export function ruleSummary(rule, meta) {
@@ -33,7 +37,8 @@ export function ruleSummary(rule, meta) {
     const value = Array.isArray(c.value) ? c.value.map((v) => labelOf(field, v)).join(', ') : labelOf(field, c.value);
     return `${field.label} ${test} ${value}`;
   };
-  return `${rule.conditions.map(part).join(' and ')} · ${ACTION_LABELS[rule.action.kind] ?? rule.action.kind}`;
+  const then = rule.action.kind === 'pending' ? `Pending: ${rule.action.note}` : ACTION_LABELS[rule.action.kind] ?? rule.action.kind;
+  return `${rule.conditions.map(part).join(' and ')} · ${then}`;
 }
 
 export function rulesSection(ui, title = 'Rules') {
@@ -100,9 +105,19 @@ export function rulesSection(ui, title = 'Rules') {
         const box = numberBox(value, 'Value');
         valueHost.append(box);
         readValue = () => ({ value: Number(box.value) });
-      } else if (test === 'is_one_of') {
-        const chosen = new Set((Array.isArray(value) ? value : []).map((v) => String(v).toLowerCase()));
-        const boxes = options(field).map((o) => {
+      } else if (TYPED.includes(test) || (field.kind === 'text' && !MANY.includes(test) && !options(field).length)) {
+        const box = h('input', { class: 'fx-input', type: 'text', maxlength: '200', value: Array.isArray(value) ? value[0] ?? '' : value ?? '', 'aria-label': 'Value' });
+        valueHost.append(box);
+        readValue = () => ({ value: box.value });
+      } else if (MANY.includes(test)) {
+        const picked = Array.isArray(value) ? value : [];
+        const chosen = new Set(picked.map((v) => String(v).toLowerCase()));
+        // A value saved earlier that is no longer on the menu stays ticked.
+        const known = new Set(options(field).map((o) => String(o.value).toLowerCase()));
+        // Ticked values come first, so a long menu shows what the rule holds.
+        const list = [...picked.filter((v) => !known.has(String(v).toLowerCase())).map((v) => ({ value: v, label: v })), ...options(field)]
+          .sort((x, y) => Number(chosen.has(String(y.value).toLowerCase())) - Number(chosen.has(String(x.value).toLowerCase())));
+        const boxes = list.map((o) => {
           const box = h('input', { type: 'checkbox', value: o.value, checked: chosen.has(String(o.value).toLowerCase()) });
           return h('label', { class: 'fx-multi__option' }, box, h('span', {}, o.label));
         });
@@ -112,10 +127,6 @@ export function rulesSection(ui, title = 'Rules') {
         const select = choiceSelect(field, Array.isArray(value) ? value[0] : value, 'Value');
         valueHost.append(select);
         readValue = () => ({ value: select.value });
-      } else {
-        const box = h('input', { class: 'fx-input', type: 'text', value: value ?? '', 'aria-label': 'Value' });
-        valueHost.append(box);
-        readValue = () => ({ value: box.value });
       }
     }
 
@@ -144,6 +155,15 @@ export function rulesSection(ui, title = 'Rules') {
     const action = h('select', { class: 'fx-select', 'aria-label': 'Then' },
       Object.entries(ACTION_LABELS).map(([value, label]) => h('option', { value }, label)));
     action.value = draft?.action.kind ?? 'wait';
+    // A pending rule's note: what a person must fix. It shows on the draft.
+    const note = h('input', {
+      class: 'fx-input', maxlength: '200', value: draft?.action.note ?? '', 'aria-label': 'Note',
+      placeholder: 'For example: Put the practitioner in the job, then check the Reference.',
+    });
+    const noteField = h('div', { class: 'fx-field' }, h('span', { class: 'fx-label' }, 'Note on the draft'), note);
+    const showNote = () => { noteField.hidden = action.value !== 'pending'; };
+    action.addEventListener('change', showNote);
+    showNote();
     let editors = [];
     const list = h('div', { class: 'fx-rule__conditions' });
     const addCondition = (start) => {
@@ -174,9 +194,10 @@ export function rulesSection(ui, title = 'Rules') {
       title: rule ? 'Edit rule' : 'New rule',
       body: h('div', { class: 'fx-fields fx-rule__dialog' },
         label('Name', name),
-        label('When', h('span', { class: 'fx-dim' }, 'A job is ready to invoice and has no invoice.')),
+        label('When', h('span', { class: 'fx-dim' }, 'A job is ready to invoice. A pending rule also checks its draft and the Reference.')),
         label('If all of these match', list, more),
         label('Then', action),
+        noteField,
         remove),
       confirm: rule ? 'Save' : 'Add rule',
     });
@@ -186,7 +207,11 @@ export function rulesSection(ui, title = 'Rules') {
       return draw();
     }
     if (!data) return null;
-    const payload = { name: name.value, conditions: editors.map((e) => e.read()), action: { kind: action.value } };
+    const payload = {
+      name: name.value,
+      conditions: editors.map((e) => e.read()),
+      action: action.value === 'pending' ? { kind: 'pending', note: note.value } : { kind: action.value },
+    };
     const body = rule
       ? await send(`/api/invoicing/rules/${rule.id}`, 'PUT', payload)
       : await send('/api/invoicing/rules', 'POST', payload);
@@ -219,7 +244,7 @@ export function rulesSection(ui, title = 'Rules') {
     add?.addEventListener('click', () => edit(null));
     section.replaceChildren(
       h('h2', { class: 'fx-set__title' }, title),
-      h('p', { class: 'fx-set__hint', style: { margin: '0 0 4px' } }, 'A ready job waits, or is never drafted, when a rule matches.'),
+      h('p', { class: 'fx-set__hint', style: { margin: '0 0 4px' } }, 'When a rule matches, a ready job waits, is never drafted, or its draft is Pending with the rule\'s note.'),
       ...(rules.length ? rules.map(rowOf) : [h('p', { class: 'fx-dim' }, 'No rules. Every ready job is drafted.')]),
       h('div', { class: 'fx-rule__footer' }, add,
         h('a', { class: 'fx-dim', href: DOCS, target: '_blank', rel: 'noopener' }, 'How rules work')));
