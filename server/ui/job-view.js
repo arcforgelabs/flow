@@ -418,6 +418,24 @@ export function widthOf(column, widths) {
   return Number.isFinite(saved) ? Math.round(Math.min(MAX_WIDTH, Math.max(minWidth(column.kind), saved))) : startWidth(column.kind);
 }
 
+// A list table's columns: the tick column at the start, the end column
+// (+) at least this wide.
+export const LEAD_WIDTH = 44;
+export const TAIL_WIDTH = 40;
+
+// The width a list table needs for its columns, with the end column at
+// its least.
+export function tableWidth(columns, widths, lead = 0) {
+  return columns.reduce((sum, c) => sum + widthOf(c, widths), 0) + lead * LEAD_WIDTH + TAIL_WIDTH;
+}
+
+// The end column's width: the room left after the other columns, so the
+// head and rows reach the window's right edge (as HubSpot's), never under
+// TAIL_WIDTH. A window not drawn yet (width 0) gets TAIL_WIDTH.
+export function endWidth(need, room) {
+  return Math.max(TAIL_WIDTH, Math.floor(room) - (need - TAIL_WIDTH));
+}
+
 // Saved widths as Flow keeps them: known-looking ids, whole pixels in range.
 // The minimum per kind applies when a width is drawn (widthOf), since the
 // server does not know a custom column's kind.

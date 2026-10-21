@@ -24,7 +24,8 @@ class El {
   constructor(tag) { Object.assign(this, { tag, attrs: {}, children: [] }); }
   setAttribute(k, v) { this.attrs[k] = String(v); }
   append(...kids) { this.children.push(...kids.flat().filter((k) => k != null)); }
-  replaceChildren(...kids) { this.children = []; this.append(...kids); }
+  // As the DOM's: a value that is not an element becomes text, null too.
+  replaceChildren(...kids) { this.children = kids.map((k) => (k instanceof El ? k : String(k))); }
   set innerHTML(markup) { this.children = []; }
   get text() { return this.children.map((k) => (k instanceof El ? k.text : String(k))).join(''); }
   all(test) { return this.children.filter((k) => k instanceof El).flatMap((k) => [...(test(k) ? [k] : []), ...k.all(test)]); }
@@ -58,4 +59,5 @@ test('a page button asks for its rows; a new size starts at the first page', () 
   assert.equal(pager.element.all((el) => el.attrs.class === 'fx-pages__num').length, 0);
   assert.equal(pager.element.all((el) => el.tag === 'select').length, 1);
   assert.match(pager.element.text, /1–30 of 30/);
+  assert.doesNotMatch(pager.element.text, /null/, 'no stray text after the range');
 });
