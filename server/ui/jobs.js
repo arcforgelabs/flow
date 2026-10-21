@@ -13,6 +13,7 @@
 // or with a keyboard, the job's panel has the same moves.
 
 import { bulkBar } from '/assets/ui/bulk-bar.js';
+import { columnTable, onRightButton, rowCells, viewSaver } from '/assets/ui/columns.js';
 import { lucide } from '/assets/ui/custom-fields.js';
 import { formatCents } from '/assets/ui/invoicing.js';
 import { jobChangeReview } from '/assets/ui/job-change.js';
@@ -166,17 +167,12 @@ export async function renderJobs(main, ui) {
 
   // A change to the view: draw it now, save it with the account shortly
   // after, so a few quick clicks make one request.
-  let saveTimer = null;
+  const saveView = viewSaver(ui, 'jobs');
   function change(patch) {
     state.view = normaliseJobsView({ ...state.view, ...patch });
-    if (ui.me) ui.me.views = { ...ui.me.views, jobs: state.view };
     drawControls();
     draw();
-    clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => {
-      flow('/api/me/views/jobs', { method: 'PUT', body: JSON.stringify(state.view) })
-        .catch(() => ui.toast?.('Flow could not save your view. It applies on this page only.', 'danger'));
-    }, 500);
+    saveView(state.view);
   }
 
   // The chips (view-bar.js), shared with every list page.
@@ -709,9 +705,6 @@ export async function renderJobs(main, ui) {
     return h('div', { class: 'fx-task__move' }, wait, select);
   }
 
-  // A column's menu (a click on its head, or a right-click): sort by it,
-  // move it, hide it. Client always shows. `column` null is the + menu: the
-  // hidden columns, to add one back.
   // What a column's head sorts by: a built-in key, or the column's custom
   // field (Assignee is the lab's person field).
   const SORT_OF = { client: 'client', practitioner: 'practitioner', due: 'due', ordered: 'ordered', shipped: 'shipped', total: 'total' };
@@ -761,65 +754,43 @@ export async function renderJobs(main, ui) {
     on && sorts.length > 1 ? h('span', { class: 'fx-th-sort__n' }, String(at + 1)) : null);
   }
   function sortMenuAt(event, by, label, on, at) {
-    const close = () => columnPop.hidePopover?.();
     const { sorts } = state.view;
     const flip = () => change({ sorts: sorts.map((s, n) => (n === at ? { ...s, dir: s.dir === 'asc' ? 'desc' : 'asc' } : s)) });
-    columnPop.replaceChildren(
-      h('button', { type: 'button', class: 'fx-pop__item', role: 'menuitemcheckbox', 'aria-checked': 'true', title: 'Change the direction', onclick: () => { close(); flip(); } },
+    heads.menu.show([
+      h('button', { type: 'button', class: 'fx-pop__item', role: 'menuitemcheckbox', 'aria-checked': 'true', title: 'Change the direction', onclick: () => { heads.menu.close(); flip(); } },
         h('span', { class: 'fx-pop__tick' }, lucide(h, on.dir === 'asc' ? 'arrow-up' : 'arrow-down')), h('span', {}, `Sort by ${label}`), h('span', { class: 'fx-pop__end' }, svg(ICONS.tick))),
-      h('button', { type: 'button', class: 'fx-pop__item', role: 'menuitem', onclick: () => { close(); change({ sorts: sorts.filter((_, n) => n !== at) }); } },
-        h('span', { class: 'fx-pop__tick' }, lucide(h, 'ban')), h('span', {}, 'Clear sort')));
-    placeColumnPop(event);
+      heads.menu.item('ban', 'Clear sort', () => change({ sorts: sorts.filter((_, n) => n !== at) })),
+    ], event);
   }
-  const columnPop = h('div', { class: 'fx-pop', id: 'fx-jobs-colmenu', popover: 'auto', role: 'menu' });
-  document.body.append(columnPop);
-  // A popover opened while the right button is still down closes again on
-  // its release (light dismiss), so open it after the release.
-  function onRightButton(event, open) {
-    if (event.buttons & 2) addEventListener('pointerup', () => setTimeout(open), { once: true });
-    else open();
-  }
-  function columnMenu(column, event) {
-    const ids = state.view.columns;
-    const close = () => columnPop.hidePopover?.();
-    const item = (icon, text, run) => h('button', { type: 'button', class: 'fx-pop__item', role: 'menuitem', onclick: () => { close(); run(); } },
-      h('span', { class: 'fx-pop__tick' }, lucide(h, icon)), h('span', {}, text));
-    const parts = [];
-    if (column) {
+  // The list's heads (columns.js): drag an edge to resize, drag a head to
+  // move it; a click or right-click opens its menu: sort by it, move it,
+  // edit its custom field, hide it. Client always shows, first. + lists the
+  // hidden columns, to add one back.
+  const heads = columnTable(h, {
+    order: () => state.view.columns,
+    widths: () => state.view.widths,
+    change,
+    hidden: () => {
+      const shown = new Set(state.view.columns);
+      return [
+        ...builtInColumns().filter((id) => !shown.has(id)).map((id) => ({ id, label: id === 'assignee' ? assigneeField().name : COLUMNS[id] })),
+        ...customColumns().filter((f) => !shown.has(fieldGroup(f.id))).map((f) => ({ id: fieldGroup(f.id), label: f.name })),
+      ];
+    },
+    extra: (column, item) => {
+      const parts = [];
       const sort = sortOf(column.id);
       if (sort) {
         const [up, down] = dirWords(sort);
         parts.push(item('arrow-up-narrow-wide', `Sort: ${up}`, () => change({ sorts: [{ by: sort, dir: 'asc' }] })),
           item('arrow-down-wide-narrow', `Sort: ${down}`, () => change({ sorts: [{ by: sort, dir: 'desc' }] })), h('div', { class: 'fx-pop__sep' }));
       }
-      const rest = ids.filter((c) => c !== column.id);
-      parts.push(item('arrow-left-to-line', 'Move to start', () => change({ columns: [column.id, ...rest] })),
-        item('arrow-right-to-line', 'Move to end', () => change({ columns: [...rest, column.id] })));
       if (column.id.startsWith('field:') && ['owner', 'admin'].includes(ui.me?.person?.role)) {
         parts.push(item('settings', 'Edit custom field', () => ui.go('/custom-fields')));
       }
-      parts.push(h('div', { class: 'fx-pop__sep' }), item('eye-off', 'Hide column', () => change({ columns: rest })));
-    }
-    // + lists the hidden columns: a click adds one at the end.
-    if (!column) {
-      const shown = new Set(ids);
-      const hidden = [
-        ...builtInColumns().filter((id) => !shown.has(id)).map((id) => ({ id, label: id === 'assignee' ? assigneeField().name : COLUMNS[id] })),
-        ...customColumns().filter((f) => !shown.has(fieldGroup(f.id))).map((f) => ({ id: fieldGroup(f.id), label: f.name })),
-      ];
-      parts.push(...hidden.map((c) => h('button', { type: 'button', class: 'fx-pop__item', role: 'menuitem', onclick: () => { close(); change({ columns: [...ids, c.id] }); } }, c.label)));
-      if (!hidden.length) parts.push(h('p', { class: 'fx-pop__head' }, 'Every column shows'));
-    }
-    columnPop.replaceChildren(...parts);
-    placeColumnPop(event);
-  }
-  function placeColumnPop(event) {
-    columnPop.showPopover?.();
-    const x = event.clientX || event.currentTarget?.getBoundingClientRect?.().left || 0;
-    const y = event.clientY || event.currentTarget?.getBoundingClientRect?.().bottom || 0;
-    columnPop.style.top = `${Math.round(Math.min(y + 4, innerHeight - columnPop.offsetHeight - 8))}px`;
-    columnPop.style.left = `${Math.round(Math.max(8, Math.min(x, innerWidth - columnPop.offsetWidth - 8)))}px`;
-  }
+      return parts;
+    },
+  });
 
   // The list's columns, in the order the person chose them. One column holds
   // one field; each date has its own column.
@@ -827,25 +798,30 @@ export async function renderJobs(main, ui) {
     const day = (iso) => h('time', { datetime: iso ?? null, title: iso ? fullDate(iso) : null }, shortDate(iso));
     const late = (job) => (isLate(job) ? h('span', { class: 'fx-job__date--late', title: 'Past due' }, day(job.dueOn)) : day(job.dueOn));
     const BUILT_IN = {
-      case: { kind: 'case', dim: true, cell: (job) => caseNumber(job) ?? '—' },
-      practitioner: { kind: 'text', dim: true, cell: (job) => job.practitioner ?? '—' },
-      patient: { kind: 'text', dim: true, cell: (job) => job.patient ?? '—' },
+      case: { kind: 'case', className: 'fx-dim', cell: (job) => caseNumber(job) ?? '—' },
+      practitioner: { kind: 'text', className: 'fx-dim', cell: (job) => job.practitioner ?? '—' },
+      patient: { kind: 'text', className: 'fx-dim', cell: (job) => job.patient ?? '—' },
       stage: { kind: 'stage', cell: (job) => stagePill(statusOf(job)) },
       assignee: { kind: 'person', cell: (job) => personBadge(job, assigneeField()) },
-      ordered: { kind: 'date', dim: true, cell: (job) => day(job.orderedOn) },
-      due: { kind: 'date', dim: true, cell: late },
-      shipped: { kind: 'date', dim: true, cell: (job) => day(job.shippedOn) },
-      total: { kind: 'total', num: true, strong: true, cell: (job) => (job.totalCents == null ? '—' : formatCents(job.totalCents)) },
+      ordered: { kind: 'date', className: 'fx-dim', cell: (job) => day(job.orderedOn) },
+      due: { kind: 'date', className: 'fx-dim', cell: late },
+      shipped: { kind: 'date', className: 'fx-dim', cell: (job) => day(job.shippedOn) },
+      total: { kind: 'total', num: true, className: 'fx-strong', cell: (job) => (job.totalCents == null ? '—' : formatCents(job.totalCents)) },
     };
     const allowed = new Set(builtInColumns());
-    return state.view.columns.map((id) => {
+    // Client is always the first column: it has no drag, Move or Hide.
+    const client = {
+      id: 'client', label: 'Client', kind: 'client', fixed: true, sort: () => sortButton('client', 'Client'),
+      cell: (job) => h('span', { class: 'fx-job__cell' }, h('span', { class: 'fx-strong' }, clientOf(job)), problemMark(job)),
+    };
+    return [client, ...state.view.columns.map((id) => {
       if (BUILT_IN[id]) return allowed.has(id) ? { id, label: id === 'assignee' ? assigneeField().name : COLUMNS[id], ...BUILT_IN[id] } : null;
       const field = customColumns().find((f) => fieldGroup(f.id) === id);
       if (!field) return null;
       const cell = field.type === 'person' ? (job) => personBadge(job, field)
         : field.type === 'date' ? (job) => day(valueOf(job, field.id)?.value ?? null) : (job) => fieldText(job, field);
-      return { id, label: field.name, kind: field.type === 'date' ? 'date' : field.type === 'person' ? 'person' : field.type === 'number' ? 'total' : 'text', num: field.type === 'number', dim: true, cell };
-    }).filter(Boolean);
+      return { id, label: field.name, kind: field.type === 'date' ? 'date' : field.type === 'person' ? 'person' : field.type === 'number' ? 'total' : 'text', num: field.type === 'number', className: 'fx-dim', cell };
+    }).filter(Boolean).map((c) => ({ ...c, sort: () => sortButton(c.id, c.label) }))];
   }
 
   // A person custom field's value as a badge (initials), the name on hover.
@@ -902,8 +878,7 @@ export async function renderJobs(main, ui) {
       onkeydown: (event) => { if (event.key === 'Enter' && event.target === event.currentTarget) openJob(job); },
     },
     tickCell(setBox([job], `Tick ${clientOf(job)}${caseNumber(job) ? `, case ${caseNumber(job)}` : ''}`)),
-    h('td', { class: 'fx-c-client' }, h('span', { class: 'fx-job__cell' }, h('span', { class: 'fx-strong' }, clientOf(job)), problemMark(job))),
-    columns.map((c) => h('td', { class: `fx-c-${c.kind}${c.num ? ' fx-num' : ''}${c.dim ? ' fx-dim' : ''}${c.strong ? ' fx-strong' : ''}`, 'data-label': c.label }, c.cell(job))),
+    rowCells(h, columns, job),
     h('td', { class: 'fx-c-end' }));
     const fold = (label) => {
       const next = new Set(state.folded[state.view.group] ?? []);
@@ -921,22 +896,16 @@ export async function renderJobs(main, ui) {
       color ? h('span', { class: 'fx-cf__opt fx-board__lane', 'data-color': color }, label, h('span', { class: 'fx-stage__count' }, String(jobs.length))) : stagePill(label, jobs.length, rank));
       return h('tr', { class: `fx-table__group${open ? '' : ' fx-table__group--folded'}`, onclick: () => fold(label) },
         tickCell(setBox(jobs, `Tick every job in ${label}`)),
-        h('td', { colspan: String(columns.length + 2) }, h('span', { class: 'fx-table__group-row' }, toggle, h('span', { class: 'fx-board__sum' }, formatCents(totalOf(jobs))))));
+        h('td', { colspan: String(columns.length + 1) }, h('span', { class: 'fx-table__group-row' }, toggle, h('span', { class: 'fx-board__sum' }, formatCents(totalOf(jobs))))));
     };
-    return h('div', { class: 'fx-panel' }, h('table', { class: 'fx-table fx-table--jobs' },
-      h('thead', {}, h('tr', {},
-        h('th', { class: 'fx-tick-cell' }, setBox(allJobs, 'Tick every job shown')),
-        h('th', {}, h('span', { class: 'fx-th-cell' }, h('span', { class: 'fx-th fx-th--fixed' }, 'Client'), sortButton('client', 'Client'))),
-        columns.map((c) => h('th', { class: c.num ? 'fx-num' : null, oncontextmenu: (event) => { event.preventDefault(); onRightButton(event, () => columnMenu(c, event)); } },
-          h('span', { class: 'fx-th-cell' },
-            h('button', { type: 'button', class: 'fx-th', 'aria-haspopup': 'menu', title: 'Column menu (or right-click)', onclick: (event) => columnMenu(c, event) }, c.label),
-            sortButton(c.id, c.label)))),
-        h('th', { class: 'fx-th-add' }, h('button', {
-          type: 'button', class: 'fx-th fx-th--add', 'aria-label': 'Show a column', title: 'Show a column', onclick: (event) => columnMenu(null, event),
-        }, '+')))),
-      shownGroups.map((g) => h('tbody', {},
+    return h('div', { class: 'fx-panel' }, heads.table({
+      className: 'fx-table--jobs',
+      columns,
+      lead: [h('th', { class: 'fx-tick-cell' }, setBox(allJobs, 'Tick every job shown'))],
+      rows: shownGroups.map((g) => h('tbody', {},
         g.label == null ? null : head(g),
-        g.label != null && folded.has(g.label) ? null : g.jobs.map(row)))));
+        g.label != null && folded.has(g.label) ? null : g.jobs.map(row))),
+    }));
   }
 
   // ── Bulk actions ─────────────────────────────────────────────────────────

@@ -17,8 +17,9 @@
 // /jobs/:id/no-invoice (docs/JOB_INVOICE_LINKS.md).
 import { bulkBar } from '/assets/ui/bulk-bar.js';
 import { lucide } from '/assets/ui/custom-fields.js';
+import { columnTable, rowCells, viewSaver } from '/assets/ui/columns.js';
 import { statusRank } from '/assets/ui/job-board.js';
-import { cleanFilterView, filterJobs, KIND_OF_TYPE } from '/assets/ui/job-view.js';
+import { cleanFilterView, filterJobs, KIND_OF_TYPE, normaliseListView, RECONCILE_COLUMNS } from '/assets/ui/job-view.js';
 import { findBox, today, viewBar } from '/assets/ui/view-bar.js';
 import { formatCents } from '/assets/ui/invoicing.js';
 
@@ -180,7 +181,19 @@ async function renderList(main, ui) {
   const icon = (name, label) => lucide(h, name, label);
   const canAct = ['owner', 'admin'].includes(ui.me?.person?.role);
   const back = readStored(sessionStorage, NAV_KEY, null);
-  const state = { view: readView(), q: back?.q ?? '', ticked: new Set() };
+  const state = { view: readView(), q: back?.q ?? '', ticked: new Set(), columns: normaliseListView(ui.me?.views?.reconcile, RECONCILE_COLUMNS) };
+  // The list's columns: resize, move, hide, kept with the account.
+  const saveColumns = viewSaver(ui, 'reconcile');
+  const heads = columnTable(h, {
+    order: () => state.columns.columns,
+    widths: () => state.columns.widths,
+    change: (patch) => {
+      state.columns = normaliseListView({ ...state.columns, ...patch }, RECONCILE_COLUMNS);
+      saveColumns(state.columns);
+      draw();
+    },
+    hidden: () => Object.keys(RECONCILE_COLUMNS).filter((id) => !state.columns.columns.includes(id)).map((id) => ({ id, label: RECONCILE_COLUMNS[id] })),
+  });
   const find = findBox(h, { label: 'Find a client, practitioner or amount', value: state.q, oninput: (words) => { state.q = words; draw(); } });
   const controls = h('div', { class: 'fx-viewbar', role: 'group', 'aria-label': 'Filter' });
   const host = h('div', { class: 'fx-rec' }, h('div', { class: 'fx-skeleton' }));
@@ -291,31 +304,31 @@ async function renderList(main, ui) {
     const possible = (r) => (r.possible
       ? h('span', { class: 'fx-rec__possible', 'data-state': 'some' }, icon('link-2', 'Possible match'), String(r.possible))
       : h('span', { class: 'fx-rec__possible' }, icon('circle-dashed', 'No possible match')));
-    host.replaceChildren(h('div', { class: 'fx-panel' }, h('table', { class: 'fx-table fx-table--rows fx-rec-list' },
-      h('thead', {}, h('tr', {},
-        canAct ? h('th', { class: 'fx-tick-cell' }, all) : null,
-        h('th', { class: 'fx-rec-list__kind' }, h('span', { class: 'fx-sr' }, 'Type')),
-        h('th', {}, 'Client'),
-        h('th', {}, 'Detail'),
-        h('th', {}, 'Date'),
-        h('th', { class: 'fx-num' }, 'Total'),
-        h('th', { class: 'fx-rec-list__mid' }, 'Possible'))),
-      h('tbody', {}, shown.map((r) => {
+    const ALL = {
+      kind: { kind: 'icon', icon: 'layers', className: 'fx-rec-list__kind', cell: (r) => icon(...KIND_ICON[r.kind]) },
+      client: { kind: 'client', className: 'fx-strong', cell: (r) => r.client ?? h('span', { class: 'fx-dim' }, 'No client') },
+      detail: { kind: 'text', cell: (r) => h('span', { class: r.kind === 'invoice' ? 'fx-num' : 'fx-dim' }, r.who ?? '—', r.kind === 'invoice' ? h('span', { class: 'fx-dim' }, ` · ${statusWords(r.status)}`) : null) },
+      date: { kind: 'date', className: 'fx-dim', cell: (r) => shortDate(r.date) },
+      total: { kind: 'total', num: true, cell: (r) => money(r.totalCents) },
+      possible: { kind: 'status', className: 'fx-rec-list__mid', cell: possible },
+    };
+    const columns = state.columns.columns.map((id) => ({ id, label: RECONCILE_COLUMNS[id], ...ALL[id] }));
+    host.replaceChildren(h('div', { class: 'fx-panel' }, heads.table({
+      className: 'fx-table--rows fx-rec-list',
+      columns,
+      lead: canAct ? [h('th', { class: 'fx-tick-cell' }, all)] : [],
+      rows: h('tbody', {}, shown.map((r) => {
         const box = r.kind === 'job' ? h('input', { type: 'checkbox', class: 'fx-tick', 'aria-label': `Tick ${r.client ?? 'job'}`, checked: state.ticked.has(r.id), onclick: (event) => event.stopPropagation(), onchange: () => {
           if (box.checked) state.ticked.add(r.id); else state.ticked.delete(r.id);
           drawBar();
         } }) : null;
         if (box) boxes.set(r.id, box);
-        const [glyph, label] = KIND_ICON[r.kind];
         return h('tr', { 'data-kind': r.kind, onclick: () => { remember(); ui.go(pathOf(r)); } },
           canAct ? h('td', { class: 'fx-tick-cell', onclick: (event) => event.stopPropagation() }, box) : null,
-          h('td', { class: 'fx-rec-list__kind' }, icon(glyph, label)),
-          h('td', { class: 'fx-strong' }, r.client ?? h('span', { class: 'fx-dim' }, 'No client')),
-          h('td', { class: r.kind === 'invoice' ? 'fx-num' : 'fx-dim' }, r.who ?? '—', r.kind === 'invoice' ? h('span', { class: 'fx-dim' }, ` · ${statusWords(r.status)}`) : null),
-          h('td', { class: 'fx-dim' }, shortDate(r.date)),
-          h('td', { class: 'fx-num' }, money(r.totalCents)),
-          h('td', { class: 'fx-rec-list__mid' }, possible(r)));
-      })))));
+          rowCells(h, columns, r),
+          h('td', { class: 'fx-c-end' }));
+      })),
+    })));
     drawBar();
   }
   draw();

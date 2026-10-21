@@ -10,7 +10,8 @@ import { bulkBar } from '/assets/ui/bulk-bar.js';
 import { draftNote, sendModeNote } from '/assets/ui/invoice-notes.js';
 import { caseNumber } from '/assets/ui/job-board.js';
 import { jobChangeReview } from '/assets/ui/job-change.js';
-import { cleanFilterView, filterJobs } from '/assets/ui/job-view.js';
+import { columnTable, rowCells, viewSaver } from '/assets/ui/columns.js';
+import { cleanFilterView, filterJobs, INVOICE_COLUMNS, normaliseListView } from '/assets/ui/job-view.js';
 import { findBox, today, viewBar } from '/assets/ui/view-bar.js';
 
 // The tabs, left to right (server/api/invoicing.js, TABS): Pending (a
@@ -154,7 +155,24 @@ export async function renderInvoiceList(main, ui) {
   const back = readNav();
   const returning = sessionStorage.getItem(NAV_BACK) === '1';
   sessionStorage.removeItem(NAV_BACK);
-  const state = { status: TABS.some(([id]) => id === saved) ? saved : 'ready', q: returning ? back?.q ?? '' : '', ticked: new Set(), view: readFilters() };
+  const state = {
+    status: TABS.some(([id]) => id === saved) ? saved : 'ready', q: returning ? back?.q ?? '' : '', ticked: new Set(), view: readFilters(),
+    columns: normaliseListView(ui.me?.views?.invoices, INVOICE_COLUMNS),
+  };
+  // The list's columns: resize, move, hide, kept with the account. A tab
+  // has some of them (`available`, set as it draws).
+  let available = Object.keys(INVOICE_COLUMNS);
+  const saveColumns = viewSaver(ui, 'invoices');
+  const heads = columnTable(h, {
+    order: () => state.columns.columns,
+    widths: () => state.columns.widths,
+    change: (patch) => {
+      state.columns = normaliseListView({ ...state.columns, ...patch }, INVOICE_COLUMNS);
+      saveColumns(state.columns);
+      if (raw) draw(raw);
+    },
+    hidden: () => available.filter((id) => !state.columns.columns.includes(id)).map((id) => ({ id, label: INVOICE_COLUMNS[id] })),
+  });
   const tabs = h('div', { class: 'fx-tabs', role: 'tablist' });
   let timer;
   const find = findBox(h, {
@@ -443,37 +461,47 @@ export async function renderInvoiceList(main, ui) {
       },
     });
     const statusCells = new Map();
-    host.replaceChildren(h('table', { class: 'fx-table fx-table--rows' },
-      h('thead', {}, h('tr', {},
-        h('th', { class: 'fx-tick-cell' }, all),
-        numbered ? h('th', {}, 'Number') : null, h('th', {}, 'Client'), h('th', {}, showProblem ? 'Problem' : 'Reference'),
-        h('th', {}, created ? 'Created' : 'Date'), h('th', { class: 'fx-num' }, 'Total'), h('th', {}, 'Status'),
-        linked ? h('th', {}, 'Linked') : null)),
-      h('tbody', {}, body.invoices.map((invoice) => {
-        const href = `/invoices/${invoice.id}`;
-        const first = invoice.problems?.[0];
-        return h('tr', { tabindex: '0', onclick: () => open(href), onkeydown: (event) => { if (event.key === 'Enter') open(href); } },
-          h('td', { class: 'fx-tick-cell', onclick: (event) => event.stopPropagation() }, tickBox(invoice)),
-          numbered ? h('td', {}, link(href, invoice.number ?? 'Draft')) : null,
-          h('td', {}, numbered ? (invoice.contactName ?? '—') : link(href, invoice.contactName ?? 'No client')),
-          showProblem
-            ? h('td', { class: 'fx-problem', title: invoice.problems.map((p) => p.message).join(' ') }, first?.short ?? first?.message ?? '—', invoice.problems.length > 1 ? h('span', { class: 'fx-dim' }, ` +${invoice.problems.length - 1}`) : null)
-            : h('td', { class: 'fx-dim' }, invoice.reference ?? '—'),
-          h('td', { class: 'fx-dim' }, showDate(invoice.issueDate ?? invoice.createdAt?.slice(0, 10))),
-          h('td', { class: 'fx-num fx-strong' }, formatCents(invoice.totalCents)),
-          (() => {
-            const cell = h('td', { class: 'fx-status-cell' }, invoice.sending
-              ? h('span', { class: 'fx-status', 'data-tone': 'info' }, 'Sending')
-              : h('span', { class: 'fx-status', 'data-tone': TAB_TONE[invoice.tab] ?? 'mute' }, TAB_LABEL[invoice.tab] ?? ''));
-            if (!linked) statusCells.set(invoice.id, cell);
-            return cell;
-          })(),
-          linked ? (() => {
-            const cell = h('td', { class: 'fx-links' }, systems.filter((s) => s.kind === 'work').map((s) => workIcon(ui, s, invoice.job)));
-            statusCells.set(invoice.id, cell);
-            return cell;
-          })() : null);
-      }))));
+    // The columns this tab has, in the person's order (columns.js).
+    const statusCell = (invoice) => {
+      const cell = h('span', {}, invoice.sending
+        ? h('span', { class: 'fx-status', 'data-tone': 'info' }, 'Sending')
+        : h('span', { class: 'fx-status', 'data-tone': TAB_TONE[invoice.tab] ?? 'mute' }, TAB_LABEL[invoice.tab] ?? ''));
+      if (!linked) statusCells.set(invoice.id, cell);
+      return cell;
+    };
+    const linkCell = (invoice) => {
+      const cell = h('span', { class: 'fx-links' }, systems.filter((s) => s.kind === 'work').map((s) => workIcon(ui, s, invoice.job)));
+      statusCells.set(invoice.id, cell);
+      return cell;
+    };
+    const problemCell = (invoice) => {
+      const first = invoice.problems?.[0];
+      return h('span', { class: 'fx-problem', title: invoice.problems.map((p) => p.message).join(' ') },
+        first?.short ?? first?.message ?? '—', invoice.problems.length > 1 ? h('span', { class: 'fx-dim' }, ` +${invoice.problems.length - 1}`) : null);
+    };
+    const href = (invoice) => `/invoices/${invoice.id}`;
+    const ALL = {
+      number: numbered ? { kind: 'number', cell: (i) => link(href(i), i.number ?? 'Draft') } : null,
+      client: { kind: 'client', cell: (i) => (numbered ? (i.contactName ?? '—') : link(href(i), i.contactName ?? 'No client')) },
+      reference: showProblem
+        ? { label: 'Problem', kind: 'text', cell: problemCell }
+        : { kind: 'text', className: 'fx-dim', cell: (i) => i.reference ?? '—' },
+      date: { label: created ? 'Created' : 'Date', kind: 'date', className: 'fx-dim', cell: (i) => showDate(i.issueDate ?? i.createdAt?.slice(0, 10)) },
+      total: { kind: 'total', num: true, className: 'fx-strong', cell: (i) => formatCents(i.totalCents) },
+      status: { kind: 'status', className: 'fx-status-cell', cell: statusCell },
+      linked: linked ? { kind: 'link', cell: linkCell } : null,
+    };
+    available = Object.keys(ALL).filter((id) => ALL[id]);
+    const columns = state.columns.columns.filter((id) => ALL[id]).map((id) => ({ id, label: INVOICE_COLUMNS[id], ...ALL[id] }));
+    host.replaceChildren(heads.table({
+      className: 'fx-table--rows',
+      columns,
+      lead: [h('th', { class: 'fx-tick-cell' }, all)],
+      rows: h('tbody', {}, body.invoices.map((invoice) => h('tr', { tabindex: '0', onclick: () => open(href(invoice)), onkeydown: (event) => { if (event.key === 'Enter') open(href(invoice)); } },
+        h('td', { class: 'fx-tick-cell', onclick: (event) => event.stopPropagation() }, tickBox(invoice)),
+        rowCells(h, columns, invoice),
+        h('td', { class: 'fx-c-end' })))),
+    }));
     // Issued and void invoices also show Xero's status, from Flow's copy:
     // in the Linked column every one gets an icon, so one not in Xero
     // stands out.

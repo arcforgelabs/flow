@@ -77,6 +77,7 @@ const OLD_DATE_OPS = new Set(['overdue', 'today', 'next7', 'last7', 'before', 'a
 
 export const DEFAULT_VIEW = Object.freeze({
   layout: 'board', group: 'status', groupDir: 'asc', sorts: Object.freeze([]), match: 'all', groups: Object.freeze([]), columns: DEFAULT_COLUMNS,
+  widths: Object.freeze({}),
 });
 
 // Group by one of the lab's custom fields (docs/CUSTOM_FIELDS.md):
@@ -171,6 +172,7 @@ export function normaliseJobsView(input) {
     columns: Array.isArray(value.columns)
       ? [...new Set(value.columns.filter((c) => Object.hasOwn(COLUMNS, c) || FIELD_GROUP.test(c ?? '')))].slice(0, MAX_COLUMNS)
       : [...DEFAULT_COLUMNS],
+    widths: cleanWidths(value.widths),
   };
 }
 
@@ -393,4 +395,78 @@ export function fieldLanes(field, { people = [], jobs = [], valueOf = () => null
 export function laneOf(lanes, value) {
   if (value === false || value == null) return lanes[0].label;
   return (lanes.find((lane) => lane.value === value) ?? lanes[0]).label;
+}
+
+// ── Columns (columns.js draws them) ──
+// Each kind of column starts at a width and never gets narrower than its
+// minimum, so a head and a short value always fit.
+export const COLUMN_WIDTH = Object.freeze({
+  client: 240, text: 176, case: 96, date: 120, total: 112, stage: 168, person: 96, status: 128, link: 96, icon: 48, number: 112,
+});
+export const COLUMN_MIN = Object.freeze({
+  client: 140, text: 112, case: 64, date: 76, total: 84, stage: 104, person: 64, status: 92, link: 72, icon: 40, number: 80,
+});
+export const MAX_WIDTH = 800;
+const COLUMN_ID = /^[a-z][a-z0-9_-]{0,31}(:[0-9a-f-]{36})?$/i;
+
+export const minWidth = (kind) => COLUMN_MIN[kind] ?? COLUMN_MIN.text;
+export const startWidth = (kind) => COLUMN_WIDTH[kind] ?? COLUMN_WIDTH.text;
+// A column's width now: the person's width (kept to the kind's minimum and
+// the most), else the kind's start width.
+export function widthOf(column, widths) {
+  const saved = widths?.[column.id];
+  return Number.isFinite(saved) ? Math.round(Math.min(MAX_WIDTH, Math.max(minWidth(column.kind), saved))) : startWidth(column.kind);
+}
+
+// Saved widths as Flow keeps them: known-looking ids, whole pixels in range.
+// The minimum per kind applies when a width is drawn (widthOf), since the
+// server does not know a custom column's kind.
+export function cleanWidths(input) {
+  const out = {};
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return out;
+  for (const [id, px] of Object.entries(input).slice(0, MAX_COLUMNS)) {
+    if (COLUMN_ID.test(id) && Number.isFinite(px) && px >= COLUMN_MIN.icon && px <= MAX_WIDTH) out[id] = Math.round(px);
+  }
+  return out;
+}
+
+// A saved column order: ids `known(id)` allows, each once.
+export function cleanColumnIds(input, known) {
+  if (!Array.isArray(input)) return null;
+  return [...new Set(input.filter((id) => typeof id === 'string' && COLUMN_ID.test(id) && known(id)))].slice(0, MAX_COLUMNS);
+}
+
+// The ids with `id` put at place `to` (0 is the start).
+export function moveColumn(ids, id, to) {
+  const rest = ids.filter((c) => c !== id);
+  const at = Math.max(0, Math.min(rest.length, to));
+  return [...rest.slice(0, at), id, ...rest.slice(at)];
+}
+
+// The columns in a view's order: the ones it names first, in its order, and
+// any it does not name after them, as the page lists them.
+export function inOrder(columns, ids) {
+  if (!Array.isArray(ids)) return columns;
+  const at = new Map(ids.map((id, n) => [id, n]));
+  return columns.map((c, n) => [c, at.has(c.id) ? at.get(c.id) : ids.length + n]).sort((a, b) => a[1] - b[1]).map(([c]) => c);
+}
+
+// The columns of the Invoices and Reconcile lists. On Pending, Reference
+// shows the invoice's problem; Number shows on the tabs with numbers only.
+export const INVOICE_COLUMNS = Object.freeze({
+  number: 'Number', client: 'Client', reference: 'Reference', date: 'Date', total: 'Total', status: 'Status', linked: 'Linked',
+});
+export const RECONCILE_COLUMNS = Object.freeze({
+  kind: 'Type', client: 'Client', detail: 'Detail', date: 'Date', total: 'Total', possible: 'Possible',
+});
+
+// A person's view of a list with set columns (Invoices, Reconcile): the
+// shown columns in order (every one when none is saved) and their widths.
+export function normaliseListView(input, columns) {
+  const value = input && typeof input === 'object' && !Array.isArray(input) ? input : {};
+  const ids = Object.keys(columns);
+  return {
+    columns: cleanColumnIds(value.columns, (id) => ids.includes(id)) ?? ids,
+    widths: cleanWidths(value.widths),
+  };
 }

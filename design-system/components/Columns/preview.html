@@ -1,0 +1,28 @@
+<!-- @dsCard group="Lists" height=260 -->
+<div class="fx-panel" id="list"></div>
+<script>
+const { h, columnTable, rowCells } = window.FlowDesignSystem;
+const LABELS = { client: 'Client', practitioner: 'Practitioner', due: 'Due', total: 'Total' };
+const KINDS = { client: 'client', practitioner: 'text', due: 'date', total: 'total' };
+const rows = [
+  { client: 'Bayside Dental', practitioner: 'Dr A Lee', due: 'Today', total: '$240.00' },
+  { client: 'Hillview Clinic', practitioner: 'Dr R Moss', due: '24/10', total: '$135.00' },
+  { client: 'Northgate Smiles', practitioner: 'Dr K Tran', due: '28/10', total: '$770.00' },
+];
+let view = { columns: ['client', 'practitioner', 'due', 'total'], widths: {} };
+const heads = columnTable(h, {
+  order: () => view.columns,
+  widths: () => view.widths,
+  change: (patch) => { view = { ...view, ...patch }; draw(); },
+  hidden: () => Object.keys(LABELS).filter((id) => !view.columns.includes(id)).map((id) => ({ id, label: LABELS[id] })),
+});
+function draw() {
+  const columns = view.columns.map((id) => ({ id, label: LABELS[id], kind: KINDS[id], num: id === 'total', className: id === 'client' ? 'fx-strong' : 'fx-dim', cell: (r) => r[id] }));
+  document.getElementById('list').replaceChildren(heads.table({
+    className: 'fx-table--rows',
+    columns,
+    rows: h('tbody', {}, rows.map((r) => h('tr', {}, rowCells(h, columns, r), h('td', { class: 'fx-c-end' })))),
+  }));
+}
+draw();
+</script>
