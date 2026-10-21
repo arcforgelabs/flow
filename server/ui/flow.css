@@ -338,9 +338,7 @@ a.fx-link:hover, a.fx-link:focus-visible { border-color: var(--t-strong); }
 .fx-tiles__more { display: inline-flex; align-items: center; gap: 4px; color: var(--t-dim); font-size: 13.5px; text-decoration: none; }
 .fx-tiles__more:hover, .fx-tiles__more:focus-visible { color: var(--t-strong); }
 .fx-tiles__more .fx-lucide { width: 15px; height: 15px; }
-.fx-tiles__grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
-@media (max-width: 1100px) { .fx-tiles__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (max-width: 640px) { .fx-tiles__grid { grid-template-columns: minmax(0, 1fr); } }
+.fx-tiles__grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 12px; }
 .fx-tile {
   display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 14px; align-items: center; padding: 12px 14px 12px 12px;
   border: 1px solid var(--fx-line); border-radius: var(--t-radius-lg); background: var(--t-paper); color: var(--t-text); text-decoration: none;
