@@ -49,7 +49,7 @@ export async function renderXeroImport(main, ui) {
   const history = params.get('show') === 'all';
   const icon = (name, label) => lucide(h, name, label);
   const host = h('div', { class: 'fx-xi' }, h('p', { class: 'fx-dim' }, 'Loading…'));
-  const subtitle = h('span', {});
+  const tally = h('span', {});
   const actions = [];
   let view = params.get('view') === 'list' ? 'list' : 'card';
   if (!history) {
@@ -70,7 +70,7 @@ export async function renderXeroImport(main, ui) {
       h('a', { href: '/integrations', onclick: (event) => ui.go(event) }, 'Integrations'), h('span', { 'aria-hidden': 'true' }, '›'),
       h('a', { href: '/integrations/xero', onclick: (event) => ui.go(event) }, 'Xero'), h('span', { 'aria-hidden': 'true' }, '›'),
       h('span', {}, history ? 'History' : 'Review')),
-    ui.pageHeader(history ? 'Xero history' : 'Review', { subtitle, actions }),
+    ui.pageHeader(history ? 'Xero history' : 'Review', { count: tally, actions }),
     host);
 
   let organisationId;
@@ -117,7 +117,7 @@ export async function renderXeroImport(main, ui) {
       return;
     }
     if (!rows.length) {
-      subtitle.replaceChildren('');
+      tally.replaceChildren('');
       host.replaceChildren(h('div', { class: 'fx-xi__done' }, icon('check-check'), h('p', {}, 'Nothing to check.'), go('/xero-import?show=all', 'Xero history')));
       return;
     }
@@ -134,7 +134,7 @@ export async function renderXeroImport(main, ui) {
       const fit = flowFit(row, pick);
       const bar = h('span', { class: 'fx-xi__progress', role: 'progressbar', 'aria-valuemin': '1', 'aria-valuemax': String(rows.length), 'aria-valuenow': String(at + 1) },
         h('span', { style: { width: `${((at + 1) / rows.length) * 100}%` } }));
-      subtitle.replaceChildren(h('span', { class: 'fx-xi__count' }, bar, `${at + 1} / ${rows.length}`));
+      tally.replaceChildren(h('span', { class: 'fx-xi__count' }, bar, `${at + 1} / ${rows.length}`));
       const days = daysApart(row.issuedOn, fit.date);
       const facts = [
         ['hash', 'Number', h('span', { class: 'fx-num' }, row.number ?? '—'), h('span', { class: 'fx-num' }, fit.name), null],
@@ -195,7 +195,7 @@ export async function renderXeroImport(main, ui) {
 
   // Every one to check, best fit beside it; ticked rows go from the bulk bar.
   function reviewList(rows) {
-    subtitle.replaceChildren(`${rows.length} to check`);
+    tally.replaceChildren(`${rows.length} to check`);
     const ticked = new Set();
     const boxes = new Map();
     const drawBar = () => {
@@ -315,7 +315,7 @@ export async function renderXeroImport(main, ui) {
         return;
       }
       const total = Object.values(page.counts).reduce((a, b) => a + b, 0);
-      subtitle.replaceChildren(h('span', { class: 'fx-xi__count' }, icon('check', 'In Flow'), `${page.counts.linked} / ${total}`));
+      tally.replaceChildren(h('span', { class: 'fx-xi__count' }, icon('check', 'In Flow'), `${page.counts.linked} / ${total}`));
       shown = offset === 0 ? page.rows : [...shown, ...page.rows];
       const rows = page.rows.map(rowOf);
       if (offset === 0) body.replaceChildren(...(rows.length ? rows : [h('tr', {}, h('td', { colspan: '8', class: 'fx-empty' }, q.trim() ? 'No match.' : 'No Xero invoices copied yet.'))]));

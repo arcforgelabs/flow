@@ -18,9 +18,11 @@ export function sendModeNote(to, sendMode, what = 'each invoice') {
   return text.join(' ');
 }
 
-// The line under a draft's title, one fact per sentence.
-export function draftNote(to, invoice, ready) {
-  if (!to) return ready ? 'It has no problem. Approve gives it a number.' : 'Fix the problem, then approve it.';
-  if (!ready) return `Fix the problem, then send it to ${to}.`;
-  return sendModeNote(to, invoice?.sendMode, 'this invoice');
+// A warning above a draft, only when its Send cannot work: the accounting
+// system is off or takes no invoices. Otherwise nothing: the problems show
+// on their own, and the Send dialog says what Send does.
+export function draftNote(to, invoice) {
+  const sendMode = invoice?.sendMode;
+  if (!to || !sendMode || (sendMode.connected && sendMode.writesAllowed)) return null;
+  return sendModeNote(to, sendMode);
 }

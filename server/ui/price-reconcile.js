@@ -26,7 +26,7 @@ export async function renderPriceReconcile(main, ui) {
   const icon = (name, label) => lucide(h, name, label);
   let view = new URLSearchParams(location.search).get('view') === 'list' ? 'list' : 'card';
   const host = h('div', { class: 'fx-xi fx-prc' }, h('p', { class: 'fx-dim' }, 'Loading…'));
-  const subtitle = h('span', {});
+  const tally = h('span', {});
   const toggle = (name, label, glyph) => h('button', {
     class: 'fx-xi__view', type: 'button', role: 'tab', 'aria-selected': String(view === name), 'aria-label': label, title: label, 'data-view': name,
     onclick: () => setView(name),
@@ -36,7 +36,7 @@ export async function renderPriceReconcile(main, ui) {
     h('nav', { class: 'fx-crumbs', 'aria-label': 'Breadcrumb' },
       h('a', { href: '/price-list', onclick: (event) => ui.go(event) }, 'Price list'), h('span', { 'aria-hidden': 'true' }, '›'), h('span', {}, 'Reconcile')),
     ui.pageHeader('Reconcile prices', {
-      subtitle,
+      count: tally,
       actions: [h('div', { class: 'fx-xi__views', role: 'tablist', 'aria-label': 'View' }, toggle('card', 'One at a time', 'square'), toggle('list', 'List, tick many', 'list-checks'))],
     }),
     host, bulk.element);
@@ -129,13 +129,13 @@ export async function renderPriceReconcile(main, ui) {
     if (!data) return;
     bulk.draw({ count: 0 });
     if (!data.systems.length) {
-      subtitle.replaceChildren('');
+      tally.replaceChildren('');
       host.replaceChildren(h('p', { class: 'fx-empty' }, 'No integration with a price list is on. Flow uses its own list alone.'),
         h('a', { href: '/price-list', onclick: (event) => ui.go(event) }, '← Price list'));
       return;
     }
     if (!rows.length) {
-      subtitle.replaceChildren('');
+      tally.replaceChildren('');
       host.replaceChildren(h('div', { class: 'fx-xi__done' }, icon('check-check'), h('p', {}, 'Every record has a code, and every price agrees.'),
         h('a', { href: '/price-list', onclick: (event) => ui.go(event) }, 'Price list')));
       return;
@@ -184,7 +184,7 @@ export async function renderPriceReconcile(main, ui) {
   // One record (or one differing code) at a time.
   function drawCard() {
     const row = rows[at];
-    subtitle.replaceChildren(`${rows.length} to check`);
+    tally.replaceChildren(`${rows.length} to check`);
     const next = () => { at = (at + 1) % rows.length; pick = 0; chosen = null; drawCard(); };
     const record = row.record;
     const item = row.kind === 'differs' ? row.item : chosen ?? row.candidates[pick]?.item ?? null;
@@ -267,7 +267,7 @@ export async function renderPriceReconcile(main, ui) {
 
   // Every record and code to check; ticked rows go from the bulk bar.
   function drawList() {
-    subtitle.replaceChildren(`${rows.length} to check`);
+    tally.replaceChildren(`${rows.length} to check`);
     const ticked = new Set();
     const boxes = new Map();
     const picked = () => rows.filter((r) => ticked.has(r.key));

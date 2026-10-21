@@ -118,7 +118,7 @@ export async function renderJobs(main, ui) {
   const bulk = bulkBar(ui, { label: 'Ticked jobs' });
   main.classList.add('fx-main--wide');
   main.append(
-    pageHeader('Jobs', { subtitle: 'Every job in the lab system, by its status there.' }),
+    pageHeader('Jobs'),
     h('div', { class: 'fx-toolbar fx-toolbar--plain' }, controls, h('div', { class: 'fx-toolbar__end' }, find.element, toggle)),
     host,
     bulk.element);

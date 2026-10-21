@@ -836,15 +836,12 @@ function draftView(invoice, ui, context, redraw) {
   dueDate.addEventListener('change', syncIssue);
   syncIssue();
 
-  // A new invoice can start from a job that has no invoice yet: a quiet
-  // strip above the form says so. Flow drafts it the way the invoicing rules
-  // do (client, Reference, lines) and links it to the job. An invoice with
-  // no job is fine too.
-  const fromJob = isNew && context.canIssue ? h('section', { class: 'fx-fromjob' },
-    h('div', { class: 'fx-fromjob__text' },
-      h('span', { class: 'fx-strong' }, 'Billing a job?'),
-      h('span', { class: 'fx-dim' }, 'Flow fills in the details.')),
-    h('button', { class: 'fx-btn', type: 'button', onclick: () => pickJob(ui) }, 'Choose a job')) : null;
+  // A new invoice can start from a job that has no invoice yet: a button in
+  // the header. Flow drafts it the way the invoicing rules do (client,
+  // Reference, lines) and links it to the job. An invoice with no job is
+  // fine too.
+  const fromJob = isNew && context.canIssue
+    ? h('button', { class: 'fx-btn fx-btn--ghost', type: 'button', onclick: () => pickJob(ui) }, 'From a job') : null;
 
   // A draft with no problem is in Ready by itself; one with a problem is
   // Pending. A changed job is fixed at its source or accepted here.
@@ -887,13 +884,11 @@ function draftView(invoice, ui, context, redraw) {
 
   return [
     navBar(ui, invoice),
-    h('header', { class: 'fx-ph' },
-      h('div', { class: 'fx-ph__text' },
-        h('h1', { class: 'fx-title' }, isNew ? 'New invoice' : ready ? 'Ready invoice' : 'Pending invoice'),
-        h('p', { class: 'fx-ph__sub' }, draftNote(to, invoice, ready))),
-      h('div', { class: 'fx-ph__actions' }, isNew ? null : previewButton(ui, invoice.id, 'Shows the saved invoice.'), saveButton, sendButton ?? issueButton)),
+    ui.pageHeader(isNew ? 'New invoice' : ready ? 'Ready invoice' : 'Pending invoice', {
+      actions: [fromJob, isNew ? null : previewButton(ui, invoice.id, 'Shows the saved invoice.'), saveButton, sendButton ?? issueButton].filter(Boolean),
+    }),
+    draftNote(to, invoice) ? ui.notice(draftNote(to, invoice), 'warn') : null,
     ...problems,
-    fromJob,
     h('div', { class: 'fx-invoice__grid' },
       h('div', { class: 'fx-invoice__main' },
         h('section', { class: 'fx-card fx-invoice__head' },
@@ -999,10 +994,8 @@ function issuedView(invoice, ui, context, redraw) {
     navBar(ui, invoice),
     h('header', { class: 'fx-ph' },
       h('div', { class: 'fx-ph__text' },
-        h('div', { class: 'fx-row' },
-          h('h1', { class: 'fx-title' }, invoice.number),
-          h('span', { class: 'fx-status', 'data-tone': TAB_TONE[invoice.tab] }, TAB_LABEL[invoice.tab] ?? 'Approved')),
-        h('p', { class: 'fx-ph__sub' }, `${invoice.contact?.name ?? ''} · ${showDate(invoice.issueDate)}`)),
+        h('h1', { class: 'fx-title' }, invoice.number),
+        h('span', { class: 'fx-status', 'data-tone': TAB_TONE[invoice.tab] }, TAB_LABEL[invoice.tab] ?? 'Approved')),
       h('div', { class: 'fx-ph__actions' }, actions, previewButton(ui, invoice.id), send)),
     h('div', { class: 'fx-invoice__grid' },
       h('div', { class: 'fx-invoice__main' },

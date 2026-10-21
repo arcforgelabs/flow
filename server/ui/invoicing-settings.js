@@ -23,7 +23,7 @@ const SEND_MODES = [
 export async function renderInvoicingSettings(main, ui) {
   const { h, flow, toast, notice, pageHeader, me } = ui;
   const host = h('div', { class: 'fx-card', style: { padding: '8px 20px 16px' } }, h('div', { class: 'fx-skeleton' }));
-  main.append(pageHeader('Invoice rules', { subtitle: 'The rules Flow uses to draft each invoice.' }), host);
+  main.append(pageHeader('Invoice rules'), host);
   let body;
   try {
     body = await flow('/api/invoicing/settings');
@@ -82,11 +82,10 @@ export function sendModeSection(ui) {
   const disabled = !['owner', 'admin'].includes(me?.person.role);
   const select = h('select', { class: 'fx-select', 'aria-label': 'Send to Xero as', disabled },
     SEND_MODES.map((m) => h('option', { value: m.value }, m.label)));
-  const section = h('section', { class: 'fx-set' }, h('h2', { class: 'fx-set__title' }, 'Sending'),
+  const section = h('section', { class: 'fx-set' }, ui.sectionTitle('Sending', { href: DOCS, label: 'How sending works' }),
     h('div', { class: 'fx-set__row' },
       h('div', { class: 'fx-set__text' }, h('span', { class: 'fx-set__name' }, 'Send to Xero as'), h('span', { class: 'fx-set__hint' }, 'Draft: approve in Xero. Approved: Xero emails it.')),
-      h('div', { class: 'fx-set__control' }, select)),
-    h('p', { class: 'fx-dim', style: { margin: '8px 0 0' } }, h('a', { href: DOCS, target: '_blank', rel: 'noopener' }, 'How sending works')));
+      h('div', { class: 'fx-set__control' }, select)));
   let saved = null;
   (async () => {
     try {

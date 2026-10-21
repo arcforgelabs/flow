@@ -103,6 +103,16 @@ the Clerk instance is called.
 The page at `/sign-in`, `/people`, `/account` and `/appearance`
 (`server/ui/app-page.js`, `server/ui/app.js`):
 
+- **Every page**: the space shows work, not words about the page. The header
+  is the page's name only (`pageHeader`), with no line under it, at one
+  height on every page; a live count (2 to check) may sit beside the name,
+  and a docs link is a "?" icon there (`helpLink`), not a line of text.
+  Prefer white space to filler.
+- **Tips**: every control that shows only an icon says its name on hover
+  and on keyboard focus (`server/ui/tip.js`, one listener for the whole
+  app). It reads `data-tip`, else the control's `aria-label` or `title`; a
+  control with words on it shows no tip. Give each icon-only control an
+  `aria-label` (or `named()`), and it gets its tip.
 - **Sign-in**: a brand panel (the primary colour in light mode, a raised
   surface in dark) beside Clerk's sign-in card. On a phone the panel is a
   band above the card.

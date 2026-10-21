@@ -96,7 +96,7 @@ export async function renderCustomFields(main, ui) {
   const disabled = !['owner', 'admin'].includes(me?.person.role);
   const host = h('div', { class: 'fx-card fx-cfm__card' }, h('div', { class: 'fx-skeleton' }));
   const addButton = h('button', { class: 'fx-btn fx-btn--primary fx-btn--sm', type: 'button', disabled }, 'Create custom field');
-  main.append(pageHeader('Custom fields', { subtitle: 'Fields for your jobs. They stay in Flow and never change Seazona or Xero.' }), host);
+  main.append(pageHeader('Custom fields', { help: { href: DOCS, label: 'How custom fields work' } }), host);
 
   let data = null;
   const groupColor = (type) => data?.groupColors?.[type] ?? 'gray';
@@ -493,8 +493,7 @@ export async function renderCustomFields(main, ui) {
     }
     table.replaceChildren(...parts);
     // The count is what the table shows, the work systems' fields too.
-    foot.replaceChildren(h('span', {}, `${count} ${count === 1 ? 'custom field' : 'custom fields'}`),
-      h('a', { href: DOCS, target: '_blank', rel: 'noopener' }, 'How custom fields work'));
+    foot.replaceChildren(h('span', {}, `${count} ${count === 1 ? 'custom field' : 'custom fields'}`));
   }
   const foot = h('div', { class: 'fx-cfm__foot' });
   host.append(foot);
