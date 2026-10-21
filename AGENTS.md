@@ -23,3 +23,8 @@ Before you build a UI element, read the
 - Prefer white space to filler text. Say "Custom field", never "Field".
 - Colours, corners and strokes come from the `--t-*` tokens, never literal
   values.
+
+## Explainers
+
+When asked to explain, compare, map or plan, make an explainer page with
+`.agents/skills/arc-forge-explainer/SKILL.md`.

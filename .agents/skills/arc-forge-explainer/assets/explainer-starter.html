@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Explainer starter</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Tokens: the Knot values of the Arc Forge Design System (tokens.json). Keep in step with it. */
+:root{
+  --bg-accent:#f2f2f5;--card:#ffffff;--text:#3a3a42;--text-strong:#18181b;--muted:#68676f;
+  --border:#e2e2e8;--border-strong:#ccccd4;--accent:#c41e30;--accent-subtle:rgba(196,30,48,.08);--ring:#c41e30;
+  --accent-2:#5a626e;--accent-2-subtle:rgba(90,98,110,.08);
+  --shadow-md:0 4px 12px rgba(0,0,0,.06);--shadow-lg:0 12px 28px rgba(0,0,0,.08);
+  --radius-md:10px;--radius-lg:14px;--radius-full:9999px;
+  --font-body:"Geist",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;--font-display:var(--font-body);
+  --font-mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg-accent:#0d0d0f;--card:#111113;--text:#c6c6cb;--text-strong:#f5f5f7;--muted:#8a8a94;
+  --border:#202026;--border-strong:#303038;--accent:#e5243b;--accent-subtle:rgba(229,36,59,.12);--ring:#e5243b;
+  --accent-2:#b8bdc4;--accent-2-subtle:rgba(184,189,196,.1);
+  --shadow-md:0 4px 16px rgba(0,0,0,.5);--shadow-lg:0 12px 32px rgba(0,0,0,.6);color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg-accent:#0d0d0f;--card:#111113;--text:#c6c6cb;--text-strong:#f5f5f7;--muted:#8a8a94;
+  --border:#202026;--border-strong:#303038;--accent:#e5243b;--accent-subtle:rgba(229,36,59,.12);--ring:#e5243b;
+  --accent-2:#b8bdc4;--accent-2-subtle:rgba(184,189,196,.1);
+  --shadow-md:0 4px 16px rgba(0,0,0,.5);--shadow-lg:0 12px 32px rgba(0,0,0,.6);color-scheme:dark}
+
+*,*::before,*::after{box-sizing:border-box}
+/* ---------- Explainer pages (explainers.md). Prefix .ex-. Tokens only. ---------- */
+.ex-page { background: var(--bg-accent); color: var(--text); font-family: var(--font-body); font-size: 16px; line-height: 1.6; letter-spacing: -.005em; margin: 0; }
+.ex-shell { max-width: 1040px; margin: 0 auto; padding: 40px max(16px, env(safe-area-inset-right, 0px)) 72px max(16px, env(safe-area-inset-left, 0px)); }
+.ex-section { padding-block: 40px; border-bottom: 1px solid var(--border); display: grid; gap: 20px; scroll-margin-top: 12px; }
+.ex-title { display: grid; gap: 8px; }
+.ex-title h1 { margin: 0; color: var(--text-strong); font-family: var(--font-display, var(--font-body)); font-weight: 650; font-size: clamp(32px, 5vw, 48px); letter-spacing: -.04em; line-height: 1.04; }
+.ex-title p { margin: 0; max-width: 66ch; color: var(--muted); }
+.ex-meta { font: 400 12px var(--font-mono); letter-spacing: .06em; color: var(--muted); }
+
+/* ExplainerHead */
+.ex-head { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 18px; row-gap: 6px; align-items: baseline; border-top: 3px solid var(--accent); padding: 28px 0 4px; }
+.ex-head .ex-n { grid-row: 1 / span 2; font: 500 clamp(36px, 6vw, 56px)/1 var(--font-mono); color: var(--accent); letter-spacing: -.04em; }
+.ex-head h2 { margin: 0; color: var(--text-strong); font-family: var(--font-display, var(--font-body)); font-weight: 650; font-size: clamp(26px, 4vw, 40px); letter-spacing: -.035em; line-height: 1.08; }
+.ex-head p { grid-column: 2; margin: 0; max-width: 66ch; color: var(--text); }
+
+/* FlowLanes */
+.ex-flow { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 20px; display: grid; gap: 18px; }
+.ex-layers { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; font-size: 13px; color: var(--muted); }
+.ex-layers span { display: inline-flex; gap: 8px; align-items: center; }
+.ex-layers .ex-tap { margin-left: auto; font: 500 11px var(--font-mono); letter-spacing: .08em; }
+.ex-ly { width: 14px; height: 14px; border-radius: 4px; display: inline-block; background: var(--card); border: 1.5px solid var(--border-strong); }
+.ex-ly--key { background: var(--accent-subtle); border-color: var(--accent); }
+.ex-ly--alt { background: var(--accent-2-subtle); border-color: var(--accent-2); }
+.ex-ly--off { border-style: dashed; }
+.ex-lane { display: grid; gap: 8px; padding-top: 14px; border-top: 1px solid var(--border); }
+.ex-lane-h { display: flex; gap: 10px; align-items: center; font: 500 11px var(--font-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.ex-tag { color: var(--text-strong); border: 1px solid var(--border-strong); border-radius: var(--radius-full); padding: 1px 8px; }
+.ex-tag--key { color: var(--accent); border-color: var(--accent); }
+.ex-nodes { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.ex-node { font: 500 14px var(--font-body); color: var(--text-strong); background: var(--card); border: 1px solid var(--border-strong); border-radius: var(--radius-md); padding: 10px 14px; min-height: 44px; cursor: pointer; text-align: left; }
+.ex-node--key { background: var(--accent-subtle); border-color: var(--accent); }
+.ex-node--alt { background: var(--accent-2-subtle); border-color: var(--accent-2); }
+.ex-node--off { border-style: dashed; }
+.ex-node--main { border-width: 2px; font-weight: 650; }
+.ex-node:hover { border-color: var(--text-strong); }
+.ex-node:focus-visible { outline: 2px solid var(--ring, var(--accent)); outline-offset: 3px; }
+.ex-node[aria-expanded="true"] { box-shadow: 0 0 0 3px var(--text-strong); }
+.ex-arr { font-style: normal; font-family: var(--font-mono); color: var(--muted); }
+.ex-arr--key { color: var(--accent); }
+
+/* Clickable areas over an SVG diagram */
+.ex-figure { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow-x: auto; }
+.ex-figure svg { display: block; width: 100%; min-width: 760px; height: auto; }
+.ex-hot { fill: transparent; stroke: transparent; stroke-width: 2; cursor: pointer; transition: stroke .12s; }
+.ex-hot:hover, .ex-hot:focus-visible { stroke: var(--text-strong); outline: none; }
+.ex-hot[aria-expanded="true"] { stroke: var(--accent); }
+
+/* DetailPopover */
+.ex-pop { position: absolute; z-index: 20; width: min(380px, calc(100vw - 32px)); background: var(--card); border: 1px solid var(--border-strong); border-radius: 12px; box-shadow: var(--shadow-lg); padding: 14px 16px; display: grid; gap: 8px; }
+.ex-pop[hidden] { display: none; }
+.ex-pop-l { font: 500 11px var(--font-mono); letter-spacing: .1em; text-transform: uppercase; color: var(--accent); }
+.ex-pop h4 { margin: 0; display: flex; justify-content: space-between; gap: 12px; font-size: 15px; font-weight: 650; color: var(--text-strong); }
+.ex-pop h4 button { background: none; border: 0; color: var(--muted); font: 500 16px var(--font-mono); line-height: 1; cursor: pointer; }
+.ex-def { margin: 0; padding-bottom: 8px; border-bottom: 1px solid var(--border); font-size: 14px; color: var(--text-strong); }
+.ex-pop ol { margin: 0; padding-left: 20px; display: grid; gap: 4px; font-size: 14px; color: var(--text); }
+
+/* CrispTable */
+.ex-table-wrap { overflow-x: auto; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-lg); }
+.ex-table { border-collapse: collapse; width: 100%; min-width: 760px; table-layout: fixed; font-size: 14px; }
+.ex-table th, .ex-table td { height: 44px; padding: 8px 12px; text-align: left; vertical-align: middle; border-bottom: 1px solid var(--border); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ex-table th { font: 500 11px var(--font-mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); background: var(--bg-accent); }
+.ex-table th:first-child { width: 220px; }
+.ex-table td:first-child { color: var(--text-strong); font-weight: 600; }
+.ex-table .ex-c { width: 76px; padding-inline: 4px; text-align: center; }
+.ex-table .ex-dt { color: var(--muted); font-size: 13px; }
+.ex-table .ex-dt span { display: inline-block; max-width: calc(100% - 92px); overflow: hidden; text-overflow: ellipsis; vertical-align: middle; }
+.ex-more { margin-left: 10px; vertical-align: middle; font: 500 11px var(--font-mono); letter-spacing: .06em; color: var(--accent); background: none; border: 1px solid var(--accent); border-radius: var(--radius-full); padding: 2px 9px; cursor: pointer; }
+.ex-g { display: inline-block; width: 16px; height: 16px; border-radius: 50%; vertical-align: middle; box-sizing: border-box; }
+.ex-g--full { background: var(--accent-2); }
+.ex-g--half { background: linear-gradient(90deg, var(--accent-2) 50%, transparent 50%); border: 1.5px solid var(--accent-2); }
+.ex-g--gap { border: 2px solid var(--accent); }
+.ex-g--off { border: 1.5px dashed var(--muted); }
+.ex-keys { display: flex; flex-wrap: wrap; gap: 18px; align-items: center; font-size: 13px; color: var(--muted); }
+.ex-keys span { display: inline-flex; gap: 8px; align-items: center; }
+
+/* FactsList */
+.ex-facts { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 12px 18px; }
+.ex-facts summary { cursor: pointer; font: 500 12px var(--font-mono); letter-spacing: .1em; text-transform: uppercase; color: var(--text-strong); }
+.ex-facts .ex-def { margin-top: 12px; max-width: 70ch; }
+.ex-facts ol { list-style: none; margin: 12px 0 4px; padding: 0; columns: 2; column-gap: 32px; }
+.ex-facts li { break-inside: avoid; margin-bottom: 2px; }
+.ex-fx { all: unset; box-sizing: border-box; display: flex; gap: 10px; align-items: baseline; width: 100%; padding: 4px 6px; margin-left: -6px; border-radius: 6px; cursor: pointer; font-size: 14px; color: var(--text); }
+.ex-fx:hover, .ex-fx:focus-visible { background: var(--accent-subtle); color: var(--text-strong); }
+.ex-fx:focus-visible { outline: 2px solid var(--ring, var(--accent)); outline-offset: 1px; }
+.ex-fx i { font: 500 11px var(--font-mono); font-style: normal; color: var(--muted); min-width: 1.8em; text-align: right; }
+.ex-fx b { flex: 1; font-weight: 400; }
+.ex-fx em { font: 500 10px var(--font-mono); font-style: normal; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); white-space: nowrap; }
+@keyframes ex-pulse-svg { 0%, 100% { stroke: var(--accent); stroke-width: 2; } 35% { stroke: var(--accent); stroke-width: 7; fill: var(--accent-subtle); } }
+@keyframes ex-pulse { 0%, 100% { box-shadow: 0 0 0 0 var(--accent); } 35% { box-shadow: 0 0 0 7px var(--accent-subtle), 0 0 0 2px var(--accent); } }
+.ex-hot.ex-pulse { animation: ex-pulse-svg .55s ease-in-out 2; }
+.ex-node.ex-pulse, .ex-more.ex-pulse { animation: ex-pulse .55s ease-in-out 2; }
+
+/* TickRail */
+.ex-rail { position: fixed; left: max(20px, env(safe-area-inset-left, 0px)); top: 50%; transform: translateY(-50%); z-index: 15; display: flex; flex-direction: column; gap: 4px; }
+.ex-rail a { position: relative; display: flex; align-items: center; width: 32px; height: 16px; text-decoration: none; }
+.ex-rail a:focus-visible { outline: none; }
+.ex-tk { display: block; width: 14px; height: 2px; border-radius: 2px; background: var(--border-strong); transition: width .18s ease-out, background .15s; }
+.ex-rail:hover .ex-tk { width: 18px; }
+.ex-rail a:hover + a .ex-tk, .ex-rail a:has(+ a:hover) .ex-tk { width: 23px; }
+.ex-rail a:hover .ex-tk, .ex-rail a:focus-visible .ex-tk { width: 30px; background: var(--text-strong); }
+.ex-rail a.ex-on .ex-tk { height: 3px; background: var(--accent); }
+.ex-rail a:focus-visible .ex-tk { outline: 2px solid var(--accent); outline-offset: 3px; }
+.ex-tip { position: absolute; left: 40px; top: 50%; transform: translateY(-50%); display: none; gap: 8px; align-items: baseline; white-space: nowrap; padding: 7px 12px; background: var(--card); border: 1px solid var(--border-strong); border-radius: var(--radius-md); box-shadow: var(--shadow-md); font-size: 13px; color: var(--text-strong); }
+.ex-tip b { font: 500 11px var(--font-mono); color: var(--accent); }
+.ex-rail a:hover .ex-tip, .ex-rail a:focus-visible .ex-tip { display: inline-flex; }
+@media (min-width: 901px) and (max-width: 1200px) { .ex-rail ~ .ex-shell { padding-left: 64px; padding-right: 64px; } }
+@media (max-width: 900px) { .ex-rail { display: none; } .ex-facts ol { columns: 1; } }
+@media (prefers-reduced-motion: reduce) { .ex-tk { transition: none; } .ex-hot.ex-pulse, .ex-node.ex-pulse, .ex-more.ex-pulse { animation: none; } }
+
+/* ConnectionDiagram: SVG parts, joined by labelled arrows. The default diagram. */
+.ex-box { fill: var(--card); stroke: var(--border-strong); stroke-width: 1; }
+.ex-box--key { fill: var(--accent-subtle); stroke: var(--accent); stroke-width: 1.5; }
+.ex-box--alt { fill: var(--accent-2-subtle); stroke: var(--accent-2); stroke-width: 1.5; }
+.ex-box--off { stroke-dasharray: 4 3; }
+.ex-zone { fill: var(--bg-accent); stroke: var(--border-strong); stroke-width: 1; }
+.ex-t { fill: var(--text-strong); font: 500 14px var(--font-body); }
+.ex-ts { fill: var(--muted); font: 400 12px var(--font-body); }
+.ex-tm { fill: var(--muted); font: 500 11px var(--font-mono); letter-spacing: .1em; text-transform: uppercase; }
+.ex-ta { fill: var(--accent); font: 500 11px var(--font-mono); letter-spacing: .06em; }
+.ex-tl { fill: var(--text); font: 400 11px var(--font-mono); }
+.ex-line { stroke: var(--muted); stroke-width: 1.5; fill: none; }
+.ex-line--key { stroke: var(--accent); }
+.ex-line--off { stroke-dasharray: 5 4; }
+.ex-head-fill { fill: var(--muted); }
+.ex-head-fill--key { fill: var(--accent); }
+.ex-bar { fill: var(--border-strong); }
+.ex-figure svg *:not(.ex-hot) { pointer-events: none; }
+.ex-figure svg .ex-hot { pointer-events: all; }
+
+</style>
+</head>
+<body class="ex-page">
+<nav class="ex-rail" aria-label="Sections"></nav>
+<div class="ex-shell">
+<section class="ex-section" style="padding-top:0">
+  <div class="ex-title"><h1>Page title</h1><p>One fact. One more fact.</p><div class="ex-meta">Source · date</div></div>
+</section>
+<section class="ex-section" id="core">
+  <div class="ex-head"><span class="ex-n">01</span><h2>OpenClaw core</h2><p>The core is the Gateway and the parts that connect to it. Clients connect over one WebSocket.</p></div>
+  <div class="ex-flow">
+  <div class="ex-layers"><span><i class="ex-ly ex-ly--key"></i>host</span><span><i class="ex-ly ex-ly--alt"></i>identity</span><span><i class="ex-ly ex-ly--off"></i>off</span><span class="ex-tap">TAP A BOX</span></div>
+  <div class="ex-lane"><div class="ex-lane-h"><span class="ex-tag ex-tag--key">WRITE</span>client → host</div>
+    <div class="ex-nodes"><button class="ex-node" data-ex="cli">CLI</button><i class="ex-arr ex-arr--key">→</i><button class="ex-node ex-node--key ex-node--main" data-ex="gw">Gateway</button><i class="ex-arr ex-arr--key">→</i><button class="ex-node ex-node--alt" data-ex="id">Identity</button><button class="ex-node ex-node--off" data-ex="plan">Old plugin</button></div></div>
+</div>
+  <div class="ex-figure"><svg viewBox="0 0 760 120" role="img" aria-label="Gateway and store">
+  <rect x="20" y="30" width="300" height="60" rx="10" fill="var(--accent-subtle)" stroke="var(--accent)" stroke-width="1.5"/>
+  <text x="40" y="66" fill="var(--text-strong)" style="font:500 14px var(--font-body)">Gateway</text>
+  <path d="M320 60 H420" stroke="var(--muted)" stroke-width="1.5"/>
+  <rect x="420" y="30" width="300" height="60" rx="10" fill="var(--card)" stroke="var(--border-strong)"/>
+  <text x="440" y="66" fill="var(--text-strong)" style="font:500 14px var(--font-body)">Store</text>
+  <g><rect class="ex-hot" data-ex="gw" x="20" y="30" width="300" height="60" rx="10"/><rect class="ex-hot" data-ex="box" x="420" y="30" width="300" height="60" rx="10"/></g>
+</svg></div>
+  <details class="ex-facts" data-def="The OpenClaw core is the Gateway and the parts that connect to it."></details>
+</section>
+<section class="ex-section" id="compare">
+  <div class="ex-head"><span class="ex-n">02</span><h2>OpenClaw vs Projects</h2><p>Projects has 1 of these 2 features in part.</p></div>
+  <div class="ex-table-wrap"><table class="ex-table">
+  <thead><tr><th>Item</th><th class="ex-c">OpenClaw</th><th class="ex-c">Projects</th><th>Detail</th></tr></thead>
+  <tbody>
+    <tr><td>Session per task</td><td class="ex-c"><i class="ex-g ex-g--full"></i></td><td class="ex-c"><i class="ex-g ex-g--half"></i></td><td class="ex-dt"><span>A thread does the job of a session.</span><button class="ex-more" data-ex="row1">More · 2</button></td></tr>
+    <tr><td>Claims</td><td class="ex-c"><i class="ex-g ex-g--full"></i></td><td class="ex-c"><i class="ex-g ex-g--gap"></i></td><td class="ex-dt"><span>Projects has no claims.</span><button class="ex-more" data-ex="row2">More · 1</button></td></tr>
+  </tbody></table></div>
+<div class="ex-keys"><span><i class="ex-g ex-g--full"></i>yes</span><span><i class="ex-g ex-g--half"></i>partly</span><span><i class="ex-g ex-g--gap"></i>no</span><span><i class="ex-g ex-g--off"></i>off</span></div>
+</section>
+</div>
+<script>
+window.EX={"gw": {"t": "Gateway", "l": "HOST", "d": "The Gateway is the one process that owns all sessions.", "x": ["It runs once on each host.", "It listens on port 18789 by default."]}, "cli": {"t": "CLI", "l": "CLIENT", "d": "The CLI is the command line client.", "x": ["It connects with one WebSocket."]}, "id": {"t": "Identity", "l": "IDENTITY", "d": "An identity is the GitHub account that a write uses.", "x": ["Native gh is the default identity."]}, "plan": {"t": "Old plugin", "l": "PLUGIN · OFF", "d": "An old plugin is a plugin that is turned off.", "x": []}, "row1": {"t": "Session per task", "l": "FEATURE", "d": "A session per task gives each task its own conversation.", "x": ["Each thread is a Claude Code session.", "A thread can run on your machine."]}, "row2": {"t": "Claims", "l": "FEATURE", "d": "A claim gives one agent the right to change a task.", "x": ["Projects has no claims."]}, "box": {"t": "Store", "l": "HOST", "d": "The store keeps all state in SQLite.", "x": ["It holds boards, cards and pins."]}};
+</script>
+<script>
+/* Explainer runtime (explainers.md). Data: window.EX = {"<key>": {t, l, d, x: []}}.
+   Items: any element with data-ex="<key>". Facts lists: <details class="ex-facts" data-def="…"> in a section.
+   Rail: <nav class="ex-rail"></nav>, filled from .ex-section[id] heads. */
+(function () {
+  var EX = window.EX || {};
+  var reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var pop = document.createElement('div');
+  pop.className = 'ex-pop'; pop.hidden = true; pop.setAttribute('role', 'dialog');
+  pop.innerHTML = '<div class="ex-pop-l"></div><h4><span></span><button type="button" aria-label="Close">×</button></h4><p class="ex-def"></p><ol></ol>';
+  document.body.appendChild(pop);
+  var cur = null;
+  function close() { pop.hidden = true; if (cur) { cur.setAttribute('aria-expanded', 'false'); cur.focus({ preventScroll: true }); } cur = null; }
+  function open(el) {
+    if (cur === el) { close(); return; }
+    var d = EX[el.dataset.ex]; if (!d) return;
+    pop.querySelector('.ex-pop-l').textContent = d.l || ''; pop.querySelector('.ex-pop-l').hidden = !d.l;
+    pop.querySelector('h4 span').textContent = d.t;
+    pop.querySelector('.ex-def').textContent = d.d;
+    var ol = pop.querySelector('ol'); ol.textContent = '';
+    (d.x || []).forEach(function (f) { var li = document.createElement('li'); li.textContent = f; ol.appendChild(li); });
+    ol.hidden = !(d.x && d.x.length);
+    pop.hidden = false;
+    var r = el.getBoundingClientRect(), w = pop.offsetWidth, h = pop.offsetHeight;
+    var left = Math.max(16, Math.min(r.left, document.documentElement.clientWidth - w - 16)) + scrollX;
+    var top = r.bottom + 6 + scrollY;
+    if (r.bottom + 6 + h > innerHeight && r.top - 6 - h > 0) top = r.top - 6 - h + scrollY;
+    pop.style.left = left + 'px'; pop.style.top = top + 'px';
+    if (cur) cur.setAttribute('aria-expanded', 'false');
+    cur = el; el.setAttribute('aria-expanded', 'true');
+  }
+  document.querySelectorAll('[data-ex]').forEach(function (el) {
+    el.setAttribute('aria-haspopup', 'dialog'); el.setAttribute('aria-expanded', 'false');
+    if (!/^(BUTTON|A)$/.test(el.tagName)) { el.setAttribute('tabindex', '0'); el.setAttribute('role', 'button'); }
+    if (!el.getAttribute('aria-label') && EX[el.dataset.ex]) el.setAttribute('aria-label', EX[el.dataset.ex].t);
+  });
+  document.addEventListener('click', function (e) {
+    var el = e.target.closest && e.target.closest('[data-ex]');
+    if (el && !pop.contains(el)) { e.stopPropagation(); open(el); return; }
+    if (!pop.hidden && (!pop.contains(e.target) || e.target.closest('h4 button'))) close();
+  }, true);
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && !pop.hidden) { close(); return; }
+    var el = e.target.closest && e.target.closest('[data-ex]');
+    if (el && el.getAttribute('role') === 'button' && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); open(el); }
+  });
+
+  // FactsList: every fact comes from an item and leads back to it
+  function go(el) {
+    el.scrollIntoView({ block: 'center', behavior: reduce ? 'auto' : 'smooth' });
+    var last = -1, still = 0, t0 = performance.now();
+    (function wait() {
+      if (scrollY === last) still++; else still = 0; last = scrollY;
+      if (still >= 4 || performance.now() - t0 > 1500) {
+        el.classList.remove('ex-pulse'); void el.getBoundingClientRect(); el.classList.add('ex-pulse');
+        setTimeout(function () { el.classList.remove('ex-pulse'); }, 1200);
+        if (cur !== el) open(el); return;
+      }
+      requestAnimationFrame(wait);
+    })();
+  }
+  document.querySelectorAll('details.ex-facts').forEach(function (det) {
+    var scope = det.closest('.ex-section') || document, seen = {}, facts = [];
+    scope.querySelectorAll('[data-ex]').forEach(function (el) {
+      var d = EX[el.dataset.ex]; if (!d) return;
+      (d.x || []).forEach(function (f) { if (!seen[f]) { seen[f] = 1; facts.push({ f: f, el: el, t: d.t }); } });
+    });
+    det.textContent = '';
+    var s = document.createElement('summary'); s.textContent = 'Facts · ' + facts.length; det.appendChild(s);
+    if (det.dataset.def) { var p = document.createElement('p'); p.className = 'ex-def'; p.textContent = det.dataset.def; det.appendChild(p); }
+    var ol = document.createElement('ol');
+    facts.forEach(function (o, i) {
+      var li = document.createElement('li'), b = document.createElement('button');
+      b.type = 'button'; b.className = 'ex-fx';
+      b.innerHTML = '<i></i><b></b><em></em>';
+      b.children[0].textContent = i + 1; b.children[1].textContent = o.f; b.children[2].textContent = o.t;
+      b.addEventListener('click', function (e) { e.stopPropagation(); go(o.el); });
+      li.appendChild(b); ol.appendChild(li);
+    });
+    det.appendChild(ol);
+  });
+
+  // TickRail
+  var rail = document.querySelector('.ex-rail');
+  if (rail) {
+    var secs = [].slice.call(document.querySelectorAll('.ex-section[id]')).filter(function (s) { return s.querySelector('.ex-head h2'); });
+    secs.forEach(function (s) {
+      var n = (s.querySelector('.ex-n') || {}).textContent || '', t = s.querySelector('.ex-head h2').textContent;
+      var a = document.createElement('a'); a.href = '#' + s.id; a.dataset.s = s.id; a.setAttribute('aria-label', n + ' ' + t);
+      a.innerHTML = '<i class="ex-tk"></i><span class="ex-tip"><b></b></span>';
+      a.querySelector('b').textContent = n; a.querySelector('.ex-tip').appendChild(document.createTextNode(t));
+      rail.appendChild(a);
+    });
+    var links = [].slice.call(rail.querySelectorAll('a')), lock = null, raf = 0;
+    function set(id) { links.forEach(function (l) { l.classList.toggle('ex-on', l.dataset.s === id); }); }
+    function pick() {
+      raf = 0; if (lock || !secs.length) return;
+      var line = innerHeight * .35, id = secs[0].id;
+      secs.forEach(function (s) { if (s.getBoundingClientRect().top <= line) id = s.id; });
+      if (innerHeight + scrollY >= document.documentElement.scrollHeight - 4) id = secs[secs.length - 1].id;
+      set(id);
+    }
+    addEventListener('scroll', function () { if (!raf) raf = requestAnimationFrame(pick); }, { passive: true });
+    addEventListener('resize', pick);
+    links.forEach(function (a) { a.addEventListener('click', function () { set(a.dataset.s); clearTimeout(lock); lock = setTimeout(function () { lock = null; pick(); }, 900); }); });
+    pick();
+  }
+})();
+</script>
+</body>
+</html>
