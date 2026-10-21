@@ -175,7 +175,7 @@ const pathOf = (row) => `/reconcile/${row.id}${row.kind === 'invoice' ? '?kind=i
 const KIND_ICON = { job: ['briefcase', 'Job'], invoice: ['file-text', 'Invoice'] };
 
 async function renderList(main, ui) {
-  const { h, flow, toast, listHead } = ui;
+  const { h, flow, toast, listHead, listFrame } = ui;
   const icon = (name, label) => lucide(h, name, label);
   const canAct = ['owner', 'admin'].includes(ui.me?.person?.role);
   const back = readStored(sessionStorage, NAV_KEY, null);
@@ -184,7 +184,8 @@ async function renderList(main, ui) {
   const controls = h('div', { class: 'fx-viewbar', role: 'group', 'aria-label': 'Filter' });
   const host = h('div', { class: 'fx-rec' }, h('div', { class: 'fx-skeleton' }));
   const bulk = bulkBar(ui, { label: 'Ticked jobs' });
-  main.append(...listHead('Reconcile', { start: controls, end: find.element }).nodes, host, bulk.element);
+  const frame = listFrame(main, host);
+  main.append(...listHead('Reconcile', { start: controls, end: find.element }).nodes, frame.element, bulk.element);
 
   // The Filter chip: the same panel as on Jobs (view-bar.js). Job rows also
   // have the lab's custom fields.
@@ -239,6 +240,7 @@ async function renderList(main, ui) {
     filterMenu.draw();
     const shown = keptRows(rows, state.view, state.q, { kindOf, valueOf });
     const seen = new Set(shown.map((r) => r.id));
+    frame.count(`${shown.length} to check`);
     for (const key of state.ticked) if (!seen.has(key)) state.ticked.delete(key);
     const remember = () => writeStored(sessionStorage, NAV_KEY, { q: state.q, rows: shown.map(({ kind, id }) => ({ kind, id })) });
     if (!rows.length) {

@@ -653,10 +653,27 @@ th:hover .fx-th-sort, .fx-th-sort:focus-visible, .fx-th-sort--on { opacity: 1; }
 .fx-board__head { display: flex; flex: none; align-items: center; gap: 8px; min-width: 0; padding: 2px 4px 4px 2px; }
 .fx-board__sum { flex: none; margin-left: auto; color: var(--t-dim); font-size: 12px; font-variant-numeric: tabular-nums; }
 .fx-board__cards { display: grid; gap: 8px; align-content: start; min-height: 0; max-height: 70vh; padding-right: 2px; overflow-y: auto; scrollbar-width: thin; }
+/* listFrame() in kit.js: the window of a list or board (Jobs, Invoices,
+   Reconcile). Its body scrolls both ways; the foot holds the count. A table
+   or panel inside drops its own frame. On a wide, tall screen the page is
+   the window's height and does not scroll itself: the frame fills it, and
+   on the board each lane scrolls inside itself. */
+.fx-frame { display: flex; flex-direction: column; min-width: 0; border: 1px solid var(--fx-line); border-radius: var(--t-radius-lg); background: var(--t-paper); box-shadow: var(--t-shadow); overflow: hidden; }
+.fx-frame__body { min-height: 0; overflow: auto; scrollbar-width: thin; }
+.fx-frame__body .fx-panel { border: 0; border-radius: 0; box-shadow: none; overflow: visible; }
+.fx-frame__body .fx-empty { padding: 24px; }
+.fx-frame .fx-table-scroll { overflow: visible; }
+.fx-frame thead th { position: sticky; top: 0; z-index: 2; }
+.fx-frame__foot { display: flex; flex: none; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; padding: 6px 12px; border-top: 1px solid var(--fx-line); color: var(--t-dim); font-size: 13px; font-variant-numeric: tabular-nums; }
+.fx-frame__tools { display: flex; align-items: center; gap: 8px; }
+.fx-main--board .fx-frame__body { padding: 12px; background: var(--t-bg); }
 @media (min-width: 821px) and (min-height: 560px) {
-  .fx-main--board { height: 100vh; height: 100dvh; padding-bottom: 16px; display: flex; flex-direction: column; }
-  .fx-main--board > * { flex: none; }
-  .fx-main--board > .fx-jobs { flex: 1; min-height: 0; }
+  .fx-main--frame { height: 100vh; height: 100dvh; padding-bottom: 16px; display: flex; flex-direction: column; }
+  .fx-main--frame > * { flex: none; }
+  .fx-main--frame > .fx-frame { flex: 1; min-height: 0; }
+  .fx-main--frame .fx-frame__body { flex: 1; }
+  .fx-main--board .fx-frame__body { display: flex; overflow: hidden; }
+  .fx-main--board .fx-jobs { flex: 1; min-width: 0; min-height: 0; }
   .fx-main--board .fx-board { height: 100%; overflow-y: hidden; align-items: stretch; }
   .fx-main--board .fx-board__cards { flex: 1; max-height: none; }
 }

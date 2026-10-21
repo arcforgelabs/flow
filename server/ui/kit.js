@@ -81,6 +81,19 @@ export function listHead(title, { count = null, help = null, actions = [], start
   return { nodes: [pageHeader(title, { count, help }), views, edge, bar].filter(Boolean), views, bar };
 }
 
+// The window a list or board sits in under listHead, as HubSpot's: on a
+// desktop it fills the page to the bottom and scrolls inside itself both
+// ways, so nothing runs off the page, with a foot bar for the count and its
+// tools. It makes `main` the window's height (fx-main--frame).
+export function listFrame(main, content) {
+  main.classList.add('fx-main--frame');
+  const count = h('span', { class: 'fx-frame__count', role: 'status' });
+  const tools = h('div', { class: 'fx-frame__tools' });
+  const body = h('div', { class: 'fx-frame__body' }, content);
+  const element = h('section', { class: 'fx-frame' }, body, h('footer', { class: 'fx-frame__foot' }, count, tools));
+  return { element, body, tools, count: (text) => { count.textContent = text ?? ''; } };
+}
+
 // A docs link as a small "?" icon whose tip names it (How sending works).
 export function helpLink({ href, label }) {
   return named(h('a', { class: 'fx-help', href, target: '_blank', rel: 'noopener' }, lucide(h, 'circle-help')), label);

@@ -148,7 +148,7 @@ function readFilters() {
 }
 
 export async function renderInvoiceList(main, ui) {
-  const { h, flow, listHead, notice, go, toast } = ui;
+  const { h, flow, listHead, listFrame, notice, go, toast } = ui;
   const saved = OLD_TAB[sessionStorage.getItem('flow_invoice_tab')] ?? sessionStorage.getItem('flow_invoice_tab');
   // Back from an invoice comes here with the tab, search and scroll it left.
   const back = readNav();
@@ -197,7 +197,8 @@ export async function renderInvoiceList(main, ui) {
     start: tabs, end: [controls, find.element], line: true, sticky: true,
   });
   const [title, ...top] = head.nodes;
-  main.append(title, alerts.element, ...top, host, bulk.element);
+  const frame = listFrame(main, host);
+  main.append(title, alerts.element, ...top, frame.element, bulk.element);
 
   const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
   // The bulk bar for the ticked rows: what a person can do with this view.
@@ -396,6 +397,7 @@ export async function renderInvoiceList(main, ui) {
     filterMenu.draw();
     body = { ...answer, invoices: keptInvoices(answer.invoices, state.view) };
     const shown = new Set(body.invoices.map((i) => i.id));
+    frame.count(plural(body.invoices.length, 'invoice', 'invoices'));
     for (const id of state.ticked) if (!shown.has(id)) state.ticked.delete(id);
     drawTabs(body.counts);
     drawBar();
@@ -409,7 +411,7 @@ export async function renderInvoiceList(main, ui) {
     }
     // The invoice page steps through this list, in this order (navBar).
     saveNav({ tab: state.status, q: state.q, ids: body.invoices.map((i) => i.id) });
-    const open = (href) => { saveNav({ ...readNav(), scrollY: window.scrollY }); go(href); };
+    const open = (href) => { saveNav({ ...readNav(), scrollY: window.scrollY, frameY: frame.body.scrollTop }); go(href); };
     const link = (href, label) => h('a', { class: 'fx-strong', href, onclick: (event) => { event.preventDefault(); event.stopPropagation(); open(href); } }, label);
     const showProblem = state.status === 'pending';
     const created = ['pending', 'ready'].includes(state.status);
@@ -487,6 +489,7 @@ export async function renderInvoiceList(main, ui) {
   }
   await load();
   if (returning && back?.scrollY) window.scrollTo(0, back.scrollY);
+  if (returning && back?.frameY) frame.body.scrollTop = back.frameY;
 }
 
 // A file the browser saves, from a blob made on this page.

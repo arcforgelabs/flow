@@ -108,7 +108,7 @@ const CHEVRON_ICON = '<svg width="14" height="14" viewBox="0 0 16 16" aria-hidde
 const CALENDAR_ICON = '<svg width="13" height="13" viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="3" width="12" height="11" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M2 6.5h12M5.5 1.5v3M10.5 1.5v3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>';
 
 export async function renderJobs(main, ui) {
-  const { h, flow, listHead, notice } = ui;
+  const { h, flow, listHead, listFrame, notice } = ui;
   // Search (search.js) opens a job with no invoice as /jobs?q=<case>.
   const asked = new URLSearchParams(location.search).get('q') ?? '';
   // The person's own view (job-view.js), saved with their account. Before
@@ -132,7 +132,8 @@ export async function renderJobs(main, ui) {
   const controls = h('div', { class: 'fx-viewbar', role: 'group', 'aria-label': 'Group, sort and filter' });
   // In the list, ticked rows get the same floating bar as Invoices.
   const bulk = bulkBar(ui, { label: 'Ticked jobs' });
-  main.append(...listHead('Jobs', { start: controls, end: [find.element, toggle] }).nodes, host, bulk.element);
+  const frame = listFrame(main, host);
+  main.append(...listHead('Jobs', { start: controls, end: [find.element, toggle] }).nodes, frame.element, bulk.element);
 
   const drawToggle = () => toggle.replaceChildren(...[['board', 'Board'], ['list', 'List']].map(([id, label]) => h('button', {
     type: 'button', role: 'radio', class: 'fx-seg__item', 'aria-checked': String(state.view.layout === id),
@@ -349,6 +350,7 @@ export async function renderJobs(main, ui) {
     const shown = new Set(found.map(jobKey));
     for (const key of state.ticked) if (!shown.has(key)) state.ticked.delete(key);
     state.found = found;
+    frame.count(`${found.length} ${found.length === 1 ? 'job' : 'jobs'}`);
     host.replaceChildren(state.view.layout === 'list' ? list(groups, found.length) : board(groups));
     drawBulk();
   }
