@@ -116,7 +116,6 @@ export async function renderJobs(main, ui) {
   const controls = h('div', { class: 'fx-viewbar', role: 'group', 'aria-label': 'Group, sort and filter' });
   // In the list, ticked rows get the same floating bar as Invoices.
   const bulk = bulkBar(ui, { label: 'Ticked jobs' });
-  main.classList.add('fx-main--wide');
   main.append(
     pageHeader('Jobs'),
     h('div', { class: 'fx-toolbar fx-toolbar--plain' }, controls, h('div', { class: 'fx-toolbar__end' }, find.element, toggle)),

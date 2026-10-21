@@ -490,7 +490,8 @@ a.fx-strong:hover { text-decoration: underline; }
 }
 
 /* ── Jobs board ─────────────────────────────────────────────────────────── */
-.fx-main--wide { max-width: none; }
+/* Every page shares .fx-main's width; only the board's lanes use the whole window. */
+.fx-main--board { max-width: none; }
 .fx-main > * { min-width: 0; }
 .fx-toolbar--plain { border-bottom: 0; align-items: center; }
 .fx-toolbar--plain .fx-search { margin-bottom: 0; }
@@ -915,8 +916,13 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
   box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .15);
 }
 .fx-swatch[aria-checked="true"] { box-shadow: 0 0 0 2px var(--t-paper), 0 0 0 4px var(--t-text); }
-.fx-swatch--default { overflow: hidden; background: var(--t-paper); }
-.fx-swatch--default span { display: block; width: 100%; height: 100%; }
+/* The default accent: a pill that says Default, before the colours. */
+.fx-swatch--default {
+  display: inline-flex; align-items: center; gap: 6px; width: auto; padding: 0 10px 0 4px; border-radius: 999px;
+  background: var(--t-paper); color: var(--t-text); font: 600 12.5px/1 var(--t-body); box-shadow: inset 0 0 0 1px var(--t-control);
+}
+.fx-swatch--default[aria-checked="true"] { box-shadow: inset 0 0 0 1px var(--t-control), 0 0 0 2px var(--t-paper), 0 0 0 4px var(--t-text); }
+.fx-swatch__dot { flex: none; width: 22px; height: 22px; border-radius: 50%; }
 .fx-swatch-custom { display: inline-flex; align-items: center; gap: 8px; color: var(--t-dim); font-size: 13px; font-weight: 600; }
 .fx-swatch-custom input { width: 34px; height: 30px; padding: 0; border: 1px solid var(--t-control); border-radius: var(--t-radius); background: var(--t-paper); cursor: pointer; }
 
