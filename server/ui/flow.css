@@ -705,18 +705,13 @@ th:hover .fx-th-sort, .fx-th-sort:focus-visible, .fx-th-sort--on { opacity: 1; }
 .fx-task__none { display: inline-flex; align-items: center; gap: 6px; color: var(--t-warn); }
 .fx-task__none svg { width: 16px; height: 16px; }
 
-/* Reconcile (reconcile.js): the two views of Price list › Reconcile. Card:
-   the invoice pager, then one job beside its possible invoices. List: one
-   table, ticked jobs acted on from the bulk bar. */
+/* Reconcile (reconcile.js): the list, as Jobs and Invoices; one gap, as an
+   invoice opened from Invoices (the pager on top). */
 .fx-rec { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
 .fx-rec .fx-lucide { width: 16px; height: 16px; }
-.fx-rec__bar { margin-bottom: 4px; }
-.fx-rec__card-view { display: flex; flex-direction: column; gap: 16px; min-width: 0; max-width: 1180px; }
-.fx-rec__card-view .fx-xi__acts .fx-btn, .fx-rec__acts .fx-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.fx-rec__gap { max-width: 1180px; }
+.fx-rec__gap .fx-ph__actions .fx-btn, .fx-rec__acts .fx-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
 .fx-rec__results { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
-.fx-rec__head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
-.fx-rec__head > div { display: grid; gap: 4px; }
-.fx-rec__title { margin: 0; font-family: var(--t-display); font-weight: var(--t-display-weight); color: var(--t-strong); font-size: 26px; }
 .fx-rec__table { display: grid; grid-template-columns: 110px minmax(150px, 1fr) repeat(var(--cols), minmax(170px, 1fr)); border: 1px solid var(--fx-line); border-radius: var(--t-radius); background: var(--t-paper); overflow-x: auto; }
 .fx-rec__row { display: contents; }
 .fx-rec__row > span { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border-top: 1px solid var(--fx-line-soft); font-size: 13.5px; color: var(--t-strong); }
@@ -739,14 +734,16 @@ th:hover .fx-th-sort, .fx-th-sort:focus-visible, .fx-th-sort--on { opacity: 1; }
 .fx-rec__label { color: var(--t-dim); font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
 .fx-rec__checks { display: flex; flex-wrap: wrap; gap: 4px 12px; }
 .fx-rec-list tbody tr { cursor: pointer; }
+.fx-rec-list__kind { width: 36px; color: var(--t-dim); }
 .fx-rec-list__mid { width: 72px; text-align: center; white-space: nowrap; }
 .fx-rec__possible { display: inline-flex; align-items: center; gap: 4px; color: var(--t-dim); font-variant-numeric: tabular-nums; }
 .fx-rec__possible[data-state="some"] { color: var(--t-warn); }
 @media (max-width: 820px) {
   .fx-rec__table { display: none; }
   .fx-rec__cards { display: flex; flex-direction: column; gap: 12px; }
-  .fx-rec__cards .fx-btn, .fx-rec__card-view .fx-xi__acts .fx-btn { min-height: 44px; }
-  .fx-rec__card-view .fx-xi__acts .fx-btn { flex: 1 1 auto; }
+  .fx-rec__cards .fx-btn, .fx-rec__gap .fx-ph__actions .fx-btn { min-height: 44px; }
+  .fx-rec__gap .fx-ph__actions { width: 100%; }
+  .fx-rec__gap .fx-ph__actions .fx-btn { flex: 1 1 auto; }
 }
 .fx-task__custom { margin-top: 24px; }
 .fx-task__custom h3 { margin: 0 0 4px; color: var(--t-dim); font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }

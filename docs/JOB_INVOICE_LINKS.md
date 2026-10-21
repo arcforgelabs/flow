@@ -116,19 +116,23 @@ Flow jobs against Flow invoices. It calls no integration. Whether a Flow
 invoice matches an invoice in an accounting system is that integration's own
 work, on its own page.
 
-It has two queues, oldest first, as tabs with their counts. Like Price list ›
-Reconcile and Xero › Import › Review, it has two views (the toggle at the
-top right):
+It is laid out like Jobs and Invoices. `/reconcile` lists every gap, oldest
+first, jobs and invoices together:
 
-| View | Shows |
+| Gap | A gap is |
 | --- | --- |
-| One at a time | The invoice pager ("← Back" to the list, "n of N", previous and next), then one gap beside its possible other side. The default. |
-| List | Every gap in a table, with a count of possible matches. A row opens it one at a time. Ticked jobs get draft invoices from the bulk bar ("Make invoices"); a ticked job with a possible invoice is left for a person to check. |
+| Job with no invoice | A job marked ready, with no Flow invoice, not held, and not tied to an accounting invoice by the matcher. |
+| Invoice with no job | A Flow invoice, not void, that no job is linked to. |
 
-| Queue | A gap is |
-| --- | --- |
-| Job, no invoice | A job marked ready, with no Flow invoice, not held, and not tied to an accounting invoice by the matcher. |
-| Invoice, no job | A Flow invoice, not void, that no job is linked to. |
+The Filter chip (as on Jobs) shows jobs, invoices or both, with or without a
+possible match; it is kept for each viewer in the browser. The search finds a
+client, practitioner, invoice number or amount. Ticked jobs get draft
+invoices from the bulk bar ("Make invoices"); a ticked job with a possible
+invoice is left for a person to check.
+
+A row opens that gap at `/reconcile/:id` (`?kind=invoice` for an invoice),
+as an invoice opens from Invoices: the pager on top ("← Back" to the list,
+"n of N" of the list as it was filtered, previous and next), then the gap.
 
 For one gap the page shows the record beside its possible other side, best
 first: the same client within 60 days, ranked by total, lines, Reference and
