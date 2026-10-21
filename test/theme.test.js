@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { cpSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
+import { cpSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, test } from 'node:test';
@@ -103,6 +103,13 @@ describe('pages and assets', () => {
     for (const path of ['/assets/theme/themes.js', '/assets/theme/openclaw-palettes.js', '/assets/theme/color-contrast.js', '/assets/theme/font-families.js', '/assets/ui/flow.css', '/assets/ui/appearance.js', '/assets/ui/clerk-appearance.js', '/assets/ui/app.js', '/assets/ui/invoicing.js', '/assets/ui/invoicing-settings.js', '/assets/ui/automations.js', '/assets/ui/line-mappings.js', '/assets/ui/price-list.js', '/assets/ui/jobs.js', '/assets/ui/logos/xero.svg', '/assets/ui/logos/seazona.svg', '/assets/icons/calendar.svg', '/assets/icons/square-chevron-down.svg']) {
       assert.equal((await request(app, path)).status, 200, path);
     }
+    // Every page script a served script imports is served too: a missing
+    // one stops the whole app from opening.
+    const uiDir = new URL('../server/ui/', import.meta.url);
+    const imported = new Set(readdirSync(uiDir).filter((f) => f.endsWith('.js'))
+      .flatMap((f) => [...readFileSync(new URL(f, uiDir), 'utf8').matchAll(/from '\/assets\/ui\/([\w-]+\.js)'/g)].map((m) => m[1])));
+    assert.ok(imported.has('kit.js'));
+    for (const file of imported) assert.equal((await request(app, `/assets/ui/${file}`)).status, 200, `/assets/ui/${file}`);
     const font = await request(app, '/assets/fonts/nunito-sans/index.css');
     assert.equal(font.status, 200);
     const file = font.text.match(/url\(\.\/files\/([^)]+\.woff2)\)/)[1];
