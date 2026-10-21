@@ -87,8 +87,9 @@ function jobLines(o, codes) {
 }
 
 // The two queues, oldest first. jobs: { id, clientName, practitioner,
-// jobDate, totalCents, possible }; invoices: { id, number, clientName,
-// issueDate, status, totalCents, possible }. `possible` counts the other
+// jobDate, totalCents, status, sourceSystem, sourceJobRef, possible };
+// invoices: { id, number, clientName, issueDate, status, totalCents,
+// possible }. `possible` counts the other
 // side with the same client and total.
 export async function listReconcile(db, organisationId) {
   const jobs = await db.select({
@@ -97,6 +98,9 @@ export async function listReconcile(db, organisationId) {
     practitioner: billingObligations.practitioner,
     jobDate: billingObligations.jobDate,
     totalCents: billingObligations.totalCents,
+    status: billingObligations.sourceStatus,
+    sourceSystem: billingObligations.sourceSystem,
+    sourceJobRef: billingObligations.sourceJobRef,
     // An unclear accounting match: "Make invoice" settles it first.
     unclear: sql`${billingObligations.accountingState} = 'ambiguous'`.mapWith(Boolean),
     possible: sql`(select count(*) from invoices i

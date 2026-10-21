@@ -124,10 +124,17 @@ first, jobs and invoices together:
 | Job with no invoice | A job marked ready, with no Flow invoice, not held, and not tied to an accounting invoice by the matcher. |
 | Invoice with no job | A Flow invoice, not void, that no job is linked to. |
 
-The Filter chip is the one Jobs uses (`server/ui/view-bar.js`): rows of
-field, operator and value. The fields are Type (Job or Invoice), Client,
-Practitioner, Date, Total and Match (has a possible match, or none). The
-rows are kept for each viewer in the browser. The search icon at the right
+The Filter chip is the one Jobs uses (`server/ui/view-bar.js`): groups of
+rows of field, operator and value, joined by And / Or, as on ClickUp. The
+fields are Type (Job or Invoice), Status, Client, Practitioner, Date, Total,
+Match (has a possible match, or none) and the lab's custom fields. Status
+is the job's status from the lab system, or the invoice's stage.
+Practitioner and custom fields belong to jobs, so a row on them never hides
+an invoice. The rows are kept for each viewer in the browser.
+
+The Invoices list has the same chip at the right of its tabs. Its fields
+are Client, Number, Reference, Date, Total and Problem; the tabs stay the
+status. It filters the rows of the tab shown, and is kept in the browser. The search icon at the right
 of the toolbar opens a box that finds a client, practitioner, invoice number
 or amount. Jobs and Invoices use the same icon (`findBox` in
 `server/ui/view-bar.js`); the sidebar search (Ctrl+K) stays the way to find

@@ -241,11 +241,11 @@ export async function renderJobs(main, ui) {
   }, { rows: true, clearLabel: 'Clear the sort' });
 
   // ── Filters ──
-  // Rows of field, operator and value, with a bin on each, "Add filter",
-  // and "Clear all". The second row's And / Or applies to every row.
+  // The shared filter panel (view-bar.js), as ClickUp's: groups of rows of
+  // field, operator and value. A job's fields, then the lab's custom fields.
   const filterFields = () => [
     ...Object.entries(FILTER_FIELDS).filter(([id]) => id !== 'assignee' || assigneeField())
-      .map(([value, f]) => ({ value, label: value === 'assignee' ? assigneeField().name : f.label })),
+      .map(([value, f]) => ({ value, label: value === 'assignee' ? assigneeField().name : f.label, icon: f.icon })),
     { group: 'Custom fields', options: customColumns().map((f) => ({ value: fieldGroup(f.id), label: f.name })) },
   ];
   const kindOf = (field) => {
@@ -253,8 +253,11 @@ export async function renderJobs(main, ui) {
     if (Object.hasOwn(FILTER_FIELDS, field)) return FILTER_FIELDS[field].kind;
     return KIND_OF_TYPE[fieldById(fieldIdOf(field))?.type] ?? null;
   };
-  const PROBLEM_OPS = { yes: 'has one', no: 'has none' };
-  const opsOf = (field) => (field === 'problem' ? PROBLEM_OPS : OPERATORS[kindOf(field)] ?? {});
+  // Status and stage are always set, so they offer Is and Is not, as
+  // ClickUp's Status does.
+  const PROBLEM_OPS = { yes: 'Has one', no: 'Has none' };
+  const SET_OPS = { is: 'Is', not: 'Is not' };
+  const opsOf = (field) => (field === 'problem' ? PROBLEM_OPS : ['status', 'stage'].includes(field) ? SET_OPS : OPERATORS[kindOf(field)] ?? {});
   // The choices a choice or person filter offers: [{ value, label }].
   function choicesOf(field) {
     const people = () => [{ value: 'me', label: 'Me' }, ...state.people.map((p) => ({ value: p.id, label: p.name }))];

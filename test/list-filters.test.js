@@ -1,0 +1,54 @@
+import assert from 'node:assert/strict';
+import { registerHooks } from 'node:module';
+import { test } from 'node:test';
+
+// The Filter chip on Reconcile and Invoices: the same groups and rows as on
+// Jobs (job-view.js), on each page's own fields. Synthetic data only.
+const ui = new URL('../server/ui/', import.meta.url);
+registerHooks({
+  resolve: (specifier, context, next) => next(specifier.startsWith('/assets/ui/') ? new URL(specifier.slice('/assets/ui/'.length), ui).href : specifier, context),
+});
+const { keptRows, reconcileRows } = await import('../server/ui/reconcile.js');
+const { keptInvoices } = await import('../server/ui/invoicing.js');
+
+const FIELD = '6f1c2a4e-1b2c-4d3e-8f9a-0b1c2d3e4f5a';
+const rows = reconcileRows({
+  jobs: [
+    { id: 'j1', clientName: 'Beta Clinic', practitioner: 'Dr B', status: 'Shipped', jobDate: '2026-03-02', totalCents: 5000, possible: 1, sourceSystem: 'lab', sourceJobRef: '101' },
+    { id: 'j2', clientName: 'Alpha Clinic', practitioner: 'Dr A', status: 'In lab', jobDate: '2026-03-09', totalCents: 12000, possible: 0, sourceSystem: 'lab', sourceJobRef: '102' },
+  ],
+  invoices: [{ id: 'i1', number: 'INV-9', clientName: 'Beta Clinic', status: 'draft', issueDate: '2026-03-05', totalCents: 5000, possible: 1 }],
+});
+const values = new Map([[`lab\u0000101\u0000${FIELD}`, 'opt-rush']]);
+const kindOf = (field) => ({ type: 'choice', status: 'choice', client: 'choice', practitioner: 'choice', date: 'date', total: 'number', match: 'check', [`field:${FIELD}`]: 'choice' })[field] ?? null;
+const keep = (view, q = '') => keptRows(rows, view, q, { kindOf, valueOf: (row, id) => values.get(`${row.key}\u0000${id}`) ?? null, now: '2026-03-10' }).map((r) => r.id);
+const one = (filters, match = 'all') => ({ match: 'all', groups: [{ match, filters }] });
+
+test('Reconcile filters by Status, and a job-only field never hides invoices', () => {
+  assert.deepEqual(keep(one([{ field: 'status', op: 'is', value: ['Shipped'] }])), ['j1']);
+  assert.deepEqual(keep(one([{ field: 'practitioner', op: 'is', value: ['Dr A'] }])), ['i1', 'j2']);
+  assert.deepEqual(keep(one([{ field: `field:${FIELD}`, op: 'is', value: ['opt-rush'] }])), ['j1', 'i1'], 'a custom field reads the job by its source key');
+});
+
+test('Reconcile groups join with And / Or, and dates use ClickUp ranges', () => {
+  const jobs = { match: 'all', filters: [{ field: 'type', op: 'is', value: ['job'] }] };
+  const big = { match: 'all', filters: [{ field: 'total', op: 'gt', value: 100 }] };
+  assert.deepEqual(keep({ match: 'all', groups: [jobs, big] }), ['j2']);
+  assert.deepEqual(keep({ match: 'any', groups: [jobs, big] }), ['j1', 'j2']);
+  assert.deepEqual(keep(one([{ field: 'date', op: 'is', value: 'thisweek' }])), ['j2']);
+  assert.deepEqual(keep(one([{ field: 'date', op: 'is', value: 'lastweek' }]), 'beta'), ['j1', 'i1']);
+});
+
+test('Invoices filters the rows of the tab shown', () => {
+  const invoices = [
+    { id: 'a', number: 'INV-1', contactName: 'Beta Clinic', reference: 'Dr B - P1', issueDate: '2026-03-02', totalCents: 5000, problems: [] },
+    { id: 'b', number: null, contactName: 'Alpha Clinic', reference: null, createdAt: '2026-03-09T01:00:00Z', totalCents: 12000, problems: [{ message: 'No price' }] },
+  ];
+  const kept = (view) => keptInvoices(invoices, view, '2026-03-10').map((i) => i.id);
+  assert.deepEqual(kept(one([{ field: 'client', op: 'is', value: ['Alpha Clinic'] }])), ['b']);
+  assert.deepEqual(kept(one([{ field: 'problem', op: 'yes' }])), ['b']);
+  assert.deepEqual(kept(one([{ field: 'reference', op: 'has', value: 'dr b' }])), ['a']);
+  assert.deepEqual(kept(one([{ field: 'number', op: 'unset' }])), ['b']);
+  assert.deepEqual(kept(one([{ field: 'date', op: 'is', value: 'thisweek' }])), ['b'], 'a draft uses the day it was made');
+  assert.deepEqual(kept(one([{ field: 'total', op: 'lt', value: 100 }, { field: 'problem', op: 'yes' }], 'any')), ['a', 'b']);
+});

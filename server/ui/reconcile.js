@@ -17,7 +17,7 @@
 // /jobs/:id/no-invoice (docs/JOB_INVOICE_LINKS.md).
 import { bulkBar } from '/assets/ui/bulk-bar.js';
 import { lucide } from '/assets/ui/custom-fields.js';
-import { filterJobs, MATCHES } from '/assets/ui/job-view.js';
+import { cleanFilterView, filterJobs, KIND_OF_TYPE } from '/assets/ui/job-view.js';
 import { findBox, today, viewBar } from '/assets/ui/view-bar.js';
 import { formatCents } from '/assets/ui/invoicing.js';
 
@@ -97,15 +97,20 @@ const CHEVRONS = { prev: 'M14.5 6l-6 6 6 6', next: 'M9.5 6l6 6-6 6' };
 const FILTER_KEY = 'flow_reconcile_filters';
 const NAV_KEY = 'flow_reconcile_nav';
 // The fields a filter row can use. One word each; Type's choices have icons.
+// The filter's fields (view-bar.js). Reconcile lists jobs and invoices, so
+// it has both lists' fields; a job's own field (Practitioner, a custom
+// field) skips invoice rows, so it never hides them.
 const FILTER_FIELDS = {
-  type: { label: 'Type', kind: 'choice' },
-  client: { label: 'Client', kind: 'choice' },
-  practitioner: { label: 'Practitioner', kind: 'choice' },
-  date: { label: 'Date', kind: 'date' },
-  total: { label: 'Total', kind: 'number' },
-  match: { label: 'Match', kind: 'check' },
+  type: { label: 'Type', kind: 'choice', icon: 'layers' },
+  status: { label: 'Status', kind: 'choice', icon: 'circle-dot' },
+  client: { label: 'Client', kind: 'choice', icon: 'building-2' },
+  practitioner: { label: 'Practitioner', kind: 'choice', icon: 'stethoscope', job: true },
+  date: { label: 'Date', kind: 'date', icon: 'calendar' },
+  total: { label: 'Total', kind: 'number', icon: 'dollar-sign' },
+  match: { label: 'Match', kind: 'check', icon: 'link' },
 };
-const MATCH_OPS = { yes: 'has one', no: 'has none' };
+const MATCH_OPS = { yes: 'Has one', no: 'Has none' };
+const SET_OPS = { is: 'Is', not: 'Is not' };
 const TYPES = [{ value: 'job', label: 'Job', icon: 'briefcase' }, { value: 'invoice', label: 'Invoice', icon: 'file-text' }];
 
 function readStored(store, key, fallback) {
@@ -118,35 +123,47 @@ function writeStored(store, key, value) {
 // One row for each gap, jobs and invoices together, oldest first.
 export function reconcileRows({ jobs = [], invoices = [] }) {
   return [
-    ...jobs.map((j) => ({ kind: 'job', id: j.id, client: j.clientName, who: j.practitioner, date: j.jobDate, totalCents: j.totalCents, possible: j.possible, unclear: j.unclear })),
-    ...invoices.map((i) => ({ kind: 'invoice', id: i.id, client: i.clientName, who: i.number ?? 'Draft', status: i.status, date: i.issueDate, totalCents: i.totalCents, possible: i.possible })),
+    ...jobs.map((j) => ({
+      kind: 'job', id: j.id, client: j.clientName, who: j.practitioner, stage: j.status ?? null, date: j.jobDate, totalCents: j.totalCents, possible: j.possible, unclear: j.unclear,
+      key: j.sourceSystem && j.sourceJobRef ? `${j.sourceSystem}\u0000${j.sourceJobRef}` : null,
+    })),
+    ...invoices.map((i) => ({ kind: 'invoice', id: i.id, client: i.clientName, who: i.number ?? 'Draft', status: i.status, stage: statusWords(i.status), date: i.issueDate, totalCents: i.totalCents, possible: i.possible })),
   ].sort((a, b) => String(a.date ?? '9999').localeCompare(String(b.date ?? '9999')));
 }
 
-// A row's value for a filter field, as the filter compares it.
-export function rowValue(row, field) {
+const isCustom = (field) => /^field:/.test(field);
+
+// A row's value for a filter field, as the filter compares it. `valueOf`
+// reads a job's custom field value: (row, fieldId) => value.
+export function rowValue(row, field, valueOf = () => null) {
   switch (field) {
     case 'type': return row.kind;
+    case 'status': return row.stage ?? null;
     case 'client': return row.client ?? null;
     case 'practitioner': return row.kind === 'job' ? row.who ?? null : null;
     case 'date': return row.date ?? null;
     case 'total': return row.totalCents == null ? null : row.totalCents / 100;
     case 'match': return row.possible > 0;
-    default: return null;
+    default: return isCustom(field) && row.kind === 'job' ? valueOf(row, field.slice(6)) : null;
   }
 }
 
-// The rows a view keeps: its filter rows, then the search words.
-export function keptRows(rows, view, q = '') {
+// A view without the rows a record does not have: an invoice has no
+// practitioner and no custom fields.
+const forInvoices = (view) => ({ ...view, groups: view.groups.map((g) => ({ ...g, filters: g.filters.filter((f) => !FILTER_FIELDS[f.field]?.job && !isCustom(f.field)) })) });
+
+// The rows a view keeps: its filter rows, then the search words. `kindOf`
+// gives a field's kind (custom fields too); `valueOf` a custom value.
+export function keptRows(rows, view, q = '', { kindOf = (field) => FILTER_FIELDS[field]?.kind ?? null, valueOf = () => null, now = today() } = {}) {
   const words = q.trim().toLowerCase();
-  return filterJobs(rows, view, { valueOf: rowValue, kindOf: (field) => FILTER_FIELDS[field]?.kind ?? null, today: today() })
+  const keep = (list, v) => filterJobs(list, v, { valueOf: (row, field) => rowValue(row, field, valueOf), kindOf, today: now });
+  const kept = new Set([...keep(rows.filter((r) => r.kind === 'job'), view), ...keep(rows.filter((r) => r.kind !== 'job'), forInvoices(view))]);
+  return rows.filter((r) => kept.has(r))
     .filter((r) => !words || [r.client, r.who, money(r.totalCents)].some((v) => String(v ?? '').toLowerCase().includes(words)));
 }
 
 function readView() {
-  const saved = readStored(localStorage, FILTER_KEY, {});
-  const filters = Array.isArray(saved.filters) ? saved.filters.filter((f) => f && Object.hasOwn(FILTER_FIELDS, f.field)) : [];
-  return { match: MATCHES.includes(saved.match) ? saved.match : 'all', filters };
+  return cleanFilterView(readStored(localStorage, FILTER_KEY, {}), (field) => (Object.hasOwn(FILTER_FIELDS, field) ? FILTER_FIELDS[field].kind : isCustom(field) ? '*' : null));
 }
 
 export async function renderReconcile(main, ui, id = null) {
@@ -172,15 +189,29 @@ async function renderList(main, ui) {
     h('div', { class: 'fx-toolbar fx-toolbar--plain' }, controls, h('div', { class: 'fx-toolbar__end' }, find.element)),
     host, bulk.element);
 
-  // The Filter chip: the same rows as on Jobs (view-bar.js).
+  // The Filter chip: the same panel as on Jobs (view-bar.js). Job rows also
+  // have the lab's custom fields.
+  const custom = { fields: [], people: [], values: new Map() };
+  const fieldById = (id) => custom.fields.find((f) => f.id === id) ?? null;
+  const kindOf = (field) => FILTER_FIELDS[field]?.kind ?? (isCustom(field) ? KIND_OF_TYPE[fieldById(field.slice(6))?.type] ?? null : null);
+  const valueOf = (row, fieldId) => (row.key ? custom.values.get(`${row.key}\u0000${fieldId}`) ?? null : null);
   const labels = (list) => [...new Set(list.filter(Boolean))].sort((a, b) => a.localeCompare(b)).map((v) => ({ value: v, label: v }));
   const filterMenu = viewBar(h).filterMenu({
-    fields: () => Object.entries(FILTER_FIELDS).map(([value, f]) => ({ value, label: f.label })),
-    kindOf: (field) => FILTER_FIELDS[field]?.kind ?? null,
-    opsOf: (field) => (field === 'match' ? MATCH_OPS : null),
-    choicesOf: (field) => (field === 'type' ? TYPES
-      : field === 'client' ? labels(rows.map((r) => r.client))
-        : field === 'practitioner' ? labels(rows.filter((r) => r.kind === 'job').map((r) => r.who)) : []),
+    fields: () => [
+      ...Object.entries(FILTER_FIELDS).map(([value, f]) => ({ value, label: f.label, icon: f.icon })),
+      ...custom.fields.filter((f) => KIND_OF_TYPE[f.type]).map((f) => ({ value: `field:${f.id}`, label: f.name })),
+    ],
+    kindOf,
+    opsOf: (field) => (field === 'match' ? MATCH_OPS : ['type', 'status'].includes(field) ? SET_OPS : null),
+    choicesOf: (field) => {
+      if (field === 'type') return TYPES;
+      if (field === 'status') return labels(rows.map((r) => r.stage));
+      if (field === 'client') return labels(rows.map((r) => r.client));
+      if (field === 'practitioner') return labels(rows.filter((r) => r.kind === 'job').map((r) => r.who));
+      const f = isCustom(field) ? fieldById(field.slice(6)) : null;
+      if (f?.type === 'person') return [{ value: 'me', label: 'Me' }, ...custom.people.map((p) => ({ value: p.id, label: p.name }))];
+      return (f?.options ?? []).map((o) => ({ value: o.id, label: o.archived ? `${o.name} (archived)` : o.name }));
+    },
     view: () => state.view,
     change: (patch) => {
       state.view = { ...state.view, ...patch };
@@ -194,7 +225,14 @@ async function renderList(main, ui) {
 
   let rows;
   try {
-    rows = reconcileRows(await flow('/api/invoicing/reconcile'));
+    // Custom fields are extra: the list still shows without them.
+    const [lists, fields, values] = await Promise.all([
+      flow('/api/invoicing/reconcile'), flow('/api/custom-fields').catch(() => null), flow('/api/custom-fields/values').catch(() => null),
+    ]);
+    rows = reconcileRows(lists);
+    custom.fields = fields?.fields ?? [];
+    custom.people = fields?.people ?? [];
+    custom.values = new Map((values?.values ?? []).map((v) => [`${v.sourceSystem}\u0000${v.sourceJobRef}\u0000${v.fieldId}`, v.value]));
   } catch (error) {
     host.replaceChildren(h('p', { class: 'fx-empty' }, error.message));
     return;
@@ -202,7 +240,7 @@ async function renderList(main, ui) {
 
   function draw() {
     filterMenu.draw();
-    const shown = keptRows(rows, state.view, state.q);
+    const shown = keptRows(rows, state.view, state.q, { kindOf, valueOf });
     const seen = new Set(shown.map((r) => r.id));
     for (const key of state.ticked) if (!seen.has(key)) state.ticked.delete(key);
     const remember = () => writeStored(sessionStorage, NAV_KEY, { q: state.q, rows: shown.map(({ kind, id }) => ({ kind, id })) });

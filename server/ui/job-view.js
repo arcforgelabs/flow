@@ -23,42 +23,60 @@ export const COLUMNS = {
 };
 export const DEFAULT_COLUMNS = Object.freeze(['practitioner', 'patient', 'stage', 'assignee', 'due', 'total']);
 
-// Filters, like ClickUp's: rows of field, operator and value, all of them
-// ('all') or any of them ('any') must match. A custom field filters too
-// ('field:<id>'); its kind comes from its type. Each kind has its
-// operators, in the order the menu shows them.
+// Filters, like ClickUp's: groups of rows of field, operator and value. The
+// rows in a group all match ('all') or any one matches ('any'); the groups
+// join the same way (the view's `match`). A custom field filters too
+// ('field:<id>'); its kind comes from its type. Each kind has ClickUp's
+// operators, in the order ClickUp's menu shows them.
 export const FILTER_FIELDS = {
-  status: { label: 'Status', kind: 'choice' },
-  stage: { label: 'Invoice stage', kind: 'choice' },
-  client: { label: 'Client', kind: 'choice' },
-  practitioner: { label: 'Practitioner', kind: 'choice' },
-  assignee: { label: 'Assignee', kind: 'person' },
-  due: { label: 'Due', kind: 'date' },
-  ordered: { label: 'Requested', kind: 'date' },
-  shipped: { label: 'Shipped', kind: 'date' },
-  total: { label: 'Total', kind: 'number' },
-  problem: { label: 'Problem', kind: 'check' },
+  status: { label: 'Status', kind: 'choice', icon: 'circle-dot' },
+  stage: { label: 'Invoice stage', kind: 'choice', icon: 'receipt' },
+  client: { label: 'Client', kind: 'choice', icon: 'building-2' },
+  practitioner: { label: 'Practitioner', kind: 'choice', icon: 'stethoscope' },
+  assignee: { label: 'Assignee', kind: 'person', icon: 'user-round' },
+  due: { label: 'Due', kind: 'date', icon: 'calendar' },
+  ordered: { label: 'Requested', kind: 'date', icon: 'calendar' },
+  shipped: { label: 'Shipped', kind: 'date', icon: 'calendar' },
+  total: { label: 'Total', kind: 'number', icon: 'dollar-sign' },
+  problem: { label: 'Problem', kind: 'check', icon: 'triangle-alert' },
 };
-const CHOICE_OPS = { is: 'is', not: 'is not', set: 'is set', unset: 'is not set' };
+const CHOICE_OPS = { is: 'Is', not: 'Is not', set: 'Is set', unset: 'Is not set' };
 export const OPERATORS = {
   choice: CHOICE_OPS,
   person: CHOICE_OPS,
-  date: {
-    overdue: 'is overdue', today: 'is today', next7: 'is in the next 7 days', last7: 'was in the last 7 days',
-    before: 'is before', after: 'is after', on: 'is on', set: 'is set', unset: 'is not set',
-  },
-  number: { eq: 'is', gt: 'is more than', lt: 'is less than', set: 'is set', unset: 'is not set' },
-  check: { yes: 'is ticked', no: 'is not ticked' },
-  text: { has: 'contains', is: 'is', set: 'is set', unset: 'is not set' },
+  // A date row's range is its value (DATE_VALUES), as on ClickUp.
+  date: CHOICE_OPS,
+  number: { set: 'Is set', unset: 'Is not set', gt: 'Greater than', lt: 'Less than', eq: 'Equal to' },
+  check: { yes: 'Is checked', no: 'Is not checked' },
+  text: { has: 'Contains', hasnt: 'Does not contain', is: 'Is', set: 'Is set', unset: 'Is not set' },
+};
+// The ranges a date row can match, as ClickUp's list names them. 'on',
+// 'before' and 'after' take a day ('on:2026-03-10'), 'between' two days
+// ('between:2026-03-01..2026-03-31'), 'last' and 'next' a count of days
+// ('next:14').
+export const DATE_VALUES = {
+  today: 'Today', yesterday: 'Yesterday', tomorrow: 'Tomorrow', next7: 'Next 7 days', last7: 'Last 7 days',
+  thisweek: 'This week', nextweek: 'Next week', lastweek: 'Last week',
+  lastmonth: 'Last month', thismonth: 'This month', nextmonth: 'Next month', earlier: 'Today & Earlier',
+  lastquarter: 'Last quarter', thisquarter: 'This quarter', nextquarter: 'Next quarter',
+  overdue: 'Overdue', later: 'Later than Today', last: 'Last', next: 'Next',
+  lastyear: 'Last year', thisyear: 'This year', nextyear: 'Next year',
+  on: 'Exact date', before: 'Before date', after: 'After date', between: 'Date range',
 };
 export const KIND_OF_TYPE = { dropdown: 'choice', person: 'person', checkbox: 'check', date: 'date', number: 'number', text: 'text' };
+// Each kind's icon in the field list (Lucide, /assets/icons/), as ClickUp
+// shows a field's type beside its name.
+export const KIND_ICONS = { choice: 'square-chevron-down', person: 'user-round', check: 'square-check', date: 'calendar', number: 'hash', text: 'type' };
 export const MATCHES = ['all', 'any'];
 // Operators that need no value.
-const NO_VALUE = new Set(['set', 'unset', 'overdue', 'today', 'next7', 'last7', 'yes', 'no']);
+const NO_VALUE = new Set(['set', 'unset', 'yes', 'no']);
 const ALL_OPS = new Set(Object.values(OPERATORS).flatMap(Object.keys));
+// Filters saved before dates took ClickUp's form had the range as the
+// operator ('next7', 'before' with a day). They load as "Is <range>".
+const OLD_DATE_OPS = new Set(['overdue', 'today', 'next7', 'last7', 'before', 'after', 'on']);
 
 export const DEFAULT_VIEW = Object.freeze({
-  layout: 'board', group: 'status', groupDir: 'asc', sorts: Object.freeze([]), match: 'all', filters: Object.freeze([]), columns: DEFAULT_COLUMNS,
+  layout: 'board', group: 'status', groupDir: 'asc', sorts: Object.freeze([]), match: 'all', groups: Object.freeze([]), columns: DEFAULT_COLUMNS,
 });
 
 // Group by one of the lab's custom fields (docs/CUSTOM_FIELDS.md):
@@ -71,6 +89,7 @@ const MAX_VALUES = 100;
 const MAX_COLUMNS = 40;
 const MAX_LABEL = 120;
 const MAX_FILTERS = 20;
+const MAX_GROUPS = 10;
 const MAX_SORTS = 5;
 
 const cleanLabels = (list) => [...new Set(list.filter((label) => typeof label === 'string' && label.length > 0 && label.length <= MAX_LABEL))].slice(0, MAX_VALUES);
@@ -82,15 +101,40 @@ function cleanValue(value) {
   return null;
 }
 
-function cleanFilter(filter) {
+// One row, checked. `kindOf(field)` is the field's kind, '*' for a custom
+// field (its type is not known here, so any operator stands and the page
+// skips one that does not fit), or null for a field the list does not have.
+function cleanFilter(filter, kindOf) {
   if (!filter || typeof filter !== 'object') return null;
-  const builtIn = Object.hasOwn(FILTER_FIELDS, filter.field ?? '') ? FILTER_FIELDS[filter.field] : null;
-  if (!builtIn && !FIELD_GROUP.test(filter.field ?? '')) return null;
-  // A custom field's type is not known here, so any operator stands; the
-  // page skips one that does not fit.
-  const ok = builtIn ? Object.hasOwn(OPERATORS[builtIn.kind], filter.op ?? '') : ALL_OPS.has(filter.op);
+  const kind = kindOf(filter.field ?? '');
+  if (!kind) return null;
+  if (OLD_DATE_OPS.has(filter.op) && (kind === 'date' || kind === '*')) {
+    const day = typeof filter.value === 'string' && ISO_DAY.test(filter.value) ? filter.value : null;
+    const range = ['before', 'after', 'on'].includes(filter.op) ? (day ? `${filter.op}:${day}` : null) : filter.op;
+    return { field: filter.field, op: 'is', value: range };
+  }
+  const ok = kind === '*' ? ALL_OPS.has(filter.op) : Object.hasOwn(OPERATORS[kind] ?? {}, filter.op ?? '');
   return ok ? { field: filter.field, op: filter.op, value: NO_VALUE.has(filter.op) ? null : cleanValue(filter.value) } : null;
 }
+
+// A filter as Flow keeps it: { match, groups: [{ match, filters }] }. A
+// filter saved before groups ({ match, filters }) loads as one group.
+export function cleanFilterView(value, kindOf) {
+  const input = value && typeof value === 'object' ? value : {};
+  const match = (m) => (MATCHES.includes(m) ? m : 'all');
+  const list = Array.isArray(input.groups) ? input.groups
+    : Array.isArray(input.filters) ? [{ match: input.match, filters: input.filters }] : [];
+  let room = MAX_FILTERS;
+  const groups = list.slice(0, MAX_GROUPS).map((g) => {
+    const filters = (Array.isArray(g?.filters) ? g.filters : []).map((f) => cleanFilter(f, kindOf)).filter(Boolean).slice(0, room);
+    room -= filters.length;
+    return { match: match(g?.match), filters };
+  }).filter((g) => g.filters.length);
+  return { match: Array.isArray(input.groups) ? match(input.match) : 'all', groups };
+}
+
+// A job filter field's kind, for cleanFilterView.
+const jobKind = (field) => FILTER_FIELDS[field]?.kind ?? (FIELD_GROUP.test(field) ? '*' : null);
 
 // A view saved before filter rows had fixed filters: hidden statuses, late
 // jobs, jobs with a problem, and "Assignee: me". They become rows.
@@ -98,7 +142,7 @@ function oldFilters(value) {
   const filters = [];
   const hide = Array.isArray(value.hide) ? cleanLabels(value.hide) : [];
   if (hide.length) filters.push({ field: 'status', op: 'not', value: hide });
-  if (value.late === true) filters.push({ field: 'due', op: 'overdue', value: null });
+  if (value.late === true) filters.push({ field: 'due', op: 'is', value: 'overdue' });
   if (value.problems === true) filters.push({ field: 'problem', op: 'yes', value: null });
   if (value.mine === true) filters.push({ field: 'assignee', op: 'is', value: ['me'] });
   return filters;
@@ -123,8 +167,7 @@ export function normaliseJobsView(input) {
     group: FIELD_GROUP.test(value.group ?? '') ? value.group : pick('group', Object.keys(GROUPS)),
     groupDir: pick('groupDir', DIRS),
     sorts: cleanSorts(value),
-    match: pick('match', MATCHES),
-    filters: (Array.isArray(value.filters) ? value.filters.map(cleanFilter).filter(Boolean) : oldFilters(value)).slice(0, MAX_FILTERS),
+    ...cleanFilterView(Array.isArray(value.groups) || Array.isArray(value.filters) ? value : { filters: oldFilters(value) }, jobKind),
     columns: Array.isArray(value.columns)
       ? [...new Set(value.columns.filter((c) => Object.hasOwn(COLUMNS, c) || FIELD_GROUP.test(c ?? '')))].slice(0, MAX_COLUMNS)
       : [...DEFAULT_COLUMNS],
@@ -132,18 +175,32 @@ export function normaliseJobsView(input) {
 }
 
 const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
+const DAY_RANGE = /^between:(\d{4}-\d{2}-\d{2})\.\.(\d{4}-\d{2}-\d{2})$/;
+// Is a date row's value a range Flow knows?
+export function dateValueIsOn(value) {
+  if (typeof value !== 'string') return false;
+  if (Object.hasOwn(DATE_VALUES, value)) return !['on', 'before', 'after', 'between', 'last', 'next'].includes(value);
+  const [kind, rest = ''] = value.split(':');
+  if (['on', 'before', 'after'].includes(kind)) return ISO_DAY.test(rest);
+  if (['last', 'next'].includes(kind)) return /^[1-9]\d{0,3}$/.test(rest);
+  return DAY_RANGE.test(value);
+}
+
 // A row filters only once it is complete: a row still being filled in
-// (no value yet) keeps every job.
-export function filterIsOn(filter) {
+// (no value yet) keeps every job. `kind` is the row's field kind.
+export function filterIsOn(filter, kind = null) {
   if (NO_VALUE.has(filter.op)) return true;
-  if (['before', 'after', 'on'].includes(filter.op)) return ISO_DAY.test(filter.value ?? '');
+  if (kind === 'date' || (kind == null && typeof filter.value === 'string' && dateValueIsOn(filter.value))) return dateValueIsOn(filter.value);
   if (['eq', 'gt', 'lt'].includes(filter.op)) return typeof filter.value === 'number';
   return Array.isArray(filter.value) ? filter.value.length > 0 : typeof filter.value === 'string' && filter.value.trim().length > 0;
 }
 
+// Every row of a view, in its groups' order.
+export const filterRows = (view) => (view.groups ?? []).flatMap((g) => g.filters);
+
 // How many filters are on: shown on the Filter button.
-export function filterCount(view) {
-  return view.filters.filter(filterIsOn).length;
+export function filterCount(view, kindOf = () => null) {
+  return filterRows(view).filter((f) => filterIsOn(f, kindOf(f.field))).length;
 }
 
 const text = (value) => (value ?? '').toString().toLowerCase();
@@ -152,13 +209,74 @@ const addDays = (iso, days) => {
   at.setUTCDate(at.getUTCDate() + days);
   return at.toISOString().slice(0, 10);
 };
+const parts = (iso) => iso.split('-').map(Number);
+const dayIso = (y, m, d) => new Date(Date.UTC(y, m - 1, d)).toISOString().slice(0, 10);
+// The first day of the week (Monday, as in Australia) that holds `iso`.
+const weekStart = (iso) => addDays(iso, -((new Date(`${iso}T00:00:00Z`).getUTCDay() + 6) % 7));
+const monthRange = (y, m) => ({ from: dayIso(y, m, 1), to: dayIso(y, m + 1, 0) });
+const quarterRange = (y, q) => ({ from: dayIso(y, q * 3 + 1, 1), to: dayIso(y, q * 3 + 4, 0) });
 
-// Does one value pass one filter row? `late` says if the job is late (for
-// "is overdue" on a job's due date); `me` is the person looking (for "me"
-// in a person filter); `today` is yyyy-mm-dd.
-export function matchesFilter(filter, value, { today, me = null, late = null } = {}) {
+// The days a date value matches, both ends kept: { from, to }, where a
+// missing end is open. Null for 'overdue' (it needs the job) or a value
+// Flow does not know.
+export function dateRange(value, today) {
+  const [y, m] = parts(today);
+  const q = Math.floor((m - 1) / 3);
+  const week = weekStart(today);
+  switch (value) {
+    case 'today': return { from: today, to: today };
+    case 'yesterday': return { from: addDays(today, -1), to: addDays(today, -1) };
+    case 'tomorrow': return { from: addDays(today, 1), to: addDays(today, 1) };
+    case 'next7': return { from: today, to: addDays(today, 7) };
+    case 'last7': return { from: addDays(today, -7), to: addDays(today, -1) };
+    case 'thisweek': return { from: week, to: addDays(week, 6) };
+    case 'nextweek': return { from: addDays(week, 7), to: addDays(week, 13) };
+    case 'lastweek': return { from: addDays(week, -7), to: addDays(week, -1) };
+    case 'thismonth': return monthRange(y, m);
+    case 'nextmonth': return monthRange(y, m + 1);
+    case 'lastmonth': return monthRange(y, m - 1);
+    case 'earlier': return { from: null, to: today };
+    case 'later': return { from: addDays(today, 1), to: null };
+    case 'thisquarter': return quarterRange(y, q);
+    case 'nextquarter': return quarterRange(y, q + 1);
+    case 'lastquarter': return quarterRange(y, q - 1);
+    case 'thisyear': return { from: dayIso(y, 1, 1), to: dayIso(y, 12, 31) };
+    case 'nextyear': return { from: dayIso(y + 1, 1, 1), to: dayIso(y + 1, 12, 31) };
+    case 'lastyear': return { from: dayIso(y - 1, 1, 1), to: dayIso(y - 1, 12, 31) };
+    default: break;
+  }
+  if (!dateValueIsOn(value) || value === 'overdue') return null;
+  const between = DAY_RANGE.exec(value);
+  if (between) return between[1] <= between[2] ? { from: between[1], to: between[2] } : { from: between[2], to: between[1] };
+  const [kind, rest] = value.split(':');
+  if (kind === 'on') return { from: rest, to: rest };
+  if (kind === 'before') return { from: null, to: addDays(rest, -1) };
+  if (kind === 'after') return { from: addDays(rest, 1), to: null };
+  if (kind === 'last') return { from: addDays(today, -Number(rest)), to: addDays(today, -1) };
+  if (kind === 'next') return { from: today, to: addDays(today, Number(rest)) };
+  return null;
+}
+
+// Is a day (yyyy-mm-dd) in a date value's range? `late` says if the job is
+// late, for "Overdue" on a job's due date.
+function inDateValue(day, want, today, late) {
+  if (want === 'overdue') return late ? late() : day != null && day < today;
+  const range = dateRange(want, today);
+  if (!range || day == null) return false;
+  return (range.from == null || day >= range.from) && (range.to == null || day <= range.to);
+}
+
+// Does one value pass one filter row? `kind` is the field's kind; `late`
+// says if the job is late (for "Overdue" on a job's due date); `me` is the
+// person looking (for "Me" in a person filter); `today` is yyyy-mm-dd.
+export function matchesFilter(filter, value, { today, me = null, late = null, kind = null } = {}) {
   const want = filter.value;
   const empty = value == null || value === '' || value === false;
+  const day = typeof value === 'string' && ISO_DAY.test(value.slice(0, 10)) ? value.slice(0, 10) : null;
+  if (kind === 'date' && ['is', 'not'].includes(filter.op)) {
+    const inside = inDateValue(day, want, today, late);
+    return filter.op === 'is' ? inside : day != null && !inside;
+  }
   switch (filter.op) {
     case 'set': return !empty;
     case 'unset': return empty;
@@ -167,38 +285,39 @@ export function matchesFilter(filter, value, { today, me = null, late = null } =
     case 'is': return Array.isArray(want) ? want.map((w) => (w === 'me' ? me : w)).includes(value) : !empty && text(value) === text(want).trim();
     case 'not': return !want.map((w) => (w === 'me' ? me : w)).includes(value);
     case 'has': return text(value).includes(text(want).trim());
+    case 'hasnt': return !text(value).includes(text(want).trim());
     case 'eq': return typeof value === 'number' && value === want;
     case 'gt': return typeof value === 'number' && value > want;
     case 'lt': return typeof value === 'number' && value < want;
-    case 'overdue': return late ? late() : !empty && value < today;
-    case 'today': return value === today;
-    case 'next7': return !empty && value >= today && value <= addDays(today, 7);
-    case 'last7': return !empty && value < today && value >= addDays(today, -7);
-    case 'before': return !empty && value < want;
-    case 'after': return !empty && value > want;
-    case 'on': return value === want;
     default: return true;
   }
 }
 
 // The jobs the filter keeps. `valueOf(job, field)` reads a job's value for
 // a filter field; `kindOf(field)` gives its kind, or null when the field is
-// gone (its rows are skipped); `late(job)` says if a job is late.
+// gone (its rows are skipped); `late(job)` says if a job is late. A group
+// keeps a job when all its rows pass ('all') or one does ('any'); the
+// groups join the same way. A group with no complete row is left out.
 export function filterJobs(jobs, view, { valueOf, kindOf = (field) => FILTER_FIELDS[field]?.kind ?? null, late = () => false, me = null, today }) {
-  const rows = view.filters.filter((f) => filterIsOn(f) && kindOf(f.field) && Object.hasOwn(OPERATORS[kindOf(f.field)], f.op));
-  if (!rows.length) return [...jobs];
-  const pass = (job) => (f) => matchesFilter(f, valueOf(job, f.field), { today, me, late: f.field === 'due' ? () => late(job) : null });
-  return jobs.filter((job) => (view.match === 'any' ? rows.some(pass(job)) : rows.every(pass(job))));
+  const live = (f) => kindOf(f.field) && Object.hasOwn(OPERATORS[kindOf(f.field)], f.op) && filterIsOn(f, kindOf(f.field));
+  const groups = (view.groups ?? []).map((g) => ({ match: g.match, rows: g.filters.filter(live) })).filter((g) => g.rows.length);
+  if (!groups.length) return [...jobs];
+  const pass = (job) => (f) => matchesFilter(f, valueOf(job, f.field), { today, me, kind: kindOf(f.field), late: f.field === 'due' ? () => late(job) : null });
+  const passGroup = (job) => (g) => (g.match === 'any' ? g.rows.some(pass(job)) : g.rows.every(pass(job)));
+  return jobs.filter((job) => (view.match === 'any' ? groups.some(passGroup(job)) : groups.every(passGroup(job))));
 }
 
 // The status lanes to show: a status filter hides the lanes it leaves out,
-// even empty ones. With "any" a lane can still match another row, so all
-// lanes show.
+// even empty ones. A row whose group (or the groups' join) is "any" can be
+// passed another way, so it hides no lane.
 export function keptStatuses(view, labels) {
-  if (view.match === 'any') return labels;
-  return view.filters.filter((f) => f.field === 'status' && filterIsOn(f) && Array.isArray(f.value)).reduce((kept, f) => (f.op === 'is'
-    ? kept.filter((label) => f.value.includes(label))
-    : f.op === 'not' ? kept.filter((label) => !f.value.includes(label)) : kept), labels);
+  const groups = (view.groups ?? []).filter((g) => g.filters.some((f) => filterIsOn(f)));
+  if (view.match === 'any' && groups.length > 1) return labels;
+  return groups.filter((g) => g.match !== 'any' || g.filters.length === 1)
+    .flatMap((g) => g.filters)
+    .filter((f) => f.field === 'status' && filterIsOn(f) && Array.isArray(f.value)).reduce((kept, f) => (f.op === 'is'
+      ? kept.filter((label) => f.value.includes(label))
+      : f.op === 'not' ? kept.filter((label) => !f.value.includes(label)) : kept), labels);
 }
 
 const dayOf = (job) => job.dueOn ?? job.orderedOn ?? job.jobDate ?? null;
