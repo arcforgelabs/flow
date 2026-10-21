@@ -42,8 +42,8 @@ test('the sidebar button folds the sidebar on wide screens and opens it as a dra
 
 test('Account is not in the sidebar; its page stays, with one visible heading', () => {
   const app = read('../server/ui/app.js');
-  assert.match(app, /account: \{ label: 'Account', icon: 'person', group: 'Settings', sidebar: false, render: renderAccount \}/);
-  assert.match(app, /if \(view\.sidebar === false\) continue;/);
+  assert.match(app, /account: \{ label: 'Account', icon: 'person', sidebar: false, render: renderAccount \}/);
+  assert.match(app, /if \(view\.sidebar === false \|\| view\.place === 'account'\) continue;/);
   assert.match(app, /main\.append\(h\('h1', \{ class: 'fx-sr' \}, 'Account'\), host\);/);
 });
 
@@ -64,20 +64,25 @@ test('folded, a click on the sidebar empty space opens it; a click on a page, th
   assert.match(css, /\.fx-shell\[data-folded\] \.fx-side \{ width: 64px; padding-inline: 10px; cursor: e-resize; \}/);
 });
 
-test('day to day the sidebar shows Work and a Settings row; a Settings page shows Back and the Settings pages', () => {
+test('the sidebar shows daily work, Price list and Rules; More holds the rest; People and Appearance are in the account menu', () => {
   const app = read('../server/ui/app.js');
-  // Each link names its section; route() names the open one on the nav.
-  assert.match(app, /\(view\.group === 'Settings' \? settings : work\)\.push\(navLink\(/);
-  assert.match(app, /\$\('nav'\)\.dataset\.section = settings \? 'settings' : 'work';/);
-  assert.match(app, /drawSection\(view, path\);/);
-  // Settings opens the first Settings page this person may see; Back returns
-  // to the last Work page.
-  assert.match(app, /navLink\(settings\[0\]\?\.dataset\.nav \?\? 'appearance', 'Settings', 'gear', \{ class: 'fx-nav__settings', 'data-section': 'work' \}\)/);
-  assert.match(app, /if \(!settings\) lastWork = path;/);
-  assert.match(app, /querySelector\('\[data-nav="back"\]'\)\?\.setAttribute\('href', lastWork\)/);
-  // No "Work" heading: the daily pages need no label.
-  assert.doesNotMatch(app, /'fx-nav__group' \}, view\.group\)/);
+  const views = app.match(/const VIEWS = \{([\s\S]*?)\n\};/)[1];
+  // The sidebar order: daily work first, then Price list and Rules.
+  const order = [...views.matchAll(/^  '?([a-z-]+)'?: \{/gm)].map((m) => m[1]);
+  assert.deepEqual(order.slice(0, 5), ['jobs', 'invoices', 'reconcile', 'price-list', 'invoicing-settings']);
+  for (const name of ['automations', 'custom-fields', 'integrations']) assert.match(views, new RegExp(`'?${name}'?: \\{[^\\n]*place: 'more'`));
+  for (const name of ['people', 'appearance']) assert.match(views, new RegExp(`${name}: \\{[^\\n]*place: 'account'`));
+  // No group headings in the sidebar.
+  assert.doesNotMatch(app, /fx-nav__group/);
+  // More is the shared row menu, opened under its left edge, and shows as
+  // current while one of its pages is open.
+  assert.match(app, /rowMenu\('More', more, \{ trigger: \[icon\('more'\), h\('span', \{ class: 'fx-nav__label' \}, 'More'\)\], className: 'fx-nav__more', align: 'start' \}\)/);
+  assert.match(app, /setAttribute\('aria-current', VIEWS\[view\]\.place === 'more' \? 'page' : 'false'\)/);
+  // The account menu: People (owners), Appearance, then Report a problem.
+  assert.match(app, /customMenuItems: accountItems \}/);
+  assert.match(app, /customMenuItems: \[\.\.\.accountItems, reportMenuItem\(openReport\)\]/);
+  const kit = read('../server/ui/kit.js');
+  assert.match(kit, /export function rowMenu\(label, items, \{ trigger = null, className = 'fx-cfm__more', align = 'end' \} = \{\}\)/);
   const css = read('../server/ui/flow.css');
-  assert.match(css, /\.fx-nav\[data-section="work"\] \[data-section="settings"\], \.fx-nav\[data-section="settings"\] \[data-section="work"\] \{ display: none; \}/);
-  assert.match(css, /\.fx-nav__settings \{ margin-top: auto; \}/);
+  assert.match(css, /\.fx-nav :is\(a, \.fx-nav__more\)\[aria-current="page"\] \{/);
 });

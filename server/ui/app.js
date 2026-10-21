@@ -21,9 +21,8 @@ import { renderXeroImport } from '/assets/ui/xero-import.js';
 import { startMonitoring } from '/assets/ui/monitoring.js';
 import { openSearch } from '/assets/ui/search.js';
 import { alertStrip } from '/assets/ui/alerts.js';
-import { initialsOf, personLabel } from '/assets/ui/person.js';
 import { startTips } from '/assets/ui/tip.js';
-import { crumbs, dialog, h, holdButton, linksOpenWith, notice, pageHeader, rowMenu, sectionTitle, settingRow, tileCard, tileSection, toast } from '/assets/ui/kit.js';
+import { dialog, h, holdButton, notice, pageHeader, rowMenu, sectionTitle, settingRow, toast } from '/assets/ui/kit.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -125,6 +124,12 @@ async function flow(path, options = {}) {
 
 // ── Shared pieces ──────────────────────────────────────────────────────────
 
+function initials(person) {
+  const source = (person.name || person.email || '?').replace(/@.*/, '');
+  const parts = source.split(/[\s._-]+/).filter(Boolean);
+  return ((parts[0]?.[0] ?? '?') + (parts[1]?.[0] ?? '')).toUpperCase();
+}
+
 function statusPill(person) {
   if (person.status === 'pending') return h('span', { class: 'fx-status', 'data-tone': 'warn' }, 'Waiting for approval');
   if (person.status === 'disabled') return h('span', { class: 'fx-status', 'data-tone': 'mute' }, 'Turned off');
@@ -142,31 +147,33 @@ function roleSelect(value, attrs = {}) {
 
 let me = null;
 
-// The sidebar lists the views in this order. Day to day it shows the Work
-// views and a Settings row at its foot; on a Settings page it shows Back and
-// the Settings views instead, as in ClickUp (route() sets data-section).
+// Where each view sits: the sidebar, in this order, daily work first (no
+// `place`); the sidebar's More menu (`place: 'more'`, `more` names its Lucide
+// icon); the account menu (`place: 'account'`). `sidebar: false` views open
+// by link and Search only.
 const VIEWS = {
-  jobs: { label: 'Jobs', icon: 'jobs', group: 'Work', render: (main) => renderJobs(main, ui()) },
-  invoices: { label: 'Invoices', icon: 'invoices', group: 'Work', render: (main, id) => (id ? renderInvoice(main, ui(), id) : renderInvoiceList(main, ui())) },
-  reconcile: { label: 'Reconcile', icon: 'reconcile', group: 'Work', render: (main, id) => renderReconcile(main, ui(), id) },
-  'invoicing-settings': { label: 'Rules', icon: 'rules', group: 'Settings', render: (main, id) => renderInvoicingSettings(main, ui(), id) },
-  automations: { label: 'Automations', icon: 'bolt', group: 'Settings', render: (main) => renderAutomations(main, ui()) },
-  'price-list': { label: 'Price list', icon: 'tag', group: 'Settings', render: (main, id) => (id === 'reconcile' ? renderPriceReconcile(main, ui()) : renderPriceList(main, ui())) },
-  'custom-fields': { label: 'Custom fields', icon: 'fields', group: 'Settings', render: (main) => renderCustomFields(main, ui()) },
-  people: { label: 'People', icon: 'people', group: 'Settings', ownerOnly: true, render: renderPeople },
-  integrations: { label: 'Integrations', icon: 'plug', group: 'Settings', ownerOnly: true, render: (main, id) => (id ? renderIntegration(main, id) : renderIntegrations(main)) },
+  jobs: { label: 'Jobs', icon: 'jobs', render: (main) => renderJobs(main, ui()) },
+  invoices: { label: 'Invoices', icon: 'invoices', render: (main, id) => (id ? renderInvoice(main, ui(), id) : renderInvoiceList(main, ui())) },
+  reconcile: { label: 'Reconcile', icon: 'reconcile', render: (main, id) => renderReconcile(main, ui(), id) },
+  'price-list': { label: 'Price list', icon: 'tag', render: (main, id) => (id === 'reconcile' ? renderPriceReconcile(main, ui()) : renderPriceList(main, ui())) },
+  'invoicing-settings': { label: 'Rules', icon: 'rules', render: (main, id) => renderInvoicingSettings(main, ui(), id) },
+  automations: { label: 'Automations', icon: 'bolt', place: 'more', more: 'zap', render: (main) => renderAutomations(main, ui()) },
+  'custom-fields': { label: 'Custom fields', icon: 'fields', place: 'more', more: 'form-input', render: (main) => renderCustomFields(main, ui()) },
+  integrations: { label: 'Integrations', icon: 'plug', place: 'more', more: 'plug', ownerOnly: true, render: (main, id) => (id ? renderIntegration(main, id) : renderIntegrations(main)) },
+  people: { label: 'People', icon: 'people', place: 'account', ownerOnly: true, render: renderPeople },
   // Not in the sidebar: "Manage account" in the account menu opens the same
   // Clerk profile. The page stays for links and Search.
   // Opened from the Xero integration page: Xero invoices against Flow's own.
-  'xero-import': { label: 'Xero import', icon: 'plug', group: 'Settings', sidebar: false, render: (main) => renderXeroImport(main, ui()) },
-  account: { label: 'Account', icon: 'person', group: 'Settings', sidebar: false, render: renderAccount },
-  appearance: { label: 'Appearance', icon: 'palette', group: 'Settings', render: renderAppearance },
+  'xero-import': { label: 'Xero import', icon: 'plug', sidebar: false, render: (main) => renderXeroImport(main, ui()) },
+  account: { label: 'Account', icon: 'person', sidebar: false, render: renderAccount },
+  appearance: { label: 'Appearance', icon: 'palette', place: 'account', render: renderAppearance },
 };
 
 // Line icons for the sidebar, drawn on a 24-unit grid in the text colour.
 const ICON_PATHS = {
   jobs: '<rect x="3" y="4" width="5" height="16" rx="1"/><rect x="10" y="4" width="5" height="11" rx="1"/><rect x="17" y="4" width="4" height="14" rx="1"/>',
   invoices: '<path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 13h7M9 17h5"/>',
+  draft: '<path d="M14 3H6v18h5M14 3l4 4v3M14 3v4h4"/><path d="M13 21v-2.5l6-6 2.5 2.5-6 6z"/>',
   bolt: '<path d="M13 3L5 13h6l-1 8 8-10h-6z"/>',
   rules: '<path d="M3 6l2 2 4-4M3 16l2 2 4-4M13 6h8M13 12h8M13 18h8"/>',
   reconcile: '<path d="M4 8h13M13 4l4 4-4 4M20 16H7M11 12l-4 4 4 4"/>',
@@ -178,8 +185,7 @@ const ICON_PATHS = {
   flag: '<path d="M5 21V4M5 4h11l-2 4 2 4H5"/>',
   search: '<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/>',
   sidebar: '<rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M9.5 4v16"/>',
-  gear: '<circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/><circle cx="12" cy="12" r="6.5"/>',
-  back: '<path d="M19 12H5M11 6l-6 6 6 6"/>',
+  more: '<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>',
   palette: '<path d="M12 3a9 9 0 100 18c1.1 0 1.5-.8 1.5-1.6 0-1-.8-1.4-.8-2.4 0-.9.7-1.5 1.6-1.5H17a4 4 0 004-4c0-4.7-4-8.5-9-8.5z"/><circle cx="7.5" cy="11" r="1"/><circle cx="10" cy="7" r="1"/><circle cx="15" cy="7" r="1"/>',
 };
 
@@ -242,7 +248,7 @@ document.addEventListener('keydown', (event) => {
   }
 });
 document.addEventListener('click', (event) => {
-  if (!event.target.closest?.('.fx-side') || event.target.closest?.('[data-nav]')) closeMenu();
+  if (!event.target.closest?.('.fx-side') || event.target.closest?.('[data-nav]:not([data-nav="more"])')) closeMenu();
 });
 // Folded, a click on the sidebar's empty space opens it out again, as in
 // Claude. A click on a page, the account photo or Search still does its job.
@@ -270,13 +276,17 @@ document.addEventListener('keydown', (event) => {
 
 // "Report a problem" in Clerk's account menu, between "Manage account" and
 // "Sign out". Clerk mounts and unmounts the icon itself.
-function reportMenuItem(openReport) {
+function accountMenuItem(label, iconName, onClick) {
   return {
-    label: 'Report a problem',
-    onClick: () => { openReport().catch((error) => toast(error.message, 'danger')); },
-    mountIcon: (element) => element.replaceChildren(icon('flag')),
+    label,
+    onClick,
+    mountIcon: (element) => element.replaceChildren(icon(iconName)),
     unmountIcon: (element) => element.replaceChildren(),
   };
+}
+
+function reportMenuItem(openReport) {
+  return accountMenuItem('Report a problem', 'flag', () => { openReport().catch((error) => toast(error.message, 'danger')); });
 }
 
 // The page a person lands on after sign-in, and for / or an unknown path.
@@ -299,7 +309,8 @@ async function route() {
   for (const link of document.querySelectorAll('a[data-nav]')) {
     link.setAttribute('aria-current', link.dataset.nav === view ? 'page' : 'false');
   }
-  drawSection(view, path);
+  // More shows as current while one of its pages is open.
+  document.querySelector('[data-nav="more"]')?.setAttribute('aria-current', VIEWS[view].place === 'more' ? 'page' : 'false');
   main.replaceChildren();
   main.className = 'fx-main';
   document.title = `${VIEWS[view].label} · Flow`;
@@ -308,8 +319,6 @@ async function route() {
 }
 
 // Opens a path in place; the address changes, the page stays.
-linksOpenWith((path) => go(path));
-
 function go(path, { replace = false } = {}) {
   if (path !== location.pathname + location.search) history[replace ? 'replaceState' : 'pushState'](null, '', path);
   route();
@@ -325,7 +334,7 @@ function navigate(event) {
 // The shared pieces a view module (invoicing.js) builds with. Its `go`
 // takes a path, or a link's click event.
 const ui = () => ({
-  h, flow, toast, notice, pageHeader, sectionTitle, dialog, me, holdButton, tileCard, tileSection, crumbs,
+  h, flow, toast, notice, pageHeader, sectionTitle, dialog, me, holdButton, tileCard, crumbs,
   go: (target, options) => (typeof target === 'string' ? go(target, options) : navigate(target)),
 });
 
@@ -353,42 +362,26 @@ function renderSignedOut() {
   });
 }
 
-// The sidebar shows one section at a time: Work, or Settings while a
-// Settings page is open. Back returns to the last Work page.
-let lastWork = `/${START_VIEW}`;
-
-function drawSection(view, path) {
-  const settings = VIEWS[view].group === 'Settings';
-  if (!settings) lastWork = path;
-  $('nav').dataset.section = settings ? 'settings' : 'work';
-  $('nav').querySelector('[data-nav="back"]')?.setAttribute('href', lastWork);
-}
-
-function navLink(name, label, iconName, extra = {}) {
-  return h('a', { href: `/${name}`, 'data-nav': name, 'data-label': label, onclick: navigate, ...extra }, icon(iconName), h('span', { class: 'fx-nav__label' }, label));
-}
-
 function renderShell() {
   document.body.dataset.state = 'signed-in';
   const nav = $('nav');
-  const work = [];
-  const settings = [];
+  const items = [];
+  const more = [];
   for (const [name, view] of Object.entries(VIEWS)) {
     if (view.ownerOnly && me?.person.role !== 'owner') continue;
-    if (view.sidebar === false) continue;
-    (view.group === 'Settings' ? settings : work).push(navLink(name, view.label, view.icon, { 'data-section': view.group === 'Settings' ? 'settings' : 'work' }));
+    if (view.sidebar === false || view.place === 'account') continue;
+    if (view.place === 'more') more.push({ icon: view.more, text: view.label, run: () => { closeMenu(); go(`/${name}`); } });
+    else items.push(h('a', { href: `/${name}`, 'data-nav': name, 'data-label': view.label, onclick: navigate }, icon(view.icon), h('span', { class: 'fx-nav__label' }, view.label)));
   }
-  // Settings opens on its first page this person may see.
-  const settingsRow = navLink(settings[0]?.dataset.nav ?? 'appearance', 'Settings', 'gear', { class: 'fx-nav__settings', 'data-section': 'work' });
-  settingsRow.dataset.nav = 'settings';
-  const back = navLink(START_VIEW, 'Back', 'back', { 'data-section': 'settings' });
-  back.dataset.nav = 'back';
+  // The rest of the setup pages, behind More (the shared ⋯ menu).
+  const [moreButton, morePanel] = rowMenu('More', more, { trigger: [icon('more'), h('span', { class: 'fx-nav__label' }, 'More')], className: 'fx-nav__more', align: 'start' });
+  Object.assign(moreButton.dataset, { nav: 'more', label: 'More' });
+  items.push(moreButton, morePanel);
   // "Report a problem" sits at the foot of the menu, above the account chip,
   // while Sentry and its report form are on (monitoring.js).
   const report = h('button', { type: 'button', class: 'fx-nav__report', 'data-nav': 'report', 'data-label': 'Report a problem', hidden: true },
     icon('flag'), h('span', { class: 'fx-nav__label' }, 'Report a problem'));
-  nav.dataset.section = 'work';
-  nav.replaceChildren(...work, back, h('span', { class: 'fx-nav__group', 'data-section': 'settings' }, 'Settings'), ...settings, settingsRow, report);
+  nav.replaceChildren(...items, report);
   // Folded or narrow, the logo is the sidebar button: it shows the mark and
   // turns into the sidebar icon under the pointer or keyboard focus.
   const mark = h('span', { class: 'fx-toggle__mark', 'aria-hidden': 'true' });
@@ -400,7 +393,11 @@ function renderShell() {
   drawMenu();
   // The sidebar foot shows who is signed in: photo or initial, then the name
   // (the email when the account has no name). It opens the account menu.
-  const userButton = { afterSignOutUrl: '/sign-in', showName: true };
+  // People (owners) and Appearance live in the account menu.
+  const accountItems = Object.entries(VIEWS)
+    .filter(([, view]) => view.place === 'account' && (!view.ownerOnly || me?.person.role === 'owner'))
+    .map(([name, view]) => accountMenuItem(view.label, view.icon, () => go(`/${name}`)));
+  const userButton = { afterSignOutUrl: '/sign-in', showName: true, customMenuItems: accountItems };
   $('search').replaceChildren(icon('search'));
   $('search').onclick = search;
   mountClerk('userButton', $('user-button'), userButton);
@@ -413,7 +410,7 @@ function renderShell() {
       report.hidden = false;
       report.onclick = () => { openReport().catch((error) => toast(error.message, 'danger')); };
       unmountClerk($('user-button'));
-      mountClerk('userButton', $('user-button'), { ...userButton, customMenuItems: [reportMenuItem(openReport)] });
+      mountClerk('userButton', $('user-button'), { ...userButton, customMenuItems: [...accountItems, reportMenuItem(openReport)] });
     })
     .catch((error) => console.warn(`[monitoring] ${error.message}`));
   window.addEventListener('popstate', route);
@@ -483,9 +480,9 @@ function personRow(person, host) {
   };
   const patch = (body) => flow(`/api/people/${person.id}`, { method: 'PATCH', body: JSON.stringify(body) });
   const who = h('div', { class: 'fx-person' },
-    h('span', { class: 'fx-avatar', 'aria-hidden': 'true' }, initialsOf(person)),
+    h('span', { class: 'fx-avatar', 'aria-hidden': 'true' }, initials(person)),
     h('span', { class: 'fx-person__text' },
-      h('span', { class: 'fx-person__name' }, personLabel(person), self ? h('span', { class: 'fx-tag' }, 'You') : null),
+      h('span', { class: 'fx-person__name' }, person.name || person.email, self ? h('span', { class: 'fx-tag' }, 'You') : null),
       person.name ? h('span', { class: 'fx-person__email' }, person.email) : null));
   const role = self
     ? h('span', { title: ROLE_HINT[person.role] }, ROLE_LABEL[person.role])
@@ -628,6 +625,27 @@ function integrationTile(integration) {
   });
 }
 
+// One card in a grid of choices (Integrations, Rules): its mark (a node, or
+// an ICON_PATHS name), the name, a status pill, two lines at most (only when
+// they help), and the action. The whole card is the link.
+function tileCard({ href, mark, title, status, blurb, action = 'Manage' }) {
+  const logo = typeof mark === 'string' ? h('span', { class: 'fx-logo fx-logo--icon', 'aria-hidden': 'true' }, icon(mark)) : mark;
+  return h('a', { class: `fx-int-card${blurb ? '' : ' fx-int-card--bare'}`, href, onclick: navigate },
+    h('header', { class: 'fx-int-card__head' },
+      logo,
+      h('h3', {}, title),
+      status ? h('span', { class: 'fx-status', 'data-tone': status.tone ?? 'mute' }, status.label) : null),
+    blurb ? h('p', { class: 'fx-int-card__blurb' }, blurb) : null,
+    h('span', { class: 'fx-int-card__btn' }, action));
+}
+
+// The trail above a page one level down: crumbs(['/integrations', 'Integrations'], 'Xero').
+function crumbs(...trail) {
+  const here = trail.pop();
+  return h('nav', { class: 'fx-crumbs', 'aria-label': 'Breadcrumb' },
+    ...trail.flatMap(([href, label]) => [h('a', { href, onclick: navigate }, label), h('span', { 'aria-hidden': 'true' }, '›')]),
+    h('span', {}, here));
+}
 
 // One integration's page (/integrations/<id>): its logo and maker, Connect
 // with each step shown as it happens, the setup steps, its settings, and the

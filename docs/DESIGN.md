@@ -117,15 +117,14 @@ The page at `/sign-in`, `/people`, `/account` and `/appearance`
 - **Sign-in**: a brand panel (the primary colour in light mode, a raised
   surface in dark) beside Clerk's sign-in card. On a phone the panel is a
   band above the card.
-- **Sidebar**: the Flow mark and the views the person may open (People and
-  Integrations for owners). Daily work comes first: day to day it shows Jobs,
-  Invoices and Reconcile, with a Settings row at its foot. Settings swaps the
-  list, as in ClickUp: Back (to the last work page), then the Settings pages
-  (Rules, Automations, Price list, Custom fields, People, Integrations,
-  Appearance). Any Settings page opens with that list. Account is not in the list: "Manage account" in
+- **Sidebar**: the Flow mark and the views the person may open, daily work
+  first: Jobs, Invoices, Reconcile, Price list, Rules, then More. More opens
+  the shared row menu with Automations, Custom fields and Integrations (owners);
+  it shows as current while one of those pages is open. People (owners) and
+  Appearance are in the account menu. Account is not in the list: "Manage account" in
   the account menu opens it. At its foot: the account chip (Clerk's photo or
   initial, then the name, or the email when there is no name, clipped to fit)
-  that opens the account menu (Manage account, Report a problem when Sentry
+  that opens the account menu (Manage account, People, Appearance, Report a problem when Sentry
   is on, Sign out; as wide as its rows, 220px to 280px, with a long name or
   email clipped), and Search (also Ctrl+K or ⌘K) for pages, invoices and
   jobs. While Sentry's report form is on, "Report a problem" sits at the
@@ -220,16 +219,14 @@ names its card in the Flow Design System.
 | `dialog({ title, body, confirm, tone })` | `server/ui/kit.js` | Dialog | A confirm step before an action that is hard to undo |
 | `holdButton(button, ms)` | `server/ui/kit.js` | HoldButton | A button that waits between presses (Xero, Seazona) and shows the time left |
 | `settingRow({ label, hint, control })`, `sectionTitle`, `.fx-setting` | `server/ui/kit.js` | SettingRow | One setting row: short name, one hint line, the control at the right |
-| `tileCard({ href, mark, title, status, blurb, meta, action, row })`, `tileSection(title, cards, { href, more })` | `server/ui/kit.js` | Tiles | Cards that open a page. `row: true` with `tileSection`: one-line cards, three columns, like Claude's Customize categories (Rules). Without `row`: the large card (Integrations) |
-| `crumbs([href, label]…, here)` | `server/ui/kit.js` | Crumbs | The trail above a page one level down (Rules › Invoices, Integrations › Xero) |
-| `rowMenu(label, items)` | `server/ui/kit.js` | RowMenu | The ⋯ menu on a row |
+| `tileCard({ href, mark, title, status, blurb, action })`, `.fx-int-grid` | `server/ui/app.js` (`ui().tileCard`) |  | A grid of cards that each open a page: Integrations, Rules. `mark` is a logo node or an icon name; leave out `blurb` unless it helps |
+| `crumbs([href, label]…, here)` | `server/ui/app.js` (`ui().crumbs`) |  | The trail above a page one level down (Rules › Invoice rules, Integrations › Xero) |
+| `rowMenu(label, items, { trigger, className, align })` | `server/ui/kit.js` | RowMenu | The ⋯ menu on a row; with `trigger` and `align: 'start'`, the sidebar's More |
 | `.fx-btn` and its modifiers | `server/ui/flow.css` | Button | Every button |
 | `named`, `startTips` | `server/ui/tip.js` | Tip | An icon-only control's name, shown on hover and focus |
 | `viewBar(h)`: `menu`, `option`, `filterMenu` and the rows-panel parts | `server/ui/view-bar.js` | Filter | Group, Sort, Filter and Columns chips and their panels, on every list (Jobs, Invoices, Reconcile) |
-| `columnTable(h, { order, widths, change, hidden, extra })`, `rowCells`, `viewSaver` | `server/ui/columns.js` (rules in `job-view.js`) | Columns | A list's table: drag an edge to resize (a minimum per column kind), drag a head to move, the head menu (Move, Hide, Reset width), + for hidden columns; order and widths kept with the account. Jobs, Invoices, Reconcile |
 | `findBox(h, { label, oninput })` | `server/ui/view-bar.js` | FindBox | A list's own search: an icon that opens into a box |
 | `ICONS`, `svg`, `today` | `server/ui/view-bar.js` | | The toolbar icons, an SVG string as a node, the local day |
-| `personLabel`, `initialsOf`, `clipLabel` | `server/ui/person.js` | | A person's name everywhere (pickers, filters, lanes, badges, People): full name, else the whole email; a badge's letters; a native menu's label cut with "…" |
 | `filterJobs`, `cleanFilterView`, `sortJobs`, `groupJobs`, `OPERATORS`, `DATE_VALUES` | `server/ui/job-view.js` | | The rules behind Filter, Sort and Group (no DOM). Every list's filter uses them with its own fields |
 | `bulkBar(ui, { label })` | `server/ui/bulk-bar.js` | BulkBar | The bar at the foot while rows are ticked: icon and one word per action, More |
 | `.fx-pager` | `server/ui/flow.css` | Pager | "← Back", "n of N", previous and next over one record. Built three times today (Invoices, Reconcile, Price list › Reconcile); issue #220 makes one helper. Do not add a fourth copy |

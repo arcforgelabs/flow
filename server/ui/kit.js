@@ -125,10 +125,12 @@ settingRow.next = 0;
 
 let rowMenus = 0;
 
-// A row's ⋯ menu, as on the Custom fields page.
-export function rowMenu(label, items) {
+// A row's ⋯ menu, as on the Custom fields page. `trigger` swaps the ⋯ icon
+// for the given contents (the sidebar's More) and `align: 'start'` opens the
+// menu under the trigger's left edge, not its right.
+export function rowMenu(label, items, { trigger = null, className = 'fx-cfm__more', align = 'end' } = {}) {
   const id = `fx-row-menu-${++rowMenus}`;
-  const button = h('button', { class: 'fx-cfm__more', type: 'button', 'aria-label': label, popovertarget: id, 'aria-haspopup': 'menu', 'aria-expanded': 'false' }, lucide(h, 'ellipsis'));
+  const button = h('button', { class: className, type: 'button', 'aria-label': label, popovertarget: id, 'aria-haspopup': 'menu', 'aria-expanded': 'false' }, trigger ?? lucide(h, 'ellipsis'));
   const panel = h('div', { class: 'fx-pop', id, popover: 'auto', role: 'menu' });
   panel.addEventListener('toggle', (event) => {
     button.setAttribute('aria-expanded', String(event.newState === 'open'));
@@ -140,7 +142,8 @@ export function rowMenu(label, items) {
         h('span', { class: 'fx-pop__tick' }, lucide(h, entry.icon)), h('span', {}, entry.text)))));
     const at = button.getBoundingClientRect();
     panel.style.top = `${Math.round(at.bottom + 6)}px`;
-    panel.style.left = `${Math.round(Math.max(8, Math.min(at.right - panel.offsetWidth, innerWidth - panel.offsetWidth - 8)))}px`;
+    const left = align === 'start' ? at.left : at.right - panel.offsetWidth;
+    panel.style.left = `${Math.round(Math.max(8, Math.min(left, innerWidth - panel.offsetWidth - 8)))}px`;
   });
   return [button, panel];
 }
