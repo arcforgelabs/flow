@@ -773,7 +773,7 @@ export function createInvoicingRouter({
   // with their tests, and the values Flow already holds for each kind of menu.
   router.get('/rule-fields', ...signedIn, handle(log, async (req, res) => {
     const organisationId = await organisationOf(req);
-    const [statuses, customers, items] = await Promise.all([
+    const [statuses, customers, items, practitioners] = await Promise.all([
       workStatuses(db, organisationId),
       db.select({ value: contacts.id, label: contacts.name }).from(contacts)
         .where(and(eq(contacts.organisationId, organisationId), eq(contacts.kind, 'customer')))
@@ -781,13 +781,20 @@ export function createInvoicingRouter({
       db.select({ value: priceItems.code, label: priceItems.name }).from(priceItems)
         .where(and(eq(priceItems.organisationId, organisationId), isNull(priceItems.archivedAt)))
         .orderBy(asc(priceItems.code)).limit(1000),
+      // The practitioners on the jobs, as the work system wrote them, most used first.
+      db.select({ value: billingObligations.practitioner, n: sql`count(*)::int` }).from(billingObligations)
+        .where(and(eq(billingObligations.organisationId, organisationId), sql`coalesce(trim(${billingObligations.practitioner}), '') <> ''`))
+        .groupBy(billingObligations.practitioner).orderBy(sql`count(*) desc`, asc(billingObligations.practitioner)).limit(500),
     ]);
     res.json({
       ok: true,
-      fields: Object.entries(FIELDS).map(([key, f]) => ({ key, label: f.label, kind: f.kind, options: f.options ?? null, tests: TESTS[f.kind] })),
+      fields: Object.entries(FIELDS).map(([key, f]) => ({
+        key, label: f.label, kind: f.kind, options: f.options ?? null, tests: TESTS[f.kind], draftOnly: Boolean(f.draftOnly),
+      })),
       actions: ACTIONS,
       options: {
         statuses: statuses.map((s) => ({ value: s.value, label: s.label })),
+        practitioners: practitioners.map((p) => ({ value: p.value, label: `${p.value} (${p.n})` })),
         customers,
         items: [
           ...items.map((i) => ({ value: i.value, label: `${i.value} · ${i.label}` })),

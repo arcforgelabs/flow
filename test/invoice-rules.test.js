@@ -3,11 +3,12 @@ import { after, before, describe, test } from 'node:test';
 import { eq } from 'drizzle-orm';
 import { createContact, createOrganisation, createPriceItem } from '../server/core/directory.js';
 import {
-  createRule, deleteRule, listRules, readRule, ruleReasons, starterRules, updateRule,
+  createRule, deleteRule, listRules, readRule, rulePending, ruleReasons, starterRules, updateRule,
 } from '../server/core/invoice-rules.js';
 import { autoDraftJobs, saveInvoicingSettings } from '../server/core/invoicing-rules.js';
 import { observeJob, setReady } from '../server/core/ledger.js';
-import { billingObligations } from '../server/db/schema.js';
+import { invoiceViews } from '../server/core/sending.js';
+import { billingObligations, invoices } from '../server/db/schema.js';
 import { freshDatabase, skipWithoutDatabase } from './support/db.js';
 
 // Invoice rules a lab builds: When a job is ready, If every condition
@@ -61,6 +62,47 @@ describe('one rule against one job', () => {
     const off = { ...rule([{ field: 'job_total', test: 'more_than', value: 0 }]), enabled: false };
     assert.deepEqual(ruleRunner([off]), []);
     assert.deepEqual(ruleRunner([rule([{ field: 'job_total', test: 'more_than', value: 0 }], 'skip', 'Free work')]), ['rule "Free work": not drafted by rule']);
+  });
+
+  test('text tests read a practitioner or a Reference as a person would', () => {
+    const p = (practitioner, condition) => reasons([{ field: 'practitioner', ...condition }], job({ practitioner })).length === 1;
+    assert.equal(p('Not Listed', { test: 'is_one_of', value: ['not listed', 'Unknown'] }), true);
+    assert.equal(p('Dr Ann Lee', { test: 'is_not_one_of', value: ['Dr Ann Lee', 'Dr Ben Ng'] }), false);
+    assert.equal(p('Dr Ann Le', { test: 'is_not_one_of', value: ['Dr Ann Lee', 'Dr Ben Ng'] }), true);
+    assert.equal(p('Ann', { test: 'one_word' }), true);
+    assert.equal(p('Dr Ann Lee', { test: 'one_word' }), false);
+    assert.equal(p('Dr Ann Lee - 21764', { test: 'has_number' }), true);
+    assert.equal(p('Dr Ann Lee', { test: 'does_not_start_with', value: 'dr ' }), false);
+    assert.equal(p('Ann Lee', { test: 'does_not_start_with', value: 'Dr ' }), true);
+    assert.equal(p('Not  Listed', { test: 'contains', value: 'not listed' }), true);
+    assert.equal(p('Dr Ann Lee', { test: 'does_not_contain', value: 'listed' }), true);
+    // An empty practitioner matches no word test; "is empty" finds it.
+    for (const test of ['one_word', 'has_number', 'does_not_start_with', 'is_not_one_of']) {
+      assert.equal(p(null, { test, value: test.endsWith('of') ? ['Dr Ann Lee'] : 'Dr' }), false, test);
+    }
+    // Earlier tests read as before.
+    assert.equal(p(null, { test: 'is_not', value: 'Dr Ann Lee' }), true);
+  });
+
+  test('a pending rule needs a note, never stops a draft, and gives the draft its note', () => {
+    const flag = { name: 'Practitioner not known', conditions: [{ field: 'practitioner', test: 'is', value: 'Not Listed' }], action: { kind: 'pending', note: ' Put the practitioner in the job. ' } };
+    assert.deepEqual(readRule(flag).action, { kind: 'pending', note: 'Put the practitioner in the job.' });
+    assert.throws(() => readRule({ ...flag, action: { kind: 'pending' } }), /needs a note/);
+    assert.throws(() => readRule({ ...flag, action: { kind: 'pending', note: 'x'.repeat(201) } }), /needs a note/);
+    // The Reference is on the draft only.
+    const ref = [{ field: 'reference', test: 'has_number' }];
+    assert.throws(() => readRule({ ...flag, conditions: ref, action: { kind: 'wait' } }), /Reference is on the draft only/);
+    assert.deepEqual(readRule({ ...flag, conditions: ref }).conditions, ref);
+
+    const rules = [{ ...readRule(flag), id: 'r-1', trigger: 'job_ready' }, { ...readRule({ ...flag, name: 'Number in Reference', conditions: ref }), id: 'r-2', trigger: 'job_ready' }];
+    const odd = job({ practitioner: 'Not Listed', reference: 'Not Listed - Ann - 13909' });
+    assert.deepEqual(ruleReasons(rules, odd, { now: NOW }), []);
+    assert.deepEqual(rulePending(rules, odd, { now: NOW }), [
+      { code: 'rule', message: 'Put the practitioner in the job.', short: 'Practitioner not known', rule: 'r-1' },
+      { code: 'rule', message: 'Put the practitioner in the job.', short: 'Number in Reference', rule: 'r-2' },
+    ]);
+    assert.deepEqual(rulePending(rules, job({ practitioner: 'Dr Ann Lee', reference: 'Dr Ann Lee - Ben Ng' }), { now: NOW }), []);
+    assert.deepEqual(rulePending([{ ...rules[0], enabled: false }], odd, { now: NOW }), []);
   });
 
   test('the starter rules come from the earlier settings', () => {
@@ -139,5 +181,31 @@ describe('rules a lab keeps', { skip: skipWithoutDatabase }, () => {
     assert.equal(result.drafted, 1);
     assert.equal((await reload(held)).invoiceId, null);
     assert.ok((await reload(fine)).invoiceId);
+  });
+
+  test('a pending rule drafts the job, and its draft is Pending with the note until the cause is fixed', async () => {
+    const row = await observeJob(handle.db, lab.id, {
+      sourceSystem: 'seazona', sourceJobRef: `job-${++counter}`, caseRef: `CASE-${counter}`, contactId: practice.id, practitioner: 'Not Listed',
+      sourceStatus: 'Shipped', jobDate: '2026-10-15', lines: [{ itemCode: 'CROWN', description: 'Crown' }], observedAt: NOW,
+    });
+    await setReady(handle.db, lab.id, row.id, { actor: 'person:test' });
+    const made = await createRule(handle.db, lab.id, {
+      name: 'Reference not known', conditions: [{ field: 'reference', test: 'starts_with', value: 'not listed' }],
+      action: { kind: 'pending', note: 'Put the practitioner in the job, then check the Reference.' },
+    });
+    await autoDraftJobs(handle.db, lab.id, { now: NOW });
+    const [obligation] = await handle.db.select().from(billingObligations).where(eq(billingObligations.id, row.id));
+    assert.ok(obligation.invoiceId, 'a pending rule never stops the draft');
+    let views = await invoiceViews(handle.db, lab.id);
+    assert.deepEqual(views.problems.get(obligation.invoiceId), [
+      { code: 'rule', message: 'Put the practitioner in the job, then check the Reference.', short: 'Reference not known', rule: made.id },
+    ]);
+    assert.equal(views.ready.includes(obligation.invoiceId), false);
+    // A person fixes the Reference: the draft is Ready.
+    await handle.db.update(invoices).set({ reference: 'Dr Ann Lee - Ben Ng' }).where(eq(invoices.id, obligation.invoiceId));
+    views = await invoiceViews(handle.db, lab.id);
+    assert.equal(views.problems.has(obligation.invoiceId), false);
+    assert.equal(views.ready.includes(obligation.invoiceId), true);
+    await deleteRule(handle.db, lab.id, made.id);
   });
 });
