@@ -1,6 +1,6 @@
 ---
 name: flow-changelog-update
-description: Write a Flow release's changelog file (CHANGELOG/<version>.md and its record in CHANGELOG/records/) from the history since the previous release. Use when cutting a beta or stable release, or when asked to write or fix release notes.
+description: Write a Flow release's changelog file (CHANGELOG/<version>.md, its record in CHANGELOG/records/ and its docs page in docs/releases/) from the history since the previous release. Use when cutting a beta or stable release, or when asked to write or fix release notes.
 ---
 
 # Flow changelog update
@@ -88,9 +88,11 @@ stable release gets a new, cumulative file, and a correction
    npm run changelog:check
    ```
 
-5. Commit `CHANGELOG/<version>.md`, `CHANGELOG/records/<version>.md` and
-   `CHANGELOG.md` together on your branch, push it, and give it to the cut
-   or to Flow Release Branch `notes` as `notes_ref`.
+5. Commit `CHANGELOG/<version>.md`, `CHANGELOG/records/<version>.md`,
+   `CHANGELOG.md` and, for a stable release or a correction,
+   `docs/releases/<version>.md` together on your branch, push it, and give
+   it to the cut or to Flow Release Branch `notes` as `notes_ref`. `write`
+   writes the docs page from the file; never edit the page by hand.
 
 6. After Publish, it runs the body check itself. To run it by hand:
 
@@ -104,8 +106,42 @@ GitHub Release body for that version: the whole section, or, past GitHub's
 `verify` keeps GitHub's answers in `.git/flow-changelog/`;
 `--refresh-github-snapshot` asks again.
 
-## Not copied yet
+## Docs page and roster
 
-OpenClaw also publishes a docs-site mirror of each release and rewrites the
-GitHub Release body with a full thanks roster after the docs deploy. Flow
-has no docs site, so its files stay in their first format.
+OpenClaw's post-release docs route, with Flow's names:
+
+- The docs page. `write` and `index` write `docs/releases/<version>.md` for
+  each stable release and correction from its file: the prose for readers,
+  with the pull requests, issues and people as links, the numbers, and a
+  link to the record. `check` refuses a page that is not the file's page.
+  The closeout pull request carries the page to `main`; Docs Sync Publish
+  mirrors it to `arcforgelabs/docs`, which lists every release with the
+  highest stable as latest (https://arcforgelabs.github.io/docs/flow/releases/).
+- The roster. After the docs site serves the page, `release:stable` (phase
+  `thanks`) reads the GitHub Release again and replaces only its body with
+  `node scripts/release/changelog.mjs thanks --version <version>`: the
+  version, its pull requests, direct commits and contributors, the docs,
+  Raw changelog and record links, and one alphabetical roster of every
+  person GitHub credits on its pull requests and direct commits (authors,
+  co-authors, issue reporters). The maintainer is in the roster; bots,
+  agents and the organization are not. The published body's
+  `### Release verification` section stays. It reads the body back with
+  `verify --check-github --post-docs`. Never retag, rebuild or publish again
+  to change the body.
+
+## Differences from OpenClaw
+
+- The docs page is written from the changelog file at the cut, and the file
+  stays the one source. OpenClaw writes its docs page by hand in a separate,
+  approved docs pull request after the release, then turns the changelog
+  file into a flat copy of the page (`changelog:from-docs`). Reason: the
+  handover of 2026-10-20 puts the page at the cut, in the closeout pull
+  request, and one source keeps the page, the file and the release body in
+  step. This is open for the maintainer's review (a hand-written page needs
+  that second pull request and its approval for every release).
+- OpenClaw's post-docs body renderer is in its private release tooling.
+  Flow's `thanks` body follows the public text of OpenClaw's skill (numbers,
+  Raw changelog and docs links, the roster, the verification section); its
+  exact layout is Flow's.
+- Docs pages exist for stable releases and corrections only, as OpenClaw's
+  `docs/releases/` has no beta page.

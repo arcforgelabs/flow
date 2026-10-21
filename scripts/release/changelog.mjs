@@ -21,7 +21,7 @@
 //   node scripts/release/changelog.mjs notes --version <v>
 //     The GitHub Release body for <v>: the section, or, when it is too long
 //     for GitHub, the prose and a link to the record.
-//   node scripts/release/changelog.mjs verify --version <v> [--target <ref>] [--check-github [--release-tag <tag>] [--body-file <file>]]
+//   node scripts/release/changelog.mjs verify --version <v> [--target <ref>] [--check-github [--post-docs] [--release-tag <tag>] [--body-file <file>]]
 //     Whether the record lists exactly the pull requests in the range, with
 //     the related issues and thanks GitHub gives, and whether the prose keeps
 //     the rules below. Flow Release Prepare runs it before it tags.
@@ -29,9 +29,18 @@
 //     --body-file checks that body instead (a draft release's, which only the
 //     publish run can read).
 //   node scripts/release/changelog.mjs index
-//     Writes CHANGELOG.md again from the files in CHANGELOG/.
+//     Writes CHANGELOG.md again from the files in CHANGELOG/, and the
+//     docs-site page of each stable release and correction,
+//     docs/releases/<v>.md (write does this too).
+//   node scripts/release/changelog.mjs thanks --version <v>
+//     The GitHub Release body after the docs site serves <v>'s page: the
+//     version and its numbers, the docs, Raw changelog and record links, and
+//     one roster of every person GitHub credits, the maintainer included.
+//     It keeps the published body's `### Release verification` section.
+//     `verify --check-github --post-docs` checks the published body is this.
 //   node scripts/release/changelog.mjs check
-//     Whether the index and every file keep the format rules (npm test runs it).
+//     Whether the index, every file and every docs page keep the format rules
+//     (npm test runs it).
 //
 // Each exits 1 with a reason on stderr. draft and verify read GitHub through
 // `gh api` and keep the answers in .git/flow-changelog/ (--refresh-github-snapshot
@@ -60,12 +69,20 @@ import { compareTags, parseTag } from "./release.mjs";
 export const REPOSITORY = "arcforgelabs/flow";
 export const PACKAGE = "@arcforgelabs/flow";
 export const INDEX_MARKER = "<!-- flow:split-changelog -->";
+export const PRODUCT = "Flow";
+// The docs site (arcforgelabs/docs) renders docs/ of this repository here.
+export const DOCS_SITE = "https://arcforgelabs.github.io/docs/flow";
+export const DOCS_RELEASES = "docs/releases";
 export const UNRELEASED = "Unreleased";
 // GitHub refuses a release body longer than this (characters, and bytes).
 export const GITHUB_BODY_LIMIT = 125_000;
 // Handles the changelog never thanks: the maintainer, the organization and
 // the agents that write most pull requests. Bots ([bot], app/) are refused too.
-export const EXCLUDED_HANDLES = new Set(["iamsamuelrodda", "arcforgelabs", "claude", "codex", "copilot", "github-actions", "dependabot", "clawsweeper", "arc-forge-clawsweeper", "flow-docs-agent"]);
+// The roster after the docs deploy thanks the maintainer, as OpenClaw's
+// thanks @steipete there; the agents, bots and organization stay out.
+export const MAINTAINER_HANDLES = new Set(["iamsamuelrodda"]);
+export const AGENT_HANDLES = new Set(["arcforgelabs", "claude", "codex", "copilot", "github-actions", "dependabot", "clawsweeper", "arc-forge-clawsweeper", "flow-docs-agent"]);
+export const EXCLUDED_HANDLES = new Set([...MAINTAINER_HANDLES, ...AGENT_HANDLES]);
 
 const PROSE = ["Highlights", "Changes", "Fixes"];
 const RECORD = "Complete contribution record";
@@ -119,9 +136,10 @@ export function parseSubject(subject) {
   };
 }
 
-export function isEligibleHandle(handle) {
+export function isEligibleHandle(handle, { roster = false } = {}) {
   const normalized = String(handle ?? "").toLowerCase();
-  return normalized !== "" && normalized !== "null" && normalized !== "undefined" && !normalized.endsWith("[bot]") && !normalized.startsWith("app/") && !EXCLUDED_HANDLES.has(normalized);
+  const excluded = roster ? AGENT_HANDLES : EXCLUDED_HANDLES;
+  return normalized !== "" && normalized !== "null" && normalized !== "undefined" && !normalized.endsWith("[bot]") && !normalized.startsWith("app/") && !excluded.has(normalized);
 }
 
 export function references(text) {
@@ -281,6 +299,84 @@ export function highlightCountError(version, text) {
   return found >= minimum && found <= 8 ? null : `### Highlights must contain ${minimum}-8 top-level bullets; found ${found}`;
 }
 
+// The docs-site page of a stable release or correction, OpenClaw's
+// docs/releases/<version>.md: the prose of CHANGELOG/<v>.md for readers, with
+// its pull requests, issues and people as links, and a link to the record.
+// Written from the file, so the page, the file and the release body agree.
+export function hasDocsPage(version) {
+  return parseVersion(version).channel !== "beta";
+}
+
+function plain(line) {
+  return line
+    .replace(/^- /, "")
+    .replace(/\s*\bThanks\b.*$/, "")
+    .replace(/\s*\((?:#\d+(?:,\s*)?)+\)/g, "")
+    .trim();
+}
+
+function linked(line, pulls) {
+  return line
+    .replace(REFERENCE, (all, number) => `[#${number}](https://github.com/${REPOSITORY}/${pulls.has(Number(number)) ? "pull" : "issues"}/${number})`)
+    .replace(/(^|[\s(])@([-_A-Za-z0-9]+)\b/g, (all, before, handle) => `${before}[@${handle}](https://github.com/${handle})`);
+}
+
+function plural(number, one, many = `${one}s`) {
+  return `${count(number)} ${number === 1 ? one : many}`;
+}
+
+function uniqueHandles(handles) {
+  const seen = new Map();
+  for (const handle of handles) if (!seen.has(handle.toLowerCase())) seen.set(handle.toLowerCase(), handle);
+  return [...seen.values()];
+}
+
+export function renderDocsPage(version, text) {
+  const fail = (reason) => {
+    throw new ChangelogError(`CHANGELOG/${version}.md: ${reason}`);
+  };
+  const { blocks } = parseSection(text);
+  const block = blocks.find((found) => found.heading === RECORD);
+  if (!block) fail(`a release ends with "### ${RECORD}"`);
+  const record = parseRecord(block, fail);
+  const pulls = new Set(record.rows.keys());
+  const people = uniqueHandles([...record.rows.values()].flatMap((row) => row.thanks));
+  const prose = PROSE.map((heading) => [heading, bullets(blocks.find((found) => found.heading === heading))]);
+  const first = prose.find(([, lines]) => lines.length)?.[1][0];
+  const summary = first ? plain(first) : `What changed in ${PRODUCT} ${version}.`;
+  const covers = people.length ? `${plural(record.rows.size, "pull request")}, with thanks to ${plural(people.length, "contributor")}` : plural(record.rows.size, "pull request");
+  const lines = [
+    "---",
+    `title: ${JSON.stringify(`v${version}`)}`,
+    `summary: ${JSON.stringify(summary)}`,
+    `description: ${JSON.stringify(`${PRODUCT} v${version} release notes: what changed, and who contributed.`)}`,
+    "keywords:",
+    `  - ${PRODUCT}`,
+    `  - v${version}`,
+    "  - release notes",
+    "---",
+    "",
+    `# v${version}`,
+    "",
+    `<!-- Written by scripts/release/changelog.mjs from CHANGELOG/${version}.md. Do not edit it: the release cut writes it again. -->`,
+    "",
+    `AI agents and tools can read these release notes as [plain Markdown](https://raw.githubusercontent.com/${REPOSITORY}/main/CHANGELOG/${version}.md).`,
+    "",
+    `This release covers **${covers}.**`,
+    "",
+  ];
+  for (const [heading, items] of prose) {
+    if (items.length) lines.push(`## ${heading}`, "", ...items.map((line) => linked(line, pulls)), "");
+  }
+  lines.push(
+    "## Contribution record",
+    "",
+    `[CHANGELOG/records/${version}.md](https://github.com/${REPOSITORY}/blob/main/CHANGELOG/records/${version}.md) lists every pull request in this release once, with its related issues and thanks.`,
+    "",
+  );
+  return lines.join("\n");
+}
+
 export function renderIndex(versions) {
   const sorted = [...versions].sort((a, b) => compareVersions(b, a));
   const row = (name) => `- [${name}](CHANGELOG/${name}.md) · [Raw](https://github.com/${REPOSITORY}/raw/refs/heads/main/CHANGELOG/${name}.md)`;
@@ -327,6 +423,19 @@ export function checkChangelog(root) {
   }
   for (const name of records) {
     if (!names.includes(name)) throw new ChangelogError(`CHANGELOG/records/${name} has no CHANGELOG/${name}`);
+  }
+  const docsDir = join(root, DOCS_RELEASES);
+  const pages = existsSync(docsDir) ? readdirSync(docsDir).filter((name) => name !== "index.md") : [];
+  for (const version of versions.filter(hasDocsPage)) {
+    const page = join(docsDir, `${version}.md`);
+    const want = renderDocsPage(version, readFileSync(join(dir, `${version}.md`), "utf8"));
+    if (!existsSync(page) || readFileSync(page, "utf8") !== want) {
+      throw new ChangelogError(`${DOCS_RELEASES}/${version}.md is not the docs page of CHANGELOG/${version}.md. Run: node scripts/release/changelog.mjs index`);
+    }
+  }
+  for (const name of pages) {
+    const version = name.replace(/\.md$/, "");
+    if (!versions.includes(version) || !hasDocsPage(version)) throw new ChangelogError(`${DOCS_RELEASES}/${name} has no stable CHANGELOG/${name}`);
   }
   const index = existsSync(join(root, "CHANGELOG.md")) ? readFileSync(join(root, "CHANGELOG.md"), "utf8") : "";
   if (index !== renderIndex(versions)) {
@@ -396,7 +505,11 @@ function npmBeta() {
 export function resolveBase(root, { version, base, target, npm = npmBeta }) {
   if (base && base !== "npm-beta") return base;
   const release = parseVersion(version);
-  if (release.channel === "stable") return baseTag({ version, tags: releaseTags(root) });
+  const previous = baseTag({ version, tags: releaseTags(root) });
+  if (release.channel === "stable") return previous;
+  // The first release of all has no earlier tag: its notes cover the whole
+  // history through its target.
+  if (!previous) return null;
   const selected = npm();
   if (!selected) throw new ChangelogError(`npm's beta tag for ${PACKAGE} could not be read. Pass --base <the tag it selected>`);
   if (compareVersions(selected, version) >= 0) throw new ChangelogError(`npm's beta tag already selects ${selected}, so it cannot be ${version}'s base. Pass --base <the tag captured before publishing>`);
@@ -514,14 +627,24 @@ function handleFromNoreply(email) {
   return /^(?:\d+\+)?([^@]+)@users\.noreply\.github\.com$/i.exec(email ?? "")?.[1] ?? null;
 }
 
-function human(user) {
-  return user && user.type !== "Bot" && isEligibleHandle(user.login) ? user.login : null;
+function human(user, options) {
+  return user && user.type !== "Bot" && isEligibleHandle(user.login, options) ? user.login : null;
+}
+
+function coAuthors(message, options) {
+  const handles = [];
+  for (const [, email] of String(message ?? "").matchAll(/^Co-authored-by:.*<([^>]+)>\s*$/gim)) {
+    const login = handleFromNoreply(email);
+    handles.push(login && isEligibleHandle(login, options) ? login : null);
+  }
+  return handles;
 }
 
 // A pull request's credit, as OpenClaw gives it: the issues it closes
 // (`Related #I`), and thanks to its author, its known co-authors and the
 // people who reported those issues, never to bots or excluded handles.
-export function creditFor(github, number) {
+// { roster: true } also credits the maintainer, for the roster (`thanks`).
+export function creditFor(github, number, options = {}) {
   const pull = github(`repos/${REPOSITORY}/pulls/${number}`);
   if (!pull) throw new ChangelogError(`#${number} is not a pull request in ${REPOSITORY}`);
   const commits = [];
@@ -530,13 +653,9 @@ export function creditFor(github, number) {
     commits.push(...batch);
     if (batch.length < 100) break;
   }
-  const handles = [human(pull.user)];
+  const handles = [human(pull.user, options)];
   for (const commit of commits) {
-    handles.push(human(commit.author));
-    for (const [, email] of String(commit.commit?.message ?? "").matchAll(/^Co-authored-by:.*<([^>]+)>\s*$/gim)) {
-      const login = handleFromNoreply(email);
-      handles.push(login && isEligibleHandle(login) ? login : null);
-    }
+    handles.push(human(commit.author, options), ...coAuthors(commit.commit?.message, options));
   }
   const related = [];
   for (const match of String(pull.body ?? "").matchAll(CLOSING)) {
@@ -545,7 +664,7 @@ export function creditFor(github, number) {
     const found = github(`repos/${REPOSITORY}/issues/${issue}`);
     if (!found || found.pull_request) continue;
     related.push(issue);
-    handles.push(human(found.user));
+    handles.push(human(found.user, options));
   }
   const thanks = [];
   for (const handle of handles) {
@@ -579,6 +698,54 @@ export function checkReleaseBody(body, notes) {
   return "the GitHub Release body is not the changelog section";
 }
 
+// OpenClaw's GitHub Release body after the docs deploy: the version and its
+// numbers, the docs, Raw changelog and record links, and one alphabetical
+// roster of every person GitHub credits on the release's pull requests and
+// direct commits (authors, co-authors, issue reporters), the maintainer
+// included and bots never. The published body's `### Release verification`
+// section stays as it is.
+export function rosterFor(root, github, version) {
+  const text = readSection(root, version);
+  const record = checkSection(`${version}.md`, text);
+  const history = historyRange(root, { base: record.base, target: record.target });
+  const handles = [];
+  for (const number of record.rows.keys()) handles.push(...creditFor(github, number, { roster: true }).thanks);
+  for (const commit of history.direct) {
+    const found = github(`repos/${REPOSITORY}/commits/${commit.sha}`);
+    handles.push(human(found?.author, { roster: true }), ...coAuthors(found?.commit?.message, { roster: true }));
+  }
+  const roster = uniqueHandles(handles.filter(Boolean)).sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+  return { pullRequests: record.rows.size, directCommits: history.direct.length, roster };
+}
+
+export function verificationTail(body) {
+  const text = String(body ?? "").replace(/\r\n/g, "\n");
+  const at = text.search(/(^|\n)### Release verification\n/);
+  return at < 0 ? "" : text.slice(at).replace(/^\n/, "").trimEnd();
+}
+
+export function renderThanksBody({ version, pullRequests, directCommits, roster, verification = "" }) {
+  const lines = [
+    `## ${version}`,
+    "",
+    `This release covers **${plural(pullRequests, "pull request")}, ${plural(directCommits, "direct commit")}, and ${plural(roster.length, "contributor")}.**`,
+    "",
+    `- Release notes: ${DOCS_SITE}/releases/${version}/`,
+    `- Raw changelog: https://github.com/${REPOSITORY}/raw/refs/tags/v${version}/CHANGELOG/${version}.md`,
+    `- Contribution record: https://github.com/${REPOSITORY}/blob/v${version}/CHANGELOG/records/${version}.md`,
+    "",
+    "### Thanks",
+    "",
+    roster.length ? `${roster.map((handle) => `@${handle}`).join(", ")}` : "No person is credited on this release.",
+  ];
+  if (verification) lines.push("", verification);
+  const body = `${lines.join("\n")}\n`;
+  if (body.length > GITHUB_BODY_LIMIT || Buffer.byteLength(body) > GITHUB_BODY_LIMIT) {
+    throw new ChangelogError(`the ${version} roster body is longer than GitHub accepts; it is never cut short`);
+  }
+  return body;
+}
+
 // The rules that need git and GitHub: the record lists exactly the range's
 // pull requests with GitHub's credit, the prose names only editorial pull
 // requests in the range, and the highlight budget holds.
@@ -603,7 +770,7 @@ export function verifySection(root, { version, target, github }) {
     const expected = baseTag({ version, tags });
     const expectedSha = expected ? revParse(root, expected) : null;
     if (record.base !== expectedSha) fail(`a stable record starts at the previous stable release ${expected ? `${expected} (${expectedSha})` : "(none: the first commit)"}; it starts at ${record.base ?? "the first commit"}`);
-  } else if (!record.base || !tagCommits.has(record.base)) {
+  } else if (record.base ? !tagCommits.has(record.base) : baseTag({ version, tags }) !== null) {
     fail(`a beta record starts at the release npm's beta tag selected; ${record.base ?? "the first commit"} is no release tag`);
   }
   const history = historyRange(root, { base: record.base, target: finalSha });
@@ -650,7 +817,14 @@ function required(args, name) {
 }
 
 function writeIndex(root) {
-  writeFileSync(join(root, "CHANGELOG.md"), renderIndex(listVersions(root)));
+  const versions = listVersions(root);
+  writeFileSync(join(root, "CHANGELOG.md"), renderIndex(versions));
+  const pages = versions.filter(hasDocsPage);
+  if (pages.length) mkdirSync(join(root, DOCS_RELEASES), { recursive: true });
+  for (const version of pages) {
+    writeFileSync(join(root, DOCS_RELEASES, `${version}.md`), renderDocsPage(version, readSection(root, version)));
+  }
+  return pages.map((version) => `${DOCS_RELEASES}/${version}.md`);
 }
 
 // `request` and `npm` stand in for `gh api` and `npm view` in tests.
@@ -687,8 +861,8 @@ export function main(argv, root = resolve(import.meta.dirname, "../.."), { reque
     mkdirSync(join(root, "CHANGELOG", "records"), { recursive: true });
     writeFileSync(join(root, "CHANGELOG", `${version}.md`), text);
     writeFileSync(join(root, "CHANGELOG", "records", `${version}.md`), renderRecordFile(version, text));
-    writeIndex(root);
-    return `CHANGELOG/${version}.md\nCHANGELOG/records/${version}.md\n`;
+    const pages = writeIndex(root).filter((page) => page.endsWith(`/${version}.md`));
+    return [`CHANGELOG/${version}.md`, `CHANGELOG/records/${version}.md`, ...pages, ""].join("\n");
   }
   if (command === "read") return readSection(root, parseVersion(required(args, "--version")).version, { record: args.includes("--record") });
   if (command === "notes") {
@@ -703,6 +877,12 @@ export function main(argv, root = resolve(import.meta.dirname, "../.."), { reque
       const bodyFile = option(args, "--body-file");
       const release = bodyFile ? { body: readFileSync(bodyFile, "utf8").replace(/\n$/, "") } : client(`repos/${REPOSITORY}/releases/tags/${tag}`, { live: true });
       if (!release) throw new ChangelogError(`GitHub has no release ${tag}`);
+      if (args.includes("--post-docs")) {
+        const want = renderThanksBody({ version, ...rosterFor(root, client, version), verification: verificationTail(release.body) });
+        const normal = (text) => String(text ?? "").replace(/\r\n/g, "\n").trimEnd();
+        if (normal(release.body) !== normal(want)) throw new ChangelogError(`${tag}: the GitHub Release body is not the roster body. Fix: node scripts/release/changelog.mjs thanks --version ${version} > body.md && gh release edit ${tag} --notes-file body.md`);
+        return `the ${tag} GitHub Release body is the roster body of CHANGELOG/${version}.md\n`;
+      }
       const error = checkReleaseBody(release.body, releaseNotes(readSection(root, version), version));
       if (error) throw new ChangelogError(`${tag}: ${error}. Fix: node scripts/release/changelog.mjs notes --version ${version} > notes.md && gh release edit ${tag} --notes-file notes.md`);
       return `the ${tag} GitHub Release body is CHANGELOG/${version}.md\n`;
@@ -711,14 +891,21 @@ export function main(argv, root = resolve(import.meta.dirname, "../.."), { reque
     return `CHANGELOG/${version}.md lists the ${listed} pull requests through ${finalTarget}, with GitHub's credit\n`;
   }
   if (command === "index") {
-    writeIndex(root);
-    return "CHANGELOG.md\n";
+    return ["CHANGELOG.md", ...writeIndex(root), ""].join("\n");
+  }
+  if (command === "thanks") {
+    const version = parseVersion(required(args, "--version")).version;
+    const client = github();
+    const tag = option(args, "--release-tag") ?? `v${version}`;
+    const release = client(`repos/${REPOSITORY}/releases/tags/${tag}`, { live: true });
+    if (!release) throw new ChangelogError(`GitHub has no release ${tag}`);
+    return renderThanksBody({ version, ...rosterFor(root, client, version), verification: verificationTail(release.body) });
   }
   if (command === "check") {
     const { versions } = checkChangelog(root);
     return `CHANGELOG.md, CHANGELOG/records/ and ${versions.length + 1} files in CHANGELOG/ follow the rules\n`;
   }
-  throw new ChangelogError("usage: changelog.mjs draft|write|read|notes|verify|index|check (see the header of this file)");
+  throw new ChangelogError("usage: changelog.mjs draft|write|read|notes|verify|index|thanks|check (see the header of this file)");
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
