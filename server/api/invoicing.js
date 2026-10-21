@@ -1,5 +1,6 @@
 import { and, asc, desc, eq, ilike, inArray, isNull, or, sql } from 'drizzle-orm';
 import express from 'express';
+import { cleanFilterView, invoiceFilterKind, invoicePage, INVOICE_SORTS } from '../ui/job-view.js';
 import { FlowError } from '../core/errors.js';
 import { createActionGuard } from '../integrations/call-guard.js';
 import {
@@ -163,6 +164,21 @@ function limitOf(raw, fallback, max) {
   const n = Number(text(raw));
   if (!Number.isInteger(n) || n < 1) throw invalid(`limit must be a whole number from 1 to ${max}`);
   return Math.min(n, max);
+}
+
+function offsetOf(raw) {
+  if (raw === undefined) return 0;
+  const n = Number(text(raw));
+  if (!Number.isInteger(n) || n < 0) throw invalid('offset must be a whole number from 0');
+  return n;
+}
+
+// The Filter chip's view, sent as JSON (job-view.js keeps only what it knows).
+function filterViewOf(raw) {
+  if (raw === undefined || text(raw) === '') return cleanFilterView({}, invoiceFilterKind);
+  let value;
+  try { value = JSON.parse(String(raw)); } catch { throw invalid('filter must be JSON'); }
+  return cleanFilterView(value, invoiceFilterKind);
 }
 
 // A LIKE pattern that matches the text anywhere, with its wildcards escaped.
@@ -404,7 +420,20 @@ export function createInvoicingRouter({
       throw invalid(`status must be one of ${TABS.join(', ')}`);
     }
     const q = text(req.query.q);
+    // The list pages on the server, so it works with any number of invoices:
+    // the tab and the search pick rows, the Filter chip's view and the sort
+    // (job-view.js, the page's own rules) run over all of them, and one page
+    // goes back with the total.
     const limit = limitOf(req.query.limit, 200, 500);
+    const offset = offsetOf(req.query.offset);
+    const view = filterViewOf(req.query.filter);
+    const sort = text(req.query.sort) || null;
+    if (sort && !INVOICE_SORTS.includes(sort)) throw invalid(`sort must be one of ${INVOICE_SORTS.join(', ')}`);
+    const dir = text(req.query.dir) || 'asc';
+    if (!['asc', 'desc'].includes(dir)) throw invalid('dir must be asc or desc');
+    // The person's own day, for date filters such as This week.
+    const day = text(req.query.today) || new Date().toISOString().slice(0, 10);
+    if (!isRealDate(day)) throw invalid('today must be a date (yyyy-mm-dd)');
     // Each tab switch runs this, so the independent reads run side by side.
     const system = accounting();
     const sendMode = system
@@ -420,11 +449,25 @@ export function createInvoicingRouter({
       const pattern = containing(q);
       where.push(or(ilike(invoices.number, pattern), ilike(invoices.reference, pattern), ilike(contacts.name, pattern)));
     }
-    const rows = await db.select({ invoice: invoices, contactName: contacts.name }).from(invoices)
+    // First the few columns the filter and sort read, for every row; then
+    // the whole rows of the one page.
+    const light = (await db.select({
+      id: invoices.id, number: invoices.number, reference: invoices.reference, issueDate: invoices.issueDate,
+      createdAt: invoices.createdAt, totalCents: invoices.totalCents, contactName: contacts.name,
+    }).from(invoices)
       .leftJoin(contacts, eq(contacts.id, invoices.contactId))
       .where(and(...where))
-      .orderBy(desc(invoices.createdAt), desc(invoices.id))
-      .limit(limit);
+      .orderBy(desc(invoices.createdAt), desc(invoices.id)))
+      .map((row) => ({ ...row, problems: tabs.problems.get(row.id) ?? [] }));
+    const page = invoicePage(light, { view, sort, dir, offset, limit, today: day });
+    const pageIds = page.rows.map((r) => r.id);
+    const full = pageIds.length
+      ? await db.select({ invoice: invoices, contactName: contacts.name }).from(invoices)
+        .leftJoin(contacts, eq(contacts.id, invoices.contactId))
+        .where(and(eq(invoices.organisationId, organisationId), inArray(invoices.id, pageIds)))
+      : [];
+    const byId = new Map(full.map((r) => [r.invoice.id, r]));
+    const rows = pageIds.map((id) => byId.get(id)).filter(Boolean);
     const jobs = await jobsByInvoice(db, organisationId, rows.map((r) => r.invoice.id));
     const systems = work();
     res.json({
@@ -438,6 +481,13 @@ export function createInvoicingRouter({
         problems: tabs.problems.get(invoice.id) ?? [],
       })),
       counts: Object.fromEntries(TABS.map((t) => [t, tabs.ids[t].length])),
+      // The page: where it starts, its size, and every row the filter keeps.
+      offset,
+      limit,
+      total: page.total,
+      totalCents: page.totalCents,
+      // The Filter chip's Client choices: every client of the tab.
+      clients: [...new Set(light.map((r) => r.contactName).filter(Boolean))].sort((a, b) => a.localeCompare(b)),
       sendsTo: system?.name ?? null,
       sendMode: mode,
       // The Linked column: one icon for each connected system.

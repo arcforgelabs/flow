@@ -460,6 +460,57 @@ export const RECONCILE_COLUMNS = Object.freeze({
   kind: 'Type', client: 'Client', detail: 'Detail', date: 'Date', total: 'Total', possible: 'Possible',
 });
 
+// The Invoices list's Filter fields. The tabs are the status, so Status is
+// not here. The page shows the chip (view-bar.js); the server keeps the rows
+// (GET /api/invoicing/invoices), so a filter reaches every invoice of a tab.
+export const INVOICE_FILTER_FIELDS = Object.freeze({
+  client: { label: 'Client', kind: 'choice', icon: 'building-2' },
+  number: { label: 'Number', kind: 'text', icon: 'hash' },
+  reference: { label: 'Reference', kind: 'text', icon: 'text' },
+  date: { label: 'Date', kind: 'date', icon: 'calendar' },
+  total: { label: 'Total', kind: 'number', icon: 'dollar-sign' },
+  problem: { label: 'Problem', kind: 'check', icon: 'triangle-alert' },
+});
+export const invoiceFilterKind = (field) => INVOICE_FILTER_FIELDS[field]?.kind ?? null;
+
+// An invoice's value for a filter field or a sort, as they compare it. A
+// draft has no issue date: it uses the day it was made.
+export function invoiceValue(invoice, field) {
+  switch (field) {
+    case 'client': return invoice.contactName ?? null;
+    case 'number': return invoice.number ?? null;
+    case 'reference': return invoice.reference ?? null;
+    case 'date': return invoice.issueDate ?? (invoice.createdAt ? new Date(invoice.createdAt).toISOString().slice(0, 10) : null);
+    case 'total': return invoice.totalCents == null ? null : invoice.totalCents / 100;
+    case 'problem': return (invoice.problems?.length ?? 0) > 0;
+    default: return null;
+  }
+}
+
+// What the Invoices list sorts by (a column head). No sort is newest first.
+export const INVOICE_SORTS = Object.freeze(['number', 'client', 'reference', 'date', 'total']);
+
+// One page of an invoice list: the Filter view keeps rows, the sort orders
+// them (an empty value last, either way), then `offset` and `limit` cut the
+// page. `total` and `totalCents` are of every kept row. The rows come in
+// newest first; that order breaks ties.
+export function invoicePage(invoices, { view, sort = null, dir = 'asc', offset = 0, limit = 100, today }) {
+  const kept = filterJobs(invoices, view, { valueOf: invoiceValue, kindOf: invoiceFilterKind, today });
+  const sign = dir === 'desc' ? -1 : 1;
+  const ordered = INVOICE_SORTS.includes(sort)
+    ? kept.map((invoice, i) => [invoice, invoiceValue(invoice, sort), i]).sort(([, x, i], [, y, j]) => {
+      if (x == null || y == null) return x == null && y == null ? i - j : (x == null) - (y == null);
+      const order = typeof x === 'number' ? x - y : String(x).localeCompare(String(y), 'en', { numeric: true });
+      return order ? order * sign : i - j;
+    }).map(([invoice]) => invoice)
+    : kept;
+  return {
+    rows: ordered.slice(offset, offset + limit),
+    total: kept.length,
+    totalCents: kept.reduce((sum, i) => sum + (i.totalCents ?? 0), 0),
+  };
+}
+
 // A person's view of a list with set columns (Invoices, Reconcile): the
 // shown columns in order (every one when none is saved) and their widths.
 export function normaliseListView(input, columns) {
