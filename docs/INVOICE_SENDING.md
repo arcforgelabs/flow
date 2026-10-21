@@ -188,10 +188,10 @@ the work system. Flow never writes to the work system.
 
 A fix made in the work system closes the problem when Flow next reads the job.
 
-The Jobs page shows the same review. What a job must fix is a chip beside its
-stage, such as **Job changed** (**+1** when there is more), so the panel keeps
-one layout with or without a fix. Hover shows each fix in one line with its
-link. A click on **Job changed** opens the panel's sidecar on the right (in
+The Jobs page shows the same review. Each problem a job must fix is a chip
+beside its stage, such as **Job changed**, so the panel keeps one layout with
+or without a fix. Hover shows what is wrong in one line and one button to fix
+it. A click on **Job changed** opens the panel's sidecar on the right (in
 place of Activity) on Review, with this banner and its buttons, so a person
 checks and accepts the change without leaving the job. The sidecar has
 tabs (Activity, Review) and closes with ×; closed, the job's details take the

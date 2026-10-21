@@ -1174,27 +1174,25 @@ export async function renderJobs(main, ui) {
       : choose ? h('span', { class: 'fx-task__none' }, svg(WARN_ICON), 'Needs invoice')
         : stage ? INVOICE_STAGES[stage] : o ? 'Not ready to invoice' : 'No invoice yet';
     const rest = found.filter((f) => f.go !== 'choose');
-    // What to fix is a chip beside the stage ("Job changed", "+1" for more),
-    // so the panel keeps one layout with or without a fix. Hover or focus
-    // shows a card: one line a fix, with its link; what to do is the link's
-    // tip. A click opens Review when the job changed, else holds the card
-    // open (a phone has no hover).
-    const review = rest.some((f) => f.go === 'review') && reviewable;
-    const fixCard = rest.length ? h('div', { class: 'fx-task__fixcard', role: 'group', 'aria-label': 'Fix' },
-      rest.map((f) => {
-        const go = fixLink(f.go, f.todo);
-        return h('div', { class: 'fx-task__fixrow', title: go ? null : f.todo }, h('strong', {}, f.label), h('span', {}, f.text), go);
-      })) : null;
-    const fixChip = rest.length ? h('div', { class: 'fx-task__fix' },
-      h('button', {
-        class: 'fx-task__fixchip', type: 'button', 'aria-expanded': 'false',
-        onclick: (event) => {
-          if (review) { side.open('review'); return; }
-          const button = event.currentTarget;
-          button.setAttribute('aria-expanded', String(button.getAttribute('aria-expanded') !== 'true'));
-        },
-      }, lucide(h, 'triangle-alert'), problemSummary(rest)),
-      fixCard) : null;
+    // What to fix: one chip a problem, beside the stage, so the panel keeps
+    // one layout with or without a fix. Hover or focus shows its card: what
+    // is wrong in one line, and one button to fix it (what to do is the
+    // button's tip). A click on Job changed opens Review; another chip holds
+    // its card open (a phone has no hover).
+    const fixChips = rest.map((f) => {
+      const action = fixLink(f.go, f.todo);
+      return h('div', { class: 'fx-task__fix' },
+        h('button', {
+          class: 'fx-task__fixchip', type: 'button', 'aria-expanded': 'false', title: action ? null : f.todo,
+          onclick: (event) => {
+            if (f.go === 'review' && reviewable) { side.open('review'); return; }
+            const button = event.currentTarget;
+            button.setAttribute('aria-expanded', String(button.getAttribute('aria-expanded') !== 'true'));
+          },
+        }, lucide(h, 'triangle-alert'), f.label),
+        h('div', { class: 'fx-task__fixcard', role: 'group', 'aria-label': f.label },
+          h('span', {}, f.go === 'review' ? `${system} changed after the draft.` : f.text), action));
+    });
     // No invoice, and the match is unclear: one line and two buttons. The
     // possible matches are compared on the Reconcile page, not here.
     const chooseBox = choose ? h('section', { class: 'fx-task__choose', 'aria-label': 'Invoice' },
@@ -1223,18 +1221,16 @@ export async function renderJobs(main, ui) {
     // Each fix's link: Flow's own invoice, the job in the work system, or
     // the Flow page where the fix is made (job-board.js GO).
     function fixLink(go, tip = null) {
-      const inFlow = (href, text) => h('a', { class: 'fx-task__link', href, title: tip, onclick: (event) => { close(); ui.go(event); } }, text);
-      if (go === 'review' && reviewable) {
-        return h('button', { class: 'fx-task__link fx-task__linkbtn', type: 'button', title: tip, onclick: () => side.open('review') }, 'Review');
-      }
-      if (go === 'review' && o?.invoiceId) return inFlow(`/invoices/${o.invoiceId}`, 'Open invoice');
-      if (go === 'invoice' && o?.invoiceId) return inFlow(`/invoices/${o.invoiceId}`, 'Open invoice');
-      if (go === 'work' && job.link?.url) {
-        return h('a', { class: 'fx-task__link', href: job.link.url, target: '_blank', rel: 'noopener' }, job.link.exact ? `Open case in ${system} ↗` : `Open ${system} ↗`);
-      }
-      if (go === 'price-list') return inFlow('/price-list', 'Open price list');
-      if (go === 'invoicing-settings') return inFlow('/invoicing-settings', 'Open invoice rules');
-      if (go === 'integrations' && ui.me?.person?.role === 'owner') return inFlow('/integrations', 'Open integrations');
+      const button = (icon, text, attrs) => h(attrs.href ? 'a' : 'button', {
+        class: 'fx-btn fx-btn--sm fx-btn--primary fx-task__fixgo', title: tip, ...(attrs.href ? {} : { type: 'button' }), ...attrs,
+      }, lucide(h, icon), text);
+      const inFlow = (icon, href, text) => button(icon, text, { href, onclick: (event) => { close(); ui.go(event); } });
+      if (go === 'review' && reviewable) return button('git-compare', 'Review', { onclick: () => side.open('review') });
+      if ((go === 'review' || go === 'invoice') && o?.invoiceId) return inFlow('file-text', `/invoices/${o.invoiceId}`, 'Invoice');
+      if (go === 'work' && job.link?.url) return button('external-link', system, { href: job.link.url, target: '_blank', rel: 'noopener' });
+      if (go === 'price-list') return inFlow('tag', '/price-list', 'Price list');
+      if (go === 'invoicing-settings') return inFlow('list-checks', '/invoicing-settings', 'Rules');
+      if (go === 'integrations' && ui.me?.person?.role === 'owner') return inFlow('plug', '/integrations', 'Integrations');
       return null;
     }
     const lines = job.lines ?? [];
@@ -1289,7 +1285,7 @@ export async function renderJobs(main, ui) {
           h('div', { class: 'fx-task__tools' }, sideButton,
             h('button', { class: 'fx-btn fx-btn--ghost fx-btn--icon', type: 'button', 'aria-label': 'Close', title: 'Close', onclick: close }, '✕'))),
         h('h2', { class: 'fx-task__title' }, clientOf(job)),
-        h('div', { class: 'fx-task__stage' }, stagePill(status), fixChip),
+        h('div', { class: 'fx-task__stage' }, stagePill(status), fixChips),
         h('dl', { class: 'fx-task__fields' },
           field('Practitioner', job.practitioner),
           field(job.dueOn ? 'Due' : 'Ordered', job.dueOn ? fullDate(job.dueOn) : job.orderedOn ? fullDate(job.orderedOn) : null, late ? { class: 'fx-task__late' } : {}),
@@ -1325,9 +1321,9 @@ export async function renderJobs(main, ui) {
         h('div', { class: 'fx-task__actions' }, actions(job, close))),
       side.element));
     element.addEventListener('click', (event) => { if (event.target === element) close(); });
-    // A click away from the Fix chip puts its card away.
+    // A click away from a Fix chip puts its card away.
     element.addEventListener('click', (event) => {
-      if (fixChip && !fixChip.contains(event.target)) fixChip.firstChild.setAttribute('aria-expanded', 'false');
+      for (const chip of fixChips) if (!chip.contains(event.target)) chip.firstChild.setAttribute('aria-expanded', 'false');
     });
     element.addEventListener('close', () => element.remove());
     document.body.append(element);
@@ -1336,7 +1332,7 @@ export async function renderJobs(main, ui) {
     if (atFix && reviewable) side.open('review');
     else if (last !== 'closed') side.open(last === 'review' && reviewable ? 'review' : 'activity');
     if (atFix && chooseBox) chooseBox.scrollIntoView({ block: 'start' });
-    if (atFix && fixChip && !review) fixChip.firstChild.setAttribute('aria-expanded', 'true');
+    if (atFix && fixChips.length && !(reviewable && rest[0].go === 'review')) fixChips[0].firstChild.setAttribute('aria-expanded', 'true');
     if (!o) return;
     const when = (iso) => new Date(iso).toLocaleString('en-AU', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
     flow(`/api/invoicing/jobs/${o.id}/activity`).then(({ events }) => {
