@@ -7,6 +7,10 @@
 
 :root {
   --fx-line: color-mix(in srgb, var(--t-text) 12%, transparent);
+  /* The page column: its side space and the width inside it. Every page,
+     and the head of the Jobs board, sits in this one column. */
+  --fx-gutter: clamp(16px, 4vw, 48px);
+  --fx-column: calc(1180px - 2 * var(--fx-gutter));
   --fx-line-soft: color-mix(in srgb, var(--t-text) 7%, transparent);
   --fx-hover: color-mix(in srgb, var(--t-text) 5%, transparent);
   --fx-focus: 0 0 0 3px color-mix(in srgb, var(--t-ring) 40%, transparent);
@@ -167,7 +171,7 @@ body:is([data-state="off"], [data-state="error"], [data-state="no-access"]) .fx-
   .fx-shell[data-folded] #user-button .cl-userButtonTrigger { width: auto; padding: 0; border-radius: 50%; background: transparent; box-shadow: none; }
   .fx-shell[data-folded] #user-button .cl-userButtonOuterIdentifier, .fx-shell[data-folded] #user-button .cl-userButtonBox::before { display: none; }
 }
-.fx-main { flex: 1; min-width: 0; max-width: 1180px; margin: 0 auto; padding: 32px clamp(16px, 4vw, 48px) 64px; display: grid; gap: 20px; align-content: start; }
+.fx-main { flex: 1; min-width: 0; max-width: 1180px; margin: 0 auto; padding: 32px var(--fx-gutter) 64px; display: grid; gap: 20px; align-content: start; }
 .fx-main:focus { outline: none; box-shadow: none; }
 
 /* Page header: the title only (no line under it), then the actions,
@@ -492,8 +496,14 @@ a.fx-strong:hover { text-decoration: underline; }
 }
 
 /* ── Jobs board ─────────────────────────────────────────────────────────── */
-/* Every page shares .fx-main's width; only the board's lanes use the whole window. */
+/* Every page shares .fx-main's column, the board's head too, so the title,
+   chips, search and Board/List stay put when a person switches layout or
+   page. Only the board's lanes run on past the column to the window's
+   right edge; they start at the column's left edge, under the title. */
 .fx-main--board { max-width: none; }
+.fx-main--board > * { flex: none; width: 100%; max-width: var(--fx-column); margin-inline: auto; }
+.fx-main--board > .fx-jobs { width: auto; max-width: none; margin: 0 calc(-1 * var(--fx-gutter)) 0 max(0px, (100% - var(--fx-column)) / 2); }
+.fx-main--board .fx-board { padding-right: var(--fx-gutter); }
 .fx-main > * { min-width: 0; }
 .fx-toolbar--plain { border-bottom: 0; align-items: center; }
 .fx-toolbar--plain .fx-search { margin-bottom: 0; }
@@ -652,8 +662,8 @@ th:hover .fx-th-sort, .fx-th-sort:focus-visible, .fx-th-sort--on { opacity: 1; }
 .fx-board__sum { flex: none; margin-left: auto; color: var(--t-dim); font-size: 12px; font-variant-numeric: tabular-nums; }
 .fx-board__cards { display: grid; gap: 8px; align-content: start; min-height: 0; max-height: 70vh; padding-right: 2px; overflow-y: auto; scrollbar-width: thin; }
 @media (min-width: 821px) and (min-height: 560px) {
-  .fx-main--board { height: 100vh; height: 100dvh; padding: 24px 24px 16px; grid-template-rows: auto auto minmax(0, 1fr); align-content: stretch; }
-  .fx-main--board > .fx-jobs { min-height: 0; }
+  .fx-main--board { height: 100vh; height: 100dvh; padding-bottom: 16px; display: flex; flex-direction: column; }
+  .fx-main--board > .fx-jobs { flex: 1; min-height: 0; }
   .fx-main--board .fx-board { height: 100%; overflow-y: hidden; align-items: stretch; }
   .fx-main--board .fx-board__cards { flex: 1; max-height: none; }
 }
@@ -1343,12 +1353,22 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
 /* The Invoices list head (invoicing.js): tabs, search and the send bar stay
    at the top while rows scroll up under them; a shadow shows once they do.
    Narrow, the app bar (60px) sits above it. */
-.fx-listhead { position: sticky; top: 0; z-index: 5; margin: -12px calc(-1 * clamp(16px, 4vw, 48px)) 0; padding: 12px clamp(16px, 4vw, 48px) 0; background: var(--t-bg); transition: box-shadow .15s; }
+/* listHead() in kit.js: the toolbar row of every list. One height, with
+   chips, tabs or a Board/List switch in it, so the rows start at one place. */
+.fx-listhead > .fx-toolbar { min-height: 40px; }
+.fx-listhead .fx-toolbar__end { flex: 1 1 auto; }
+.fx-listhead > .fx-toolbar--plain { align-items: center; }
+.fx-views { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.fx-listhead[data-sticky] { position: sticky; top: 0; z-index: 5; margin: -12px calc(-1 * var(--fx-gutter)) 0; padding: 12px var(--fx-gutter) 0; background: var(--t-bg); transition: box-shadow .15s; }
 .fx-listhead[data-stuck] { box-shadow: 0 10px 12px -12px rgba(0, 0, 0, .45); }
-.fx-listhead__edge { height: 0; margin-bottom: -20px; }
-@media (max-width: 820px) { .fx-listhead { top: 60px; } }
+/* The edge tells listHead when the rows reach the toolbar. In the page's
+   grid it takes a row and a gap of its own, so the toolbar moves up by both. */
+.fx-listhead__edge { height: 0; }
+.fx-listhead__edge + .fx-listhead[data-sticky] { margin-top: -32px; }
+.fx-listhead > .fx-toolbar > .fx-tabs button { padding-block: 9px; }
+@media (max-width: 820px) { .fx-listhead[data-sticky] { top: 60px; } }
 /* On a phone the head would hide too many rows: it scrolls away. */
-@media (max-width: 560px) { .fx-listhead { position: static; } }
+@media (max-width: 560px) { .fx-listhead[data-sticky] { position: static; } }
 
 /* The bulk action bar (bulk-bar.js): floats at the foot while rows are
    ticked. "N selected ×", then icon actions in groups, then More. It takes

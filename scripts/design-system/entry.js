@@ -1,7 +1,7 @@
 // The design system's bundle: the real server/ui modules, as one script that
 // sets window.FlowDesignSystem (scripts/design-system/build.mjs). A card calls
 // these, so what a card shows is what the app draws.
-import { dialog, h, helpLink, holdButton, notice, pageHeader, rowMenu, sectionTitle, settingRow, toast } from '/assets/ui/kit.js';
+import { dialog, h, helpLink, holdButton, listHead, notice, pageHeader, rowMenu, sectionTitle, settingRow, toast } from '/assets/ui/kit.js';
 import { findBox, ICONS, svg, viewBar } from '/assets/ui/view-bar.js';
 import { bulkBar } from '/assets/ui/bulk-bar.js';
 import { colorPicker, lucide, optionPill } from '/assets/ui/custom-fields.js';
@@ -14,7 +14,7 @@ import { sidecar } from '/assets/ui/sidecar.js';
 const OPTION_COLORS = __FLOW_OPTION_COLORS__;
 
 // What app.js hands a view module, minus the network: enough for a card.
-const ui = () => ({ h, toast, notice, pageHeader, sectionTitle, dialog, holdButton, me: null, flow: async () => ({}), go: () => {} });
+const ui = () => ({ h, toast, notice, pageHeader, listHead, sectionTitle, dialog, holdButton, me: null, flow: async () => ({}), go: () => {} });
 
 // A toast needs its region, as on every Flow page.
 function ready() {
@@ -25,6 +25,6 @@ if (document.readyState === 'loading') document.addEventListener('DOMContentLoad
 else ready();
 
 export {
-  bulkBar, colorPicker, dialog, findBox, h, helpLink, holdButton, ICONS, jobChangeBanner, lucide, named,
+  bulkBar, colorPicker, dialog, findBox, h, helpLink, holdButton, ICONS, jobChangeBanner, listHead, lucide, named,
   notice, OPTION_COLORS, optionPill, pageHeader, rowMenu, sectionTitle, settingRow, sidecar, svg, toast, ui, viewBar,
 };

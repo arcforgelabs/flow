@@ -175,7 +175,7 @@ const pathOf = (row) => `/reconcile/${row.id}${row.kind === 'invoice' ? '?kind=i
 const KIND_ICON = { job: ['briefcase', 'Job'], invoice: ['file-text', 'Invoice'] };
 
 async function renderList(main, ui) {
-  const { h, flow, toast, pageHeader } = ui;
+  const { h, flow, toast, listHead } = ui;
   const icon = (name, label) => lucide(h, name, label);
   const canAct = ['owner', 'admin'].includes(ui.me?.person?.role);
   const back = readStored(sessionStorage, NAV_KEY, null);
@@ -184,10 +184,7 @@ async function renderList(main, ui) {
   const controls = h('div', { class: 'fx-viewbar', role: 'group', 'aria-label': 'Filter' });
   const host = h('div', { class: 'fx-rec' }, h('div', { class: 'fx-skeleton' }));
   const bulk = bulkBar(ui, { label: 'Ticked jobs' });
-  main.append(
-    pageHeader('Reconcile'),
-    h('div', { class: 'fx-toolbar fx-toolbar--plain' }, controls, h('div', { class: 'fx-toolbar__end' }, find.element)),
-    host, bulk.element);
+  main.append(...listHead('Reconcile', { start: controls, end: find.element }).nodes, host, bulk.element);
 
   // The Filter chip: the same panel as on Jobs (view-bar.js). Job rows also
   // have the lab's custom fields.

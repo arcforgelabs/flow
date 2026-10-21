@@ -148,7 +148,7 @@ function readFilters() {
 }
 
 export async function renderInvoiceList(main, ui) {
-  const { h, flow, pageHeader, notice, go, toast } = ui;
+  const { h, flow, listHead, notice, go, toast } = ui;
   const saved = OLD_TAB[sessionStorage.getItem('flow_invoice_tab')] ?? sessionStorage.getItem('flow_invoice_tab');
   // Back from an invoice comes here with the tab, search and scroll it left.
   const back = readNav();
@@ -192,22 +192,12 @@ export async function renderInvoiceList(main, ui) {
   // The tabs and search stay at the top while the rows scroll up under them;
   // the bulk bar floats at the foot (ClickUp's layout). Sending is a bulk
   // action: tick rows (the head tick takes every row shown), then Send.
-  const head = h('div', { class: 'fx-listhead' }, h('div', { class: 'fx-toolbar' }, tabs, h('div', { class: 'fx-toolbar__end' }, controls, find.element)));
-  const edge = h('div', { class: 'fx-listhead__edge', 'aria-hidden': 'true' });
-  main.append(
-    pageHeader('Invoices', {
-      actions: [h('a', { class: 'fx-btn fx-btn--primary', href: '/invoices/new', onclick: go }, 'New invoice')],
-    }),
-    alerts.element,
-    edge,
-    head,
-    host,
-    bulk.element);
-  // A shadow under the head shows once rows scroll under it.
-  if (typeof IntersectionObserver === 'function') {
-    new IntersectionObserver(([entry]) => head.toggleAttribute('data-stuck', !entry.isIntersecting), { rootMargin: `-${head.offsetTop > 0 && window.matchMedia?.('(max-width: 820px)').matches ? 61 : 1}px 0px 0px 0px` }).observe(edge);
-  }
-
+  const head = listHead('Invoices', {
+    actions: [h('a', { class: 'fx-btn fx-btn--primary', href: '/invoices/new', onclick: go }, 'New invoice')],
+    start: tabs, end: [controls, find.element], line: true, sticky: true,
+  });
+  const [title, ...top] = head.nodes;
+  main.append(title, alerts.element, ...top, host, bulk.element);
 
   const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
   // The bulk bar for the ticked rows: what a person can do with this view.

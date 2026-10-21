@@ -61,6 +61,26 @@ export function pageHeader(title, { count = null, help = null, actions = [] } = 
     actions.length ? h('div', { class: 'fx-ph__actions' }, actions) : null);
 }
 
+// The top of a list page (Jobs, Invoices, Reconcile), laid out the same on
+// every list and in Board and List alike, so nothing moves when a person
+// switches: the title row, a row for saved view tabs (`views`, hidden until
+// a page fills it), then one toolbar with `start` at the left (tabs, Group,
+// Sort, Filter) and `end` at the right (search, Board/List), then the page's
+// `actions` (New invoice) last, as Claude's own lists do. `line` draws the
+// rule that tabs sit on; `sticky` keeps the toolbar at the top while the rows
+// scroll up under it, with a shadow once they do. Append `nodes` to the page.
+export function listHead(title, { count = null, help = null, actions = [], start = [], end = [], line = false, sticky = false } = {}) {
+  const views = h('div', { class: 'fx-views', role: 'group', 'aria-label': 'Views', hidden: true });
+  const bar = h('div', { class: 'fx-listhead', 'data-sticky': sticky },
+    h('div', { class: `fx-toolbar${line ? '' : ' fx-toolbar--plain'}` }, start, h('div', { class: 'fx-toolbar__end' }, end, actions)));
+  const edge = sticky ? h('div', { class: 'fx-listhead__edge', 'aria-hidden': 'true' }) : null;
+  if (edge && typeof IntersectionObserver === 'function') {
+    const top = window.matchMedia?.('(max-width: 820px)').matches ? 61 : 1;
+    new IntersectionObserver(([entry]) => bar.toggleAttribute('data-stuck', !entry.isIntersecting), { rootMargin: `-${top}px 0px 0px 0px` }).observe(edge);
+  }
+  return { nodes: [pageHeader(title, { count, help }), views, edge, bar].filter(Boolean), views, bar };
+}
+
 // A docs link as a small "?" icon whose tip names it (How sending works).
 export function helpLink({ href, label }) {
   return named(h('a', { class: 'fx-help', href, target: '_blank', rel: 'noopener' }, lucide(h, 'circle-help')), label);
