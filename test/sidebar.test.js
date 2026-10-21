@@ -15,7 +15,7 @@ test('the sidebar foot holds the account chip and Search; light or dark is on th
 
 test('search.js is served with the other page scripts', () => {
   assert.match(read('../server/ui/routes.js'), /'search\.js'/);
-  assert.match(read('../server/ui/app.js'), /import \{ openSearch \} from '\/assets\/ui\/search\.js';/);
+  assert.match(read('../server/ui/app.js'), /import \{ isSearchKey, openSearch \} from '\/assets\/ui\/search\.js';/);
 });
 
 test('the sidebar button folds the sidebar on wide screens and opens it as a drawer on narrow ones', () => {

@@ -19,7 +19,7 @@ import { renderJobs } from '/assets/ui/jobs.js';
 import { renderReconcile } from '/assets/ui/reconcile.js';
 import { renderXeroImport } from '/assets/ui/xero-import.js';
 import { startMonitoring } from '/assets/ui/monitoring.js';
-import { openSearch } from '/assets/ui/search.js';
+import { isSearchKey, openSearch } from '/assets/ui/search.js';
 import { alertStrip } from '/assets/ui/alerts.js';
 import { initialsOf, personLabel } from '/assets/ui/person.js';
 import { startTips } from '/assets/ui/tip.js';
@@ -258,7 +258,7 @@ function search() {
 }
 
 document.addEventListener('keydown', (event) => {
-  if (event.key.toLowerCase() !== 'k' || !(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey) return;
+  if (!isSearchKey(event)) return;
   if (document.body.dataset.state !== 'signed-in') return;
   event.preventDefault();
   search();
