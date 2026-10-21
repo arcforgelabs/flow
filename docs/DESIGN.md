@@ -255,6 +255,7 @@ names its card in the Flow Design System.
 | `sidecar(h, { label, overlay, escape, tabs })` | `server/ui/sidecar.js` | Sidecar | The right-hand panel: tabs with an icon and one word, ×, closed takes no room. A job's panel (Activity, Review); over a page with `overlay` (Custom fields manager) |
 | `formatCents`, `xeroTag`, `linkIcon`, `accountingIcon` | `server/ui/invoicing.js` | | Money, an accounting status tag, a link to the other system |
 | `automationSection`, `rulesSection`, `sendModeSection`, `lineMappingSection` | `server/ui/automations.js`, `invoice-rules.js`, `invoicing-settings.js`, `line-mappings.js` | | Settings sections a page mounts |
+| `messagePage({ title, text, tone, integration, organisation, mode, autoReturnSeconds })` | `server/ui/page.js` | MessagePage | The shared HTML card after an integration approval (OAuth callback). Flow mark + maker logo, status line (organisation · mode), tick or cross, "Back to Flow". Success may auto-return after a few seconds with a polite countdown; failure never does. Every integration with an approval step uses this, not its own copy. |
 
 ## Adding a family
 

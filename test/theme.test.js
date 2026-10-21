@@ -87,6 +87,45 @@ describe('pages and assets', () => {
     const message = messagePage({ title: 'Done', text: 'Connected to <Acme>.', defaultFamily: 'harbour', tone: 'success' });
     assert.match(message, /Connected to &lt;Acme&gt;\./);
     assert.match(message, /data-tone="success"/);
+    assert.doesNotMatch(message, /data-return-after/, 'a plain message page does not auto-return');
+  });
+
+  test('the connected callback page shows marks, status, countdown and cleans the address', () => {
+    const html = messagePage({
+      title: 'Xero is connected',
+      text: 'Flow is now copying its invoice and payment history in the background.',
+      defaultFamily: 'harbour',
+      tone: 'success',
+      integration: { name: 'Xero', logo: 'xero.svg' },
+      organisation: 'Acme <Lab>',
+      mode: 'sandbox',
+      autoReturnSeconds: 5,
+    });
+    assert.match(html, /fx-message__marks/);
+    assert.match(html, /\/assets\/ui\/logos\/xero\.svg/);
+    assert.match(html, /check-circle\.svg/);
+    assert.match(html, /Acme &lt;Lab&gt; · Demo/);
+    assert.match(html, /data-return-after="5"/);
+    assert.match(html, /aria-live="polite"/);
+    assert.match(html, /history\.replaceState/);
+    assert.match(html, /Going back to Flow in/);
+    assert.match(html, /href="\/"[^>]*>Back to Flow/);
+  });
+
+  test('a failed callback page shows the cross and never auto-returns', () => {
+    const html = messagePage({
+      title: 'Xero was not connected',
+      text: 'The approval was cancelled in Xero.',
+      defaultFamily: 'harbour',
+      tone: 'danger',
+      integration: { name: 'Xero', logo: 'xero.svg' },
+      autoReturnSeconds: 5,
+    });
+    assert.match(html, /x-circle\.svg/);
+    assert.match(html, /\/assets\/ui\/logos\/xero\.svg/);
+    assert.doesNotMatch(html, /data-return-after=/);
+    assert.doesNotMatch(html, /location\.assign/);
+    assert.match(html, /history\.replaceState/, 'failure still clears the OAuth query from the address');
   });
 
   test('the sign-in page follows FLOW_THEME', async () => {

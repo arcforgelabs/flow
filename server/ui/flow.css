@@ -1023,13 +1023,27 @@ th:hover > .fx-th-grip::after { background: var(--t-brd-hi); }
   .fx-auth__title { font-size: 26px; max-width: none; }
 }
 
-/* A one-message page (sign-in off, an error, no access, Xero's return). */
+/* A one-message page (sign-in off, an error, no access, an OAuth return). */
 .fx-message, .fx-centre .fx-message { min-height: 100vh; place-content: center; justify-items: center; gap: 20px; padding: 32px 16px; }
 .fx-centre .fx-message { display: grid; }
 .fx-message__card { display: grid; gap: 12px; width: min(460px, 100%); padding: 28px; }
 .fx-message__card[data-tone="success"] { border-top: 3px solid var(--t-success); }
 .fx-message__card[data-tone="danger"] { border-top: 3px solid var(--t-danger); }
 .fx-message__card .fx-btn { justify-self: start; }
+.fx-message__marks {
+  display: flex; align-items: center; gap: 10px; margin-bottom: 4px;
+}
+.fx-message__marks--solo { justify-content: flex-start; }
+.fx-message__flow .fx-mark { width: 34px; height: 34px; display: block; }
+.fx-message__plus { color: var(--t-dim); font: 600 18px/1 var(--t-body); }
+.fx-message__result {
+  display: grid; place-items: center; width: 28px; height: 28px; margin-left: 4px;
+  border-radius: 50%; color: var(--t-success); background: var(--t-success-bg);
+}
+.fx-message__result[data-tone="danger"] { color: var(--t-danger); background: var(--t-danger-bg); }
+.fx-message__result .fx-lucide { width: 16px; height: 16px; }
+.fx-message__status { margin: 0; }
+.fx-message__return { margin: 0; color: var(--t-dim); font-size: 13.5px; }
 
 .fx-loading { display: none; min-height: 100vh; place-content: center; gap: 12px; color: var(--t-dim); }
 body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
