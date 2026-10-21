@@ -57,15 +57,17 @@ test('with the real SDK, a logged line reaches Sentry as the title, with no stac
 test('Flow ships the Sentry adapter, with no DSN of its own', () => {
   const sentry = adapters.find((a) => a.id === 'sentry');
   assert.ok(sentry);
-  assert.deepEqual(sentry.setup.fields.map((f) => f.name), ['SENTRY_DSN', 'SENTRY_ENVIRONMENT', 'SENTRY_FEEDBACK', 'SENTRY_TRACES_SAMPLE_RATE']);
+  assert.deepEqual(sentry.setup.fields.map((f) => f.name), ['SENTRY_DSN', 'SENTRY_ENVIRONMENT', 'SENTRY_CLIENT', 'SENTRY_FEEDBACK', 'SENTRY_TRACES_SAMPLE_RATE']);
   assert.equal(sentry.schema, undefined);
 });
 
 test('the settings need a Sentry DSN; environment and the report button have defaults', () => {
   assert.throws(() => readSentrySettings({}), /SENTRY_DSN is not set/);
   assert.throws(() => readSentrySettings({ SENTRY_DSN: 'https://example.test/1' }), /not a Sentry DSN/);
-  assert.deepEqual(readSentrySettings({ SENTRY_DSN: DSN }), { dsn: DSN, environment: 'production', feedback: true, tracesSampleRate: 0.2 });
-  assert.deepEqual(readSentrySettings({ SENTRY_DSN: ` ${DSN} `, SENTRY_ENVIRONMENT: 'staging', SENTRY_FEEDBACK: 'off', SENTRY_TRACES_SAMPLE_RATE: '0' }), { dsn: DSN, environment: 'staging', feedback: false, tracesSampleRate: 0 });
+  assert.deepEqual(readSentrySettings({ SENTRY_DSN: DSN }), { dsn: DSN, environment: 'production', feedback: true, tracesSampleRate: 0.2, tags: { product: 'flow' } });
+  assert.deepEqual(readSentrySettings({ SENTRY_DSN: ` ${DSN} `, SENTRY_ENVIRONMENT: 'staging', SENTRY_FEEDBACK: 'off', SENTRY_TRACES_SAMPLE_RATE: '0' }), { dsn: DSN, environment: 'staging', feedback: false, tracesSampleRate: 0, tags: { product: 'flow' } });
+  assert.deepEqual(readSentrySettings({ SENTRY_DSN: DSN, SENTRY_CLIENT: ' Example Lab ' }).tags, { product: 'flow', client: 'Example Lab' });
+  assert.throws(() => readSentrySettings({ SENTRY_DSN: DSN, SENTRY_CLIENT: 'a\nb' }), /SENTRY_CLIENT must be one short line/);
 });
 
 test('the traces setting is a share from 0 to 1', () => {
@@ -106,6 +108,7 @@ test('the adapter starts the SDK without personal data, and sends errors only wh
   assert.equal(options.sendDefaultPii, false);
   assert.equal(options.release, 'flow@2026.10.26');
   assert.equal(options.environment, 'production');
+  assert.deepEqual(options.initialScope, { tags: { product: 'flow' } });
   assert.equal(options.beforeSendSpan, scrubSpan);
   // The host's health check is never traced; a browser's choice is kept.
   const sampled = (path) => options.tracesSampler({ attributes: { 'url.path': path }, inheritOrSampleWith: (rate) => rate });
@@ -121,7 +124,7 @@ test('the adapter starts the SDK without personal data, and sends errors only wh
   assert.deepEqual(sdk.calls[2][2].tags, { source: 'http' });
 
   assert.deepEqual(adapter.capabilities.browserMonitoring(), {
-    dsn: DSN, environment: 'production', release: 'flow@2026.10.26', feedback: true, tracesSampleRate: 0.2, script: SENTRY_BROWSER_TRACING,
+    dsn: DSN, environment: 'production', release: 'flow@2026.10.26', feedback: true, tags: { product: 'flow' }, tracesSampleRate: 0.2, script: SENTRY_BROWSER_TRACING,
   });
   assert.deepEqual(await adapter.capabilities.health(), { ok: true, environment: 'production', feedback: true });
 

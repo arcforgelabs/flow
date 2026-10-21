@@ -99,6 +99,7 @@ export async function startMonitoring({ flow, person }) {
     integrations,
     tracesSampleRate,
     beforeSendSpan: scrubSpan,
+    initialScope: { tags: config.tags ?? {} },
   });
   Sentry.getClient()?.on('beforeSendFeedback', tagNotify);
   // Who reported or met the error, so the lab can follow up.

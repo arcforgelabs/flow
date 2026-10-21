@@ -42,6 +42,7 @@ export const SENTRY_SETUP = {
   fields: [
     { name: 'SENTRY_DSN', label: 'DSN', kind: 'url', help: 'From the Sentry project\'s Client Keys. Browsers see it, so it is not a secret.' },
     { name: 'SENTRY_ENVIRONMENT', label: 'Environment', help: 'How Sentry labels this installation, for example production. Empty: production, or workspace in a Replit workspace.' },
+    { name: 'SENTRY_CLIENT', label: 'Client', help: 'The name your support desk files this installation\'s reports under. Sent as the client tag. Empty: no client tag.' },
     { name: 'SENTRY_FEEDBACK', label: 'Report a problem button', kind: 'onoff', help: 'On: everyone signed in can send a report, with a screenshot, to this Sentry project.' },
     { name: 'SENTRY_TRACES_SAMPLE_RATE', label: 'Traces', help: 'The share of clicks, page loads and requests timed, from 0 (off) to 1 (all). Empty: 0.2.' },
   ],
@@ -60,7 +61,12 @@ export function readSentrySettings(env) {
   if (!/^\d*\.?\d+$/.test(rate || '0') || !(tracesSampleRate >= 0 && tracesSampleRate <= 1)) {
     throw new Error('SENTRY_TRACES_SAMPLE_RATE must be a number from 0 to 1, such as 0.2.');
   }
-  return { dsn, environment, feedback, tracesSampleRate };
+  const client = String(env.SENTRY_CLIENT ?? '').trim();
+  if (client.length > 60 || /[\r\n]/.test(client)) throw new Error('SENTRY_CLIENT must be one short line.');
+  // Every event says which product and, when set, which client it is from,
+  // so one support desk can serve many installations.
+  const tags = client ? { product: 'flow', client } : { product: 'flow' };
+  return { dsn, environment, feedback, tracesSampleRate, tags };
 }
 
 // No trace for the host's health check: it is not a person waiting.
@@ -92,6 +98,7 @@ export function createSentryAdapter({ sdk = SentryNode, env: hostEnv = process.e
         dsn: settings.dsn,
         environment: settings.environment,
         release: release ?? undefined,
+        initialScope: { tags: settings.tags },
         // Flow sends what it logs; no request bodies, cookies or IP addresses.
         sendDefaultPii: false,
         // A request the browser traced keeps the browser's choice, so a
@@ -132,6 +139,7 @@ export function createSentryAdapter({ sdk = SentryNode, env: hostEnv = process.e
           environment: settings.environment,
           release,
           feedback: settings.feedback,
+          tags: settings.tags,
           tracesSampleRate,
           script: tracesSampleRate > 0 ? SENTRY_BROWSER_TRACING : SENTRY_BROWSER,
         };
