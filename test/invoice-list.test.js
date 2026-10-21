@@ -50,7 +50,10 @@ function page() {
   const main = new El('main');
   const ui = { h, flow, go() {}, toast() {}, notice: (m) => h('p', {}, m), pageHeader: (title) => h('header', {}, title),
     listHead: (title, { start = [], end = [], actions = [] } = {}) => ({ nodes: [h('header', {}, title), h('div', {}, start, end, actions)] }),
-    listFrame: (_main, content) => ({ element: h('section', {}, content), body: { scrollTop: 0 }, tools: h('div', {}), count() {} }) };
+    listFrame: (_main, content) => {
+      const tools = h('div', {});
+      return { element: h('section', {}, content, h('footer', {}, tools)), body: { scrollTop: 0 }, tools, count() {} };
+    } };
   return { main, ui, asked };
 }
 
@@ -205,4 +208,35 @@ test('ticked rows bring up the bulk bar: N selected, the tab\'s actions, and × 
   const fl = panel(main).all((el) => el.tag === 'input' && el.getAttribute('aria-label')?.startsWith('Tick FL-1'))[0];
   fl.checked = true; fl.onchange();
   assert.deepEqual(words(), ['Copy numbers', 'Export CSV', 'Download PDFs', 'Void', 'More']);
+});
+
+test('the list asks the server for one page; a page button asks for the next rows', async () => {
+  globalThis.sessionStorage = { getItem: () => null, setItem() {}, removeItem() {} };
+  globalThis.document = { visibilityState: 'visible', addEventListener() {}, removeEventListener() {}, createElement: (tag) => new El(tag) };
+  const { main, ui, asked } = page();
+  const opened = renderInvoiceList(main, ui);
+  await settle();
+  const first = asked.shift();
+  const query = (path) => new URL(path, 'http://flow.test').searchParams;
+  assert.equal(query(first.path).get('offset'), '0');
+  assert.equal(query(first.path).get('limit'), '100');
+  assert.equal(query(first.path).get('filter'), null, 'no filter, none sent');
+  first.answer({ ...list('ready', ['R-1']), offset: 0, limit: 100, total: 250 });
+  await opened;
+  const pages = main.all((el) => el.getAttribute('class') === 'fx-pages')[0];
+  assert.match(pages.text, /1–100 of 250/);
+  const nums = pages.all((el) => el.getAttribute('class') === 'fx-pages__num');
+  assert.deepEqual(nums.map((n) => n.text), ['1', '2', '3']);
+
+  nums[2].onclick();
+  const third = asked.shift();
+  assert.equal(query(third.path).get('offset'), '200');
+  third.answer({ ...list('ready', ['R-201']), offset: 200, limit: 100, total: 250 });
+  await settle();
+  assert.match(panel(main).text, /R-201/);
+  assert.match(pages.text, /201–250 of 250/);
+
+  // A new tab starts at its first page.
+  tab(main, 'Approved').onclick();
+  assert.equal(query(asked.shift().path).get('offset'), '0');
 });

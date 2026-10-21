@@ -11,8 +11,9 @@ import { draftNote, sendModeNote } from '/assets/ui/invoice-notes.js';
 import { caseNumber } from '/assets/ui/job-board.js';
 import { jobChangeReview } from '/assets/ui/job-change.js';
 import { columnTable, rowCells, viewSaver } from '/assets/ui/columns.js';
-import { filterJobs, INVOICE_COLUMNS, normaliseListView } from '/assets/ui/job-view.js';
-import { INVOICE_FILTER_FIELDS, normaliseInvoicesView } from '/assets/ui/list-views.js';
+import { filterCount, filterJobs, INVOICE_COLUMNS, normaliseListView } from '/assets/ui/job-view.js';
+import { INVOICE_FILTER_FIELDS, invoiceFilterKind, invoiceValue, normaliseInvoicesView } from '/assets/ui/list-views.js';
+import { listPager, PAGE_SIZES } from '/assets/ui/pager.js';
 import { savedViews } from '/assets/ui/saved-views.js';
 import { findBox, today, viewBar } from '/assets/ui/view-bar.js';
 
@@ -114,27 +115,24 @@ const showDate = (iso) => (iso ? new Date(`${iso}T00:00:00`).toLocaleDateString(
 
 // ── The list ───────────────────────────────────────────────────────────────
 
-// The filter's fields: list-views.js (the server checks saved views with them).
+// The filter's fields and rules: list-views.js. The server checks saved
+// views with them and filters every invoice of a tab (GET /invoices).
 const FILTER_FIELDS = INVOICE_FILTER_FIELDS;
 const PROBLEM_OPS = { yes: 'Has one', no: 'Has none' };
 const FILTER_KEY = 'flow_invoice_filters';
-const filterKind = (field) => FILTER_FIELDS[field]?.kind ?? null;
-
-// An invoice's value for a filter field, as the filter compares it.
-export function invoiceValue(invoice, field) {
-  switch (field) {
-    case 'client': return invoice.contactName ?? null;
-    case 'number': return invoice.number ?? null;
-    case 'reference': return invoice.reference ?? null;
-    case 'date': return invoice.issueDate ?? invoice.createdAt?.slice(0, 10) ?? null;
-    case 'total': return invoice.totalCents == null ? null : invoice.totalCents / 100;
-    case 'problem': return (invoice.problems?.length ?? 0) > 0;
-    default: return null;
-  }
-}
+const SIZE_KEY = 'flow_invoice_page_size';
+const filterKind = invoiceFilterKind;
+export { invoiceValue };
 
 // The invoices a filter view keeps.
 export const keptInvoices = (invoices, view, now = today()) => filterJobs(invoices, view, { valueOf: invoiceValue, kindOf: filterKind, today: now });
+
+// Rows per page, kept on this device.
+function readSize() {
+  let size = null;
+  try { size = Number(localStorage.getItem(SIZE_KEY)); } catch { /* none kept */ }
+  return PAGE_SIZES.includes(size) ? size : 100;
+}
 
 function readFilters() {
   try { return normaliseInvoicesView(JSON.parse(localStorage.getItem(FILTER_KEY))); } catch { return normaliseInvoicesView(null); }
@@ -149,6 +147,8 @@ export async function renderInvoiceList(main, ui) {
   sessionStorage.removeItem(NAV_BACK);
   const state = {
     status: TABS.some(([id]) => id === saved) ? saved : 'ready', q: returning ? back?.q ?? '' : '', ticked: new Set(), view: readFilters(),
+    // The page of rows shown: the server filters and cuts it (GET /invoices).
+    offset: returning ? back?.offset ?? 0 : 0, limit: readSize(),
     columns: normaliseListView(ui.me?.views?.invoices, INVOICE_COLUMNS),
   };
   // The list's columns: resize, move, hide, kept with the account. A tab
@@ -171,17 +171,18 @@ export async function renderInvoiceList(main, ui) {
     label: 'Find a number, client or reference', value: state.q,
     oninput: (words) => {
       clearTimeout(timer);
-      timer = setTimeout(() => { state.q = words.trim(); load(); }, 200);
+      timer = setTimeout(() => { state.q = words.trim(); state.offset = 0; load(); }, 200);
     },
   });
   // The Filter chip: the same panel as on Jobs and Reconcile (view-bar.js).
-  // It filters the rows of the tab shown, on this device.
-  // A change to the filter: kept in this browser, and drawn.
+  // The server filters every invoice of the tab shown.
+  // A change to the filter: kept in this browser, and the first page loads.
   function setView(patch) {
     state.view = normaliseInvoicesView({ ...state.view, ...patch });
     try { localStorage.setItem(FILTER_KEY, JSON.stringify(state.view)); } catch { /* the page still works, it forgets */ }
     views.draw();
-    if (raw) draw(raw);
+    state.offset = 0;
+    if (raw) load();
   }
   // The person's named views (saved-views.js): their default opens on a
   // new visit.
@@ -189,12 +190,11 @@ export async function renderInvoiceList(main, ui) {
   const opening = views.opening();
   if (opening) state.view = normaliseInvoicesView(opening);
   views.draw();
-  const labels = (list) => [...new Set(list.filter(Boolean))].sort((a, b) => a.localeCompare(b)).map((v) => ({ value: v, label: v }));
   const filterMenu = viewBar(h).filterMenu({
     fields: () => Object.entries(FILTER_FIELDS).map(([value, f]) => ({ value, label: f.label, icon: f.icon })),
     kindOf: filterKind,
     opsOf: (field) => (field === 'problem' ? PROBLEM_OPS : null),
-    choicesOf: (field) => (field === 'client' ? labels((raw?.invoices ?? []).map((i) => i.contactName)) : []),
+    choicesOf: (field) => (field === 'client' ? (raw?.clients ?? []).map((v) => ({ value: v, label: v })) : []),
     view: () => state.view,
     change: setView,
     first: 'client',
@@ -203,10 +203,22 @@ export async function renderInvoiceList(main, ui) {
   const controls = h('div', { class: 'fx-viewbar', role: 'group', 'aria-label': 'Filter' }, ...filterMenu.node);
   const host = h('div', { class: 'fx-panel' }, h('div', { class: 'fx-skeleton' }));
   const bulk = bulkBar(ui);
+  // The pages, in the foot under the rows (pager.js).
+  const pager = listPager(h, {
+    label: 'Invoice pages',
+    change: ({ offset, limit }) => {
+      if (limit !== state.limit) { try { localStorage.setItem(SIZE_KEY, String(limit)); } catch { /* it forgets */ } }
+      Object.assign(state, { offset, limit });
+      state.ticked.clear();
+      // A new page opens at its first row.
+      frame.body.scrollTop = 0;
+      load();
+    },
+  });
   const context = await flow('/api/invoicing/context').catch(() => ({ canIssue: false }));
   let body = null;
   let raw = null;
-  const openTab = (id) => { state.status = id; state.ticked.clear(); sessionStorage.setItem('flow_invoice_tab', id); load(); };
+  const openTab = (id) => { state.status = id; state.offset = 0; state.ticked.clear(); sessionStorage.setItem('flow_invoice_tab', id); load(); };
   const alerts = alertStrip(ui, 'invoices', { onTab: openTab });
   // The tabs and search stay at the top while the rows scroll up under them;
   // the bulk bar floats at the foot (ClickUp's layout). Sending is a bulk
@@ -217,6 +229,8 @@ export async function renderInvoiceList(main, ui) {
   });
   const [title, ...top] = head.nodes;
   const frame = listFrame(main, host);
+  // The pages sit in the window's foot bar, beside the count.
+  frame.tools.append(pager.element);
   main.append(title, alerts.element, ...top, frame.element, bulk.element);
 
   const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
@@ -373,7 +387,11 @@ export async function renderInvoiceList(main, ui) {
   const seen = new Map();
   let asked = 0;
   async function load() {
-    const query = new URLSearchParams({ status: state.status, ...(state.q ? { q: state.q } : {}) });
+    const query = new URLSearchParams({
+      status: state.status, offset: String(state.offset), limit: String(state.limit), today: today(),
+      ...(state.q ? { q: state.q } : {}),
+      ...(filterCount(state.view, filterKind) ? { filter: JSON.stringify(state.view) } : {}),
+    });
     const key = String(query);
     const mine = ++asked;
     if (seen.has(key)) {
@@ -414,14 +432,22 @@ export async function renderInvoiceList(main, ui) {
   async function draw(answer) {
     raw = answer;
     filterMenu.draw();
-    body = { ...answer, invoices: keptInvoices(answer.invoices, state.view) };
+    body = answer;
+    // A page past the end (rows went to another tab): show the last one.
+    if (!answer.invoices.length && answer.total && answer.offset) {
+      state.offset = Math.max(0, Math.floor((answer.total - 1) / state.limit) * state.limit);
+      load();
+      return;
+    }
+    pager.draw({ offset: answer.offset ?? 0, limit: answer.limit ?? state.limit, total: answer.total ?? answer.invoices.length });
     const shown = new Set(body.invoices.map((i) => i.id));
-    frame.count(plural(body.invoices.length, 'invoice', 'invoices'));
+    const total = answer.total ?? body.invoices.length;
+    frame.count(`${total.toLocaleString('en-AU')} ${total === 1 ? 'invoice' : 'invoices'}${total ? ` · ${formatCents(answer.totalCents ?? 0)}` : ''}`);
     for (const id of state.ticked) if (!shown.has(id)) state.ticked.delete(id);
     drawTabs(body.counts);
     drawBar();
     if (!body.invoices.length) {
-      host.replaceChildren(h('p', { class: 'fx-empty' }, answer.invoices.length
+      host.replaceChildren(h('p', { class: 'fx-empty' }, filterCount(state.view, filterKind)
         ? 'No invoice in this tab passes the filter.'
         : state.q
         ? 'No invoice matches that search.'
@@ -429,7 +455,7 @@ export async function renderInvoiceList(main, ui) {
       return;
     }
     // The invoice page steps through this list, in this order (navBar).
-    saveNav({ tab: state.status, q: state.q, ids: body.invoices.map((i) => i.id) });
+    saveNav({ tab: state.status, q: state.q, offset: state.offset, ids: body.invoices.map((i) => i.id) });
     const open = (href) => { saveNav({ ...readNav(), scrollY: window.scrollY, frameY: frame.body.scrollTop }); go(href); };
     const link = (href, label) => h('a', { class: 'fx-strong', href, onclick: (event) => { event.preventDefault(); event.stopPropagation(); open(href); } }, label);
     const showProblem = state.status === 'pending';

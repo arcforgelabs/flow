@@ -1462,6 +1462,19 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
 .fx-pager__step:hover:not(:disabled) { background: var(--fx-hover); border-color: var(--fx-line); }
 .fx-pager__step:disabled { opacity: 0.35; cursor: default; }
 
+/* The pages of a long list, in the list window's foot bar (pager.js):
+   rows per page, the range, numbered pages. The page shown is filled. */
+.fx-pages { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; color: var(--t-dim); font-size: 13px; font-variant-numeric: tabular-nums; }
+.fx-pages__rows { display: inline-flex; align-items: center; gap: 6px; }
+.fx-pages__size { width: 76px; min-height: 28px; padding-block: 2px; font-size: 13px; }
+.fx-pages__range { color: var(--t-text); }
+.fx-pages__steps { display: inline-flex; align-items: center; gap: 4px; }
+.fx-pages__step, .fx-pages__num { display: inline-grid; place-items: center; min-width: 28px; height: 28px; padding: 0 6px; border: 1px solid var(--fx-line-soft); border-radius: 999px; background: transparent; color: var(--t-text); font: inherit; cursor: pointer; transition: background 120ms var(--fx-ease), border-color 120ms var(--fx-ease); }
+.fx-pages__step:hover:not(:disabled), .fx-pages__num:hover:not([aria-current]) { background: var(--fx-hover); border-color: var(--fx-line); }
+.fx-pages__step:disabled { opacity: 0.35; cursor: default; }
+.fx-pages__num[aria-current="page"] { background: var(--t-primary); border-color: var(--t-primary); color: var(--t-on-primary); cursor: default; }
+.fx-pages__gap { min-width: 16px; text-align: center; color: var(--t-mute); }
+
 /* New invoice from a job: a searchable list of jobs with no invoice. */
 .fx-dialog:has(.fx-pick__body) { width: min(620px, calc(100vw - 32px)); }
 .fx-pick__body { display: grid; gap: 12px; }

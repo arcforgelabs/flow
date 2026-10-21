@@ -170,7 +170,13 @@ Xero's `SentToContact` flag.
 - `GET /api/invoicing/invoices?status=pending|ready|draft|approved|sent|void`
   lists a tab. The old names `problem`, `to_check` and `issued` still work.
   Each invoice carries `tab`, `sending` and `problems`. `counts` has one
-  number per tab. One invoice (`GET /invoices/:id`) carries the same `tab`,
+  number per tab. The list is one page: `offset` and `limit` (default 200,
+  at most 500) cut it, `filter` (the Filter chip's view as JSON, the rules of
+  `server/ui/job-view.js`), `sort` (`number`, `client`, `reference`, `date`,
+  `total`) with `dir` (`asc` or `desc`) and `today` (the person's day, for
+  date filters) run over every invoice of the tab first. The answer has
+  `total` and `totalCents` of every match and `clients` (the tab's clients,
+  for the Filter's choices). One invoice (`GET /invoices/:id`) carries the same `tab`,
   `view` (`problem` or `ready`, for a draft) and `problems`, and, for a draft,
   `sendsTo` and `sendMode` (this customer's mode, and whether the accounting
   system is connected and takes writes).
