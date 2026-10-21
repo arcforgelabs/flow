@@ -49,8 +49,7 @@ export function listPager(h, { label = 'Pages', sizes = PAGE_SIZES, change }) {
       type: 'button', class: 'fx-pages__step', 'aria-label': name, title: name,
       ...(n < 1 || n > pages ? { disabled: true } : {}), onclick: () => go(n),
     }, icon(markup));
-    // replaceChildren writes a null as the text "null": leave it out.
-    element.replaceChildren(...[
+    element.replaceChildren(
       h('label', { class: 'fx-pages__rows' }, 'Rows', size),
       h('span', { class: 'fx-pages__range' }, pageRange({ offset, limit, total })),
       pages > 1 ? h('span', { class: 'fx-pages__steps' },
@@ -61,8 +60,7 @@ export function listPager(h, { label = 'Pages', sizes = PAGE_SIZES, change }) {
             type: 'button', class: 'fx-pages__num', 'aria-label': `Page ${n}`,
             ...(n === at ? { 'aria-current': 'page' } : {}), onclick: () => { if (n !== at) go(n); },
           }, String(n)))),
-        step(at + 1, NEXT, 'Next page')) : null,
-    ].filter(Boolean));
+        step(at + 1, NEXT, 'Next page')) : null);
   }
 
   return { element, draw };
