@@ -659,6 +659,15 @@ th:hover .fx-th-sort, .fx-th-sort:focus-visible, .fx-th-sort--on { opacity: 1; }
 .fx-table.fx-table--sized { table-layout: fixed; }
 .fx-table--sized th, .fx-table--sized td { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fx-table--sized th { position: relative; }
+/* Every cell is one line: a long value ends in "…" and the row keeps its
+   height, as HubSpot's. A wrapper in a cell (a client with its warning
+   mark, a stage pill) shrinks its text, never its mark. */
+.fx-table--sized td > * { max-width: 100%; }
+.fx-table--sized .fx-job__cell { display: flex; min-width: 0; }
+.fx-table--sized .fx-job__cell > * { flex: none; }
+.fx-table--sized .fx-job__cell > .fx-strong,
+.fx-table--sized .fx-status { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fx-table--sized .fx-job__cell > .fx-strong { flex: 0 1 auto; }
 .fx-table--sized .fx-th-cell { max-width: 100%; }
 .fx-table--sized .fx-th { overflow: hidden; text-overflow: ellipsis; }
 .fx-th--drag .fx-th { cursor: grab; touch-action: none; }

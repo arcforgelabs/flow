@@ -32,12 +32,19 @@ const LEAD_WIDTH = 44;
 const TAIL_WIDTH = 40;
 
 // A row's cells for the shown columns: a class per kind, the label for
-// the phone layout.
+// the phone layout, the full text as the cell's name on hover.
 export function rowCells(h, columns, row) {
-  return columns.map((c) => h('td', {
-    class: [`fx-c-${c.kind}`, c.num ? 'fx-num' : null, c.className].filter(Boolean).join(' '),
-    'data-label': c.label,
-  }, c.cell(row)));
+  return columns.map((c) => {
+    const td = h('td', {
+      class: [`fx-c-${c.kind}`, c.num ? 'fx-num' : null, c.className].filter(Boolean).join(' '),
+      'data-label': c.label,
+    }, c.cell(row));
+    // A cell stays on one line and ends in "…" when the column is narrow
+    // (flow.css, .fx-table--sized); the whole text shows on hover.
+    const text = td.textContent?.trim();
+    if (text && text !== '—') td.title = text;
+    return td;
+  });
 }
 
 // ── The table ──────────────────────────────────────────────────────────────
