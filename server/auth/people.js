@@ -2,7 +2,7 @@ import { and, asc, eq, isNull, ne, sql } from 'drizzle-orm';
 import { people, PERSON_ROLES } from '../db/schema.js';
 import { FlowError } from '../core/errors.js';
 import { isThemeFamily, normalizeAccent } from '../theme/themes.js';
-import { normaliseJobsView } from '../ui/job-view.js';
+import { INVOICE_COLUMNS, normaliseJobsView, normaliseListView, RECONCILE_COLUMNS } from '../ui/job-view.js';
 import { isPlainEmail } from './settings.js';
 
 // The people who may sign in, and their roles. Only an owner changes this
@@ -57,10 +57,12 @@ export async function setPersonAppearance(db, { id, appearance }) {
 function viewCheck(page) {
   switch (page) {
     case 'jobs': return normaliseJobsView;
+    case 'invoices': return (view) => normaliseListView(view, INVOICE_COLUMNS);
+    case 'reconcile': return (view) => normaliseListView(view, RECONCILE_COLUMNS);
     default: return null;
   }
 }
-const VIEW_PAGE_NAMES = ['jobs'];
+const VIEW_PAGE_NAMES = ['jobs', 'invoices', 'reconcile'];
 
 // A person's saved views as Flow sends them: only the known pages, each
 // checked, so a view saved by an older Flow still loads.

@@ -4,6 +4,7 @@
 import { crumbs, dialog, h, helpLink, holdButton, notice, pageHeader, rowMenu, sectionTitle, settingRow, tileCard, tileSection, toast } from '/assets/ui/kit.js';
 import { findBox, ICONS, svg, viewBar } from '/assets/ui/view-bar.js';
 import { bulkBar } from '/assets/ui/bulk-bar.js';
+import { columnTable, onRightButton, rowCells, viewSaver } from '/assets/ui/columns.js';
 import { colorPicker, lucide, optionPill } from '/assets/ui/custom-fields.js';
 import { jobChangeBanner } from '/assets/ui/job-change.js';
 import { named, startTips } from '/assets/ui/tip.js';
@@ -25,6 +26,7 @@ if (document.readyState === 'loading') document.addEventListener('DOMContentLoad
 else ready();
 
 export {
-  bulkBar, colorPicker, crumbs, dialog, findBox, h, helpLink, holdButton, ICONS, jobChangeBanner, lucide, named,
-  notice, OPTION_COLORS, optionPill, pageHeader, rowMenu, sectionTitle, settingRow, sidecar, svg, tileCard, tileSection, toast, ui, viewBar,
+  bulkBar, colorPicker, columnTable, crumbs, dialog, findBox, h, helpLink, holdButton, ICONS, jobChangeBanner, lucide, named,
+  notice, onRightButton, OPTION_COLORS, optionPill, pageHeader, rowCells, rowMenu, sectionTitle, settingRow, sidecar, svg, tileCard,
+  tileSection, toast, ui, viewBar, viewSaver,
 };

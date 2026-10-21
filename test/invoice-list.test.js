@@ -12,7 +12,7 @@ const { renderInvoiceList } = await import('../server/ui/invoicing.js');
 // A small stand-in for the page: enough elements to draw the list and click
 // its tabs, with each answer from the server held until the test lets it go.
 class El {
-  constructor(tag) { Object.assign(this, { tag, attrs: {}, dataset: {}, children: [], hidden: false, listeners: {} }); }
+  constructor(tag) { Object.assign(this, { tag, attrs: {}, dataset: {}, style: {}, children: [], hidden: false, listeners: {} }); }
   setAttribute(k, v) { this.attrs[k] = String(v); }
   removeAttribute(k) { delete this.attrs[k]; }
   getAttribute(k) { return this.attrs[k] ?? null; }
@@ -130,7 +130,8 @@ test('with integrations on, a Linked column shows one icon per system; one not i
   await settle();
   asked.shift().answer({ ...list('ready', [null]), sendsTo: 'Xero', linksTo });
   await opened;
-  const heads = () => panel(main).all((el) => el.tag === 'th').map((el) => el.text);
+  // The last head is + (show a hidden column).
+  const heads = () => panel(main).all((el) => el.tag === 'th').map((el) => el.text).filter((t) => t !== '+');
   const icons = () => panel(main).all((el) => /^fx-link( |$)/.test(el.getAttribute('class') ?? ''));
   // A draft shows its work system link only.
   assert.equal(heads().at(-1), 'Linked');
