@@ -107,7 +107,8 @@ The page at `/sign-in`, `/people`, `/account` and `/appearance`
   is the page's name only (`pageHeader`), with no line under it, at one
   height on every page; a live count (2 to check) may sit beside the name,
   and a docs link is a "?" icon there (`helpLink`), not a line of text.
-  Prefer white space to filler.
+  Prefer white space to filler. Every page uses the same centred width
+  (`.fx-main`); only the Jobs board's lanes use the whole window.
 - **Tips**: every control that shows only an icon says its name on hover
   and on keyboard focus (`server/ui/tip.js`, one listener for the whole
   app). It reads `data-tip`, else the control's `aria-label` or `title`; a

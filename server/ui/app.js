@@ -1185,13 +1185,16 @@ function drawAppearance() {
     (p) => chooseAppearance({ accent: p.hex ? p.id : null }),
     (p) => p.hex
       ? h('button', { type: 'button', class: 'fx-swatch', title: p.label, 'aria-label': p.label, style: { background: p.hex } })
-      : h('button', { type: 'button', class: 'fx-swatch fx-swatch--default', title: `${active.label}'s own`, 'aria-label': `${active.label}'s own accent` },
-        h('span', { 'aria-hidden': 'true', style: { background: `linear-gradient(135deg, ${active.swatches[mode].primary} 50%, ${active.swatches[mode].accent} 50%)` } })));
+      // The design system's own accent, named "Default" on the swatch: a
+      // click puts it back.
+      : h('button', { type: 'button', class: 'fx-swatch fx-swatch--default', 'aria-label': `Default: ${active.label}'s own accent` },
+        h('span', { class: 'fx-swatch__dot', 'aria-hidden': 'true', style: { background: `linear-gradient(135deg, ${active.swatches[mode].primary} 50%, ${active.swatches[mode].accent} 50%)` } }),
+        'Default'));
   accents.classList.add('fx-swatches');
   const custom = h('label', { class: 'fx-swatch-custom' },
     h('input', { type: 'color', 'aria-label': 'Custom accent colour', value: customHex ?? '#0d4e5f', onchange: (event) => chooseAppearance({ accent: event.target.value }) }),
     'Custom');
-  const accentLabel = customHex ? `Custom ${customHex}` : presetIndex > 0 ? ACCENT_PRESETS[presetIndex].label : `${active.label}'s own`;
+  const accentLabel = customHex ? `Custom ${customHex}` : presetIndex > 0 ? ACCENT_PRESETS[presetIndex].label : `the default, ${active.label}'s own`;
 
   host.replaceChildren(h('div', { class: 'fx-settings' },
     settingRow({ label: 'Mode', hint: 'Auto follows this device.', control: modeGroup }),
