@@ -204,7 +204,7 @@ async function renderList(main, ui) {
   const host = h('div', { class: 'fx-rec' }, h('div', { class: 'fx-skeleton' }));
   const bulk = bulkBar(ui, { label: 'Ticked jobs' });
   const frame = listFrame(main, host);
-  main.append(...listHead('Reconcile', { views: views.element, start: controls, end: find.element }).nodes, frame.element, bulk.element);
+  main.append(...listHead('Reconcile', { views: views.element, controls, end: find.element }).nodes, frame.element, bulk.element);
 
   // The Filter chip: the same panel as on Jobs (view-bar.js). Job rows also
   // have the lab's custom fields.
