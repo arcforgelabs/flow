@@ -63,3 +63,21 @@ test('folded, a click on the sidebar empty space opens it; a click on a page, th
   const css = read('../server/ui/flow.css');
   assert.match(css, /\.fx-shell\[data-folded\] \.fx-side \{ width: 64px; padding-inline: 10px; cursor: e-resize; \}/);
 });
+
+test('day to day the sidebar shows Work and a Settings row; a Settings page shows Back and the Settings pages', () => {
+  const app = read('../server/ui/app.js');
+  // Each link names its section; route() names the open one on the nav.
+  assert.match(app, /\(view\.group === 'Settings' \? settings : work\)\.push\(navLink\(/);
+  assert.match(app, /\$\('nav'\)\.dataset\.section = settings \? 'settings' : 'work';/);
+  assert.match(app, /drawSection\(view, path\);/);
+  // Settings opens the first Settings page this person may see; Back returns
+  // to the last Work page.
+  assert.match(app, /navLink\(settings\[0\]\?\.dataset\.nav \?\? 'appearance', 'Settings', 'gear', \{ class: 'fx-nav__settings', 'data-section': 'work' \}\)/);
+  assert.match(app, /if \(!settings\) lastWork = path;/);
+  assert.match(app, /querySelector\('\[data-nav="back"\]'\)\?\.setAttribute\('href', lastWork\)/);
+  // No "Work" heading: the daily pages need no label.
+  assert.doesNotMatch(app, /'fx-nav__group' \}, view\.group\)/);
+  const css = read('../server/ui/flow.css');
+  assert.match(css, /\.fx-nav\[data-section="work"\] \[data-section="settings"\], \.fx-nav\[data-section="settings"\] \[data-section="work"\] \{ display: none; \}/);
+  assert.match(css, /\.fx-nav__settings \{ margin-top: auto; \}/);
+});

@@ -118,7 +118,11 @@ The page at `/sign-in`, `/people`, `/account` and `/appearance`
   surface in dark) beside Clerk's sign-in card. On a phone the panel is a
   band above the card.
 - **Sidebar**: the Flow mark and the views the person may open (People and
-  Integrations for owners). Account is not in the list: "Manage account" in
+  Integrations for owners). Daily work comes first: day to day it shows Jobs,
+  Invoices and Reconcile, with a Settings row at its foot. Settings swaps the
+  list, as in ClickUp: Back (to the last work page), then the Settings pages
+  (Rules, Automations, Price list, Custom fields, People, Integrations,
+  Appearance). Any Settings page opens with that list. Account is not in the list: "Manage account" in
   the account menu opens it. At its foot: the account chip (Clerk's photo or
   initial, then the name, or the email when there is no name, clipped to fit)
   that opens the account menu (Manage account, Report a problem when Sentry

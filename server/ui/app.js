@@ -142,7 +142,9 @@ function roleSelect(value, attrs = {}) {
 
 let me = null;
 
-// The sidebar lists the views in this order, under their group's heading.
+// The sidebar lists the views in this order. Day to day it shows the Work
+// views and a Settings row at its foot; on a Settings page it shows Back and
+// the Settings views instead, as in ClickUp (route() sets data-section).
 const VIEWS = {
   jobs: { label: 'Jobs', icon: 'jobs', group: 'Work', render: (main) => renderJobs(main, ui()) },
   invoices: { label: 'Invoices', icon: 'invoices', group: 'Work', render: (main, id) => (id ? renderInvoice(main, ui(), id) : renderInvoiceList(main, ui())) },
@@ -176,6 +178,8 @@ const ICON_PATHS = {
   flag: '<path d="M5 21V4M5 4h11l-2 4 2 4H5"/>',
   search: '<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/>',
   sidebar: '<rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M9.5 4v16"/>',
+  gear: '<circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/><circle cx="12" cy="12" r="6.5"/>',
+  back: '<path d="M19 12H5M11 6l-6 6 6 6"/>',
   palette: '<path d="M12 3a9 9 0 100 18c1.1 0 1.5-.8 1.5-1.6 0-1-.8-1.4-.8-2.4 0-.9.7-1.5 1.6-1.5H17a4 4 0 004-4c0-4.7-4-8.5-9-8.5z"/><circle cx="7.5" cy="11" r="1"/><circle cx="10" cy="7" r="1"/><circle cx="15" cy="7" r="1"/>',
 };
 
@@ -295,6 +299,7 @@ async function route() {
   for (const link of document.querySelectorAll('a[data-nav]')) {
     link.setAttribute('aria-current', link.dataset.nav === view ? 'page' : 'false');
   }
+  drawSection(view, path);
   main.replaceChildren();
   main.className = 'fx-main';
   document.title = `${VIEWS[view].label} · Flow`;
@@ -348,23 +353,42 @@ function renderSignedOut() {
   });
 }
 
+// The sidebar shows one section at a time: Work, or Settings while a
+// Settings page is open. Back returns to the last Work page.
+let lastWork = `/${START_VIEW}`;
+
+function drawSection(view, path) {
+  const settings = VIEWS[view].group === 'Settings';
+  if (!settings) lastWork = path;
+  $('nav').dataset.section = settings ? 'settings' : 'work';
+  $('nav').querySelector('[data-nav="back"]')?.setAttribute('href', lastWork);
+}
+
+function navLink(name, label, iconName, extra = {}) {
+  return h('a', { href: `/${name}`, 'data-nav': name, 'data-label': label, onclick: navigate, ...extra }, icon(iconName), h('span', { class: 'fx-nav__label' }, label));
+}
+
 function renderShell() {
   document.body.dataset.state = 'signed-in';
   const nav = $('nav');
-  const items = [];
-  let group = null;
+  const work = [];
+  const settings = [];
   for (const [name, view] of Object.entries(VIEWS)) {
     if (view.ownerOnly && me?.person.role !== 'owner') continue;
     if (view.sidebar === false) continue;
-    if (view.group && view.group !== group) items.push(h('span', { class: 'fx-nav__group' }, view.group));
-    group = view.group;
-    items.push(h('a', { href: `/${name}`, 'data-nav': name, 'data-label': view.label, onclick: navigate }, icon(view.icon), h('span', { class: 'fx-nav__label' }, view.label)));
+    (view.group === 'Settings' ? settings : work).push(navLink(name, view.label, view.icon, { 'data-section': view.group === 'Settings' ? 'settings' : 'work' }));
   }
+  // Settings opens on its first page this person may see.
+  const settingsRow = navLink(settings[0]?.dataset.nav ?? 'appearance', 'Settings', 'gear', { class: 'fx-nav__settings', 'data-section': 'work' });
+  settingsRow.dataset.nav = 'settings';
+  const back = navLink(START_VIEW, 'Back', 'back', { 'data-section': 'settings' });
+  back.dataset.nav = 'back';
   // "Report a problem" sits at the foot of the menu, above the account chip,
   // while Sentry and its report form are on (monitoring.js).
   const report = h('button', { type: 'button', class: 'fx-nav__report', 'data-nav': 'report', 'data-label': 'Report a problem', hidden: true },
     icon('flag'), h('span', { class: 'fx-nav__label' }, 'Report a problem'));
-  nav.replaceChildren(...items, report);
+  nav.dataset.section = 'work';
+  nav.replaceChildren(...work, back, h('span', { class: 'fx-nav__group', 'data-section': 'settings' }, 'Settings'), ...settings, settingsRow, report);
   // Folded or narrow, the logo is the sidebar button: it shows the mark and
   // turns into the sidebar icon under the pointer or keyboard focus.
   const mark = h('span', { class: 'fx-toggle__mark', 'aria-hidden': 'true' });
