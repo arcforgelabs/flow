@@ -60,6 +60,7 @@ export function listPager(h, { label = 'Pages', sizes = PAGE_SIZES, change }) {
             type: 'button', class: 'fx-pages__num', 'aria-label': `Page ${n}`,
             ...(n === at ? { 'aria-current': 'page' } : {}), onclick: () => { if (n !== at) go(n); },
           }, String(n)))),
+        // Empty string, not null: replaceChildren writes null as the text "null" (#263).
         step(at + 1, NEXT, 'Next page')) : '');
   }
 

@@ -61,3 +61,12 @@ test('a page button asks for its rows; a new size starts at the first page', () 
   assert.match(pager.element.text, /1–30 of 30/);
   assert.doesNotMatch(pager.element.text, /null/);
 });
+
+// Regression for #263: a one-page list must not show the word "null" after the range.
+test('one page of rows does not write null into the pager text', () => {
+  const pager = listPager(h, { label: 'Invoice pages', change: () => {} });
+  pager.draw({ offset: 0, limit: 100, total: 9 });
+  assert.equal(pager.element.all((el) => el.attrs.class === 'fx-pages__steps').length, 0);
+  assert.match(pager.element.text, /1–9 of 9/);
+  assert.doesNotMatch(pager.element.text, /null/);
+});
