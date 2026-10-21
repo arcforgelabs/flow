@@ -219,11 +219,21 @@ export async function sendAllReady(db, organisationId, { accounting = null, work
   let views = await invoiceViews(db, organisationId, { accounting });
   const accountingRead = views.ready.length ? await readAccountingFirst(db, organisationId, { accounting, now }) : { outcome: 'fresh' };
   if (accountingRead.changed) views = await invoiceViews(db, organisationId, { accounting });
+  // Every check runs again at the press, as a gate: a ticked draft that
+  // fails one now (someone edited it, its job changed, a rule matches) is not
+  // sent and stays on Pending with its problem. The rest go.
   let { ready } = views;
+  let held = 0;
   if (invoiceIds) {
     const wanted = new Set(invoiceIds);
     ready = ready.filter((id) => wanted.has(id));
-    if (ready.length !== wanted.size) throw new FlowError('not_ready', 'Only a ready invoice can be sent. Mark it ready first.');
+    held = wanted.size - ready.length;
+    if (!ready.length) {
+      const reason = invoiceIds.map((id) => views.problems.get(id)?.[0]?.message).find(Boolean);
+      throw new FlowError('not_ready', reason
+        ? `Not sent: ${reason.replace(/\.?$/, '.')} The invoice is on Pending.`
+        : 'Only a ready invoice can be sent. Mark it ready first.');
+    }
   }
   const { go, waiting } = accountingRead.outcome === 'waiting'
     ? { go: [], waiting: ready.slice(0, SEND_BATCH) }
@@ -247,7 +257,7 @@ export async function sendAllReady(db, organisationId, { accounting = null, work
     }
     issued += 1;
   }
-  return { issued, queued: accounting ? issued : 0, remaining: Math.max(0, ready.length - SEND_BATCH), waiting: waiting.length };
+  return { issued, queued: accounting ? issued : 0, remaining: Math.max(0, ready.length - SEND_BATCH), waiting: waiting.length, held };
 }
 
 // Send again: issued invoices that failed go back on the queue. With no ids,

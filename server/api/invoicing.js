@@ -43,7 +43,8 @@ import {
 //   POST  /invoices/mark-ready        { invoiceIds }: a person checked these drafts; one with a problem stays
 //   POST  /invoices/mark-not-ready    { invoiceIds }: back to To check
 //   POST  /invoices/send-ready        owner or admin: issue every ready draft and queue it for the
-//                                     accounting system { issueDate, invoiceIds? (only these, each ready) }
+//                                     accounting system { issueDate, invoiceIds? (only these; one that fails
+//                                     a check now stays on Pending and counts as held) }
 //   POST  /invoices/send-again        owner or admin: queue failed sends again { invoiceIds? }
 //   GET   /invoices/:id               one invoice: lines, contact, job, issued versions, and where it sends
 //   GET   /invoices/:id/pdf?version=  the invoice as a PDF, drawn by Flow (server/core/invoice-pdf.js),
@@ -542,8 +543,10 @@ export function createInvoicingRouter({
     // the job at its source or adopt the change (ledger.js), as Move to
     // Ready and Send do.
     const { problems } = await invoiceView(db, organisationId, await getInvoice(db, organisationId, invoiceId));
-    const held = problems.find((p) => p.code === 'job_review');
-    if (held) throw new FlowError('not_ready', `${held.message} Nothing was approved.`);
+    // A lab's pending rule (invoice-rules.js) is a gate too: fix its cause
+    // or turn the rule off.
+    const held = problems.find((p) => p.code === 'job_review' || p.code === 'rule');
+    if (held) throw new FlowError('not_ready', `${held.message.replace(/\.?$/, '.')} Nothing was approved.`);
     const issued = await issueInvoice(db, organisationId, invoiceId, { issuedBy: `person:${req.person.id}`, issueDate });
     log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} issued invoice ${issued.number} (version ${issued.issuedVersion})`);
     res.json({ ok: true, invoice: await invoiceDetail(db, organisationId, invoiceId, accounting(), work()) });

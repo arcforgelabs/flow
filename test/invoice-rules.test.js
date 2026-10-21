@@ -7,7 +7,7 @@ import {
 } from '../server/core/invoice-rules.js';
 import { autoDraftJobs, saveInvoicingSettings } from '../server/core/invoicing-rules.js';
 import { observeJob, setReady } from '../server/core/ledger.js';
-import { invoiceViews } from '../server/core/sending.js';
+import { invoiceViews, sendAllReady } from '../server/core/sending.js';
 import { billingObligations, invoices } from '../server/db/schema.js';
 import { freshDatabase, skipWithoutDatabase } from './support/db.js';
 
@@ -201,11 +201,29 @@ describe('rules a lab keeps', { skip: skipWithoutDatabase }, () => {
       { code: 'rule', message: 'Put the practitioner in the job, then check the Reference.', short: 'Reference not known', rule: made.id },
     ]);
     assert.equal(views.ready.includes(obligation.invoiceId), false);
+    // Send is a gate: every check runs again at the press.
+    await assert.rejects(sendAllReady(handle.db, lab.id, { personId: null, issueDate: '2026-10-21', invoiceIds: [obligation.invoiceId] }),
+      { code: 'not_ready', message: /^Not sent: Put the practitioner in the job, then check the Reference\. The invoice is on Pending\.$/ });
     // A person fixes the Reference: the draft is Ready.
     await handle.db.update(invoices).set({ reference: 'Dr Ann Lee - Ben Ng' }).where(eq(invoices.id, obligation.invoiceId));
     views = await invoiceViews(handle.db, lab.id);
     assert.equal(views.problems.has(obligation.invoiceId), false);
     assert.equal(views.ready.includes(obligation.invoiceId), true);
+    // Someone edits it again before the press: of the ticked drafts, the one
+    // that fails now stays on Pending and the rest go.
+    const other = await observeJob(handle.db, lab.id, {
+      sourceSystem: 'seazona', sourceJobRef: `job-${++counter}`, caseRef: `CASE-${counter}`, contactId: practice.id, practitioner: 'Dr Ann Lee',
+      sourceStatus: 'Shipped', jobDate: '2026-10-15', lines: [{ itemCode: 'CROWN', description: 'Crown' }], observedAt: NOW,
+    });
+    await setReady(handle.db, lab.id, other.id, { actor: 'person:test' });
+    await autoDraftJobs(handle.db, lab.id, { now: NOW });
+    const [{ invoiceId: good }] = await handle.db.select().from(billingObligations).where(eq(billingObligations.id, other.id));
+    await handle.db.update(invoices).set({ reference: 'Not Listed - Ben Ng' }).where(eq(invoices.id, obligation.invoiceId));
+    const sent = await sendAllReady(handle.db, lab.id, { personId: null, issueDate: '2026-10-21', invoiceIds: [obligation.invoiceId, good] });
+    assert.deepEqual([sent.issued, sent.held], [1, 1]);
+    const status = async (id) => (await handle.db.select().from(invoices).where(eq(invoices.id, id)))[0].status;
+    assert.deepEqual([await status(obligation.invoiceId), await status(good)], ['draft', 'issued']);
+    assert.ok((await invoiceViews(handle.db, lab.id)).problems.has(obligation.invoiceId));
     await deleteRule(handle.db, lab.id, made.id);
   });
 });

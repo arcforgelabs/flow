@@ -38,6 +38,13 @@ every condition matches, the draft is on the Pending tab. The list shows the
 rule's name. The invoice page shows the note: 1 to 200 characters that tell
 a person what to fix. Send all ready never sends it.
 
+Send is a gate, like a CI check. At each press of Send, Send all ready or
+Approve, Flow runs every check again, pending rules included. A draft that
+someone edited, or whose job changed, and that now fails a check is not sent.
+It stays on the Pending tab with its problem. The other ticked drafts go, and
+the message counts the ones held. Approve on one invoice refuses a draft that
+fails a pending rule.
+
 The draft goes to Ready when the cause is fixed:
 
 - A rule on `practitioner` reads the job. Fix the practitioner in the work
