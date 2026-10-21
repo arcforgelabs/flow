@@ -12,10 +12,10 @@ const TEST_LABELS = {
   more_than: 'is more than', at_most: 'is at most', is: 'is', is_not: 'is not', is_one_of: 'is one of',
   is_empty: 'is empty', is_not_empty: 'is not empty', has: 'has', has_not: 'does not have',
   is_not_one_of: 'is not one of', contains: 'contains', does_not_contain: 'does not contain',
-  starts_with: 'starts with', does_not_start_with: 'does not start with', has_number: 'has a number', one_word: 'is one word',
+  starts_with: 'starts with', does_not_start_with: 'does not start with', has_number: 'has a number', number_in_words: 'has a number beside words', one_word: 'is one word',
 };
 const ACTION_LABELS = { wait: 'Wait for a person', skip: 'Never draft', pending: 'Pending, with a note' };
-const NO_VALUE = ['is_empty', 'is_not_empty', 'has_number', 'one_word'];
+const NO_VALUE = ['is_empty', 'is_not_empty', 'has_number', 'number_in_words', 'one_word'];
 const MANY = ['is_one_of', 'is_not_one_of'];
 const TYPED = ['contains', 'does_not_contain', 'starts_with', 'does_not_start_with'];
 

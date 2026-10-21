@@ -24,6 +24,7 @@ import {
   COLUMNS, DEFAULT_VIEW, fieldGroup, fieldIdOf, fieldLanes, FILTER_FIELDS, filterJobs, groupJobs, GROUPS, KIND_OF_TYPE, keptStatuses, laneOf,
   normaliseJobsView, NOT_SET, OPERATORS, sortJobs, SORTS,
 } from '/assets/ui/job-view.js';
+import { clipLabel, initialsOf } from '/assets/ui/person.js';
 import { sidecar } from '/assets/ui/sidecar.js';
 import { findBox, ICONS, svg, today, viewBar } from '/assets/ui/view-bar.js';
 
@@ -61,11 +62,6 @@ const shortDate = (iso) => {
   if (days === 1) return 'Tomorrow';
   if (days === -1) return 'Yesterday';
   return at.toLocaleDateString('en-AU', at.getFullYear() === now.getFullYear() ? { day: '2-digit', month: '2-digit' } : { day: '2-digit', month: '2-digit', year: '2-digit' });
-};
-// A person's badge: their initials in a circle; the name on hover.
-const initialsOf = (name) => {
-  const parts = (name ?? '?').split(/[\s._-]+/).filter(Boolean);
-  return ((parts[0]?.[0] ?? '?') + (parts[1]?.[0] ?? '')).toUpperCase();
 };
 const clientOf = (job) => job.clientName ?? 'No client';
 // The one date a card shows: when the job is due, else when it was ordered.
@@ -664,10 +660,10 @@ export async function renderJobs(main, ui) {
     const label = field.name;
     if (field.type === 'dropdown' || field.type === 'person') {
       const choices = field.type === 'person'
-        ? state.people.map((p) => ({ value: p.id, label: p.name }))
+        ? state.people.map((p) => ({ value: p.id, label: p.name, title: p.name }))
         : field.options.filter((o) => !o.archived || o.id === current).map((o) => ({ value: o.id, label: o.archived ? `${o.name} (archived)` : o.name }));
       const select = h('select', { class: 'fx-select fx-task__input', 'aria-label': label },
-        h('option', { value: '' }, NOT_SET), choices.map((c) => h('option', { value: c.value, selected: c.value === current }, c.label)));
+        h('option', { value: '' }, NOT_SET), choices.map((c) => h('option', { value: c.value, selected: c.value === current, title: c.title ?? null }, clipLabel(c.label))));
       select.addEventListener('change', () => save(select.value || null));
       return select;
     }

@@ -61,7 +61,12 @@ practitioner, so a Reference reads `Not Listed - Ann - 13909`.
 | Practitioner not known | Practitioner is one of `Not Listed`, `Unknown` | Pending: "Put the practitioner in the job." |
 | Practitioner not on file | Customer is Example Practice, and Practitioner is not one of its practitioners | Pending: "Check the practitioner with the practice." |
 | Bare name | Practitioner is one word | Pending: "Use the practitioner's full name." |
-| Number in Reference | Reference has a number | Pending: "Remove the number from the Reference." |
+| Number in Reference | Reference has a number beside words | Pending: "Keep the patient's name or the client's reference number, not both." |
+
+A client may send its own reference number in place of the patient's name,
+so `Dr Ann Lee - 21764` is a good Reference. "Has a number beside words"
+reads each part between ` - ` and finds a number only next to words, as in
+`Coral Smith (OIQ-9902)`.
 
 ## Fields
 
@@ -70,7 +75,7 @@ practitioner, so a Reference reads `Not Listed - Ann - 13909`.
 | `job_age_days` | number | Days from the job date to now | more than, at most, is, is not, is empty |
 | `job_total` | money (dollars) | The job's total | more than, at most, is, is not |
 | `job_status` | menu of the work system's statuses | The job's status there | is, is not, is one of, is empty |
-| `practitioner` | text, with a menu of the practitioners on jobs | The job's practitioner, else the customer's default | is, is not, is one of, is not one of, contains, does not contain, starts with, does not start with, has a number, is one word, is empty, is not empty |
+| `practitioner` | text, with a menu of the practitioners on jobs | The job's practitioner, else the customer's default | is, is not, is one of, is not one of, contains, does not contain, starts with, does not start with, has a number, has a number beside words, is one word, is empty, is not empty |
 | `reference` | text | The draft's Reference. Pending rules only | the same tests as `practitioner` |
 | `customer` | menu of customers | The job's customer | is, is not, is one of, is empty |
 | `customer_billable` | yes or no | The customer's `billable` setting | is |

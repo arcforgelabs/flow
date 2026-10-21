@@ -57,7 +57,7 @@ export const TESTS = Object.freeze({
   number: ['more_than', 'at_most', 'is', 'is_not', 'is_empty'],
   money: ['more_than', 'at_most', 'is', 'is_not'],
   choice: ['is', 'is_not', 'is_one_of', 'is_empty'],
-  text: ['is', 'is_not', 'is_one_of', 'is_not_one_of', 'contains', 'does_not_contain', 'starts_with', 'does_not_start_with', 'has_number', 'one_word', 'is_empty', 'is_not_empty'],
+  text: ['is', 'is_not', 'is_one_of', 'is_not_one_of', 'contains', 'does_not_contain', 'starts_with', 'does_not_start_with', 'has_number', 'number_in_words', 'one_word', 'is_empty', 'is_not_empty'],
   boolean: ['is'],
   items: ['has', 'has_not'],
   share: ['is', 'is_not'],
@@ -65,7 +65,7 @@ export const TESTS = Object.freeze({
 
 export const ACTIONS = Object.freeze(['wait', 'skip', 'pending']);
 // Tests that take no value.
-const NO_VALUE = new Set(['is_empty', 'is_not_empty', 'has_number', 'one_word']);
+const NO_VALUE = new Set(['is_empty', 'is_not_empty', 'has_number', 'number_in_words', 'one_word']);
 
 function readCondition(raw, index) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw invalid(`condition ${index + 1} must be an object`);
@@ -131,6 +131,9 @@ function matches(condition, job, context) {
     if (!left) return false;
     if (test === 'is_not_one_of') return !value.some((v) => norm(v) === left);
     if (test === 'has_number') return /\d/.test(left);
+    // A part (between " - ") that is only a number is a client's reference,
+    // such as a patient number, so only a number beside words matches.
+    if (test === 'number_in_words') return left.split(' - ').some((part) => /\d/.test(part) && /\p{L}/u.test(part));
     if (test === 'one_word') return !left.includes(' ');
     if (test === 'contains') return left.includes(norm(value));
     if (test === 'does_not_contain') return !left.includes(norm(value));
