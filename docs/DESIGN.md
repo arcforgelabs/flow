@@ -156,6 +156,15 @@ The page at `/sign-in`, `/people`, `/account` and `/appearance`
   being filled in filters nothing. Each person's view is
   saved with their account (`people.views`, `PUT /api/me/views/jobs`,
   server/ui/job-view.js), so it follows them to every device.
+  Saved views, as ClickUp's view tabs, sit between the title and the
+  toolbar on Jobs, Invoices and Reconcile. "+ View" saves the page's
+  Group, Sort, Filter and Columns under a name. While the page differs
+  from the chosen tab, the tab has a dot and "Save" and "Revert" show at
+  the right. Each tab's ⋯ has "Set as my default", Rename and Delete. A
+  person's default opens when they first come to the page in a browser
+  tab (ClickUp's "Set as default view" is for everyone; Flow's is each
+  person's own). The views follow the account (`people.views.saved`,
+  `PUT /api/me/saved-views/:page`, server/ui/list-views.js).
   In the list, Columns chooses the columns (saved with the view; Client
   always shows): Case, Practitioner, Patient (only when the installation
   keeps patient names), Stage, Assignee, Requested, Due, Shipped, Total,
@@ -211,7 +220,7 @@ names its card in the Flow Design System.
 | --- | --- | --- | --- |
 | `h`, `ui()`: `flow`, `go`, `me` | `server/ui/kit.js` (`h`), `server/ui/app.js` (`ui()`) | | Build elements; what every view module takes: call the API, open a page, the signed-in person |
 | `pageHeader(title, { count, help, actions })`, `helpLink` | `server/ui/kit.js` | PageHeader | The page title only, a live count, a ? docs link, its actions |
-| `listHead(title, { start, end, actions, line, sticky })` | `server/ui/kit.js` | ListHead | The top of every list (Jobs Board and List, Invoices, Reconcile): title, a `views` slot for saved view tabs, then one toolbar (`start` left, `end` and `actions` right). Same place on every list and layout. |
+| `listHead(title, { views, start, end, actions, line, sticky })` | `server/ui/kit.js` | ListHead | The top of every list (Jobs Board and List, Invoices, Reconcile): title, the `views` row (the page's `savedViews` element), then one toolbar (`start` left, `end` and `actions` right). Same place on every list and layout. |
 | `listFrame(main, content)`, `edgeFade(scroller, { target, edges })` | `server/ui/kit.js` | ListFrame | The window a list or board sits in under `listHead`: fills the page, scrolls inside itself both ways, sticky table head, a foot bar with the count and tools. `edgeFade`: a soft fade where content scrolls past an edge |
 | `notice` | `server/ui/kit.js` | Notice | A note on the page that stays until the cause is gone |
 | `fieldError(field, on)`, `.fx-input[aria-invalid="true"]` | `server/ui/kit.js`, `server/ui/flow.css` | FieldError | A field that fails a check glows red, like a required field, until the person types in it |
@@ -221,7 +230,8 @@ names its card in the Flow Design System.
 | `settingRow({ label, hint, control })`, `sectionTitle`, `.fx-setting` | `server/ui/kit.js` | SettingRow | One setting row: short name, one hint line, the control at the right |
 | `tileCard({ href, mark, title, status, blurb, meta, action, row })`, `tileSection(title, cards, { href, more })` | `server/ui/kit.js` | Tiles | Cards that open a page. `row: true` with `tileSection`: one-line cards, three columns, like Claude's Customize categories (Rules). Without `row`: the large card (Integrations) |
 | `crumbs([href, label]…, here)` | `server/ui/kit.js` | Crumbs | The trail above a page one level down (Rules › Invoices, Integrations › Xero) |
-| `rowMenu(label, items)` | `server/ui/kit.js` | RowMenu | The ⋯ menu on a row |
+| `rowMenu(label, items, { align })` | `server/ui/kit.js` | RowMenu | The ⋯ menu on a row; `align: 'start'` lines the menu up with the button's left edge |
+| `savedViews(ui, { page, current, apply })` | `server/ui/saved-views.js` | SavedViews | The row of named view tabs over a list, as ClickUp's: + View, Save / Revert, and each tab's ⋯ (Set as my default, Rename, Delete). The rules are in `list-views.js` |
 | `.fx-btn` and its modifiers | `server/ui/flow.css` | Button | Every button |
 | `named`, `startTips` | `server/ui/tip.js` | Tip | An icon-only control's name, shown on hover and focus |
 | `viewBar(h)`: `menu`, `option`, `filterMenu` and the rows-panel parts | `server/ui/view-bar.js` | Filter | Group, Sort, Filter and Columns chips and their panels, on every list (Jobs, Invoices, Reconcile) |

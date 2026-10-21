@@ -63,14 +63,14 @@ export function pageHeader(title, { count = null, help = null, actions = [] } = 
 
 // The top of a list page (Jobs, Invoices, Reconcile), laid out the same on
 // every list and in Board and List alike, so nothing moves when a person
-// switches: the title row, a row for saved view tabs (`views`, hidden until
-// a page fills it), then one toolbar with `start` at the left (tabs, Group,
+// switches: the title row, a row for saved view tabs (`views`: the page's
+// savedViews element, else an empty slot that stays hidden), then one toolbar with `start` at the left (tabs, Group,
 // Sort, Filter) and `end` at the right (search, Board/List), then the page's
 // `actions` (New invoice) last, as Claude's own lists do. `line` draws the
 // rule that tabs sit on; `sticky` keeps the toolbar at the top while the rows
 // scroll up under it, with a shadow once they do. Append `nodes` to the page.
-export function listHead(title, { count = null, help = null, actions = [], start = [], end = [], line = false, sticky = false } = {}) {
-  const views = h('div', { class: 'fx-views', role: 'group', 'aria-label': 'Views', hidden: true });
+export function listHead(title, { count = null, help = null, actions = [], start = [], end = [], line = false, sticky = false, views: tabs = null } = {}) {
+  const views = tabs ?? h('div', { class: 'fx-views', role: 'group', 'aria-label': 'Views', hidden: true });
   const bar = h('div', { class: 'fx-listhead', 'data-sticky': sticky },
     h('div', { class: `fx-toolbar${line ? '' : ' fx-toolbar--plain'}` }, start, h('div', { class: 'fx-toolbar__end' }, end, actions)));
   const edge = sticky ? h('div', { class: 'fx-listhead__edge', 'aria-hidden': 'true' }) : null;
@@ -206,8 +206,9 @@ settingRow.next = 0;
 
 let rowMenus = 0;
 
-// A row's ⋯ menu, as on the Custom fields page.
-export function rowMenu(label, items) {
+// A row's ⋯ menu, as on the Custom fields page. The menu lines up with the
+// button's right edge; `align: 'start'` lines it up with its left edge.
+export function rowMenu(label, items, { align = 'end' } = {}) {
   const id = `fx-row-menu-${++rowMenus}`;
   const button = h('button', { class: 'fx-cfm__more', type: 'button', 'aria-label': label, popovertarget: id, 'aria-haspopup': 'menu', 'aria-expanded': 'false' }, lucide(h, 'ellipsis'));
   const panel = h('div', { class: 'fx-pop', id, popover: 'auto', role: 'menu' });
@@ -221,7 +222,8 @@ export function rowMenu(label, items) {
         h('span', { class: 'fx-pop__tick' }, lucide(h, entry.icon)), h('span', {}, entry.text)))));
     const at = button.getBoundingClientRect();
     panel.style.top = `${Math.round(at.bottom + 6)}px`;
-    panel.style.left = `${Math.round(Math.max(8, Math.min(at.right - panel.offsetWidth, innerWidth - panel.offsetWidth - 8)))}px`;
+    const left = align === 'start' ? at.left : at.right - panel.offsetWidth;
+    panel.style.left = `${Math.round(Math.max(8, Math.min(left, innerWidth - panel.offsetWidth - 8)))}px`;
   });
   return [button, panel];
 }
