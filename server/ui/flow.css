@@ -387,9 +387,6 @@ a.fx-strong:hover { text-decoration: underline; }
 .fx-tabs button[aria-selected="true"] { color: var(--t-strong); border-bottom-color: var(--t-brand); }
 .fx-tabs__count { padding: 0 7px; border-radius: 999px; background: var(--fx-hover); color: var(--t-dim); font-size: 12px; line-height: 20px; }
 .fx-tabs button[data-tone="danger"] .fx-tabs__count { background: var(--t-danger-bg); color: var(--t-danger); }
-/* Invoices: the Send all ready bar above the Ready list. */
-.fx-sendbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin: 0 0 12px; padding: 12px 16px; border: 1px solid var(--fx-line); border-radius: 8px; background: var(--t-paper); margin-top: 12px; }
-.fx-sendbar[hidden] { display: none; }
 
 /* Quiet alerts (server/ui/alerts.js): one slim line under the page header,
    only while something on the page needs this person. */
@@ -409,9 +406,7 @@ a.fx-strong:hover { text-decoration: underline; }
   .fx-alerts__text { flex-basis: calc(100% - 52px); }
   .fx-alerts__action, .fx-alerts__more { order: 2; }
 }
-.fx-sendbar p { margin: 0; }
 .fx-problem { color: var(--t-danger); }
-.fx-sendbar__actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .fx-tick-cell { width: 40px; }
 .fx-tick { width: 16px; height: 16px; accent-color: var(--t-brand); cursor: pointer; }
 .fx-search { width: min(320px, 100%); margin-bottom: 8px; }
@@ -1293,7 +1288,6 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
    Narrow, the app bar (60px) sits above it. */
 .fx-listhead { position: sticky; top: 0; z-index: 5; margin: -12px calc(-1 * clamp(16px, 4vw, 48px)) 0; padding: 12px clamp(16px, 4vw, 48px) 0; background: var(--t-bg); transition: box-shadow .15s; }
 .fx-listhead[data-stuck] { box-shadow: 0 10px 12px -12px rgba(0, 0, 0, .45); }
-.fx-listhead .fx-sendbar { margin-bottom: 12px; }
 .fx-listhead__edge { height: 0; margin-bottom: -20px; }
 @media (max-width: 820px) { .fx-listhead { top: 60px; } }
 /* On a phone the head would hide too many rows: it scrolls away. */
