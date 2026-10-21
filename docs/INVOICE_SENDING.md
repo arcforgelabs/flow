@@ -190,12 +190,14 @@ A fix made in the work system closes the problem when Flow next reads the job.
 
 The Jobs page shows the same review. Each problem a job must fix is a chip
 beside its stage, such as **Job changed**, so the panel keeps one layout with
-or without a fix. Hover shows what is wrong in one line and one button to fix
-it. A click on **Job changed** opens the panel's sidecar on the right (in
-place of Activity) on Review, with this banner and its buttons, so a person
-checks and accepts the change without leaving the job. The sidecar has
-tabs (Activity, Review) and closes with ×; closed, the job's details take the
-full width. The panel icon at the top reopens it.
+or without a fix. A chip is a toggle. A click opens the panel's sidecar on the
+right (in place of Activity) on its **Fix** tab, for that problem, and shows
+the chip pressed; a second click closes the sidecar. For **Job changed** the
+tab has this banner and its buttons, so a person checks and accepts the
+change without leaving the job. For another problem it says what is wrong,
+what to do, and has one button to the place to fix it. The sidecar has tabs
+(Activity, Fix) and closes with ×; closed, the job's details take the full
+width. The panel icon at the top reopens it.
 
 The job and its draft hold one fact: the job is in review. Flow stores it once
 (the job's hold, and one open review item for each job; a second report
