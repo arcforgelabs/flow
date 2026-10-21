@@ -100,6 +100,10 @@ export async function startFlow({ port = 0 } = {}) {
       EXCEPTION WHEN others THEN NULL; END;
     END LOOP;
   END $$;`);
+  // Lists show the newest first, so give each invoice its own minute, in
+  // the order of its case, or rows that tie would swap between runs.
+  await handle.pool.query(`UPDATE invoices SET created_at = timestamptz '2026-10-20T09:00:00Z' - o.n * interval '1 minute'
+    FROM (SELECT id, row_number() OVER (ORDER BY reference) AS n FROM invoices) o WHERE invoices.id = o.id`);
 
   const integrations = createRegistry({ log: quiet, env: {} });
   integrations.register(workSystem());

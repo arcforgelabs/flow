@@ -33,7 +33,14 @@ async function open(page, project, screen) {
   await page.locator(screen.ready).first().waitFor();
   await page.waitForLoadState('networkidle');
   if (screen.prepare) await screen.prepare(page);
-  await page.evaluate(() => document.fonts.ready);
+  // A click can scroll the page, and a sticky head marks itself stuck a
+  // frame later (an IntersectionObserver): start each check from the top,
+  // settled.
+  await page.evaluate(async () => {
+    window.scrollTo(0, 0);
+    await document.fonts.ready;
+    for (let i = 0; i < 3; i += 1) await new Promise((done) => requestAnimationFrame(done));
+  });
 }
 
 // A stand-in for Clerk's browser script: signed in, with a session token the

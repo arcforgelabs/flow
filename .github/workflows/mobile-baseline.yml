@@ -110,6 +110,7 @@ jobs:
           curl -fsS -X POST -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json"
           "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/mobile.yml/dispatches"
           -d "{\"ref\":\"${BRANCH}\"}"
+          || echo "::warning::Could not start Mobile; push again or run it on the branch."
 
       - name: Take the label off
         if: ${{ always() && github.event_name == 'pull_request' }}
