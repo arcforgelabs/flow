@@ -120,8 +120,8 @@ The page at `/sign-in`, `/people`, `/account` and `/appearance`
   button opens the pages as a panel below the bar.
 - **Jobs**: the board (one lane per group, about a phone wide, filling the
   window to its bottom edge, each lane scrolling inside itself) or the list.
-  The toolbar has Group, Sort and Filter at the left, and search and
-  Board/List at the right. Each opens a panel of rows, laid out as
+  The toolbar has Group, Sort and Filter at the left, and the search icon
+  (it opens into a box, `findBox`) and Board/List at the right. Each opens a panel of rows, laid out as
   ClickUp's, in Flow's own look; each row has a bin that deletes it, and
   an active chip has an × that clears it ("Clear all filters").
   Group by is one row: status, invoice stage, client, practitioner or a
@@ -180,6 +180,34 @@ The page at `/sign-in`, `/people`, `/account` and `/appearance`
   and accent swatches.
 - **Messages**: one-card pages (sign-in not set up, an error, no access yet,
   the end of connecting Xero) use `messagePage` in `server/ui/page.js`.
+
+## Shared components
+
+Every page builds from these. Reuse one, or give it a new option; do not
+copy its code into a page (`AGENTS.md`, "UI: reuse first"). A new shared
+component gets a row here in the pull request that adds it.
+
+| Component | Where | Use it for |
+| --- | --- | --- |
+| `ui()`: `h`, `flow`, `go`, `me` | `server/ui/app.js` | What every view module takes: build elements, call the API, open a page, the signed-in person |
+| `pageHeader(title, { actions })` | `server/ui/app.js` (`ui().pageHeader`) | The page title and its actions |
+| `notice`, `toast`, `dialog` | `server/ui/app.js` (`ui()`) | A note on the page, a short result, a confirm dialog |
+| `holdButton(button, ms)` | `server/ui/app.js` (`ui()`) | A button that waits between presses (Xero, Seazona) and shows the time left |
+| `settingRow({ label, hint, control })`, `.fx-setting` | `server/ui/app.js` | One setting row: short name, one hint line, the control at the right. Not in `ui()` yet: add it there before another module needs it |
+| `rowMenu(label, items)` | `server/ui/app.js` | The ⋯ menu on a row |
+| `viewBar(h)`: `menu`, `option`, `filterMenu` and the rows-panel parts | `server/ui/view-bar.js` | Group, Sort, Filter and Columns chips and their panels, on every list (Jobs, Reconcile) |
+| `findBox(h, { label, oninput })` | `server/ui/view-bar.js` | A list's own search: an icon that opens into a box |
+| `ICONS`, `svg`, `today` | `server/ui/view-bar.js` | The toolbar icons, an SVG string as a node, the local day |
+| `filterJobs`, `sortJobs`, `groupJobs`, `OPERATORS` | `server/ui/job-view.js` | The rules behind Filter, Sort and Group (no DOM) |
+| `bulkBar(ui, { label })` | `server/ui/bulk-bar.js` | The bar at the foot while rows are ticked: icon and one word per action, More |
+| `.fx-pager` | `server/ui/flow.css` | "← Back", "n of N", previous and next over one record. Built three times today (Invoices, Reconcile, Price list › Reconcile); issue #220 makes one helper. Do not add a fourth copy |
+| `.fx-tabs`, `.fx-tabs__count` | `server/ui/flow.css` | Tabs with counts (Invoices, Price list) |
+| `alertStrip(ui, page)` | `server/ui/alerts.js` | The slim alert line on a page (`docs/ALERTS.md`) |
+| `lucide(h, name, label)` | `server/ui/custom-fields.js` | A Lucide icon in the text colour; with `label` it is named |
+| `colorPicker`, `optionPill` | `server/ui/custom-fields.js` | A colour choice; a dropdown option as a coloured pill |
+| `jobChangeBanner(ui, change)` | `server/ui/job-change.js` | "The job changed" on a draft, with Accept change |
+| `formatCents`, `xeroTag`, `linkIcon`, `accountingIcon` | `server/ui/invoicing.js` | Money, an accounting status tag, a link to the other system |
+| `automationSection`, `rulesSection`, `sendModeSection`, `lineMappingSection` | `server/ui/automations.js`, `invoice-rules.js`, `invoicing-settings.js`, `line-mappings.js` | Settings sections a page mounts |
 
 ## Adding a family
 
