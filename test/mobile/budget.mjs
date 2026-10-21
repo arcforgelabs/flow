@@ -27,7 +27,8 @@ for (const file of readdirSync(dir).filter((f) => f.endsWith('.json')).sort()) {
     if (m.axe && Object.keys(m.axe).length) entry.axe = m.axe;
     if (!Object.keys(entry).length) entry = null;
   }
-  if (lower && previous[key]) entry = lowerOnly(previous[key], entry ?? {});
+  // With --lower, a screen with no budget meets every rule and stays so.
+  if (lower) entry = previous[key] ? lowerOnly(previous[key], entry ?? {}) : null;
   if (entry && Object.keys(entry).length) budget[key] = entry;
   else delete budget[key];
 }
