@@ -77,7 +77,9 @@ async function get(url, { fetchImpl, retryDelayMs, as = "json" }) {
   throw new ReleaseUnavailable(lastError);
 }
 
-async function fromGitHub(channel, { slug, githubApi, fetchImpl, retryDelayMs }) {
+// The release GitHub names for the channel, alone. A publish guard asks
+// GitHub and npm separately, so the two must agree.
+export async function fromGitHub(channel, { slug, githubApi, fetchImpl, retryDelayMs }) {
   if (channel === "stable") {
     const latest = await get(`${githubApi}/repos/${slug}/releases/latest`, { fetchImpl, retryDelayMs });
     const release = parseReleaseTag(latest?.tag_name);
@@ -95,7 +97,8 @@ async function fromGitHub(channel, { slug, githubApi, fetchImpl, retryDelayMs })
   return tags.at(-1);
 }
 
-async function fromNpm(channel, { npmRegistry, packageName, fetchImpl, retryDelayMs }) {
+// The release npm's dist-tag names for the channel, alone.
+export async function fromNpm(channel, { npmRegistry, packageName, fetchImpl, retryDelayMs }) {
   const metadata = await get(`${npmRegistry}/${packageName.replaceAll("/", "%2f")}`, { fetchImpl, retryDelayMs });
   const distTag = channel === "stable" ? "latest" : "beta";
   const version = metadata?.["dist-tags"]?.[distTag];
