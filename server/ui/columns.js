@@ -103,14 +103,17 @@ export function columnTable(h, config) {
 
   function table({ columns, rows, lead = [], className = '' }) {
     const saved = widths();
-    const cols = columns.map((c) => h('col', { style: { width: `${widthOf(c, saved)}px` } }));
+    // The last column has no set width: it is at least its width (the table
+    // is as wide as the columns) and fills what is left of the frame, as
+    // HubSpot's. So a resize changes the table only; the tools stay put.
+    const cols = columns.map((c, n) => h('col', n === columns.length - 1 ? {} : { style: { width: `${widthOf(c, saved)}px` } }));
     const leadCols = lead.map(() => h('col', { style: { width: `${LEAD_WIDTH}px` } }));
     const tail = config.hidden ? h('th', { class: 'fx-th-add' }, h('button', {
       type: 'button', class: 'fx-th fx-th--add', 'aria-label': 'Show a column', title: 'Show a column', onclick: (event) => openMenu(null, event),
     }, '+')) : h('th', { class: 'fx-th-end', 'aria-hidden': 'true' });
     const heads = columns.map((c, n) => head(c, n));
     const node = h('table', { class: `fx-table fx-table--sized ${className}`.trim() },
-      h('colgroup', {}, leadCols, cols, h('col', {})),
+      h('colgroup', {}, leadCols, cols, h('col', { style: { width: `${TAIL_WIDTH}px` } })),
       h('thead', {}, h('tr', {}, lead, heads, tail)),
       rows);
     // The table is as wide as its columns; past the page it scrolls sideways.

@@ -674,7 +674,8 @@ th:hover > .fx-th-grip::after { background: var(--t-brd-hi); }
 .fx-table--sized[data-resizing] { cursor: col-resize; user-select: none; }
 .fx-table--sized .fx-tick-cell, .fx-table--sized .fx-th-add, .fx-table--sized .fx-c-end { overflow: visible; text-overflow: clip; }
 .fx-table--sized .fx-tick-cell { padding-right: 0; }
-.fx-table--sized .fx-th-add { width: auto; padding-left: 0; padding-right: 12px; }
+/* + stays at the right edge while the table scrolls sideways. */
+.fx-table--sized .fx-th-add { position: sticky; right: 0; z-index: 1; padding-left: 0; padding-right: 12px; }
 .fx-avatar--sm { width: 24px; height: 24px; font-size: 10px; }
 .fx-c-date time { font-variant-numeric: tabular-nums; }
 .fx-stage[data-rank="plain"] { --stage: var(--t-dim); }
