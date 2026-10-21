@@ -474,11 +474,14 @@ export function inOrder(columns, ids) {
 export const INVOICE_COLUMNS = Object.freeze({
   number: 'Number', client: 'Client', reference: 'Reference', date: 'Date', total: 'Total', status: 'Status', linked: 'Linked',
 });
+export const PRICE_COLUMNS = Object.freeze({
+  code: 'Code', name: 'Name', price: 'Price', tax: 'Tax',
+});
 export const RECONCILE_COLUMNS = Object.freeze({
   kind: 'Type', client: 'Client', detail: 'Detail', date: 'Date', total: 'Total', possible: 'Possible',
 });
 
-// A person's view of a list with set columns (Invoices, Reconcile): the
+// A person's view of a list with set columns (Invoices, Reconcile, Price list): the
 // shown columns in order (every one when none is saved) and their widths.
 export function normaliseListView(input, columns) {
   const value = input && typeof input === 'object' && !Array.isArray(input) ? input : {};
