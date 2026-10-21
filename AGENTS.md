@@ -27,4 +27,5 @@ Before you build a UI element, read the
 ## Explainers
 
 When asked to explain, compare, map or plan, make an explainer page with
-`.agents/skills/arc-forge-explainer/SKILL.md`.
+`.agents/skills/explainer/SKILL.md` (a generated copy;
+the source is arcforgelabs/tools).

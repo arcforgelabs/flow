@@ -1,0 +1,73 @@
+#!/usr/bin/env node
+// Headless check for an explainer page (references/pattern.md, "Check before you publish").
+// Usage: scripts/check <page.html> [--shots <dir>]
+// Needs Playwright. Set CHROMIUM_PATH to use a browser that is already installed.
+'use strict';
+const path = require('path');
+let pw;
+try { pw = require('playwright'); } catch (e) {
+  try { pw = require(path.join(process.execPath, '../../lib/node_modules/playwright')); } catch (e2) {
+    console.error('Playwright is not installed. Run: npm i -g playwright'); process.exit(2);
+  }
+}
+const args = process.argv.slice(2);
+const page0 = args[0];
+const shots = args.includes('--shots') ? args[args.indexOf('--shots') + 1] : null;
+if (!page0) { console.error('usage: scripts/check <page.html> [--shots <dir>]'); process.exit(2); }
+const url = 'file://' + path.resolve(page0);
+const fails = [];
+(async () => {
+  const browser = await pw.chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {});
+  for (const scheme of ['light', 'dark']) {
+    for (const width of [390, 1280]) {
+      const ctx = await browser.newContext({ viewport: { width, height: 900 }, colorScheme: scheme });
+      const page = await ctx.newPage();
+      page.on('pageerror', (e) => fails.push(`${scheme} ${width}px: page error: ${e.message}`));
+      await page.goto(url, { waitUntil: 'load' });
+      const r = await page.evaluate(() => {
+        const out = { items: 0, missing: [], noDef: [], sideways: false, facts: 0 };
+        const EX = window.EX || {};
+        document.querySelectorAll('[data-ex]').forEach((el) => {
+          out.items++;
+          const d = EX[el.dataset.ex];
+          if (!d) out.missing.push(el.dataset.ex); else if (!d.d) out.noDef.push(el.dataset.ex);
+        });
+        out.facts = document.querySelectorAll('.ex-facts .ex-fx').length;
+        out.sideways = document.documentElement.scrollWidth > document.documentElement.clientWidth;
+        return out;
+      });
+      if (!r.items) fails.push(`${scheme} ${width}px: no [data-ex] items`);
+      if (r.missing.length) fails.push(`${scheme} ${width}px: items with no EX entry: ${r.missing.join(', ')}`);
+      if (r.noDef.length) fails.push(`${scheme} ${width}px: items with no definition: ${r.noDef.join(', ')}`);
+      if (r.sideways) fails.push(`${scheme} ${width}px: the page scrolls sideways`);
+      // Open every item; each must show a pop-up with a definition.
+      const n = await page.locator('[data-ex]').count();
+      for (let i = 0; i < n; i++) {
+        const el = page.locator('[data-ex]').nth(i);
+        await el.scrollIntoViewIfNeeded();
+        await el.evaluate((e) => e.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+        const ok = await page.evaluate(() => { const p = document.querySelector('.ex-pop'); return p && !p.hidden && p.querySelector('.ex-def').textContent.trim().length > 0; });
+        if (!ok) fails.push(`${scheme} ${width}px: item ${i} (${await el.getAttribute('data-ex')}) opens no pop-up`);
+        await page.keyboard.press('Escape');
+      }
+      // A fact in each Facts list must open its item.
+      const lists = await page.locator('details.ex-facts').count();
+      for (let i = 0; i < lists; i++) {
+        const det = page.locator('details.ex-facts').nth(i);
+        if (!(await det.locator('.ex-fx').count())) { fails.push(`${scheme} ${width}px: Facts list ${i} is empty`); continue; }
+        await det.evaluate((d) => { d.open = true; });
+        await det.locator('.ex-fx').first().click();
+        await page.waitForTimeout(1700);
+        const open = await page.evaluate(() => !document.querySelector('.ex-pop').hidden);
+        if (!open) fails.push(`${scheme} ${width}px: a fact in Facts list ${i} opens no item`);
+        await page.keyboard.press('Escape');
+      }
+      if (shots) await page.screenshot({ path: path.join(shots, `${path.basename(page0, '.html')}-${scheme}-${width}.png`), fullPage: true });
+      console.log(`${scheme} ${width}px: ${r.items} items, ${r.facts} facts, ${n} opened`);
+      await ctx.close();
+    }
+  }
+  await browser.close();
+  if (fails.length) { console.error('FAIL\n' + [...new Set(fails)].join('\n')); process.exit(1); }
+  console.log('PASS');
+})().catch((e) => { console.error(e); process.exit(1); });

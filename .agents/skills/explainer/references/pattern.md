@@ -1,8 +1,10 @@
-# Explainers
+# Explainer pattern
+
+> Copy of `project/explainers.md` in the Arc Forge Design System artifact (https://claude.ai/artifact/8pZbZfefPhvV5kAHUSquEJ), 2026-10-20. When one changes, change the other in the same session. In this repo the kit is `kit/` and the starter is `examples/starter.html`.
 
 An explainer is a page or inline widget that explains a system, a plan or a comparison with visuals first. Use one whenever someone asks to explain something, for more detail, how something works, or to compare things. Marketing pages follow the rest of this book; explainers follow this section.
 
-Reference page: **OpenClaw vs Projects** (https://claude.ai/artifact/ESFw5NeVtSXnC4QJD7CKj6). Start a new page from `explainer/starter.html`: it holds the tokens, `explainer/explainer.css` and `explainer/explainer.js`. The same styles are in `components/bundle.css` with the `.ex-` prefix.
+Reference page: **OpenClaw vs Projects** (https://claude.ai/artifact/ESFw5NeVtSXnC4QJD7CKj6). Start a new page from `examples/starter.html`: it links `kit/tokens.css`, `kit/explainer.css`, `kit/charts.js` and `kit/explainer.js`.
 
 ## Pages are wiki pages
 
@@ -21,7 +23,7 @@ Reference page: **OpenClaw vs Projects** (https://claude.ai/artifact/ESFw5NeVtSX
 - **Pretty, with substance**: care in the look is care for the reader. Decoration with no content is not allowed.
 - Never use a sequence diagram (lifelines with messages): rated D tier. Show a request path as a ConnectionDiagram.
 - FlowLanes (chip lanes) are low tier: they only group things. Use them for short, simple lists.
-- Chart Lab rates each kind on the same subject: https://claude.ai/artifact/RESTxZpBbDo9x2mjgWy2f8. Its ratings decide this list.
+- Chart Lab rates each kind on the same subject: https://claude.ai/artifact/RESTxZpBbDo9x2mjgWy2f8. Its ratings decide this list. The tiers are in `charts.md`.
 
 ## Words
 

@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Explainer Kit</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="../kit/tokens.css">
+<link rel="stylesheet" href="../kit/explainer.css">
+</head>
+<body class="ex-page">
+<nav class="ex-rail" aria-label="Sections"></nav>
+<div class="ex-shell">
+<section class="ex-section" style="padding-top:0">
+  <div class="ex-title"><h1>Explainer kit</h1><p>An explainer page explains a system with visuals first. Every part on the page opens a pop-up with a definition.</p><div class="ex-meta">arcforgelabs/tools · components/skills/explainer · Chart Lab ratings 2026-10-19</div></div>
+</section>
+
+<section class="ex-section" id="build">
+  <div class="ex-head"><span class="ex-n">01</span><h2>How a page works</h2><p>A page is HTML plus four kit files. The runtime turns each marked part into a pop-up.</p></div>
+  <div class="ex-figure" id="fig-build"></div>
+  <details class="ex-facts" data-def="A page is built from data, the chart module and the runtime."></details>
+</section>
+
+<section class="ex-section" id="where">
+  <div class="ex-head"><span class="ex-n">02</span><h2>Where a page goes</h2><p>The same page source works in three places. Only the delivery changes.</p></div>
+  <div class="ex-figure" id="fig-where"></div>
+  <details class="ex-facts" data-def="One source page, many outputs."></details>
+</section>
+
+<section class="ex-section" id="pick">
+  <div class="ex-head"><span class="ex-n">03</span><h2>Which chart to pick</h2><p>Chart Lab rated 42 chart kinds on the same subject. Pick from the top two tiers.</p></div>
+  <div class="ex-figure" id="fig-sankey"></div>
+  <div class="ex-figure" id="fig-heat"></div>
+  <details class="ex-facts" data-def="Chart Lab rates each kind of chart: great, good, meh or poor."></details>
+</section>
+
+<section class="ex-section" id="cover">
+  <div class="ex-head"><span class="ex-n">04</span><h2>What the kit draws</h2><p>The chart module draws five of the 42 kinds from data. The other kinds are drawn by hand from Chart Lab.</p></div>
+  <div class="ex-figure" id="fig-cap"></div>
+  <details class="ex-facts" data-def="Coverage is the share of rated kinds that the chart module draws from data."></details>
+</section>
+</div>
+
+<script src="../kit/charts.js"></script>
+<script>
+window.EX = {
+  "data": {"t": "Page data", "l": "PAGE", "d": "Page data is the window.EX object: one entry for each part.", "x": ["Each entry has a title, a layer, a definition and facts.", "An element links to its entry with data-ex."]},
+  "charts": {"t": "charts.js", "l": "KIT", "d": "charts.js draws SVG charts from data.", "x": ["It puts a clickable area over every part.", "It must run before explainer.js."]},
+  "runtime": {"t": "explainer.js", "l": "KIT", "d": "explainer.js is the page runtime.", "x": ["It opens the pop-up for a part.", "It fills each Facts list from the parts.", "It builds the tick rail."]},
+  "tokens": {"t": "tokens.css", "l": "KIT", "d": "tokens.css holds the colours, fonts and radii.", "x": ["It has light and dark values.", "It holds the diagram colour key."]},
+  "styles": {"t": "explainer.css", "l": "KIT", "d": "explainer.css styles every .ex- part.", "x": ["It uses tokens only, never a fixed colour."]},
+  "pop": {"t": "Pop-up", "l": "READER", "d": "A pop-up shows one part: its definition first, then its facts.", "x": ["Esc or an outside click closes it.", "It never changes the page below."]},
+  "e.svg": {"t": "Hot areas", "l": "ARROW", "d": "charts.js writes an SVG with a hot area over each part.", "x": ["A hot area is a transparent rect with data-ex."]},
+  "z.kit": {"t": "Kit", "l": "SOURCE", "d": "The kit is the four files in kit/.", "x": ["Agents copy it; they do not change it per page."]},
+  "z.out": {"t": "Outputs", "l": "DELIVERY", "d": "An output is where a reader opens the page.", "x": []},
+  "z.ref": {"t": "References", "l": "RULES", "d": "References are the rules that a page follows.", "x": []},
+  "o.art": {"t": "Claude artifact", "l": "OUTPUT", "d": "A Claude artifact is a private page on claude.ai.", "x": ["Run scripts/bundle to inline the kit into one file.", "Publish the bundled file with the Artifact tool."]},
+  "o.local": {"t": "Localhost", "l": "OUTPUT", "d": "Localhost is the page served from a local folder.", "x": ["Run python3 -m http.server in the skill folder.", "Codex and Grok agents use this output."]},
+  "o.site": {"t": "Docs site", "l": "OUTPUT", "d": "A docs site is a product's own site, for example arcforgelabs.github.io/docs.", "x": ["Copy the kit into the site's assets."]},
+  "r.pattern": {"t": "Pattern rules", "l": "REFERENCE", "d": "references/pattern.md holds the page rules.", "x": ["Definition first, one fact per sentence, one red."]},
+  "r.charts": {"t": "Chart catalogue", "l": "REFERENCE", "d": "references/charts.md lists every rated chart kind.", "x": ["Each kind has its tier and Samuel's note."]},
+  "r.key": {"t": "Diagram colour key", "l": "REFERENCE", "d": "The diagram colour key gives one meaning to each box colour.", "x": ["It lives in arcforgelabs/themes."]}
+};
+
+ExCharts.connection(document.getElementById('fig-build'), {
+  label: 'How a page works', cols: ['SOURCE', 'KIT', 'RUNTIME', 'READER'], boxW: 170, gapX: 110,
+  nodes: [
+    {id: 'data', col: 0, row: 0, title: 'Page data', sub: 'window.EX', ex: 'data'},
+    {id: 'tokens', col: 0, row: 1, title: 'tokens.css', sub: 'colours, fonts', ex: 'tokens'},
+    {id: 'charts', col: 1, row: 0, title: 'charts.js', sub: 'draws SVG', layer: 'alt', ex: 'charts'},
+    {id: 'styles', col: 1, row: 1, title: 'explainer.css', sub: '.ex- styles', ex: 'styles'},
+    {id: 'runtime', col: 2, row: 0, title: 'explainer.js', sub: 'runtime', layer: 'alt', ex: 'runtime'},
+    {id: 'pop', col: 3, row: 0, title: 'Pop-up', sub: 'definition first', layer: 'key', ex: 'pop'}
+  ],
+  edges: [
+    {from: 'data', to: 'charts', label: 'parts'},
+    {from: 'tokens', to: 'styles', label: 'values'},
+    {from: 'charts', to: 'runtime', label: 'hot areas', ex: 'e.svg'},
+    {from: 'styles', to: 'runtime', label: 'styles', offset: 14},
+    {from: 'runtime', to: 'pop', label: 'click', layer: 'key'}
+  ]
+});
+
+ExCharts.container(document.getElementById('fig-where'), {
+  label: 'Where a page goes', zoneCols: 3, perRow: 1, itemW: 220,
+  zones: [
+    {title: 'Kit', ex: 'z.kit', items: [
+      {title: 'tokens.css', ex: 'tokens'}, {title: 'explainer.css', ex: 'styles'},
+      {title: 'charts.js', layer: 'alt', ex: 'charts'}, {title: 'explainer.js', layer: 'alt', ex: 'runtime'}]},
+    {title: 'Outputs', ex: 'z.out', items: [
+      {title: 'Claude artifact', sub: 'scripts/bundle', ex: 'o.art'},
+      {title: 'Localhost', sub: 'any agent', ex: 'o.local'},
+      {title: 'Docs site', sub: 'copy the kit', layer: 'off', ex: 'o.site'}]},
+    {title: 'References', ex: 'z.ref', items: [
+      {title: 'Pattern rules', ex: 'r.pattern'}, {title: 'Chart catalogue', ex: 'r.charts'},
+      {title: 'Diagram colour key', sub: 'arcforgelabs/themes', ex: 'r.key'}]}
+  ]
+});
+
+// Chart Lab ratings (references/charts.md): family → tier → kinds. The charts below count these lists.
+var FAMILIES = [
+  {id: 'boxes', title: 'Boxes and arrows', tiers: {
+    great: ['Container diagram', 'Live anatomy', 'Sketch style'],
+    good: ['Connection diagram', 'State machine', 'Anatomy callout', 'Expand and collapse'],
+    meh: ['Sequence diagram', 'Keyed container diagram', 'Step-through simulation'], poor: []}},
+  {id: 'amounts', title: 'Amounts', tiers: {
+    great: ['Heatmap', 'Parallel sets', 'Sankey'],
+    good: ['Capacity bars', 'Treemap', 'Sunburst'],
+    meh: ['Ladder', 'Area chart with tooltip', 'Bump chart', 'Every token'], poor: ['Layer stack']}},
+  {id: 'networks', title: 'Networks', tiers: {
+    great: ['GPU graph'],
+    good: ['Arc diagram, version 2', 'Grouped graph', 'Grouped graph, version 2', 'Concentric', 'Particle flow graph', '3D graph', '3D graph, WebGL'],
+    meh: ['Arc diagram', 'Chord diagram', 'Edge bundling', 'Hive plot'], poor: []}},
+  {id: 'hier', title: 'Hierarchy', tiers: {
+    great: [], good: ['Tree', 'Fishbone, version 2'], meh: ['Mind map', 'Radial tree', 'Fishbone'], poor: []}},
+  {id: 'time', title: 'Time and order', tiers: {
+    great: [], good: ['Timeline', 'Snake flow'], meh: [], poor: ['Chip lanes', 'Scroll story, WebGL']}}
+];
+var TIERS = [{id: 'great', title: 'Great', layer: 'key'}, {id: 'good', title: 'Good', layer: 'alt'}, {id: 'meh', title: 'Meh'}, {id: 'poor', title: 'Poor'}];
+function kinds(list) { return list.map(function (k) { return k + '.'; }); }
+function byTier(t) { return [].concat.apply([], FAMILIES.map(function (f) { return f.tiers[t]; })); }
+
+ExCharts.sankey(document.getElementById('fig-sankey'), {
+  label: 'Chart kinds by family and tier', unit: ' kinds', height: 360,
+  nodes: FAMILIES.map(function (f) {
+    var all = [].concat(f.tiers.great, f.tiers.good, f.tiers.meh, f.tiers.poor);
+    return {id: f.id, col: 0, title: f.title, ex: {t: f.title, l: 'FAMILY', d: f.title + ' is one family of chart kinds.', x: kinds(all)}};
+  }).concat(TIERS.map(function (t) {
+    return {id: t.id, col: 1, title: t.title, layer: t.layer, ex: {t: t.title, l: 'TIER', d: t.title + ' is one rating that Samuel gave in Chart Lab.', x: kinds(byTier(t.id))}};
+  })),
+  links: [].concat.apply([], FAMILIES.map(function (f) {
+    return TIERS.filter(function (t) { return f.tiers[t.id].length; }).map(function (t) {
+      return {from: f.id, to: t.id, value: f.tiers[t.id].length, layer: t.layer,
+        ex: {t: f.title + ' → ' + t.title, l: 'FLOW', d: 'These are the ' + f.title.toLowerCase() + ' kinds rated ' + t.title.toLowerCase() + '.', x: kinds(f.tiers[t.id])}};
+    });
+  }))
+});
+
+ExCharts.heatmap(document.getElementById('fig-heat'), {
+  label: 'Chart kinds per family and tier', labelW: 170, cellW: 90,
+  rows: FAMILIES.map(function (f) { return f.title; }),
+  cols: TIERS.map(function (t) { return t.title.toUpperCase(); }),
+  values: FAMILIES.map(function (f) { return TIERS.map(function (t) { return f.tiers[t.id].length; }); }),
+  cellEx: function (r, c, v) {
+    var f = FAMILIES.filter(function (x) { return x.title === r; })[0], list = f.tiers[c.toLowerCase()];
+    return {t: r + ' · ' + c.toLowerCase(), l: 'CHART LAB', d: v + (v === 1 ? ' chart kind in ' : ' chart kinds in ') + r.toLowerCase() + (v === 1 ? ' is rated ' : ' are rated ') + c.toLowerCase() + '.', x: list.length ? kinds(list) : ['No kind has this rating.']};
+  }
+});
+
+ExCharts.capacity(document.getElementById('fig-cap'), {
+  label: 'Kit coverage', limit: 42, unit: '',
+  rows: [
+    {label: 'Rated kinds', parts: [
+      {label: 'Great 7', value: 7, layer: 'key'}, {label: 'Good 18', value: 18, layer: 'alt'}, {label: 'Meh 14', value: 14}, {label: 'Poor 3', value: 3, layer: 'off'}]},
+    {label: 'charts.js', parts: [
+      {label: 'Great 3', value: 3, layer: 'key', ex: {t: 'Great kinds in charts.js', l: 'COVERAGE', d: 'charts.js draws three great kinds.', x: ['Container diagram.', 'Heatmap.', 'Sankey.']}},
+      {label: 'Good 2', value: 2, layer: 'alt', ex: {t: 'Good kinds in charts.js', l: 'COVERAGE', d: 'charts.js draws two good kinds.', x: ['Connection diagram, the default.', 'Capacity bars.']}}]}
+  ]
+});
+</script>
+<script src="../kit/explainer.js"></script>
+</body>
+</html>
