@@ -241,18 +241,24 @@ test('each request is named by the route it matched, and each query gets a span'
   assert.deepEqual(spans, [['db', 'SELECT * FROM invoices WHERE id = $1'], ['db', 'UPDATE invoices SET state = ?']]);
 });
 
-test('a problem report is tagged notify=yes only when it carries an email', () => {
+test('a problem report is tagged notify=yes only when the person asks for a response and gives an email', () => {
   const report = (email) => ({ type: 'feedback', tags: { source: 'browser' }, contexts: { feedback: { message: 'It broke.', contact_email: email } } });
   const asked = report('person@example.test');
-  tagNotify(asked);
+  tagNotify(asked, true);
   assert.deepEqual(asked.tags, { source: 'browser', notify: 'yes' });
+  // The email is prefilled, so an address alone does not ask for a reply.
+  for (const wantsResponse of [false, undefined]) {
+    const prefilled = report('person@example.test');
+    tagNotify(prefilled, wantsResponse);
+    assert.equal(prefilled.tags.notify, 'no');
+  }
   for (const email of [undefined, '', '  ']) {
-    const quietReport = report(email);
-    tagNotify(quietReport);
-    assert.equal(quietReport.tags.notify, 'no');
+    const noAddress = report(email);
+    tagNotify(noAddress, true);
+    assert.equal(noAddress.tags.notify, 'no');
   }
   const error = { type: undefined, tags: {} };
-  tagNotify(error);
+  tagNotify(error, true);
   assert.deepEqual(error.tags, {});
 });
 
