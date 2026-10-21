@@ -1,0 +1,882 @@
+<!doctype html>
+<html lang="en-AU">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Data spine</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Tokens: the Knot values of the Arc Forge Design System (tokens.json). Keep in step with it. */
+:root{
+  --bg-accent:#f2f2f5;--card:#ffffff;--text:#3a3a42;--text-strong:#18181b;--muted:#68676f;
+  --border:#e2e2e8;--border-strong:#ccccd4;--accent:#c41e30;--accent-subtle:rgba(196,30,48,.08);--ring:#c41e30;
+  --accent-2:#5a626e;--accent-2-subtle:rgba(90,98,110,.08);
+  --shadow-md:0 4px 12px rgba(0,0,0,.06);--shadow-lg:0 12px 28px rgba(0,0,0,.08);
+  --radius-md:10px;--radius-lg:14px;--radius-full:9999px;
+  --font-body:"Geist",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;--font-display:var(--font-body);
+  --font-mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg-accent:#0d0d0f;--card:#111113;--text:#c6c6cb;--text-strong:#f5f5f7;--muted:#8a8a94;
+  --border:#202026;--border-strong:#303038;--accent:#e5243b;--accent-subtle:rgba(229,36,59,.12);--ring:#e5243b;
+  --accent-2:#b8bdc4;--accent-2-subtle:rgba(184,189,196,.1);
+  --shadow-md:0 4px 16px rgba(0,0,0,.5);--shadow-lg:0 12px 32px rgba(0,0,0,.6);color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg-accent:#0d0d0f;--card:#111113;--text:#c6c6cb;--text-strong:#f5f5f7;--muted:#8a8a94;
+  --border:#202026;--border-strong:#303038;--accent:#e5243b;--accent-subtle:rgba(229,36,59,.12);--ring:#e5243b;
+  --accent-2:#b8bdc4;--accent-2-subtle:rgba(184,189,196,.1);
+  --shadow-md:0 4px 16px rgba(0,0,0,.5);--shadow-lg:0 12px 32px rgba(0,0,0,.6);color-scheme:dark}
+
+*,*::before,*::after{box-sizing:border-box}
+
+/* Chart scale (heatmaps): from the card colour to the accent. */
+:root{--on-accent:#ffffff;--seq-1:color-mix(in srgb,var(--accent) 6%,var(--card));--seq-2:color-mix(in srgb,var(--accent) 45%,var(--card));--seq-3:var(--accent)}
+
+/* Diagram colour key (arcforgelabs/themes docs/diagram-colour-key.md). One colour, one meaning, every page. */
+:root{--key-stock:oklch(0.55 0.12 150);--key-conf:oklch(0.52 0.12 240);--key-exp:oklch(0.70 0.15 90);--key-ours:oklch(0.64 0.17 50);--key-risk:oklch(0.55 0.22 25);--key-outside:oklch(0.60 0.01 60)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--key-stock:oklch(0.74 0.13 150);--key-conf:oklch(0.72 0.12 240);--key-exp:oklch(0.86 0.15 95);--key-ours:oklch(0.76 0.16 55);--key-risk:oklch(0.68 0.21 22);--key-outside:oklch(0.70 0.01 60)}}
+:root[data-theme="dark"]{--key-stock:oklch(0.74 0.13 150);--key-conf:oklch(0.72 0.12 240);--key-exp:oklch(0.86 0.15 95);--key-ours:oklch(0.76 0.16 55);--key-risk:oklch(0.68 0.21 22);--key-outside:oklch(0.70 0.01 60)}
+</style>
+<style>
+/* ---------- Explainer pages (explainers.md). Prefix .ex-. Tokens only. ---------- */
+.ex-page { background: var(--bg-accent); color: var(--text); font-family: var(--font-body); font-size: 16px; line-height: 1.6; letter-spacing: -.005em; margin: 0; }
+.ex-shell { max-width: 1040px; margin: 0 auto; padding: 40px max(16px, env(safe-area-inset-right, 0px)) 72px max(16px, env(safe-area-inset-left, 0px)); }
+.ex-section { padding-block: 40px; border-bottom: 1px solid var(--border); display: grid; gap: 20px; scroll-margin-top: 12px; }
+.ex-title { display: grid; gap: 8px; }
+.ex-title h1 { margin: 0; color: var(--text-strong); font-family: var(--font-display, var(--font-body)); font-weight: 650; font-size: clamp(32px, 5vw, 48px); letter-spacing: -.04em; line-height: 1.04; }
+.ex-title p { margin: 0; max-width: 66ch; color: var(--muted); }
+.ex-meta { font: 400 12px var(--font-mono); letter-spacing: .06em; color: var(--muted); }
+
+/* ExplainerHead */
+.ex-head { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 18px; row-gap: 6px; align-items: baseline; border-top: 3px solid var(--accent); padding: 28px 0 4px; }
+.ex-head .ex-n { grid-row: 1 / span 2; font: 500 clamp(36px, 6vw, 56px)/1 var(--font-mono); color: var(--accent); letter-spacing: -.04em; }
+.ex-head h2 { margin: 0; color: var(--text-strong); font-family: var(--font-display, var(--font-body)); font-weight: 650; font-size: clamp(26px, 4vw, 40px); letter-spacing: -.035em; line-height: 1.08; }
+.ex-head p { grid-column: 2; margin: 0; max-width: 66ch; color: var(--text); }
+
+/* FlowLanes */
+.ex-flow { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 20px; display: grid; gap: 18px; }
+.ex-layers { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; font-size: 13px; color: var(--muted); }
+.ex-layers span { display: inline-flex; gap: 8px; align-items: center; }
+.ex-layers .ex-tap { margin-left: auto; font: 500 11px var(--font-mono); letter-spacing: .08em; }
+.ex-ly { width: 14px; height: 14px; border-radius: 4px; display: inline-block; background: var(--card); border: 1.5px solid var(--border-strong); }
+.ex-ly--key { background: var(--accent-subtle); border-color: var(--accent); }
+.ex-ly--alt { background: var(--accent-2-subtle); border-color: var(--accent-2); }
+.ex-ly--off { border-style: dashed; }
+.ex-lane { display: grid; gap: 8px; padding-top: 14px; border-top: 1px solid var(--border); }
+.ex-lane-h { display: flex; gap: 10px; align-items: center; font: 500 11px var(--font-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.ex-tag { color: var(--text-strong); border: 1px solid var(--border-strong); border-radius: var(--radius-full); padding: 1px 8px; }
+.ex-tag--key { color: var(--accent); border-color: var(--accent); }
+.ex-nodes { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.ex-node { font: 500 14px var(--font-body); color: var(--text-strong); background: var(--card); border: 1px solid var(--border-strong); border-radius: var(--radius-md); padding: 10px 14px; min-height: 44px; cursor: pointer; text-align: left; }
+.ex-node--key { background: var(--accent-subtle); border-color: var(--accent); }
+.ex-node--alt { background: var(--accent-2-subtle); border-color: var(--accent-2); }
+.ex-node--off { border-style: dashed; }
+.ex-node--main { border-width: 2px; font-weight: 650; }
+.ex-node:hover { border-color: var(--text-strong); }
+.ex-node:focus-visible { outline: 2px solid var(--ring, var(--accent)); outline-offset: 3px; }
+.ex-node[aria-expanded="true"] { box-shadow: 0 0 0 3px var(--text-strong); }
+.ex-arr { font-style: normal; font-family: var(--font-mono); color: var(--muted); }
+.ex-arr--key { color: var(--accent); }
+
+/* Clickable areas over an SVG diagram */
+.ex-figure { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow-x: auto; }
+.ex-figure svg { display: block; width: 100%; min-width: 760px; height: auto; }
+.ex-hot { fill: transparent; stroke: transparent; stroke-width: 2; cursor: pointer; transition: stroke .12s; }
+.ex-hot:hover, .ex-hot:focus-visible { stroke: var(--text-strong); outline: none; }
+.ex-hot[aria-expanded="true"] { stroke: var(--accent); }
+
+/* DetailPopover */
+.ex-pop { position: absolute; z-index: 20; width: min(380px, calc(100vw - 32px)); background: var(--card); border: 1px solid var(--border-strong); border-radius: 12px; box-shadow: var(--shadow-lg); padding: 14px 16px; display: grid; gap: 8px; }
+.ex-pop[hidden] { display: none; }
+.ex-pop-l { font: 500 11px var(--font-mono); letter-spacing: .1em; text-transform: uppercase; color: var(--accent); }
+.ex-pop h4 { margin: 0; display: flex; justify-content: space-between; gap: 12px; font-size: 15px; font-weight: 650; color: var(--text-strong); }
+.ex-pop h4 button { background: none; border: 0; color: var(--muted); font: 500 16px var(--font-mono); line-height: 1; cursor: pointer; }
+.ex-def { margin: 0; padding-bottom: 8px; border-bottom: 1px solid var(--border); font-size: 14px; color: var(--text-strong); }
+.ex-pop ol { margin: 0; padding-left: 20px; display: grid; gap: 4px; font-size: 14px; color: var(--text); }
+
+/* CrispTable */
+.ex-table-wrap { overflow-x: auto; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-lg); }
+.ex-table { border-collapse: collapse; width: 100%; min-width: 760px; table-layout: fixed; font-size: 14px; }
+.ex-table th, .ex-table td { height: 44px; padding: 8px 12px; text-align: left; vertical-align: middle; border-bottom: 1px solid var(--border); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ex-table th { font: 500 11px var(--font-mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); background: var(--bg-accent); }
+.ex-table th:first-child { width: 220px; }
+.ex-table td:first-child { color: var(--text-strong); font-weight: 600; }
+.ex-table .ex-c { width: 76px; padding-inline: 4px; text-align: center; }
+.ex-table .ex-dt { color: var(--muted); font-size: 13px; }
+.ex-table .ex-dt span { display: inline-block; max-width: calc(100% - 92px); overflow: hidden; text-overflow: ellipsis; vertical-align: middle; }
+.ex-more { margin-left: 10px; vertical-align: middle; font: 500 11px var(--font-mono); letter-spacing: .06em; color: var(--accent); background: none; border: 1px solid var(--accent); border-radius: var(--radius-full); padding: 2px 9px; cursor: pointer; }
+.ex-g { display: inline-block; width: 16px; height: 16px; border-radius: 50%; vertical-align: middle; box-sizing: border-box; }
+.ex-g--full { background: var(--accent-2); }
+.ex-g--half { background: linear-gradient(90deg, var(--accent-2) 50%, transparent 50%); border: 1.5px solid var(--accent-2); }
+.ex-g--gap { border: 2px solid var(--accent); }
+.ex-g--off { border: 1.5px dashed var(--muted); }
+.ex-keys { display: flex; flex-wrap: wrap; gap: 18px; align-items: center; font-size: 13px; color: var(--muted); }
+.ex-keys span { display: inline-flex; gap: 8px; align-items: center; }
+
+/* FactsList */
+.ex-facts { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 12px 18px; }
+.ex-facts summary { cursor: pointer; font: 500 12px var(--font-mono); letter-spacing: .1em; text-transform: uppercase; color: var(--text-strong); }
+.ex-facts .ex-def { margin-top: 12px; max-width: 70ch; }
+.ex-facts ol { list-style: none; margin: 12px 0 4px; padding: 0; columns: 2; column-gap: 32px; }
+.ex-facts li { break-inside: avoid; margin-bottom: 2px; }
+.ex-fx { all: unset; box-sizing: border-box; display: flex; gap: 10px; align-items: baseline; width: 100%; padding: 4px 6px; margin-left: -6px; border-radius: 6px; cursor: pointer; font-size: 14px; color: var(--text); }
+.ex-fx:hover, .ex-fx:focus-visible { background: var(--accent-subtle); color: var(--text-strong); }
+.ex-fx:focus-visible { outline: 2px solid var(--ring, var(--accent)); outline-offset: 1px; }
+.ex-fx i { font: 500 11px var(--font-mono); font-style: normal; color: var(--muted); min-width: 1.8em; text-align: right; }
+.ex-fx b { flex: 1; font-weight: 400; }
+.ex-fx em { font: 500 10px var(--font-mono); font-style: normal; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); white-space: nowrap; }
+@keyframes ex-pulse-svg { 0%, 100% { stroke: var(--accent); stroke-width: 2; } 35% { stroke: var(--accent); stroke-width: 7; fill: var(--accent-subtle); } }
+@keyframes ex-pulse { 0%, 100% { box-shadow: 0 0 0 0 var(--accent); } 35% { box-shadow: 0 0 0 7px var(--accent-subtle), 0 0 0 2px var(--accent); } }
+.ex-hot.ex-pulse { animation: ex-pulse-svg .55s ease-in-out 2; }
+.ex-node.ex-pulse, .ex-more.ex-pulse { animation: ex-pulse .55s ease-in-out 2; }
+
+/* TickRail */
+.ex-rail { position: fixed; left: max(20px, env(safe-area-inset-left, 0px)); top: 50%; transform: translateY(-50%); z-index: 15; display: flex; flex-direction: column; gap: 4px; }
+.ex-rail a { position: relative; display: flex; align-items: center; width: 32px; height: 16px; text-decoration: none; }
+.ex-rail a:focus-visible { outline: none; }
+.ex-tk { display: block; width: 14px; height: 2px; border-radius: 2px; background: var(--border-strong); transition: width .18s ease-out, background .15s; }
+.ex-rail:hover .ex-tk { width: 18px; }
+.ex-rail a:hover + a .ex-tk, .ex-rail a:has(+ a:hover) .ex-tk { width: 23px; }
+.ex-rail a:hover .ex-tk, .ex-rail a:focus-visible .ex-tk { width: 30px; background: var(--text-strong); }
+.ex-rail a.ex-on .ex-tk { height: 3px; background: var(--accent); }
+.ex-rail a:focus-visible .ex-tk { outline: 2px solid var(--accent); outline-offset: 3px; }
+.ex-tip { position: absolute; left: 40px; top: 50%; transform: translateY(-50%); display: none; gap: 8px; align-items: baseline; white-space: nowrap; padding: 7px 12px; background: var(--card); border: 1px solid var(--border-strong); border-radius: var(--radius-md); box-shadow: var(--shadow-md); font-size: 13px; color: var(--text-strong); }
+.ex-tip b { font: 500 11px var(--font-mono); color: var(--accent); }
+.ex-rail a:hover .ex-tip, .ex-rail a:focus-visible .ex-tip { display: inline-flex; }
+@media (min-width: 901px) and (max-width: 1200px) { .ex-rail ~ .ex-shell { padding-left: 64px; padding-right: 64px; } }
+@media (max-width: 900px) { .ex-rail { display: none; } .ex-facts ol { columns: 1; } }
+@media (prefers-reduced-motion: reduce) { .ex-tk { transition: none; } .ex-hot.ex-pulse, .ex-node.ex-pulse, .ex-more.ex-pulse { animation: none; } }
+
+/* ConnectionDiagram: SVG parts, joined by labelled arrows. The default diagram. */
+.ex-box { fill: var(--card); stroke: var(--border-strong); stroke-width: 1; }
+.ex-box--key { fill: var(--accent-subtle); stroke: var(--accent); stroke-width: 1.5; }
+.ex-box--alt { fill: var(--accent-2-subtle); stroke: var(--accent-2); stroke-width: 1.5; }
+.ex-box--off { stroke-dasharray: 4 3; }
+.ex-zone { fill: var(--bg-accent); stroke: var(--border-strong); stroke-width: 1; }
+.ex-t { fill: var(--text-strong); font: 500 14px var(--font-body); }
+.ex-ts { fill: var(--muted); font: 400 12px var(--font-body); }
+.ex-tm { fill: var(--muted); font: 500 11px var(--font-mono); letter-spacing: .1em; text-transform: uppercase; }
+.ex-ta { fill: var(--accent); font: 500 11px var(--font-mono); letter-spacing: .06em; }
+.ex-tl { fill: var(--text); font: 400 11px var(--font-mono); }
+.ex-line { stroke: var(--muted); stroke-width: 1.5; fill: none; }
+.ex-line--key { stroke: var(--accent); }
+.ex-line--off { stroke-dasharray: 5 4; }
+.ex-head-fill { fill: var(--muted); }
+.ex-head-fill--key { fill: var(--accent); }
+.ex-bar { fill: var(--border-strong); }
+.ex-figure svg *:not(.ex-hot) { pointer-events: none; }
+.ex-figure svg .ex-hot { pointer-events: all; }
+
+/* Diagram colour key boxes (charts.js layer "k-stock", "k-conf", …). Use one family per page: plain/key/alt/off, or the key. */
+.ex-box--k-stock{fill:color-mix(in srgb,var(--key-stock) 14%,var(--card));stroke:var(--key-stock);stroke-width:1.5}
+.ex-box--k-conf{fill:color-mix(in srgb,var(--key-conf) 14%,var(--card));stroke:var(--key-conf);stroke-width:1.5}
+.ex-box--k-exp{fill:color-mix(in srgb,var(--key-exp) 14%,var(--card));stroke:var(--key-exp);stroke-width:1.5}
+.ex-box--k-ours{fill:color-mix(in srgb,var(--key-ours) 14%,var(--card));stroke:var(--key-ours);stroke-width:1.5}
+.ex-box--k-risk{fill:color-mix(in srgb,var(--key-risk) 14%,var(--card));stroke:var(--key-risk);stroke-width:1.5}
+.ex-box--k-outside{fill:color-mix(in srgb,var(--key-outside) 14%,var(--card));stroke:var(--key-outside);stroke-width:1.5}
+.ex-keyrow{display:flex;flex-wrap:wrap;gap:8px 16px;font:500 13px var(--font-body);color:var(--text-strong)}
+.ex-key{position:relative;cursor:help;border-radius:4px;outline:none}
+.ex-key:focus-visible{box-shadow:0 0 0 2px var(--ring)}
+.ex-key::before{content:"";display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;background:var(--c)}
+.ex-key:hover::after,.ex-key:focus::after{content:attr(data-tip);position:absolute;z-index:5;left:0;bottom:calc(100% + 6px);width:max-content;max-width:240px;padding:6px 10px;border:1px solid var(--border);border-radius:8px;background:var(--card);color:var(--text-strong);font:400 12px var(--font-body);box-shadow:var(--shadow-md)}
+</style>
+</head>
+<body class="ex-page">
+<nav class="ex-rail" aria-label="Sections"></nav>
+<div class="ex-shell">
+<section class="ex-section" style="padding-top:0">
+  <div class="ex-title"><h1>Data spine</h1><p>The data spine is the set of tables and jobs that every integration uses. A record comes in, gets a Flow identity, and goes out from a Flow record.</p><div class="ex-meta">Sources · Data spine · Data model · server core · 21 Oct 2026</div></div>
+</section>
+
+<section class="ex-section" id="gap">
+  <div class="ex-head"><span class="ex-n">01</span><h2>Name match</h2><p>A name match joins a Flow customer to an accounts contact by the same name. A send to Xero still finds the contact this way.</p></div>
+  <div class="ex-figure" id="fig-gap"></div>
+  <div class="ex-layers"><span><i class="ex-ly ex-ly--key"></i> See first</span><span><i class="ex-ly ex-ly--alt"></i> Outside copy</span><span><i class="ex-ly ex-ly--off"></i> Not in use</span></div>
+  <details class="ex-facts" data-def="A name match joins a Flow customer to an accounts contact by the same name."></details>
+</section>
+
+<section class="ex-section" id="tables">
+  <div class="ex-head"><span class="ex-n">02</span><h2>Four tables</h2><p>The data spine is four tables in the Flow database. Every installation creates the tables when the server starts.</p></div>
+  <div class="ex-figure" id="fig-tables"></div>
+  <details class="ex-facts" data-def="The data spine is four tables in the Flow database."></details>
+</section>
+
+<section class="ex-section" id="path">
+  <div class="ex-head"><span class="ex-n">03</span><h2>One path</h2><p>The path is the route a record takes from an outside system into Flow and back. The outbox send on this path is not in use.</p></div>
+  <div class="ex-figure" id="fig-path"></div>
+  <details class="ex-facts" data-def="The path is the route a record takes from an outside system into Flow and back."></details>
+</section>
+
+<section class="ex-section" id="identity">
+  <div class="ex-head"><span class="ex-n">04</span><h2>Identity map</h2><p>The identity map pairs one Flow record with one outside record. One active link is the pair Flow trusts.</p></div>
+  <div class="ex-figure" id="fig-identity"></div>
+  <details class="ex-facts" data-def="The identity map pairs one Flow record with one outside record."></details>
+</section>
+
+<section class="ex-section" id="jobs">
+  <div class="ex-head"><span class="ex-n">05</span><h2>Job queue</h2><p>The job queue is the table of background work that waits to run. A worker claims a job and holds a lease.</p></div>
+  <div class="ex-figure" id="fig-job-states"></div>
+  <div class="ex-figure" id="fig-job-runs"></div>
+  <details class="ex-facts" data-def="The job queue is the table of background work that waits to run."></details>
+</section>
+
+<section class="ex-section" id="writes">
+  <div class="ex-head"><span class="ex-n">06</span><h2>Outbox</h2><p>The outbox is the table of writes Flow will send to an outside system. Flow stores the write row before the call leaves.</p></div>
+  <div class="ex-figure" id="fig-outbox"></div>
+  <details class="ex-facts" data-def="The outbox is the table of writes Flow will send to an outside system."></details>
+</section>
+
+<section class="ex-section" id="review">
+  <div class="ex-head"><span class="ex-n">07</span><h2>Review queue</h2><p>The review queue is the list of differences a person must decide. An item alerts the person and writes to no system.</p></div>
+  <div class="ex-figure" id="fig-review"></div>
+  <details class="ex-facts" data-def="The review queue is the list of differences a person must decide."></details>
+</section>
+
+<section class="ex-section" id="owners">
+  <div class="ex-head"><span class="ex-n">08</span><h2>Field owners</h2><p>A field owner is the one system that may change that fact on a billed job. Flow compares the work fields only.</p></div>
+  <div class="ex-figure" id="fig-owners"></div>
+  <details class="ex-facts" data-def="A field owner is the one system that may change that fact on a billed job."></details>
+</section>
+
+<section class="ex-section" id="compare">
+  <div class="ex-head"><span class="ex-n">09</span><h2>Three-way compare</h2><p>The three-way compare checks a job after Flow has drafted its invoice. Flow looks at the basis, the work system and its own draft.</p></div>
+  <div class="ex-figure" id="fig-compare"></div>
+  <details class="ex-facts" data-def="The three-way compare checks a job after Flow has drafted its invoice."></details>
+</section>
+</div>
+
+<script>
+/* Explainer charts (references/charts.md). Data-driven SVG for the top-rated Chart Lab kinds.
+   Each renderer draws into an element (usually a .ex-figure), puts an .ex-hot rect with data-ex
+   over every part, and adds inline items to window.EX. Load this file and call the renderers
+   BEFORE explainer.js, so the runtime finds every [data-ex].
+   Item field `ex`: a key into window.EX, or an object {t, l, d, x} that is added under an auto key.
+   Layers: "" (plain), "key" (red, the one thing to see first), "alt" (steel), "off" (dashed, optional). */
+(function () {
+  var seq = 0;
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function key(ex, hint) {
+    if (!ex) return '';
+    if (typeof ex === 'string') return ex;
+    var k = 'auto.' + (hint || 'item') + '.' + (++seq);
+    (window.EX = window.EX || {})[k] = ex; return k;
+  }
+  function mod(base, layer) { return base + (layer ? ' ' + base + '--' + layer : ''); }
+  function hot(k, x, y, w, h, rx) {
+    return k ? '<rect class="ex-hot" data-ex="' + esc(k) + '" x="' + x + '" y="' + y + '" width="' + w + '" height="' + h + '" rx="' + (rx == null ? 10 : rx) + '"/>' : '';
+  }
+  function svg(el, w, h, label, body, hots, minW) {
+    var id = 'exc' + (++seq);
+    var defs = '<defs>' +
+      '<marker id="' + id + 'h" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ex-head-fill" d="M0 0 L10 5 L0 10 z"/></marker>' +
+      '<marker id="' + id + 'k" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ex-head-fill ex-head-fill--key" d="M0 0 L10 5 L0 10 z"/></marker></defs>';
+    el.innerHTML = '<svg viewBox="0 0 ' + w + ' ' + h + '" role="img" aria-label="' + esc(label || '') + '"' +
+      ' style="max-width:' + w + 'px;min-width:' + Math.min(minW || w, w) + 'px">' + defs + body.replace(/\{M\}/g, id) + '<g>' + hots + '</g></svg>';
+    return el.firstChild;
+  }
+  function boxText(x, y, w, h, title, sub) {
+    var cy = y + h / 2;
+    return sub
+      ? '<text class="ex-t" x="' + (x + 14) + '" y="' + (cy - 3) + '">' + esc(title) + '</text><text class="ex-ts" x="' + (x + 14) + '" y="' + (cy + 15) + '">' + esc(sub) + '</text>'
+      : '<text class="ex-t" x="' + (x + 14) + '" y="' + (cy + 5) + '">' + esc(title) + '</text>';
+  }
+
+  /* ConnectionDiagram: parts as boxes in columns, joined by labelled arrows. The default diagram.
+     {cols: ["CLIENT", "HOST"], nodes: [{id, col, row, title, sub, layer, ex}],
+      edges: [{from, to, label, layer, ex}], boxW, boxH, gapX, gapY} */
+  function connection(el, o) {
+    var bw = o.boxW || 200, bh = o.boxH || 62, gx = o.gapX || 120, gy = o.gapY || 34, top = o.cols ? 44 : 16, pad = 20;
+    var byId = {}, maxCol = 0, maxRow = 0, body = '', hots = '';
+    o.nodes.forEach(function (n) { n.x = pad + n.col * (bw + gx); n.y = top + n.row * (bh + gy); byId[n.id] = n; maxCol = Math.max(maxCol, n.col); maxRow = Math.max(maxRow, n.row); });
+    var W = pad * 2 + (maxCol + 1) * bw + maxCol * gx, H = top + (maxRow + 1) * bh + maxRow * gy + 20;
+    (o.cols || []).forEach(function (c, i) { body += '<text class="ex-tm" x="' + (pad + i * (bw + gx)) + '" y="24">' + esc(c) + '</text>'; });
+    (o.edges || []).forEach(function (e) {
+      var a = byId[e.from], b = byId[e.to], d, lx, ly;
+      if (!a || !b) throw new Error('connection: unknown node in edge ' + e.from + ' → ' + e.to);
+      if (a.col === b.col) {
+        var down = b.row > a.row, x = a.x + bw / 2, y1 = down ? a.y + bh : a.y, y2 = down ? b.y : b.y + bh;
+        d = 'M' + x + ' ' + y1 + ' V' + y2; lx = x + 8; ly = (y1 + y2) / 2 + 4;
+      } else {
+        var right = b.col > a.col, x1 = right ? a.x + bw : a.x, x2 = right ? b.x : b.x + bw;
+        var ya = a.y + bh / 2 + (e.offset || 0), yb = b.y + bh / 2 + (e.offset || 0), mx = (x1 + x2) / 2;
+        d = ya === yb ? 'M' + x1 + ' ' + ya + ' H' + x2 : 'M' + x1 + ' ' + ya + ' H' + mx + ' V' + yb + ' H' + x2;
+        lx = Math.min(x1, x2) + 8; ly = ya - 8;
+      }
+      body += '<path class="' + mod('ex-line', e.layer === 'key' ? 'key' : e.layer === 'off' ? 'off' : '') + '" d="' + d + '" marker-end="url(#{M}' + (e.layer === 'key' ? 'k' : 'h') + ')"/>';
+      if (e.label) {
+        body += '<text class="' + (e.ex ? 'ex-ta' : 'ex-tl') + '" x="' + lx + '" y="' + ly + '">' + esc(e.label) + '</text>';
+        if (e.ex) hots += hot(key(e.ex, 'edge'), lx - 4, ly - 13, e.label.length * 7 + 8, 18, 4);
+      }
+    });
+    o.nodes.forEach(function (n) {
+      body += '<rect class="' + mod('ex-box', n.layer) + (n.layer === 'off' ? '' : '') + '" x="' + n.x + '" y="' + n.y + '" width="' + bw + '" height="' + bh + '" rx="10"/>' + boxText(n.x, n.y, bw, bh, n.title, n.sub);
+      hots += hot(key(n.ex, n.id), n.x, n.y, bw, bh);
+    });
+    return svg(el, W, H, o.label, body, hots, o.minWidth || 760);
+  }
+
+  /* Container diagram: zones that hold parts. Rated great.
+     {zones: [{title, layer, ex, items: [{title, sub, layer, ex}]}], perRow: 2, zoneCols: 2} */
+  function container(el, o) {
+    var per = o.perRow || 2, zc = o.zoneCols || Math.min(o.zones.length, 3), iw = o.itemW || 170, ih = o.itemH || 54, g = 12, pad = 20, zh0 = 40;
+    var zw = per * iw + (per - 1) * g + 2 * 16, body = '', hots = '', rowsH = [];
+    o.zones.forEach(function (z, i) { var r = Math.floor(i / zc), h = zh0 + Math.ceil(z.items.length / per) * (ih + g) + 4; rowsH[r] = Math.max(rowsH[r] || 0, h); });
+    var W = pad * 2 + zc * zw + (zc - 1) * 24, H = pad * 2 + rowsH.reduce(function (s, h) { return s + h; }, 0) + (rowsH.length - 1) * 24;
+    o.zones.forEach(function (z, i) {
+      var r = Math.floor(i / zc), c = i % zc, zx = pad + c * (zw + 24), zy = pad;
+      for (var k = 0; k < r; k++) zy += rowsH[k] + 24;
+      var zcls = z.layer ? mod('ex-box', z.layer) : 'ex-zone';
+      body += '<rect class="' + zcls + '" x="' + zx + '" y="' + zy + '" width="' + zw + '" height="' + rowsH[r] + '" rx="14"/><text class="ex-tm" x="' + (zx + 16) + '" y="' + (zy + 26) + '">' + esc(z.title) + '</text>';
+      hots += hot(key(z.ex, 'zone'), zx, zy, zw, 34, 14);
+      z.items.forEach(function (it, j) {
+        var x = zx + 16 + (j % per) * (iw + g), y = zy + zh0 + Math.floor(j / per) * (ih + g);
+        body += '<rect class="' + mod('ex-box', it.layer) + '" x="' + x + '" y="' + y + '" width="' + iw + '" height="' + ih + '" rx="10"/>' + boxText(x, y, iw, ih, it.title, it.sub);
+        hots += hot(key(it.ex, 'part'), x, y, iw, ih);
+      });
+    });
+    return svg(el, W, H, o.label, body, hots, o.minWidth || 760);
+  }
+
+  /* Capacity bars: one limit split into named parts, one bar per step. Rated good.
+     {limit: 200, unit: "k", rows: [{label, parts: [{label, value, layer, ex}]}]} */
+  function capacity(el, o) {
+    var lw = o.labelW || 150, bw = o.barW || 560, bh = 30, gy = 30, pad = 20, top = 34, body = '', hots = '';
+    var W = pad * 2 + lw + bw + 60, H = top + o.rows.length * (bh + gy) + 10, u = o.unit || '';
+    body += '<text class="ex-tm" x="' + (pad + lw) + '" y="20">0</text><text class="ex-tm" x="' + (pad + lw + bw) + '" y="20" text-anchor="end">' + esc(o.limit + u) + ' LIMIT</text>';
+    o.rows.forEach(function (r, i) {
+      var y = top + i * (bh + gy), x = pad + lw, used = 0;
+      body += '<text class="ex-t" x="' + pad + '" y="' + (y + 20) + '">' + esc(r.label) + '</text>';
+      body += '<rect class="ex-box ex-box--off" x="' + x + '" y="' + y + '" width="' + bw + '" height="' + bh + '" rx="6"/>';
+      r.parts.forEach(function (p) {
+        var w = bw * p.value / o.limit;
+        body += '<rect class="' + mod('ex-box', p.layer) + '" x="' + x + '" y="' + y + '" width="' + w + '" height="' + bh + '" rx="6"/>';
+        if (w > 60) body += '<text class="ex-ts" x="' + (x + 8) + '" y="' + (y + 19) + '">' + esc(p.label) + '</text>';
+        hots += hot(key(p.ex || { t: p.label, l: r.label, d: p.label + ' is one part of ' + r.label + '.', x: ['It uses ' + p.value + u + ' of ' + o.limit + u + '.', 'That is ' + Math.round(100 * p.value / o.limit) + '% of the limit.'] }, 'part'), x, y, w, bh, 6);
+        x += w; used += p.value;
+      });
+      body += '<text class="' + (used > o.limit ? 'ex-ta' : 'ex-tl') + '" x="' + (pad + lw + bw + 8) + '" y="' + (y + 20) + '">' + Math.round(100 * used / o.limit) + '%</text>';
+    });
+    return svg(el, W, H, o.label, body, hots, o.minWidth || 760);
+  }
+
+  /* Heatmap: a value for each row and column pair. Rated great.
+     {rows: [..], cols: [..], values: [[..]], fmt: v => text, cellEx: (row, col, v) => {t,l,d,x}} */
+  function heatmap(el, o) {
+    var lw = o.labelW || 140, cw = o.cellW || 64, ch = o.cellH || 40, pad = 20, top = 40, body = '', hots = '';
+    var flat = [].concat.apply([], o.values), lo = Math.min.apply(null, flat), hi = Math.max.apply(null, flat), fmt = o.fmt || String;
+    var W = pad * 2 + lw + o.cols.length * cw, H = top + o.rows.length * ch + pad;
+    o.cols.forEach(function (c, j) { body += '<text class="ex-tm" x="' + (pad + lw + j * cw + cw / 2) + '" y="26" text-anchor="middle">' + esc(c) + '</text>'; });
+    o.rows.forEach(function (r, i) {
+      var y = top + i * ch;
+      body += '<text class="ex-t" x="' + pad + '" y="' + (y + ch / 2 + 5) + '">' + esc(r) + '</text>';
+      o.cols.forEach(function (c, j) {
+        var v = o.values[i][j], t = hi === lo ? 1 : (v - lo) / (hi - lo), x = pad + lw + j * cw;
+        var fill = t < .5 ? 'color-mix(in oklab, var(--seq-2) ' + Math.round(t * 200) + '%, var(--seq-1))' : 'color-mix(in oklab, var(--seq-3) ' + Math.round((t - .5) * 200) + '%, var(--seq-2))';
+        body += '<rect x="' + (x + 1) + '" y="' + (y + 1) + '" width="' + (cw - 2) + '" height="' + (ch - 2) + '" rx="4" style="fill:' + fill + '"/>';
+        body += '<text class="ex-tl" x="' + (x + cw / 2) + '" y="' + (y + ch / 2 + 4) + '" text-anchor="middle" style="fill:' + (t > .55 ? 'var(--on-accent)' : 'var(--text-strong)') + '">' + esc(fmt(v)) + '</text>';
+        var ex = o.cellEx ? o.cellEx(r, c, v) : { t: r + ' · ' + c, l: 'HEATMAP', d: 'This cell is ' + r + ' against ' + c + '.', x: ['Its value is ' + fmt(v) + '.'] };
+        hots += hot(key(ex, 'cell'), x + 1, y + 1, cw - 2, ch - 2, 4);
+      });
+    });
+    return svg(el, W, H, o.label, body, hots, o.minWidth || Math.min(760, W));
+  }
+
+  /* Sankey: flows as bands; band width = amount. Rated great.
+     {nodes: [{id, col, title, layer, ex}], links: [{from, to, value, layer, ex}], unit} */
+  function sankey(el, o) {
+    var nw = 14, gap = o.gapY || 26, pad = 20, H = o.height || 320, W = o.width || 760, labelW = o.labelW || 150, body = '', hots = '', u = o.unit || '';
+    var byId = {}, cols = [];
+    o.nodes.forEach(function (n) { n.inV = 0; n.outV = 0; byId[n.id] = n; (cols[n.col] = cols[n.col] || []).push(n); });
+    o.links.forEach(function (l) { byId[l.from].outV += l.value; byId[l.to].inV += l.value; });
+    o.nodes.forEach(function (n) { n.v = Math.max(n.inV, n.outV); });
+    var scale = Infinity;
+    cols.forEach(function (c) { var s = c.reduce(function (a, n) { return a + n.v; }, 0); scale = Math.min(scale, (H - 2 * pad - (c.length - 1) * gap) / s); });
+    var x0 = pad + labelW, colW = cols.length > 1 ? (W - pad - labelW - nw - x0) / (cols.length - 1) : 0;
+    cols.forEach(function (c, ci) {
+      var y = pad;
+      c.forEach(function (n) { n.left = ci === 0 && cols.length > 1; n.x = x0 + ci * colW; n.y = y; n.h = n.v * scale; n.oy = y; n.iy = y; y += n.h + gap; });
+    });
+    o.links.forEach(function (l) {
+      var a = byId[l.from], b = byId[l.to], h = l.value * scale, x1 = a.x + nw, x2 = b.x, y1 = a.oy, y2 = b.iy, mx = (x1 + x2) / 2;
+      a.oy += h; b.iy += h;
+      var d = 'M' + x1 + ' ' + y1 + ' C' + mx + ' ' + y1 + ' ' + mx + ' ' + y2 + ' ' + x2 + ' ' + y2 + ' V' + (y2 + h) + ' C' + mx + ' ' + (y2 + h) + ' ' + mx + ' ' + (y1 + h) + ' ' + x1 + ' ' + (y1 + h) + ' Z';
+      var k = key(l.ex || { t: a.title + ' → ' + b.title, l: 'FLOW', d: 'This flow goes from ' + a.title + ' to ' + b.title + '.', x: ['It carries ' + l.value + u + '.', 'That is ' + Math.round(100 * l.value / a.v) + '% of ' + a.title + '.'] }, 'flow');
+      body += '<path d="' + d + '" style="fill:' + (l.layer === 'key' ? 'var(--accent)' : l.layer === 'alt' ? 'var(--accent-2)' : 'var(--border-strong)') + ';fill-opacity:' + (l.layer ? .35 : .5) + '"/>';
+      hots += '<path class="ex-hot" data-ex="' + esc(k) + '" d="' + d + '"/>';
+    });
+    o.nodes.forEach(function (n) {
+      body += '<rect x="' + n.x + '" y="' + n.y + '" width="' + nw + '" height="' + Math.max(n.h, 2) + '" rx="3" style="fill:' + (n.layer === 'key' ? 'var(--accent)' : n.layer === 'alt' ? 'var(--accent-2)' : 'var(--text-strong)') + '"/>';
+      var tx = n.left ? n.x - 8 : n.x + nw + 8, anchor = n.left ? ' text-anchor="end"' : '';
+      body += '<text class="ex-t"' + anchor + ' x="' + tx + '" y="' + (n.y + n.h / 2 + 1) + '">' + esc(n.title) + '</text><text class="ex-ts"' + anchor + ' x="' + tx + '" y="' + (n.y + n.h / 2 + 17) + '">' + esc(n.v + u) + '</text>';
+      hots += hot(key(n.ex || { t: n.title, l: 'NODE', d: n.title + ' is one stage of the flow.', x: [n.title + ' carries ' + n.v + u + '.'] }, n.id), n.left ? n.x - labelW + 10 : n.x - 2, n.y, nw + labelW - 10, Math.max(n.h, 34), 4);
+    });
+    return svg(el, W, H, o.label, body, hots, o.minWidth || 760);
+  }
+
+  window.ExCharts = { connection: connection, container: container, capacity: capacity, heatmap: heatmap, sankey: sankey };
+})();
+</script>
+<script>
+window.EX = {
+  "n.accounts": {"t": "Accounts system", "l": "OUTSIDE", "d": "The accounts system is the outside system that holds invoices and payments.", "x": ["Xero is the accounts system.", "Flow does not create an accounts contact when a name is missing."]},
+  "n.work": {"t": "Work system", "l": "OUTSIDE", "d": "The work system is the outside system that holds the jobs.", "x": ["Seazona is the work system."]},
+  "n.acopy": {"t": "Accounts copy", "l": "COPY", "d": "The accounts copy is the rows Flow stores from the accounts system.", "x": ["The copy holds contacts and items.", "The copy holds invoices, credit notes and payments.", "Flow does not change those rows.", "Each Xero row belongs to one organisation."]},
+  "n.wcopy": {"t": "Work copy", "l": "COPY", "d": "The work copy is the rows Flow stores from the work system.", "x": ["The copy holds orders, invoices, clients, products and users.", "The Seazona tables have no organisation column.", "The Seazona sync has its own loop and its own call limit."]},
+  "n.name": {"t": "Name match", "l": "JOIN", "d": "A name match joins a Flow customer to one accounts contact by the same name.", "x": ["Spaces and letter case do not change the test.", "Two contacts with that name do not match.", "A missing name does not match.", "The match stores no link row."]},
+  "n.core": {"t": "Core records", "l": "FLOW", "d": "Core records are the rows Flow owns.", "x": ["Core records include contacts, price items, invoices and the billing ledger.", "Each of those rows belongs to one organisation."]},
+  "e.arec": {"t": "Copy", "l": "ARROW", "d": "A copy is a read of rows from an outside system into Flow.", "x": ["Flow stores the page and moves the read position together."]},
+  "e.jobs": {"t": "Jobs", "l": "ARROW", "d": "A job feed is the work-system rows Flow reads into its copy.", "x": ["The Seazona loop reads this feed.", "That loop does not claim a job from the shared queue."]},
+  "e.ename": {"t": "Exact name", "l": "ARROW", "d": "An exact name is one accounts contact with the same name as the Flow customer.", "x": ["A send to Xero looks up the contact with this test.", "The ledger uses this test on one lookup.", "That lookup is not an exact link."]},
+  "e.contact": {"t": "Contact", "l": "ARROW", "d": "The contact is the accounts person or company named on the send.", "x": ["Flow refuses the send when the name is missing or doubled."]},
+  "e.ledger": {"t": "Ledger", "l": "ARROW", "d": "The ledger is the billing row Flow keeps for one job.", "x": ["One job in the work system is one ledger row."]},
+
+  "z.id": {"t": "Identity map", "l": "SPINE", "d": "The identity map is the table of links between a Flow record and an outside record.", "x": ["The table name is external_links.", "PostgreSQL is the Flow database.", "Flow uses no second database for it.", "Each row belongs to one organisation.", "One organisation is one lab.", "Flow does not delete a row.", "Flow changes the state of the row."]},
+  "z.job": {"t": "Job queue", "l": "SPINE", "d": "The job queue is the table of background work that waits to run.", "x": ["The table name is background_jobs.", "PostgreSQL is the Flow database.", "The queue is rows in PostgreSQL.", "Flow adds no extra service to run the queue.", "Each row belongs to one organisation.", "Flow does not delete a row.", "Flow changes the state of the row."]},
+  "z.out": {"t": "Outbox", "l": "SPINE", "d": "The outbox is the table of writes Flow will send to an outside system.", "x": ["The table name is outbox.", "No send uses this table yet.", "A Xero draft push is stored on its own table.", "A paid status for the work system is stored on its own table.", "No code sends that paid status.", "Each row belongs to one organisation.", "Flow does not delete a row.", "Flow changes the state of the row."]},
+  "z.rev": {"t": "Review queue", "l": "SPINE", "d": "The review queue is the table of differences a person must decide.", "x": ["The table name is review_items.", "An item alerts the person.", "An item writes to no outside system.", "Each row belongs to one organisation.", "Flow does not delete a row.", "Flow changes the state of the row."]},
+  "z.id.on": {"t": "Active link", "l": "LINK", "d": "An active link is the pair Flow trusts.", "x": ["One outside record has one active link for that system and entity.", "One Flow record has one active link for that system and entity."]},
+  "z.id.wait": {"t": "Proposed link", "l": "LINK", "d": "A proposed link is a guess that waits for a person.", "x": ["A loose name match stays proposed until a person confirms it."]},
+  "z.id.old": {"t": "Superseded link", "l": "LINK", "d": "A superseded link is a link that was replaced.", "x": ["The old row stays, so the history remains."]},
+  "z.job.wait": {"t": "Queued job", "l": "JOB", "d": "A queued job is work that waits for a worker.", "x": ["One queued or running job is allowed for each kind and key."]},
+  "z.job.run": {"t": "Running job", "l": "JOB", "d": "A running job is work a worker has claimed.", "x": ["The worker holds a lease while the job runs."]},
+  "z.job.dead": {"t": "Dead job", "l": "JOB", "d": "A dead job is work that will not be tried again on its own.", "x": ["A dead job opens a review item."]},
+  "z.out.wait": {"t": "Pending write", "l": "WRITE", "d": "A pending write is a write that has not been sent.", "x": ["Flow stores the row before the call leaves."]},
+  "z.out.sent": {"t": "Sent write", "l": "WRITE", "d": "A sent write is a write the outside system has accepted.", "x": ["The row stores the new outside id."]},
+  "z.out.unk": {"t": "Ambiguous write", "l": "WRITE", "d": "An ambiguous write is a send whose result Flow does not know.", "x": ["Flow does not send it again until a lookup."]},
+  "z.rev.open": {"t": "Open item", "l": "REVIEW", "d": "An open item is a difference a person has not closed.", "x": ["One open item is kept for each kind and record.", "A repeat finding updates that same item."]},
+  "z.rev.shut": {"t": "Closed item", "l": "REVIEW", "d": "A closed item is a difference a person has decided.", "x": ["The row stores the choice, who made it and the time."]},
+
+  "p.api": {"t": "Integration", "l": "OUTSIDE", "d": "An integration is the connection to one outside system.", "x": ["A new integration adds an adapter.", "An adapter is the code for one integration.", "A new integration adds no new spine tables."]},
+  "p.mir": {"t": "Mirror", "l": "COPY", "d": "The mirror is the copy of outside rows that an adapter keeps.", "x": ["The read position moves only after Flow stores that page."]},
+  "p.id": {"t": "Identity map", "l": "SPINE", "d": "The identity map on this path gives the outside record its Flow record.", "x": ["The pipeline writes a contact link when one customer on each side has the same name."]},
+  "p.core": {"t": "Core records", "l": "FLOW", "d": "Core records on this path are the Flow rows the link points at.", "x": ["A difference here can open a review item."]},
+  "p.out": {"t": "Outbox", "l": "SPINE", "d": "The outbox on this path is the write row that must exist before a send.", "x": ["No caller queues a write here yet.", "The send from this row is not in use.", "A live invoice send uses the job queue, not the outbox.", "The old draft-push table and the paid-status table remain."]},
+  "p.rev": {"t": "Review queue", "l": "SPINE", "d": "The review queue on this path is where a difference waits.", "x": ["The ledger, the price check and the daily reconcile open items here."]},
+  "e.page": {"t": "Page", "l": "ARROW", "d": "A page is one batch of records read from an outside system.", "x": ["Flow stores the batch before it moves the read position."]},
+  "e.rid": {"t": "Outside id", "l": "ARROW", "d": "The outside id is the id of the record in the other system.", "x": ["The identity map stores that id with the Flow id."]},
+  "e.fid": {"t": "Flow id", "l": "ARROW", "d": "The Flow id is the id of the Flow record in the link.", "x": ["The pipeline reads an active link before it adds another."]},
+  "e.write": {"t": "Intended write", "l": "ARROW", "d": "An intended write is a change Flow means to make in an outside system.", "x": ["The outbox row is part of the same transaction as the Flow change.", "A rollback removes the write and the change together."]},
+  "e.diff": {"t": "Difference", "l": "ARROW", "d": "A difference is a fact two sides do not share.", "x": ["Flow opens a review item.", "Flow does not overwrite one side to hide the difference."]},
+
+  "i.loose": {"t": "Loose name", "l": "MATCH", "d": "A loose name is a name match that is not unique.", "x": ["The link state is proposed.", "The match kind is name."]},
+  "i.exact": {"t": "Exact match", "l": "MATCH", "d": "An exact match is evidence Flow can trust without a new confirm.", "x": ["Flow made the outside record.", "Both records carry the same id.", "One record on each side has the same name.", "A person made the link.", "An earlier installation imported the link."]},
+  "i.prior": {"t": "Prior link", "l": "MATCH", "d": "A prior link is a job-to-invoice link kept from an earlier installation.", "x": ["Flow adds a missing link at each start when the earlier data is connected.", "A link a person made there is marked person.", "A link the earlier app made is marked imported.", "Flow reads the link when the job first becomes an obligation.", "Flow checks the link against the accounts copy before it counts as evidence.", "That check calls no accounts system."]},
+  "i.prop": {"t": "Proposed link", "l": "LINK", "d": "A proposed link is a row that waits for a person.", "x": ["The row opens a review item.", "A person can confirm it.", "The confirm fails when either side already has an active link."]},
+  "i.active": {"t": "Active link", "l": "LINK", "d": "An active link is the one pair Flow uses for that record.", "x": ["Two callers that link the same record at the same time take turns.", "The first caller makes one link.", "The second caller gets a conflict and changes nothing."]},
+  "i.old": {"t": "Superseded link", "l": "LINK", "d": "A superseded link is a link Flow has ended.", "x": ["Flow does not delete the row.", "A merged or removed outside record can end the link."]},
+  "i.bad": {"t": "Conflict", "l": "LINK", "d": "A conflict is the result when one side already has an active link.", "x": ["Flow changes no link.", "Flow opens a review item that shows both sides.", "An exact match conflicts in the same way."]},
+  "e.guess": {"t": "Guess", "l": "ARROW", "d": "A guess is the step that stores a loose name as a proposed link.", "x": ["A name match cannot be active until a person confirms it."]},
+  "e.prove": {"t": "Prove", "l": "ARROW", "d": "Prove is the step that stores an exact match as an active link.", "x": ["No person has to confirm an exact match."]},
+  "e.check": {"t": "Check", "l": "ARROW", "d": "A check is the read of a prior link against the accounts copy.", "x": ["The link counts as evidence only after that check."]},
+  "e.confirm": {"t": "Confirm", "l": "ARROW", "d": "A confirm is a person making a proposed link active.", "x": ["The row records who confirmed it and when."]},
+  "e.replace": {"t": "Replace", "l": "ARROW", "d": "Replace is the step that ends an active link.", "x": ["The new state is superseded."]},
+  "e.block": {"t": "Side taken", "l": "ARROW", "d": "Side taken means one side of the pair already has an active link.", "x": ["Flow locks both sides before it decides."]},
+
+  "j.q": {"t": "Queued", "l": "JOB", "d": "Queued is the state of a job that waits for its run time.", "x": ["The job does not run before that time.", "A second job with the same kind and key is not added."]},
+  "j.run": {"t": "Running", "l": "JOB", "d": "Running is the state of a job a worker has claimed.", "x": ["The default lease is five minutes.", "The Xero copy may hold a job for 30 minutes.", "Invoice send and the daily reconcile may hold a job for 15 minutes.", "A lease that ends makes the job free to claim.", "Only the worker that holds the lease can finish the job."]},
+  "j.ok": {"t": "Succeeded", "l": "JOB", "d": "Succeeded is the state of a job that finished.", "x": ["The row stores what the run reported."]},
+  "j.dead": {"t": "Dead", "l": "JOB", "d": "Dead is the state of a job that has stopped for good.", "x": ["The usual job stops after eight attempts.", "The daily reconcile stops after three attempts.", "A failure that must not wait makes the job dead at once.", "A lease that ends on the last attempt makes the job dead.", "The stored text is the failure message, not the raw response.", "That text must not be a credential."]},
+  "j.rev": {"t": "Review item", "l": "JOB", "d": "The review item for a job is the alert that the job is dead.", "x": ["Flow does not queue that job again until the next day.", "A restart of Flow can queue it before that day."]},
+  "e.claim": {"t": "Claim", "l": "ARROW", "d": "A claim is a worker taking the next free job.", "x": ["The claim skips a job another worker has locked.", "Jobs are taken in run-time order."]},
+  "e.wait": {"t": "Wait", "l": "ARROW", "d": "A wait is the delay before a failed job can run again.", "x": ["The first wait is one minute.", "The wait doubles after each failure.", "The wait is never more than six hours."]},
+  "e.done": {"t": "Done", "l": "ARROW", "d": "Done is the step that marks a job succeeded.", "x": ["A worker that lost its lease cannot mark the job done."]},
+  "e.give": {"t": "Give up", "l": "ARROW", "d": "Give up is the step that marks a job dead.", "x": ["The same step opens the review item."]},
+  "e.alert": {"t": "Alert", "l": "ARROW", "d": "An alert is the review item opened for a dead job.", "x": ["The item does not run the job again by itself."]},
+
+  "r.queue": {"t": "Job queue", "l": "QUEUE", "d": "The job queue here is the shared list that four kinds of work use.", "x": ["The Seazona sync does not take a job from this list.", "The Seazona sync runs on its own loop."]},
+  "r.xero": {"t": "Xero copy", "l": "JOB", "d": "The Xero copy is the job that reads the accounts history into Flow.", "x": ["The job copies invoices, credit notes and payments.", "Contacts and items are copied again once a day.", "One history job is open for an organisation at a time.", "Every Xero call goes through the Xero governor.", "The governor limits how many calls Flow may make.", "The copy leaves a reserve of the day's calls for drafts and for people."]},
+  "r.pipe": {"t": "Pipeline", "l": "JOB", "d": "The pipeline is the job that brings copied work into the ledger.", "x": ["It links a customer when one name is unique on each side.", "It skips a name that is not unique on each side.", "It writes only Flow records.", "It does not write to an outside system."]},
+  "r.send": {"t": "Invoice send", "l": "JOB", "d": "Invoice send is the job that sends invoices a person has queued.", "x": ["A person queues the invoices first, with Send all ready.", "Send uses this queue.", "Send does not write an outbox row.", "Two Flow processes do not send the same batch at once."]},
+  "r.day": {"t": "Daily reconcile", "l": "JOB", "d": "The daily reconcile is the job that compares a day's totals across Flow's copies.", "x": ["It looks at the last 60 days.", "It counts the work copy, the ledger and the invoices.", "A day that does not agree opens one review item.", "It does not call an outside system.", "It does not change a record to force a match."]},
+  "r.sea": {"t": "Seazona loop", "l": "JOB", "d": "The Seazona loop is the background sync for the work system.", "x": ["It does not claim a row from the shared job queue.", "It has its own limit on calls."]},
+  "r.work": {"t": "Work copy", "l": "COPY", "d": "The work copy is the Seazona rows that loop keeps up to date.", "x": ["The loop reads orders, invoices, clients, products and users."]},
+  "w.pend": {"t": "Pending", "l": "WRITE", "d": "Pending is the state of a write that is waiting to be sent.", "x": ["The row is stored in the same transaction as the Flow change.", "Each write has one idempotency key.", "An idempotency key is the text that stops a second copy of the same write.", "The key is unique.", "The same key returns the first write.", "The same key for a different record is refused."]},
+  "w.send": {"t": "Sending", "l": "WRITE", "d": "Sending is the state of a write while the call is in progress.", "x": ["A send still in progress after ten minutes becomes ambiguous."]},
+  "w.sent": {"t": "Sent", "l": "WRITE", "d": "Sent is the state of a write the outside system has accepted.", "x": ["A sent row must store the outside id."]},
+  "w.link": {"t": "New link", "l": "WRITE", "d": "The new link is the active identity-map row for a record Flow created.", "x": ["The match kind is created by Flow.", "The link is written in the same transaction as the sent state."]},
+  "w.amb": {"t": "Ambiguous", "l": "WRITE", "d": "Ambiguous is the state of a send whose result is unknown.", "x": ["The adapter must look in the outside system before it sends again.", "Flow does not send the write again with no lookup."]},
+  "w.fail": {"t": "Failed", "l": "WRITE", "d": "Failed is the state of a write the outside system refused, or that a lookup shows was never made.", "x": ["A retry can return the write to pending.", "A write with no retry opens a review item."]},
+  "w.can": {"t": "Cancelled", "l": "WRITE", "d": "Cancelled is the state of a write a person has stopped.", "x": ["A person can cancel a pending write.", "A person can cancel an ambiguous write.", "A person can cancel a failed write.", "The row records who cancelled it."]},
+  "w.rev": {"t": "Review item", "l": "WRITE", "d": "The review item for a write is the alert that the write failed.", "x": ["The item does not send the write."]},
+  "e.wclaim": {"t": "Claim", "l": "ARROW", "d": "A claim here is a worker taking the next pending write for one system.", "x": ["The claim skips a write another worker has locked."]},
+  "e.ok": {"t": "Accepted", "l": "ARROW", "d": "Accepted is the step that marks a write sent.", "x": ["The step runs only from sending or ambiguous."]},
+  "e.newid": {"t": "Outside id", "l": "ARROW", "d": "The outside id on this step is the id the other system gave the new record.", "x": ["Flow refuses to mark the write sent with no id."]},
+  "e.unk": {"t": "Unknown", "l": "ARROW", "d": "Unknown is the step that marks a send ambiguous.", "x": ["A timeout or a server error after the call left is unknown."]},
+  "e.look": {"t": "Lookup", "l": "ARROW", "d": "A lookup is a read that asks whether the outside system already has the write.", "x": ["When the lookup shows the write was never made, Flow may send it again."]},
+  "e.no": {"t": "Refused", "l": "ARROW", "d": "Refused is the step that marks a write failed.", "x": ["The write moves only from a state that this step allows."]},
+  "e.can": {"t": "Cancel", "l": "ARROW", "d": "Cancel is a person stopping a write that has not been sent.", "x": ["Two workers cannot both settle one write."]},
+  "e.failrev": {"t": "Alert", "l": "ARROW", "d": "The alert on a failed write is its review item.", "x": ["The item shows the action, the attempt count and the error."]},
+
+  "v.link": {"t": "A link", "l": "CAUSE", "d": "A link cause is an identity-map decision a person must see.", "x": ["A proposed link opens an item.", "A link conflict opens an item."]},
+  "v.job": {"t": "A job", "l": "CAUSE", "d": "A job cause is a background job that has stopped.", "x": ["A dead job opens an item."]},
+  "v.write": {"t": "A write", "l": "CAUSE", "d": "A write cause is an outbox send that failed for good.", "x": ["A failed write opens an item.", "No send uses the outbox yet, so this cause waits."]},
+  "v.diff": {"t": "A difference", "l": "CAUSE", "d": "A difference cause is two records that do not agree.", "x": ["A changed job opens an item.", "A job status that moved back opens an item.", "A deleted job opens an item.", "A price that differs opens an item.", "A day whose totals do not agree opens an item.", "An invoice that differs from the accounts copy opens an item."]},
+  "v.item": {"t": "Review item", "l": "QUEUE", "d": "A review item is one open decision for one kind and one record.", "x": ["A repeat finding updates the evidence.", "The item adds one to its seen count.", "The open list shows the largest sum of money first.", "Equal sums show the oldest item first.", "The sum is a whole number of cents.", "The sum cannot be below zero.", "Mark resolved checks that one finding again.", "The item closes when the difference is gone.", "The item stays open when the difference remains."]},
+  "v.person": {"t": "Person", "l": "PERSON", "d": "The person is the one who decides a review item.", "x": ["Dismiss records that no change was needed.", "A closed item must name the choice, the person and the time."]},
+  "v.where": {"t": "Chosen system", "l": "FIX", "d": "The chosen system is the place the person corrects the record.", "x": ["The person can correct it in Flow, in the work system, or in the accounts system.", "Flow does not pick a side and overwrite the other."]},
+  "e.vlink": {"t": "Link problem", "l": "ARROW", "d": "A link problem is a proposed link or a link conflict.", "x": ["The item holds the two sides."]},
+  "e.vjob": {"t": "Dead job", "l": "ARROW", "d": "A dead job on this arrow is the alert from the job queue.", "x": ["The item names the job kind and the error."]},
+  "e.vwrite": {"t": "Failed write", "l": "ARROW", "d": "A failed write on this arrow is the alert from the outbox.", "x": ["The item does not send the write again."]},
+  "e.vdiff": {"t": "Differs", "l": "ARROW", "d": "Differs means the stored evidence on the two sides is not the same.", "x": ["The item shows both sides and the field that differs."]},
+  "e.valert": {"t": "Alert", "l": "ARROW", "d": "The alert is the open item shown to a person.", "x": ["The item writes to no system."]},
+  "e.fix": {"t": "Correction", "l": "ARROW", "d": "A correction is the change the person makes in the system they choose.", "x": ["Flow does not make that change to settle the item."]},
+
+  "o.work": {"t": "Work system", "l": "OWNER", "d": "The work system owns the facts about the job itself.", "x": ["Flow copies those facts.", "Flow does not write them back to settle a difference."]},
+  "o.flow": {"t": "Flow", "l": "OWNER", "d": "Flow owns the invoice text, the due date and the send.", "x": ["Flow does not give those fields to the work system."]},
+  "o.acc": {"t": "Accounts", "l": "OWNER", "d": "The accounts system owns approval, payment and void.", "x": ["Flow reads those facts back.", "Flow does not change them to settle a difference."]},
+  "o.lines": {"t": "Lines", "l": "WORK", "d": "Lines are the codes, quantities and amounts on the job.", "x": ["The work system owns the lines.", "Flow copies the lines.", "A person can take new lines into an unsent Flow draft."]},
+  "o.cust": {"t": "Customer", "l": "WORK", "d": "The customer is the Flow contact for the job.", "x": ["The work system owns the customer.", "Flow finds its contact from the work system's client."]},
+  "o.stat": {"t": "Job status", "l": "WORK", "d": "The job status is the work system's state for the job.", "x": ["Flow reads the status.", "A status that moves back, on a job with an invoice, opens a review item.", "A ready job with no invoice loses the ready mark and opens an alert.", "That alert closes when the job is billable again.", "Any other job stores the status only.", "The same status reported again does nothing.", "A hold a person released stays released.", "A job deleted in the work system opens a review item.", "Flow writes nothing to an outside system for that delete."]},
+  "o.ref": {"t": "Reference", "l": "FLOW", "d": "The reference is the invoice text Flow puts on the invoice.", "x": ["Flow owns the reference."]},
+  "o.due": {"t": "Due date", "l": "FLOW", "d": "The due date is the date Flow sets for payment.", "x": ["Flow owns the due date."]},
+  "o.send": {"t": "Send", "l": "FLOW", "d": "Send is Flow giving its draft to the accounts system.", "x": ["Flow owns the send."]},
+  "o.appr": {"t": "Approval", "l": "ACCOUNTS", "d": "Approval is the accounts system accepting the invoice.", "x": ["Flow reads approval back."]},
+  "o.pay": {"t": "Payment", "l": "ACCOUNTS", "d": "Payment is the accounts system recording money against the invoice.", "x": ["Flow reads payment back.", "A part payment shows as part paid.", "A payment counts only with an exact match and a confirmed invoice."]},
+  "o.void": {"t": "Void", "l": "ACCOUNTS", "d": "A void is the accounts system cancelling the invoice.", "x": ["Flow reads a void back.", "A void or a delete of that invoice opens a review item."]},
+
+  "c.base": {"t": "Basis", "l": "SIDE", "d": "The basis is the job facts Flow stored when it made the draft.", "x": ["The basis holds the lines, the totals, the customer, the status and the time.", "A draft made before a basis was stored uses the last report."]},
+  "c.work": {"t": "Work now", "l": "SIDE", "d": "Work now is the job as the work system reports it today.", "x": ["An older report does not replace a newer one."]},
+  "c.draft": {"t": "Flow draft", "l": "SIDE", "d": "The Flow draft is the invoice Flow holds now.", "x": ["Flow compares the lines and the customer.", "Flow does not compare the job status in this check."]},
+  "c.cmp": {"t": "Compare", "l": "CHECK", "d": "The compare is the field-by-field check of the basis, the work system and the draft.", "x": ["When the draft is missing, the result is a conflict."]},
+  "c.offer": {"t": "Adopt changes", "l": "RESULT", "d": "Adopt changes is the choice to put the work system's new lines on the draft.", "x": ["This result applies when only the work system changed.", "The draft must not have been sent.", "Flow copies the lines onto its own draft.", "Flow also copies the customer when the customer changed.", "Flow writes no outside system.", "The new facts become the basis.", "The review item closes."]},
+  "c.bad": {"t": "Alert only", "l": "RESULT", "d": "Alert only is a review item with no adopt.", "x": ["Both sides changed in different ways, or the invoice left Flow.", "The invoice has left Flow when it is issued, queued or sent.", "The invoice has also left Flow when the accounts system holds it.", "Adopt is refused after the invoice has left Flow.", "When both sides changed and the draft is still unsent, a person can accept the work values."]},
+  "c.none": {"t": "Nothing", "l": "RESULT", "d": "Nothing is the result when Flow has no change to offer.", "x": ["Only Flow changed, or the job matches the basis again.", "The draft already matches the work system.", "Flow releases a hold from an earlier change.", "Flow closes that review item."]},
+  "e.cbase": {"t": "Basis", "l": "ARROW", "d": "The basis arrow carries the facts Flow kept at draft time.", "x": ["Those facts are the merge base."]},
+  "e.cnow": {"t": "Now", "l": "ARROW", "d": "The now arrow carries the work system report.", "x": ["Only the lines and the customer are compared."]},
+  "e.cdraft": {"t": "Draft", "l": "ARROW", "d": "The draft arrow carries the invoice Flow holds.", "x": ["A sent invoice cannot take new lines this way."]},
+  "e.coffer": {"t": "Work only", "l": "ARROW", "d": "Work only means the work system changed and the draft did not.", "x": ["The draft is still unsent."]},
+  "e.cbad": {"t": "Both or sent", "l": "ARROW", "d": "Both or sent means the two sides disagree, or the invoice has left Flow.", "x": ["The result is an alert only, unless a person accepts an unsent draft."]},
+  "e.cnone": {"t": "Flow only", "l": "ARROW", "d": "Flow only means the work system still matches the basis or the draft.", "x": ["Flow opens no review item for that case."]}
+};
+
+ExCharts.connection(document.getElementById('fig-gap'), {
+  label: 'Name match today',
+  cols: ['OUTSIDE', 'COPY', 'MATCH', 'FLOW'],
+  boxW: 168, boxH: 64, gapX: 108, gapY: 40,
+  nodes: [
+    {id: 'accounts', col: 0, row: 0, title: 'Accounts', sub: 'Xero', ex: 'n.accounts'},
+    {id: 'work', col: 0, row: 1, title: 'Work system', sub: 'Seazona', ex: 'n.work'},
+    {id: 'acopy', col: 1, row: 0, title: 'Accounts copy', sub: 'Xero records', layer: 'alt', ex: 'n.acopy'},
+    {id: 'wcopy', col: 1, row: 1, title: 'Work copy', sub: 'Seazona records', layer: 'alt', ex: 'n.wcopy'},
+    {id: 'name', col: 2, row: 0, title: 'Name match', sub: 'exact name', layer: 'key', ex: 'n.name'},
+    {id: 'core', col: 3, row: 1, title: 'Core records', sub: 'Flow rows', ex: 'n.core'}
+  ],
+  edges: [
+    {from: 'accounts', to: 'acopy', label: 'copy', ex: 'e.arec'},
+    {from: 'work', to: 'wcopy', label: 'jobs', ex: 'e.jobs'},
+    {from: 'acopy', to: 'name', label: 'exact name', ex: 'e.ename'},
+    {from: 'name', to: 'core', label: 'contact', ex: 'e.contact'},
+    {from: 'wcopy', to: 'core', label: 'ledger', ex: 'e.ledger'}
+  ]
+});
+
+ExCharts.container(document.getElementById('fig-tables'), {
+  label: 'Four spine tables',
+  zoneCols: 2, perRow: 2, itemW: 176, itemH: 56,
+  zones: [
+    {title: 'Identity map', ex: 'z.id', items: [
+      {title: 'Active link', sub: 'the pair Flow trusts', ex: 'z.id.on'},
+      {title: 'Proposed link', sub: 'waits for a person', ex: 'z.id.wait'},
+      {title: 'Superseded link', sub: 'kept as history', ex: 'z.id.old'}
+    ]},
+    {title: 'Job queue', ex: 'z.job', items: [
+      {title: 'Queued job', sub: 'one per kind and key', ex: 'z.job.wait'},
+      {title: 'Running job', sub: 'holds a lease', ex: 'z.job.run'},
+      {title: 'Dead job', sub: 'opens a review', ex: 'z.job.dead'}
+    ]},
+    {title: 'Outbox', layer: 'off', ex: 'z.out', items: [
+      {title: 'Pending write', sub: 'stored before send', ex: 'z.out.wait'},
+      {title: 'Sent write', sub: 'has the outside id', ex: 'z.out.sent'},
+      {title: 'Ambiguous write', sub: 'lookup before retry', ex: 'z.out.unk'}
+    ]},
+    {title: 'Review queue', ex: 'z.rev', items: [
+      {title: 'Open item', sub: 'one per kind', ex: 'z.rev.open'},
+      {title: 'Closed item', sub: 'choice, person, time', ex: 'z.rev.shut'}
+    ]}
+  ]
+});
+
+ExCharts.connection(document.getElementById('fig-path'), {
+  label: 'The path a record takes',
+  cols: ['OUTSIDE', 'COPY', 'SPINE', 'RECORDS'],
+  boxW: 176, boxH: 64, gapX: 120, gapY: 56,
+  nodes: [
+    {id: 'api', col: 0, row: 0, title: 'Integration', sub: 'outside system', ex: 'p.api'},
+    {id: 'mirror', col: 1, row: 0, title: 'Mirror', sub: 'adapter copy', layer: 'alt', ex: 'p.mir'},
+    {id: 'idmap', col: 2, row: 0, title: 'Identity map', sub: 'one active link', ex: 'p.id'},
+    {id: 'core', col: 3, row: 0, title: 'Core records', sub: 'Flow rows', ex: 'p.core'},
+    {id: 'review', col: 2, row: 1, title: 'Review queue', sub: 'one open item', ex: 'p.rev'},
+    {id: 'outbox', col: 3, row: 1, title: 'Outbox', sub: 'no send yet', layer: 'off', ex: 'p.out'}
+  ],
+  edges: [
+    {from: 'api', to: 'mirror', label: 'page', ex: 'e.page'},
+    {from: 'mirror', to: 'idmap', label: 'outside id', ex: 'e.rid'},
+    {from: 'idmap', to: 'core', label: 'Flow id', ex: 'e.fid'},
+    {from: 'core', to: 'outbox', label: 'write', layer: 'off', ex: 'e.write'},
+    {from: 'core', to: 'review', label: 'difference', offset: 22, ex: 'e.diff'}
+  ]
+});
+
+ExCharts.connection(document.getElementById('fig-identity'), {
+  label: 'How a link becomes active',
+  cols: ['MATCH', 'LINK', 'END'],
+  boxW: 180, boxH: 64, gapX: 120, gapY: 36,
+  nodes: [
+    {id: 'loose', col: 0, row: 0, title: 'Loose name', sub: 'not unique', ex: 'i.loose'},
+    {id: 'proposed', col: 1, row: 0, title: 'Proposed', sub: 'waits', ex: 'i.prop'},
+    {id: 'conflict', col: 2, row: 0, title: 'Conflict', sub: 'no change', ex: 'i.bad'},
+    {id: 'prior', col: 0, row: 1, title: 'Prior link', sub: 'earlier app', ex: 'i.prior'},
+    {id: 'exact', col: 0, row: 2, title: 'Exact match', sub: 'trusted evidence', layer: 'alt', ex: 'i.exact'},
+    {id: 'active', col: 1, row: 2, title: 'Active link', sub: 'the pair used', ex: 'i.active'},
+    {id: 'old', col: 2, row: 2, title: 'Superseded', sub: 'history kept', ex: 'i.old'}
+  ],
+  edges: [
+    {from: 'loose', to: 'proposed', label: 'guess', ex: 'e.guess'},
+    {from: 'proposed', to: 'active', label: 'confirm', ex: 'e.confirm'},
+    {from: 'exact', to: 'active', label: 'prove', ex: 'e.prove'},
+    {from: 'prior', to: 'exact', label: 'check', ex: 'e.check'},
+    {from: 'active', to: 'old', label: 'replace', ex: 'e.replace'},
+    {from: 'proposed', to: 'conflict', label: 'side taken', ex: 'e.block'}
+  ]
+});
+
+ExCharts.connection(document.getElementById('fig-job-states'), {
+  label: 'Job states',
+  cols: ['WAIT', 'RUN', 'END'],
+  boxW: 180, boxH: 64, gapX: 130, gapY: 44,
+  nodes: [
+    {id: 'queued', col: 0, row: 0, title: 'Queued', sub: 'not before time', ex: 'j.q'},
+    {id: 'running', col: 1, row: 0, title: 'Running', sub: 'holds a lease', ex: 'j.run'},
+    {id: 'ok', col: 2, row: 0, title: 'Succeeded', sub: 'stores the result', ex: 'j.ok'},
+    {id: 'dead', col: 1, row: 2, title: 'Dead', sub: 'stops for good', ex: 'j.dead'},
+    {id: 'rev', col: 2, row: 2, title: 'Review item', sub: 'person must see', ex: 'j.rev'}
+  ],
+  edges: [
+    {from: 'queued', to: 'running', label: 'claim', offset: -14, ex: 'e.claim'},
+    {from: 'running', to: 'queued', label: 'wait', offset: 16, ex: 'e.wait'},
+    {from: 'running', to: 'ok', label: 'done', ex: 'e.done'},
+    {from: 'running', to: 'dead', label: 'give up', ex: 'e.give'},
+    {from: 'dead', to: 'rev', label: 'alert', ex: 'e.alert'}
+  ]
+});
+
+ExCharts.container(document.getElementById('fig-job-runs'), {
+  label: 'Work on the queue',
+  zoneCols: 2, perRow: 2, itemW: 190, itemH: 56,
+  zones: [
+    {title: 'On the queue', ex: 'r.queue', items: [
+      {title: 'Xero copy', sub: 'history and changes', ex: 'r.xero'},
+      {title: 'Pipeline', sub: 'into the ledger', ex: 'r.pipe'},
+      {title: 'Invoice send', sub: 'a person queued it', ex: 'r.send'},
+      {title: 'Daily reconcile', sub: 'totals for a day', ex: 'r.day'}
+    ]},
+    {title: 'Own loop', layer: 'off', ex: 'r.sea', items: [
+      {title: 'Work copy', sub: 'Seazona rows', layer: 'alt', ex: 'r.work'}
+    ]}
+  ]
+});
+
+ExCharts.connection(document.getElementById('fig-outbox'), {
+  label: 'How a write leaves',
+  cols: ['READY', 'SEND', 'RESULT', 'AFTER'],
+  boxW: 160, boxH: 64, gapX: 100, gapY: 40,
+  nodes: [
+    {id: 'pend', col: 0, row: 0, title: 'Pending', sub: 'stored first', ex: 'w.pend'},
+    {id: 'sending', col: 1, row: 0, title: 'Sending', sub: 'call in progress', ex: 'w.send'},
+    {id: 'sent', col: 2, row: 0, title: 'Sent', sub: 'accepted', ex: 'w.sent'},
+    {id: 'link', col: 3, row: 0, title: 'New link', sub: 'Flow created it', ex: 'w.link'},
+    {id: 'can', col: 0, row: 3, title: 'Cancelled', sub: 'a person stopped it', layer: 'off', ex: 'w.can'},
+    {id: 'amb', col: 1, row: 2, title: 'Ambiguous', sub: 'result unknown', ex: 'w.amb'},
+    {id: 'fail', col: 2, row: 2, title: 'Failed', sub: 'refused', ex: 'w.fail'},
+    {id: 'rev', col: 3, row: 2, title: 'Review item', sub: 'does not send', ex: 'w.rev'}
+  ],
+  edges: [
+    {from: 'pend', to: 'sending', label: 'claim', ex: 'e.wclaim'},
+    {from: 'sending', to: 'sent', label: 'accepted', ex: 'e.ok'},
+    {from: 'sent', to: 'link', label: 'outside id', ex: 'e.newid'},
+    {from: 'sending', to: 'amb', label: 'unknown', ex: 'e.unk'},
+    {from: 'amb', to: 'pend', label: 'lookup', offset: 16, ex: 'e.look'},
+    {from: 'sending', to: 'fail', label: 'refused', offset: 30, ex: 'e.no'},
+    {from: 'pend', to: 'can', label: 'cancel', ex: 'e.can'},
+    {from: 'fail', to: 'rev', label: 'alert', ex: 'e.failrev'}
+  ]
+});
+
+ExCharts.connection(document.getElementById('fig-review'), {
+  label: 'How a difference waits',
+  cols: ['CAUSE', 'QUEUE', 'PERSON', 'FIX'],
+  boxW: 168, boxH: 64, gapX: 108, gapY: 28,
+  nodes: [
+    {id: 'link', col: 0, row: 0, title: 'A link', sub: 'proposed or conflict', ex: 'v.link'},
+    {id: 'job', col: 0, row: 1, title: 'A job', sub: 'dead', ex: 'v.job'},
+    {id: 'write', col: 0, row: 2, title: 'A write', sub: 'failed', layer: 'off', ex: 'v.write'},
+    {id: 'diff', col: 0, row: 3, title: 'A difference', sub: 'two sides disagree', ex: 'v.diff'},
+    {id: 'item', col: 1, row: 1, title: 'Review item', sub: 'one open row', ex: 'v.item'},
+    {id: 'person', col: 2, row: 1, title: 'Person', sub: 'decides', ex: 'v.person'},
+    {id: 'where', col: 3, row: 1, title: 'Chosen system', sub: 'person corrects it', ex: 'v.where'}
+  ],
+  edges: [
+    {from: 'link', to: 'item', label: 'link', ex: 'e.vlink'},
+    {from: 'job', to: 'item', label: 'dead job', ex: 'e.vjob'},
+    {from: 'write', to: 'item', label: 'failed', layer: 'off', ex: 'e.vwrite'},
+    {from: 'diff', to: 'item', label: 'differs', ex: 'e.vdiff'},
+    {from: 'item', to: 'person', label: 'alert', ex: 'e.valert'},
+    {from: 'person', to: 'where', label: 'correction', ex: 'e.fix'}
+  ]
+});
+
+ExCharts.container(document.getElementById('fig-owners'), {
+  label: 'Who owns each field',
+  zoneCols: 3, perRow: 1, itemW: 200, itemH: 56,
+  zones: [
+    {title: 'Work system', ex: 'o.work', items: [
+      {title: 'Lines', sub: 'codes and amounts', ex: 'o.lines'},
+      {title: 'Customer', sub: 'the client', ex: 'o.cust'},
+      {title: 'Job status', sub: 'read, not written', ex: 'o.stat'}
+    ]},
+    {title: 'Flow', layer: 'alt', ex: 'o.flow', items: [
+      {title: 'Reference', sub: 'invoice text', ex: 'o.ref'},
+      {title: 'Due date', sub: 'Flow sets it', ex: 'o.due'},
+      {title: 'Send', sub: 'Flow sends', ex: 'o.send'}
+    ]},
+    {title: 'Accounts', ex: 'o.acc', items: [
+      {title: 'Approval', sub: 'read back', ex: 'o.appr'},
+      {title: 'Payment', sub: 'read back', ex: 'o.pay'},
+      {title: 'Void', sub: 'read back', ex: 'o.void'}
+    ]}
+  ]
+});
+
+ExCharts.connection(document.getElementById('fig-compare'), {
+  label: 'When a job changes after its invoice',
+  cols: ['SIDES', 'CHECK', 'RESULT'],
+  boxW: 190, boxH: 64, gapX: 176, gapY: 36,
+  nodes: [
+    {id: 'base', col: 0, row: 0, title: 'Basis', sub: 'facts at draft', ex: 'c.base'},
+    {id: 'work', col: 0, row: 1, title: 'Work now', sub: 'work system', ex: 'c.work'},
+    {id: 'draft', col: 0, row: 2, title: 'Flow draft', sub: 'invoice now', ex: 'c.draft'},
+    {id: 'cmp', col: 1, row: 1, title: 'Compare', sub: 'lines, customer', layer: 'alt', ex: 'c.cmp'},
+    {id: 'offer', col: 2, row: 0, title: 'Adopt changes', sub: 'unsent draft', ex: 'c.offer'},
+    {id: 'bad', col: 2, row: 1, title: 'Alert only', sub: 'no overwrite', ex: 'c.bad'},
+    {id: 'none', col: 2, row: 2, title: 'Nothing', sub: 'no new alert', ex: 'c.none'}
+  ],
+  edges: [
+    {from: 'base', to: 'cmp', label: 'basis', ex: 'e.cbase'},
+    {from: 'work', to: 'cmp', label: 'now', ex: 'e.cnow'},
+    {from: 'draft', to: 'cmp', label: 'draft', ex: 'e.cdraft'},
+    {from: 'cmp', to: 'offer', label: 'work only', offset: -24, ex: 'e.coffer'},
+    {from: 'cmp', to: 'bad', label: 'both or sent', ex: 'e.cbad'},
+    {from: 'cmp', to: 'none', label: 'flow only', offset: 24, ex: 'e.cnone'}
+  ]
+});
+</script>
+<script>
+/* Explainer runtime (explainers.md). Data: window.EX = {"<key>": {t, l, d, x: []}}.
+   Items: any element with data-ex="<key>". Facts lists: <details class="ex-facts" data-def="…"> in a section.
+   Rail: <nav class="ex-rail"></nav>, filled from .ex-section[id] heads. */
+(function () {
+  var EX = window.EX || {};
+  var reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var pop = document.createElement('div');
+  pop.className = 'ex-pop'; pop.hidden = true; pop.setAttribute('role', 'dialog');
+  pop.innerHTML = '<div class="ex-pop-l"></div><h4><span></span><button type="button" aria-label="Close">×</button></h4><p class="ex-def"></p><ol></ol>';
+  document.body.appendChild(pop);
+  var cur = null;
+  function close() { pop.hidden = true; if (cur) { cur.setAttribute('aria-expanded', 'false'); cur.focus({ preventScroll: true }); } cur = null; }
+  function open(el) {
+    if (cur === el) { close(); return; }
+    var d = EX[el.dataset.ex]; if (!d) return;
+    pop.querySelector('.ex-pop-l').textContent = d.l || ''; pop.querySelector('.ex-pop-l').hidden = !d.l;
+    pop.querySelector('h4 span').textContent = d.t;
+    pop.querySelector('.ex-def').textContent = d.d;
+    var ol = pop.querySelector('ol'); ol.textContent = '';
+    (d.x || []).forEach(function (f) { var li = document.createElement('li'); li.textContent = f; ol.appendChild(li); });
+    ol.hidden = !(d.x && d.x.length);
+    pop.hidden = false;
+    var r = el.getBoundingClientRect(), w = pop.offsetWidth, h = pop.offsetHeight;
+    var left = Math.max(16, Math.min(r.left, document.documentElement.clientWidth - w - 16)) + scrollX;
+    var top = r.bottom + 6 + scrollY;
+    if (r.bottom + 6 + h > innerHeight && r.top - 6 - h > 0) top = r.top - 6 - h + scrollY;
+    pop.style.left = left + 'px'; pop.style.top = top + 'px';
+    if (cur) cur.setAttribute('aria-expanded', 'false');
+    cur = el; el.setAttribute('aria-expanded', 'true');
+  }
+  document.querySelectorAll('[data-ex]').forEach(function (el) {
+    el.setAttribute('aria-haspopup', 'dialog'); el.setAttribute('aria-expanded', 'false');
+    if (!/^(BUTTON|A)$/.test(el.tagName)) { el.setAttribute('tabindex', '0'); el.setAttribute('role', 'button'); }
+    if (!el.getAttribute('aria-label') && EX[el.dataset.ex]) el.setAttribute('aria-label', EX[el.dataset.ex].t);
+  });
+  document.addEventListener('click', function (e) {
+    var el = e.target.closest && e.target.closest('[data-ex]');
+    if (el && !pop.contains(el)) { e.stopPropagation(); open(el); return; }
+    if (!pop.hidden && (!pop.contains(e.target) || e.target.closest('h4 button'))) close();
+  }, true);
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && !pop.hidden) { close(); return; }
+    var el = e.target.closest && e.target.closest('[data-ex]');
+    if (el && el.getAttribute('role') === 'button' && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); open(el); }
+  });
+
+  // FactsList: every fact comes from an item and leads back to it
+  function go(el) {
+    el.scrollIntoView({ block: 'center', behavior: reduce ? 'auto' : 'smooth' });
+    var last = -1, still = 0, t0 = performance.now();
+    (function wait() {
+      if (scrollY === last) still++; else still = 0; last = scrollY;
+      if (still >= 4 || performance.now() - t0 > 1500) {
+        el.classList.remove('ex-pulse'); void el.getBoundingClientRect(); el.classList.add('ex-pulse');
+        setTimeout(function () { el.classList.remove('ex-pulse'); }, 1200);
+        if (cur !== el) open(el); return;
+      }
+      requestAnimationFrame(wait);
+    })();
+  }
+  document.querySelectorAll('details.ex-facts').forEach(function (det) {
+    var scope = det.closest('.ex-section') || document, seen = {}, facts = [];
+    scope.querySelectorAll('[data-ex]').forEach(function (el) {
+      var d = EX[el.dataset.ex]; if (!d) return;
+      (d.x || []).forEach(function (f) { if (!seen[f]) { seen[f] = 1; facts.push({ f: f, el: el, t: d.t }); } });
+    });
+    det.textContent = '';
+    var s = document.createElement('summary'); s.textContent = 'Facts · ' + facts.length; det.appendChild(s);
+    if (det.dataset.def) { var p = document.createElement('p'); p.className = 'ex-def'; p.textContent = det.dataset.def; det.appendChild(p); }
+    var ol = document.createElement('ol');
+    facts.forEach(function (o, i) {
+      var li = document.createElement('li'), b = document.createElement('button');
+      b.type = 'button'; b.className = 'ex-fx';
+      b.innerHTML = '<i></i><b></b><em></em>';
+      b.children[0].textContent = i + 1; b.children[1].textContent = o.f; b.children[2].textContent = o.t;
+      b.addEventListener('click', function (e) { e.stopPropagation(); go(o.el); });
+      li.appendChild(b); ol.appendChild(li);
+    });
+    det.appendChild(ol);
+  });
+
+  // TickRail
+  var rail = document.querySelector('.ex-rail');
+  if (rail) {
+    var secs = [].slice.call(document.querySelectorAll('.ex-section[id]')).filter(function (s) { return s.querySelector('.ex-head h2'); });
+    secs.forEach(function (s) {
+      var n = (s.querySelector('.ex-n') || {}).textContent || '', t = s.querySelector('.ex-head h2').textContent;
+      var a = document.createElement('a'); a.href = '#' + s.id; a.dataset.s = s.id; a.setAttribute('aria-label', n + ' ' + t);
+      a.innerHTML = '<i class="ex-tk"></i><span class="ex-tip"><b></b></span>';
+      a.querySelector('b').textContent = n; a.querySelector('.ex-tip').appendChild(document.createTextNode(t));
+      rail.appendChild(a);
+    });
+    var links = [].slice.call(rail.querySelectorAll('a')), lock = null, raf = 0;
+    function set(id) { links.forEach(function (l) { l.classList.toggle('ex-on', l.dataset.s === id); }); }
+    function pick() {
+      raf = 0; if (lock || !secs.length) return;
+      var line = innerHeight * .35, id = secs[0].id;
+      secs.forEach(function (s) { if (s.getBoundingClientRect().top <= line) id = s.id; });
+      if (innerHeight + scrollY >= document.documentElement.scrollHeight - 4) id = secs[secs.length - 1].id;
+      set(id);
+    }
+    addEventListener('scroll', function () { if (!raf) raf = requestAnimationFrame(pick); }, { passive: true });
+    addEventListener('resize', pick);
+    links.forEach(function (a) { a.addEventListener('click', function () { set(a.dataset.s); clearTimeout(lock); lock = setTimeout(function () { lock = null; pick(); }, 900); }); });
+    pick();
+  }
+})();
+</script>
+</body>
+</html>
