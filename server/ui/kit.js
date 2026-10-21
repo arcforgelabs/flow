@@ -63,14 +63,14 @@ export function pageHeader(title, { count = null, help = null, actions = [] } = 
 
 // The top of a list page (Jobs, Invoices, Reconcile), laid out the same on
 // every list and in Board and List alike, so nothing moves when a person
-// switches: the title row, a row for saved view tabs (`views`, hidden until
-// a page fills it), then one toolbar with `start` at the left (tabs, Group,
+// switches: the title row, a row for saved view tabs (`views`: the page's
+// savedViews element, else an empty slot that stays hidden), then one toolbar with `start` at the left (tabs, Group,
 // Sort, Filter) and `end` at the right (search, Board/List), then the page's
 // `actions` (New invoice) last, as Claude's own lists do. `line` draws the
 // rule that tabs sit on; `sticky` keeps the toolbar at the top while the rows
 // scroll up under it, with a shadow once they do. Append `nodes` to the page.
-export function listHead(title, { count = null, help = null, actions = [], start = [], end = [], line = false, sticky = false } = {}) {
-  const views = h('div', { class: 'fx-views', role: 'group', 'aria-label': 'Views', hidden: true });
+export function listHead(title, { count = null, help = null, actions = [], start = [], end = [], line = false, sticky = false, views: tabs = null } = {}) {
+  const views = tabs ?? h('div', { class: 'fx-views', role: 'group', 'aria-label': 'Views', hidden: true });
   const bar = h('div', { class: 'fx-listhead', 'data-sticky': sticky },
     h('div', { class: `fx-toolbar${line ? '' : ' fx-toolbar--plain'}` }, start, h('div', { class: 'fx-toolbar__end' }, end, actions)));
   const edge = sticky ? h('div', { class: 'fx-listhead__edge', 'aria-hidden': 'true' }) : null;
@@ -148,6 +148,16 @@ export function notice(text, tone = 'info', title = null) {
     h('span', {}, text));
 }
 
+// A field that fails a check glows red, like a required field, until the
+// person types in it; the next check marks it again if it still fails.
+// `on` false clears it. Answers the field.
+export function fieldError(field, on = true) {
+  if (!on) { field.removeAttribute('aria-invalid'); return field; }
+  field.setAttribute('aria-invalid', 'true');
+  field.addEventListener('input', () => field.removeAttribute('aria-invalid'), { once: true });
+  return field;
+}
+
 export function toast(text, tone = 'info') {
   const region = document.getElementById('toasts');
   const item = h('div', { class: 'fx-toast', 'data-tone': tone, role: 'status' }, text);
@@ -196,9 +206,9 @@ settingRow.next = 0;
 
 let rowMenus = 0;
 
-// A row's ⋯ menu, as on the Custom fields page. `trigger` swaps the ⋯ icon
-// for the given contents (the sidebar's More) and `align: 'start'` opens the
-// menu under the trigger's left edge, not its right.
+// A row's ⋯ menu, as on the Custom fields page. The menu lines up with the
+// button's right edge; `align: 'start'` lines it up with its left edge.
+// `trigger` swaps the ⋯ icon for the given contents (the sidebar's More).
 export function rowMenu(label, items, { trigger = null, className = 'fx-cfm__more', align = 'end' } = {}) {
   const id = `fx-row-menu-${++rowMenus}`;
   const button = h('button', { class: className, type: 'button', 'aria-label': label, popovertarget: id, 'aria-haspopup': 'menu', 'aria-expanded': 'false' }, trigger ?? lucide(h, 'ellipsis'));

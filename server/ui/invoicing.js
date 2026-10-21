@@ -11,7 +11,9 @@ import { draftNote, sendModeNote } from '/assets/ui/invoice-notes.js';
 import { caseNumber } from '/assets/ui/job-board.js';
 import { jobChangeReview } from '/assets/ui/job-change.js';
 import { columnTable, rowCells, viewSaver } from '/assets/ui/columns.js';
-import { cleanFilterView, filterJobs, INVOICE_COLUMNS, normaliseListView } from '/assets/ui/job-view.js';
+import { filterJobs, INVOICE_COLUMNS, normaliseListView } from '/assets/ui/job-view.js';
+import { INVOICE_FILTER_FIELDS, normaliseInvoicesView } from '/assets/ui/list-views.js';
+import { savedViews } from '/assets/ui/saved-views.js';
 import { findBox, today, viewBar } from '/assets/ui/view-bar.js';
 
 // The tabs, left to right (server/api/invoicing.js, TABS): Pending (a
@@ -112,16 +114,8 @@ const showDate = (iso) => (iso ? new Date(`${iso}T00:00:00`).toLocaleDateString(
 
 // ── The list ───────────────────────────────────────────────────────────────
 
-// The filter's fields (view-bar.js). The tabs are the status, so Status is
-// not here. The filter keeps rows of the tab shown.
-const FILTER_FIELDS = {
-  client: { label: 'Client', kind: 'choice', icon: 'building-2' },
-  number: { label: 'Number', kind: 'text', icon: 'hash' },
-  reference: { label: 'Reference', kind: 'text', icon: 'text' },
-  date: { label: 'Date', kind: 'date', icon: 'calendar' },
-  total: { label: 'Total', kind: 'number', icon: 'dollar-sign' },
-  problem: { label: 'Problem', kind: 'check', icon: 'triangle-alert' },
-};
+// The filter's fields: list-views.js (the server checks saved views with them).
+const FILTER_FIELDS = INVOICE_FILTER_FIELDS;
 const PROBLEM_OPS = { yes: 'Has one', no: 'Has none' };
 const FILTER_KEY = 'flow_invoice_filters';
 const filterKind = (field) => FILTER_FIELDS[field]?.kind ?? null;
@@ -143,9 +137,7 @@ export function invoiceValue(invoice, field) {
 export const keptInvoices = (invoices, view, now = today()) => filterJobs(invoices, view, { valueOf: invoiceValue, kindOf: filterKind, today: now });
 
 function readFilters() {
-  let stored = {};
-  try { stored = JSON.parse(localStorage.getItem(FILTER_KEY)) ?? {}; } catch { /* none kept */ }
-  return cleanFilterView(stored, filterKind);
+  try { return normaliseInvoicesView(JSON.parse(localStorage.getItem(FILTER_KEY))); } catch { return normaliseInvoicesView(null); }
 }
 
 export async function renderInvoiceList(main, ui) {
@@ -184,6 +176,19 @@ export async function renderInvoiceList(main, ui) {
   });
   // The Filter chip: the same panel as on Jobs and Reconcile (view-bar.js).
   // It filters the rows of the tab shown, on this device.
+  // A change to the filter: kept in this browser, and drawn.
+  function setView(patch) {
+    state.view = normaliseInvoicesView({ ...state.view, ...patch });
+    try { localStorage.setItem(FILTER_KEY, JSON.stringify(state.view)); } catch { /* the page still works, it forgets */ }
+    views.draw();
+    if (raw) draw(raw);
+  }
+  // The person's named views (saved-views.js): their default opens on a
+  // new visit.
+  const views = savedViews(ui, { page: 'invoices', current: () => state.view, apply: setView });
+  const opening = views.opening();
+  if (opening) state.view = normaliseInvoicesView(opening);
+  views.draw();
   const labels = (list) => [...new Set(list.filter(Boolean))].sort((a, b) => a.localeCompare(b)).map((v) => ({ value: v, label: v }));
   const filterMenu = viewBar(h).filterMenu({
     fields: () => Object.entries(FILTER_FIELDS).map(([value, f]) => ({ value, label: f.label, icon: f.icon })),
@@ -191,11 +196,7 @@ export async function renderInvoiceList(main, ui) {
     opsOf: (field) => (field === 'problem' ? PROBLEM_OPS : null),
     choicesOf: (field) => (field === 'client' ? labels((raw?.invoices ?? []).map((i) => i.contactName)) : []),
     view: () => state.view,
-    change: (patch) => {
-      state.view = { ...state.view, ...patch };
-      try { localStorage.setItem(FILTER_KEY, JSON.stringify(state.view)); } catch { /* the page still works, it forgets */ }
-      if (raw) draw(raw);
-    },
+    change: setView,
     first: 'client',
     empty: 'No filters. Every invoice in the tab shows.',
   });
@@ -212,7 +213,7 @@ export async function renderInvoiceList(main, ui) {
   // action: tick rows (the head tick takes every row shown), then Send.
   const head = listHead('Invoices', {
     actions: [h('a', { class: 'fx-btn fx-btn--primary', href: '/invoices/new', onclick: go }, 'New invoice')],
-    start: tabs, end: [controls, find.element], line: true, sticky: true,
+    views: views.element, start: tabs, end: [controls, find.element], line: true, sticky: true,
   });
   const [title, ...top] = head.nodes;
   const frame = listFrame(main, host);
@@ -580,7 +581,8 @@ function navBar(ui, invoice) {
   return bar;
 }
 
-// After a send, an Approve or a Save as draft, the next invoice of the list
+// After a send, an Approve or a Save that makes a Pending invoice Ready, the
+// next invoice of the list
 // opens; at its end, the list. So a person reviews drafts one after another
 // without going back. The invoice stays in the bar's list, so the count holds
 // (2 of 35) and Previous opens it again, now done. Back reloads the list
@@ -676,9 +678,13 @@ function linkedCard(ui, invoice, accountingStatus = null) {
     facts);
 }
 
+// The first sentence of a problem: what is wrong. The red field shows where,
+// so the banner holds no how-to.
+const brief = (text) => String(text ?? '').match(/^.*?[.!?](?=\s|$)/s)?.[0] ?? String(text ?? '');
+
 // A draft, or a new invoice before its first save.
 function draftView(invoice, ui, context, redraw) {
-  const { h, flow, toast, go, notice } = ui;
+  const { h, flow, toast, go, notice, fieldError } = ui;
   const isNew = !invoice;
   const lines = (invoice?.lines ?? []).map((line) => ({ ...line }));
   if (!lines.length) lines.push({ description: '', quantity: 1, unitAmountCents: null, taxCode: 'GST', priceItemId: null });
@@ -720,6 +726,15 @@ function draftView(invoice, ui, context, redraw) {
   const reference = h('input', { class: 'fx-input', type: 'text', value: invoice?.reference ?? '', placeholder: 'Type a reference', 'aria-label': 'Reference' });
   const dueDate = h('input', { class: 'fx-input', type: 'date', value: invoice?.dueDate ?? '' });
 
+  // The fields a failed check reads go red (problem.fields): a rule on the
+  // Reference marks the Reference box, a line with no price item marks its
+  // item. A check on something this page cannot change (the job's
+  // practitioner) marks nothing; the banner says it.
+  const problemList = invoice?.problems ?? [];
+  const failed = new Set(problemList.flatMap((p) => p.fields ?? []));
+  const badLines = new Set(problemList.filter((p) => p.fields?.includes('line_item')).map((p) => p.line));
+  const boxes = { reference };
+
   // Lines.
   let items = null;
   const itemsReady = flow('/api/invoicing/price-items').then((body) => { items = body.priceItems ?? body.items ?? []; return items; }).catch(() => { items = []; return items; });
@@ -749,6 +764,7 @@ function draftView(invoice, ui, context, redraw) {
         class: 'fx-input', type: 'text', list: 'fx-price-items', placeholder: 'Code', autocomplete: 'off',
         value: line.itemCode ?? '', 'aria-label': `Item, line ${index + 1}`,
       });
+      if (badLines.has(index + 1)) fieldError(item);
       const description = h('input', { class: 'fx-input', type: 'text', value: line.description ?? '', 'aria-label': `Description, line ${index + 1}` });
       const quantity = h('input', { class: 'fx-input fx-num', type: 'number', min: '1', step: '1', value: String(line.quantity ?? 1), 'aria-label': `Quantity, line ${index + 1}` });
       const price = h('input', { class: 'fx-input fx-num', type: 'text', inputmode: 'decimal', value: fromCents(line.unitAmountCents), placeholder: '0.00', 'aria-label': `Unit price, line ${index + 1}` });
@@ -774,7 +790,7 @@ function draftView(invoice, ui, context, redraw) {
       gst.addEventListener('change', () => { line.taxCode = gst.value; preview(); });
       const remove = h('button', {
         class: 'fx-btn fx-btn--ghost fx-btn--sm fx-btn--icon', type: 'button', title: 'Remove line', 'aria-label': `Remove line ${index + 1}`,
-        onclick: () => { lines.splice(index, 1); if (!lines.length) lines.push({ description: '', quantity: 1, unitAmountCents: null, taxCode: 'GST', priceItemId: null }); drawLines(); preview(); },
+        onclick: () => { badLines.clear(); lines.splice(index, 1); if (!lines.length) lines.push({ description: '', quantity: 1, unitAmountCents: null, taxCode: 'GST', priceItemId: null }); drawLines(); preview(); },
       }, '×');
       return h('tr', {},
         h('td', { class: 'fx-lines__item' }, item),
@@ -815,7 +831,7 @@ function draftView(invoice, ui, context, redraw) {
   });
 
   const check = () => {
-    if (!contact) return 'Choose a client from the list.';
+    if (!contact) { fieldError(clientInput); return 'Choose a client from the list.'; }
     if (lines.some((line) => (line.description?.trim() || line.priceItemId) && line.unitAmountCents == null)) return 'Each line needs a price.';
     return null;
   };
@@ -834,22 +850,38 @@ function draftView(invoice, ui, context, redraw) {
     }
   };
 
-  // Save shows only when there is something to save: a new invoice, or a
-  // change since the page opened. Save as draft opens the next invoice.
-  // Save as draft: a draft that is not ready always offers it. A ready
-  // invoice offers Save changes only once something changed.
+  // Save is the check, like CI: it saves, and Flow runs every check again
+  // (Flow's own, the lab's rules, the accounting system's). A Pending
+  // invoice that now passes is Ready: a toast says so and the next invoice
+  // of the list opens. One that still fails stays Pending, with its red
+  // fields. A new invoice and a Pending one always offer Save; a Ready one
+  // only once something changed. There is no Flow "draft" step: Draft is
+  // the accounting system's word for an invoice it holds.
   const keepsSave = isNew || invoice?.view !== 'ready';
   const saveButton = h('button', {
     class: 'fx-btn', type: 'button', hidden: !keepsSave,
     onclick: async () => {
+      saveButton.disabled = true;
       const saved = await save();
+      saveButton.disabled = false;
       if (!saved) return;
-      toast(keepsSave ? 'Saved as a draft.' : 'Changes saved.', 'success');
-      if (isNew) go(`/invoices/${saved.id}`, { replace: true });
-      else if (keepsSave) openNext(ui, invoice.id);
-      else redraw(saved);
+      const passes = saved.view === 'ready';
+      const why = brief(saved.problems?.[0]?.message);
+      if (isNew) {
+        toast(passes ? 'Saved. It is Ready.' : `Saved. It is Pending. ${why}`, passes ? 'success' : 'warn');
+        go(`/invoices/${saved.id}`, { replace: true });
+      } else if (passes && keepsSave) {
+        toast('Saved. It is Ready.', 'success');
+        openNext(ui, invoice.id);
+      } else if (passes) {
+        toast('Saved.', 'success');
+        redraw(saved);
+      } else {
+        toast(`Still Pending. ${why}`, 'danger');
+        redraw(saved);
+      }
     },
-  }, keepsSave ? 'Save as draft' : 'Save changes');
+  }, 'Save');
   const opened = JSON.stringify(body());
   const changed = () => !isNew && JSON.stringify(body()) !== opened;
   const watchChanges = () => { if (!keepsSave) saveButton.hidden = !changed(); };
@@ -933,8 +965,16 @@ function draftView(invoice, ui, context, redraw) {
   const problems = [
     // Accepting changes the draft for the business: owners and admins only.
     jobChange ? jobChangeReview(ui, jobChange, { money: formatCents, canAccept: context.canIssue, unsaved: changed, done: redraw }) : null,
-    otherProblems.length ? notice(otherProblems.map((p) => p.message).join(' '), 'danger', 'Problem.') : null,
+    otherProblems.length ? notice([...new Set(otherProblems.map((p) => brief(p.message)))].join(' '), 'danger', 'Problem.') : null,
   ];
+  // A red field names the banner as its reason (for a screen reader).
+  const banner = problems[1];
+  if (banner) banner.id = 'fx-invoice-problem';
+  for (const name of failed) {
+    if (!boxes[name]) continue;
+    fieldError(boxes[name]);
+    if (banner) boxes[name].setAttribute('aria-describedby', banner.id);
+  }
 
   return [
     navBar(ui, invoice),

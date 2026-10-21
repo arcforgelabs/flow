@@ -23,7 +23,7 @@ import { isSearchKey, openSearch } from '/assets/ui/search.js';
 import { alertStrip } from '/assets/ui/alerts.js';
 import { initialsOf, personLabel } from '/assets/ui/person.js';
 import { startTips } from '/assets/ui/tip.js';
-import { crumbs, dialog, edgeFade, h, holdButton, linksOpenWith, listFrame, listHead, notice, pageHeader, rowMenu, sectionTitle, settingRow, tileCard, tileSection, toast } from '/assets/ui/kit.js';
+import { crumbs, dialog, edgeFade, fieldError, h, holdButton, linksOpenWith, listFrame, listHead, notice, pageHeader, rowMenu, sectionTitle, settingRow, tileCard, tileSection, toast } from '/assets/ui/kit.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -330,7 +330,7 @@ function navigate(event) {
 // The shared pieces a view module (invoicing.js) builds with. Its `go`
 // takes a path, or a link's click event.
 const ui = () => ({
-  h, flow, toast, notice, pageHeader, listHead, listFrame, edgeFade, sectionTitle, dialog, me, holdButton, tileCard, tileSection, crumbs,
+  h, flow, toast, notice, fieldError, pageHeader, listHead, listFrame, edgeFade, sectionTitle, dialog, me, holdButton, tileCard, tileSection, crumbs,
   go: (target, options) => (typeof target === 'string' ? go(target, options) : navigate(target)),
 });
 

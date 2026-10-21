@@ -1,0 +1,14 @@
+<!-- @dsCard group="Lists" height=110 -->
+<div id="root"></div>
+<script>
+const { savedViews, ui } = window.FlowDesignSystem;
+let view = { match: 'all', groups: [] };
+const me = { views: { saved: { invoices: { default: 'a', list: [
+  { id: 'a', name: 'Mine', view: { match: 'all', groups: [] } },
+  { id: 'b', name: 'Over $200', view: { match: 'all', groups: [{ match: 'all', filters: [{ field: 'total', op: 'gt', value: 200 }] }] } },
+] } } } };
+const views = savedViews({ ...ui(), me }, { page: 'invoices', current: () => view, apply: (next) => { view = next; views.draw(); } });
+views.opening();
+document.getElementById('root').append(views.element);
+views.draw();
+</script>
