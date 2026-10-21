@@ -590,6 +590,19 @@ a.fx-strong:hover { text-decoration: underline; }
 .fx-pop__link { padding: 4px 8px; border: 0; background: none; color: var(--t-accent); font: 500 12.5px/1.3 var(--t-body); cursor: pointer; }
 .fx-pop__link:hover, .fx-pop__link:focus-visible { text-decoration: underline; outline: none; }
 .fx-pop.fx-pop--choices { min-width: 200px; max-width: 300px; padding: 6px; }
+/* A value list row, as ClickUp's: mark (when there is one), name, tick box
+   at the right. No empty space at the left. */
+.fx-pop__item--check { gap: 8px; }
+.fx-pop__item--check .fx-pop__text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fx-pop__box { display: inline-grid; place-items: center; flex: none; width: 16px; height: 16px; margin-left: auto; border: 1px solid var(--t-control); border-radius: var(--t-radius); color: var(--t-on-primary); }
+.fx-pop__item--check[aria-checked="true"] .fx-pop__box { border-color: var(--t-primary); background: var(--t-primary); }
+.fx-pop__box svg { width: 12px; height: 12px; }
+.fx-dot { flex: none; width: 9px; height: 9px; border-radius: 50%; background: var(--cf, var(--t-dim)); }
+.fx-dot--stage { --stage: var(--t-accent); background: var(--stage); }
+.fx-dot--stage[data-rank="0"] { --stage: var(--t-mute); }
+.fx-dot--stage[data-rank="3"], .fx-dot--stage[data-rank="4"] { --stage: color-mix(in srgb, var(--t-accent) 45%, var(--t-success)); }
+.fx-dot--stage[data-rank="5"], .fx-dot--stage[data-rank="6"] { --stage: var(--t-success); }
+.fx-dot--stage[data-rank="7"] { --stage: var(--t-dim); }
 .fx-pop--choices .fx-input { min-height: 32px; margin-bottom: 4px; font-size: 13px; }
 .fx-pop__end { display: inline-grid; margin-left: auto; color: var(--t-accent); }
 @media (max-width: 640px) {

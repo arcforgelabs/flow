@@ -262,14 +262,14 @@ export async function renderJobs(main, ui) {
   function choicesOf(field) {
     const people = () => [{ value: 'me', label: 'Me' }, ...state.people.map((p) => ({ value: p.id, label: p.name }))];
     const labels = (list) => [...new Set(list.filter(Boolean))].sort((a, b) => a.localeCompare(b)).map((v) => ({ value: v, label: v }));
-    if (field === 'status') return orderStatuses(state.statuses, state.jobs).map((v) => ({ value: v, label: v }));
+    if (field === 'status') return orderStatuses(state.statuses, state.jobs).map((v) => ({ value: v, label: v, rank: statusRank(v) }));
     if (field === 'stage') return Object.values(STAGE_GROUPS).map((v) => ({ value: v, label: v }));
     if (field === 'client') return labels(state.jobs.map(clientOf));
     if (field === 'practitioner') return labels(state.jobs.map((job) => job.practitioner));
     if (field === 'assignee') return people();
     const custom = fieldById(fieldIdOf(field));
     if (custom?.type === 'person') return people();
-    return (custom?.options ?? []).map((o) => ({ value: o.id, label: o.archived ? `${o.name} (archived)` : o.name }));
+    return (custom?.options ?? []).map((o) => ({ value: o.id, label: o.archived ? `${o.name} (archived)` : o.name, color: o.color }));
   }
   // A job's value for a filter field, as the filter compares it.
   function filterValue(job, field) {

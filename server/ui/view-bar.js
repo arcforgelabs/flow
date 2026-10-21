@@ -91,6 +91,17 @@ export function viewBar(h) {
     type: 'button', class: 'fx-pop__item', role, 'aria-checked': String(checked), onclick,
   }, h('span', { class: 'fx-pop__tick' }, checked ? svg(ICONS.tick) : null), icon ? lucide(h, icon) : null, h('span', {}, text));
 
+  // A choice in a list where many can be ticked, as ClickUp's value list:
+  // the choice's mark at the left only when it has one (a Lucide `icon`, a
+  // custom field `color`, or a status `rank`), its name, a tick box at the
+  // right.
+  const mark = (c) => (c.icon ? lucide(h, c.icon)
+    : c.color ? h('span', { class: 'fx-dot', 'data-color': c.color, 'aria-hidden': 'true' })
+      : c.rank != null ? h('span', { class: 'fx-dot fx-dot--stage', 'data-rank': String(c.rank), 'aria-hidden': 'true' }) : null);
+  const checkOption = (c, checked, onclick) => h('button', {
+    type: 'button', class: 'fx-pop__item fx-pop__item--check', role: 'menuitemcheckbox', 'aria-checked': String(checked), onclick,
+  }, mark(c), h('span', { class: 'fx-pop__text' }, c.label), h('span', { class: 'fx-pop__box', 'aria-hidden': 'true' }, checked ? svg(ICONS.tick) : null));
+
   // The parts of a rows panel (Group by, Sort, Filters): a title, rows of
   // selects with a bin at the end, and a foot with "Add" and "Clear all".
   const title = (text) => h('p', { class: 'fx-rows__title' }, text);
@@ -190,12 +201,12 @@ export function viewBar(h) {
       const drawItems = () => {
         const q = find.value.trim().toLowerCase();
         all.textContent = filter.value.length === choices.length && choices.length ? 'Clear' : 'Select all';
-        items.replaceChildren(...choices.filter((c) => !q || c.label.toLowerCase().includes(q)).map((c) => option(c.label, filter.value.includes(c.value), () => {
+        items.replaceChildren(...choices.filter((c) => !q || c.label.toLowerCase().includes(q)).map((c) => checkOption(c, filter.value.includes(c.value), () => {
           save(filter.value.includes(c.value) ? filter.value.filter((v) => v !== c.value) : [...filter.value, c.value]);
-        }, 'menuitemcheckbox', c.icon ?? null)));
+        })));
       };
       find.addEventListener('input', drawItems);
-      pop.append(find, h('div', { class: 'fx-pop__bar' }, h('span', { class: 'fx-pop__head' }, 'Options'), all), items);
+      pop.append(find, h('div', { class: 'fx-pop__bar' }, h('span', { class: 'fx-pop__head' }, fieldList().find((f) => f.value === filter.field)?.label ?? 'Options'), all), items);
       pop.addEventListener('toggle', (event) => {
         if (event.newState !== 'open') return;
         drawItems();
