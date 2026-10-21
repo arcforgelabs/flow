@@ -4,6 +4,7 @@ import { createApp } from '../server/app.js';
 import { invitePerson, seedFirstOwner } from '../server/auth/people.js';
 import { createPersonAuth } from '../server/auth/session.js';
 import { createContact, createOrganisation, createPriceItem } from '../server/core/directory.js';
+import { createRule, deleteRule } from '../server/core/invoice-rules.js';
 import { draftInvoiceForObligation, observeJob, recordAccountingEvidence, setReady } from '../server/core/ledger.js';
 import { linkRecord } from '../server/core/links.js';
 import { createRegistry } from '../server/integrations/port.js';
@@ -506,5 +507,18 @@ describe('invoicing API', { skip: skipWithoutDatabase }, () => {
     assert.equal(accepted.status, 200, JSON.stringify(accepted.body));
     assert.equal(accepted.body.invoice.jobChange, null);
     assert.equal(accepted.body.invoice.lines.length, 2);
+  });
+
+  test('Approve runs the lab\'s pending rules again and refuses a draft that fails one', async () => {
+    const job = await observeJob(handle.db, lab.id, { sourceSystem: 'worksystem', sourceJobRef: 'JOB-GATE', contactId: practice.id, practitioner: 'Not Listed', sourceStatus: 'Shipped', lines: [{ itemCode: 'CRN' }] });
+    await recordAccountingEvidence(handle.db, lab.id, job.id, { state: 'not_found', actor: 'user:test' });
+    const { invoice } = await draftInvoiceForObligation(handle.db, lab.id, job.id, { actor: 'user:test', liveCheck: async () => ({ state: 'not_found' }) });
+    const rule = await createRule(handle.db, lab.id, { name: 'Practitioner not known', conditions: [{ field: 'practitioner', test: 'is', value: 'Not Listed' }], action: { kind: 'pending', note: 'Put the practitioner in the job' } });
+    const refused = await call(`/invoices/${invoice.id}/issue`, { method: 'POST', body: { organisationId: lab.id } });
+    assert.equal(refused.status, 409);
+    assert.equal(refused.body.error, 'Put the practitioner in the job. Nothing was approved.');
+    await deleteRule(handle.db, lab.id, rule.id);
+    const approved = await call(`/invoices/${invoice.id}/issue`, { method: 'POST', body: { organisationId: lab.id } });
+    assert.equal(approved.status, 200, JSON.stringify(approved.body));
   });
 });

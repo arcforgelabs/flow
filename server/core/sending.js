@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import { billingObligations, invoiceLines, invoices } from '../db/schema.js';
 import { FlowError } from './errors.js';
+import { listRules, rulePending } from './invoice-rules.js';
+import { customerBillingByContact, effectiveSettings, readInvoicingSettings } from './invoicing-rules.js';
 import { issueInvoice } from './invoices.js';
 import { CHANGED_REASON, diffJobLines, STATUS_BACK_REASON } from './ledger.js';
 import { soleOrganisation } from './pipeline.js';
@@ -14,7 +16,8 @@ import { deadHoldSince, deadSince, enqueueJob, runNextJob } from './queue.js';
 // a total above zero, and a price item (or, for a line such as a rush
 // charge, an account) on every line. When an accounting
 // system is connected, its own checks are added (for Xero: the customer
-// matches one Xero contact, every item is in Xero). A draft with a problem is
+// matches one Xero contact, every item is in Xero), and the lab's pending
+// rules (invoice-rules.js) add their notes. A draft with a problem is
 // Pending (the "problem" view). A draft without one is Ready.
 //
 // Send all ready issues every ready draft (each gets its number) and, when an
@@ -77,10 +80,25 @@ async function checkDrafts(db, organisationId, drafts, accounting) {
     const found = draftProblems(draft, linesOf.get(draft.id) ?? []);
     if (found.length) problems.set(draft.id, found);
   }
+  const jobs = await db.select({ obligation: billingObligations, reference: invoices.reference }).from(billingObligations)
+    .innerJoin(invoices, eq(invoices.id, billingObligations.invoiceId))
+    .where(and(eq(billingObligations.organisationId, organisationId), inArray(billingObligations.invoiceId, ids)));
+  // The lab's pending rules (invoice-rules.js): a draft from a job that
+  // matches one waits on Pending with the rule's note, such as a Reference
+  // with no real practitioner.
+  const rules = (await listRules(db, organisationId)).filter((r) => r.enabled && r.action.kind === 'pending');
+  if (rules.length && jobs.length) {
+    const settings = await readInvoicingSettings(db, organisationId);
+    const customers = await customerBillingByContact(db, organisationId, jobs.map((j) => j.obligation.contactId));
+    for (const { obligation, reference } of jobs) {
+      const customer = effectiveSettings(settings, customers.get(obligation.contactId));
+      const found = rulePending(rules, { ...obligation, reference }, { customer });
+      if (found.length) problems.set(obligation.invoiceId, [...(problems.get(obligation.invoiceId) ?? []), ...found]);
+    }
+  }
   // A draft whose job the ledger sent to review (the job changed after the
   // draft was made, or the work system deleted it) waits for a person.
-  const reviewed = await db.select().from(billingObligations)
-    .where(and(eq(billingObligations.organisationId, organisationId), inArray(billingObligations.invoiceId, ids), eq(billingObligations.holdState, 'review')));
+  const reviewed = jobs.map((j) => j.obligation).filter((o) => o.holdState === 'review');
   for (const obligation of reviewed) {
     const { invoiceId, holdReason: reason } = obligation;
     const found = problem('job_review', `The job needs a look before this invoice goes: ${reason ?? 'it was sent to review'}.`, reviewShort(obligation));
@@ -201,11 +219,21 @@ export async function sendAllReady(db, organisationId, { accounting = null, work
   let views = await invoiceViews(db, organisationId, { accounting });
   const accountingRead = views.ready.length ? await readAccountingFirst(db, organisationId, { accounting, now }) : { outcome: 'fresh' };
   if (accountingRead.changed) views = await invoiceViews(db, organisationId, { accounting });
+  // Every check runs again at the press, as a gate: a ticked draft that
+  // fails one now (someone edited it, its job changed, a rule matches) is not
+  // sent and stays on Pending with its problem. The rest go.
   let { ready } = views;
+  let held = 0;
   if (invoiceIds) {
     const wanted = new Set(invoiceIds);
     ready = ready.filter((id) => wanted.has(id));
-    if (ready.length !== wanted.size) throw new FlowError('not_ready', 'Only a ready invoice can be sent. Mark it ready first.');
+    held = wanted.size - ready.length;
+    if (!ready.length) {
+      const reason = invoiceIds.map((id) => views.problems.get(id)?.[0]?.message).find(Boolean);
+      throw new FlowError('not_ready', reason
+        ? `Not sent: ${reason.replace(/\.?$/, '.')} The invoice is on Pending.`
+        : 'Only a ready invoice can be sent. Mark it ready first.');
+    }
   }
   const { go, waiting } = accountingRead.outcome === 'waiting'
     ? { go: [], waiting: ready.slice(0, SEND_BATCH) }
@@ -229,7 +257,7 @@ export async function sendAllReady(db, organisationId, { accounting = null, work
     }
     issued += 1;
   }
-  return { issued, queued: accounting ? issued : 0, remaining: Math.max(0, ready.length - SEND_BATCH), waiting: waiting.length };
+  return { issued, queued: accounting ? issued : 0, remaining: Math.max(0, ready.length - SEND_BATCH), waiting: waiting.length, held };
 }
 
 // Send again: issued invoices that failed go back on the queue. With no ids,

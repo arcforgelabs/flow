@@ -201,7 +201,7 @@ export async function renderInvoiceList(main, ui) {
           });
           if (!ok) return;
           await post('send-ready', { issueDate: localDate(), invoiceIds: ticked },
-            (res) => [`${to ? `${res.issued} on the way to ${to}.` : `${res.issued} approved.`}${res.remaining ? ` ${res.remaining} more stay in Ready: tick them and press again.` : ''}`, 'success']);
+            (res) => [`${to ? `${res.issued} on the way to ${to}.` : `${res.issued} approved.`}${res.held ? ` ${res.held} failed a check and went to Pending.` : ''}${res.remaining ? ` ${res.remaining} more stay in Ready: tick them and press again.` : ''}`, res.held ? 'info' : 'success']);
         },
       });
     }

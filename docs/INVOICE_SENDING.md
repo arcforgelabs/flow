@@ -85,6 +85,12 @@ asks first. There is no separate send bar. Then:
    Then the accounting system reads its latest changes (issue #45, see
    [XERO.md](XERO.md#read-before-draft-and-send)). When that read cannot
    run, nothing is issued and every draft in the press waits.
+   Every draft check then runs again, the lab's pending rules
+   ([INVOICE_RULES.md](INVOICE_RULES.md#pending-rules)) included. A draft
+   that fails one now stays on Pending and is not sent. When a person ticked
+   drafts, the rest go and the answer counts the ones held (`held`); when
+   every ticked draft fails, nothing is sent and the answer names the first
+   problem.
 3. Each ready draft is issued and gets its number. One press takes up to 100
    drafts; the rest wait for the next press.
 4. Each issued invoice is queued for the accounting system, and shows in
