@@ -141,12 +141,19 @@ The page at `/sign-in`, `/people`, `/account` and `/appearance`
   lanes: status lanes). Sort is rows applied in turn (due, requested,
   shipped, client, practitioner, total or any custom field, each in
   either direction), with "Add sort"; no sort keeps the lab system's
-  order. Filters are rows of field, operator and value (status, invoice
-  stage, client, practitioner, Assignee, due, requested, shipped, total,
-  problem, or any custom field; operators such as is, is not, is set,
-  is overdue, is before, contains, is more than), with "Add filter",
-  "Clear all", and And / Or for all rows. A row still being filled in
-  filters nothing. Each person's view is
+  order. Filters work as ClickUp's: groups of rows of field, operator
+  and value. The field list has a search box and a type icon for each
+  field (status, invoice stage, client, practitioner, Assignee, due,
+  requested, shipped, total, problem, or any custom field). Each type has
+  ClickUp's operators: Is, Is not, Is set, Is not set for a choice,
+  person or date; Greater than, Less than, Equal to for a number;
+  Contains, Does not contain, Is for text; Is checked for a checkbox. A
+  date's value is a range: Today, This week, Next month, This quarter,
+  Overdue, Last or Next N days, an exact date, before or after a date, or
+  a date range (weeks start on Monday). "Add nested filter" adds a row to
+  a group, and "Add filter" adds a group; And / Or joins the rows in a
+  group, and the groups. "Clear all" takes them all away. A row still
+  being filled in filters nothing. Each person's view is
   saved with their account (`people.views`, `PUT /api/me/views/jobs`,
   server/ui/job-view.js), so it follows them to every device.
   In the list, Columns chooses the columns (saved with the view; Client
@@ -210,10 +217,10 @@ component gets a row here in the pull request that adds it.
 | `tileCard({ href, mark, title, status, blurb, action })`, `.fx-int-grid` | `server/ui/app.js` (`ui().tileCard`) | A grid of cards that each open a page: Integrations, Rules. `mark` is a logo node or an icon name; leave out `blurb` unless it helps |
 | `crumbs([href, label]…, here)` | `server/ui/app.js` (`ui().crumbs`) | The trail above a page one level down (Rules › Invoice rules, Integrations › Xero) |
 | `rowMenu(label, items)` | `server/ui/app.js` | The ⋯ menu on a row |
-| `viewBar(h)`: `menu`, `option`, `filterMenu` and the rows-panel parts | `server/ui/view-bar.js` | Group, Sort, Filter and Columns chips and their panels, on every list (Jobs, Reconcile) |
+| `viewBar(h)`: `menu`, `option`, `filterMenu` and the rows-panel parts | `server/ui/view-bar.js` | Group, Sort, Filter and Columns chips and their panels, on every list (Jobs, Invoices, Reconcile) |
 | `findBox(h, { label, oninput })` | `server/ui/view-bar.js` | A list's own search: an icon that opens into a box |
 | `ICONS`, `svg`, `today` | `server/ui/view-bar.js` | The toolbar icons, an SVG string as a node, the local day |
-| `filterJobs`, `sortJobs`, `groupJobs`, `OPERATORS` | `server/ui/job-view.js` | The rules behind Filter, Sort and Group (no DOM) |
+| `filterJobs`, `cleanFilterView`, `sortJobs`, `groupJobs`, `OPERATORS`, `DATE_VALUES` | `server/ui/job-view.js` | The rules behind Filter, Sort and Group (no DOM). Every list's filter uses them with its own fields |
 | `bulkBar(ui, { label })` | `server/ui/bulk-bar.js` | The bar at the foot while rows are ticked: icon and one word per action, More |
 | `.fx-pager` | `server/ui/flow.css` | "← Back", "n of N", previous and next over one record. Built three times today (Invoices, Reconcile, Price list › Reconcile); issue #220 makes one helper. Do not add a fourth copy |
 | `.fx-tabs`, `.fx-tabs__count` | `server/ui/flow.css` | Tabs with counts (Invoices, Price list) |

@@ -19,6 +19,9 @@ class El {
   append(...kids) { this.children.push(...kids.flat().filter((k) => k != null)); }
   replaceChildren(...kids) { this.children = []; this.append(...kids); }
   addEventListener(type, fn) { this.listeners[type] = fn; }
+  get classList() { return { toggle: (name, on) => { this.attrs[`class:${name}`] = String(on); } }; }
+  get firstChild() { return this.children[0] ?? null; }
+  set innerHTML(markup) { this.children = [new El('svg')]; }
   get text() { return this.children.map((k) => (k instanceof El ? k.text : String(k))).join(''); }
   all(test) { return this.children.filter((k) => k instanceof El).flatMap((k) => [...(test(k) ? [k] : []), ...k.all(test)]); }
 }
@@ -62,7 +65,7 @@ const panel = (main) => main.all((el) => el.getAttribute('class') === 'fx-panel'
 
 test('a tab click selects the tab at once; only the newest answer draws; a tab seen before shows at once', async () => {
   globalThis.sessionStorage = { getItem: () => null, setItem() {}, removeItem() {} };
-  globalThis.document = { visibilityState: 'visible', addEventListener() {}, removeEventListener() {} };
+  globalThis.document = { visibilityState: 'visible', addEventListener() {}, removeEventListener() {}, createElement: (tag) => new El(tag) };
   const { main, ui, asked } = page();
   const opened = renderInvoiceList(main, ui);
   await settle();
@@ -97,7 +100,7 @@ test('a tab click selects the tab at once; only the newest answer draws; a tab s
 
 test('only Draft, Approved, Sent and Void show a Number column; the other tabs open on Client', async () => {
   globalThis.sessionStorage = { getItem: () => null, setItem() {}, removeItem() {} };
-  globalThis.document = { visibilityState: 'visible', addEventListener() {}, removeEventListener() {} };
+  globalThis.document = { visibilityState: 'visible', addEventListener() {}, removeEventListener() {}, createElement: (tag) => new El(tag) };
   const { main, ui, asked } = page();
   const opened = renderInvoiceList(main, ui);
   await settle();
@@ -116,7 +119,7 @@ test('only Draft, Approved, Sent and Void show a Number column; the other tabs o
 
 test('with integrations on, a Linked column shows one icon per system; one not in Xero stands out', async () => {
   globalThis.sessionStorage = { getItem: () => null, setItem() {}, removeItem() {} };
-  globalThis.document = { visibilityState: 'visible', addEventListener() {}, removeEventListener() {} };
+  globalThis.document = { visibilityState: 'visible', addEventListener() {}, removeEventListener() {}, createElement: (tag) => new El(tag) };
   const { main, ui, asked } = page();
   const flow = ui.flow;
   ui.flow = (path, options) => (path === '/api/invoicing/context'
@@ -162,7 +165,7 @@ test('with integrations on, a Linked column shows one icon per system; one not i
 
 test('ticked rows bring up the bulk bar: N selected, the tab\'s actions, and × clears', async () => {
   globalThis.sessionStorage = { getItem: () => null, setItem() {}, removeItem() {} };
-  globalThis.document = { visibilityState: 'visible', addEventListener() {}, removeEventListener() {} };
+  globalThis.document = { visibilityState: 'visible', addEventListener() {}, removeEventListener() {}, createElement: (tag) => new El(tag) };
   const { main, ui, asked } = page();
   const opened = renderInvoiceList(main, ui);
   await settle();

@@ -544,14 +544,16 @@ a.fx-strong:hover { text-decoration: underline; }
 .fx-chipset--on .fx-chip__clear { border-color: var(--t-accent-brd, var(--t-accent)); background: var(--t-accent-bg); color: var(--t-accent); }
 /* Group by, Sort and Filters: rows of selects with a bin at the end, as
    ClickUp lays them out, in Flow's own look. */
-.fx-pop.fx-pop--rows { width: max-content; min-width: 360px; max-width: min(680px, calc(100vw - 16px)); max-height: min(520px, calc(100vh - 32px)); padding: 12px; }
+.fx-pop.fx-pop--rows { width: max-content; min-width: 360px; max-width: min(760px, calc(100vw - 16px)); max-height: min(520px, calc(100vh - 32px)); padding: 12px; }
 .fx-rows__title { margin: 0 0 10px; color: var(--t-strong); font: 600 14px/1.3 var(--t-body); }
 .fx-rows { display: grid; gap: 8px; }
-.fx-rows__row { display: grid; grid-template-columns: 78px minmax(130px, 1fr) minmax(120px, auto) minmax(150px, 1.2fr) 32px; gap: 8px; align-items: center; }
+.fx-rows__row { display: grid; grid-template-columns: 64px minmax(140px, 1fr) minmax(120px, auto) minmax(170px, 1.3fr) 32px; gap: 8px; align-items: start; }
 .fx-rows__row--sort { grid-template-columns: 78px minmax(150px, 1fr) minmax(140px, auto) 32px; }
 .fx-rows__row--group { grid-template-columns: minmax(170px, 1fr) minmax(130px, auto) 32px; }
 .fx-rows .fx-select, .fx-rows .fx-input { width: 100%; min-width: 0; min-height: 32px; font-size: 13px; }
-.fx-rows__lead { color: var(--t-dim); font: 500 13px/1.2 var(--t-body); }
+/* Rows align at the top, so a value on two lines (a date range) keeps the
+   bin beside its first line. */
+.fx-rows__lead { display: flex; align-items: center; min-height: 32px; color: var(--t-dim); font: 500 13px/1.2 var(--t-body); }
 .fx-rows__value { overflow: hidden; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
 .fx-rows__gone { grid-column: span 3; color: var(--t-dim); font-size: 13px; font-style: italic; }
 .fx-rows__bin {
@@ -565,13 +567,38 @@ a.fx-strong:hover { text-decoration: underline; }
 .fx-rows__foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 12px; }
 .fx-rows__add { display: inline-flex; align-items: center; gap: 6px; }
 .fx-rows__add .fx-lucide { width: 14px; height: 14px; }
+/* The filter panel's groups, as ClickUp's: each group a shaded box with its
+   own rows and "Add nested filter"; groups stack with And / Or at the left. */
+.fx-fgroup { display: grid; gap: 8px; padding: 10px; border-radius: var(--t-radius-lg); background: var(--fx-hover); }
+.fx-fgroups { display: grid; gap: 8px; }
+.fx-fgroups__row { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 8px; align-items: start; }
+.fx-fgroups__row > .fx-rows__lead, .fx-fgroups__row > span { padding-top: 16px; }
+.fx-fgroup__add { justify-self: start; padding: 2px 4px; border: 0; background: none; color: var(--t-dim); font: 500 12.5px/1.3 var(--t-body); cursor: pointer; }
+.fx-fgroup__add:hover, .fx-fgroup__add:focus-visible { color: var(--t-strong); text-decoration: underline; outline: none; }
+.fx-choice { display: inline-flex; align-items: center; gap: 6px; min-width: 0; text-align: left; }
+.fx-choice .fx-lucide { flex: none; width: 14px; height: 14px; color: var(--t-dim); }
+.fx-choice__text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fx-rows .fx-rows__join { min-width: 0; width: 100%; padding-left: 8px; font: 600 12px/1 var(--t-data, var(--t-body)); letter-spacing: .04em; }
+.fx-rows__word { font: 600 12px/1 var(--t-data, var(--t-body)); letter-spacing: .04em; padding-left: 9px; }
+.fx-fgroups__row .fx-rows__join { min-width: 0; width: 64px; padding-left: 8px; font: 600 12px/1 var(--t-data, var(--t-body)); letter-spacing: .04em; min-height: 32px; }
+.fx-rows__date { display: flex; flex-wrap: wrap; gap: 6px; overflow: visible; }
+.fx-rows__date > .fx-choice { flex: 1 1 130px; }
+.fx-rows__date .fx-input { width: auto; flex: 1 1 130px; }
+.fx-rows__days { display: inline-flex; flex: 1 1 130px; align-items: center; gap: 6px; }
+.fx-rows__days .fx-input[type="number"] { width: 72px; flex: none; }
+.fx-pop__bar { display: flex; align-items: center; justify-content: space-between; }
+.fx-pop__link { padding: 4px 8px; border: 0; background: none; color: var(--t-accent); font: 500 12.5px/1.3 var(--t-body); cursor: pointer; }
+.fx-pop__link:hover, .fx-pop__link:focus-visible { text-decoration: underline; outline: none; }
 .fx-pop.fx-pop--choices { min-width: 200px; max-width: 300px; padding: 6px; }
 .fx-pop--choices .fx-input { min-height: 32px; margin-bottom: 4px; font-size: 13px; }
 .fx-pop__end { display: inline-grid; margin-left: auto; color: var(--t-accent); }
 @media (max-width: 640px) {
   .fx-pop.fx-pop--rows { min-width: 0; width: calc(100vw - 16px); }
   .fx-rows__row, .fx-rows__row--sort { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 32px; }
-  .fx-rows__row > .fx-rows__lead, .fx-rows__row > .fx-select:first-child { grid-column: 1 / -1; }
+  .fx-rows__row > .fx-rows__lead, .fx-rows__row > .fx-select:first-child, .fx-rows__row > .fx-rows__join { grid-column: 1 / -1; }
+  .fx-rows__row > .fx-rows__join { width: 72px; }
+  .fx-fgroups__row { grid-template-columns: minmax(0, 1fr); }
+  .fx-fgroups__row > .fx-rows__lead, .fx-fgroups__row > span { padding-top: 0; }
   .fx-rows__row > .fx-rows__value { grid-column: 1 / 3; }
   .fx-rows__row > .fx-rows__value--none { display: none; }
 }
@@ -945,6 +972,8 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
 /* ── Narrow screens: the sidebar becomes a bar across the top. ──────────── */
 @media (max-width: 820px) {
   .fx-shell { flex-direction: column; }
+  /* In a column, the page takes the full width, not its content's. */
+  .fx-main { width: 100%; }
   .fx-side { flex-direction: row; align-items: center; width: auto; height: 60px; padding: 0 12px; border-right: 0; border-bottom: 1px solid var(--fx-line); }
   .fx-side__head { flex-direction: row-reverse; gap: 6px; padding: 0; }
   .fx-side__head .fx-brand { display: none; }

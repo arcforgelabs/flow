@@ -10,7 +10,8 @@ import { bulkBar } from '/assets/ui/bulk-bar.js';
 import { draftNote, sendModeNote } from '/assets/ui/invoice-notes.js';
 import { caseNumber } from '/assets/ui/job-board.js';
 import { jobChangeReview } from '/assets/ui/job-change.js';
-import { findBox } from '/assets/ui/view-bar.js';
+import { cleanFilterView, filterJobs } from '/assets/ui/job-view.js';
+import { findBox, today, viewBar } from '/assets/ui/view-bar.js';
 
 // The tabs, left to right (server/api/invoicing.js, TABS): Pending (a
 // person must look), Ready (checks pass), then the accounting system's
@@ -110,6 +111,42 @@ const showDate = (iso) => (iso ? new Date(`${iso}T00:00:00`).toLocaleDateString(
 
 // ── The list ───────────────────────────────────────────────────────────────
 
+// The filter's fields (view-bar.js). The tabs are the status, so Status is
+// not here. The filter keeps rows of the tab shown.
+const FILTER_FIELDS = {
+  client: { label: 'Client', kind: 'choice', icon: 'building-2' },
+  number: { label: 'Number', kind: 'text', icon: 'hash' },
+  reference: { label: 'Reference', kind: 'text', icon: 'text' },
+  date: { label: 'Date', kind: 'date', icon: 'calendar' },
+  total: { label: 'Total', kind: 'number', icon: 'dollar-sign' },
+  problem: { label: 'Problem', kind: 'check', icon: 'triangle-alert' },
+};
+const PROBLEM_OPS = { yes: 'Has one', no: 'Has none' };
+const FILTER_KEY = 'flow_invoice_filters';
+const filterKind = (field) => FILTER_FIELDS[field]?.kind ?? null;
+
+// An invoice's value for a filter field, as the filter compares it.
+export function invoiceValue(invoice, field) {
+  switch (field) {
+    case 'client': return invoice.contactName ?? null;
+    case 'number': return invoice.number ?? null;
+    case 'reference': return invoice.reference ?? null;
+    case 'date': return invoice.issueDate ?? invoice.createdAt?.slice(0, 10) ?? null;
+    case 'total': return invoice.totalCents == null ? null : invoice.totalCents / 100;
+    case 'problem': return (invoice.problems?.length ?? 0) > 0;
+    default: return null;
+  }
+}
+
+// The invoices a filter view keeps.
+export const keptInvoices = (invoices, view, now = today()) => filterJobs(invoices, view, { valueOf: invoiceValue, kindOf: filterKind, today: now });
+
+function readFilters() {
+  let stored = {};
+  try { stored = JSON.parse(localStorage.getItem(FILTER_KEY)) ?? {}; } catch { /* none kept */ }
+  return cleanFilterView(stored, filterKind);
+}
+
 export async function renderInvoiceList(main, ui) {
   const { h, flow, pageHeader, notice, go, toast } = ui;
   const saved = OLD_TAB[sessionStorage.getItem('flow_invoice_tab')] ?? sessionStorage.getItem('flow_invoice_tab');
@@ -117,7 +154,7 @@ export async function renderInvoiceList(main, ui) {
   const back = readNav();
   const returning = sessionStorage.getItem(NAV_BACK) === '1';
   sessionStorage.removeItem(NAV_BACK);
-  const state = { status: TABS.some(([id]) => id === saved) ? saved : 'ready', q: returning ? back?.q ?? '' : '', ticked: new Set() };
+  const state = { status: TABS.some(([id]) => id === saved) ? saved : 'ready', q: returning ? back?.q ?? '' : '', ticked: new Set(), view: readFilters() };
   const tabs = h('div', { class: 'fx-tabs', role: 'tablist' });
   let timer;
   const find = findBox(h, {
@@ -127,16 +164,35 @@ export async function renderInvoiceList(main, ui) {
       timer = setTimeout(() => { state.q = words.trim(); load(); }, 200);
     },
   });
+  // The Filter chip: the same panel as on Jobs and Reconcile (view-bar.js).
+  // It filters the rows of the tab shown, on this device.
+  const labels = (list) => [...new Set(list.filter(Boolean))].sort((a, b) => a.localeCompare(b)).map((v) => ({ value: v, label: v }));
+  const filterMenu = viewBar(h).filterMenu({
+    fields: () => Object.entries(FILTER_FIELDS).map(([value, f]) => ({ value, label: f.label, icon: f.icon })),
+    kindOf: filterKind,
+    opsOf: (field) => (field === 'problem' ? PROBLEM_OPS : null),
+    choicesOf: (field) => (field === 'client' ? labels((raw?.invoices ?? []).map((i) => i.contactName)) : []),
+    view: () => state.view,
+    change: (patch) => {
+      state.view = { ...state.view, ...patch };
+      try { localStorage.setItem(FILTER_KEY, JSON.stringify(state.view)); } catch { /* the page still works, it forgets */ }
+      if (raw) draw(raw);
+    },
+    first: 'client',
+    empty: 'No filters. Every invoice in the tab shows.',
+  });
+  const controls = h('div', { class: 'fx-viewbar', role: 'group', 'aria-label': 'Filter' }, ...filterMenu.node);
   const host = h('div', { class: 'fx-panel' }, h('div', { class: 'fx-skeleton' }));
   const bulk = bulkBar(ui);
   const context = await flow('/api/invoicing/context').catch(() => ({ canIssue: false }));
   let body = null;
+  let raw = null;
   const openTab = (id) => { state.status = id; state.ticked.clear(); sessionStorage.setItem('flow_invoice_tab', id); load(); };
   const alerts = alertStrip(ui, 'invoices', { onTab: openTab });
   // The tabs and search stay at the top while the rows scroll up under them;
   // the bulk bar floats at the foot (ClickUp's layout). Sending is a bulk
   // action: tick rows (the head tick takes every row shown), then Send.
-  const head = h('div', { class: 'fx-listhead' }, h('div', { class: 'fx-toolbar' }, tabs, find.element));
+  const head = h('div', { class: 'fx-listhead' }, h('div', { class: 'fx-toolbar' }, tabs, h('div', { class: 'fx-toolbar__end' }, controls, find.element)));
   const edge = h('div', { class: 'fx-listhead__edge', 'aria-hidden': 'true' });
   main.append(
     pageHeader('Invoices', {
@@ -346,13 +402,17 @@ export async function renderInvoiceList(main, ui) {
   }
 
   async function draw(answer) {
-    body = answer;
+    raw = answer;
+    filterMenu.draw();
+    body = { ...answer, invoices: keptInvoices(answer.invoices, state.view) };
     const shown = new Set(body.invoices.map((i) => i.id));
     for (const id of state.ticked) if (!shown.has(id)) state.ticked.delete(id);
     drawTabs(body.counts);
     drawBar();
     if (!body.invoices.length) {
-      host.replaceChildren(h('p', { class: 'fx-empty' }, state.q
+      host.replaceChildren(h('p', { class: 'fx-empty' }, answer.invoices.length
+        ? 'No invoice in this tab passes the filter.'
+        : state.q
         ? 'No invoice matches that search.'
         : EMPTY[state.status] ?? `No ${TAB_LABEL[state.status].toLowerCase()} invoices.`));
       return;

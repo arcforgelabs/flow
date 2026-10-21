@@ -9,19 +9,22 @@
 //   option(text, checked, onclick, role, icon)  a row in a panel, with a tick.
 //   title, choose, bin, addButton, rowsFoot, clearAll  the parts of a rows
 //     panel: a title, rows of selects with a bin, a foot with Add and Clear.
-//   filterMenu(config)  the Filter chip: rows of field, operator and value,
-//     And / Or, "Add filter" and "Clear all" (job-view.js has the rules and
-//     filterJobs, which keeps the rows that pass). config:
-//       fields()          [{ value, label } | { group, options }]
+//   filterMenu(config)  the Filter chip, as ClickUp's: groups of rows of
+//     field, operator and value, And / Or in a group and between groups,
+//     "Add nested filter", "Add filter" and "Clear all" (job-view.js has
+//     the rules and filterJobs, which keeps the rows that pass). config:
+//       fields()          [{ value, label, icon? } | { group, options }]
 //       kindOf(field)     'choice' | 'person' | 'date' | 'number' | 'check' | 'text' | null
 //       opsOf(field)      { op: words }, or null for OPERATORS[kindOf(field)]
 //       choicesOf(field)  [{ value, label, icon? }] for a choice field
-//       view()            { filters, match }
-//       change(patch)     saves { filters } or { match }
+//       view()            { match, groups: [{ match, filters }] }
+//       change(patch)     saves { groups } or { match }
 //       first             the field a new row starts on
 //       empty             the words when no filter is on
 import { lucide } from '/assets/ui/custom-fields.js';
-import { filterCount, OPERATORS } from '/assets/ui/job-view.js';
+import { DATE_VALUES, dateValueIsOn, filterCount, KIND_ICONS, OPERATORS } from '/assets/ui/job-view.js';
+
+const DAY_BETWEEN = /^between:(\d{4}-\d{2}-\d{2})\.\.(\d{4}-\d{2}-\d{2})$/;
 
 export const ICONS = {
   group: '<svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.8 14.5 5 8 8.2 1.5 5z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="m1.5 8.2 6.5 3.2 6.5-3.2M1.5 11.2 8 14.4l6.5-3.2" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>',
@@ -101,113 +104,205 @@ export function viewBar(h) {
   const rowsFoot = (...parts) => h('div', { class: 'fx-rows__foot' }, ...parts);
   const clearAll = (onclick) => h('button', { type: 'button', class: 'fx-btn fx-btn--ghost fx-btn--sm', onclick }, 'Clear all');
 
+  // A button that opens a list to pick one choice from, as ClickUp's menus
+  // in a filter row: options [{ value, label, icon? }], a search box when
+  // `search` is on, and a tick on the chosen one.
+  function picker({ label, value, options, onpick, search = false, empty = 'Choose…', extra = '' }) {
+    const id = `fx-view-pick-${++choiceCount}`;
+    const chosen = options.find((o) => o.value === value) ?? null;
+    const button = h('button', {
+      type: 'button', class: `fx-select fx-select--sm fx-choice ${extra}`.trim(), popovertarget: id, 'aria-label': label, title: chosen?.label ?? label,
+    }, chosen?.icon ? lucide(h, chosen.icon) : null, h('span', { class: 'fx-choice__text' }, chosen?.label ?? empty));
+    const pop = h('div', { class: 'fx-pop fx-pop--choices', id, popover: 'auto', role: 'menu' });
+    const find = search ? h('input', { class: 'fx-input fx-input--sm', type: 'search', placeholder: 'Search…', 'aria-label': `Search ${label.toLowerCase()}` }) : null;
+    const items = h('div', {});
+    const drawItems = () => {
+      const q = find?.value.trim().toLowerCase() ?? '';
+      const shown = options.filter((o) => !q || o.label.toLowerCase().includes(q));
+      items.replaceChildren(...(shown.length ? shown.map((o) => option(o.label, o.value === value, () => { pop.hidePopover(); onpick(o.value); }, 'menuitemradio', o.icon ?? null))
+        : [h('p', { class: 'fx-rows__empty' }, 'Nothing matches.')]));
+    };
+    find?.addEventListener('input', drawItems);
+    pop.append(...[find, items].filter(Boolean));
+    pop.addEventListener('toggle', (event) => {
+      if (event.newState !== 'open') return;
+      if (find) find.value = '';
+      drawItems();
+      place(button, pop);
+      find?.focus();
+    });
+    return [button, pop];
+  }
+  const place = (button, pop) => {
+    const at = button.getBoundingClientRect();
+    pop.style.top = `${Math.round(at.bottom + 4)}px`;
+    pop.style.left = `${Math.round(Math.max(8, Math.min(at.left, innerWidth - pop.offsetWidth - 8)))}px`;
+  };
+
   // ── Filters ──
-  // Rows of field, operator and value, with a bin on each, "Add filter",
-  // and "Clear all". The second row's And / Or applies to every row.
+  // As ClickUp's: groups of rows of field, operator and value, with a bin on
+  // each row. A group's second row has And / Or for the rows in it; the
+  // second group has And / Or between the groups. "Add nested filter" adds a
+  // row to a group, "Add filter" a new group, "Clear all" empties it.
   function filterMenu({ fields, kindOf, opsOf: ownOps = () => null, choicesOf = () => [], view, change, first, empty = 'No filters. Every row shows.' }) {
     const opsOf = (field) => ownOps(field) ?? OPERATORS[kindOf(field)] ?? {};
-    // A row's value when its operator changes: kept when it still fits.
+    // The field list: one list, as ClickUp's, each field with its type icon.
+    const fieldList = () => fields().flatMap((o) => (o.group ? o.options : [o]))
+      .map((o) => ({ ...o, icon: o.icon ?? KIND_ICONS[kindOf(o.value)] ?? null }));
+    // A row's value when its field or operator changes: kept when it fits.
     function valueFor(field, op, old) {
       const kind = kindOf(field);
+      if (kind === 'date' && ['is', 'not'].includes(op)) return typeof old === 'string' && dateValueIsOn(old) ? old : 'today';
       if (['is', 'not'].includes(op) && ['choice', 'person'].includes(kind)) return Array.isArray(old) ? old : [];
-      if (['before', 'after', 'on'].includes(op)) return typeof old === 'string' && /^\d{4}-/.test(old) ? old : today();
       if (['eq', 'gt', 'lt'].includes(op)) return typeof old === 'number' ? old : null;
-      if (['has', 'is'].includes(op)) return typeof old === 'string' ? old : '';
+      if (['has', 'hasnt', 'is'].includes(op)) return typeof old === 'string' ? old : '';
       return null;
     }
-    const setFilters = (filters) => change({ filters });
-    const setRow = (i, patch) => setFilters(view().filters.map((f, n) => (n === i ? { ...f, ...patch } : f)));
+    const groups = () => view().groups;
+    const setGroups = (next) => change({ groups: next.filter((g) => g.filters.length) });
+    const newRow = (field = first) => {
+      const op = Object.keys(opsOf(field))[0];
+      return { field, op, value: valueFor(field, op, null) };
+    };
+    const setRow = (gi, ri, patch) => setGroups(groups().map((g, n) => (n === gi ? { ...g, filters: g.filters.map((f, m) => (m === ri ? { ...f, ...patch } : f)) } : g)));
+    const dropRow = (gi, ri) => setGroups(groups().map((g, n) => (n === gi ? { ...g, filters: g.filters.filter((_, m) => m !== ri) } : g)));
     // A choice row's value: a button that opens a list of choices to tick,
-    // with a search when the list is long.
-    function choiceValue(i, filter) {
+    // with a search and "Select all", as ClickUp's.
+    function choiceValue(gi, ri, filter) {
       const choices = choicesOf(filter.field);
       const named = () => {
         const on = choices.filter((c) => filter.value.includes(c.value)).map((c) => c.label);
-        return on.length ? on.join(', ') : 'Choose…';
+        return on.length ? on.join(', ') : 'Select option';
       };
       const id = `fx-view-choice-${++choiceCount}`;
       const button = h('button', { type: 'button', class: 'fx-select fx-select--sm fx-rows__value', popovertarget: id, title: named() }, named());
       const pop = h('div', { class: 'fx-pop fx-pop--choices', id, popover: 'auto', role: 'menu' });
-      const find = choices.length > 8 ? h('input', { class: 'fx-input fx-input--sm', type: 'search', placeholder: 'Find', 'aria-label': 'Find a choice' }) : null;
+      const find = h('input', { class: 'fx-input fx-input--sm', type: 'search', placeholder: 'Search…', 'aria-label': 'Search the choices' });
       const items = h('div', {});
+      const save = (value) => {
+        filter = { ...filter, value };
+        setRow(gi, ri, { value });
+        button.textContent = named();
+        button.title = named();
+        drawItems();
+      };
+      const all = h('button', { type: 'button', class: 'fx-pop__link', onclick: () => save(filter.value.length === choices.length ? [] : choices.map((c) => c.value)) });
       const drawItems = () => {
-        const q = find?.value.trim().toLowerCase() ?? '';
+        const q = find.value.trim().toLowerCase();
+        all.textContent = filter.value.length === choices.length && choices.length ? 'Clear' : 'Select all';
         items.replaceChildren(...choices.filter((c) => !q || c.label.toLowerCase().includes(q)).map((c) => option(c.label, filter.value.includes(c.value), () => {
-          filter = { ...filter, value: filter.value.includes(c.value) ? filter.value.filter((v) => v !== c.value) : [...filter.value, c.value] };
-          setRow(i, { value: filter.value });
-          button.textContent = named();
-          button.title = named();
-          drawItems();
+          save(filter.value.includes(c.value) ? filter.value.filter((v) => v !== c.value) : [...filter.value, c.value]);
         }, 'menuitemcheckbox', c.icon ?? null)));
       };
-      find?.addEventListener('input', drawItems);
-      pop.append(...[find, items].filter(Boolean));
+      find.addEventListener('input', drawItems);
+      pop.append(find, h('div', { class: 'fx-pop__bar' }, h('span', { class: 'fx-pop__head' }, 'Options'), all), items);
       pop.addEventListener('toggle', (event) => {
         if (event.newState !== 'open') return;
         drawItems();
-        const at = button.getBoundingClientRect();
-        pop.style.top = `${Math.round(at.bottom + 4)}px`;
-        pop.style.left = `${Math.round(Math.max(8, Math.min(at.left, innerWidth - pop.offsetWidth - 8)))}px`;
-        find?.focus();
+        place(button, pop);
+        find.focus();
       });
       return [button, pop];
     }
-    function valueControl(i, filter) {
+    // A date row's value: ClickUp's list of ranges, then a day, two days or
+    // a count of days when the range needs one.
+    function dateValue(gi, ri, filter) {
+      const value = filter.value ?? 'today';
+      const [kind, rest = ''] = value.split(':');
+      const range = DAY_BETWEEN.exec(value);
+      const base = range ? 'between' : kind;
+      const set = (next) => { setRow(gi, ri, { value: next }); };
+      const pick = picker({
+        label: 'Date', value: base, search: true, extra: 'fx-rows__value',
+        options: Object.entries(DATE_VALUES).map(([v, l]) => ({ value: v, label: l })),
+        onpick: (v) => {
+          const day = today();
+          set({ on: `on:${day}`, before: `before:${day}`, after: `after:${day}`, between: `between:${day}..${day}`, last: 'last:7', next: 'next:7' }[v] ?? v);
+          redrawPanel();
+        },
+      });
+      const dayInput = (at, onchange) => h('input', { class: 'fx-input fx-input--sm', type: 'date', 'aria-label': 'Day', value: at, onchange: (event) => { if (event.target.value) onchange(event.target.value); } });
+      let more = null;
+      if (['on', 'before', 'after'].includes(base)) more = dayInput(rest, (d) => set(`${base}:${d}`));
+      if (range) {
+        more = h('span', { class: 'fx-rows__days' },
+          dayInput(range[1], (d) => set(`between:${d}..${range[2]}`)), dayInput(range[2], (d) => set(`between:${range[1]}..${d}`)));
+      }
+      if (['last', 'next'].includes(base)) {
+        more = h('span', { class: 'fx-rows__days' }, h('input', {
+          class: 'fx-input fx-input--sm', type: 'number', min: '1', max: '9999', step: '1', 'aria-label': 'Days', value: rest,
+          oninput: (event) => { const n = Number(event.target.value); if (Number.isInteger(n) && n > 0 && n < 10000) set(`${base}:${n}`); },
+        }), h('span', { class: 'fx-rows__lead' }, 'days'));
+      }
+      return h('span', { class: 'fx-rows__value fx-rows__date' }, ...pick, more);
+    }
+    function valueControl(gi, ri, filter) {
       const kind = kindOf(filter.field);
       const { op } = filter;
-      if (['is', 'not'].includes(op) && ['choice', 'person'].includes(kind)) return choiceValue(i, filter);
-      if (['before', 'after', 'on'].includes(op)) {
-        return h('input', { class: 'fx-input fx-input--sm fx-rows__value', type: 'date', 'aria-label': 'Date', value: filter.value ?? '', onchange: (event) => setRow(i, { value: event.target.value || null }) });
-      }
+      if (kind === 'date' && ['is', 'not'].includes(op)) return dateValue(gi, ri, filter);
+      if (['is', 'not'].includes(op) && ['choice', 'person'].includes(kind)) return choiceValue(gi, ri, filter);
       if (['eq', 'gt', 'lt'].includes(op)) {
         return h('input', {
           class: 'fx-input fx-input--sm fx-rows__value', type: 'number', step: 'any', inputmode: 'decimal', 'aria-label': 'Number', value: filter.value ?? '',
-          oninput: (event) => setRow(i, { value: event.target.value === '' ? null : Number(event.target.value) }),
+          oninput: (event) => setRow(gi, ri, { value: event.target.value === '' ? null : Number(event.target.value) }),
         });
       }
-      if (['has', 'is'].includes(op)) {
-        return h('input', { class: 'fx-input fx-input--sm fx-rows__value', type: 'text', 'aria-label': 'Text', value: filter.value ?? '', oninput: (event) => setRow(i, { value: event.target.value }) });
+      if (['has', 'hasnt', 'is'].includes(op)) {
+        return h('input', { class: 'fx-input fx-input--sm fx-rows__value', type: 'text', placeholder: 'Search…', 'aria-label': 'Text', value: filter.value ?? '', oninput: (event) => setRow(gi, ri, { value: event.target.value }) });
       }
       return h('span', { class: 'fx-rows__value fx-rows__value--none' });
     }
+    // And / Or: a small menu on the second row (or group), the word after it.
+    const joinControl = (label, match, onpick) => picker({
+      label, value: match, extra: 'fx-rows__join', options: [{ value: 'all', label: 'AND' }, { value: 'any', label: 'OR' }], onpick,
+    });
+    let redrawPanel = () => {};
     const control = menu(ICONS.filter, (redraw) => {
-      const { filters, match } = view();
-      const list = fields();
+      redrawPanel = redraw;
+      const list = fieldList();
+      const all = groups();
+      const { match } = view();
+      const row = (gi, g, filter, ri) => {
+        const lead = ri === 0 ? h('span', { class: 'fx-rows__lead' }, 'Where')
+          : ri === 1 ? joinControl('Match in this group', g.match, (value) => { setGroups(all.map((x, n) => (n === gi ? { ...x, match: value } : x))); redraw(); })
+            : h('span', { class: 'fx-rows__lead fx-rows__word' }, g.match === 'any' ? 'OR' : 'AND');
+        const remove = bin('Remove this filter', () => { dropRow(gi, ri); redraw(); });
+        if (!kindOf(filter.field)) return h('div', { class: 'fx-rows__row' }, lead, h('span', { class: 'fx-rows__gone' }, 'A custom field that was deleted'), remove);
+        const ops = opsOf(filter.field);
+        return h('div', { class: 'fx-rows__row' },
+          lead,
+          ...picker({
+            label: 'Field', value: filter.field, options: list, search: true,
+            onpick: (field) => { const op = Object.keys(opsOf(field))[0]; setRow(gi, ri, { field, op, value: valueFor(field, op, null) }); redraw(); },
+          }),
+          ...picker({
+            label: 'Operator', value: filter.op, options: Object.entries(ops).map(([value, label]) => ({ value, label })),
+            onpick: (op) => { setRow(gi, ri, { op, value: valueFor(filter.field, op, filter.value) }); redraw(); },
+          }),
+          valueControl(gi, ri, filter),
+          remove);
+      };
+      const count = all.reduce((n, g) => n + g.filters.length, 0);
+      const box = (g, gi) => h('div', { class: 'fx-fgroup' },
+        h('div', { class: 'fx-rows' }, g.filters.map((filter, ri) => row(gi, g, filter, ri))),
+        count < 20 ? h('button', { type: 'button', class: 'fx-fgroup__add', onclick: () => { setGroups(all.map((x, n) => (n === gi ? { ...x, filters: [...x.filters, newRow()] } : x))); redraw(); } }, 'Add nested filter') : null);
+      const body = all.length === 1 ? box(all[0], 0) : h('div', { class: 'fx-fgroups' }, all.map((g, gi) => h('div', { class: 'fx-fgroups__row' },
+        gi === 0 ? h('span', { class: 'fx-rows__lead' }, 'Where')
+          : gi === 1 ? h('span', {}, ...joinControl('Match between groups', match, (value) => { change({ match: value }); redraw(); }))
+            : h('span', { class: 'fx-rows__lead fx-rows__word' }, match === 'any' ? 'OR' : 'AND'),
+        box(g, gi))));
       return [
         title('Filters'),
-        filters.length ? h('div', { class: 'fx-rows' }, filters.map((filter, i) => {
-          const known = kindOf(filter.field);
-          const lead = i === 0 ? h('span', { class: 'fx-rows__lead' }, 'Where')
-            : i === 1 ? choose('Match', match, [{ value: 'all', label: 'And' }, { value: 'any', label: 'Or' }], (value) => { change({ match: value }); redraw(); })
-              : h('span', { class: 'fx-rows__lead' }, match === 'any' ? 'Or' : 'And');
-          if (!known) {
-            return h('div', { class: 'fx-rows__row' }, lead, h('span', { class: 'fx-rows__gone' }, 'A custom field that was deleted'), bin('Remove this filter', () => { setFilters(filters.filter((_, n) => n !== i)); redraw(); }));
-          }
-          const ops = opsOf(filter.field);
-          return h('div', { class: 'fx-rows__row' },
-            lead,
-            choose('Field', filter.field, list, (field) => {
-              const op = Object.keys(opsOf(field))[0];
-              setRow(i, { field, op, value: valueFor(field, op, null) });
-              redraw();
-            }),
-            choose('Operator', filter.op, Object.entries(ops).map(([value, label]) => ({ value, label })), (op) => { setRow(i, { op, value: valueFor(filter.field, op, filter.value) }); redraw(); }),
-            valueControl(i, filter),
-            bin('Remove this filter', () => { setFilters(filters.filter((_, n) => n !== i)); redraw(); }));
-        })) : h('p', { class: 'fx-rows__empty' }, empty),
+        all.length ? body : h('p', { class: 'fx-rows__empty' }, empty),
         rowsFoot(
-          filters.length < 20 ? addButton('Add filter', () => {
-            const op = Object.keys(opsOf(first))[0];
-            setFilters([...filters, { field: first, op, value: valueFor(first, op, null) }]);
-            redraw();
-          }) : h('span'),
-          filters.length ? clearAll(() => { setFilters([]); redraw(); }) : null),
+          count < 20 ? addButton('Add filter', () => { setGroups([...all, { match: 'all', filters: [newRow()] }]); redraw(); }) : h('span'),
+          all.length ? clearAll(() => { change({ groups: [], match: 'all' }); redraw(); }) : null),
       ];
     }, { rows: true, clearLabel: 'Clear all filters' });
     // The chip names how many filters are on.
     const draw = () => {
-      const count = filterCount(view());
-      control.set(count ? `${count} ${count === 1 ? 'Filter' : 'Filters'}` : 'Filter', count > 0, view().filters.length ? () => change({ filters: [], match: 'all' }) : null);
+      const count = filterCount(view(), kindOf);
+      control.set(count ? `${count} ${count === 1 ? 'Filter' : 'Filters'}` : 'Filter', count > 0, groups().length ? () => change({ groups: [], match: 'all' }) : null);
     };
     return { ...control, draw };
   }
