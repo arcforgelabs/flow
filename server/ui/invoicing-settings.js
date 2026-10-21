@@ -1,5 +1,6 @@
-// Settings, Rules (/invoicing-settings): a card for each part, like the
-// Integrations page, and one page for each (/invoicing-settings/<key>).
+// Settings, Rules (/invoicing-settings): a section of cards for each part,
+// like Claude's Customize page, and one page for each
+// (/invoicing-settings/<key>).
 // Drafts holds payment terms and the Reference; Price codes the lines with no
 // price item (line-mappings.js); Invoices the checks a ready job passes
 // before Flow drafts its invoice (invoice-rules.js, docs/INVOICE_RULES.md).
@@ -19,43 +20,65 @@ const SEND_MODES = [
   { value: 'approve_and_email', label: 'Approved and emailed' },
 ];
 
-const onCount = (list) => ({ label: `${list.filter((x) => x.enabled).length} on`, tone: list.some((x) => x.enabled) ? 'success' : 'mute' });
-
-// Each card: its page, its mark, and its state once the data is in. No
-// blurb: the name and the state say enough.
+// The parts of Rules, each on its own page (/invoicing-settings/<key>).
 const PARTS = [
-  { key: 'drafts', title: 'Drafts', mark: 'draft', mount: (ui) => draftsSection(ui) },
-  { key: 'price-codes', title: 'Price codes', mark: 'tag', mount: (ui) => lineMappingSection(ui),
-    summary: async (flow) => {
-      const { labels } = await flow('/api/invoicing/line-labels');
-      const waiting = labels.filter((l) => l.unmapped > 0).length;
-      return waiting ? { status: { label: `${waiting} wait`, tone: 'warn' }, action: 'Fix' } : { status: { label: 'All mapped', tone: 'success' } };
-    } },
-  { key: 'invoices', title: 'Invoices', mark: 'rules', mount: (ui) => rulesSection(ui, 'Invoices'),
-    summary: async (flow) => ({ status: onCount((await flow('/api/invoicing/rules')).rules) }) },
+  { key: 'invoices', title: 'Invoices', mount: (ui) => rulesSection(ui, 'Invoices') },
+  { key: 'drafts', title: 'Drafts', mount: (ui) => draftsSection(ui) },
+  { key: 'price-codes', title: 'Price codes', mount: (ui) => lineMappingSection(ui) },
 ];
 
+// What a rule does, as its card's mark: Pending, Waits, Never drafted.
+const KIND = {
+  pending: { mark: 'flag' },
+  wait: { mark: 'clock' },
+  skip: { mark: 'ban' },
+};
+const SHOWN = 6;
+
 export function renderInvoicingSettings(main, ui, id) {
-  const { h, flow, notice, pageHeader, tileCard, crumbs } = ui;
+  const { h, flow, notice, pageHeader, tileCard, tileSection, crumbs } = ui;
   if (id) {
     const part = PARTS.find((p) => p.key === id);
     main.append(crumbs(['/invoicing-settings', 'Rules'], part?.title ?? 'Not found'),
       part ? h('div', { class: 'fx-card', style: { padding: '8px 20px 16px' } }, part.mount(ui)) : notice('No such part of Rules.', 'danger'));
     return;
   }
-  const grid = h('div', { class: 'fx-int-grid' });
-  main.append(pageHeader('Rules'), grid);
-  // Each card shows at once and fills in its state when its data comes back.
-  for (const part of PARTS) {
-    const href = `/invoicing-settings/${part.key}`;
-    const slot = tileCard({ href, mark: part.mark, title: part.title });
-    grid.append(slot);
-    if (part.summary) {
-      part.summary(flow)
-        .then((more) => slot.replaceWith(tileCard({ href, mark: part.mark, title: part.title, ...more })))
-        .catch(() => {});
+  // The landing is Claude's Customize page: a section for each part, one-line
+  // cards, and "Show all" to the part's own page, a list.
+  const host = h('div', { style: { display: 'grid', gap: '20px' } }, h('div', { class: 'fx-skeleton' }));
+  main.append(pageHeader('Rules'), host);
+  const page = (key) => `/invoicing-settings/${key}`;
+  (async () => {
+    let settings;
+    let labels;
+    let rules;
+    try {
+      [{ settings }, { labels }, { rules }] = await Promise.all([
+        flow('/api/invoicing/settings'), flow('/api/invoicing/line-labels'), flow('/api/invoicing/rules')]);
+    } catch (error) {
+      host.replaceChildren(notice(error.message, 'danger'));
+      return;
     }
-  }
+    const ruleCard = (rule) => tileCard({
+      row: true, href: page('invoices'), mark: (KIND[rule.action.kind] ?? { mark: 'list-checks' }).mark, title: rule.name,
+      meta: rule.enabled ? 'On' : 'Off',
+    });
+    const waiting = labels.filter((l) => l.unmapped > 0).length;
+    host.replaceChildren(
+      tileSection('Invoices', rules.length ? rules.slice(0, SHOWN).map(ruleCard) : [h('p', { class: 'fx-dim' }, 'No rules yet.')],
+        { href: page('invoices'), more: rules.length > SHOWN ? `Show all ${rules.length}` : 'Show all' }),
+      tileSection('Drafts', [
+        tileCard({ row: true, href: page('drafts'), mark: 'calendar-clock', title: 'Payment terms', meta: `${settings.paymentTermsDays} days` }),
+        tileCard({ row: true, href: page('drafts'), mark: 'text-cursor-input', title: 'Reference' }),
+      ], { href: page('drafts') }),
+      tileSection('Price codes', [
+        tileCard({
+          row: true, href: page('price-codes'), mark: 'tag', title: 'Line labels',
+          status: waiting ? { label: `${waiting} wait`, tone: 'warn' } : { label: 'All mapped', tone: 'success' },
+        }),
+      ], { href: page('price-codes') }),
+    );
+  })();
 }
 
 // Payment terms and the Reference template.

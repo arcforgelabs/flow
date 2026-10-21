@@ -11,7 +11,7 @@ const read = (path) => readFileSync(join(ROOT, path), 'utf8');
 // The modules whose exports are shared components. Each export has a card,
 // or is a helper listed here.
 const SHARED = ['server/ui/kit.js', 'server/ui/view-bar.js', 'server/ui/bulk-bar.js', 'server/ui/tip.js', 'server/ui/job-change.js', 'server/ui/sidecar.js'];
-const HELPERS = new Set(['h', 'ICONS', 'svg', 'today', 'iconOnly', 'tipText', 'startTips', 'FIRST_ROWS', 'changeRows', 'changeSummary']);
+const HELPERS = new Set(['h', 'ICONS', 'svg', 'today', 'iconOnly', 'tipText', 'startTips', 'FIRST_ROWS', 'changeRows', 'changeSummary', 'linksOpenWith']);
 
 const exportsOf = (source) => [...source.matchAll(/^export (?:async )?(?:function|const|let) ([A-Za-z_$][\w$]*)/gm)].map((m) => m[1]);
 
