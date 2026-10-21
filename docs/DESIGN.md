@@ -200,7 +200,9 @@ component gets a row here in the pull request that adds it.
 | Component | Where | Use it for |
 | --- | --- | --- |
 | `ui()`: `h`, `flow`, `go`, `me` | `server/ui/app.js` | What every view module takes: build elements, call the API, open a page, the signed-in person |
-| `pageHeader(title, { actions })` | `server/ui/app.js` (`ui().pageHeader`) | The page title and its actions |
+| `pageHeader(title, { count, help, actions })` | `server/ui/app.js` (`ui().pageHeader`) | The page title only (no line under it), a live count beside it, a docs `?` icon, and its actions |
+| `helpLink({ href, label })`, `sectionTitle(text, help)` | `server/ui/app.js` (`sectionTitle` in `ui()`) | A docs link as a `?` icon with its name as a tip; a settings section heading with one |
+| `startTips()`, `named(node, label)` | `server/ui/tip.js` | The one hover and focus tip for every icon-only control (from `data-tip`, `aria-label` or `title`); `named` gives a control its name and tip |
 | `notice`, `toast`, `dialog` | `server/ui/app.js` (`ui()`) | A note on the page, a short result, a confirm dialog |
 | `holdButton(button, ms)` | `server/ui/app.js` (`ui()`) | A button that waits between presses (Xero, Seazona) and shows the time left |
 | `settingRow({ label, hint, control })`, `.fx-setting` | `server/ui/app.js` | One setting row: short name, one hint line, the control at the right. Not in `ui()` yet: add it there before another module needs it |
