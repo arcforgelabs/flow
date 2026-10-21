@@ -114,6 +114,46 @@ steps"). When a commit changes one of these files, the build log says
 `note: ... differs from <ref>`; pull `main` into the workspace when you can,
 so the new fetch steps take effect.
 
+### Publishing from an agent
+
+An agent with Replit's connector can publish after a release, so a fix
+reaches an installation without a person pressing Republish. The connector
+signs in to one Replit workspace per connection: connect it to the
+installation's workspace. Its `publish_app` republishes with the
+deployment's own settings (a Reserved VM stays one), and
+`get_publish_status` says `success`, `failed`, `suspended` or still running.
+
+`scripts/publish-guard.js` decides, before and after:
+
+```sh
+node scripts/publish-guard.js before https://<app> stable   # 0 publish, 3 nothing to do, 1 stop
+node scripts/publish-guard.js after https://<app> <tag>     # 0 live, 1 stop
+```
+
+`before` passes only when GitHub's latest release and npm's `latest` name the
+same tag, its `release-manifest.json` matches its `.sha256`, its commit passed
+`test` and `gitleaks`, and the live `/health` is ok, follows `stable` from
+`github` and runs an older release. `after` asks `/health` for up to five
+minutes until `build.release` is the tag with `checks: passed`. An
+integration that is not ok is a warning. Set `GH_TOKEN` where many machines
+share one address, so GitHub's anonymous limit (60 requests an hour) is not
+used up; the guard sends it to `api.github.com` only.
+
+The agent's steps:
+
+1. Run `before`. On 3 stop quietly. On 1 stop and report the problems.
+2. Call `publish_app` once.
+3. Call `get_publish_status` every 30 seconds, for at most 15 minutes.
+4. On `success`, run `after`. On anything else, stop.
+5. Report the result. Never publish again in the same run, and never retry a
+   publish that failed: the build refused it for a reason, and the old build
+   stays live.
+
+The workspace database follows production ("The workspace database"), so a
+publish proposes no database changes. If a publish stops at "Development
+database changes detected", a person presses **Cancel**; an agent never
+answers it.
+
 ### The workspace database
 
 The workspace and the published app have separate databases. Before each
