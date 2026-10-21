@@ -1,0 +1,8 @@
+<!-- @dsCard group="Feedback" height=90 -->
+<div class="fds-row" id="root"></div>
+<p class="fds-cap">Hover or tab to each icon</p>
+<script>
+const { h, lucide, named } = window.FlowDesignSystem;
+document.getElementById('root').append(...[['pencil', 'Edit'], ['copy', 'Copy link'], ['refresh-cw', 'Check Seazona again'], ['trash-2', 'Delete']]
+  .map(([icon, label]) => named(h('button', { class: 'fx-btn fx-btn--icon', type: 'button' }, lucide(h, icon)), label)));
+</script>

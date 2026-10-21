@@ -1,0 +1,8 @@
+<!-- @dsCard group="Feedback" height=120 -->
+<div class="fds-row" id="root"></div>
+<script>
+const { h, toast } = window.FlowDesignSystem;
+document.getElementById('root').append(
+  h('button', { class: 'fx-btn', type: 'button', onclick: () => toast('3 invoices sent.', 'success') }, 'Success'),
+  h('button', { class: 'fx-btn', type: 'button', onclick: () => toast('Xero asks Flow to wait. Try again in a minute.', 'warn') }, 'Warn'));
+</script>

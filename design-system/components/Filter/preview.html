@@ -1,0 +1,17 @@
+<!-- @dsCard group="Lists" height=120 -->
+<div class="fx-toolbar fx-toolbar--plain"><div class="fx-viewbar" id="bar" role="group" aria-label="Filter"></div></div>
+<script>
+const { h, viewBar } = window.FlowDesignSystem;
+let view = { match: 'all', groups: [{ match: 'all', filters: [{ field: 'type', op: 'is', value: ['job'] }, { field: 'date', op: 'is', value: 'thisweek' }] }] };
+const fields = { type: { label: 'Type', kind: 'choice', icon: 'layers' }, client: { label: 'Client', kind: 'choice', icon: 'building-2' }, date: { label: 'Date', kind: 'date', icon: 'calendar' }, total: { label: 'Total', kind: 'number', icon: 'dollar-sign' } };
+const menu = viewBar(h).filterMenu({
+  fields: () => Object.entries(fields).map(([value, f]) => ({ value, label: f.label, icon: f.icon })),
+  kindOf: (f) => fields[f]?.kind ?? null,
+  choicesOf: (f) => (f === 'type' ? [{ value: 'job', label: 'Job', icon: 'briefcase' }, { value: 'invoice', label: 'Invoice', icon: 'file-text' }] : [{ value: 'a', label: 'Bayside Dental' }, { value: 'b', label: 'Hillview Clinic' }]),
+  view: () => view,
+  change: (patch) => { view = { ...view, ...patch }; menu.draw(); },
+  first: 'type',
+});
+document.getElementById('bar').append(...menu.node);
+menu.draw();
+</script>

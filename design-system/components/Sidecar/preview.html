@@ -1,0 +1,17 @@
+<!-- @dsCard group="Navigation" height=300 -->
+<div style="display:grid;grid-template-columns:1fr auto;gap:12px;min-height:260px">
+  <div class="fds"><div class="fds-row" id="open"></div><p class="fds-cap">The main area keeps the full width while the panel is closed</p></div>
+  <div id="side"></div>
+</div>
+<script>
+const { h, sidecar, toast } = window.FlowDesignSystem;
+const panel = sidecar(h, { label: 'Job', escape: true, tabs: [
+  { id: 'activity', label: 'Activity', icon: 'history', render: () => h('p', {}, 'Marked ready to invoice · today') },
+  { id: 'review', label: 'Review', icon: 'git-compare', render: () => h('p', {}, 'Changed in Seazona. 1 change.') },
+] });
+document.getElementById('side').append(panel.element);
+document.getElementById('open').append(
+  h('button', { class: 'fx-btn', type: 'button', onclick: () => panel.open('activity') }, 'Activity'),
+  h('button', { class: 'fx-btn', type: 'button', onclick: () => panel.open('review') }, 'Review'));
+panel.open('activity');
+</script>

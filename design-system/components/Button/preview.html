@@ -1,0 +1,19 @@
+<!-- @dsCard group="Actions" height=200 -->
+<div class="fds">
+  <div class="fds-row">
+    <button class="fx-btn fx-btn--primary" type="button">Send</button>
+    <button class="fx-btn" type="button">Preview</button>
+    <button class="fx-btn fx-btn--ghost" type="button">Cancel</button>
+    <button class="fx-btn fx-btn--danger" type="button">Delete</button>
+  </div>
+  <div class="fds-row" id="icons"></div>
+  <div class="fds-row"><button class="fx-btn fx-btn--primary" type="button" disabled>Send</button><button class="fx-btn" type="button" disabled>Preview</button></div>
+</div>
+<script>
+const { h, lucide } = window.FlowDesignSystem;
+document.getElementById('icons').append(
+  h('button', { class: 'fx-btn fx-btn--sm', type: 'button' }, lucide(h, 'plus'), 'Add'),
+  h('button', { class: 'fx-btn fx-btn--sm fx-btn--primary', type: 'button' }, lucide(h, 'send'), 'Send'),
+  h('button', { class: 'fx-btn fx-btn--icon', type: 'button', 'aria-label': 'Copy link' }, lucide(h, 'copy')),
+  h('button', { class: 'fx-btn fx-btn--ghost fx-btn--icon', type: 'button', 'aria-label': 'More' }, lucide(h, 'ellipsis')));
+</script>

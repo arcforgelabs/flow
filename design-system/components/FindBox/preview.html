@@ -1,0 +1,8 @@
+<!-- @dsCard group="Lists" height=90 -->
+<div class="fx-toolbar fx-toolbar--plain"><span></span><div class="fx-toolbar__end" id="end"></div></div>
+<p class="fds-cap" id="out">Type to search</p>
+<script>
+const { h, findBox } = window.FlowDesignSystem;
+const out = document.getElementById('out');
+document.getElementById('end').append(findBox(h, { label: 'Find a number, client or reference', oninput: (w) => { out.textContent = w ? `Finding "${w}"` : 'Type to search'; } }).element);
+</script>
