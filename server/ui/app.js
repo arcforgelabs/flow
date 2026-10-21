@@ -10,7 +10,7 @@ import { getAppearance, onAppearanceChange, setAppearance, loadFonts } from '/as
 import { flowClerkAppearance } from '/assets/ui/clerk-appearance.js';
 import { ACCENT_PRESETS, normalizeAccent, THEME_FAMILIES, tokensFor } from '/assets/theme/themes.js';
 import { renderInvoice, renderInvoiceList } from '/assets/ui/invoicing.js';
-import { automationSection } from '/assets/ui/automations.js';
+import { automationSection, renderAutomations } from '/assets/ui/automations.js';
 import { renderInvoicingSettings, sendModeSection } from '/assets/ui/invoicing-settings.js';
 import { renderPriceList } from '/assets/ui/price-list.js';
 import { renderPriceReconcile } from '/assets/ui/price-reconcile.js';
@@ -251,6 +251,7 @@ const VIEWS = {
   invoices: { label: 'Invoices', icon: 'invoices', group: 'Work', render: (main, id) => (id ? renderInvoice(main, ui(), id) : renderInvoiceList(main, ui())) },
   reconcile: { label: 'Reconcile', icon: 'reconcile', group: 'Work', render: (main, id) => renderReconcile(main, ui(), id) },
   'invoicing-settings': { label: 'Rules', icon: 'rules', group: 'Settings', render: (main, id) => renderInvoicingSettings(main, ui(), id) },
+  automations: { label: 'Automations', icon: 'bolt', group: 'Settings', render: (main) => renderAutomations(main, ui()) },
   'price-list': { label: 'Price list', icon: 'tag', group: 'Settings', render: (main, id) => (id === 'reconcile' ? renderPriceReconcile(main, ui()) : renderPriceList(main, ui())) },
   'custom-fields': { label: 'Custom fields', icon: 'fields', group: 'Settings', render: (main) => renderCustomFields(main, ui()) },
   people: { label: 'People', icon: 'people', group: 'Settings', ownerOnly: true, render: renderPeople },
@@ -728,16 +729,16 @@ function integrationTile(integration) {
 }
 
 // One card in a grid of choices (Integrations, Rules): its mark (a node, or
-// an ICON_PATHS name), the name, a status pill, two lines at most, and the
-// action. The whole card is the link.
+// an ICON_PATHS name), the name, a status pill, two lines at most (only when
+// they help), and the action. The whole card is the link.
 function tileCard({ href, mark, title, status, blurb, action = 'Manage' }) {
   const logo = typeof mark === 'string' ? h('span', { class: 'fx-logo fx-logo--icon', 'aria-hidden': 'true' }, icon(mark)) : mark;
-  return h('a', { class: 'fx-int-card', href, onclick: navigate },
+  return h('a', { class: `fx-int-card${blurb ? '' : ' fx-int-card--bare'}`, href, onclick: navigate },
     h('header', { class: 'fx-int-card__head' },
       logo,
       h('h3', {}, title),
       status ? h('span', { class: 'fx-status', 'data-tone': status.tone ?? 'mute' }, status.label) : null),
-    h('p', { class: 'fx-int-card__blurb' }, blurb ?? ''),
+    blurb ? h('p', { class: 'fx-int-card__blurb' }, blurb) : null,
     h('span', { class: 'fx-int-card__btn' }, action));
 }
 

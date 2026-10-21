@@ -1,15 +1,14 @@
 // Settings, Rules (/invoicing-settings): a card for each part, like the
 // Integrations page, and one page for each (/invoicing-settings/<key>).
 // Drafts holds payment terms and the Reference; Price codes the lines with no
-// price item (line-mappings.js); Automations the draft automation
-// (server/core/automations.js); Invoice rules the checks a ready job passes
+// price item (line-mappings.js); Invoices the checks a ready job passes
 // before Flow drafts its invoice (invoice-rules.js, docs/INVOICE_RULES.md).
+// Automations have their own page (automations.js).
 // How an invoice goes to Xero is on the Xero integration page
 // (sendModeSection). A change saves at once. Everyone can read them; an owner
 // or admin changes them. The full rules are in docs/INVOICING_RULES.md.
 // app.js passes in its shared pieces as `ui`.
 
-import { automationSection } from '/assets/ui/automations.js';
 import { rulesSection } from '/assets/ui/invoice-rules.js';
 import { lineMappingSection } from '/assets/ui/line-mappings.js';
 
@@ -20,34 +19,20 @@ const SEND_MODES = [
   { value: 'approve_and_email', label: 'Approved and emailed' },
 ];
 
-const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 const onCount = (list) => ({ label: `${list.filter((x) => x.enabled).length} on`, tone: list.some((x) => x.enabled) ? 'success' : 'mute' });
 
-// Each card: its page, its mark, and what it says once the data is in.
+// Each card: its page, its mark, and its state once the data is in. No
+// blurb: the name and the state say enough.
 const PARTS = [
-  { key: 'drafts', title: 'Drafts', mark: 'draft', mount: (ui) => draftsSection(ui),
-    summary: async (flow) => {
-      const { settings } = await flow('/api/invoicing/settings');
-      return { blurb: `Due in ${plural(settings.paymentTermsDays, 'day')}. Reference ${settings.referenceTemplate || '{practitioner} - {patient}'}.` };
-    } },
+  { key: 'drafts', title: 'Drafts', mark: 'draft', mount: (ui) => draftsSection(ui) },
   { key: 'price-codes', title: 'Price codes', mark: 'tag', mount: (ui) => lineMappingSection(ui),
     summary: async (flow) => {
       const { labels } = await flow('/api/invoicing/line-labels');
       const waiting = labels.filter((l) => l.unmapped > 0).length;
-      return waiting
-        ? { status: { label: `${waiting} wait`, tone: 'warn' }, blurb: `${plural(waiting, 'line label')} with no price item.`, action: 'Fix' }
-        : { status: { label: 'All mapped', tone: 'success' }, blurb: 'Every line has a price item.' };
+      return waiting ? { status: { label: `${waiting} wait`, tone: 'warn' }, action: 'Fix' } : { status: { label: 'All mapped', tone: 'success' } };
     } },
-  { key: 'automations', title: 'Automations', mark: 'bolt', mount: (ui) => automationSection(ui, 'invoicing', 'Automations'),
-    summary: async (flow) => {
-      const { automations } = await flow('/api/invoicing/automations?place=invoicing');
-      return { status: onCount(automations), blurb: automations.map((a) => a.name).join(', ') };
-    } },
-  { key: 'invoice-rules', title: 'Invoice rules', mark: 'rules', mount: (ui) => rulesSection(ui, 'Invoice rules'),
-    summary: async (flow) => {
-      const { rules } = await flow('/api/invoicing/rules');
-      return { status: onCount(rules), blurb: rules.length ? rules.map((r) => r.name).join(', ') : 'No rules yet.' };
-    } },
+  { key: 'invoices', title: 'Invoices', mark: 'rules', mount: (ui) => rulesSection(ui, 'Invoices'),
+    summary: async (flow) => ({ status: onCount((await flow('/api/invoicing/rules')).rules) }) },
 ];
 
 export function renderInvoicingSettings(main, ui, id) {
@@ -65,9 +50,11 @@ export function renderInvoicingSettings(main, ui, id) {
     const href = `/invoicing-settings/${part.key}`;
     const slot = tileCard({ href, mark: part.mark, title: part.title });
     grid.append(slot);
-    part.summary(flow)
-      .then((more) => slot.replaceWith(tileCard({ href, mark: part.mark, title: part.title, ...more })))
-      .catch(() => {});
+    if (part.summary) {
+      part.summary(flow)
+        .then((more) => slot.replaceWith(tileCard({ href, mark: part.mark, title: part.title, ...more })))
+        .catch(() => {});
+    }
   }
 }
 
