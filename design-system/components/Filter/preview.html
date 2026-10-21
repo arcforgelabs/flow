@@ -1,0 +1,17 @@
+<!-- @dsCard group="Lists" height=120 -->
+<div class="fx-toolbar fx-toolbar--plain"><div class="fx-viewbar" id="bar" role="group" aria-label="Filter"></div></div>
+<script>
+const { h, viewBar } = window.FlowDesignSystem;
+let view = { filters: [{ field: 'type', op: 'is', value: ['job'] }], match: 'and' };
+const fields = { type: { label: 'Type', kind: 'choice' }, client: { label: 'Client', kind: 'choice' }, date: { label: 'Date', kind: 'date' }, total: { label: 'Total', kind: 'number' } };
+const menu = viewBar(h).filterMenu({
+  fields: () => Object.entries(fields).map(([value, f]) => ({ value, label: f.label })),
+  kindOf: (f) => fields[f]?.kind ?? null,
+  choicesOf: (f) => (f === 'type' ? [{ value: 'job', label: 'Job', icon: 'briefcase' }, { value: 'invoice', label: 'Invoice', icon: 'file-text' }] : [{ value: 'a', label: 'Bayside Dental' }, { value: 'b', label: 'Hillview Clinic' }]),
+  view: () => view,
+  change: (patch) => { view = { ...view, ...patch }; menu.draw(); },
+  first: 'type',
+});
+document.getElementById('bar').append(...menu.node);
+menu.draw();
+</script>

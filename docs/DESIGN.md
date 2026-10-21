@@ -196,34 +196,38 @@ The page at `/sign-in`, `/people`, `/account` and `/appearance`
 
 Every page builds from these. Reuse one, or give it a new option; do not
 copy its code into a page (`AGENTS.md`, "UI: reuse first"). A new shared
-component gets a row here in the pull request that adds it.
+component gets a row here and a card in the design system
+(`docs/DESIGN_SYSTEM.md`) in the pull request that adds it. The Card column
+names its card in the Flow Design System.
 
-| Component | Where | Use it for |
-| --- | --- | --- |
-| `ui()`: `h`, `flow`, `go`, `me` | `server/ui/app.js` | What every view module takes: build elements, call the API, open a page, the signed-in person |
-| `pageHeader(title, { count, help, actions })` | `server/ui/app.js` (`ui().pageHeader`) | The page title only (no line under it), a live count beside it, a docs `?` icon, and its actions |
-| `helpLink({ href, label })`, `sectionTitle(text, help)` | `server/ui/app.js` (`sectionTitle` in `ui()`) | A docs link as a `?` icon with its name as a tip; a settings section heading with one |
-| `startTips()`, `named(node, label)` | `server/ui/tip.js` | The one hover and focus tip for every icon-only control (from `data-tip`, `aria-label` or `title`); `named` gives a control its name and tip |
-| `notice`, `toast`, `dialog` | `server/ui/app.js` (`ui()`) | A note on the page, a short result, a confirm dialog |
-| `holdButton(button, ms)` | `server/ui/app.js` (`ui()`) | A button that waits between presses (Xero, Seazona) and shows the time left |
-| `settingRow({ label, hint, control })`, `.fx-setting` | `server/ui/app.js` | One setting row: short name, one hint line, the control at the right. Not in `ui()` yet: add it there before another module needs it |
-| `tileCard({ href, mark, title, status, blurb, action })`, `.fx-int-grid` | `server/ui/app.js` (`ui().tileCard`) | A grid of cards that each open a page: Integrations, Rules. `mark` is a logo node or an icon name; leave out `blurb` unless it helps |
-| `crumbs([href, label]…, here)` | `server/ui/app.js` (`ui().crumbs`) | The trail above a page one level down (Rules › Invoice rules, Integrations › Xero) |
-| `rowMenu(label, items)` | `server/ui/app.js` | The ⋯ menu on a row |
-| `viewBar(h)`: `menu`, `option`, `filterMenu` and the rows-panel parts | `server/ui/view-bar.js` | Group, Sort, Filter and Columns chips and their panels, on every list (Jobs, Reconcile) |
-| `findBox(h, { label, oninput })` | `server/ui/view-bar.js` | A list's own search: an icon that opens into a box |
-| `ICONS`, `svg`, `today` | `server/ui/view-bar.js` | The toolbar icons, an SVG string as a node, the local day |
-| `filterJobs`, `sortJobs`, `groupJobs`, `OPERATORS` | `server/ui/job-view.js` | The rules behind Filter, Sort and Group (no DOM) |
-| `bulkBar(ui, { label })` | `server/ui/bulk-bar.js` | The bar at the foot while rows are ticked: icon and one word per action, More |
-| `.fx-pager` | `server/ui/flow.css` | "← Back", "n of N", previous and next over one record. Built three times today (Invoices, Reconcile, Price list › Reconcile); issue #220 makes one helper. Do not add a fourth copy |
-| `.fx-tabs`, `.fx-tabs__count` | `server/ui/flow.css` | Tabs with counts (Invoices, Price list) |
-| `alertStrip(ui, page)` | `server/ui/alerts.js` | The slim alert line on a page (`docs/ALERTS.md`) |
-| `lucide(h, name, label)` | `server/ui/custom-fields.js` | A Lucide icon in the text colour; with `label` it is named |
-| `colorPicker`, `optionPill` | `server/ui/custom-fields.js` | A colour choice; a dropdown option as a coloured pill |
-| `jobChangeBanner(ui, change)`, `jobChangeReview(ui, change, { canAccept, done })` | `server/ui/job-change.js` | "The job changed" on a draft, with Accept change; `jobChangeReview` wires Accept and the recheck (invoice page, a job's Review sidecar) |
-| `sidecar(h, { label, overlay, escape, tabs })` | `server/ui/sidecar.js` | The right-hand panel: tabs with an icon and one word, ×, closed takes no room. A job's panel (Activity, Review); over a page with `overlay` (Custom fields manager) |
-| `formatCents`, `xeroTag`, `linkIcon`, `accountingIcon` | `server/ui/invoicing.js` | Money, an accounting status tag, a link to the other system |
-| `automationSection`, `rulesSection`, `sendModeSection`, `lineMappingSection` | `server/ui/automations.js`, `invoice-rules.js`, `invoicing-settings.js`, `line-mappings.js` | Settings sections a page mounts |
+| Component | Where | Card | Use it for |
+| --- | --- | --- | --- |
+| `h`, `ui()`: `flow`, `go`, `me` | `server/ui/kit.js` (`h`), `server/ui/app.js` (`ui()`) | | Build elements; what every view module takes: call the API, open a page, the signed-in person |
+| `pageHeader(title, { count, help, actions })`, `helpLink` | `server/ui/kit.js` | PageHeader | The page title only, a live count, a ? docs link, its actions |
+| `notice` | `server/ui/kit.js` | Notice | A note on the page that stays until the cause is gone |
+| `toast` | `server/ui/kit.js` | Toast | A short result after an action |
+| `dialog({ title, body, confirm, tone })` | `server/ui/kit.js` | Dialog | A confirm step before an action that is hard to undo |
+| `holdButton(button, ms)` | `server/ui/kit.js` | HoldButton | A button that waits between presses (Xero, Seazona) and shows the time left |
+| `settingRow({ label, hint, control })`, `sectionTitle`, `.fx-setting` | `server/ui/kit.js` | SettingRow | One setting row: short name, one hint line, the control at the right |
+| `tileCard({ href, mark, title, status, blurb, action })`, `.fx-int-grid` | `server/ui/app.js` (`ui().tileCard`) |  | A grid of cards that each open a page: Integrations, Rules. `mark` is a logo node or an icon name; leave out `blurb` unless it helps |
+| `crumbs([href, label]…, here)` | `server/ui/app.js` (`ui().crumbs`) |  | The trail above a page one level down (Rules › Invoice rules, Integrations › Xero) |
+| `rowMenu(label, items)` | `server/ui/kit.js` | RowMenu | The ⋯ menu on a row |
+| `.fx-btn` and its modifiers | `server/ui/flow.css` | Button | Every button |
+| `named`, `startTips` | `server/ui/tip.js` | Tip | An icon-only control's name, shown on hover and focus |
+| `viewBar(h)`: `menu`, `option`, `filterMenu` and the rows-panel parts | `server/ui/view-bar.js` | Filter | Group, Sort, Filter and Columns chips and their panels, on every list (Jobs, Reconcile) |
+| `findBox(h, { label, oninput })` | `server/ui/view-bar.js` | FindBox | A list's own search: an icon that opens into a box |
+| `ICONS`, `svg`, `today` | `server/ui/view-bar.js` | | The toolbar icons, an SVG string as a node, the local day |
+| `filterJobs`, `sortJobs`, `groupJobs`, `OPERATORS` | `server/ui/job-view.js` | | The rules behind Filter, Sort and Group (no DOM) |
+| `bulkBar(ui, { label })` | `server/ui/bulk-bar.js` | BulkBar | The bar at the foot while rows are ticked: icon and one word per action, More |
+| `.fx-pager` | `server/ui/flow.css` | Pager | "← Back", "n of N", previous and next over one record. Built three times today (Invoices, Reconcile, Price list › Reconcile); issue #220 makes one helper. Do not add a fourth copy |
+| `.fx-tabs`, `.fx-tabs__count` | `server/ui/flow.css` | Tabs | Tabs with counts (Invoices, Price list) |
+| `alertStrip(ui, page)` | `server/ui/alerts.js` | | The slim alert line on a page (`docs/ALERTS.md`) |
+| `lucide(h, name, label)` | `server/ui/custom-fields.js` | Icon | A Lucide icon in the text colour; with `label` it is named |
+| `colorPicker`, `optionPill` | `server/ui/custom-fields.js` | OptionPill | A colour choice; a dropdown option as a coloured pill |
+| `jobChangeBanner(ui, change)`, `jobChangeReview(ui, change, { canAccept, done })` | `server/ui/job-change.js` | JobChangeBanner | "The job changed" on a draft, with Accept change; `jobChangeReview` wires Accept and the recheck (invoice page, a job's Review sidecar) |
+| `sidecar(h, { label, overlay, escape, tabs })` | `server/ui/sidecar.js` | Sidecar | The right-hand panel: tabs with an icon and one word, ×, closed takes no room. A job's panel (Activity, Review); over a page with `overlay` (Custom fields manager) |
+| `formatCents`, `xeroTag`, `linkIcon`, `accountingIcon` | `server/ui/invoicing.js` | | Money, an accounting status tag, a link to the other system |
+| `automationSection`, `rulesSection`, `sendModeSection`, `lineMappingSection` | `server/ui/automations.js`, `invoice-rules.js`, `invoicing-settings.js`, `line-mappings.js` | | Settings sections a page mounts |
 
 ## Adding a family
 

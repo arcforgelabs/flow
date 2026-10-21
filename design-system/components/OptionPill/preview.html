@@ -1,0 +1,8 @@
+<!-- @dsCard group="Forms" height=130 -->
+<div class="fds"><div class="fds-row" id="pills"></div><div class="fds-row" id="pick"></div></div>
+<script>
+const { h, optionPill, colorPicker, OPTION_COLORS } = window.FlowDesignSystem;
+document.getElementById('pills').append(...OPTION_COLORS.map((c) => optionPill(h, c[0].toUpperCase() + c.slice(1), c)));
+const picker = colorPicker(h, { colors: OPTION_COLORS, value: 'teal', label: 'Colour of Urgent', sample: (c) => optionPill(h, 'Urgent', c), onpick: () => {} });
+document.getElementById('pick').append(picker.button, picker.panel);
+</script>

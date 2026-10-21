@@ -1,0 +1,7 @@
+<!-- @dsCard group="Foundations" height=120 -->
+<div class="fds-row" id="root" style="gap:14px"></div>
+<script>
+const { h, lucide } = window.FlowDesignSystem;
+document.getElementById('root').append(...['send', 'file-text', 'briefcase', 'search', 'plus', 'pencil', 'copy', 'download', 'trash-2', 'check-check', 'refresh-cw', 'circle-help', 'ellipsis', 'x']
+  .map((n) => h('span', { style: 'display:grid;justify-items:center;gap:4px;font-size:11px;color:var(--t-dim)' }, lucide(h, n, n), n)));
+</script>

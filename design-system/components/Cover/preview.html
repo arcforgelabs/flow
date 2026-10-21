@@ -1,0 +1,32 @@
+<!-- @dsCard height=288 width=960 -->
+<style>
+  html, body { margin: 0; padding: 0; }
+  .cv { position: relative; width: 960px; height: 288px; background: var(--t-bg); overflow: hidden; }
+  .cv svg { position: absolute; left: 0; top: 0; }
+  .ink { fill: var(--t-text); } .mint { fill: var(--t-accent-bg); } .teal { fill: var(--t-primary); } .card { fill: var(--t-paper); stroke: var(--t-brd); } .warn { fill: var(--t-warn); } .rule { stroke: var(--t-brd-hi); stroke-width: 1; }
+  .cv h1 { position: absolute; left: 40px; top: 92px; margin: 0; font-family: var(--t-display); font-size: 72px; line-height: .95; font-weight: var(--t-display-weight); color: var(--t-strong); max-width: 440px; }
+  .cv p { position: absolute; left: 42px; top: 244px; margin: 0; font-family: var(--t-body); font-size: 14px; color: var(--t-dim); max-width: 440px; }
+</style>
+<div class="cv">
+  <!--
+    blocks: --t-primary (deep teal slab 200x288), --t-accent-bg (mint lane 132x288), --t-paper cards with --t-brd edges, one small --t-warn chip; teal and mint are what Flow is known by
+    arrangement: board lanes from x = 520, a tall teal lane bleeding off the top and bottom, a mint lane, a paper lane, like the Jobs board
+    pattern: job cards stacked in each lane (geometric, modular, dense UI row: the board is Flow's own motif), corners at --t-radius-lg 10px
+    steps and radii: 12px gaps and card insets, 16px lane padding, radius 10px (Harbour --t-radius-lg)
+  -->
+  <svg width="960" height="288" viewBox="0 0 960 288" aria-hidden="true">
+    <rect class="teal" x="520" y="0" width="140" height="288"/>
+    <rect class="mint" x="672" y="0" width="132" height="288"/>
+    <rect class="card" x="816" y="16" width="144" height="256" rx="10"/>
+    <rect class="card" x="536" y="24" width="108" height="56" rx="10"/>
+    <rect class="card" x="536" y="92" width="108" height="72" rx="10"/>
+    <rect class="card" x="536" y="176" width="108" height="56" rx="10"/>
+    <rect class="card" x="684" y="24" width="108" height="72" rx="10"/>
+    <rect class="card" x="684" y="108" width="108" height="56" rx="10"/>
+    <rect class="card" x="828" y="28" width="120" height="56" rx="10"/>
+    <rect class="warn" x="840" y="40" width="28" height="8" rx="4"/>
+    <line class="rule" x1="840" y1="100" x2="936" y2="100"/><line class="rule" x1="840" y1="112" x2="936" y2="112"/><line class="rule" x1="840" y1="124" x2="912" y2="124"/>
+  </svg>
+  <h1>Flow Design System</h1>
+  <p>One token set, thirteen design systems, the parts every page shares.</p>
+</div>
