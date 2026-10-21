@@ -10,8 +10,8 @@ import { bulkBar } from '/assets/ui/bulk-bar.js';
 import { draftNote, sendModeNote } from '/assets/ui/invoice-notes.js';
 import { caseNumber } from '/assets/ui/job-board.js';
 import { jobChangeReview } from '/assets/ui/job-change.js';
-import { columnTable, rowCells, viewSaver } from '/assets/ui/columns.js';
-import { filterCount, filterJobs, INVOICE_COLUMNS, normaliseListView } from '/assets/ui/job-view.js';
+import { columnTable, dateCell, fieldColumn, rowCells, viewSaver } from '/assets/ui/columns.js';
+import { fieldGroup, filterCount, filterJobs, INVOICE_COLUMNS, invoiceColumnsView } from '/assets/ui/job-view.js';
 import { INVOICE_FILTER_FIELDS, invoiceFilterKind, invoiceValue, normaliseInvoicesView } from '/assets/ui/list-views.js';
 import { listPager, PAGE_SIZES } from '/assets/ui/pager.js';
 import { savedViews } from '/assets/ui/saved-views.js';
@@ -149,21 +149,25 @@ export async function renderInvoiceList(main, ui) {
     status: TABS.some(([id]) => id === saved) ? saved : 'ready', q: returning ? back?.q ?? '' : '', ticked: new Set(), view: readFilters(),
     // The page of rows shown: the server filters and cuts it (GET /invoices).
     offset: returning ? back?.offset ?? 0 : 0, limit: readSize(),
-    columns: normaliseListView(ui.me?.views?.invoices, INVOICE_COLUMNS),
+    columns: invoiceColumnsView(ui.me?.views?.invoices),
+    // The lab's custom fields, their job values and the people a person
+    // field names (GET /api/custom-fields): columns a person can add.
+    fields: [], values: new Map(), people: [],
   };
   // The list's columns: resize, move, hide, kept with the account. A tab
-  // has some of them (`available`, set as it draws).
+  // has some of them (`available`, set as it draws), each with its label.
   let available = Object.keys(INVOICE_COLUMNS);
+  const labelOf = (id) => INVOICE_COLUMNS[id] ?? state.fields.find((f) => fieldGroup(f.id) === id)?.name ?? id;
   const saveColumns = viewSaver(ui, 'invoices');
   const heads = columnTable(h, {
     order: () => state.columns.columns,
     widths: () => state.columns.widths,
     change: (patch) => {
-      state.columns = normaliseListView({ ...state.columns, ...patch }, INVOICE_COLUMNS);
+      state.columns = invoiceColumnsView({ ...state.columns, ...patch });
       saveColumns(state.columns);
       if (raw) draw(raw);
     },
-    hidden: () => available.filter((id) => !state.columns.columns.includes(id)).map((id) => ({ id, label: INVOICE_COLUMNS[id] })),
+    hidden: () => available.filter((id) => !state.columns.columns.includes(id)).map((id) => ({ id, label: labelOf(id) })),
   });
   const tabs = h('div', { class: 'fx-tabs', role: 'tablist' });
   let timer;
@@ -215,7 +219,15 @@ export async function renderInvoiceList(main, ui) {
       load();
     },
   });
-  const context = await flow('/api/invoicing/context').catch(() => ({ canIssue: false }));
+  // Custom fields are extra: the list still shows without them.
+  const [context, fields, values] = await Promise.all([
+    flow('/api/invoicing/context').catch(() => ({ canIssue: false })),
+    flow('/api/custom-fields').catch(() => null), flow('/api/custom-fields/values').catch(() => null),
+  ]);
+  state.fields = fields?.fields ?? [];
+  state.people = fields?.people ?? [];
+  const valueKey = (job, fieldId) => `${job.sourceSystem}\u0000${job.sourceJobRef}\u0000${fieldId}`;
+  state.values = new Map((values?.values ?? []).map((v) => [valueKey(v, v.fieldId), v.value]));
   let body = null;
   let raw = null;
   const openTab = (id) => { state.status = id; state.offset = 0; state.ticked.clear(); sessionStorage.setItem('flow_invoice_tab', id); load(); };
@@ -513,13 +525,24 @@ export async function renderInvoiceList(main, ui) {
       reference: showProblem
         ? { label: 'Problem', kind: 'text', cell: problemCell }
         : { kind: 'text', className: 'fx-dim', cell: (i) => i.reference ?? '—' },
-      date: { label: created ? 'Created' : 'Date', kind: 'date', className: 'fx-dim', cell: (i) => showDate(i.issueDate ?? i.createdAt?.slice(0, 10)) },
+      date: { label: created ? 'Created' : 'Date', kind: 'date', className: 'fx-dim', cell: (i) => dateCell(h, i.issueDate ?? i.createdAt?.slice(0, 10)) },
+      due: { kind: 'date', className: 'fx-dim', cell: (i) => dateCell(h, i.dueDate) },
       total: { kind: 'total', num: true, className: 'fx-strong', cell: (i) => formatCents(i.totalCents) },
       status: { kind: 'status', className: 'fx-status-cell', cell: statusCell },
       linked: linked ? { kind: 'link', cell: linkCell } : null,
+      // The invoice's job (from the work system): its case, practitioner and
+      // the day it shipped.
+      case: { kind: 'case', className: 'fx-dim', cell: (i) => (i.job ? caseNumber(i.job) ?? '—' : '—') },
+      practitioner: { kind: 'text', className: 'fx-dim', cell: (i) => i.job?.practitioner ?? '—' },
+      shipped: { kind: 'date', className: 'fx-dim', cell: (i) => dateCell(h, i.job?.shippedOn ?? null) },
     };
+    // Each custom field is a column too: the value of the invoice's job.
+    for (const field of state.fields) {
+      const id = fieldGroup(field.id);
+      ALL[id] = fieldColumn(h, field, { id, valueOf: (i) => (i.job ? state.values.get(valueKey(i.job, field.id)) ?? null : null), people: state.people });
+    }
     available = Object.keys(ALL).filter((id) => ALL[id]);
-    const columns = state.columns.columns.filter((id) => ALL[id]).map((id) => ({ id, label: INVOICE_COLUMNS[id], ...ALL[id] }));
+    const columns = state.columns.columns.filter((id) => ALL[id]).map((id) => ({ id, label: labelOf(id), ...ALL[id] }));
     host.replaceChildren(heads.table({
       className: 'fx-table--rows',
       columns,

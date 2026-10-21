@@ -473,7 +473,14 @@ export function inOrder(columns, ids) {
 // shows the invoice's problem; Number shows on the tabs with numbers only.
 export const INVOICE_COLUMNS = Object.freeze({
   number: 'Number', client: 'Client', reference: 'Reference', date: 'Date', total: 'Total', status: 'Status', linked: 'Linked',
+  due: 'Due', case: 'Case', practitioner: 'Practitioner', shipped: 'Shipped',
 });
+// The Invoices columns a person sees before they choose: the others (the
+// invoice's due date, its job's case, practitioner and shipped date, and
+// the lab's custom fields) wait in the + menu.
+export const INVOICE_SHOWN = Object.freeze(['number', 'client', 'reference', 'date', 'total', 'status', 'linked']);
+// A person's Invoices columns: custom fields ('field:<id>') are columns too.
+export const invoiceColumnsView = (input) => normaliseListView(input, INVOICE_COLUMNS, { shown: INVOICE_SHOWN, fields: true });
 export const PRICE_COLUMNS = Object.freeze({
   code: 'Code', name: 'Name', price: 'Price', tax: 'Tax',
 });
@@ -482,12 +489,13 @@ export const RECONCILE_COLUMNS = Object.freeze({
 });
 
 // A person's view of a list with set columns (Invoices, Reconcile, Price list): the
-// shown columns in order (every one when none is saved) and their widths.
-export function normaliseListView(input, columns) {
+// shown columns in order (`shown`, else every one, when none is saved) and
+// their widths. With `fields`, a custom field ('field:<id>') is a column too.
+export function normaliseListView(input, columns, { shown = null, fields = false } = {}) {
   const value = input && typeof input === 'object' && !Array.isArray(input) ? input : {};
   const ids = Object.keys(columns);
   return {
-    columns: cleanColumnIds(value.columns, (id) => ids.includes(id)) ?? ids,
+    columns: cleanColumnIds(value.columns, (id) => ids.includes(id) || (fields && FIELD_GROUP.test(id))) ?? [...(shown ?? ids)],
     widths: cleanWidths(value.widths),
   };
 }

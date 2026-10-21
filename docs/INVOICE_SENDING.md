@@ -15,6 +15,12 @@ and Sent. Code: `server/core/sending.js`, `server/api/invoicing.js`
 | Sent | The accounting system sent it to the customer, or it is part paid or paid. |
 | Void | Voided or deleted. |
 
+The list starts with Number, Client, Reference, Date, Total, Status and
+Linked. + at the end of the head adds more: Due (the invoice's due date),
+the invoice's job's Case, Practitioner and Shipped date, and each custom
+field (the job's value, `docs/CUSTOM_FIELDS.md`). The columns, their order
+and widths stay with the person's account (`docs/DESIGN.md`, Columns).
+
 A Ready invoice can go to the accounting system at any time. It then moves to
 Draft, the lowest stage Xero takes. Draft, Approved and Sent follow Xero's own
 status and its `SentToContact` flag, read from Flow's copy of Xero (no extra
