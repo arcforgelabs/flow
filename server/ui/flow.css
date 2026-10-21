@@ -7,10 +7,8 @@
 
 :root {
   --fx-line: color-mix(in srgb, var(--t-text) 12%, transparent);
-  /* The page column: its side space and the width inside it. Every page,
-     and the head of the Jobs board, sits in this one column. */
+  /* The side space of a page; work pages (.fx-main--work) set a slimmer one. */
   --fx-gutter: clamp(16px, 4vw, 48px);
-  --fx-column: calc(1180px - 2 * var(--fx-gutter));
   --fx-line-soft: color-mix(in srgb, var(--t-text) 7%, transparent);
   --fx-hover: color-mix(in srgb, var(--t-text) 5%, transparent);
   --fx-focus: 0 0 0 3px color-mix(in srgb, var(--t-ring) 40%, transparent);
@@ -496,14 +494,11 @@ a.fx-strong:hover { text-decoration: underline; }
 }
 
 /* ── Jobs board ─────────────────────────────────────────────────────────── */
-/* Every page shares .fx-main's column, the board's head too, so the title,
-   chips, search and Board/List stay put when a person switches layout or
-   page. Only the board's lanes run on past the column to the window's
-   right edge; they start at the column's left edge, under the title. */
-.fx-main--board { max-width: none; }
-.fx-main--board > * { flex: none; width: 100%; max-width: var(--fx-column); margin-inline: auto; }
-.fx-main--board > .fx-jobs { width: auto; max-width: none; margin: 0 calc(-1 * var(--fx-gutter)) 0 max(0px, (100% - var(--fx-column)) / 2); }
-.fx-main--board .fx-board { padding-right: var(--fx-gutter); }
+/* Work pages (Jobs, Invoices, Reconcile: listHead) use the whole width with
+   a slim edge, as ClickUp and HubSpot do; the pages a person reads keep the
+   centred column. The title, toolbar and rows start at one place on every
+   work page, in Board and in List. */
+.fx-main--work { --fx-gutter: clamp(16px, 2vw, 24px); max-width: none; }
 .fx-main > * { min-width: 0; }
 .fx-toolbar--plain { border-bottom: 0; align-items: center; }
 .fx-toolbar--plain .fx-search { margin-bottom: 0; }
@@ -663,6 +658,7 @@ th:hover .fx-th-sort, .fx-th-sort:focus-visible, .fx-th-sort--on { opacity: 1; }
 .fx-board__cards { display: grid; gap: 8px; align-content: start; min-height: 0; max-height: 70vh; padding-right: 2px; overflow-y: auto; scrollbar-width: thin; }
 @media (min-width: 821px) and (min-height: 560px) {
   .fx-main--board { height: 100vh; height: 100dvh; padding-bottom: 16px; display: flex; flex-direction: column; }
+  .fx-main--board > * { flex: none; }
   .fx-main--board > .fx-jobs { flex: 1; min-height: 0; }
   .fx-main--board .fx-board { height: 100%; overflow-y: hidden; align-items: stretch; }
   .fx-main--board .fx-board__cards { flex: 1; max-height: none; }

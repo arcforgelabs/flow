@@ -196,6 +196,7 @@ export async function renderInvoiceList(main, ui) {
     actions: [h('a', { class: 'fx-btn fx-btn--primary', href: '/invoices/new', onclick: go }, 'New invoice')],
     start: tabs, end: [controls, find.element], line: true, sticky: true,
   });
+  main.classList.add('fx-main--work');
   const [title, ...top] = head.nodes;
   main.append(title, alerts.element, ...top, host, bulk.element);
 

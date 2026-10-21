@@ -211,7 +211,7 @@ names its card in the Flow Design System.
 | --- | --- | --- | --- |
 | `h`, `ui()`: `flow`, `go`, `me` | `server/ui/kit.js` (`h`), `server/ui/app.js` (`ui()`) | | Build elements; what every view module takes: call the API, open a page, the signed-in person |
 | `pageHeader(title, { count, help, actions })`, `helpLink` | `server/ui/kit.js` | PageHeader | The page title only, a live count, a ? docs link, its actions |
-| `listHead(title, { start, end, actions, line, sticky })` | `server/ui/kit.js` | ListHead | The top of every list (Jobs Board and List, Invoices, Reconcile): title, a `views` slot for saved view tabs, then one toolbar (`start` left, `end` and `actions` right). Same place on every list and layout |
+| `listHead(title, { start, end, actions, line, sticky })` | `server/ui/kit.js` | ListHead | The top of every list (Jobs Board and List, Invoices, Reconcile): title, a `views` slot for saved view tabs, then one toolbar (`start` left, `end` and `actions` right). Same place on every list and layout. A list page adds `fx-main--work` to `main`: full width, slim edge |
 | `notice` | `server/ui/kit.js` | Notice | A note on the page that stays until the cause is gone |
 | `toast` | `server/ui/kit.js` | Toast | A short result after an action |
 | `dialog({ title, body, confirm, tone })` | `server/ui/kit.js` | Dialog | A confirm step before an action that is hard to undo |
