@@ -1,0 +1,18 @@
+<!-- @dsCard group="Lists" height=300 -->
+<div id="root" class="fds" style="display: grid; height: 260px"></div>
+<script>
+const { h, listFrame } = window.FlowDesignSystem;
+const root = document.getElementById('root');
+const rows = Array.from({ length: 12 }, (_, i) => h('tr', {}, h('td', {}, `Example Practice ${i + 1}`), h('td', {}, 'Dr Example'), h('td', { class: 'fx-num' }, `$${100 + i * 15}.00`)));
+const table = h('div', { class: 'fx-panel' }, h('table', { class: 'fx-table fx-table--rows' },
+  h('thead', {}, h('tr', {}, h('th', {}, 'Client'), h('th', {}, 'Practitioner'), h('th', { class: 'fx-num' }, 'Total'))),
+  h('tbody', {}, rows)));
+const frame = listFrame(root, table);
+frame.element.style.minHeight = '0';
+frame.body.style.flex = '1';
+root.style.display = 'flex';
+root.style.flexDirection = 'column';
+frame.element.style.flex = '1';
+frame.count('12 jobs');
+root.append(frame.element);
+</script>

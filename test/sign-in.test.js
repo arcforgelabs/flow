@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { after, before, describe, test } from 'node:test';
+import { eq } from 'drizzle-orm';
 import { createApp } from '../server/app.js';
 import { findPersonByEmail, seedFirstOwner } from '../server/auth/people.js';
 import { createPersonAuth } from '../server/auth/session.js';
@@ -73,6 +74,33 @@ describe('Clerk sign-in', { skip: skipWithoutDatabase }, () => {
     assert.equal(res.status, 403);
     assert.equal(res.body.code, 'email_unverified');
     assert.equal((await findPersonByEmail(handle.db, 'unverified@example.test')).clerkUserId, null);
+  });
+
+  test('Flow takes a name from the sign-in when it has none, and keeps one it has', async () => {
+    await handle.db.insert(people).values([
+      { email: 'named-later@example.test', role: 'staff' },
+      { email: 'already-named@example.test', name: 'Kept Name', role: 'staff' },
+    ]);
+    const later = clerk.addUser({ email: 'named-later@example.test' });
+    Object.assign(clerk.users.get(later), { firstName: 'Jane', lastName: 'Citizen' });
+    const kept = clerk.addUser({ email: 'already-named@example.test' });
+    Object.assign(clerk.users.get(kept), { firstName: 'Other', lastName: 'Name' });
+    // No name in the sign-in at first: the person keeps none.
+    const blank = clerk.addUser({ email: 'blank@example.test' });
+    await handle.db.insert(people).values({ email: 'blank@example.test', role: 'staff' });
+
+    assert.equal((await request(app, '/api/me', { token: clerk.signIn(later) })).status, 200);
+    assert.equal((await findPersonByEmail(handle.db, 'named-later@example.test')).name, 'Jane Citizen');
+    assert.equal((await request(app, '/api/me', { token: clerk.signIn(kept) })).status, 200);
+    assert.equal((await findPersonByEmail(handle.db, 'already-named@example.test')).name, 'Kept Name');
+    assert.equal((await request(app, '/api/me', { token: clerk.signIn(blank) })).status, 200);
+    assert.equal((await findPersonByEmail(handle.db, 'blank@example.test')).name, null);
+
+    // A person linked before this change: the next sign-in fills the name.
+    await handle.db.update(people).set({ name: null }).where(eq(people.email, 'named-later@example.test'));
+    const fresh = signInApp(handle, clerk);
+    assert.equal((await request(fresh, '/api/me', { token: clerk.signIn(later) })).status, 200);
+    assert.equal((await findPersonByEmail(handle.db, 'named-later@example.test')).name, 'Jane Citizen');
   });
 
   test('an expired, unknown or missing session is refused', async () => {

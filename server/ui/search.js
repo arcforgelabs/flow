@@ -9,6 +9,14 @@ const LIMIT = 6;
 const lower = (value) => String(value ?? '').toLowerCase();
 
 /**
+ * True for Ctrl+K or ⌘K. Some keydown events carry no `key` (Chrome sends
+ * them when it fills a form from saved details), so a missing key is no match.
+ */
+export function isSearchKey(event) {
+  return lower(event.key) === 'k' && Boolean(event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey;
+}
+
+/**
  * `views` is [{ name, label, icon }] for the pages this person may open;
  * `icon(name)` draws a sidebar icon; `go(path)` opens a path in place.
  */
