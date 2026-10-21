@@ -1,0 +1,25 @@
+<!-- @dsCard group="Lists" height=260 -->
+<div id="root" class="fds" style="display: grid; gap: 20px"></div>
+<script>
+const { h, listHead, findBox, lucide, savedViews, ui } = window.FlowDesignSystem;
+const me = { views: { saved: { jobs: { default: 'a', list: [{ id: 'a', name: 'Late', view: {} }] } } } };
+const views = savedViews({ ...ui(), me }, { page: 'jobs', current: () => ({}), apply: () => views.draw() });
+views.opening();
+views.draw();
+const filter = h('div', { class: 'fx-viewbar', role: 'group', 'aria-label': 'Filter' },
+  h('button', { type: 'button', class: 'fx-chip' }, lucide(h, 'list-filter'), 'Filter'));
+const seg = h('div', { class: 'fx-seg', role: 'radiogroup', 'aria-label': 'Layout' },
+  h('button', { type: 'button', role: 'radio', class: 'fx-seg__item', 'aria-checked': 'true' }, 'Board'),
+  h('button', { type: 'button', role: 'radio', class: 'fx-seg__item', 'aria-checked': 'false' }, 'List'));
+const chips = h('div', { class: 'fx-viewbar', role: 'group', 'aria-label': 'Group, sort and filter' },
+  h('button', { type: 'button', class: 'fx-chip' }, lucide(h, 'layers'), 'Group: Status'),
+  h('button', { type: 'button', class: 'fx-chip' }, lucide(h, 'arrow-up-down'), 'Sort'),
+  h('button', { type: 'button', class: 'fx-chip' }, lucide(h, 'list-filter'), 'Filter'));
+const tabs = h('div', { class: 'fx-tabs', role: 'tablist' },
+  h('button', { type: 'button', role: 'tab', 'aria-selected': 'true' }, 'Ready'),
+  h('button', { type: 'button', role: 'tab', 'aria-selected': 'false' }, 'Draft'),
+  h('button', { type: 'button', role: 'tab', 'aria-selected': 'false' }, 'Sent'));
+document.getElementById('root').append(
+  ...listHead('Jobs', { controls: chips, views: views.element, end: [findBox(h, { label: 'Find a job' }).element, seg] }).nodes,
+  ...listHead('Invoices', { start: tabs, controls: filter, controlsAt: 'end', end: findBox(h, { label: 'Find an invoice' }).element, actions: [h('button', { class: 'fx-btn fx-btn--primary', type: 'button' }, 'New invoice')], line: true }).nodes);
+</script>

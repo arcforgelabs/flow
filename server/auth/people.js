@@ -2,7 +2,8 @@ import { and, asc, eq, isNull, ne, sql } from 'drizzle-orm';
 import { people, PERSON_ROLES } from '../db/schema.js';
 import { FlowError } from '../core/errors.js';
 import { isThemeFamily, normalizeAccent } from '../theme/themes.js';
-import { INVOICE_COLUMNS, normaliseJobsView, normaliseListView, RECONCILE_COLUMNS } from '../ui/job-view.js';
+import { invoiceColumnsView, normaliseJobsView, normaliseListView, PRICE_COLUMNS, RECONCILE_COLUMNS } from '../ui/job-view.js';
+import { normaliseSavedViews, SAVED_VIEW_PAGES } from '../ui/list-views.js';
 import { isPlainEmail } from './settings.js';
 
 // The people who may sign in, and their roles. Only an owner changes this
@@ -57,12 +58,13 @@ export async function setPersonAppearance(db, { id, appearance }) {
 function viewCheck(page) {
   switch (page) {
     case 'jobs': return normaliseJobsView;
-    case 'invoices': return (view) => normaliseListView(view, INVOICE_COLUMNS);
+    case 'invoices': return invoiceColumnsView;
     case 'reconcile': return (view) => normaliseListView(view, RECONCILE_COLUMNS);
+    case 'price-list': return (view) => normaliseListView(view, PRICE_COLUMNS);
     default: return null;
   }
 }
-const VIEW_PAGE_NAMES = ['jobs', 'invoices', 'reconcile'];
+const VIEW_PAGE_NAMES = ['jobs', 'invoices', 'reconcile', 'price-list'];
 
 // A person's saved views as Flow sends them: only the known pages, each
 // checked, so a view saved by an older Flow still loads.
@@ -70,7 +72,29 @@ export function normaliseViews(input) {
   const value = input && typeof input === 'object' ? input : {};
   const out = {};
   for (const page of VIEW_PAGE_NAMES) if (value[page]) out[page] = viewCheck(page)(value[page]);
+  // The named views a person saved on each page, and their default
+  // (ui/list-views.js), kept under `saved`.
+  const saved = value.saved && typeof value.saved === 'object' ? value.saved : {};
+  const lists = {};
+  for (const page of SAVED_VIEW_PAGES) if (saved[page]) lists[page] = normaliseSavedViews(page, saved[page]);
+  if (Object.keys(lists).length) out.saved = lists;
   return out;
+}
+
+// Each person keeps their own named views of a page and picks their
+// default; saving one page's list leaves the other pages as they were.
+export async function setPersonSavedViews(db, { id, page, saved }) {
+  if (!SAVED_VIEW_PAGES.includes(page)) throw new FlowError('not_found', 'no such page');
+  const value = normaliseSavedViews(page, saved);
+  const [row] = await db.update(people)
+    .set({
+      views: sql`coalesce(${people.views}, '{}'::jsonb) || jsonb_build_object('saved', coalesce(${people.views}->'saved', '{}'::jsonb) || ${JSON.stringify({ [page]: value })}::jsonb)`,
+      updatedAt: new Date(),
+    })
+    .where(eq(people.id, id))
+    .returning();
+  if (!row) throw new FlowError('not_found', 'person not found');
+  return value;
 }
 
 // Each person keeps their own view of a page; saving one page leaves the

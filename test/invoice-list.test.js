@@ -37,10 +37,12 @@ function h(tag, props = {}, ...kids) {
   return el;
 }
 
-function page() {
+function page({ fields = [], people = [], values = [] } = {}) {
   const asked = [];
   const flow = (path) => {
     if (path === '/api/invoicing/context') return Promise.resolve({ canIssue: true });
+    if (path === '/api/custom-fields') return Promise.resolve({ fields, people });
+    if (path === '/api/custom-fields/values') return Promise.resolve({ values });
     if (path.startsWith('/api/alerts')) return Promise.resolve({ alerts: [] });
     let answer;
     const promise = new Promise((resolve) => { answer = resolve; });
@@ -48,7 +50,12 @@ function page() {
     return promise;
   };
   const main = new El('main');
-  const ui = { h, flow, go() {}, toast() {}, notice: (m) => h('p', {}, m), pageHeader: (title) => h('header', {}, title) };
+  const ui = { h, flow, go() {}, toast() {}, notice: (m) => h('p', {}, m), pageHeader: (title) => h('header', {}, title),
+    listHead: (title, { start = [], end = [], actions = [] } = {}) => ({ nodes: [h('header', {}, title), h('div', {}, start, end, actions)] }),
+    listFrame: (_main, content) => {
+      const tools = h('div', {});
+      return { element: h('section', {}, content, h('footer', {}, tools)), body: { scrollTop: 0 }, tools, count() {} };
+    } };
   return { main, ui, asked };
 }
 
@@ -115,6 +122,49 @@ test('only Draft, Approved, Sent and Void show a Number column; the other tabs o
   await settle();
   assert.ok(heads().includes('Number'));
   assert.match(panel(main).text, /INV-1/);
+});
+
+test('a person adds the job\'s Shipped date, Case, Practitioner, the Due date and custom fields as columns', async () => {
+  globalThis.sessionStorage = { getItem: () => null, setItem() {}, removeItem() {} };
+  globalThis.document = { visibilityState: 'visible', addEventListener() {}, removeEventListener() {}, createElement: (tag) => new El(tag) };
+  const shade = { id: '0b6a3a4e-6f3d-4b52-9d8e-2f1c7a9e5d10', name: 'Shade', type: 'dropdown', options: [{ id: 'a2', name: 'A2' }] };
+  const owner = { id: '7c1d2e3f-4a5b-4c6d-8e9f-0a1b2c3d4e5f', name: 'Checked by', type: 'person' };
+  const { main, ui, asked } = page({
+    fields: [shade, owner], people: [{ id: 'p-1', name: 'Jo Lee' }],
+    values: [{ sourceSystem: 'seazona', sourceJobRef: '48213', fieldId: shade.id, value: 'a2' }, { sourceSystem: 'seazona', sourceJobRef: '48213', fieldId: owner.id, value: 'p-1' }],
+  });
+  const heads = () => panel(main).all((el) => el.tag === 'th').map((el) => el.text).filter((t) => t && t !== '+');
+  const cells = (label) => panel(main).all((el) => el.tag === 'td' && el.getAttribute('data-label') === label);
+  const sample = () => {
+    const answer = list('issued', ['FL-1', 'FL-2']);
+    Object.assign(answer.invoices[0], { dueDate: '2025-11-20', job: { sourceSystem: 'seazona', sourceJobRef: '48213', caseRef: '48213', practitioner: 'Dr Example', shippedOn: '2025-10-05' } });
+    return answer;
+  };
+
+  // Before a person chooses, the list keeps its usual columns.
+  let opened = renderInvoiceList(main, ui);
+  await settle();
+  asked.shift().answer(sample());
+  await opened;
+  for (const name of ['Shipped', 'Case', 'Practitioner', 'Due', 'Shade']) assert.ok(!heads().includes(name), name);
+
+  // Chosen (saved with the account), each shows the invoice's job's value.
+  ui.me = { views: { invoices: { columns: ['client', 'shipped', 'case', 'practitioner', 'due', `field:${shade.id}`, `field:${owner.id}`] } } };
+  main.replaceChildren();
+  opened = renderInvoiceList(main, ui);
+  await settle();
+  asked.shift().answer(sample());
+  await opened;
+  assert.deepEqual(heads(), ['Client', 'Shipped', 'Case', 'Practitioner', 'Due', 'Shade', 'Checked by']);
+  assert.match(cells('Shipped')[0].text, /05\/10\/25/);
+  assert.equal(cells('Shipped')[0].children[0].getAttribute('datetime'), '2025-10-05');
+  assert.equal(cells('Case')[0].text, '48213');
+  assert.equal(cells('Practitioner')[0].text, 'Dr Example');
+  assert.match(cells('Due')[0].text, /20\/11\/25/);
+  assert.equal(cells('Shade')[0].text, 'A2');
+  assert.equal(cells('Checked by')[0].children[0].getAttribute('aria-label'), 'Jo Lee');
+  // An invoice with no job shows a dash.
+  for (const label of ['Shipped', 'Case', 'Practitioner', 'Shade']) assert.equal(cells(label)[1].text, '—', label);
 });
 
 test('with integrations on, a Linked column shows one icon per system; one not in Xero stands out', async () => {
@@ -203,4 +253,35 @@ test('ticked rows bring up the bulk bar: N selected, the tab\'s actions, and × 
   const fl = panel(main).all((el) => el.tag === 'input' && el.getAttribute('aria-label')?.startsWith('Tick FL-1'))[0];
   fl.checked = true; fl.onchange();
   assert.deepEqual(words(), ['Copy numbers', 'Export CSV', 'Download PDFs', 'Void', 'More']);
+});
+
+test('the list asks the server for one page; a page button asks for the next rows', async () => {
+  globalThis.sessionStorage = { getItem: () => null, setItem() {}, removeItem() {} };
+  globalThis.document = { visibilityState: 'visible', addEventListener() {}, removeEventListener() {}, createElement: (tag) => new El(tag) };
+  const { main, ui, asked } = page();
+  const opened = renderInvoiceList(main, ui);
+  await settle();
+  const first = asked.shift();
+  const query = (path) => new URL(path, 'http://flow.test').searchParams;
+  assert.equal(query(first.path).get('offset'), '0');
+  assert.equal(query(first.path).get('limit'), '100');
+  assert.equal(query(first.path).get('filter'), null, 'no filter, none sent');
+  first.answer({ ...list('ready', ['R-1']), offset: 0, limit: 100, total: 250 });
+  await opened;
+  const pages = main.all((el) => el.getAttribute('class') === 'fx-pages')[0];
+  assert.match(pages.text, /1–100 of 250/);
+  const nums = pages.all((el) => el.getAttribute('class') === 'fx-pages__num');
+  assert.deepEqual(nums.map((n) => n.text), ['1', '2', '3']);
+
+  nums[2].onclick();
+  const third = asked.shift();
+  assert.equal(query(third.path).get('offset'), '200');
+  third.answer({ ...list('ready', ['R-201']), offset: 200, limit: 100, total: 250 });
+  await settle();
+  assert.match(panel(main).text, /R-201/);
+  assert.match(pages.text, /201–250 of 250/);
+
+  // A new tab starts at its first page.
+  tab(main, 'Approved').onclick();
+  assert.equal(query(asked.shift().path).get('offset'), '0');
 });

@@ -5,6 +5,7 @@ import { invitePerson, seedFirstOwner } from '../server/auth/people.js';
 import { createPersonAuth } from '../server/auth/session.js';
 import { createContact, createOrganisation, createPriceItem } from '../server/core/directory.js';
 import { createRule, deleteRule } from '../server/core/invoice-rules.js';
+import { createDraftInvoice } from '../server/core/invoices.js';
 import { draftInvoiceForObligation, observeJob, recordAccountingEvidence, setReady } from '../server/core/ledger.js';
 import { linkRecord } from '../server/core/links.js';
 import { createRegistry } from '../server/integrations/port.js';
@@ -246,6 +247,42 @@ describe('invoicing API', { skip: skipWithoutDatabase }, () => {
     assert.equal(counts.void, 1);
     assert.ok(all.body.invoices.every((i) => i.tab === { draft: i.problems.length ? 'pending' : 'ready', issued: 'approved', void: 'void' }[i.status]));
     assert.equal((await call('/invoices?limit=1')).body.invoices.length, 1);
+  });
+
+  test('the list pages, filters and sorts every invoice of a tab on the server', async () => {
+    const made = [];
+    for (const n of [1, 2, 3, 4, 5]) {
+      // Made in the core, so the API's write limit is not spent here.
+      made.push(await createDraftInvoice(handle.db, lab.id, { contactId: practice.id, reference: `PAGE-${n}`, lines: [{ priceItemId: crown.id, quantity: n }] }));
+    }
+    const list = (query) => call(`/invoices?q=page-&${query}`).then((r) => r.body);
+
+    // Newest first, two to a page; the total is every match.
+    const first = await list('limit=2');
+    assert.deepEqual(first.invoices.map((i) => i.reference), ['PAGE-5', 'PAGE-4']);
+    assert.equal(first.total, 5);
+    assert.equal(first.offset, 0);
+    assert.equal(first.limit, 2);
+    assert.equal(first.totalCents, made.reduce((sum, i) => sum + i.totalCents, 0));
+    assert.deepEqual((await list('limit=2&offset=4')).invoices.map((i) => i.reference), ['PAGE-1']);
+    assert.deepEqual((await list('limit=2&offset=9')).invoices, [], 'past the end is an empty page');
+
+    // The Filter chip's view reaches rows on every page.
+    const view = { match: 'all', groups: [{ match: 'all', filters: [{ field: 'total', op: 'gt', value: (made[2].totalCents - 1) / 100 }] }] };
+    const big = await list(`limit=1&filter=${encodeURIComponent(JSON.stringify(view))}`);
+    assert.equal(big.total, 3);
+    assert.deepEqual(big.invoices.map((i) => i.reference), ['PAGE-5']);
+    assert.ok(big.clients.includes('Example Practice'), 'the Client choices come from the whole tab');
+
+    // A column head sorts every row, then the page is cut.
+    assert.deepEqual((await list('sort=total&dir=asc&limit=2')).invoices.map((i) => i.reference), ['PAGE-1', 'PAGE-2']);
+    assert.deepEqual((await list('sort=reference&dir=desc&limit=1&offset=1')).invoices.map((i) => i.reference), ['PAGE-4']);
+
+    assert.equal((await call('/invoices?offset=-1')).status, 400);
+    assert.equal((await call('/invoices?sort=colour')).status, 400);
+    assert.equal((await call('/invoices?dir=up')).status, 400);
+    assert.equal((await call('/invoices?filter=%7B')).status, 400);
+    assert.equal((await call('/invoices?today=2026-02-30')).status, 400);
   });
 
   test('jobs list by view; a job drafts its invoice after the live check, and the invoice shows the job', async () => {

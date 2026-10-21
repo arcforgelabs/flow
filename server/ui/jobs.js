@@ -13,7 +13,7 @@
 // or with a keyboard, the job's panel has the same moves.
 
 import { bulkBar } from '/assets/ui/bulk-bar.js';
-import { columnTable, onRightButton, rowCells, viewSaver } from '/assets/ui/columns.js';
+import { columnTable, dateCell, fieldColumn, onRightButton, personCell, rowCells, viewSaver } from '/assets/ui/columns.js';
 import { lucide } from '/assets/ui/custom-fields.js';
 import { formatCents } from '/assets/ui/invoicing.js';
 import { jobChangeReview } from '/assets/ui/job-change.js';
@@ -24,7 +24,8 @@ import {
   COLUMNS, DEFAULT_VIEW, fieldGroup, fieldIdOf, fieldLanes, FILTER_FIELDS, filterJobs, groupJobs, GROUPS, KIND_OF_TYPE, keptStatuses, laneOf,
   normaliseJobsView, NOT_SET, OPERATORS, sortJobs, SORTS,
 } from '/assets/ui/job-view.js';
-import { clipLabel, initialsOf } from '/assets/ui/person.js';
+import { clipLabel } from '/assets/ui/person.js';
+import { savedViews } from '/assets/ui/saved-views.js';
 import { sidecar } from '/assets/ui/sidecar.js';
 import { findBox, ICONS, svg, today, viewBar } from '/assets/ui/view-bar.js';
 
@@ -51,18 +52,6 @@ const STAGE_RANK = { 'In work': 0, Drafted: 2, Problem: 2, 'Ready to invoice': 4
 
 const showDate = (iso) => (iso ? new Date(`${iso}T00:00:00`).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' }) : '—');
 const fullDate = (iso) => (iso ? new Date(`${iso}T00:00:00`).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' }) : '—');
-// A list date, short: Today, Tomorrow or Yesterday, else day/month (and
-// year when it is not this year).
-const shortDate = (iso) => {
-  if (!iso) return '—';
-  const at = new Date(`${iso}T00:00:00`);
-  const now = new Date();
-  const days = Math.round((at - new Date(now.getFullYear(), now.getMonth(), now.getDate())) / 86_400_000);
-  if (days === 0) return 'Today';
-  if (days === 1) return 'Tomorrow';
-  if (days === -1) return 'Yesterday';
-  return at.toLocaleDateString('en-AU', at.getFullYear() === now.getFullYear() ? { day: '2-digit', month: '2-digit' } : { day: '2-digit', month: '2-digit', year: '2-digit' });
-};
 const clientOf = (job) => job.clientName ?? 'No client';
 // The one date a card shows: when the job is due, else when it was ordered.
 const dateOf = (job) => (job.dueOn ? `Due ${showDate(job.dueOn)}` : job.orderedOn ? `Ordered ${showDate(job.orderedOn)}` : job.jobDate ? showDate(job.jobDate) : null);
@@ -105,7 +94,7 @@ const CHEVRON_ICON = '<svg width="14" height="14" viewBox="0 0 16 16" aria-hidde
 const CALENDAR_ICON = '<svg width="13" height="13" viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="3" width="12" height="11" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M2 6.5h12M5.5 1.5v3M10.5 1.5v3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>';
 
 export async function renderJobs(main, ui) {
-  const { h, flow, pageHeader, notice } = ui;
+  const { h, flow, listHead, listFrame, edgeFade, notice } = ui;
   // Search (search.js) opens a job with no invoice as /jobs?q=<case>.
   const asked = new URLSearchParams(location.search).get('q') ?? '';
   // The person's own view (job-view.js), saved with their account. Before
@@ -123,23 +112,26 @@ export async function renderJobs(main, ui) {
     // The list's ticked jobs (by jobKey), and its folded groups by group key.
     ticked: new Set(), folded: readFolded(),
   };
+  // The person's named views (saved-views.js): their default opens on a
+  // new visit.
+  const views = savedViews(ui, { page: 'jobs', current: () => state.view, apply: (view) => { change(view); drawToggle(); } });
+  const opening = views.opening();
+  if (opening) state.view = normaliseJobsView(opening);
   const toggle = h('div', { class: 'fx-seg', role: 'radiogroup', 'aria-label': 'Layout' });
   const find = findBox(h, { label: 'Find a case, client or practitioner', value: asked, oninput: (words) => { state.q = words.trim(); draw(); } });
   const host = h('div', { class: 'fx-jobs' }, h('div', { class: 'fx-skeleton' }));
   const controls = h('div', { class: 'fx-viewbar', role: 'group', 'aria-label': 'Group, sort and filter' });
   // In the list, ticked rows get the same floating bar as Invoices.
   const bulk = bulkBar(ui, { label: 'Ticked jobs' });
-  main.append(
-    pageHeader('Jobs'),
-    h('div', { class: 'fx-toolbar fx-toolbar--plain' }, controls, h('div', { class: 'fx-toolbar__end' }, find.element, toggle)),
-    host,
-    bulk.element);
+  const frame = listFrame(main, host);
+  main.append(...listHead('Jobs', { views: views.element, controls, end: [find.element, toggle] }).nodes, frame.element, bulk.element);
 
   const drawToggle = () => toggle.replaceChildren(...[['board', 'Board'], ['list', 'List']].map(([id, label]) => h('button', {
     type: 'button', role: 'radio', class: 'fx-seg__item', 'aria-checked': String(state.view.layout === id),
     onclick: () => { saveLayout(id); change({ layout: id }); drawToggle(); },
   }, label)));
   drawToggle();
+  views.draw();
 
   const problemsOf = (job) => fixes(job.obligation);
   const jobKey = (job) => `${job.sourceSystem}\u0000${job.sourceJobRef}`;
@@ -169,6 +161,7 @@ export async function renderJobs(main, ui) {
   const saveView = viewSaver(ui, 'jobs');
   function change(patch) {
     state.view = normaliseJobsView({ ...state.view, ...patch });
+    views.draw();
     drawControls();
     draw();
     saveView(state.view);
@@ -345,6 +338,7 @@ export async function renderJobs(main, ui) {
     const shown = new Set(found.map(jobKey));
     for (const key of state.ticked) if (!shown.has(key)) state.ticked.delete(key);
     state.found = found;
+    frame.count(`${found.length} ${found.length === 1 ? 'job' : 'jobs'}`);
     host.replaceChildren(state.view.layout === 'list' ? list(groups, found.length) : board(groups));
     drawBulk();
   }
@@ -463,6 +457,9 @@ export async function renderJobs(main, ui) {
         h('span', { class: 'fx-board__sum' }, jobs.length ? formatCents(totalOf(jobs)) : '')),
       h('div', { class: 'fx-board__cards' }, jobs.length ? jobs.map(jobCard) : h('p', { class: 'fx-board__none' }, 'None')))));
     if (groups.some((g) => g.drop)) enableDrag(element, groups);
+    // Lanes past the frame's sides, and cards past a lane's foot, fade.
+    edgeFade(element, { target: frame.view, edges: ['left', 'right'] });
+    element.querySelectorAll('.fx-board__cards').forEach((cards) => edgeFade(cards, { target: cards.parentElement, edges: ['top', 'bottom'] }));
     return element;
   }
 
@@ -790,7 +787,7 @@ export async function renderJobs(main, ui) {
   // The list's columns, in the order the person chose them. One column holds
   // one field; each date has its own column.
   function listColumns() {
-    const day = (iso) => h('time', { datetime: iso ?? null, title: iso ? fullDate(iso) : null }, shortDate(iso));
+    const day = (iso) => dateCell(h, iso);
     const late = (job) => (isLate(job) ? h('span', { class: 'fx-job__date--late', title: 'Past due' }, day(job.dueOn)) : day(job.dueOn));
     const BUILT_IN = {
       case: { kind: 'case', className: 'fx-dim', cell: (job) => caseNumber(job) ?? '—' },
@@ -812,31 +809,12 @@ export async function renderJobs(main, ui) {
     return [client, ...state.view.columns.map((id) => {
       if (BUILT_IN[id]) return allowed.has(id) ? { id, label: id === 'assignee' ? assigneeField().name : COLUMNS[id], ...BUILT_IN[id] } : null;
       const field = customColumns().find((f) => fieldGroup(f.id) === id);
-      if (!field) return null;
-      const cell = field.type === 'person' ? (job) => personBadge(job, field)
-        : field.type === 'date' ? (job) => day(valueOf(job, field.id)?.value ?? null) : (job) => fieldText(job, field);
-      return { id, label: field.name, kind: field.type === 'date' ? 'date' : field.type === 'person' ? 'person' : field.type === 'number' ? 'total' : 'text', num: field.type === 'number', className: 'fx-dim', cell };
+      return field ? fieldColumn(h, field, { id, valueOf: (job) => valueOf(job, field.id)?.value ?? null, people: state.people }) : null;
     }).filter(Boolean).map((c) => ({ ...c, sort: () => sortButton(c.id, c.label) }))];
   }
 
   // A person custom field's value as a badge (initials), the name on hover.
-  function personBadge(job, field) {
-    const value = field ? valueOf(job, field.id)?.value ?? null : null;
-    if (!value) return h('span', { class: 'fx-dim' }, '—');
-    const name = state.people.find((p) => p.id === value)?.name ?? 'Former person';
-    return h('span', { class: 'fx-avatar fx-avatar--sm', role: 'img', 'aria-label': name, title: name }, initialsOf(name));
-  }
-
-  // A job's custom field value as text.
-  function fieldText(job, field) {
-    const value = field ? valueOf(job, field.id)?.value ?? null : null;
-    if (value == null || value === false) return '—';
-    if (field.type === 'checkbox') return 'Yes';
-    if (field.type === 'person') return state.people.find((p) => p.id === value)?.name ?? 'Former person';
-    if (field.type === 'dropdown') return field.options?.find((o) => o.id === value)?.name ?? '—';
-    if (field.type === 'date') return showDate(value);
-    return String(value);
-  }
+  const personBadge = (job, field) => personCell(h, field ? valueOf(job, field.id)?.value ?? null : null, state.people);
 
   // The list: one block per group, with the group's label over its rows.
   // A tick column at the left; a group's head has a tick for every job in

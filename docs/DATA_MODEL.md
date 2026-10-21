@@ -114,7 +114,7 @@ while the installation has exactly one. Money is integer cents. Answers are
 | Route | Who | What |
 | --- | --- | --- |
 | `GET /context` | anyone | `organisations` (`id`, `name`, `invoicePrefix`, `nextInvoiceNumber`) and `canIssue` |
-| `GET /invoices?status=&q=&limit=` | anyone | Newest first, each with `contactName` and its `job`; `q` matches number, reference or customer; `counts` by status |
+| `GET /invoices?status=&q=&filter=&sort=&dir=&offset=&limit=` | anyone | One page, newest first unless sorted, each with `contactName` and its `job`; `q` matches number, reference or customer; `filter` and `sort` run over every invoice of the tab; `total`, `totalCents`, `counts` by status (`docs/INVOICE_SENDING.md`) |
 | `GET /invoices/:id` | anyone | The invoice with `lines`, `contact`, `job` and issued `versions` |
 | `GET /invoices/:id/pdf?version=` | anyone | The invoice as an A4 PDF drawn by Flow, with no accounting system calls. Every page carries an EXAMPLE mark. A draft shows its lines now. Once the accounting system holds the version, its number, reference and dates come from Flow's copy of it (`documentFacts`); a value nobody knows yet is a grey note that says why, never a sample value. An issued or void invoice shows its stored version; `version` picks an earlier one (`server/core/invoice-pdf.js`) |
 | `POST /invoices` `{ contactId, reference?, dueDate?, lines }` | anyone | A new draft (201) |

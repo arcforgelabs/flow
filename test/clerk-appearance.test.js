@@ -42,7 +42,7 @@ describe('Clerk appearance', () => {
     assert.equal(chip.boxShadow, 'none', 'no outline at rest');
     assert.match(chip['&:hover, &:focus-visible, &[aria-expanded="true"]'].boxShadow, /^inset 0 0 0 1px /, 'outlined on hover');
     const app = readFileSync(new URL('../server/ui/app.js', import.meta.url), 'utf8');
-    assert.match(app, /const userButton = \{ afterSignOutUrl: '\/sign-in', showName: true \};/);
+    assert.match(app, /const userButton = \{ afterSignOutUrl: '\/sign-in', showName: true, customMenuItems: accountItems \};/);
     // The narrow-screen rule matches the one in flow.css, where the sidebar becomes a bar.
     const css = readFileSync(new URL('../server/ui/flow.css', import.meta.url), 'utf8');
     assert.match(css, /@media \(max-width: 820px\) \{\n  \.fx-shell \{ flex-direction: column; \}/);

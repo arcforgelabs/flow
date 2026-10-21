@@ -1,0 +1,9 @@
+<!-- @dsCard group="Lists" height=80 -->
+<div id="root" style="padding:12px"></div>
+<script>
+const { h, listPager } = window.FlowDesignSystem;
+let page = { offset: 100, limit: 100, total: 1204 };
+const pager = listPager(h, { label: 'Invoice pages', change: (next) => { page = { ...page, ...next }; pager.draw(page); } });
+document.getElementById('root').append(pager.element);
+pager.draw(page);
+</script>

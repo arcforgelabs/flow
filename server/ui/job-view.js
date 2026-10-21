@@ -418,6 +418,24 @@ export function widthOf(column, widths) {
   return Number.isFinite(saved) ? Math.round(Math.min(MAX_WIDTH, Math.max(minWidth(column.kind), saved))) : startWidth(column.kind);
 }
 
+// A list table's columns: the tick column at the start, the end column
+// (+) at least this wide.
+export const LEAD_WIDTH = 44;
+export const TAIL_WIDTH = 40;
+
+// The width a list table needs for its columns, with the end column at
+// its least.
+export function tableWidth(columns, widths, lead = 0) {
+  return columns.reduce((sum, c) => sum + widthOf(c, widths), 0) + lead * LEAD_WIDTH + TAIL_WIDTH;
+}
+
+// The end column's width: the room left after the other columns, so the
+// head and rows reach the window's right edge (as HubSpot's), never under
+// TAIL_WIDTH. A window not drawn yet (width 0) gets TAIL_WIDTH.
+export function endWidth(need, room) {
+  return Math.max(TAIL_WIDTH, Math.floor(room) - (need - TAIL_WIDTH));
+}
+
 // Saved widths as Flow keeps them: known-looking ids, whole pixels in range.
 // The minimum per kind applies when a width is drawn (widthOf), since the
 // server does not know a custom column's kind.
@@ -455,18 +473,29 @@ export function inOrder(columns, ids) {
 // shows the invoice's problem; Number shows on the tabs with numbers only.
 export const INVOICE_COLUMNS = Object.freeze({
   number: 'Number', client: 'Client', reference: 'Reference', date: 'Date', total: 'Total', status: 'Status', linked: 'Linked',
+  due: 'Due', case: 'Case', practitioner: 'Practitioner', shipped: 'Shipped',
+});
+// The Invoices columns a person sees before they choose: the others (the
+// invoice's due date, its job's case, practitioner and shipped date, and
+// the lab's custom fields) wait in the + menu.
+export const INVOICE_SHOWN = Object.freeze(['number', 'client', 'reference', 'date', 'total', 'status', 'linked']);
+// A person's Invoices columns: custom fields ('field:<id>') are columns too.
+export const invoiceColumnsView = (input) => normaliseListView(input, INVOICE_COLUMNS, { shown: INVOICE_SHOWN, fields: true });
+export const PRICE_COLUMNS = Object.freeze({
+  code: 'Code', name: 'Name', price: 'Price', tax: 'Tax',
 });
 export const RECONCILE_COLUMNS = Object.freeze({
   kind: 'Type', client: 'Client', detail: 'Detail', date: 'Date', total: 'Total', possible: 'Possible',
 });
 
-// A person's view of a list with set columns (Invoices, Reconcile): the
-// shown columns in order (every one when none is saved) and their widths.
-export function normaliseListView(input, columns) {
+// A person's view of a list with set columns (Invoices, Reconcile, Price list): the
+// shown columns in order (`shown`, else every one, when none is saved) and
+// their widths. With `fields`, a custom field ('field:<id>') is a column too.
+export function normaliseListView(input, columns, { shown = null, fields = false } = {}) {
   const value = input && typeof input === 'object' && !Array.isArray(input) ? input : {};
   const ids = Object.keys(columns);
   return {
-    columns: cleanColumnIds(value.columns, (id) => ids.includes(id)) ?? ids,
+    columns: cleanColumnIds(value.columns, (id) => ids.includes(id) || (fields && FIELD_GROUP.test(id))) ?? [...(shown ?? ids)],
     widths: cleanWidths(value.widths),
   };
 }

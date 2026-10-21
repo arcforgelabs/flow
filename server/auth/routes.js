@@ -13,6 +13,7 @@ import {
   publicPerson,
   removePerson,
   setPersonAppearance,
+  setPersonSavedViews,
   setPersonView,
   updatePerson,
 } from './people.js';
@@ -122,6 +123,16 @@ export function createSignInRouter({ settings, db, clerk, personAuth, defaultFam
     try {
       const view = await setPersonView(db, { id: req.person.id, page: req.params.page, view: req.body });
       res.json({ ok: true, view });
+    } catch (error) {
+      sendError(res, error, log);
+    }
+  });
+
+  // Each person's named views of a page and their default (ui/list-views.js).
+  router.put('/api/me/saved-views/:page', requireSession, express.json({ limit: '64kb' }), async (req, res) => {
+    try {
+      const saved = await setPersonSavedViews(db, { id: req.person.id, page: req.params.page, saved: req.body });
+      res.json({ ok: true, saved });
     } catch (error) {
       sendError(res, error, log);
     }

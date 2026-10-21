@@ -10,8 +10,11 @@ import { bulkBar } from '/assets/ui/bulk-bar.js';
 import { draftNote, sendModeNote } from '/assets/ui/invoice-notes.js';
 import { caseNumber } from '/assets/ui/job-board.js';
 import { jobChangeReview } from '/assets/ui/job-change.js';
-import { columnTable, rowCells, viewSaver } from '/assets/ui/columns.js';
-import { cleanFilterView, filterJobs, INVOICE_COLUMNS, normaliseListView } from '/assets/ui/job-view.js';
+import { columnTable, dateCell, fieldColumn, rowCells, viewSaver } from '/assets/ui/columns.js';
+import { fieldGroup, filterCount, filterJobs, INVOICE_COLUMNS, invoiceColumnsView } from '/assets/ui/job-view.js';
+import { INVOICE_FILTER_FIELDS, invoiceFilterKind, invoiceValue, normaliseInvoicesView } from '/assets/ui/list-views.js';
+import { listPager, PAGE_SIZES } from '/assets/ui/pager.js';
+import { savedViews } from '/assets/ui/saved-views.js';
 import { findBox, today, viewBar } from '/assets/ui/view-bar.js';
 
 // The tabs, left to right (server/api/invoicing.js, TABS): Pending (a
@@ -112,44 +115,31 @@ const showDate = (iso) => (iso ? new Date(`${iso}T00:00:00`).toLocaleDateString(
 
 // ── The list ───────────────────────────────────────────────────────────────
 
-// The filter's fields (view-bar.js). The tabs are the status, so Status is
-// not here. The filter keeps rows of the tab shown.
-const FILTER_FIELDS = {
-  client: { label: 'Client', kind: 'choice', icon: 'building-2' },
-  number: { label: 'Number', kind: 'text', icon: 'hash' },
-  reference: { label: 'Reference', kind: 'text', icon: 'text' },
-  date: { label: 'Date', kind: 'date', icon: 'calendar' },
-  total: { label: 'Total', kind: 'number', icon: 'dollar-sign' },
-  problem: { label: 'Problem', kind: 'check', icon: 'triangle-alert' },
-};
+// The filter's fields and rules: list-views.js. The server checks saved
+// views with them and filters every invoice of a tab (GET /invoices).
+const FILTER_FIELDS = INVOICE_FILTER_FIELDS;
 const PROBLEM_OPS = { yes: 'Has one', no: 'Has none' };
 const FILTER_KEY = 'flow_invoice_filters';
-const filterKind = (field) => FILTER_FIELDS[field]?.kind ?? null;
-
-// An invoice's value for a filter field, as the filter compares it.
-export function invoiceValue(invoice, field) {
-  switch (field) {
-    case 'client': return invoice.contactName ?? null;
-    case 'number': return invoice.number ?? null;
-    case 'reference': return invoice.reference ?? null;
-    case 'date': return invoice.issueDate ?? invoice.createdAt?.slice(0, 10) ?? null;
-    case 'total': return invoice.totalCents == null ? null : invoice.totalCents / 100;
-    case 'problem': return (invoice.problems?.length ?? 0) > 0;
-    default: return null;
-  }
-}
+const SIZE_KEY = 'flow_invoice_page_size';
+const filterKind = invoiceFilterKind;
+export { invoiceValue };
 
 // The invoices a filter view keeps.
 export const keptInvoices = (invoices, view, now = today()) => filterJobs(invoices, view, { valueOf: invoiceValue, kindOf: filterKind, today: now });
 
+// Rows per page, kept on this device.
+function readSize() {
+  let size = null;
+  try { size = Number(localStorage.getItem(SIZE_KEY)); } catch { /* none kept */ }
+  return PAGE_SIZES.includes(size) ? size : 100;
+}
+
 function readFilters() {
-  let stored = {};
-  try { stored = JSON.parse(localStorage.getItem(FILTER_KEY)) ?? {}; } catch { /* none kept */ }
-  return cleanFilterView(stored, filterKind);
+  try { return normaliseInvoicesView(JSON.parse(localStorage.getItem(FILTER_KEY))); } catch { return normaliseInvoicesView(null); }
 }
 
 export async function renderInvoiceList(main, ui) {
-  const { h, flow, pageHeader, notice, go, toast } = ui;
+  const { h, flow, listHead, listFrame, notice, go, toast } = ui;
   const saved = OLD_TAB[sessionStorage.getItem('flow_invoice_tab')] ?? sessionStorage.getItem('flow_invoice_tab');
   // Back from an invoice comes here with the tab, search and scroll it left.
   const back = readNav();
@@ -157,21 +147,27 @@ export async function renderInvoiceList(main, ui) {
   sessionStorage.removeItem(NAV_BACK);
   const state = {
     status: TABS.some(([id]) => id === saved) ? saved : 'ready', q: returning ? back?.q ?? '' : '', ticked: new Set(), view: readFilters(),
-    columns: normaliseListView(ui.me?.views?.invoices, INVOICE_COLUMNS),
+    // The page of rows shown: the server filters and cuts it (GET /invoices).
+    offset: returning ? back?.offset ?? 0 : 0, limit: readSize(),
+    columns: invoiceColumnsView(ui.me?.views?.invoices),
+    // The lab's custom fields, their job values and the people a person
+    // field names (GET /api/custom-fields): columns a person can add.
+    fields: [], values: new Map(), people: [],
   };
   // The list's columns: resize, move, hide, kept with the account. A tab
-  // has some of them (`available`, set as it draws).
+  // has some of them (`available`, set as it draws), each with its label.
   let available = Object.keys(INVOICE_COLUMNS);
+  const labelOf = (id) => INVOICE_COLUMNS[id] ?? state.fields.find((f) => fieldGroup(f.id) === id)?.name ?? id;
   const saveColumns = viewSaver(ui, 'invoices');
   const heads = columnTable(h, {
     order: () => state.columns.columns,
     widths: () => state.columns.widths,
     change: (patch) => {
-      state.columns = normaliseListView({ ...state.columns, ...patch }, INVOICE_COLUMNS);
+      state.columns = invoiceColumnsView({ ...state.columns, ...patch });
       saveColumns(state.columns);
       if (raw) draw(raw);
     },
-    hidden: () => available.filter((id) => !state.columns.columns.includes(id)).map((id) => ({ id, label: INVOICE_COLUMNS[id] })),
+    hidden: () => available.filter((id) => !state.columns.columns.includes(id)).map((id) => ({ id, label: labelOf(id) })),
   });
   const tabs = h('div', { class: 'fx-tabs', role: 'tablist' });
   let timer;
@@ -179,53 +175,75 @@ export async function renderInvoiceList(main, ui) {
     label: 'Find a number, client or reference', value: state.q,
     oninput: (words) => {
       clearTimeout(timer);
-      timer = setTimeout(() => { state.q = words.trim(); load(); }, 200);
+      timer = setTimeout(() => { state.q = words.trim(); state.offset = 0; load(); }, 200);
     },
   });
   // The Filter chip: the same panel as on Jobs and Reconcile (view-bar.js).
-  // It filters the rows of the tab shown, on this device.
-  const labels = (list) => [...new Set(list.filter(Boolean))].sort((a, b) => a.localeCompare(b)).map((v) => ({ value: v, label: v }));
+  // The server filters every invoice of the tab shown.
+  // A change to the filter: kept in this browser, and the first page loads.
+  function setView(patch) {
+    state.view = normaliseInvoicesView({ ...state.view, ...patch });
+    try { localStorage.setItem(FILTER_KEY, JSON.stringify(state.view)); } catch { /* the page still works, it forgets */ }
+    views.draw();
+    state.offset = 0;
+    if (raw) load();
+  }
+  // The person's named views (saved-views.js): their default opens on a
+  // new visit.
+  const views = savedViews(ui, { page: 'invoices', current: () => state.view, apply: setView });
+  const opening = views.opening();
+  if (opening) state.view = normaliseInvoicesView(opening);
+  views.draw();
   const filterMenu = viewBar(h).filterMenu({
     fields: () => Object.entries(FILTER_FIELDS).map(([value, f]) => ({ value, label: f.label, icon: f.icon })),
     kindOf: filterKind,
     opsOf: (field) => (field === 'problem' ? PROBLEM_OPS : null),
-    choicesOf: (field) => (field === 'client' ? labels((raw?.invoices ?? []).map((i) => i.contactName)) : []),
+    choicesOf: (field) => (field === 'client' ? (raw?.clients ?? []).map((v) => ({ value: v, label: v })) : []),
     view: () => state.view,
-    change: (patch) => {
-      state.view = { ...state.view, ...patch };
-      try { localStorage.setItem(FILTER_KEY, JSON.stringify(state.view)); } catch { /* the page still works, it forgets */ }
-      if (raw) draw(raw);
-    },
+    change: setView,
     first: 'client',
     empty: 'No filters. Every invoice in the tab shows.',
   });
   const controls = h('div', { class: 'fx-viewbar', role: 'group', 'aria-label': 'Filter' }, ...filterMenu.node);
   const host = h('div', { class: 'fx-panel' }, h('div', { class: 'fx-skeleton' }));
   const bulk = bulkBar(ui);
-  const context = await flow('/api/invoicing/context').catch(() => ({ canIssue: false }));
+  // The pages, in the foot under the rows (pager.js).
+  const pager = listPager(h, {
+    label: 'Invoice pages',
+    change: ({ offset, limit }) => {
+      if (limit !== state.limit) { try { localStorage.setItem(SIZE_KEY, String(limit)); } catch { /* it forgets */ } }
+      Object.assign(state, { offset, limit });
+      state.ticked.clear();
+      // A new page opens at its first row.
+      frame.body.scrollTop = 0;
+      load();
+    },
+  });
+  // Custom fields are extra: the list still shows without them.
+  const [context, fields, values] = await Promise.all([
+    flow('/api/invoicing/context').catch(() => ({ canIssue: false })),
+    flow('/api/custom-fields').catch(() => null), flow('/api/custom-fields/values').catch(() => null),
+  ]);
+  state.fields = fields?.fields ?? [];
+  state.people = fields?.people ?? [];
+  const valueKey = (job, fieldId) => `${job.sourceSystem}\u0000${job.sourceJobRef}\u0000${fieldId}`;
+  state.values = new Map((values?.values ?? []).map((v) => [valueKey(v, v.fieldId), v.value]));
   let body = null;
   let raw = null;
-  const openTab = (id) => { state.status = id; state.ticked.clear(); sessionStorage.setItem('flow_invoice_tab', id); load(); };
+  const openTab = (id) => { state.status = id; state.offset = 0; state.ticked.clear(); sessionStorage.setItem('flow_invoice_tab', id); load(); };
   const alerts = alertStrip(ui, 'invoices', { onTab: openTab });
   // The tabs and search stay at the top while the rows scroll up under them;
   // the bulk bar floats at the foot (ClickUp's layout). Sending is a bulk
   // action: tick rows (the head tick takes every row shown), then Send.
-  const head = h('div', { class: 'fx-listhead' }, h('div', { class: 'fx-toolbar' }, tabs, h('div', { class: 'fx-toolbar__end' }, controls, find.element)));
-  const edge = h('div', { class: 'fx-listhead__edge', 'aria-hidden': 'true' });
-  main.append(
-    pageHeader('Invoices', {
-      actions: [h('a', { class: 'fx-btn fx-btn--primary', href: '/invoices/new', onclick: go }, 'New invoice')],
-    }),
-    alerts.element,
-    edge,
-    head,
-    host,
-    bulk.element);
-  // A shadow under the head shows once rows scroll under it.
-  if (typeof IntersectionObserver === 'function') {
-    new IntersectionObserver(([entry]) => head.toggleAttribute('data-stuck', !entry.isIntersecting), { rootMargin: `-${head.offsetTop > 0 && window.matchMedia?.('(max-width: 820px)').matches ? 61 : 1}px 0px 0px 0px` }).observe(edge);
-  }
-
+  const head = listHead('Invoices', {
+    actions: [h('a', { class: 'fx-btn fx-btn--primary', href: '/invoices/new', onclick: go }, 'New invoice')],
+    views: views.element, start: tabs, controls, controlsAt: 'end', end: find.element, line: true, sticky: true,
+  });
+  const [title, ...top] = head.nodes;
+  const frame = listFrame(main, host);
+  // The pages sit in the window's foot bar, beside the count.
+  frame.tools.append(pager.element);
+  main.append(title, alerts.element, ...top, frame.element, bulk.element);
 
   const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
   // The bulk bar for the ticked rows: what a person can do with this view.
@@ -381,7 +399,11 @@ export async function renderInvoiceList(main, ui) {
   const seen = new Map();
   let asked = 0;
   async function load() {
-    const query = new URLSearchParams({ status: state.status, ...(state.q ? { q: state.q } : {}) });
+    const query = new URLSearchParams({
+      status: state.status, offset: String(state.offset), limit: String(state.limit), today: today(),
+      ...(state.q ? { q: state.q } : {}),
+      ...(filterCount(state.view, filterKind) ? { filter: JSON.stringify(state.view) } : {}),
+    });
     const key = String(query);
     const mine = ++asked;
     if (seen.has(key)) {
@@ -422,13 +444,22 @@ export async function renderInvoiceList(main, ui) {
   async function draw(answer) {
     raw = answer;
     filterMenu.draw();
-    body = { ...answer, invoices: keptInvoices(answer.invoices, state.view) };
+    body = answer;
+    // A page past the end (rows went to another tab): show the last one.
+    if (!answer.invoices.length && answer.total && answer.offset) {
+      state.offset = Math.max(0, Math.floor((answer.total - 1) / state.limit) * state.limit);
+      load();
+      return;
+    }
+    pager.draw({ offset: answer.offset ?? 0, limit: answer.limit ?? state.limit, total: answer.total ?? answer.invoices.length });
     const shown = new Set(body.invoices.map((i) => i.id));
+    const total = answer.total ?? body.invoices.length;
+    frame.count(`${total.toLocaleString('en-AU')} ${total === 1 ? 'invoice' : 'invoices'}${total ? ` · ${formatCents(answer.totalCents ?? 0)}` : ''}`);
     for (const id of state.ticked) if (!shown.has(id)) state.ticked.delete(id);
     drawTabs(body.counts);
     drawBar();
     if (!body.invoices.length) {
-      host.replaceChildren(h('p', { class: 'fx-empty' }, answer.invoices.length
+      host.replaceChildren(h('p', { class: 'fx-empty' }, filterCount(state.view, filterKind)
         ? 'No invoice in this tab passes the filter.'
         : state.q
         ? 'No invoice matches that search.'
@@ -436,8 +467,8 @@ export async function renderInvoiceList(main, ui) {
       return;
     }
     // The invoice page steps through this list, in this order (navBar).
-    saveNav({ tab: state.status, q: state.q, ids: body.invoices.map((i) => i.id) });
-    const open = (href) => { saveNav({ ...readNav(), scrollY: window.scrollY }); go(href); };
+    saveNav({ tab: state.status, q: state.q, offset: state.offset, ids: body.invoices.map((i) => i.id) });
+    const open = (href) => { saveNav({ ...readNav(), scrollY: window.scrollY, frameY: frame.body.scrollTop }); go(href); };
     const link = (href, label) => h('a', { class: 'fx-strong', href, onclick: (event) => { event.preventDefault(); event.stopPropagation(); open(href); } }, label);
     const showProblem = state.status === 'pending';
     const created = ['pending', 'ready'].includes(state.status);
@@ -494,13 +525,24 @@ export async function renderInvoiceList(main, ui) {
       reference: showProblem
         ? { label: 'Problem', kind: 'text', cell: problemCell }
         : { kind: 'text', className: 'fx-dim', cell: (i) => i.reference ?? '—' },
-      date: { label: created ? 'Created' : 'Date', kind: 'date', className: 'fx-dim', cell: (i) => showDate(i.issueDate ?? i.createdAt?.slice(0, 10)) },
+      date: { label: created ? 'Created' : 'Date', kind: 'date', className: 'fx-dim', cell: (i) => dateCell(h, i.issueDate ?? i.createdAt?.slice(0, 10)) },
+      due: { kind: 'date', className: 'fx-dim', cell: (i) => dateCell(h, i.dueDate) },
       total: { kind: 'total', num: true, className: 'fx-strong', cell: (i) => formatCents(i.totalCents) },
       status: { kind: 'status', className: 'fx-status-cell', cell: statusCell },
       linked: linked ? { kind: 'link', cell: linkCell } : null,
+      // The invoice's job (from the work system): its case, practitioner and
+      // the day it shipped.
+      case: { kind: 'case', className: 'fx-dim', cell: (i) => (i.job ? caseNumber(i.job) ?? '—' : '—') },
+      practitioner: { kind: 'text', className: 'fx-dim', cell: (i) => i.job?.practitioner ?? '—' },
+      shipped: { kind: 'date', className: 'fx-dim', cell: (i) => dateCell(h, i.job?.shippedOn ?? null) },
     };
+    // Each custom field is a column too: the value of the invoice's job.
+    for (const field of state.fields) {
+      const id = fieldGroup(field.id);
+      ALL[id] = fieldColumn(h, field, { id, valueOf: (i) => (i.job ? state.values.get(valueKey(i.job, field.id)) ?? null : null), people: state.people });
+    }
     available = Object.keys(ALL).filter((id) => ALL[id]);
-    const columns = state.columns.columns.filter((id) => ALL[id]).map((id) => ({ id, label: INVOICE_COLUMNS[id], ...ALL[id] }));
+    const columns = state.columns.columns.filter((id) => ALL[id]).map((id) => ({ id, label: labelOf(id), ...ALL[id] }));
     host.replaceChildren(heads.table({
       className: 'fx-table--rows',
       columns,
@@ -525,6 +567,7 @@ export async function renderInvoiceList(main, ui) {
   }
   await load();
   if (returning && back?.scrollY) window.scrollTo(0, back.scrollY);
+  if (returning && back?.frameY) frame.body.scrollTop = back.frameY;
 }
 
 // A file the browser saves, from a blob made on this page.
@@ -587,7 +630,8 @@ function navBar(ui, invoice) {
   return bar;
 }
 
-// After a send, an Approve or a Save as draft, the next invoice of the list
+// After a send, an Approve or a Save that makes a Pending invoice Ready, the
+// next invoice of the list
 // opens; at its end, the list. So a person reviews drafts one after another
 // without going back. The invoice stays in the bar's list, so the count holds
 // (2 of 35) and Previous opens it again, now done. Back reloads the list
@@ -683,9 +727,13 @@ function linkedCard(ui, invoice, accountingStatus = null) {
     facts);
 }
 
+// The first sentence of a problem: what is wrong. The red field shows where,
+// so the banner holds no how-to.
+const brief = (text) => String(text ?? '').match(/^.*?[.!?](?=\s|$)/s)?.[0] ?? String(text ?? '');
+
 // A draft, or a new invoice before its first save.
 function draftView(invoice, ui, context, redraw) {
-  const { h, flow, toast, go, notice } = ui;
+  const { h, flow, toast, go, notice, fieldError } = ui;
   const isNew = !invoice;
   const lines = (invoice?.lines ?? []).map((line) => ({ ...line }));
   if (!lines.length) lines.push({ description: '', quantity: 1, unitAmountCents: null, taxCode: 'GST', priceItemId: null });
@@ -727,6 +775,15 @@ function draftView(invoice, ui, context, redraw) {
   const reference = h('input', { class: 'fx-input', type: 'text', value: invoice?.reference ?? '', placeholder: 'Type a reference', 'aria-label': 'Reference' });
   const dueDate = h('input', { class: 'fx-input', type: 'date', value: invoice?.dueDate ?? '' });
 
+  // The fields a failed check reads go red (problem.fields): a rule on the
+  // Reference marks the Reference box, a line with no price item marks its
+  // item. A check on something this page cannot change (the job's
+  // practitioner) marks nothing; the banner says it.
+  const problemList = invoice?.problems ?? [];
+  const failed = new Set(problemList.flatMap((p) => p.fields ?? []));
+  const badLines = new Set(problemList.filter((p) => p.fields?.includes('line_item')).map((p) => p.line));
+  const boxes = { reference };
+
   // Lines.
   let items = null;
   const itemsReady = flow('/api/invoicing/price-items').then((body) => { items = body.priceItems ?? body.items ?? []; return items; }).catch(() => { items = []; return items; });
@@ -756,6 +813,7 @@ function draftView(invoice, ui, context, redraw) {
         class: 'fx-input', type: 'text', list: 'fx-price-items', placeholder: 'Code', autocomplete: 'off',
         value: line.itemCode ?? '', 'aria-label': `Item, line ${index + 1}`,
       });
+      if (badLines.has(index + 1)) fieldError(item);
       const description = h('input', { class: 'fx-input', type: 'text', value: line.description ?? '', 'aria-label': `Description, line ${index + 1}` });
       const quantity = h('input', { class: 'fx-input fx-num', type: 'number', min: '1', step: '1', value: String(line.quantity ?? 1), 'aria-label': `Quantity, line ${index + 1}` });
       const price = h('input', { class: 'fx-input fx-num', type: 'text', inputmode: 'decimal', value: fromCents(line.unitAmountCents), placeholder: '0.00', 'aria-label': `Unit price, line ${index + 1}` });
@@ -781,7 +839,7 @@ function draftView(invoice, ui, context, redraw) {
       gst.addEventListener('change', () => { line.taxCode = gst.value; preview(); });
       const remove = h('button', {
         class: 'fx-btn fx-btn--ghost fx-btn--sm fx-btn--icon', type: 'button', title: 'Remove line', 'aria-label': `Remove line ${index + 1}`,
-        onclick: () => { lines.splice(index, 1); if (!lines.length) lines.push({ description: '', quantity: 1, unitAmountCents: null, taxCode: 'GST', priceItemId: null }); drawLines(); preview(); },
+        onclick: () => { badLines.clear(); lines.splice(index, 1); if (!lines.length) lines.push({ description: '', quantity: 1, unitAmountCents: null, taxCode: 'GST', priceItemId: null }); drawLines(); preview(); },
       }, '×');
       return h('tr', {},
         h('td', { class: 'fx-lines__item' }, item),
@@ -822,7 +880,7 @@ function draftView(invoice, ui, context, redraw) {
   });
 
   const check = () => {
-    if (!contact) return 'Choose a client from the list.';
+    if (!contact) { fieldError(clientInput); return 'Choose a client from the list.'; }
     if (lines.some((line) => (line.description?.trim() || line.priceItemId) && line.unitAmountCents == null)) return 'Each line needs a price.';
     return null;
   };
@@ -841,22 +899,38 @@ function draftView(invoice, ui, context, redraw) {
     }
   };
 
-  // Save shows only when there is something to save: a new invoice, or a
-  // change since the page opened. Save as draft opens the next invoice.
-  // Save as draft: a draft that is not ready always offers it. A ready
-  // invoice offers Save changes only once something changed.
+  // Save is the check, like CI: it saves, and Flow runs every check again
+  // (Flow's own, the lab's rules, the accounting system's). A Pending
+  // invoice that now passes is Ready: a toast says so and the next invoice
+  // of the list opens. One that still fails stays Pending, with its red
+  // fields. A new invoice and a Pending one always offer Save; a Ready one
+  // only once something changed. There is no Flow "draft" step: Draft is
+  // the accounting system's word for an invoice it holds.
   const keepsSave = isNew || invoice?.view !== 'ready';
   const saveButton = h('button', {
     class: 'fx-btn', type: 'button', hidden: !keepsSave,
     onclick: async () => {
+      saveButton.disabled = true;
       const saved = await save();
+      saveButton.disabled = false;
       if (!saved) return;
-      toast(keepsSave ? 'Saved as a draft.' : 'Changes saved.', 'success');
-      if (isNew) go(`/invoices/${saved.id}`, { replace: true });
-      else if (keepsSave) openNext(ui, invoice.id);
-      else redraw(saved);
+      const passes = saved.view === 'ready';
+      const why = brief(saved.problems?.[0]?.message);
+      if (isNew) {
+        toast(passes ? 'Saved. It is Ready.' : `Saved. It is Pending. ${why}`, passes ? 'success' : 'warn');
+        go(`/invoices/${saved.id}`, { replace: true });
+      } else if (passes && keepsSave) {
+        toast('Saved. It is Ready.', 'success');
+        openNext(ui, invoice.id);
+      } else if (passes) {
+        toast('Saved.', 'success');
+        redraw(saved);
+      } else {
+        toast(`Still Pending. ${why}`, 'danger');
+        redraw(saved);
+      }
     },
-  }, keepsSave ? 'Save as draft' : 'Save changes');
+  }, 'Save');
   const opened = JSON.stringify(body());
   const changed = () => !isNew && JSON.stringify(body()) !== opened;
   const watchChanges = () => { if (!keepsSave) saveButton.hidden = !changed(); };
@@ -940,8 +1014,16 @@ function draftView(invoice, ui, context, redraw) {
   const problems = [
     // Accepting changes the draft for the business: owners and admins only.
     jobChange ? jobChangeReview(ui, jobChange, { money: formatCents, canAccept: context.canIssue, unsaved: changed, done: redraw }) : null,
-    otherProblems.length ? notice(otherProblems.map((p) => p.message).join(' '), 'danger', 'Problem.') : null,
+    otherProblems.length ? notice([...new Set(otherProblems.map((p) => brief(p.message)))].join(' '), 'danger', 'Problem.') : null,
   ];
+  // A red field names the banner as its reason (for a screen reader).
+  const banner = problems[1];
+  if (banner) banner.id = 'fx-invoice-problem';
+  for (const name of failed) {
+    if (!boxes[name]) continue;
+    fieldError(boxes[name]);
+    if (banner) boxes[name].setAttribute('aria-describedby', banner.id);
+  }
 
   return [
     navBar(ui, invoice),

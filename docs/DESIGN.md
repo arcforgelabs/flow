@@ -117,11 +117,14 @@ The page at `/sign-in`, `/people`, `/account` and `/appearance`
 - **Sign-in**: a brand panel (the primary colour in light mode, a raised
   surface in dark) beside Clerk's sign-in card. On a phone the panel is a
   band above the card.
-- **Sidebar**: the Flow mark and the views the person may open (People and
-  Integrations for owners). Account is not in the list: "Manage account" in
+- **Sidebar**: the Flow mark and the views the person may open, daily work
+  first: Jobs, Invoices, Reconcile, Price list, Rules, then More. More opens
+  the shared row menu with Automations, Custom fields and Integrations (owners);
+  it shows as current while one of those pages is open. People (owners) and
+  Appearance are in the account menu. Account is not in the list: "Manage account" in
   the account menu opens it. At its foot: the account chip (Clerk's photo or
   initial, then the name, or the email when there is no name, clipped to fit)
-  that opens the account menu (Manage account, Report a problem when Sentry
+  that opens the account menu (Manage account, People, Appearance, Report a problem when Sentry
   is on, Sign out; as wide as its rows, 220px to 280px, with a long name or
   email clipped), and Search (also Ctrl+K or ⌘K) for pages, invoices and
   jobs. While Sentry's report form is on, "Report a problem" sits at the
@@ -129,7 +132,8 @@ The page at `/sign-in`, `/people`, `/account` and `/appearance`
   the choice stays in the browser. On narrow screens the sidebar is a bar
   across the top (menu button, Flow mark, account photo, Search), and the menu
   button opens the pages as a panel below the bar.
-- **Jobs**: the board (one lane per group, about a phone wide, filling the
+- **Jobs**: the board (one lane per group, a fixed phone width that never
+  stretches, with empty space past the last lane on a wide screen, filling the
   window to its bottom edge, each lane scrolling inside itself) or the list.
   The toolbar has Group, Sort and Filter at the left, and the search icon
   (it opens into a box, `findBox`) and Board/List at the right. Each opens a panel of rows, laid out as
@@ -156,6 +160,15 @@ The page at `/sign-in`, `/people`, `/account` and `/appearance`
   being filled in filters nothing. Each person's view is
   saved with their account (`people.views`, `PUT /api/me/views/jobs`,
   server/ui/job-view.js), so it follows them to every device.
+  Saved views, as ClickUp's view tabs, sit between the title and the
+  toolbar on Jobs, Invoices and Reconcile. "+ View" saves the page's
+  Group, Sort, Filter and Columns under a name. While the page differs
+  from the chosen tab, the tab has a dot and "Save" and "Revert" show at
+  the right. Each tab's ⋯ has "Set as my default", Rename and Delete. A
+  person's default opens when they first come to the page in a browser
+  tab (ClickUp's "Set as default view" is for everyone; Flow's is each
+  person's own). The views follow the account (`people.views.saved`,
+  `PUT /api/me/saved-views/:page`, server/ui/list-views.js).
   In the list, Columns chooses the columns (saved with the view; Client
   always shows): Case, Practitioner, Patient (only when the installation
   keeps patient names), Stage, Assignee, Requested, Due, Shipped, Total,
@@ -211,23 +224,28 @@ names its card in the Flow Design System.
 | --- | --- | --- | --- |
 | `h`, `ui()`: `flow`, `go`, `me` | `server/ui/kit.js` (`h`), `server/ui/app.js` (`ui()`) | | Build elements; what every view module takes: call the API, open a page, the signed-in person |
 | `pageHeader(title, { count, help, actions })`, `helpLink` | `server/ui/kit.js` | PageHeader | The page title only, a live count, a ? docs link, its actions |
+| `listHead(title, { controls, views, start, end, actions, line, sticky, controlsAt })` | `server/ui/kit.js` | ListHead | The top of every list (Jobs Board and List, Invoices, Reconcile): title, then one toolbar (`start` left, `end` and `actions` right). `controls` (Group, Sort, Filter) and `views` (the page's `savedViews` element) sit together in it. Same place on every list and layout. |
+| `listFrame(main, content)`, `edgeFade(scroller, { target, edges })` | `server/ui/kit.js` | ListFrame | The window a list or board sits in under `listHead`: fills the page, scrolls inside itself both ways, sticky table head, a foot bar with the count and tools. `edgeFade`: a soft fade where content scrolls past an edge |
 | `notice` | `server/ui/kit.js` | Notice | A note on the page that stays until the cause is gone |
+| `fieldError(field, on)`, `.fx-input[aria-invalid="true"]` | `server/ui/kit.js`, `server/ui/flow.css` | FieldError | A field that fails a check glows red, like a required field, until the person types in it |
 | `toast` | `server/ui/kit.js` | Toast | A short result after an action |
 | `dialog({ title, body, confirm, tone })` | `server/ui/kit.js` | Dialog | A confirm step before an action that is hard to undo |
 | `holdButton(button, ms)` | `server/ui/kit.js` | HoldButton | A button that waits between presses (Xero, Seazona) and shows the time left |
 | `settingRow({ label, hint, control })`, `sectionTitle`, `.fx-setting` | `server/ui/kit.js` | SettingRow | One setting row: short name, one hint line, the control at the right |
 | `tileCard({ href, mark, title, status, blurb, meta, action, row })`, `tileSection(title, cards, { href, more })` | `server/ui/kit.js` | Tiles | Cards that open a page. `row: true` with `tileSection`: one-line cards, three columns, like Claude's Customize categories (Rules). Without `row`: the large card (Integrations) |
 | `crumbs([href, label]…, here)` | `server/ui/kit.js` | Crumbs | The trail above a page one level down (Rules › Invoices, Integrations › Xero) |
-| `rowMenu(label, items)` | `server/ui/kit.js` | RowMenu | The ⋯ menu on a row |
+| `rowMenu(label, items, { trigger, className, align })` | `server/ui/kit.js` | RowMenu | The ⋯ menu on a row; `align: 'start'` lines the menu up with the button's left edge; with `trigger`, the sidebar's More |
+| `savedViews(ui, { page, current, apply })` | `server/ui/saved-views.js` | SavedViews | The named view tabs of a list, in the toolbar beside Group, Sort and Filter, as ClickUp's: + View, Save / Revert, and each tab's ⋯ (Set as my default, Rename, Delete). The rules are in `list-views.js` |
 | `.fx-btn` and its modifiers | `server/ui/flow.css` | Button | Every button |
 | `named`, `startTips` | `server/ui/tip.js` | Tip | An icon-only control's name, shown on hover and focus |
 | `viewBar(h)`: `menu`, `option`, `filterMenu` and the rows-panel parts | `server/ui/view-bar.js` | Filter | Group, Sort, Filter and Columns chips and their panels, on every list (Jobs, Invoices, Reconcile) |
-| `columnTable(h, { order, widths, change, hidden, extra })`, `rowCells`, `viewSaver` | `server/ui/columns.js` (rules in `job-view.js`) | Columns | A list's table: drag an edge to resize (a minimum per column kind), drag a head to move, the head menu (Move, Hide, Reset width), + for hidden columns; order and widths kept with the account. Jobs, Invoices, Reconcile |
+| `columnTable(h, { order, widths, change, hidden, extra })`, `rowCells`, `viewSaver`, `dateCell`, `personCell`, `fieldColumn` | `server/ui/columns.js` (rules in `job-view.js`) | Columns | A list's table (`fieldColumn`: a custom field as a column, on Jobs and Invoices): drag an edge to resize (a minimum per column kind), drag a head to move, the head menu (Move, Hide, Reset width), + for hidden columns; the end column fills each row to the right edge (no stretch); order and widths kept with the account. Jobs, Invoices, Reconcile, Price list |
 | `findBox(h, { label, oninput })` | `server/ui/view-bar.js` | FindBox | A list's own search: an icon that opens into a box |
 | `ICONS`, `svg`, `today` | `server/ui/view-bar.js` | | The toolbar icons, an SVG string as a node, the local day |
 | `personLabel`, `initialsOf`, `clipLabel` | `server/ui/person.js` | | A person's name everywhere (pickers, filters, lanes, badges, People): full name, else the whole email; a badge's letters; a native menu's label cut with "…" |
 | `filterJobs`, `cleanFilterView`, `sortJobs`, `groupJobs`, `OPERATORS`, `DATE_VALUES` | `server/ui/job-view.js` | | The rules behind Filter, Sort and Group (no DOM). Every list's filter uses them with its own fields |
 | `bulkBar(ui, { label })` | `server/ui/bulk-bar.js` | BulkBar | The bar at the foot while rows are ticked: icon and one word per action, More |
+| `listPager(h, { label, sizes, change })`, `pageNumbers`, `pageRange` | `server/ui/pager.js` | ListPager | The pages of a long list in its foot bar: rows per page, "1–100 of 1,204", numbered pages. The server cuts the page and counts every match. Invoices |
 | `.fx-pager` | `server/ui/flow.css` | Pager | "← Back", "n of N", previous and next over one record. Built three times today (Invoices, Reconcile, Price list › Reconcile); issue #220 makes one helper. Do not add a fourth copy |
 | `.fx-tabs`, `.fx-tabs__count` | `server/ui/flow.css` | Tabs | Tabs with counts (Invoices, Price list) |
 | `alertStrip(ui, page)` | `server/ui/alerts.js` | | The slim alert line on a page (`docs/ALERTS.md`) |

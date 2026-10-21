@@ -1,8 +1,9 @@
 // A list's columns, as ClickUp's: drag a head's right edge to make the
 // column wider or narrower (never under its kind's minimum), drag a head
 // to move the column, and click or right-click a head for its menu (Move to
-// start, Move to end, Hide; + shows a hidden column again). Jobs, Invoices
-// and Reconcile build their tables here, so every list works the same.
+// start, Move to end, Hide; + shows a hidden column again). Jobs, Invoices,
+// Reconcile and the Price list build their tables here, so every list works
+// the same.
 //
 // The view a person keeps for a list (with their account, PUT
 // /api/me/views/:page) holds two keys from here:
@@ -24,12 +25,58 @@
 //            column keeps its place: no drag, no Move, no Hide.
 //   rows     the <tbody> nodes (rowCells builds a row's cells)
 //   lead     <th> nodes before the columns (the tick column)
+//
+// Cells every list shares: dateCell (a short date), personCell (a person's
+// initials) and fieldColumn (one of the lab's custom fields as a column, on
+// Jobs and on Invoices, where it is the invoice's job's value).
 import { lucide } from '/assets/ui/custom-fields.js';
-import { MAX_WIDTH, minWidth, moveColumn, widthOf } from '/assets/ui/job-view.js';
+import { endWidth, LEAD_WIDTH, MAX_WIDTH, minWidth, moveColumn, TAIL_WIDTH, tableWidth, widthOf } from '/assets/ui/job-view.js';
+import { initialsOf } from '/assets/ui/person.js';
 
-// The tick column at the start and the + column at the end.
-const LEAD_WIDTH = 44;
-const TAIL_WIDTH = 40;
+const fullDate = (iso) => new Date(`${iso}T00:00:00`).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' });
+// A list date, short: Today, Tomorrow or Yesterday, else day/month (and
+// year when it is not this year).
+export function shortDate(iso) {
+  if (!iso) return '—';
+  const at = new Date(`${iso}T00:00:00`);
+  const now = new Date();
+  const days = Math.round((at - new Date(now.getFullYear(), now.getMonth(), now.getDate())) / 86_400_000);
+  if (days === 0) return 'Today';
+  if (days === 1) return 'Tomorrow';
+  if (days === -1) return 'Yesterday';
+  return at.toLocaleDateString('en-AU', at.getFullYear() === now.getFullYear() ? { day: '2-digit', month: '2-digit' } : { day: '2-digit', month: '2-digit', year: '2-digit' });
+}
+
+// A date cell: the short date, the whole date on hover.
+export const dateCell = (h, iso) => h('time', { datetime: iso ?? null, title: iso ? fullDate(iso) : null }, shortDate(iso));
+
+// A person as a badge (initials), the name on hover; `people` is
+// [{ id, name }] (GET /api/custom-fields).
+export function personCell(h, personId, people) {
+  if (!personId) return h('span', { class: 'fx-dim' }, '—');
+  const name = people.find((p) => p.id === personId)?.name ?? 'Former person';
+  return h('span', { class: 'fx-avatar fx-avatar--sm', role: 'img', 'aria-label': name, title: name }, initialsOf(name));
+}
+
+// A custom field's value as text.
+export function fieldText(field, value, people) {
+  if (value == null || value === false) return '—';
+  if (field.type === 'checkbox') return 'Yes';
+  if (field.type === 'person') return people.find((p) => p.id === value)?.name ?? 'Former person';
+  if (field.type === 'dropdown') return field.options?.find((o) => o.id === value)?.name ?? '—';
+  if (field.type === 'date') return shortDate(value);
+  return String(value);
+}
+
+// One custom field as a list column: `valueOf(row)` is the row's value
+// (null when it has none), `people` names a person field's value.
+export function fieldColumn(h, field, { id, valueOf, people }) {
+  const cell = field.type === 'person' ? (row) => personCell(h, valueOf(row), people)
+    : field.type === 'date' ? (row) => dateCell(h, valueOf(row)) : (row) => fieldText(field, valueOf(row), people);
+  const kind = field.type === 'date' ? 'date' : field.type === 'person' ? 'person' : field.type === 'number' ? 'total' : 'text';
+  return { id, label: field.name, kind, num: field.type === 'number', className: 'fx-dim', cell };
+}
+
 
 // A row's cells for the shown columns: a class per kind, the label for
 // the phone layout, the full text as the cell's name on hover.
@@ -110,23 +157,42 @@ export function columnTable(h, config) {
 
   function table({ columns, rows, lead = [], className = '' }) {
     const saved = widths();
-    // Each column keeps its own width: the table is as wide as its columns,
-    // never stretched to the page. Space left over stays empty at the right.
-    // A resize changes the table only; the tools stay put.
+    // Each column keeps its own width: never stretched to the page. As
+    // HubSpot's, the head and every row still run to the right edge: the
+    // end column (+ at its right) takes the space after the last column, so
+    // a row looks whole, not cut off. A resize changes the table only; the
+    // tools stay put.
     const cols = columns.map((c) => h('col', { style: { width: `${widthOf(c, saved)}px` } }));
     const leadCols = lead.map(() => h('col', { style: { width: `${LEAD_WIDTH}px` } }));
+    const endCol = h('col', { style: { width: `${TAIL_WIDTH}px` } });
     const tail = config.hidden ? h('th', { class: 'fx-th-add' }, h('button', {
       type: 'button', class: 'fx-th fx-th--add', 'aria-label': 'Show a column', title: 'Show a column', onclick: (event) => openMenu(null, event),
     }, '+')) : h('th', { class: 'fx-th-end', 'aria-hidden': 'true' });
     const heads = columns.map((c, n) => head(c, n));
     const node = h('table', { class: `fx-table fx-table--sized ${className}`.trim() },
-      h('colgroup', {}, leadCols, cols, h('col', { style: { width: `${TAIL_WIDTH}px` } })),
+      h('colgroup', {}, leadCols, cols, endCol),
       h('thead', {}, h('tr', {}, lead, heads, tail)),
       rows);
-    // The table is as wide as its columns; past the page it scrolls sideways.
-    const fit = () => { node.style.width = `${columns.reduce((sum, c) => sum + widthOf(c, widths()), 0) + lead.length * LEAD_WIDTH + TAIL_WIDTH}px`; };
+    const box = h('div', { class: 'fx-table-scroll' }, node);
+    // The width the columns need; past the window the table scrolls
+    // sideways. A browser shares spare width among fixed columns, so the
+    // end column is sized here, and again when the window changes size.
+    let need = tableWidth(columns, saved, lead.length);
+    const fit = () => {
+      const end = endWidth(need, box.getBoundingClientRect?.().width ?? 0);
+      endCol.style.width = `${end}px`;
+      node.style.width = `${need - TAIL_WIDTH + end}px`;
+    };
     fit();
-    return h('div', { class: 'fx-table-scroll' }, node);
+    if (typeof ResizeObserver === 'function') {
+      // Once the table has left the page (a redraw), stop watching.
+      let shown = false;
+      const watch = new ResizeObserver(() => {
+        if (box.isConnected) { shown = true; fit(); } else if (shown) watch.disconnect();
+      });
+      watch.observe(box);
+    }
+    return box;
 
     function head(c, n) {
       const button = h('button', {
@@ -167,12 +233,13 @@ export function columnTable(h, config) {
         grip.setPointerCapture(event.pointerId);
         const from = event.clientX;
         const start = col.getBoundingClientRect().width || widthOf(c, widths());
-        const base = node.getBoundingClientRect().width;
+        const base = need;
         let w = start;
         node.dataset.resizing = '';
         const move = (e) => {
           w = set(start + e.clientX - from);
-          node.style.width = `${base + w - start}px`;
+          need = base + w - start;
+          fit();
         };
         const up = () => {
           grip.removeEventListener('pointermove', move);
