@@ -127,16 +127,16 @@ export async function renderInvoiceList(main, ui) {
       timer = setTimeout(() => { state.q = words.trim(); load(); }, 200);
     },
   });
-  const bar = h('div', { class: 'fx-sendbar', hidden: true });
   const host = h('div', { class: 'fx-panel' }, h('div', { class: 'fx-skeleton' }));
   const bulk = bulkBar(ui);
   const context = await flow('/api/invoicing/context').catch(() => ({ canIssue: false }));
   let body = null;
   const openTab = (id) => { state.status = id; state.ticked.clear(); sessionStorage.setItem('flow_invoice_tab', id); load(); };
   const alerts = alertStrip(ui, 'invoices', { onTab: openTab });
-  // The tabs, search and send bar stay at the top while the rows scroll up
-  // under them; the bulk bar floats at the foot (ClickUp's layout).
-  const head = h('div', { class: 'fx-listhead' }, h('div', { class: 'fx-toolbar' }, tabs, find.element), bar);
+  // The tabs and search stay at the top while the rows scroll up under them;
+  // the bulk bar floats at the foot (ClickUp's layout). Sending is a bulk
+  // action: tick rows (the head tick takes every row shown), then Send.
+  const head = h('div', { class: 'fx-listhead' }, h('div', { class: 'fx-toolbar' }, tabs, find.element));
   const edge = h('div', { class: 'fx-listhead__edge', 'aria-hidden': 'true' });
   main.append(
     pageHeader('Invoices', {
@@ -154,49 +154,9 @@ export async function renderInvoiceList(main, ui) {
 
 
   const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
-  const action = (label, path, payload, done, tone = 'primary') => {
-    const el = h('button', {
-      class: `fx-btn fx-btn--${tone}`, type: 'button',
-      onclick: async () => {
-        el.disabled = true;
-        try {
-          const res = await flow(`/api/invoicing/invoices/${path}`, { method: 'POST', body: JSON.stringify(payload()) });
-          toast(...done(res));
-          state.ticked.clear();
-          seen.clear();
-          await load();
-          alerts.refresh();
-        } catch (error) {
-          toast(error.message, 'danger');
-          el.disabled = false;
-        }
-      },
-    }, label);
-    return el;
-  };
-
-  // The bar above the list: what a person can do with this view.
+  // The bulk bar for the ticked rows: what a person can do with this view.
   function drawBar() {
-    const to = body.sendsTo;
     const ticked = [...state.ticked];
-    const parts = [];
-    if (state.status === 'ready') {
-      parts.push(h('p', { class: 'fx-dim' }, sendModeNote(to, body.sendMode)));
-      const buttons = [];
-      if (context.canIssue && body.counts.ready > 0) {
-        buttons.push(action(to ? `Send all ${body.counts.ready} ready to ${to}` : `Approve all ${body.counts.ready} ready`, 'send-ready', () => ({ issueDate: localDate() }),
-          (res) => [`${to ? `${res.issued} on the way to ${to}.` : `${res.issued} approved.`}${res.remaining ? ` ${res.remaining} more are ready: press again.` : ''}`, 'success']));
-      }
-      if (buttons.length) parts.push(h('div', { class: 'fx-sendbar__actions' }, buttons));
-    } else if (state.status === 'pending') {
-      const failed = body.invoices.filter((i) => i.status === 'issued' && i.problems.some((p) => p.code === 'send_failed' || p.code?.startsWith('xero_'))).length;
-      if (context.canIssue && to && failed > 0) {
-        parts.push(h('p', { class: 'fx-dim' }, `${plural(failed, 'invoice', 'invoices')} did not reach ${to}. Fix the cause, then send again.`));
-        parts.push(action('Send again', 'send-again', () => ({}), (res) => [`${res.queued} on the way to ${to} again.`, 'success']));
-      }
-    }
-    bar.replaceChildren(...parts);
-    bar.hidden = !parts.length;
     bulk.draw({ count: ticked.length, onClear: () => setTicks([]), ...bulkActions(ticked) });
   }
 
@@ -231,7 +191,7 @@ export async function renderInvoiceList(main, ui) {
     const apply = [];
     if (state.status === 'ready' && context.canIssue) {
       status.push({
-        icon: to ? 'send' : 'circle-check-big', label: to ? 'Send' : 'Approve', primary: true,
+        icon: to ? 'send' : 'circle-check-big', label: to ? `Send to ${to}` : 'Approve', primary: true,
         title: to ? `Send to ${to}` : 'Approve',
         run: async () => {
           const ok = await ui.dialog({
@@ -355,7 +315,6 @@ export async function renderInvoiceList(main, ui) {
       draw(seen.get(key));
     } else if (body) {
       drawTabs(body.counts);
-      bar.hidden = true;
       host.dataset.stale = '';
     }
     host.setAttribute('aria-busy', 'true');

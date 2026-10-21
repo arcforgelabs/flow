@@ -109,8 +109,12 @@ export function journalFolders(root) {
 //   mismatched  release tags recorded with a different hash
 //   skipped     missing tags older than the newest row, which drizzle's
 //               migrator would never apply
-export function compareMigrations({ release, applied, known = [] }) {
+//
+// `tolerated` are entries production skipped (outOfOrder): a row for one of
+// them, with its hash, is neither extra nor missing.
+export function compareMigrations({ release, applied, known = [], tolerated = [] }) {
   const byWhen = new Map(release.map((entry) => [entry.when, entry]));
+  const toleratedByWhen = new Map(tolerated.map((entry) => [entry.when, entry]));
   const knownByWhen = new Map(known.map((entry) => [entry.when, entry]));
   const recorded = new Set();
   const extra = [];
@@ -120,6 +124,7 @@ export function compareMigrations({ release, applied, known = [] }) {
     const createdAt = Number(row.created_at);
     newest = Math.max(newest, createdAt);
     const entry = byWhen.get(createdAt);
+    if (!entry && toleratedByWhen.get(createdAt)?.hash === row.hash) continue;
     if (!entry) {
       extra.push({ created_at: createdAt, hash: row.hash, tag: knownByWhen.get(createdAt)?.tag ?? null });
       continue;
@@ -299,10 +304,26 @@ const ATTENTION_HELP =
   'When production publishes a release with these migrations, the workspace is level again by itself. ' +
   "Otherwise replace the workspace database (docs/REPLIT.md, 'The workspace database')";
 
+// Journal entries whose `when` is not later than an entry before them. A
+// database that applied the earlier entry first never applies such an entry:
+// drizzle's migrator applies only entries later than its newest row.
+export function outOfOrder(entries) {
+  let newest = -Infinity;
+  const late = [];
+  for (const entry of entries) {
+    if (entry.when <= newest) late.push(entry);
+    newest = Math.max(newest, entry.when);
+  }
+  return late;
+}
+
 // Where production's journals stand: for each journal of its release, the
-// entries production has applied (the first `count`, as drizzle applies them
-// in order). A journal production reports more of than its release has
-// cannot be followed.
+// entries production has applied. Production runs the release and migrates
+// when it starts, so it has every entry, except the out-of-order ones when it
+// applied an entry after them first (it then reports that many fewer); these
+// are `skipped`. Any other count is read as the first `count` entries, as
+// drizzle applies them in order. A journal production reports more of than
+// its release has cannot be followed.
 export function productionJournals(releaseJournals, counts) {
   const journals = {};
   for (const [id, entries] of Object.entries(releaseJournals)) {
@@ -310,7 +331,12 @@ export function productionJournals(releaseJournals, counts) {
     if (count > entries.length) {
       throw new Error(`production reports ${count} ${id} migrations, but the commit it runs has ${entries.length}`);
     }
-    journals[id] = { release: entries, production: entries.slice(0, count) };
+    const late = outOfOrder(entries);
+    if (count < entries.length && late.length && count === entries.length - late.length) {
+      journals[id] = { release: entries, production: entries.filter((entry) => !late.includes(entry)), skipped: late };
+    } else {
+      journals[id] = { release: entries, production: entries.slice(0, count), skipped: [] };
+    }
   }
   return journals;
 }
@@ -362,7 +388,7 @@ export async function run({ command, env = process.env, deps = {}, warn = consol
       const results = {};
       for (const [id, journal] of Object.entries(journals)) {
         const applied = await db.readApplied(journalTable(id));
-        results[id] = { ...compareMigrations({ release: journal.production, applied, known: journal.release }), applied: applied.length };
+        results[id] = { ...compareMigrations({ release: journal.production, applied, known: journal.release, tolerated: journal.skipped }), applied: applied.length };
       }
       return results;
     };
@@ -376,7 +402,7 @@ export async function run({ command, env = process.env, deps = {}, warn = consol
         const journal = journals[id];
         // drizzle applies a whole folder; production stopping part-way
         // through a journal is not something to copy.
-        if (journal.production.length !== journal.release.length) {
+        if (journal.production.length + journal.skipped.length !== journal.release.length) {
           return fail(`production has applied ${journal.production.length} of the ${journal.release.length} ${id} migrations of the commit it runs; the workspace follows only a finished migration. Check production's start log`);
         }
         await db.apply(folders[id], journalTable(id));

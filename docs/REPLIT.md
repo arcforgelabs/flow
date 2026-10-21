@@ -152,7 +152,16 @@ and Run call it with the tools of the build they made. It:
    (`drizzle.__drizzle_migrations`, and `drizzle.__drizzle_migrations_<id>`
    for each integration: each migration file's hash and its journal time).
    An integration production has not turned on has no migrations there, so
-   the workspace gets none of its tables either. Then it acts:
+   the workspace gets none of its tables either.
+
+   Production runs its release and migrates when it starts, so it has
+   applied every entry of each journal, except an entry whose journal time
+   is older than an entry before it (core `0013_line_mappings`) when it
+   applied the newer one first: drizzle never applies an older entry. When
+   production reports exactly that many fewer, those entries are skipped:
+   the rest are production's, and a workspace row for a skipped entry counts
+   neither way. A test keeps every new entry later than the ones before it.
+   Then it acts:
 
 | `state` | What it means | What it does |
 | --- | --- | --- |
@@ -200,6 +209,9 @@ remember Run before a publish (issue #100).
   60), it brings the workspace's database to production's migrations
   ("The workspace database"). It builds `FLOW_DEPLOY_REF` again only when
   that names a new commit; the build supplies the tools and their packages.
+  When a build is already there, it follows production with that build
+  first, and builds again after: a new build takes minutes, and a publish
+  pressed meanwhile must find the database level.
 - One at a time: a lock keeps it and Run from updating together, and a
   second updater does not start.
 - A failed step is logged, and the next one tries again. It never drops
@@ -222,24 +234,33 @@ Its log ends each step with one of:
 the live app's `GET /health` counts, and says `same`, `behind`, `ahead` or
 `unknown`. The answer at the prompt is Cancel in every case.
 
-The updater reaches a workspace once, from a release that has it. A
-workspace whose history has its own commits cannot `git pull` main, so take
-the deploy files from the newest stable release instead, in the Shell, then
-start the updater:
+The updater reaches a workspace once, from a release that has it. Nothing
+from GitHub runs in a workspace by itself, so a workspace imported before the
+updater existed (its `.replit` has no `onBoot`) never follows production: each
+publish after a release with new tables offers to DROP them. Its
+`scripts/replit-deploy.sh` also has no `FLOW_DEPLOY_DRIVER` line, so it does
+not hand any step over. Take the deploy files from the newest stable release
+once, in the Shell, then follow production and start the updater. The fetch
+names the public repository, so it works without an `origin` remote:
 
 ```bash
-git fetch --tags origin
-T=$(git tag -l 'v20*' --sort=-v:refname | grep -v beta | head -1)
+R=https://github.com/arcforgelabs/flow.git
+T=$(git ls-remote --tags --refs "$R" 'v20*' | sed 's|.*refs/tags/||' | grep -v beta | sort -V | tail -1)
+git fetch -q "$R" tag "$T"
 git checkout "$T" -- .replit .gitignore scripts/replit-deploy.sh \
   scripts/deploy-checks.js scripts/deploy-release.js server/release-channel.js
+bash scripts/replit-deploy.sh update-workspace
 bash scripts/replit-deploy.sh boot
 ```
 
-Until then, an older workspace copy of `scripts/replit-deploy.sh` still
-hands the workspace step to the fetched release's own copy ("Each release
-brings its own build steps"), so it already follows production. It also
-rebuilds the release at each check until production runs it; taking the
-deploy files ends that.
+`update-workspace` needs `FLOW_PRODUCTION_URL` or `FLOW_PUBLIC_ORIGIN` in the
+workspace's Secrets; without either it says so and changes nothing.
+
+A workspace copy of `scripts/replit-deploy.sh` that has the
+`FLOW_DEPLOY_DRIVER` line hands the workspace step to the fetched release's
+own copy ("Each release brings its own build steps"), so it already follows
+production. It also rebuilds the release at each check until production runs
+it; taking the deploy files ends that.
 
 A workspace is fetch-only ("A production installation: fetch only"): fetch,
 never push.
