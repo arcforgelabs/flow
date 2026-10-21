@@ -64,7 +64,10 @@ release owns these files:
   `improve` and `fix` pull requests go in the prose; `docs`, `chore`,
   `refactor`, `test`, `ci`, `build` and `style` go only in the record,
   unless the title marks a breaking change with `!`.
-- A stable release has 5 to 8 highlights; a beta has 0 to 8.
+- A stable release has 5 to 8 highlights; a beta has 0 to 8. A small change
+  ships as a **beta**, never as a stable release with fewer highlights. A
+  stable release needs 5 real user stories. Old stable releases with fewer
+  than 5 highlights stay as history.
 - Thanks go to the pull request's author, its co-authors and the people who
   reported the issues it closes (`Closes #N`, `Fixes #N`, `Resolves #N`).
   Never to bots, to Claude or Codex, to the organization or to the
