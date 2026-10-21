@@ -26,10 +26,25 @@ it again.
 
 A draft with no problem is in Ready. A saved change keeps it there while the
 checks pass. A draft with a problem is in Pending until the problem is fixed;
-then it goes to Ready by itself. On the invoice the buttons are, left to
-right, **Preview**, **Save as draft**, then **Send to Xero** (accounting
-system on) or **Approve** (no accounting system). A Pending draft has no send
-button. While the draft's job changed after it was made (below), send and
+then it goes to Ready by itself. There is no half-made Flow draft: every
+invoice before it is sent is Pending (a check fails) or Ready (every check
+passes). Draft is the accounting system's word for an invoice it holds.
+
+On the invoice the buttons are, left to right, **Preview**, **Save**, then
+**Send to Xero** (accounting system on) or **Approve** (no accounting system).
+A Pending draft has no send button.
+
+The Problem banner gives the first sentence of each problem: what is wrong.
+The field the failed check reads glows red, like a required field
+(`fieldError`, `problem.fields`): a rule on the Reference marks the Reference
+box, a line with no price item marks its item. Typing in the field clears the
+red.
+
+**Save** is the check, like CI: it saves, and Flow runs every check again
+(its own, the lab's rules, the accounting system's). A Pending invoice that
+now passes moves to Ready: a toast says so and the next invoice of the list
+opens. One that still fails stays Pending, with the toast giving the problem
+and its red fields. While the draft's job changed after it was made (below), send and
 Approve are off: fix the job at its source, or accept the change.
 
 ### Bulk bar
@@ -138,7 +153,7 @@ Xero** button: an invoice that is queued, sent, or found in Xero cannot be
 sent twice. Back reloads the list, where the sent invoice is under Draft.
 After the last invoice of the list, the list opens.
 
-**Approve** and **Save as draft** open the next invoice of the list too, so a
+**Approve**, and a **Save** that makes a Pending invoice Ready, open the next invoice of the list too, so a
 person reviews invoices one after another without going back. **Accept
 change** stays on the invoice, to show the result. An invoice opened from
 somewhere else (the job board, search, a link) steps through its own tab.

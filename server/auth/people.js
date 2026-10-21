@@ -3,6 +3,7 @@ import { people, PERSON_ROLES } from '../db/schema.js';
 import { FlowError } from '../core/errors.js';
 import { isThemeFamily, normalizeAccent } from '../theme/themes.js';
 import { INVOICE_COLUMNS, normaliseJobsView, normaliseListView, RECONCILE_COLUMNS } from '../ui/job-view.js';
+import { normaliseSavedViews, SAVED_VIEW_PAGES } from '../ui/list-views.js';
 import { isPlainEmail } from './settings.js';
 
 // The people who may sign in, and their roles. Only an owner changes this
@@ -70,7 +71,29 @@ export function normaliseViews(input) {
   const value = input && typeof input === 'object' ? input : {};
   const out = {};
   for (const page of VIEW_PAGE_NAMES) if (value[page]) out[page] = viewCheck(page)(value[page]);
+  // The named views a person saved on each page, and their default
+  // (ui/list-views.js), kept under `saved`.
+  const saved = value.saved && typeof value.saved === 'object' ? value.saved : {};
+  const lists = {};
+  for (const page of SAVED_VIEW_PAGES) if (saved[page]) lists[page] = normaliseSavedViews(page, saved[page]);
+  if (Object.keys(lists).length) out.saved = lists;
   return out;
+}
+
+// Each person keeps their own named views of a page and picks their
+// default; saving one page's list leaves the other pages as they were.
+export async function setPersonSavedViews(db, { id, page, saved }) {
+  if (!SAVED_VIEW_PAGES.includes(page)) throw new FlowError('not_found', 'no such page');
+  const value = normaliseSavedViews(page, saved);
+  const [row] = await db.update(people)
+    .set({
+      views: sql`coalesce(${people.views}, '{}'::jsonb) || jsonb_build_object('saved', coalesce(${people.views}->'saved', '{}'::jsonb) || ${JSON.stringify({ [page]: value })}::jsonb)`,
+      updatedAt: new Date(),
+    })
+    .where(eq(people.id, id))
+    .returning();
+  if (!row) throw new FlowError('not_found', 'person not found');
+  return value;
 }
 
 // Each person keeps their own view of a page; saving one page leaves the
@@ -139,6 +162,19 @@ export async function linkPerson(db, { id, clerkUserId }) {
   const [row] = await db.update(people)
     .set({ clerkUserId, linkedAt: new Date(), updatedAt: new Date() })
     .where(and(eq(people.id, id), isNull(people.clerkUserId)))
+    .returning();
+  return row ?? null;
+}
+
+// Fills a person's name from their sign-in account (Clerk) when Flow has
+// none, so pickers show "Jane Citizen", not an email. A name Flow already
+// holds stays.
+export async function fillPersonName(db, { id, name }) {
+  const value = String(name ?? '').trim();
+  if (!value) return null;
+  const [row] = await db.update(people)
+    .set({ name: value, updatedAt: new Date() })
+    .where(and(eq(people.id, id), isNull(people.name)))
     .returning();
   return row ?? null;
 }

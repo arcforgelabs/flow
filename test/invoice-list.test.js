@@ -48,7 +48,12 @@ function page() {
     return promise;
   };
   const main = new El('main');
-  const ui = { h, flow, go() {}, toast() {}, notice: (m) => h('p', {}, m), pageHeader: (title) => h('header', {}, title) };
+  const ui = { h, flow, go() {}, toast() {}, notice: (m) => h('p', {}, m), pageHeader: (title) => h('header', {}, title),
+    listHead: (title, { start = [], end = [], actions = [] } = {}) => ({ nodes: [h('header', {}, title), h('div', {}, start, end, actions)] }),
+    listFrame: (_main, content) => {
+      const tools = h('div', {});
+      return { element: h('section', {}, content, h('footer', {}, tools)), body: { scrollTop: 0 }, tools, count() {} };
+    } };
   return { main, ui, asked };
 }
 

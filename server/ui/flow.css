@@ -7,6 +7,10 @@
 
 :root {
   --fx-line: color-mix(in srgb, var(--t-text) 12%, transparent);
+  /* The side space of every page. Pages use the whole width with this slim
+     edge, as ClickUp and HubSpot do; the title, toolbar and content start at
+     one place on every page. */
+  --fx-gutter: clamp(16px, 2vw, 24px);
   --fx-line-soft: color-mix(in srgb, var(--t-text) 7%, transparent);
   --fx-hover: color-mix(in srgb, var(--t-text) 5%, transparent);
   --fx-focus: 0 0 0 3px color-mix(in srgb, var(--t-ring) 40%, transparent);
@@ -90,6 +94,9 @@ body:is([data-state="off"], [data-state="error"], [data-state="no-access"]) .fx-
 }
 .fx-input:hover, .fx-select:hover { border-color: var(--t-text); }
 .fx-input:focus, .fx-select:focus { outline: none; border-color: var(--t-text); box-shadow: var(--fx-focus); }
+.fx-input[aria-invalid="true"], .fx-select[aria-invalid="true"] {
+  border-color: var(--t-danger); box-shadow: 0 0 0 3px color-mix(in srgb, var(--t-danger) 28%, transparent);
+}
 .fx-select {
   width: auto; min-width: 112px; padding-right: 30px; appearance: none; cursor: pointer;
   background-image: linear-gradient(45deg, transparent 50%, var(--t-dim) 50%), linear-gradient(135deg, var(--t-dim) 50%, transparent 50%);
@@ -167,7 +174,7 @@ body:is([data-state="off"], [data-state="error"], [data-state="no-access"]) .fx-
   .fx-shell[data-folded] #user-button .cl-userButtonTrigger { width: auto; padding: 0; border-radius: 50%; background: transparent; box-shadow: none; }
   .fx-shell[data-folded] #user-button .cl-userButtonOuterIdentifier, .fx-shell[data-folded] #user-button .cl-userButtonBox::before { display: none; }
 }
-.fx-main { flex: 1; min-width: 0; max-width: 1180px; margin: 0 auto; padding: 32px clamp(16px, 4vw, 48px) 64px; display: grid; gap: 20px; align-content: start; }
+.fx-main { flex: 1; min-width: 0; padding: 32px var(--fx-gutter) 64px; display: grid; gap: 20px; align-content: start; }
 .fx-main:focus { outline: none; box-shadow: none; }
 
 /* Page header: the title only (no line under it), then the actions,
@@ -426,6 +433,28 @@ a.fx-strong:hover { text-decoration: underline; }
 .fx-tabs__count { padding: 0 7px; border-radius: 999px; background: var(--fx-hover); color: var(--t-dim); font-size: 12px; line-height: 20px; }
 .fx-tabs button[data-tone="danger"] .fx-tabs__count { background: var(--t-danger-bg); color: var(--t-danger); }
 
+/* Saved views (saved-views.js): the row of named view tabs over a list, as
+   ClickUp's. The chosen tab is underlined; its ⋯ shows on hover and when
+   chosen. Save and Revert sit at the right while the list differs. */
+.fx-views { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; min-height: 32px; margin-bottom: -8px; }
+.fx-views:empty { display: none; }
+.fx-views__item { display: inline-flex; align-items: center; border-bottom: 2px solid transparent; }
+.fx-views__item[data-on="true"] { border-bottom-color: var(--t-brand); }
+.fx-views__tab { display: inline-flex; align-items: center; gap: 6px; max-width: 220px; padding: 6px 4px 6px 8px; border: 0; background: none; color: var(--t-dim); font: 600 13px var(--t-body); cursor: pointer; }
+.fx-views__tab:hover, .fx-views__item[data-on="true"] .fx-views__tab { color: var(--t-strong); }
+.fx-views__tab:focus-visible { outline: 2px solid var(--t-ring, var(--t-accent)); outline-offset: 1px; }
+.fx-views__tab .fx-lucide { width: 14px; height: 14px; flex: none; }
+.fx-views__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fx-views__dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--t-accent); }
+.fx-views__item .fx-cfm__more { width: 22px; height: 22px; opacity: 0; }
+.fx-views__item:hover .fx-cfm__more, .fx-views__item[data-on="true"] .fx-cfm__more, .fx-views__item .fx-cfm__more[aria-expanded="true"], .fx-views__item .fx-cfm__more:focus-visible { opacity: 1; }
+.fx-views__item .fx-cfm__more .fx-lucide { width: 14px; height: 14px; }
+.fx-views__add { display: inline-flex; align-items: center; gap: 4px; padding: 6px 8px; border: 0; background: none; color: var(--t-dim); font: 500 13px var(--t-body); cursor: pointer; }
+.fx-views__add:hover { color: var(--t-strong); }
+.fx-views__add .fx-lucide { width: 14px; height: 14px; }
+.fx-views__end { display: inline-flex; gap: 6px; margin-left: auto; }
+@media (hover: none) { .fx-views__item .fx-cfm__more { opacity: 1; } }
+
 /* Quiet alerts (server/ui/alerts.js): one slim line under the page header,
    only while something on the page needs this person. */
 .fx-alerts { display: flex; align-items: center; gap: 12px; margin: 0 0 12px; padding: 6px 6px 6px 14px; border: 1px solid var(--fx-line); border-left: 3px solid var(--t-warn); border-radius: var(--t-radius); background: var(--t-paper); font-size: 14px; }
@@ -511,8 +540,6 @@ a.fx-strong:hover { text-decoration: underline; }
 }
 
 /* ── Jobs board ─────────────────────────────────────────────────────────── */
-/* Every page shares .fx-main's width; only the board's lanes use the whole window. */
-.fx-main--board { max-width: none; }
 .fx-main > * { min-width: 0; }
 .fx-toolbar--plain { border-bottom: 0; align-items: center; }
 .fx-toolbar--plain .fx-search { margin-bottom: 0; }
@@ -719,9 +746,41 @@ th:hover > .fx-th-grip::after { background: var(--t-brd-hi); }
 .fx-board__head { display: flex; flex: none; align-items: center; gap: 8px; min-width: 0; padding: 2px 4px 4px 2px; }
 .fx-board__sum { flex: none; margin-left: auto; color: var(--t-dim); font-size: 12px; font-variant-numeric: tabular-nums; }
 .fx-board__cards { display: grid; gap: 8px; align-content: start; min-height: 0; max-height: 70vh; padding-right: 2px; overflow-y: auto; scrollbar-width: thin; }
+/* listFrame() in kit.js: the window of a list or board (Jobs, Invoices,
+   Reconcile). Its body scrolls both ways; the foot holds the count. A table
+   or panel inside drops its own frame. On a wide, tall screen the page is
+   the window's height and does not scroll itself: the frame fills it, and
+   on the board each lane scrolls inside itself. */
+.fx-frame { display: flex; flex-direction: column; min-width: 0; border: 1px solid var(--fx-line); border-radius: var(--t-radius-lg); background: var(--t-paper); box-shadow: var(--t-shadow); overflow: hidden; }
+.fx-frame__view { display: flex; flex-direction: column; min-height: 0; }
+.fx-frame__body { min-height: 0; overflow: auto; scrollbar-width: thin; }
+/* edgeFade() in kit.js: a soft fade over each edge with more content past
+   it, in the colour under the rows (--fx-fade). */
+.fx-fades { position: relative; --fx-fade: var(--t-paper); }
+.fx-fade { position: absolute; z-index: 3; pointer-events: none; opacity: 0; transition: opacity .15s; }
+.fx-fade[data-edge="top"] { inset: 0 0 auto; height: 24px; background: linear-gradient(to bottom, var(--fx-fade), transparent); }
+.fx-fade[data-edge="bottom"] { inset: auto 0 0; height: 24px; background: linear-gradient(to top, var(--fx-fade), transparent); }
+.fx-fade[data-edge="left"] { inset: 0 auto 0 0; width: 24px; background: linear-gradient(to right, var(--fx-fade), transparent); }
+.fx-fade[data-edge="right"] { inset: 0 0 0 auto; width: 24px; background: linear-gradient(to left, var(--fx-fade), transparent); }
+.fx-fades[data-fade~="top"] > .fx-fade[data-edge="top"], .fx-fades[data-fade~="bottom"] > .fx-fade[data-edge="bottom"],
+.fx-fades[data-fade~="left"] > .fx-fade[data-edge="left"], .fx-fades[data-fade~="right"] > .fx-fade[data-edge="right"] { opacity: 1; }
+.fx-main--board .fx-frame__view { --fx-fade: var(--t-bg); }
+.fx-board__col.fx-fades { --fx-fade: var(--t-s1); }
+.fx-board__col > .fx-fade[data-edge="bottom"] { border-radius: 0 0 var(--t-radius-lg) var(--t-radius-lg); }
+.fx-frame__body .fx-panel { border: 0; border-radius: 0; box-shadow: none; overflow: visible; }
+.fx-frame__body .fx-empty { padding: 24px; }
+.fx-frame .fx-table-scroll { overflow: visible; }
+.fx-frame thead th { position: sticky; top: 0; z-index: 2; }
+.fx-frame__foot { display: flex; flex: none; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; padding: 6px 12px; border-top: 1px solid var(--fx-line); color: var(--t-dim); font-size: 13px; font-variant-numeric: tabular-nums; }
+.fx-frame__tools { display: flex; align-items: center; gap: 8px; }
+.fx-main--board .fx-frame__body { padding: 12px; background: var(--t-bg); }
 @media (min-width: 821px) and (min-height: 560px) {
-  .fx-main--board { height: 100vh; height: 100dvh; padding: 24px 24px 16px; grid-template-rows: auto auto minmax(0, 1fr); align-content: stretch; }
-  .fx-main--board > .fx-jobs { min-height: 0; }
+  .fx-main--frame { height: 100vh; height: 100dvh; padding-bottom: 16px; display: flex; flex-direction: column; }
+  .fx-main--frame > * { flex: none; }
+  .fx-main--frame > .fx-frame { flex: 1; min-height: 0; }
+  .fx-main--frame .fx-frame__view, .fx-main--frame .fx-frame__body { flex: 1; }
+  .fx-main--board .fx-frame__body { display: flex; overflow: hidden; }
+  .fx-main--board .fx-jobs { flex: 1; min-width: 0; min-height: 0; }
   .fx-main--board .fx-board { height: 100%; overflow-y: hidden; align-items: stretch; }
   .fx-main--board .fx-board__cards { flex: 1; max-height: none; }
 }
@@ -837,7 +896,6 @@ th:hover > .fx-th-grip::after { background: var(--t-brd-hi); }
    invoice opened from Invoices (the pager on top). */
 .fx-rec { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
 .fx-rec .fx-lucide { width: 16px; height: 16px; }
-.fx-rec__gap { max-width: 1180px; }
 .fx-rec__gap .fx-toolbar .fx-rows__title { margin: 0; }
 .fx-rec__gap .fx-ph__actions .fx-btn, .fx-rec__acts .fx-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
 .fx-rec__results { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
@@ -1323,7 +1381,7 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
 .fx-cfs__where .fx-lucide { width: 16px; height: 16px; color: var(--t-dim); }
 .fx-cfs__foot { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--fx-line-soft); }
 .fx-cfs__delete { color: var(--t-danger); background: color-mix(in srgb, var(--t-danger) 12%, transparent); }
-.fx-cfs__delete:hover { background: color-mix(in srgb, var(--t-danger) 22%, transparent); }
+.fx-cfs__delete:hover { background: color-mix(in srgb, var(--t-danger) 28%, transparent); }
 .fx-cfs__delete .fx-lucide { width: 16px; height: 16px; }
 @media (max-width: 720px) {
   .fx-cfm { grid-template-columns: minmax(0, 1fr) 36px 32px; column-gap: 8px; }
@@ -1433,12 +1491,21 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
 /* The Invoices list head (invoicing.js): tabs, search and the send bar stay
    at the top while rows scroll up under them; a shadow shows once they do.
    Narrow, the app bar (60px) sits above it. */
-.fx-listhead { position: sticky; top: 0; z-index: 5; margin: -12px calc(-1 * clamp(16px, 4vw, 48px)) 0; padding: 12px clamp(16px, 4vw, 48px) 0; background: var(--t-bg); transition: box-shadow .15s; }
+/* listHead() in kit.js: the toolbar row of every list. One height, with
+   chips, tabs or a Board/List switch in it, so the rows start at one place. */
+.fx-listhead > .fx-toolbar { min-height: 40px; }
+.fx-listhead .fx-toolbar__end { flex: 1 1 auto; }
+.fx-listhead > .fx-toolbar--plain { align-items: center; }
+.fx-listhead[data-sticky] { position: sticky; top: 0; z-index: 5; margin: -12px calc(-1 * var(--fx-gutter)) 0; padding: 12px var(--fx-gutter) 0; background: var(--t-bg); transition: box-shadow .15s; }
 .fx-listhead[data-stuck] { box-shadow: 0 10px 12px -12px rgba(0, 0, 0, .45); }
-.fx-listhead__edge { height: 0; margin-bottom: -20px; }
-@media (max-width: 820px) { .fx-listhead { top: 60px; } }
+/* The edge tells listHead when the rows reach the toolbar. In the page's
+   grid it takes a row and a gap of its own, so the toolbar moves up by both. */
+.fx-listhead__edge { height: 0; }
+.fx-listhead__edge + .fx-listhead[data-sticky] { margin-top: -32px; }
+.fx-listhead > .fx-toolbar > .fx-tabs button { padding-block: 9px; }
+@media (max-width: 820px) { .fx-listhead[data-sticky] { top: 60px; } }
 /* On a phone the head would hide too many rows: it scrolls away. */
-@media (max-width: 560px) { .fx-listhead { position: static; } }
+@media (max-width: 560px) { .fx-listhead[data-sticky] { position: static; } }
 
 /* The bulk action bar (bulk-bar.js): floats at the foot while rows are
    ticked. "N selected ×", then icon actions in groups, then More. It takes
@@ -1483,7 +1550,7 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
 /* Xero › Import (server/ui/xero-import.js): Review compares one fact per row
    with ✓ or ≠ between the sides; the list and history tick rows for the bulk
    bar. */
-.fx-xi { display: flex; flex-direction: column; gap: 16px; min-width: 0; max-width: 980px; }
+.fx-xi { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
 .fx-xi .fx-lucide { width: 16px; height: 16px; }
 .fx-xi__views { display: inline-flex; border: 1px solid var(--fx-line); }
 .fx-xi__view { display: inline-grid; place-items: center; width: 40px; height: 36px; border: 0; background: transparent; color: var(--t-dim); cursor: pointer; }

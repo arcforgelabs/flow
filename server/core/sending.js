@@ -38,8 +38,9 @@ const LEASE_MS = 15 * 60 * 1000;
 // Outcomes that mean the accounting system holds the invoice.
 const SENT = new Set(['created', 'reconciled', 'existing', 'already_in_xero']);
 
-// `short` is the few words the Invoices list shows; `message` says how to fix it.
-const problem = (code, message, short = null) => ({ code, message, ...(short ? { short } : {}) });
+// `short` is the few words the Invoices list shows; `message` says how to fix
+// it. `extra` adds `fields` (the invoice fields to fix) and `line`.
+const problem = (code, message, short = null, extra = {}) => ({ code, message, ...(short ? { short } : {}), ...extra });
 
 // Flow's own checks of one draft. `lines` are its invoice lines.
 export function draftProblems(invoice, lines) {
@@ -47,7 +48,7 @@ export function draftProblems(invoice, lines) {
   if (!lines.length) problems.push(problem('no_lines', 'The invoice has no lines.', 'No lines'));
   else if (invoice.totalCents <= 0) problems.push(problem('no_amount', 'The total is $0.00 or less.', 'Total $0'));
   for (const line of lines) {
-    if (!line.priceItemId && !line.accountCode) problems.push(problem('line_no_item', `Line ${line.position} has no price item.`, `Line ${line.position}: no item`));
+    if (!line.priceItemId && !line.accountCode) problems.push(problem('line_no_item', `Line ${line.position} has no price item.`, `Line ${line.position}: no item`, { fields: ['line_item'], line: line.position }));
   }
   return problems;
 }

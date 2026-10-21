@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, ilike, inArray, isNull, or, sql } from 'drizzle-orm';
 import express from 'express';
-import { cleanFilterView, invoiceFilterKind, invoicePage, INVOICE_SORTS } from '../ui/job-view.js';
+import { invoicePage, INVOICE_SORTS, normaliseInvoicesView } from '../ui/list-views.js';
 import { FlowError } from '../core/errors.js';
 import { createActionGuard } from '../integrations/call-guard.js';
 import {
@@ -173,12 +173,12 @@ function offsetOf(raw) {
   return n;
 }
 
-// The Filter chip's view, sent as JSON (job-view.js keeps only what it knows).
+// The Filter chip's view, sent as JSON (list-views.js keeps only what it knows).
 function filterViewOf(raw) {
-  if (raw === undefined || text(raw) === '') return cleanFilterView({}, invoiceFilterKind);
+  if (raw === undefined || text(raw) === '') return normaliseInvoicesView({});
   let value;
   try { value = JSON.parse(String(raw)); } catch { throw invalid('filter must be JSON'); }
-  return cleanFilterView(value, invoiceFilterKind);
+  return normaliseInvoicesView(value);
 }
 
 // A LIKE pattern that matches the text anywhere, with its wildcards escaped.

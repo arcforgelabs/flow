@@ -61,6 +61,77 @@ export function pageHeader(title, { count = null, help = null, actions = [] } = 
     actions.length ? h('div', { class: 'fx-ph__actions' }, actions) : null);
 }
 
+// The top of a list page (Jobs, Invoices, Reconcile), laid out the same on
+// every list and in Board and List alike, so nothing moves when a person
+// switches: the title row, a row for saved view tabs (`views`: the page's
+// savedViews element, else an empty slot that stays hidden), then one toolbar with `start` at the left (tabs, Group,
+// Sort, Filter) and `end` at the right (search, Board/List), then the page's
+// `actions` (New invoice) last, as Claude's own lists do. `line` draws the
+// rule that tabs sit on; `sticky` keeps the toolbar at the top while the rows
+// scroll up under it, with a shadow once they do. Append `nodes` to the page.
+export function listHead(title, { count = null, help = null, actions = [], start = [], end = [], line = false, sticky = false, views: tabs = null } = {}) {
+  const views = tabs ?? h('div', { class: 'fx-views', role: 'group', 'aria-label': 'Views', hidden: true });
+  const bar = h('div', { class: 'fx-listhead', 'data-sticky': sticky },
+    h('div', { class: `fx-toolbar${line ? '' : ' fx-toolbar--plain'}` }, start, h('div', { class: 'fx-toolbar__end' }, end, actions)));
+  const edge = sticky ? h('div', { class: 'fx-listhead__edge', 'aria-hidden': 'true' }) : null;
+  if (edge && typeof IntersectionObserver === 'function') {
+    const top = window.matchMedia?.('(max-width: 820px)').matches ? 61 : 1;
+    new IntersectionObserver(([entry]) => bar.toggleAttribute('data-stuck', !entry.isIntersecting), { rootMargin: `-${top}px 0px 0px 0px` }).observe(edge);
+  }
+  return { nodes: [pageHeader(title, { count, help }), views, edge, bar].filter(Boolean), views, bar };
+}
+
+// The window a list or board sits in under listHead, as HubSpot's: on a
+// desktop it fills the page to the bottom and scrolls inside itself both
+// ways, so nothing runs off the page, with a foot bar for the count and its
+// tools. It makes `main` the window's height (fx-main--frame). Rows fade
+// under an edge they scroll past (edgeFade); the sticky table head is the
+// top edge's own break.
+export function listFrame(main, content) {
+  main.classList.add('fx-main--frame');
+  const count = h('span', { class: 'fx-frame__count', role: 'status' });
+  const tools = h('div', { class: 'fx-frame__tools' });
+  const body = h('div', { class: 'fx-frame__body' }, content);
+  const view = h('div', { class: 'fx-frame__view' }, body);
+  const element = h('section', { class: 'fx-frame' }, view, h('footer', { class: 'fx-frame__foot' }, count, tools));
+  edgeFade(body, { target: view, edges: ['bottom', 'left', 'right'] });
+  return { element, body, view, tools, count: (text) => { count.textContent = text ?? ''; } };
+}
+
+// A soft fade at each edge of `target` that `scroller` has more content
+// past, so rows and cards fade under it instead of vanishing. No fade on
+// an edge a scrollbar already marks (the bottom under a sideways bar, the
+// right beside a down bar). `target` holds the fades and must not scroll.
+const fading = typeof ResizeObserver === 'function'
+  ? new ResizeObserver((entries) => entries.forEach(({ target }) => (target.isConnected ? target.fxFade?.() : fading.unobserve(target))))
+  : null;
+export function edgeFade(scroller, { target = scroller.parentElement, edges = ['top', 'bottom', 'left', 'right'] } = {}) {
+  target.classList.add('fx-fades');
+  for (const edge of edges) {
+    if (!target.querySelector(`:scope > .fx-fade[data-edge="${edge}"]`)) target.append(h('span', { class: 'fx-fade', 'data-edge': edge, 'aria-hidden': 'true' }));
+  }
+  const update = () => {
+    const { scrollTop, scrollLeft, scrollHeight, scrollWidth, clientHeight, clientWidth, offsetHeight, offsetWidth } = scroller;
+    const more = {
+      top: scrollTop > 1,
+      bottom: scrollTop + clientHeight < scrollHeight - 1 && offsetHeight - clientHeight === 0,
+      left: scrollLeft > 1,
+      right: scrollLeft + clientWidth < scrollWidth - 1 && offsetWidth - clientWidth === 0,
+    };
+    // Several scrollers can share a target (the board in the frame): it
+    // fades each edge any of them has more past.
+    target.fxFades ??= new Map();
+    target.fxFades.set(scroller, edges.filter((edge) => more[edge]));
+    for (const other of target.fxFades.keys()) if (!other.isConnected) target.fxFades.delete(other);
+    target.dataset.fade = [...new Set([...target.fxFades.values()].flat())].join(' ');
+  };
+  scroller.fxFade = update;
+  scroller.addEventListener('scroll', update, { passive: true });
+  fading?.observe(scroller);
+  requestAnimationFrame(update);
+  return update;
+}
+
 // A docs link as a small "?" icon whose tip names it (How sending works).
 export function helpLink({ href, label }) {
   return named(h('a', { class: 'fx-help', href, target: '_blank', rel: 'noopener' }, lucide(h, 'circle-help')), label);
@@ -75,6 +146,16 @@ export function notice(text, tone = 'info', title = null) {
   return h('div', { class: 'fx-notice', 'data-tone': tone, role: tone === 'danger' ? 'alert' : 'status' },
     title ? h('strong', {}, title) : null,
     h('span', {}, text));
+}
+
+// A field that fails a check glows red, like a required field, until the
+// person types in it; the next check marks it again if it still fails.
+// `on` false clears it. Answers the field.
+export function fieldError(field, on = true) {
+  if (!on) { field.removeAttribute('aria-invalid'); return field; }
+  field.setAttribute('aria-invalid', 'true');
+  field.addEventListener('input', () => field.removeAttribute('aria-invalid'), { once: true });
+  return field;
 }
 
 export function toast(text, tone = 'info') {
@@ -125,8 +206,9 @@ settingRow.next = 0;
 
 let rowMenus = 0;
 
-// A row's ⋯ menu, as on the Custom fields page.
-export function rowMenu(label, items) {
+// A row's ⋯ menu, as on the Custom fields page. The menu lines up with the
+// button's right edge; `align: 'start'` lines it up with its left edge.
+export function rowMenu(label, items, { align = 'end' } = {}) {
   const id = `fx-row-menu-${++rowMenus}`;
   const button = h('button', { class: 'fx-cfm__more', type: 'button', 'aria-label': label, popovertarget: id, 'aria-haspopup': 'menu', 'aria-expanded': 'false' }, lucide(h, 'ellipsis'));
   const panel = h('div', { class: 'fx-pop', id, popover: 'auto', role: 'menu' });
@@ -140,7 +222,8 @@ export function rowMenu(label, items) {
         h('span', { class: 'fx-pop__tick' }, lucide(h, entry.icon)), h('span', {}, entry.text)))));
     const at = button.getBoundingClientRect();
     panel.style.top = `${Math.round(at.bottom + 6)}px`;
-    panel.style.left = `${Math.round(Math.max(8, Math.min(at.right - panel.offsetWidth, innerWidth - panel.offsetWidth - 8)))}px`;
+    const left = align === 'start' ? at.left : at.right - panel.offsetWidth;
+    panel.style.left = `${Math.round(Math.max(8, Math.min(left, innerWidth - panel.offsetWidth - 8)))}px`;
   });
   return [button, panel];
 }

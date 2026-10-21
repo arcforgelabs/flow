@@ -11,10 +11,10 @@ import { draftNote, sendModeNote } from '/assets/ui/invoice-notes.js';
 import { caseNumber } from '/assets/ui/job-board.js';
 import { jobChangeReview } from '/assets/ui/job-change.js';
 import { columnTable, rowCells, viewSaver } from '/assets/ui/columns.js';
-import {
-  cleanFilterView, filterCount, filterJobs, INVOICE_COLUMNS, INVOICE_FILTER_FIELDS, invoiceFilterKind, invoiceValue, normaliseListView,
-} from '/assets/ui/job-view.js';
+import { filterCount, filterJobs, INVOICE_COLUMNS, normaliseListView } from '/assets/ui/job-view.js';
+import { INVOICE_FILTER_FIELDS, invoiceFilterKind, invoiceValue, normaliseInvoicesView } from '/assets/ui/list-views.js';
 import { listPager, PAGE_SIZES } from '/assets/ui/pager.js';
+import { savedViews } from '/assets/ui/saved-views.js';
 import { findBox, today, viewBar } from '/assets/ui/view-bar.js';
 
 // The tabs, left to right (server/api/invoicing.js, TABS): Pending (a
@@ -115,8 +115,8 @@ const showDate = (iso) => (iso ? new Date(`${iso}T00:00:00`).toLocaleDateString(
 
 // ── The list ───────────────────────────────────────────────────────────────
 
-// The filter's fields and rules are in job-view.js (INVOICE_FILTER_FIELDS),
-// so the server filters every invoice of a tab the same way (GET /invoices).
+// The filter's fields and rules: list-views.js. The server checks saved
+// views with them and filters every invoice of a tab (GET /invoices).
 const FILTER_FIELDS = INVOICE_FILTER_FIELDS;
 const PROBLEM_OPS = { yes: 'Has one', no: 'Has none' };
 const FILTER_KEY = 'flow_invoice_filters';
@@ -135,13 +135,11 @@ function readSize() {
 }
 
 function readFilters() {
-  let stored = {};
-  try { stored = JSON.parse(localStorage.getItem(FILTER_KEY)) ?? {}; } catch { /* none kept */ }
-  return cleanFilterView(stored, filterKind);
+  try { return normaliseInvoicesView(JSON.parse(localStorage.getItem(FILTER_KEY))); } catch { return normaliseInvoicesView(null); }
 }
 
 export async function renderInvoiceList(main, ui) {
-  const { h, flow, pageHeader, notice, go, toast } = ui;
+  const { h, flow, listHead, listFrame, notice, go, toast } = ui;
   const saved = OLD_TAB[sessionStorage.getItem('flow_invoice_tab')] ?? sessionStorage.getItem('flow_invoice_tab');
   // Back from an invoice comes here with the tab, search and scroll it left.
   const back = readNav();
@@ -177,20 +175,28 @@ export async function renderInvoiceList(main, ui) {
     },
   });
   // The Filter chip: the same panel as on Jobs and Reconcile (view-bar.js).
-  // The server filters every invoice of the tab shown; the view is kept on
-  // this device.
+  // The server filters every invoice of the tab shown.
+  // A change to the filter: kept in this browser, and the first page loads.
+  function setView(patch) {
+    state.view = normaliseInvoicesView({ ...state.view, ...patch });
+    try { localStorage.setItem(FILTER_KEY, JSON.stringify(state.view)); } catch { /* the page still works, it forgets */ }
+    views.draw();
+    state.offset = 0;
+    if (raw) load();
+  }
+  // The person's named views (saved-views.js): their default opens on a
+  // new visit.
+  const views = savedViews(ui, { page: 'invoices', current: () => state.view, apply: setView });
+  const opening = views.opening();
+  if (opening) state.view = normaliseInvoicesView(opening);
+  views.draw();
   const filterMenu = viewBar(h).filterMenu({
     fields: () => Object.entries(FILTER_FIELDS).map(([value, f]) => ({ value, label: f.label, icon: f.icon })),
     kindOf: filterKind,
     opsOf: (field) => (field === 'problem' ? PROBLEM_OPS : null),
     choicesOf: (field) => (field === 'client' ? (raw?.clients ?? []).map((v) => ({ value: v, label: v })) : []),
     view: () => state.view,
-    change: (patch) => {
-      state.view = { ...state.view, ...patch };
-      try { localStorage.setItem(FILTER_KEY, JSON.stringify(state.view)); } catch { /* the page still works, it forgets */ }
-      state.offset = 0;
-      load();
-    },
+    change: setView,
     first: 'client',
     empty: 'No filters. Every invoice in the tab shows.',
   });
@@ -205,7 +211,7 @@ export async function renderInvoiceList(main, ui) {
       Object.assign(state, { offset, limit });
       state.ticked.clear();
       // A new page opens at its first row.
-      globalThis.scrollTo?.(0, 0);
+      frame.body.scrollTop = 0;
       load();
     },
   });
@@ -217,23 +223,15 @@ export async function renderInvoiceList(main, ui) {
   // The tabs and search stay at the top while the rows scroll up under them;
   // the bulk bar floats at the foot (ClickUp's layout). Sending is a bulk
   // action: tick rows (the head tick takes every row shown), then Send.
-  const head = h('div', { class: 'fx-listhead' }, h('div', { class: 'fx-toolbar' }, tabs, h('div', { class: 'fx-toolbar__end' }, controls, find.element)));
-  const edge = h('div', { class: 'fx-listhead__edge', 'aria-hidden': 'true' });
-  main.append(
-    pageHeader('Invoices', {
-      actions: [h('a', { class: 'fx-btn fx-btn--primary', href: '/invoices/new', onclick: go }, 'New invoice')],
-    }),
-    alerts.element,
-    edge,
-    head,
-    host,
-    h('div', { class: 'fx-listfoot' }, pager.element),
-    bulk.element);
-  // A shadow under the head shows once rows scroll under it.
-  if (typeof IntersectionObserver === 'function') {
-    new IntersectionObserver(([entry]) => head.toggleAttribute('data-stuck', !entry.isIntersecting), { rootMargin: `-${head.offsetTop > 0 && window.matchMedia?.('(max-width: 820px)').matches ? 61 : 1}px 0px 0px 0px` }).observe(edge);
-  }
-
+  const head = listHead('Invoices', {
+    actions: [h('a', { class: 'fx-btn fx-btn--primary', href: '/invoices/new', onclick: go }, 'New invoice')],
+    views: views.element, start: tabs, end: [controls, find.element], line: true, sticky: true,
+  });
+  const [title, ...top] = head.nodes;
+  const frame = listFrame(main, host);
+  // The pages sit in the window's foot bar, beside the count.
+  frame.tools.append(pager.element);
+  main.append(title, alerts.element, ...top, frame.element, bulk.element);
 
   const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
   // The bulk bar for the ticked rows: what a person can do with this view.
@@ -443,6 +441,8 @@ export async function renderInvoiceList(main, ui) {
     }
     pager.draw({ offset: answer.offset ?? 0, limit: answer.limit ?? state.limit, total: answer.total ?? answer.invoices.length });
     const shown = new Set(body.invoices.map((i) => i.id));
+    const total = answer.total ?? body.invoices.length;
+    frame.count(`${total.toLocaleString('en-AU')} ${total === 1 ? 'invoice' : 'invoices'}${total ? ` · ${formatCents(answer.totalCents ?? 0)}` : ''}`);
     for (const id of state.ticked) if (!shown.has(id)) state.ticked.delete(id);
     drawTabs(body.counts);
     drawBar();
@@ -456,7 +456,7 @@ export async function renderInvoiceList(main, ui) {
     }
     // The invoice page steps through this list, in this order (navBar).
     saveNav({ tab: state.status, q: state.q, offset: state.offset, ids: body.invoices.map((i) => i.id) });
-    const open = (href) => { saveNav({ ...readNav(), scrollY: window.scrollY }); go(href); };
+    const open = (href) => { saveNav({ ...readNav(), scrollY: window.scrollY, frameY: frame.body.scrollTop }); go(href); };
     const link = (href, label) => h('a', { class: 'fx-strong', href, onclick: (event) => { event.preventDefault(); event.stopPropagation(); open(href); } }, label);
     const showProblem = state.status === 'pending';
     const created = ['pending', 'ready'].includes(state.status);
@@ -544,6 +544,7 @@ export async function renderInvoiceList(main, ui) {
   }
   await load();
   if (returning && back?.scrollY) window.scrollTo(0, back.scrollY);
+  if (returning && back?.frameY) frame.body.scrollTop = back.frameY;
 }
 
 // A file the browser saves, from a blob made on this page.
@@ -606,7 +607,8 @@ function navBar(ui, invoice) {
   return bar;
 }
 
-// After a send, an Approve or a Save as draft, the next invoice of the list
+// After a send, an Approve or a Save that makes a Pending invoice Ready, the
+// next invoice of the list
 // opens; at its end, the list. So a person reviews drafts one after another
 // without going back. The invoice stays in the bar's list, so the count holds
 // (2 of 35) and Previous opens it again, now done. Back reloads the list
@@ -702,9 +704,13 @@ function linkedCard(ui, invoice, accountingStatus = null) {
     facts);
 }
 
+// The first sentence of a problem: what is wrong. The red field shows where,
+// so the banner holds no how-to.
+const brief = (text) => String(text ?? '').match(/^.*?[.!?](?=\s|$)/s)?.[0] ?? String(text ?? '');
+
 // A draft, or a new invoice before its first save.
 function draftView(invoice, ui, context, redraw) {
-  const { h, flow, toast, go, notice } = ui;
+  const { h, flow, toast, go, notice, fieldError } = ui;
   const isNew = !invoice;
   const lines = (invoice?.lines ?? []).map((line) => ({ ...line }));
   if (!lines.length) lines.push({ description: '', quantity: 1, unitAmountCents: null, taxCode: 'GST', priceItemId: null });
@@ -746,6 +752,15 @@ function draftView(invoice, ui, context, redraw) {
   const reference = h('input', { class: 'fx-input', type: 'text', value: invoice?.reference ?? '', placeholder: 'Type a reference', 'aria-label': 'Reference' });
   const dueDate = h('input', { class: 'fx-input', type: 'date', value: invoice?.dueDate ?? '' });
 
+  // The fields a failed check reads go red (problem.fields): a rule on the
+  // Reference marks the Reference box, a line with no price item marks its
+  // item. A check on something this page cannot change (the job's
+  // practitioner) marks nothing; the banner says it.
+  const problemList = invoice?.problems ?? [];
+  const failed = new Set(problemList.flatMap((p) => p.fields ?? []));
+  const badLines = new Set(problemList.filter((p) => p.fields?.includes('line_item')).map((p) => p.line));
+  const boxes = { reference };
+
   // Lines.
   let items = null;
   const itemsReady = flow('/api/invoicing/price-items').then((body) => { items = body.priceItems ?? body.items ?? []; return items; }).catch(() => { items = []; return items; });
@@ -775,6 +790,7 @@ function draftView(invoice, ui, context, redraw) {
         class: 'fx-input', type: 'text', list: 'fx-price-items', placeholder: 'Code', autocomplete: 'off',
         value: line.itemCode ?? '', 'aria-label': `Item, line ${index + 1}`,
       });
+      if (badLines.has(index + 1)) fieldError(item);
       const description = h('input', { class: 'fx-input', type: 'text', value: line.description ?? '', 'aria-label': `Description, line ${index + 1}` });
       const quantity = h('input', { class: 'fx-input fx-num', type: 'number', min: '1', step: '1', value: String(line.quantity ?? 1), 'aria-label': `Quantity, line ${index + 1}` });
       const price = h('input', { class: 'fx-input fx-num', type: 'text', inputmode: 'decimal', value: fromCents(line.unitAmountCents), placeholder: '0.00', 'aria-label': `Unit price, line ${index + 1}` });
@@ -800,7 +816,7 @@ function draftView(invoice, ui, context, redraw) {
       gst.addEventListener('change', () => { line.taxCode = gst.value; preview(); });
       const remove = h('button', {
         class: 'fx-btn fx-btn--ghost fx-btn--sm fx-btn--icon', type: 'button', title: 'Remove line', 'aria-label': `Remove line ${index + 1}`,
-        onclick: () => { lines.splice(index, 1); if (!lines.length) lines.push({ description: '', quantity: 1, unitAmountCents: null, taxCode: 'GST', priceItemId: null }); drawLines(); preview(); },
+        onclick: () => { badLines.clear(); lines.splice(index, 1); if (!lines.length) lines.push({ description: '', quantity: 1, unitAmountCents: null, taxCode: 'GST', priceItemId: null }); drawLines(); preview(); },
       }, '×');
       return h('tr', {},
         h('td', { class: 'fx-lines__item' }, item),
@@ -841,7 +857,7 @@ function draftView(invoice, ui, context, redraw) {
   });
 
   const check = () => {
-    if (!contact) return 'Choose a client from the list.';
+    if (!contact) { fieldError(clientInput); return 'Choose a client from the list.'; }
     if (lines.some((line) => (line.description?.trim() || line.priceItemId) && line.unitAmountCents == null)) return 'Each line needs a price.';
     return null;
   };
@@ -860,22 +876,38 @@ function draftView(invoice, ui, context, redraw) {
     }
   };
 
-  // Save shows only when there is something to save: a new invoice, or a
-  // change since the page opened. Save as draft opens the next invoice.
-  // Save as draft: a draft that is not ready always offers it. A ready
-  // invoice offers Save changes only once something changed.
+  // Save is the check, like CI: it saves, and Flow runs every check again
+  // (Flow's own, the lab's rules, the accounting system's). A Pending
+  // invoice that now passes is Ready: a toast says so and the next invoice
+  // of the list opens. One that still fails stays Pending, with its red
+  // fields. A new invoice and a Pending one always offer Save; a Ready one
+  // only once something changed. There is no Flow "draft" step: Draft is
+  // the accounting system's word for an invoice it holds.
   const keepsSave = isNew || invoice?.view !== 'ready';
   const saveButton = h('button', {
     class: 'fx-btn', type: 'button', hidden: !keepsSave,
     onclick: async () => {
+      saveButton.disabled = true;
       const saved = await save();
+      saveButton.disabled = false;
       if (!saved) return;
-      toast(keepsSave ? 'Saved as a draft.' : 'Changes saved.', 'success');
-      if (isNew) go(`/invoices/${saved.id}`, { replace: true });
-      else if (keepsSave) openNext(ui, invoice.id);
-      else redraw(saved);
+      const passes = saved.view === 'ready';
+      const why = brief(saved.problems?.[0]?.message);
+      if (isNew) {
+        toast(passes ? 'Saved. It is Ready.' : `Saved. It is Pending. ${why}`, passes ? 'success' : 'warn');
+        go(`/invoices/${saved.id}`, { replace: true });
+      } else if (passes && keepsSave) {
+        toast('Saved. It is Ready.', 'success');
+        openNext(ui, invoice.id);
+      } else if (passes) {
+        toast('Saved.', 'success');
+        redraw(saved);
+      } else {
+        toast(`Still Pending. ${why}`, 'danger');
+        redraw(saved);
+      }
     },
-  }, keepsSave ? 'Save as draft' : 'Save changes');
+  }, 'Save');
   const opened = JSON.stringify(body());
   const changed = () => !isNew && JSON.stringify(body()) !== opened;
   const watchChanges = () => { if (!keepsSave) saveButton.hidden = !changed(); };
@@ -959,8 +991,16 @@ function draftView(invoice, ui, context, redraw) {
   const problems = [
     // Accepting changes the draft for the business: owners and admins only.
     jobChange ? jobChangeReview(ui, jobChange, { money: formatCents, canAccept: context.canIssue, unsaved: changed, done: redraw }) : null,
-    otherProblems.length ? notice(otherProblems.map((p) => p.message).join(' '), 'danger', 'Problem.') : null,
+    otherProblems.length ? notice([...new Set(otherProblems.map((p) => brief(p.message)))].join(' '), 'danger', 'Problem.') : null,
   ];
+  // A red field names the banner as its reason (for a screen reader).
+  const banner = problems[1];
+  if (banner) banner.id = 'fx-invoice-problem';
+  for (const name of failed) {
+    if (!boxes[name]) continue;
+    fieldError(boxes[name]);
+    if (banner) boxes[name].setAttribute('aria-describedby', banner.id);
+  }
 
   return [
     navBar(ui, invoice),
