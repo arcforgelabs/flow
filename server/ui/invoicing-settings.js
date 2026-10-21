@@ -104,7 +104,7 @@ function draftsSection(ui) {
       disabled ? notice('Only an owner or admin can change these.', 'info') : null,
       row('Payment terms', 'Days from invoice to due date.', box('paymentTermsDays', 'Payment terms in days', { type: 'number', read: Number })),
       row('Reference', 'The Reference on each invoice. Use {practitioner} and {patient}.',
-        box('referenceTemplate', 'Reference rule', { placeholder: '{practitioner} - {patient}' })),
+        box('referenceTemplate', 'Reference rule', { placeholder: 'Type a reference rule' })),
     ].filter(Boolean));
   })();
   return section;

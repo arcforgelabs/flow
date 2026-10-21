@@ -158,7 +158,7 @@ export function rulesSection(ui, title = 'Rules') {
     // A pending rule's note: what a person must fix. It shows on the draft.
     const note = h('input', {
       class: 'fx-input', maxlength: '200', value: draft?.action.note ?? '', 'aria-label': 'Note',
-      placeholder: 'For example: Put the practitioner in the job, then check the Reference.',
+      placeholder: 'Type a note',
     });
     const noteField = h('div', { class: 'fx-field' }, h('span', { class: 'fx-label' }, 'Note on the draft'), note);
     const showNote = () => { noteField.hidden = action.value !== 'pending'; };
