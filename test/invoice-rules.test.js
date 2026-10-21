@@ -72,12 +72,17 @@ describe('one rule against one job', () => {
     assert.equal(p('Ann', { test: 'one_word' }), true);
     assert.equal(p('Dr Ann Lee', { test: 'one_word' }), false);
     assert.equal(p('Dr Ann Lee - 21764', { test: 'has_number' }), true);
+    // A part that is only a number is the client's reference; a number beside words is not.
+    assert.equal(p('Dr Ann Lee - 21764', { test: 'number_in_words' }), false);
+    assert.equal(p('Dr Ann Lee - Coral Smith (OIQ-9902)', { test: 'number_in_words' }), true);
+    assert.equal(p('Dr Ann Lee - Coral Smith 28072185', { test: 'number_in_words' }), true);
+    assert.equal(p('Dr Ann Lee - Coral Smith', { test: 'number_in_words' }), false);
     assert.equal(p('Dr Ann Lee', { test: 'does_not_start_with', value: 'dr ' }), false);
     assert.equal(p('Ann Lee', { test: 'does_not_start_with', value: 'Dr ' }), true);
     assert.equal(p('Not  Listed', { test: 'contains', value: 'not listed' }), true);
     assert.equal(p('Dr Ann Lee', { test: 'does_not_contain', value: 'listed' }), true);
     // An empty practitioner matches no word test; "is empty" finds it.
-    for (const test of ['one_word', 'has_number', 'does_not_start_with', 'is_not_one_of']) {
+    for (const test of ['one_word', 'has_number', 'number_in_words', 'does_not_start_with', 'is_not_one_of']) {
       assert.equal(p(null, { test, value: test.endsWith('of') ? ['Dr Ann Lee'] : 'Dr' }), false, test);
     }
     // Earlier tests read as before.
