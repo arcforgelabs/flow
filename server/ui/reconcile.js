@@ -17,6 +17,7 @@
 // /jobs/:id/no-invoice (docs/JOB_INVOICE_LINKS.md).
 import { bulkBar } from '/assets/ui/bulk-bar.js';
 import { lucide } from '/assets/ui/custom-fields.js';
+import { statusRank } from '/assets/ui/job-board.js';
 import { cleanFilterView, filterJobs, KIND_OF_TYPE } from '/assets/ui/job-view.js';
 import { findBox, today, viewBar } from '/assets/ui/view-bar.js';
 import { formatCents } from '/assets/ui/invoicing.js';
@@ -205,12 +206,13 @@ async function renderList(main, ui) {
     opsOf: (field) => (field === 'match' ? MATCH_OPS : ['type', 'status'].includes(field) ? SET_OPS : null),
     choicesOf: (field) => {
       if (field === 'type') return TYPES;
-      if (field === 'status') return labels(rows.map((r) => r.stage));
+      if (field === 'status') return labels(rows.filter((r) => r.kind === 'job').map((r) => r.stage)).map((c) => ({ ...c, rank: statusRank(c.value) }))
+        .concat(labels(rows.filter((r) => r.kind !== 'job').map((r) => r.stage)).filter((c) => !rows.some((r) => r.kind === 'job' && r.stage === c.value)));
       if (field === 'client') return labels(rows.map((r) => r.client));
       if (field === 'practitioner') return labels(rows.filter((r) => r.kind === 'job').map((r) => r.who));
       const f = isCustom(field) ? fieldById(field.slice(6)) : null;
       if (f?.type === 'person') return [{ value: 'me', label: 'Me' }, ...custom.people.map((p) => ({ value: p.id, label: p.name }))];
-      return (f?.options ?? []).map((o) => ({ value: o.id, label: o.archived ? `${o.name} (archived)` : o.name }));
+      return (f?.options ?? []).map((o) => ({ value: o.id, label: o.archived ? `${o.name} (archived)` : o.name, color: o.color }));
     },
     view: () => state.view,
     change: (patch) => {
