@@ -8,6 +8,7 @@ import { columnTable, onRightButton, rowCells, viewSaver } from '/assets/ui/colu
 import { colorPicker, lucide, optionPill } from '/assets/ui/custom-fields.js';
 import { jobChangeBanner } from '/assets/ui/job-change.js';
 import { named, startTips } from '/assets/ui/tip.js';
+import { savedViews } from '/assets/ui/saved-views.js';
 import { sidecar } from '/assets/ui/sidecar.js';
 
 // The colours of a custom field's options, read from server/core/custom-fields.js at build.
@@ -27,6 +28,6 @@ else ready();
 
 export {
   bulkBar, colorPicker, columnTable, crumbs, dialog, edgeFade, fieldError, findBox, h, helpLink, holdButton, ICONS, jobChangeBanner, listFrame, listHead, lucide, named,
-  notice, onRightButton, OPTION_COLORS, optionPill, pageHeader, rowCells, rowMenu, sectionTitle, settingRow, sidecar, svg, tileCard,
+  notice, onRightButton, OPTION_COLORS, optionPill, pageHeader, rowCells, rowMenu, savedViews, sectionTitle, settingRow, sidecar, svg, tileCard,
   tileSection, toast, ui, viewBar, viewSaver,
 };

@@ -19,7 +19,9 @@ import { bulkBar } from '/assets/ui/bulk-bar.js';
 import { lucide } from '/assets/ui/custom-fields.js';
 import { columnTable, rowCells, viewSaver } from '/assets/ui/columns.js';
 import { statusRank } from '/assets/ui/job-board.js';
-import { cleanFilterView, filterJobs, KIND_OF_TYPE, normaliseListView, RECONCILE_COLUMNS } from '/assets/ui/job-view.js';
+import { filterJobs, KIND_OF_TYPE, normaliseListView, RECONCILE_COLUMNS } from '/assets/ui/job-view.js';
+import { normaliseReconcileView, RECONCILE_FILTER_FIELDS } from '/assets/ui/list-views.js';
+import { savedViews } from '/assets/ui/saved-views.js';
 import { findBox, today, viewBar } from '/assets/ui/view-bar.js';
 import { formatCents } from '/assets/ui/invoicing.js';
 
@@ -99,18 +101,8 @@ const CHEVRONS = { prev: 'M14.5 6l-6 6 6 6', next: 'M9.5 6l6 6-6 6' };
 const FILTER_KEY = 'flow_reconcile_filters';
 const NAV_KEY = 'flow_reconcile_nav';
 // The fields a filter row can use. One word each; Type's choices have icons.
-// The filter's fields (view-bar.js). Reconcile lists jobs and invoices, so
-// it has both lists' fields; a job's own field (Practitioner, a custom
-// field) skips invoice rows, so it never hides them.
-const FILTER_FIELDS = {
-  type: { label: 'Type', kind: 'choice', icon: 'layers' },
-  status: { label: 'Status', kind: 'choice', icon: 'circle-dot' },
-  client: { label: 'Client', kind: 'choice', icon: 'building-2' },
-  practitioner: { label: 'Practitioner', kind: 'choice', icon: 'stethoscope', job: true },
-  date: { label: 'Date', kind: 'date', icon: 'calendar' },
-  total: { label: 'Total', kind: 'number', icon: 'dollar-sign' },
-  match: { label: 'Match', kind: 'check', icon: 'link' },
-};
+// The filter's fields: list-views.js (the server checks saved views with them).
+const FILTER_FIELDS = RECONCILE_FILTER_FIELDS;
 const MATCH_OPS = { yes: 'Has one', no: 'Has none' };
 const SET_OPS = { is: 'Is', not: 'Is not' };
 const TYPES = [{ value: 'job', label: 'Job', icon: 'briefcase' }, { value: 'invoice', label: 'Invoice', icon: 'file-text' }];
@@ -165,7 +157,7 @@ export function keptRows(rows, view, q = '', { kindOf = (field) => FILTER_FIELDS
 }
 
 function readView() {
-  return cleanFilterView(readStored(localStorage, FILTER_KEY, {}), (field) => (Object.hasOwn(FILTER_FIELDS, field) ? FILTER_FIELDS[field].kind : isCustom(field) ? '*' : null));
+  return normaliseReconcileView(readStored(localStorage, FILTER_KEY, {}));
 }
 
 export async function renderReconcile(main, ui, id = null) {
@@ -194,12 +186,25 @@ async function renderList(main, ui) {
     },
     hidden: () => Object.keys(RECONCILE_COLUMNS).filter((id) => !state.columns.columns.includes(id)).map((id) => ({ id, label: RECONCILE_COLUMNS[id] })),
   });
+  let rows;
+  // A change to the filter: kept in this browser, and drawn.
+  const setView = (patch) => {
+    state.view = normaliseReconcileView({ ...state.view, ...patch });
+    writeStored(localStorage, FILTER_KEY, state.view);
+    views.draw();
+    if (rows) draw();
+  };
+  // The person's named views (saved-views.js): their default opens on a
+  // new visit.
+  const views = savedViews(ui, { page: 'reconcile', current: () => state.view, apply: setView });
+  const opening = views.opening();
+  if (opening) state.view = normaliseReconcileView(opening);
   const find = findBox(h, { label: 'Find a client, practitioner or amount', value: state.q, oninput: (words) => { state.q = words; draw(); } });
   const controls = h('div', { class: 'fx-viewbar', role: 'group', 'aria-label': 'Filter' });
   const host = h('div', { class: 'fx-rec' }, h('div', { class: 'fx-skeleton' }));
   const bulk = bulkBar(ui, { label: 'Ticked jobs' });
   const frame = listFrame(main, host);
-  main.append(...listHead('Reconcile', { start: controls, end: find.element }).nodes, frame.element, bulk.element);
+  main.append(...listHead('Reconcile', { views: views.element, start: controls, end: find.element }).nodes, frame.element, bulk.element);
 
   // The Filter chip: the same panel as on Jobs (view-bar.js). Job rows also
   // have the lab's custom fields.
@@ -226,17 +231,13 @@ async function renderList(main, ui) {
       return (f?.options ?? []).map((o) => ({ value: o.id, label: o.archived ? `${o.name} (archived)` : o.name, color: o.color }));
     },
     view: () => state.view,
-    change: (patch) => {
-      state.view = { ...state.view, ...patch };
-      writeStored(localStorage, FILTER_KEY, state.view);
-      draw();
-    },
+    change: setView,
     first: 'type',
     empty: 'No filters. Every job and invoice shows.',
   });
   controls.append(...filterMenu.node);
 
-  let rows;
+  views.draw();
   try {
     // Custom fields are extra: the list still shows without them.
     const [lists, fields, values] = await Promise.all([

@@ -11,7 +11,9 @@ import { draftNote, sendModeNote } from '/assets/ui/invoice-notes.js';
 import { caseNumber } from '/assets/ui/job-board.js';
 import { jobChangeReview } from '/assets/ui/job-change.js';
 import { columnTable, rowCells, viewSaver } from '/assets/ui/columns.js';
-import { cleanFilterView, filterJobs, INVOICE_COLUMNS, normaliseListView } from '/assets/ui/job-view.js';
+import { filterJobs, INVOICE_COLUMNS, normaliseListView } from '/assets/ui/job-view.js';
+import { INVOICE_FILTER_FIELDS, normaliseInvoicesView } from '/assets/ui/list-views.js';
+import { savedViews } from '/assets/ui/saved-views.js';
 import { findBox, today, viewBar } from '/assets/ui/view-bar.js';
 
 // The tabs, left to right (server/api/invoicing.js, TABS): Pending (a
@@ -112,16 +114,8 @@ const showDate = (iso) => (iso ? new Date(`${iso}T00:00:00`).toLocaleDateString(
 
 // ── The list ───────────────────────────────────────────────────────────────
 
-// The filter's fields (view-bar.js). The tabs are the status, so Status is
-// not here. The filter keeps rows of the tab shown.
-const FILTER_FIELDS = {
-  client: { label: 'Client', kind: 'choice', icon: 'building-2' },
-  number: { label: 'Number', kind: 'text', icon: 'hash' },
-  reference: { label: 'Reference', kind: 'text', icon: 'text' },
-  date: { label: 'Date', kind: 'date', icon: 'calendar' },
-  total: { label: 'Total', kind: 'number', icon: 'dollar-sign' },
-  problem: { label: 'Problem', kind: 'check', icon: 'triangle-alert' },
-};
+// The filter's fields: list-views.js (the server checks saved views with them).
+const FILTER_FIELDS = INVOICE_FILTER_FIELDS;
 const PROBLEM_OPS = { yes: 'Has one', no: 'Has none' };
 const FILTER_KEY = 'flow_invoice_filters';
 const filterKind = (field) => FILTER_FIELDS[field]?.kind ?? null;
@@ -143,9 +137,7 @@ export function invoiceValue(invoice, field) {
 export const keptInvoices = (invoices, view, now = today()) => filterJobs(invoices, view, { valueOf: invoiceValue, kindOf: filterKind, today: now });
 
 function readFilters() {
-  let stored = {};
-  try { stored = JSON.parse(localStorage.getItem(FILTER_KEY)) ?? {}; } catch { /* none kept */ }
-  return cleanFilterView(stored, filterKind);
+  try { return normaliseInvoicesView(JSON.parse(localStorage.getItem(FILTER_KEY))); } catch { return normaliseInvoicesView(null); }
 }
 
 export async function renderInvoiceList(main, ui) {
@@ -184,6 +176,19 @@ export async function renderInvoiceList(main, ui) {
   });
   // The Filter chip: the same panel as on Jobs and Reconcile (view-bar.js).
   // It filters the rows of the tab shown, on this device.
+  // A change to the filter: kept in this browser, and drawn.
+  function setView(patch) {
+    state.view = normaliseInvoicesView({ ...state.view, ...patch });
+    try { localStorage.setItem(FILTER_KEY, JSON.stringify(state.view)); } catch { /* the page still works, it forgets */ }
+    views.draw();
+    if (raw) draw(raw);
+  }
+  // The person's named views (saved-views.js): their default opens on a
+  // new visit.
+  const views = savedViews(ui, { page: 'invoices', current: () => state.view, apply: setView });
+  const opening = views.opening();
+  if (opening) state.view = normaliseInvoicesView(opening);
+  views.draw();
   const labels = (list) => [...new Set(list.filter(Boolean))].sort((a, b) => a.localeCompare(b)).map((v) => ({ value: v, label: v }));
   const filterMenu = viewBar(h).filterMenu({
     fields: () => Object.entries(FILTER_FIELDS).map(([value, f]) => ({ value, label: f.label, icon: f.icon })),
@@ -191,11 +196,7 @@ export async function renderInvoiceList(main, ui) {
     opsOf: (field) => (field === 'problem' ? PROBLEM_OPS : null),
     choicesOf: (field) => (field === 'client' ? labels((raw?.invoices ?? []).map((i) => i.contactName)) : []),
     view: () => state.view,
-    change: (patch) => {
-      state.view = { ...state.view, ...patch };
-      try { localStorage.setItem(FILTER_KEY, JSON.stringify(state.view)); } catch { /* the page still works, it forgets */ }
-      if (raw) draw(raw);
-    },
+    change: setView,
     first: 'client',
     empty: 'No filters. Every invoice in the tab shows.',
   });
@@ -212,7 +213,7 @@ export async function renderInvoiceList(main, ui) {
   // action: tick rows (the head tick takes every row shown), then Send.
   const head = listHead('Invoices', {
     actions: [h('a', { class: 'fx-btn fx-btn--primary', href: '/invoices/new', onclick: go }, 'New invoice')],
-    start: tabs, end: [controls, find.element], line: true, sticky: true,
+    views: views.element, start: tabs, end: [controls, find.element], line: true, sticky: true,
   });
   const [title, ...top] = head.nodes;
   const frame = listFrame(main, host);

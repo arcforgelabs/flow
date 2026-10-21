@@ -25,6 +25,7 @@ import {
   normaliseJobsView, NOT_SET, OPERATORS, sortJobs, SORTS,
 } from '/assets/ui/job-view.js';
 import { clipLabel, initialsOf } from '/assets/ui/person.js';
+import { savedViews } from '/assets/ui/saved-views.js';
 import { sidecar } from '/assets/ui/sidecar.js';
 import { findBox, ICONS, svg, today, viewBar } from '/assets/ui/view-bar.js';
 
@@ -123,6 +124,11 @@ export async function renderJobs(main, ui) {
     // The list's ticked jobs (by jobKey), and its folded groups by group key.
     ticked: new Set(), folded: readFolded(),
   };
+  // The person's named views (saved-views.js): their default opens on a
+  // new visit.
+  const views = savedViews(ui, { page: 'jobs', current: () => state.view, apply: (view) => { change(view); drawToggle(); } });
+  const opening = views.opening();
+  if (opening) state.view = normaliseJobsView(opening);
   const toggle = h('div', { class: 'fx-seg', role: 'radiogroup', 'aria-label': 'Layout' });
   const find = findBox(h, { label: 'Find a case, client or practitioner', value: asked, oninput: (words) => { state.q = words.trim(); draw(); } });
   const host = h('div', { class: 'fx-jobs' }, h('div', { class: 'fx-skeleton' }));
@@ -130,13 +136,14 @@ export async function renderJobs(main, ui) {
   // In the list, ticked rows get the same floating bar as Invoices.
   const bulk = bulkBar(ui, { label: 'Ticked jobs' });
   const frame = listFrame(main, host);
-  main.append(...listHead('Jobs', { start: controls, end: [find.element, toggle] }).nodes, frame.element, bulk.element);
+  main.append(...listHead('Jobs', { views: views.element, start: controls, end: [find.element, toggle] }).nodes, frame.element, bulk.element);
 
   const drawToggle = () => toggle.replaceChildren(...[['board', 'Board'], ['list', 'List']].map(([id, label]) => h('button', {
     type: 'button', role: 'radio', class: 'fx-seg__item', 'aria-checked': String(state.view.layout === id),
     onclick: () => { saveLayout(id); change({ layout: id }); drawToggle(); },
   }, label)));
   drawToggle();
+  views.draw();
 
   const problemsOf = (job) => fixes(job.obligation);
   const jobKey = (job) => `${job.sourceSystem}\u0000${job.sourceJobRef}`;
@@ -166,6 +173,7 @@ export async function renderJobs(main, ui) {
   const saveView = viewSaver(ui, 'jobs');
   function change(patch) {
     state.view = normaliseJobsView({ ...state.view, ...patch });
+    views.draw();
     drawControls();
     draw();
     saveView(state.view);
