@@ -315,6 +315,7 @@ a.fx-link:hover, a.fx-link:focus-visible { border-color: var(--t-strong); }
   color: var(--t-text); text-decoration: none;
   transition: transform 140ms var(--fx-ease), box-shadow 140ms var(--fx-ease), border-color 140ms var(--fx-ease);
 }
+.fx-int-card--bare { grid-template-rows: auto auto; }
 .fx-int-card:hover, .fx-int-card:focus-visible { transform: translateY(-2px); border-color: var(--t-brd-hi, var(--t-control)); box-shadow: 0 8px 24px rgba(0, 0, 0, .1); }
 .fx-int-card__head { display: flex; align-items: center; gap: 12px; }
 .fx-int-card__head h3 { flex: 1; color: var(--t-strong); font: 650 16px/1.25 var(--t-body); }
@@ -329,6 +330,7 @@ a.fx-link:hover, a.fx-link:focus-visible { border-color: var(--t-strong); }
   display: grid; place-items: center; flex: none; width: 44px; height: 44px; border-radius: 10px;
   background: #fff; box-shadow: inset 0 0 0 1px var(--fx-line);
 }
+.fx-logo--icon { background: var(--t-accent-bg); color: var(--t-accent); box-shadow: none; }
 .fx-logo img { width: 28px; height: 28px; object-fit: contain; }
 .fx-logo--lg { width: 52px; height: 52px; }
 .fx-logo--lg img { width: 34px; height: 34px; }
