@@ -29,7 +29,7 @@ export async function renderPriceList(main, ui) {
   const addButton = h('button', { class: 'fx-btn fx-btn--primary', type: 'button', disabled }, 'Add code');
   const reconcileButton = h('button', { class: 'fx-btn fx-btn--ghost', type: 'button', hidden: true, onclick: () => ui.go('/price-list/reconcile') }, 'Reconcile');
   const alerts = alertStrip(ui, 'price-list');
-  main.append(pageHeader('Price list', { subtitle: 'The codes and prices that Flow puts on invoice lines.', actions: [reconcileButton, addButton] }), alerts.element, host);
+  main.append(pageHeader('Price list', { help: { href: DOCS, label: 'How the price list works' }, actions: [reconcileButton, addButton] }), alerts.element, host);
 
   let data = null;
   let query = '';
@@ -176,8 +176,7 @@ export async function renderPriceList(main, ui) {
       table,
     ];
     const settings = h('section', { class: 'fx-set fx-price__settings' }, h('h2', { class: 'fx-set__title' }, 'Invoice lines'), h('div', { class: 'fx-skeleton' }));
-    linePriceRow().then((r) => settings.replaceChildren(settings.firstChild, r,
-      h('p', { class: 'fx-dim', style: { margin: '8px 0 0' } }, h('a', { href: DOCS, target: '_blank', rel: 'noopener' }, 'How the price list works'))));
+    linePriceRow().then((r) => settings.replaceChildren(settings.firstChild, r));
     sections.push(settings);
     host.replaceChildren(...sections.filter(Boolean));
     // Opened from Reconcile's "Edit code": that code's dialog, once.

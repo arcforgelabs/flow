@@ -21,6 +21,7 @@ import { renderXeroImport } from '/assets/ui/xero-import.js';
 import { startMonitoring } from '/assets/ui/monitoring.js';
 import { openSearch } from '/assets/ui/search.js';
 import { alertStrip } from '/assets/ui/alerts.js';
+import { named, startTips } from '/assets/ui/tip.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -164,12 +165,26 @@ function holdButton(button, ms) {
 
 // ── Shared pieces ──────────────────────────────────────────────────────────
 
-function pageHeader(title, { subtitle, actions = [] } = {}) {
+// The page's name and nothing under it: the page shows what it is for.
+// `count` is a live number beside the name (2 to check); `help` is a docs
+// link, an icon with its name as a tip.
+function pageHeader(title, { count = null, help = null, actions = [] } = {}) {
   return h('header', { class: 'fx-ph' },
     h('div', { class: 'fx-ph__text' },
       h('h1', { class: 'fx-title' }, title),
-      subtitle ? h('p', { class: 'fx-ph__sub' }, subtitle) : null),
+      count != null ? h('span', { class: 'fx-ph__count' }, count) : null,
+      help ? helpLink(help) : null),
     actions.length ? h('div', { class: 'fx-ph__actions' }, actions) : null);
+}
+
+// A docs link as a small "?" icon whose tip names it (How sending works).
+function helpLink({ href, label }) {
+  return named(h('a', { class: 'fx-help', href, target: '_blank', rel: 'noopener' }, lucide(h, 'circle-help')), label);
+}
+
+// A settings section's heading, with its docs link beside it.
+function sectionTitle(text, help = null) {
+  return h('h2', { class: 'fx-set__title' }, text, help ? helpLink(help) : null);
 }
 
 function notice(text, tone = 'info', title = null) {
@@ -292,11 +307,11 @@ function drawMenu() {
   const label = NARROW.matches ? (open ? 'Close the menu' : 'Open the menu') : (folded ? 'Show the sidebar' : 'Hide the sidebar');
   toggle.setAttribute('aria-expanded', String(open));
   toggle.setAttribute('aria-label', label);
-  toggle.title = label;
+  toggle.dataset.tip = label;
   // Folded, a page's name shows when the pointer rests on its icon.
   for (const link of document.querySelectorAll('[data-nav]')) {
-    if (folded && !NARROW.matches) link.title = link.dataset.label;
-    else link.removeAttribute('title');
+    if (folded && !NARROW.matches) Object.assign(link.dataset, { tip: link.dataset.label, tipSide: 'right' });
+    else { delete link.dataset.tip; delete link.dataset.tipSide; }
   }
 }
 
@@ -403,7 +418,7 @@ function navigate(event) {
 // The shared pieces a view module (invoicing.js) builds with. Its `go`
 // takes a path, or a link's click event.
 const ui = () => ({
-  h, flow, toast, notice, pageHeader, dialog, me, holdButton,
+  h, flow, toast, notice, pageHeader, sectionTitle, dialog, me, holdButton,
   go: (target, options) => (typeof target === 'string' ? go(target, options) : navigate(target)),
 });
 
@@ -641,9 +656,9 @@ async function renderIntegrations(main) {
   const notices = h('div', { class: 'fx-fields' });
   const content = h('div', { class: 'fx-int-sections' }, h('div', { class: 'fx-skeleton' }));
   main.append(
-    h('header', { class: 'fx-ph' }, h('div', { class: 'fx-ph__text' }, h('h1', { class: 'fx-title' }, 'Integrations'))),
+    pageHeader('Integrations'),
     alertStrip(ui(), 'integrations').element,
-    h('div', { class: 'fx-int-bar' }, tabs, search),
+    h('div', { class: 'fx-int-bar' }, tabs, h('div', { class: 'fx-row' }, category, search)),
     notices, content);
   let body;
   try {
@@ -655,13 +670,14 @@ async function renderIntegrations(main) {
   const canChange = Boolean(me.ownerActions?.allowed);
   notices.replaceChildren(...[
     canChange ? null : notice('Changing integrations needs a verified owner sign-in: Google Workspace on the owner domain with no password, or a second factor.', 'warn', 'Read only.'),
-    body.secretsKey ? null : notice('Flow has no secrets key, so it cannot store a client secret. Ask whoever hosts Flow to set FLOW_SECRETS_KEY (64 hex characters), then restart Flow.', 'warn', 'No secrets key.'),
+    body.secretsKey ? null : notice('Flow cannot store a client secret. Set FLOW_SECRETS_KEY (64 hex characters), then restart Flow.', 'warn', 'No secrets key.'),
   ].filter(Boolean));
   const list = [...body.integrations].sort((a, b) => a.name.localeCompare(b.name));
   const connected = (i) => i.enabled;
 
   const draw = () => {
-    tabs.replaceChildren(...[['all', 'All integrations'], ['yours', 'Your integrations']].map(([id, label]) => h('button', {
+    category.hidden = state.tab !== 'all';
+    tabs.replaceChildren(...[['all', 'All'], ['yours', 'Connected']].map(([id, label]) => h('button', {
       type: 'button', role: 'tab', class: 'fx-seg__item', 'aria-selected': String(state.tab === id), 'aria-checked': String(state.tab === id),
       onclick: () => { state.tab = id; draw(); },
     }, label)));
@@ -672,7 +688,7 @@ async function renderIntegrations(main) {
       const yours = list.filter(connected).filter(matches);
       sections.push(h('section', { class: 'fx-int-section-list' },
         yours.length ? h('div', { class: 'fx-int-grid' }, yours.map(integrationTile))
-          : h('p', { class: 'fx-empty' }, q ? 'No integration matches.' : 'Nothing is connected yet. Pick one under All integrations.')));
+          : h('p', { class: 'fx-empty' }, q ? 'No integration matches.' : 'Nothing is connected yet. Pick one under All.')));
     } else {
       // Recommended: what is not connected yet, once the catalogue is long
       // enough that a short row helps (with a few, it would repeat the grid).
@@ -684,7 +700,7 @@ async function renderIntegrations(main) {
       }
       const all = list.filter(matches).filter((i) => state.category === 'all' || CATALOGUE[i.id]?.category === state.category);
       sections.push(h('section', { class: 'fx-int-section-list' },
-        h('div', { class: 'fx-int-heading-row' }, h('h2', { class: 'fx-int-heading' }, 'All integrations'), category),
+        recommended.length ? h('h2', { class: 'fx-int-heading' }, 'All') : null,
         all.length ? h('div', { class: 'fx-int-grid' }, all.map(integrationTile)) : h('p', { class: 'fx-empty' }, 'No integration matches.')));
     }
     content.replaceChildren(...sections);
@@ -858,7 +874,7 @@ async function renderIntegration(main, id) {
         h('div', { class: 'fx-int-page__main' }, ...[
           alerts.element,
           !canChange ? notice('Changing integrations needs a verified owner sign-in: Google Workspace on the owner domain with no password, or a second factor.', 'warn', 'Read only.') : null,
-          !body.secretsKey ? notice('Flow has no secrets key, so it cannot store a client secret. Ask whoever hosts Flow to set FLOW_SECRETS_KEY (64 hex characters), then restart Flow.', 'warn', 'No secrets key.') : null,
+          !body.secretsKey ? notice('Flow cannot store a client secret. Set FLOW_SECRETS_KEY (64 hex characters), then restart Flow.', 'warn', 'No secrets key.') : null,
           current.state === 'failed' && current.error ? notice(current.error, 'danger', 'It could not start.') : null,
           current.id === 'xero' && current.state === 'ready' ? h('section', { class: 'fx-int-section' }, xeroConnection(body.organisations, canChange)) : null,
           current.id === 'seazona' ? h('section', { class: 'fx-int-section fx-card', style: { padding: '8px 20px 16px' } }, automationSection(ui(), 'seazona', 'Ready to invoice')) : null,
@@ -1103,7 +1119,7 @@ function renderAccount(main) {
 // in it at once.
 function renderAppearance(main) {
   main.append(
-    pageHeader('Appearance', { subtitle: 'Saved with your account, on every device.' }),
+    pageHeader('Appearance'),
     h('div', { class: 'fx-appearance', id: 'appearance' }));
   drawAppearance();
 }
@@ -1230,7 +1246,7 @@ function drawModeToggles() {
     button.innerHTML = dark ? SUN : MOON;
     if (!button.classList.contains('fx-btn--icon')) button.append(` ${dark ? 'Light' : 'Dark'}`);
     button.setAttribute('aria-label', label);
-    button.title = label;
+    button.dataset.tip = label;
   }
 }
 
@@ -1291,4 +1307,5 @@ async function start() {
   await renderShell();
 }
 
+startTips();
 start();

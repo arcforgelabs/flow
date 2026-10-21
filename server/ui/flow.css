@@ -170,15 +170,28 @@ body:is([data-state="off"], [data-state="error"], [data-state="no-access"]) .fx-
 .fx-main { flex: 1; min-width: 0; max-width: 1180px; margin: 0 auto; padding: 32px clamp(16px, 4vw, 48px) 64px; display: grid; gap: 20px; align-content: start; }
 .fx-main:focus { outline: none; box-shadow: none; }
 
-/* Page header: title and one line, then the actions, primary last. */
-.fx-ph { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px; }
-.fx-ph__text { display: grid; gap: 6px; max-width: 64ch; }
+/* Page header: the title only (no line under it), then the actions,
+   primary last. One height on every page, with or without a button. */
+.fx-ph { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; min-height: 36px; }
+.fx-ph__text { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .fx-title {
   color: var(--t-strong);
-  font: var(--t-display-weight) 28px/1.15 var(--t-display); letter-spacing: -0.015em;
+  font: var(--t-display-weight) 24px/1.15 var(--t-display); letter-spacing: -0.015em;
 }
-.fx-ph__sub { color: var(--t-dim); }
-.fx-ph__actions { display: flex; gap: 8px; }
+.fx-ph__count { color: var(--t-dim); font-size: 14px; font-variant-numeric: tabular-nums; }
+/* A docs link as a "?" icon beside a title (helpLink in app.js). */
+.fx-help { display: inline-flex; vertical-align: middle; margin-left: 2px; padding: 4px; border-radius: var(--t-radius); color: var(--t-dim); }
+.fx-help:hover, .fx-help:focus-visible { background: var(--fx-hover); color: var(--t-strong); }
+.fx-help .fx-lucide { width: 16px; height: 16px; }
+.fx-ph__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+
+/* The tip an icon-only control shows on hover and keyboard focus (tip.js). */
+.fx-tip {
+  position: fixed; top: 0; left: 0; z-index: 1000; max-width: 260px; padding: 4px 8px;
+  border: 1px solid var(--fx-line); border-radius: var(--t-radius); background: var(--t-paper); color: var(--t-strong);
+  font: 500 12px/1.3 var(--t-body); pointer-events: none; white-space: nowrap;
+  box-shadow: var(--t-shadow), 0 4px 12px rgba(0, 0, 0, .12);
+}
 
 /* ── Notices, pills, tags, toasts ──────────────────────────────────────── */
 .fx-notice {
@@ -287,10 +300,12 @@ a.fx-link:hover, a.fx-link:focus-visible { border-color: var(--t-strong); }
 .fx-chip { border: 1px solid var(--fx-line); border-radius: 999px; background: var(--t-paper); color: var(--t-text); }
 .fx-int-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
 .fx-int-bar .fx-search { margin: 0; }
+.fx-int-bar .fx-row { flex: 1 1 auto; flex-wrap: nowrap; justify-content: flex-end; min-width: 0; }
+.fx-int-bar .fx-row .fx-search { flex: 0 1 320px; width: auto; min-width: 0; }
+.fx-int-bar .fx-row .fx-select { flex: none; }
 .fx-int-sections { display: grid; gap: 32px; }
 .fx-int-section-list { display: grid; gap: 16px; }
 .fx-int-heading { color: var(--t-strong); font: 600 19px/1.3 var(--t-body); }
-.fx-int-heading-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .fx-int-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
 .fx-int-card {
   display: grid; grid-template-rows: auto 1fr auto; gap: 14px; padding: 18px;
@@ -967,7 +982,7 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
 /* ── Phones ─────────────────────────────────────────────────────────────── */
 @media (max-width: 640px) {
   .fx-main { padding-top: 20px; }
-  .fx-title { font-size: 24px; }
+  .fx-title { font-size: 22px; }
   .fx-table thead { display: none; }
   .fx-table, .fx-table tbody, .fx-table tr, .fx-table td { display: block; width: 100%; }
   .fx-table tr { padding: 12px 14px; border-bottom: 1px solid var(--fx-line-soft); }
@@ -976,7 +991,6 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
   .fx-table tbody tr:hover td { background: none; }
   .fx-table__actions { text-align: left; }
   .fx-table__actions .fx-row--end { justify-content: flex-start; }
-  .fx-ph__actions, .fx-ph__actions .fx-btn { width: 100%; }
   /* People: the name with its actions (⋯, Approve) on one line, then the
      role select full width, then the status pill when there is one. */
   .fx-people tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px 10px; }
@@ -1271,13 +1285,7 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
 .fx-pager__step:hover:not(:disabled) { background: var(--fx-hover); border-color: var(--fx-line); }
 .fx-pager__step:disabled { opacity: 0.35; cursor: default; }
 
-/* New invoice from a job: a quiet strip above the form, and a searchable
-   list of jobs with no invoice. */
-.fx-fromjob {
-  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px;
-  padding: 12px 16px; border: 1px dashed var(--fx-line); border-radius: var(--t-radius);
-}
-.fx-fromjob__text { display: grid; gap: 2px; font-size: 14px; }
+/* New invoice from a job: a searchable list of jobs with no invoice. */
 .fx-dialog:has(.fx-pick__body) { width: min(620px, calc(100vw - 32px)); }
 .fx-pick__body { display: grid; gap: 12px; }
 .fx-pick { display: grid; max-height: min(420px, 55vh); overflow-y: auto; border: 1px solid var(--fx-line); border-radius: var(--t-radius); }
@@ -1322,12 +1330,6 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
 .fx-bulk__act[data-tone="danger"] { color: var(--t-danger); }
 .fx-bulk__act[data-tone="danger"]:hover { background: var(--t-danger-bg); }
 .fx-bulk__sep { flex: none; width: 1px; height: 18px; margin: 0 4px; background: var(--fx-line); }
-/* An icon-only action says its name on hover, in a tip above it. */
-.fx-bulk [data-tip]:hover::after, .fx-bulk [data-tip]:focus-visible::after {
-  content: attr(data-tip); position: absolute; bottom: calc(100% + 10px); left: 50%; transform: translateX(-50%);
-  padding: 4px 8px; border: 1px solid var(--fx-line); border-radius: var(--t-radius); background: var(--t-paper); color: var(--t-strong);
-  font: 500 12px/1.2 var(--t-body); pointer-events: none; box-shadow: var(--t-shadow), 0 4px 12px rgba(0, 0, 0, .12);
-}
 /* More: a compact list, one row per action, like a dropdown. */
 .fx-pop.fx-bulk__more { width: 248px; min-width: 0; padding: 4px; }
 .fx-bulk__search { width: 100%; height: 30px; margin-bottom: 2px; padding: 4px 8px; font-size: 13px; }

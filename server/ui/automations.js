@@ -86,8 +86,7 @@ export function automationSection(ui, place, title) {
   (async () => {
     try {
       const { automations } = await flow(`/api/invoicing/automations?place=${encodeURIComponent(place)}`);
-      section.replaceChildren(h('h2', { class: 'fx-set__title' }, title), ...automations.flatMap(rowsOf),
-        h('p', { class: 'fx-dim', style: { margin: '8px 0 0' } }, h('a', { href: DOCS, target: '_blank', rel: 'noopener' }, 'How automations work')));
+      section.replaceChildren(ui.sectionTitle(title, { href: DOCS, label: 'How automations work' }), ...automations.flatMap(rowsOf));
     } catch (error) {
       section.replaceChildren(h('h2', { class: 'fx-set__title' }, title), notice(error.message, 'danger'));
     }

@@ -15,10 +15,10 @@ test('the Ready note follows the send mode', () => {
   assert.equal(sendModeNote(null, null), 'No accounting system is on. Flow keeps each invoice here only.');
 });
 
-test('one invoice says what Send does with it', () => {
+test('one invoice warns only when Send cannot work', () => {
   const ready = { sendMode: { ...on, mode: 'accounting_draft' } };
-  assert.equal(draftNote('Xero', ready, true), 'Flow sends this invoice to Xero as a draft. You approve and send it in Xero.');
-  assert.equal(draftNote('Xero', ready, false), 'Fix the problem, then send it to Xero.');
-  assert.equal(draftNote(null, {}, true), 'It has no problem. Approve gives it a number.');
-  assert.equal(draftNote(null, {}, false), 'Fix the problem, then approve it.');
+  assert.equal(draftNote('Xero', ready), null, 'the Send dialog says what Send does');
+  assert.equal(draftNote(null, {}), null, 'no accounting system: nothing to warn about');
+  assert.equal(draftNote('Xero', { sendMode: { connected: false } }), 'Xero is not connected. Connect it in Integrations before you send.');
+  assert.equal(draftNote('Xero', { sendMode: { connected: true, writesAllowed: false } }), 'Xero does not take invoices from Flow yet. Turn this on in Integrations, Xero.');
 });
