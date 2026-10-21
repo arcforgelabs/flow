@@ -77,5 +77,5 @@ the suite runs in:
    lowers it otherwise.
 3. It commits `test/mobile/__screenshots__/` and `test/mobile/budget.json`
    to the branch. Check the changed images in the pull request.
-4. A commit made by a workflow does not start other workflows: run
-   **Mobile** on the branch, or push again.
+4. It then starts **Mobile** on the new commit (a commit made by a
+   workflow starts no workflow on its own).
