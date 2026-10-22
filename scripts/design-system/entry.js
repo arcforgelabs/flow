@@ -4,7 +4,7 @@
 import { crumbs, dialog, edgeFade, fieldError, h, helpLink, holdButton, listFrame, listHead, notice, pageHeader, rowMenu, sectionTitle, settingRow, tileCard, tileSection, toast } from '/assets/ui/kit.js';
 import { findBox, ICONS, svg, viewBar } from '/assets/ui/view-bar.js';
 import { bulkBar } from '/assets/ui/bulk-bar.js';
-import { listPager } from '/assets/ui/pager.js';
+import { listPager, pager } from '/assets/ui/pager.js';
 import { columnTable, onRightButton, rowCells, viewSaver } from '/assets/ui/columns.js';
 import { colorPicker, lucide, optionPill } from '/assets/ui/custom-fields.js';
 import { jobChangeBanner } from '/assets/ui/job-change.js';
@@ -28,7 +28,7 @@ if (document.readyState === 'loading') document.addEventListener('DOMContentLoad
 else ready();
 
 export {
-  bulkBar, colorPicker, columnTable, crumbs, dialog, edgeFade, fieldError, findBox, h, helpLink, holdButton, ICONS, jobChangeBanner, listFrame, listHead, listPager, lucide, named,
+  bulkBar, colorPicker, columnTable, crumbs, dialog, edgeFade, fieldError, findBox, h, helpLink, holdButton, ICONS, jobChangeBanner, listFrame, listHead, listPager, lucide, named, pager,
   notice, onRightButton, OPTION_COLORS, optionPill, pageHeader, rowCells, rowMenu, savedViews, sectionTitle, settingRow, sidecar, svg, tileCard,
   tileSection, toast, ui, viewBar, viewSaver,
 };

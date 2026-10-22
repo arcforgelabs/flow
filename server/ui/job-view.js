@@ -304,7 +304,9 @@ export function filterJobs(jobs, view, { valueOf, kindOf = (field) => FILTER_FIE
   const live = (f) => kindOf(f.field) && Object.hasOwn(OPERATORS[kindOf(f.field)], f.op) && filterIsOn(f, kindOf(f.field));
   const groups = (view.groups ?? []).map((g) => ({ match: g.match, rows: g.filters.filter(live) })).filter((g) => g.rows.length);
   if (!groups.length) return [...jobs];
-  const pass = (job) => (f) => matchesFilter(f, valueOf(job, f.field), { today, me, kind: kindOf(f.field), late: f.field === 'due' ? () => late(job) : null });
+  // `late` is a job's own lateness (Jobs). Pass null when "due" is a date on
+  // the row, so Overdue means that day is before today (Invoices).
+  const pass = (job) => (f) => matchesFilter(f, valueOf(job, f.field), { today, me, kind: kindOf(f.field), late: f.field === 'due' && late ? () => late(job) : null });
   const passGroup = (job) => (g) => (g.match === 'any' ? g.rows.some(pass(job)) : g.rows.every(pass(job)));
   return jobs.filter((job) => (view.match === 'any' ? groups.some(passGroup(job)) : groups.every(passGroup(job))));
 }

@@ -30,6 +30,12 @@ export const SCREENS = [
   { id: 'invoices-filter', path: '/invoices', ready: '.fx-tabs', prepare: async (page) => {
     await page.getByRole('button', { name: /^Filter/ }).first().click();
   } },
+  // One filter row, so the panel's field, operator, value and delete are on screen.
+  { id: 'invoices-filter-row', path: '/invoices', ready: '.fx-tabs', prepare: async (page) => {
+    await page.getByRole('button', { name: /^Filter/ }).first().click();
+    await page.getByRole('button', { name: 'Add filter' }).click();
+    await page.locator('.fx-rows__row').first().waitFor();
+  } },
   { id: 'invoice', path: () => `/invoices/${process.env.MOBILE_INVOICE}`, ready: '.fx-main h1, .fx-main .fx-title' },
   { id: 'reconcile', path: '/reconcile', ready: '.fx-main > *', list: true },
   { id: 'price-list', path: '/price-list', ready: '.fx-main > *', list: true },

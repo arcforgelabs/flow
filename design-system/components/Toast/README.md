@@ -1,8 +1,9 @@
 # Toast
 
-A short result after an action, for four seconds, at the foot of the page.
+A short result after an action, at the foot of the page.
 
-- `toast(text, tone)`; tone `info`, `success`, `warn` or `danger`.
+- `toast(text, tone, { stay })`; tone `info`, `success`, `warn` or `danger`.
+- Without `stay`, it clears after four seconds. With `stay: true`, it stays until the person closes it (use for a danger a failed press must not pass unseen).
 - Past tense, one line: "3 invoices sent.", "Saved."
 
 Code: `toast` in `server/ui/kit.js`.

@@ -11,9 +11,9 @@ import { draftNote, sendModeNote } from '/assets/ui/invoice-notes.js';
 import { caseNumber } from '/assets/ui/job-board.js';
 import { jobChangeReview } from '/assets/ui/job-change.js';
 import { columnTable, dateCell, fieldColumn, rowCells, viewSaver } from '/assets/ui/columns.js';
-import { fieldGroup, filterCount, filterJobs, INVOICE_COLUMNS, invoiceColumnsView } from '/assets/ui/job-view.js';
-import { INVOICE_FILTER_FIELDS, invoiceFilterKind, invoiceValue, normaliseInvoicesView } from '/assets/ui/list-views.js';
-import { listPager, PAGE_SIZES } from '/assets/ui/pager.js';
+import { fieldGroup, fieldIdOf, filterCount, filterJobs, INVOICE_COLUMNS, invoiceColumnsView, KIND_OF_TYPE } from '/assets/ui/job-view.js';
+import { INVOICE_FILTER_FIELDS, INVOICE_FILTER_STATUSES, invoiceFilterKind, invoiceKindOf, invoiceValue, normaliseInvoicesView } from '/assets/ui/list-views.js';
+import { listPager, pager, PAGE_SIZES } from '/assets/ui/pager.js';
 import { savedViews } from '/assets/ui/saved-views.js';
 import { findBox, today, viewBar } from '/assets/ui/view-bar.js';
 
@@ -119,13 +119,14 @@ const showDate = (iso) => (iso ? new Date(`${iso}T00:00:00`).toLocaleDateString(
 // views with them and filters every invoice of a tab (GET /invoices).
 const FILTER_FIELDS = INVOICE_FILTER_FIELDS;
 const PROBLEM_OPS = { yes: 'Has one', no: 'Has none' };
+const STATUS_OPS = { is: 'Is', not: 'Is not' };
 const FILTER_KEY = 'flow_invoice_filters';
 const SIZE_KEY = 'flow_invoice_page_size';
-const filterKind = invoiceFilterKind;
 export { invoiceValue };
 
-// The invoices a filter view keeps.
-export const keptInvoices = (invoices, view, now = today()) => filterJobs(invoices, view, { valueOf: invoiceValue, kindOf: filterKind, today: now });
+// The invoices a filter view keeps. `kindOf` knows the lab's custom fields;
+// `me` is the person looking, for "Me" on a person field.
+export const keptInvoices = (invoices, view, now = today(), { kindOf = invoiceFilterKind, me = null } = {}) => filterJobs(invoices, view, { valueOf: invoiceValue, kindOf, late: null, me, today: now });
 
 // Rows per page, kept on this device.
 function readSize() {
@@ -194,11 +195,27 @@ export async function renderInvoiceList(main, ui) {
   const opening = views.opening();
   if (opening) state.view = normaliseInvoicesView(opening);
   views.draw();
+  // The same fields the Columns menu offers: the invoice's columns, its
+  // job's columns, then the lab's custom fields (view-bar.js draws them).
+  const fieldById = (id) => state.fields.find((f) => f.id === id) ?? null;
+  const kindOf = (field) => invoiceKindOf(state.fields)(field);
+  const labels = (list) => (list ?? []).filter(Boolean).map((v) => ({ value: v, label: v }));
   const filterMenu = viewBar(h).filterMenu({
-    fields: () => Object.entries(FILTER_FIELDS).map(([value, f]) => ({ value, label: f.label, icon: f.icon })),
-    kindOf: filterKind,
-    opsOf: (field) => (field === 'problem' ? PROBLEM_OPS : null),
-    choicesOf: (field) => (field === 'client' ? (raw?.clients ?? []).map((v) => ({ value: v, label: v })) : []),
+    fields: () => [
+      ...Object.entries(FILTER_FIELDS).map(([value, f]) => ({ value, label: f.label, icon: f.icon })),
+      { group: 'Custom fields', options: state.fields.filter((f) => KIND_OF_TYPE[f.type]).map((f) => ({ value: fieldGroup(f.id), label: f.name })) },
+    ],
+    kindOf,
+    opsOf: (field) => (field === 'problem' ? PROBLEM_OPS : field === 'status' ? STATUS_OPS : null),
+    choicesOf: (field) => {
+      if (field === 'client') return labels(raw?.clients);
+      if (field === 'status') return INVOICE_FILTER_STATUSES;
+      if (field === 'linked') return (raw?.linksTo ?? []).filter((s) => s.kind === 'work').map((s) => ({ value: s.id, label: s.name }));
+      if (field === 'practitioner') return labels(raw?.practitioners);
+      const custom = fieldById(fieldIdOf(field));
+      if (custom?.type === 'person') return [{ value: 'me', label: 'Me' }, ...state.people.map((p) => ({ value: p.id, label: p.name }))];
+      return (custom?.options ?? []).map((o) => ({ value: o.id, label: o.archived ? `${o.name} (archived)` : o.name, color: o.color }));
+    },
     view: () => state.view,
     change: setView,
     first: 'client',
@@ -259,17 +276,20 @@ export async function renderInvoiceList(main, ui) {
   }
 
   // A bulk step on the server: on success the ticks clear and the list loads
-  // again; on a failure the ticks stay, so a person can try again.
-  async function post(path, payload, done) {
+  // again (or `then(res)` names the tab the invoices went to, and it opens);
+  // on a failure the ticks stay, so a person can try again.
+  async function post(path, payload, done, then = () => null) {
     try {
       const res = await flow(`/api/invoicing/invoices/${path}`, { method: 'POST', body: JSON.stringify(payload) });
       toast(...done(res));
       state.ticked.clear();
       seen.clear();
-      await load();
+      const tab = then(res);
+      if (tab && tab !== state.status) openTab(tab);
+      else await load();
       alerts.refresh();
     } catch (error) {
-      toast(error.message, 'danger');
+      toast(error.message, 'danger', { stay: true });
     }
   }
 
@@ -285,15 +305,25 @@ export async function renderInvoiceList(main, ui) {
       status.push({
         icon: to ? 'send' : 'circle-check-big', label: to ? `Send to ${to}` : 'Approve', primary: true,
         title: to ? `Send to ${to}` : 'Approve',
-        run: async () => {
+        run: async (working) => {
           const ok = await ui.dialog({
             title: to ? `Send ${plural(ticked.length, 'invoice', 'invoices')} to ${to}?` : `Approve ${plural(ticked.length, 'invoice', 'invoices')}?`,
             body: h('p', {}, to ? sendModeNote(to, body.sendMode, 'each one') : 'Each one gets the next number and is locked.'),
             confirm: to ? `Send ${ticked.length}` : `Approve ${ticked.length}`,
           });
           if (!ok) return;
-          await post('send-ready', { issueDate: localDate(), invoiceIds: ticked },
-            (res) => [`${to ? `${res.issued} on the way to ${to}.` : `${res.issued} approved.`}${res.held ? ` ${res.held} failed a check and went to Pending.` : ''}${res.remaining ? ` ${res.remaining} more stay in Ready: tick them and press again.` : ''}`, res.held ? 'info' : 'success']);
+          working(to ? 'Sending' : 'Approving');
+          // The sent ones show on Draft as Sending until the accounting
+          // system has them; the approved ones on Approved.
+          await post('send-ready', { issueDate: localDate(), invoiceIds: ticked }, (res) => {
+            const sent = to ? `${res.issued} on the way to ${to}.` : `${res.issued} approved.`;
+            const notes = [
+              res.held ? `${res.held} failed a check and went to Pending.` : '',
+              res.waiting ? `${res.waiting} could not be confirmed with the work system yet: press Send again.` : '',
+              res.remaining ? `${res.remaining} more stay in Ready: tick them and press again.` : '',
+            ].filter(Boolean);
+            return [`${sent}${notes.length ? ` ${notes.join(' ')}` : ''}`, res.held || res.waiting ? 'info' : 'success'];
+          }, (res) => (res.issued ? (to ? 'draft' : 'approved') : null));
         },
       });
     }
@@ -301,7 +331,11 @@ export async function renderInvoiceList(main, ui) {
     if (state.status === 'pending' && context.canIssue && to && failed.length) {
       status.push({
         icon: 'refresh-cw', label: 'Retry', primary: true, title: `Send again to ${to}`,
-        run: () => post('send-again', { invoiceIds: failed }, (res) => [`${res.queued} on the way to ${to} again.`, 'success']),
+        run: (working) => {
+          working('Sending');
+          return post('send-again', { invoiceIds: failed }, (res) => [`${res.queued} on the way to ${to} again.`, 'success'],
+            (res) => (res.queued ? 'draft' : null));
+        },
       });
     }
     apply.push({
@@ -402,7 +436,7 @@ export async function renderInvoiceList(main, ui) {
     const query = new URLSearchParams({
       status: state.status, offset: String(state.offset), limit: String(state.limit), today: today(),
       ...(state.q ? { q: state.q } : {}),
-      ...(filterCount(state.view, filterKind) ? { filter: JSON.stringify(state.view) } : {}),
+      ...(filterCount(state.view, kindOf) ? { filter: JSON.stringify(state.view) } : {}),
     });
     const key = String(query);
     const mine = ++asked;
@@ -429,6 +463,19 @@ export async function renderInvoiceList(main, ui) {
     host.removeAttribute('aria-busy');
     delete host.dataset.stale;
     draw(answer);
+    watchSending(answer);
+  }
+
+  // While a shown invoice is still Sending, the list reads again every 15
+  // seconds, so a person sees it reach the accounting system.
+  let sendingTimer = null;
+  function watchSending(answer) {
+    clearTimeout(sendingTimer);
+    if (!answer.invoices?.some((i) => i.sending)) return;
+    const key = state.status;
+    sendingTimer = setTimeout(() => {
+      if (host.isConnected && state.status === key && !state.ticked.size) { seen.clear(); load(); }
+    }, 15_000);
   }
 
   function drawTabs(counts) {
@@ -459,7 +506,7 @@ export async function renderInvoiceList(main, ui) {
     drawTabs(body.counts);
     drawBar();
     if (!body.invoices.length) {
-      host.replaceChildren(h('p', { class: 'fx-empty' }, filterCount(state.view, filterKind)
+      host.replaceChildren(h('p', { class: 'fx-empty' }, filterCount(state.view, kindOf)
         ? 'No invoice in this tab passes the filter.'
         : state.q
         ? 'No invoice matches that search.'
@@ -599,23 +646,21 @@ function saveNav(nav) {
 function navBar(ui, invoice) {
   const { h, go, flow } = ui;
   const id = invoice?.id ?? null;
-  const back = () => { sessionStorage.setItem(NAV_BACK, '1'); go('/invoices'); };
-  const step = (to, label, path) => {
-    const button = h('button', {
-      class: 'fx-pager__step', type: 'button', disabled: !to, 'aria-label': label, title: label,
-      onclick: () => go(`/invoices/${to}`),
-    });
-    button.innerHTML = `<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="${path}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
-    return button;
-  };
-  const bar = h('nav', { class: 'fx-pager', 'aria-label': 'Invoices' },
-    h('button', { class: 'fx-pager__back', type: 'button', onclick: back }, '← Back'));
+  const { element: bar, draw } = pager(h, {
+    label: 'Invoices',
+    back: () => { sessionStorage.setItem(NAV_BACK, '1'); go('/invoices'); },
+  });
   const fill = (ids) => {
     const at = ids.indexOf(id);
     if (at < 0) return false;
-    bar.replaceChildren(bar.firstChild,
-      h('span', { class: 'fx-pager__count' }, `${at + 1} of ${ids.length}`),
-      h('span', { class: 'fx-pager__steps' }, step(ids[at - 1], 'Previous invoice', 'M14.5 6l-6 6 6 6'), step(ids[at + 1], 'Next invoice', 'M9.5 6l6 6-6 6')));
+    const to = (other) => (other ? () => go(`/invoices/${other}`) : null);
+    draw({
+      count: `${at + 1} of ${ids.length}`,
+      prev: to(ids[at - 1]),
+      next: to(ids[at + 1]),
+      prevLabel: 'Previous invoice',
+      nextLabel: 'Next invoice',
+    });
     return true;
   };
   const tab = invoice?.tab ?? null;
@@ -957,7 +1002,7 @@ function draftView(invoice, ui, context, redraw) {
         toast(`${fresh.number} is on the way to ${to}.`, 'success');
         openNext(ui, invoice.id);
       } catch (error) {
-        toast(error.message, 'danger');
+        toast(error.message, 'danger', { stay: true });
       }
     },
   }, emails ? `Send to ${to} and email` : `Send to ${to}`) : null;

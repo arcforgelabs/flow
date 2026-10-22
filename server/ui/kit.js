@@ -166,11 +166,24 @@ export function fieldError(field, on = true) {
   return field;
 }
 
-export function toast(text, tone = 'info') {
+// A short result after an action. With `stay: true` it stays until the person
+// closes it (for a danger a failed press must not pass unseen).
+export function toast(text, tone = 'info', { stay = false } = {}) {
   const region = document.getElementById('toasts');
-  const item = applyPhoneRule(h('div', { class: 'fx-toast', 'data-tone': tone, role: 'status' }, text), 'toast');
+  const item = applyPhoneRule(h('div', {
+    class: stay ? 'fx-toast fx-toast--stay' : 'fx-toast',
+    'data-tone': tone,
+    role: tone === 'danger' ? 'alert' : 'status',
+  }, h('span', { class: 'fx-toast__text' }, text)), 'toast');
+  if (stay) {
+    item.append(h('button', {
+      type: 'button', class: 'fx-toast__close', 'aria-label': 'Close', title: 'Close',
+      onclick: () => item.remove(),
+    }, lucide(h, 'x')));
+  } else {
+    setTimeout(() => item.remove(), 4200);
+  }
   region.append(item);
-  setTimeout(() => item.remove(), 4200);
 }
 
 // A modal built on <dialog>: resolves with the button's value, or null.
@@ -214,26 +227,126 @@ settingRow.next = 0;
 
 let rowMenus = 0;
 
+function menuGlyph(icon) {
+  if (icon instanceof Node) return icon.isConnected ? icon.cloneNode(true) : icon;
+  return icon ? lucide(h, icon) : null;
+}
+
 // A row's ⋯ menu, as on the Custom fields page. The menu lines up with the
 // button's right edge; `align: 'start'` lines it up with its left edge.
-// `trigger` swaps the ⋯ icon for the given contents (the sidebar's More).
-export function rowMenu(label, items, { trigger = null, className = 'fx-cfm__more', align = 'end' } = {}) {
+// `place: 'side'` floats it to the right of the button (the sidebar's More),
+// and moves focus into the menu and back to the button on close.
+// `trigger` swaps the ⋯ icon for the given contents.
+// An item is `{ icon, text, run, tone }` or `'-'` (a line). `icon` is a Lucide
+// name or a node. `trailing` is a control at the row's end (the pin) that
+// does not close the menu: `{ icon, label, pressed, run, locked }`. `locked`
+// draws the icon and does not take a click. `items` may be a function, read
+// again each time the menu opens. `panel.refresh()` redraws it while open.
+export function rowMenu(label, items, { trigger = null, className = 'fx-cfm__more', align = 'end', place = 'below' } = {}) {
   const id = `fx-row-menu-${++rowMenus}`;
   const button = applyPhoneRule(h('button', { class: className, type: 'button', 'aria-label': label, popovertarget: id, 'aria-haspopup': 'menu', 'aria-expanded': 'false' }, trigger ?? lucide(h, 'ellipsis')), 'rowMenu');
-  const panel = h('div', { class: 'fx-pop', id, popover: 'auto', role: 'menu' });
-  panel.addEventListener('toggle', (event) => {
-    button.setAttribute('aria-expanded', String(event.newState === 'open'));
-    if (event.newState !== 'open') return;
-    const close = () => panel.hidePopover();
-    panel.replaceChildren(...items.map((entry) => (entry === '-'
-      ? h('div', { class: 'fx-pop__sep' })
-      : h('button', { type: 'button', class: 'fx-pop__item', role: 'menuitem', 'data-tone': entry.tone, onclick: () => { close(); entry.run(); } },
-        h('span', { class: 'fx-pop__tick' }, lucide(h, entry.icon)), h('span', {}, entry.text)))));
+  const panel = h('div', { class: place === 'side' ? 'fx-pop fx-pop--side' : 'fx-pop', id, popover: 'auto', role: 'menu' });
+  const entries = () => (typeof items === 'function' ? items() : items);
+  let picking = false;
+
+  function renderEntry(entry) {
+    if (entry === '-') return h('div', { class: 'fx-pop__sep' });
+    const item = h('button', {
+      type: 'button', class: 'fx-pop__item', role: 'menuitem', 'data-tone': entry.tone,
+      onclick: () => { picking = true; panel.hidePopover(); entry.run(); },
+    }, h('span', { class: 'fx-pop__tick' }, menuGlyph(entry.icon)), h('span', {}, entry.text));
+    if (!entry.trailing) return item;
+    const trail = entry.trailing;
+    const mark = menuGlyph(trail.icon);
+    const control = trail.locked
+      ? h('span', { class: 'fx-pop__pin fx-pop__pin--fixed', role: 'img', 'aria-label': trail.label }, mark)
+      : h('button', {
+        type: 'button', class: 'fx-pop__pin', 'aria-label': trail.label, 'aria-pressed': trail.pressed ? 'true' : 'false',
+        onclick: (event) => { event.stopPropagation(); trail.run(); },
+      }, mark);
+    return h('div', { class: 'fx-pop__row', role: 'none' }, item, control);
+  }
+
+  function placePanel() {
     const at = button.getBoundingClientRect();
+    const margin = 8;
+    const narrow = place === 'side' && window.matchMedia('(max-width: 820px)').matches;
+    if (narrow) {
+      // On a phone the sidebar is the slide-out. The menu stays inside it.
+      const drawer = button.closest('.fx-nav')?.getBoundingClientRect();
+      const left = Math.round((drawer?.left ?? at.left) + margin);
+      const width = Math.max(160, Math.round((drawer?.width ?? at.width) - margin * 2));
+      panel.style.width = `${width}px`;
+      panel.style.minWidth = '0';
+      let top = Math.round(at.bottom + 6);
+      if (top + panel.offsetHeight > innerHeight - margin) top = Math.max(margin, Math.round(innerHeight - margin - panel.offsetHeight));
+      panel.style.top = `${top}px`;
+      panel.style.left = `${left}px`;
+      return;
+    }
+    panel.style.width = '';
+    panel.style.minWidth = '';
+    if (place === 'side') {
+      const gap = 8;
+      let left = Math.round(at.right + gap);
+      if (left + panel.offsetWidth > innerWidth - margin) left = Math.round(at.left - gap - panel.offsetWidth);
+      panel.style.left = `${Math.max(margin, Math.min(left, innerWidth - panel.offsetWidth - margin))}px`;
+      let top = Math.round(at.top);
+      panel.style.top = `${Math.max(margin, Math.min(top, innerHeight - panel.offsetHeight - margin))}px`;
+      return;
+    }
     panel.style.top = `${Math.round(at.bottom + 6)}px`;
     const left = align === 'start' ? at.left : at.right - panel.offsetWidth;
-    panel.style.left = `${Math.round(Math.max(8, Math.min(left, innerWidth - panel.offsetWidth - 8)))}px`;
+    panel.style.left = `${Math.round(Math.max(margin, Math.min(left, innerWidth - panel.offsetWidth - margin)))}px`;
+  }
+
+  function draw(keepFocus) {
+    const active = document.activeElement;
+    const row = active?.closest?.('.fx-pop__row');
+    const text = row?.querySelector('[role="menuitem"]')?.textContent?.trim() ?? '';
+    const onPin = Boolean(active?.classList?.contains('fx-pop__pin'));
+    panel.replaceChildren(...entries().map(renderEntry));
+    if (!keepFocus || !text) return;
+    const next = [...panel.querySelectorAll('.fx-pop__row')].find((candidate) => candidate.querySelector('[role="menuitem"]')?.textContent?.trim() === text);
+    (onPin ? next?.querySelector('.fx-pop__pin') : next?.querySelector('[role="menuitem"]'))?.focus();
+  }
+
+  panel.refresh = () => {
+    if (!panel.matches(':popover-open')) return;
+    draw(true);
+    placePanel();
+  };
+
+  panel.addEventListener('toggle', (event) => {
+    const open = event.newState === 'open';
+    button.setAttribute('aria-expanded', String(open));
+    if (!open) {
+      // A chosen row moves focus itself. Anything else (Escape, a click
+      // outside) puts focus back on the button that opened the menu.
+      if (place === 'side' && !picking) button.focus();
+      picking = false;
+      return;
+    }
+    draw(false);
+    placePanel();
+    if (place === 'side') panel.querySelector('[role="menuitem"]')?.focus();
   });
+
+  if (place === 'side') {
+    panel.addEventListener('keydown', (event) => {
+      if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
+      const stops = [...panel.querySelectorAll('button')];
+      if (!stops.length) return;
+      event.preventDefault();
+      const index = Math.max(0, stops.indexOf(document.activeElement));
+      const next = event.key === 'Home' ? 0
+        : event.key === 'End' ? stops.length - 1
+        : event.key === 'ArrowDown' ? (index + 1) % stops.length
+        : (index - 1 + stops.length) % stops.length;
+      stops[next].focus();
+    });
+  }
+
   return [button, panel];
 }
 

@@ -10,6 +10,7 @@ registerHooks({
 });
 const { keptRows, reconcileRows } = await import('../server/ui/reconcile.js');
 const { keptInvoices } = await import('../server/ui/invoicing.js');
+const { invoiceKindOf } = await import('/assets/ui/list-views.js');
 
 const FIELD = '6f1c2a4e-1b2c-4d3e-8f9a-0b1c2d3e4f5a';
 const rows = reconcileRows({
@@ -51,4 +52,38 @@ test('Invoices filters the rows of the tab shown', () => {
   assert.deepEqual(kept(one([{ field: 'number', op: 'unset' }])), ['b']);
   assert.deepEqual(kept(one([{ field: 'date', op: 'is', value: 'thisweek' }])), ['b'], 'a draft uses the day it was made');
   assert.deepEqual(kept(one([{ field: 'total', op: 'lt', value: 100 }, { field: 'problem', op: 'yes' }], 'any')), ['a', 'b']);
+});
+
+test('Invoices filters by its own columns, its job and a custom field', () => {
+  const field = '6f1c2a4e-1b2c-4d3e-8f9a-0b1c2d3e4f5a';
+  const person = 'a1b2c3d4-e5f6-4789-a012-3456789abcde';
+  const invoices = [
+    {
+      id: 'a', number: 'INV-1', contactName: 'Beta Clinic', reference: 'Dr B - P1', issueDate: '2026-03-02', dueDate: '2026-03-01', totalCents: 5000, problems: [], tab: 'approved',
+      job: { sourceSystem: 'lab', sourceJobRef: '101', caseRef: 'CASE-101', practitioner: 'Dr B', shippedOn: '2026-03-04' },
+      fields: { [field]: true, [person]: 'p1' },
+    },
+    {
+      id: 'b', number: null, contactName: 'Alpha Clinic', reference: null, createdAt: '2026-03-09T01:00:00Z', dueDate: null, totalCents: 12000, problems: [{ message: 'No price' }], tab: 'pending',
+      job: null, fields: {},
+    },
+    {
+      id: 'c', number: 'INV-3', contactName: 'Beta Clinic', reference: 'x', issueDate: '2026-03-08', dueDate: '2026-04-01', totalCents: 100, problems: [], tab: 'draft', sending: true,
+      job: { sourceSystem: 'other', sourceJobRef: '102', caseRef: '6f1c2a4e-1b2c-4d3e-8f9a-0b1c2d3e4f5b', practitioner: null, shippedOn: null },
+      fields: { [field]: false },
+    },
+  ];
+  const kindOf = invoiceKindOf([{ id: field, type: 'checkbox' }, { id: person, type: 'person' }]);
+  const kept = (filters, match = 'all') => keptInvoices(invoices, one(filters, match), '2026-03-10', { kindOf, me: 'p1' }).map((i) => i.id);
+  assert.deepEqual(kept([{ field: 'due', op: 'is', value: 'overdue' }]), ['a']);
+  assert.deepEqual(kept([{ field: 'status', op: 'is', value: ['sending'] }]), ['c']);
+  assert.deepEqual(kept([{ field: 'status', op: 'is', value: ['pending'] }]), ['b']);
+  assert.deepEqual(kept([{ field: 'linked', op: 'is', value: ['lab'] }]), ['a']);
+  assert.deepEqual(kept([{ field: 'linked', op: 'unset' }]), ['b']);
+  assert.deepEqual(kept([{ field: 'case', op: 'has', value: 'case-101' }]), ['a'], 'a record id is not a case number');
+  assert.deepEqual(kept([{ field: 'case', op: 'set' }]), ['a']);
+  assert.deepEqual(kept([{ field: 'practitioner', op: 'is', value: ['Dr B'] }]), ['a']);
+  assert.deepEqual(kept([{ field: 'shipped', op: 'is', value: 'thismonth' }]), ['a']);
+  assert.deepEqual(kept([{ field: `field:${field}`, op: 'yes' }]), ['a']);
+  assert.deepEqual(kept([{ field: `field:${person}`, op: 'is', value: ['me'] }]), ['a']);
 });

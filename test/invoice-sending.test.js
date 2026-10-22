@@ -6,8 +6,10 @@ import { seedFirstOwner } from '../server/auth/people.js';
 import { createPersonAuth } from '../server/auth/session.js';
 import { createContact, createOrganisation, createPriceItem } from '../server/core/directory.js';
 import { createDraftInvoice, reviseInvoice, updateDraftInvoice } from '../server/core/invoices.js';
+import { observeJob } from '../server/core/ledger.js';
+import { READ_BEFORE_ACT_MS, READS_PER_PASS } from '../server/core/read-before-act.js';
 import { draftProblems, invoiceViews, markNotReady, markReady, sendAgain, sendAllReady, sendQueued } from '../server/core/sending.js';
-import { invoices } from '../server/db/schema.js';
+import { billingObligations, invoices } from '../server/db/schema.js';
 import { createRegistry } from '../server/integrations/port.js';
 import { createXeroAdapter } from '../server/integrations/xero/index.js';
 import { fakeClerk, request, TEST_PUBLISHABLE_KEY } from './support/clerk.js';
@@ -92,6 +94,46 @@ describe('ready, problem and send', { skip: skipWithoutDatabase }, () => {
   const good = () => draft([{ priceItemId: crown.id, quantity: 1 }]);
   const row = async (id) => (await handle.db.select().from(invoices).where(eq(invoices.id, id)))[0];
 
+  // A ready invoice whose work-system report is old enough to be read again.
+  const SEEN = new Date('2026-10-19T00:00:00.000Z');
+  const LATER = new Date(SEEN.getTime() + READ_BEFORE_ACT_MS + 60_000);
+  let jobs = 0;
+  const invoicedJob = async () => {
+    const invoice = await good();
+    const ref = `JOB-${labs}-${++jobs}`;
+    const obligation = await observeJob(handle.db, lab.id, {
+      sourceSystem: 'works', sourceJobRef: ref, caseRef: ref, sourceStatus: 'Shipped', jobDate: '2026-10-15',
+      lines: [{ itemCode: 'CRN', quantity: 1 }], observedAt: SEEN,
+    });
+    await handle.db.update(billingObligations).set({ invoiceId: invoice.id }).where(eq(billingObligations.id, obligation.id));
+    return { invoice, ref };
+  };
+  const confirmed = (ref) => ({
+    state: 'read',
+    item: {
+      ledgerJob: {
+        sourceSystem: 'works', sourceJobRef: ref, caseRef: ref, sourceStatus: 'Shipped', jobDate: '2026-10-15',
+        lines: [{ itemCode: 'CRN', quantity: 1 }], observedAt: LATER,
+      },
+    },
+  });
+  const workReader = (answer) => {
+    const reads = [];
+    const work = {
+      id: 'works',
+      capabilities: {
+        readWorkItem: async ({ sourceJobRef }) => {
+          reads.push(sourceJobRef);
+          return answer(sourceJobRef);
+        },
+      },
+    };
+    return { work, reads };
+  };
+  const sendThese = (invoiceIds, work) => sendAllReady(handle.db, lab.id, {
+    work, personId: owner.id, issueDate: ISSUE_DATE, invoiceIds, now: LATER,
+  });
+
   test('every draft is ready or a problem; a clean draft needs no mark', async () => {
     const one = await good();
     const freeText = await draft([{ description: 'Something', quantity: 1, unitAmountCents: 1000, taxCode: 'GST' }]);
@@ -166,6 +208,112 @@ describe('ready, problem and send', { skip: skipWithoutDatabase }, () => {
     assert.deepEqual(result, { issued: 1, queued: 0, remaining: 0, waiting: 0, held: 0 });
     assert.equal((await row(one.id)).status, 'issued');
     assert.equal((await row(other.id)).status, 'draft');
+  });
+
+  test('Send on one invoice sends nothing when its job cannot be confirmed', async () => {
+    const one = await invoicedJob();
+    const failed = workReader(() => ({ state: 'unavailable', reason: 'calls are stopped' }));
+    await assert.rejects(sendThese([one.invoice.id], failed.work), {
+      code: 'not_ready',
+      message: '1 job could not be read from the work system. Nothing was sent.',
+    });
+    assert.equal((await row(one.invoice.id)).status, 'draft');
+    assert.deepEqual(failed.reads, [one.ref]);
+
+    // A confirmed job on one invoice still goes.
+    const kept = await invoicedJob();
+    const ok = workReader(confirmed);
+    const result = await sendThese([kept.invoice.id], ok.work);
+    assert.deepEqual(result, { issued: 1, queued: 0, remaining: 0, waiting: 0, held: 0 });
+    assert.equal((await row(kept.invoice.id)).status, 'issued');
+  });
+
+  test('a bulk send issues the invoices whose jobs were confirmed when one read fails', async () => {
+    const keep = await invoicedJob();
+    const drop = await invoicedJob();
+    const { work, reads } = workReader((ref) => (ref === drop.ref
+      ? { state: 'unavailable', reason: 'calls are stopped' }
+      : confirmed(ref)));
+    const result = await sendThese([keep.invoice.id, drop.invoice.id], work);
+    assert.deepEqual(result, { issued: 1, queued: 0, remaining: 0, waiting: 1, held: 0 });
+    assert.equal((await row(keep.invoice.id)).status, 'issued');
+    assert.equal((await row(drop.invoice.id)).status, 'draft');
+    assert.deepEqual(reads.sort(), [keep.ref, drop.ref].sort());
+  });
+
+  test('a bulk send that confirms none names how many jobs could not be read', async () => {
+    const one = await invoicedJob();
+    const two = await invoicedJob();
+    const three = await invoicedJob();
+    const { work } = workReader(() => ({ state: 'unavailable', reason: 'calls are stopped' }));
+    await assert.rejects(sendThese([one.invoice.id, two.invoice.id, three.invoice.id], work), {
+      code: 'not_ready',
+      message: '3 jobs could not be read from the work system. Nothing was sent.',
+    });
+    for (const item of [one, two, three]) assert.equal((await row(item.invoice.id)).status, 'draft');
+  });
+
+  test('a bulk send reads at most 20 old jobs and reports the rest as waiting', async () => {
+    const made = [];
+    for (let i = 0; i < READS_PER_PASS + 5; i += 1) made.push(await invoicedJob());
+    const { work, reads } = workReader(confirmed);
+    const result = await sendThese(made.map((item) => item.invoice.id), work);
+    assert.equal(reads.length, READS_PER_PASS);
+    assert.deepEqual(
+      [result.issued, result.waiting, result.queued, result.remaining, result.held],
+      [READS_PER_PASS, 5, 0, 0, 0],
+    );
+    const statuses = await Promise.all(made.map((item) => row(item.invoice.id)));
+    assert.equal(statuses.filter((invoice) => invoice.status === 'issued').length, READS_PER_PASS);
+    assert.equal(statuses.filter((invoice) => invoice.status === 'draft').length, 5);
+  });
+
+  test('a bulk send still issues the others when one job goes to review', async () => {
+    const keep = await invoicedJob();
+    const drop = await invoicedJob();
+    const { work } = workReader((ref) => (ref === drop.ref
+      ? {
+        state: 'withdrawn',
+        reason: 'deleted',
+        ledgerWithdrawn: {
+          sourceSystem: 'works', sourceJobRef: ref, deleted: true,
+          reason: 'the order was deleted in the work system', observedAt: LATER,
+        },
+      }
+      : confirmed(ref)));
+    const result = await sendThese([keep.invoice.id, drop.invoice.id], work);
+    assert.deepEqual([result.issued, result.waiting], [1, 1]);
+    assert.equal((await row(keep.invoice.id)).status, 'issued');
+    assert.equal((await row(drop.invoice.id)).status, 'draft');
+    const views = await invoiceViews(handle.db, lab.id);
+    assert.equal(views.problems.get(drop.invoice.id)?.[0].code, 'job_review');
+  });
+
+  test('a bulk press still sends nothing when the accounting read cannot run', async () => {
+    const fake = fakeAccounting();
+    fake.adapter.capabilities.readChanges = async () => ({ state: 'unavailable', reason: 'calls are stopped' });
+    const one = await good();
+    const two = await good();
+    await assert.rejects(sendAllReady(handle.db, lab.id, {
+      accounting: fake.adapter, personId: owner.id, issueDate: ISSUE_DATE, invoiceIds: [one.id, two.id],
+    }), { code: 'not_ready', message: 'calls are stopped. Nothing was sent.' });
+    assert.equal((await row(one.id)).status, 'draft');
+    assert.equal((await row(two.id)).status, 'draft');
+  });
+
+  test('a stopped press names when the accounting copy has more changes than one read takes', async () => {
+    const fake = fakeAccounting();
+    fake.adapter.capabilities.readChanges = async () => ({
+      state: 'unavailable', reason: 'Xero has more changes than one read takes',
+    });
+    const one = await good();
+    await assert.rejects(sendAllReady(handle.db, lab.id, {
+      accounting: fake.adapter, personId: owner.id, issueDate: ISSUE_DATE, invoiceIds: [one.id],
+    }), {
+      code: 'not_ready',
+      message: 'The accounting copy has more changes than one read takes. Nothing was sent.',
+    });
+    assert.equal((await row(one.id)).status, 'draft');
   });
 
   test('an accounting system that is not connected or takes no writes stops the send before anything is issued', async () => {

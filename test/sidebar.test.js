@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
+import { NAV_DEFAULT, NAV_LOCKED, NAV_PAGES } from '../server/ui/nav-pins.js';
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), 'utf8');
 
@@ -43,7 +44,7 @@ test('the sidebar button folds the sidebar on wide screens and opens it as a dra
 test('Account is not in the sidebar; its page stays, with one visible heading', () => {
   const app = read('../server/ui/app.js');
   assert.match(app, /account: \{ label: 'Account', icon: 'person', sidebar: false, render: renderAccount \}/);
-  assert.match(app, /if \(view\.sidebar === false \|\| view\.place === 'account'\) continue;/);
+  assert.match(app, /view\.sidebar !== false && view\.place !== 'account'/);
   assert.match(app, /main\.append\(h\('h1', \{ class: 'fx-sr' \}, 'Account'\), host\);/);
 });
 
@@ -64,7 +65,7 @@ test('folded, a click on the sidebar empty space opens it; a click on a page, th
   assert.match(css, /\.fx-shell\[data-folded\] \.fx-side \{ width: 64px; padding-inline: 10px; cursor: e-resize; \}/);
 });
 
-test('the sidebar shows daily work, Price list and Rules; More holds the rest; People and Appearance are in the account menu', () => {
+test('the sidebar shows pinned pages, then More; People and Appearance are in the account menu', () => {
   const app = read('../server/ui/app.js');
   const views = app.match(/const VIEWS = \{([\s\S]*?)\n\};/)[1];
   // The sidebar order: daily work first, then Price list and Rules.
@@ -72,17 +73,29 @@ test('the sidebar shows daily work, Price list and Rules; More holds the rest; P
   assert.deepEqual(order.slice(0, 5), ['jobs', 'invoices', 'reconcile', 'price-list', 'invoicing-settings']);
   for (const name of ['automations', 'custom-fields', 'integrations']) assert.match(views, new RegExp(`'?${name}'?: \\{[^\\n]*place: 'more'`));
   for (const name of ['people', 'appearance']) assert.match(views, new RegExp(`${name}: \\{[^\\n]*place: 'account'`));
+  const lineOf = (name) => views.match(new RegExp(`'?${name}'?: \\{[^\\n]*`))[0];
+  const sidebar = order.filter((name) => !lineOf(name).includes("place: 'account'") && !lineOf(name).includes('sidebar: false'));
+  assert.deepEqual(sidebar, [...NAV_PAGES], 'a new sidebar page is added to the pin allow-list');
+  const defaults = sidebar.filter((name) => !lineOf(name).includes("place: 'more'"));
+  assert.deepEqual(defaults, [...NAV_DEFAULT]);
+  assert.deepEqual([...NAV_LOCKED], ['jobs', 'invoices']);
   // No group headings in the sidebar.
   assert.doesNotMatch(app, /fx-nav__group/);
-  // More is the shared row menu, opened under its left edge, and shows as
-  // current while one of its pages is open.
-  assert.match(app, /rowMenu\('More', more, \{ trigger: \[icon\('more'\), h\('span', \{ class: 'fx-nav__label' \}, 'More'\)\], className: 'fx-nav__more', align: 'start' \}\)/);
-  assert.match(app, /setAttribute\('aria-current', VIEWS\[view\]\.place === 'more' \? 'page' : 'false'\)/);
+  // More is the shared row menu, floating to the right of the row, listing
+  // every sidebar page. It shows as current while an unpinned page is open.
+  assert.match(app, /rowMenu\('More', moreItems, \{ trigger: \[icon\('more'\), h\('span', \{ class: 'fx-nav__label' \}, 'More'\)\], className: 'fx-nav__more', align: 'start', place: 'side' \}\)/);
+  assert.match(app, /inSidebar && !shown \? 'page' : 'false'/);
+  assert.match(app, /NAV_LOCKED\.includes\(name\)/);
+  assert.match(app, /\/api\/me\/views\/nav/);
   // The account menu: People (owners), Appearance, then Report a problem.
   assert.match(app, /customMenuItems: accountItems \}/);
   assert.match(app, /customMenuItems: \[\.\.\.accountItems, reportMenuItem\(openReport\)\]/);
   const kit = read('../server/ui/kit.js');
-  assert.match(kit, /export function rowMenu\(label, items, \{ trigger = null, className = 'fx-cfm__more', align = 'end' \} = \{\}\)/);
+  assert.match(kit, /export function rowMenu\(label, items, \{ trigger = null, className = 'fx-cfm__more', align = 'end', place = 'below' \} = \{\}\)/);
+  assert.match(kit, /place === 'side'/);
+  assert.match(kit, /entry\.trailing/);
   const css = read('../server/ui/flow.css');
   assert.match(css, /\.fx-nav :is\(a, \.fx-nav__more\)\[aria-current="page"\] \{/);
+  assert.match(css, /\.fx-pop__pin\[aria-pressed="false"\] \{ opacity: 0; \}/);
+  assert.match(css, /\.fx-pop--side \.fx-pop__item \{ min-height: 44px; \}/);
 });
