@@ -260,7 +260,7 @@ link). Then:
 | `DRAFT` or `SUBMITTED` | `POST Invoices/{id}` with `Status: DELETED` only. After Xero confirms `DELETED`, Flow voids the invoice and frees its job. |
 | `DELETED` or `VOIDED` | No Xero write. Flow voids the invoice and frees its job. |
 | `AUTHORISED` or `PAID` | No Xero write, and nothing in Flow changes. The message is `Approved in Xero. Void it in Xero first.` Flow does not void it in Xero. |
-| No connection, or writes off | No Xero call, and nothing in Flow changes. Writes off uses the same message as Send. With no accounting delete, an issued invoice answers `was_issued`. |
+| No connection, or writes off | No Xero call, and nothing in Flow changes. Writes off uses the same message as Send. With no accounting system, an issued invoice answers `accounting_unavailable`. |
 
 A timeout or a 5xx leaves Flow unchanged. The next Delete reads Xero again
 and does not post a second delete when Xero already shows it gone.

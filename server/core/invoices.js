@@ -10,8 +10,8 @@ import { invoiceTotals, lineTotals } from './money.js';
 // A draft that was never issued can be deleted. An issued invoice is voided.
 // When its accounting copy is still a draft, deleteDraft asks the accounting
 // adapter to delete it there first, and voids in Flow only after the adapter
-// confirms (docs/XERO.md, "Deleting a draft"). With no accounting delete, an
-// issued invoice answers was_issued.
+// confirms (docs/XERO.md, "Deleting a draft"). With no accounting system, an
+// issued invoice answers accounting_unavailable.
 
 async function loadInvoice(tx, organisationId, invoiceId, { lock = false } = {}) {
   let query = tx.select().from(invoices)
@@ -211,10 +211,10 @@ async function freeJobs(tx, organisationId, invoice, actor) {
 
 // Same words as the Send gate (server/core/sending.js): writes that are off,
 // or a system that is not connected, stop before anything changes. An issued
-// invoice with no accounting delete answers was_issued.
+// invoice with no accounting delete answers accounting_unavailable.
 async function deleteInAccounting(accounting, organisationId, invoiceId, actor) {
   if (!accounting || typeof accounting.capabilities?.deleteInvoice !== 'function') {
-    throw new FlowError('was_issued', 'an invoice that was issued cannot be deleted; void it');
+    throw new FlowError('accounting_unavailable', 'No accounting system is connected. An issued invoice stays as it is.');
   }
   const status = typeof accounting.capabilities.sendStatus === 'function'
     ? await accounting.capabilities.sendStatus({ organisationId })
