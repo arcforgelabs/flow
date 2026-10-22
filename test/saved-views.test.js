@@ -37,8 +37,10 @@ test('saved views keep only good entries; a default must name one of them', () =
 test('each page checks its own view: Invoices and Reconcile keep only their filter fields', () => {
   const field = 'field:6f1c2a4e-1b2c-4d3e-8f9a-0b1c2d3e4f5a';
   const view = { match: 'any', groups: [{ match: 'all', filters: [{ field: 'client', op: 'is', value: ['A'] }, { field: 'stage', op: 'is', value: ['B'] }, { field, op: 'set' }] }] };
-  assert.deepEqual(pageViewCheck('invoices')(view).groups[0].filters.map((f) => f.field), ['client']);
+  assert.deepEqual(pageViewCheck('invoices')(view).groups[0].filters.map((f) => f.field), ['client', field]);
   assert.deepEqual(pageViewCheck('reconcile')(view).groups[0].filters.map((f) => f.field), ['client', field]);
+  const columns = { match: 'all', groups: [{ match: 'all', filters: [{ field: 'due', op: 'is', value: 'overdue' }, { field: 'linked', op: 'is', value: ['lab'] }, { field: 'stage', op: 'is', value: ['B'] }] }] };
+  assert.deepEqual(pageViewCheck('invoices')(columns).groups[0].filters.map((f) => f.field), ['due', 'linked']);
   for (const page of ['nope', 'constructor', '__proto__']) assert.equal(pageViewCheck(page), null);
   assert.deepEqual(normaliseSavedViews('nope', { list: [{ id: 'a', name: 'A', view: {} }] }), { list: [], default: null });
   assert.equal(sameView('invoices', { groups: [] }, {}), true);

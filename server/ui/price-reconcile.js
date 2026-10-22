@@ -13,6 +13,7 @@
 // The price check itself runs on each pipeline pass, so there is no button.
 import { bulkBar } from '/assets/ui/bulk-bar.js';
 import { lucide } from '/assets/ui/custom-fields.js';
+import { pager as recordPager } from '/assets/ui/pager.js';
 import { findCodes, nameScore, reconcileRows, SAME_NAME } from '/assets/ui/price-match.js';
 
 const TAX_LABELS = { GST: 'GST', GST_FREE: 'GST free' };
@@ -166,18 +167,17 @@ export async function renderPriceReconcile(main, ui) {
 
   // The invoice pager: Back to the price list, "n of N", previous and next.
   function pager() {
-    const step = (to, label, path) => {
-      const button = h('button', {
-        class: 'fx-pager__step', type: 'button', disabled: to < 0 || to >= rows.length, 'aria-label': label, title: label,
-        onclick: () => { at = to; pick = 0; chosen = null; drawCard(); },
-      });
-      button.innerHTML = `<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="${path}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
-      return button;
-    };
-    return h('nav', { class: 'fx-pager', 'aria-label': 'Records to check' },
-      h('button', { class: 'fx-pager__back', type: 'button', onclick: () => ui.go('/price-list') }, '← Back'),
-      h('span', { class: 'fx-pager__count' }, `${at + 1} of ${rows.length}`),
-      h('span', { class: 'fx-pager__steps' }, step(at - 1, 'Previous', 'M14.5 6l-6 6 6 6'), step(at + 1, 'Next', 'M9.5 6l6 6-6 6')));
+    const go = (to) => () => { at = to; pick = 0; chosen = null; drawCard(); };
+    const { element, draw } = recordPager(h, {
+      label: 'Records to check',
+      back: () => ui.go('/price-list'),
+    });
+    draw({
+      count: `${at + 1} of ${rows.length}`,
+      prev: at > 0 ? go(at - 1) : null,
+      next: at < rows.length - 1 ? go(at + 1) : null,
+    });
+    return element;
   }
 
   // One record (or one differing code) at a time.
