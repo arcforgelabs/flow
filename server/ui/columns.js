@@ -31,7 +31,7 @@
 // Jobs and on Invoices, where it is the invoice's job's value).
 import { lucide } from '/assets/ui/custom-fields.js';
 import { endWidth, LEAD_WIDTH, MAX_WIDTH, minWidth, moveColumn, TAIL_WIDTH, tableWidth, widthOf } from '/assets/ui/job-view.js';
-import { applyPhoneRule, phoneSlot } from './mobile.js';
+import { applyPhoneRule, assignPhoneSlots, phoneSlot } from './mobile.js';
 import { initialsOf } from '/assets/ui/person.js';
 
 const fullDate = (iso) => new Date(`${iso}T00:00:00`).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' });
@@ -82,7 +82,7 @@ export function fieldColumn(h, field, { id, valueOf, people }) {
 // A row's cells for the shown columns: a class per kind, the label for
 // the phone layout, the full text as the cell's name on hover.
 export function rowCells(h, columns, row) {
-  return columns.map((c) => {
+  return assignPhoneSlots(columns).map((c) => {
     const slot = phoneSlot(c);
     const td = h('td', {
       class: [`fx-c-${c.kind}`, c.num ? 'fx-num' : null, c.className].filter(Boolean).join(' '),

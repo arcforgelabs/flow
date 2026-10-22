@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { buildDesignSystem, cardNames } from '../scripts/design-system/build.mjs';
 import { loadCardRules } from '../scripts/design-system/mobile-rules.mjs';
-import { RULES, WIDTHS, phoneSlot } from '../server/ui/mobile.js';
+import { RULES, WIDTHS, assignPhoneSlots, phoneSlot } from '../server/ui/mobile.js';
 import { SCREENS } from './mobile/screens.js';
 
 const ROOT = new URL('..', import.meta.url).pathname;
@@ -66,6 +66,24 @@ test('every visible card has phone rules, and the browser reads those rules', ()
   assert.equal(phoneSlot({ phone: 'hide' }), 'hide');
   assert.equal(phoneSlot({ phone: 'wide' }), null);
   assert.equal(phoneSlot({}), null);
+  const placed = assignPhoneSlots([
+    { id: 'number', kind: 'text' },
+    { id: 'client', kind: 'client', phone: 'title' },
+    { id: 'reference', kind: 'text' },
+    { id: 'date', kind: 'date' },
+    { id: 'total', kind: 'total', num: true },
+    { id: 'status', kind: 'status' },
+    { id: 'linked', kind: 'link' },
+    { id: 'extra', kind: 'text', phone: 'title' },
+  ]);
+  assert.deepEqual(placed.map((column) => column.phone), ['meta', 'title', 'meta', 'hide', 'end', 'meta', 'hide', 'title']);
+  assert.deepEqual(assignPhoneSlots([
+    { id: 'client', kind: 'client' },
+    { id: 'practitioner', kind: 'text' },
+    { id: 'stage', kind: 'stage' },
+    { id: 'total', kind: 'total', num: true },
+  ]).map((column) => column.phone), ['title', 'meta', 'meta', 'end']);
+  assert.equal(assignPhoneSlots([{ id: 'only', kind: 'text', phone: 'hide' }])[0].phone, 'hide');
   assert.deepEqual(rules.columnTable.phone.slots, { title: 2, end: 1, meta: 3 });
   assert.equal(rules.columnTable.phone.columnFlag, 'phone');
   assert.equal(rules.columnTable.minRowsAt375, 7);

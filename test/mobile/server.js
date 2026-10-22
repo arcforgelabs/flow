@@ -18,7 +18,7 @@ import { ENGINES, SIZES, THEMES } from './themes.js';
 const quiet = { info() {}, warn() {}, error() {} };
 const CLINICS = ['Northside Dental', 'Harbour Smiles', 'Bayview Clinic', 'Coast Dental Co', 'Ridge Family Dental'];
 const PRACTITIONERS = ['Dr A. Example', 'Dr B. Sample', 'Dr C. Demo', 'Dr D. Test'];
-const PRODUCTS = [['CR-ZR', 'Zirconia crown', 16000], ['SH-MT', 'Shade match', 2500], ['BR-3U', 'Bridge, 3 units', 54000], ['VN-EM', 'Veneer', 31000], ['SP-NG', 'Night guard', 12000]];
+const PRODUCTS = [['CR-ZR', 'Zirconia crown', 16000], ['SH-MT', 'Shade match', 2500], ['BR-3U', 'Bridge, 3 units', 54000], ['VN-EM', 'Veneer', 31000], ['SP-NG', 'Night guard', 12000], ['IM-PL', 'Implant crown', 48000], ['RP-DN', 'Denture repair', 9000]];
 const STAGES = ['Received', 'Design', 'Milling', 'Finishing', 'Quality check', 'Shipped'];
 const day = (n) => new Date(Date.UTC(2026, 9, 1 + n)).toISOString().slice(0, 10);
 

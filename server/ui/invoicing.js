@@ -521,7 +521,7 @@ export async function renderInvoiceList(main, ui) {
     const href = (invoice) => `/invoices/${invoice.id}`;
     const ALL = {
       number: numbered ? { kind: 'number', cell: (i) => link(href(i), i.number ?? 'Draft') } : null,
-      client: { kind: 'client', cell: (i) => (numbered ? (i.contactName ?? '—') : link(href(i), i.contactName ?? 'No client')) },
+      client: { kind: 'client', phone: 'title', cell: (i) => (numbered ? (i.contactName ?? '—') : link(href(i), i.contactName ?? 'No client')) },
       reference: showProblem
         ? { label: 'Problem', kind: 'text', cell: problemCell }
         : { kind: 'text', className: 'fx-dim', cell: (i) => i.reference ?? '—' },
