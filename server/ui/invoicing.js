@@ -11,8 +11,8 @@ import { draftNote, sendModeNote } from '/assets/ui/invoice-notes.js';
 import { caseNumber } from '/assets/ui/job-board.js';
 import { jobChangeReview } from '/assets/ui/job-change.js';
 import { columnTable, dateCell, fieldColumn, rowCells, viewSaver } from '/assets/ui/columns.js';
-import { fieldGroup, filterCount, filterJobs, INVOICE_COLUMNS, invoiceColumnsView } from '/assets/ui/job-view.js';
-import { INVOICE_FILTER_FIELDS, invoiceFilterKind, invoiceValue, normaliseInvoicesView } from '/assets/ui/list-views.js';
+import { fieldGroup, fieldIdOf, filterCount, filterJobs, INVOICE_COLUMNS, invoiceColumnsView, KIND_OF_TYPE } from '/assets/ui/job-view.js';
+import { INVOICE_FILTER_FIELDS, INVOICE_FILTER_STATUSES, invoiceFilterKind, invoiceKindOf, invoiceValue, normaliseInvoicesView } from '/assets/ui/list-views.js';
 import { listPager, PAGE_SIZES } from '/assets/ui/pager.js';
 import { savedViews } from '/assets/ui/saved-views.js';
 import { findBox, today, viewBar } from '/assets/ui/view-bar.js';
@@ -119,13 +119,14 @@ const showDate = (iso) => (iso ? new Date(`${iso}T00:00:00`).toLocaleDateString(
 // views with them and filters every invoice of a tab (GET /invoices).
 const FILTER_FIELDS = INVOICE_FILTER_FIELDS;
 const PROBLEM_OPS = { yes: 'Has one', no: 'Has none' };
+const STATUS_OPS = { is: 'Is', not: 'Is not' };
 const FILTER_KEY = 'flow_invoice_filters';
 const SIZE_KEY = 'flow_invoice_page_size';
-const filterKind = invoiceFilterKind;
 export { invoiceValue };
 
-// The invoices a filter view keeps.
-export const keptInvoices = (invoices, view, now = today()) => filterJobs(invoices, view, { valueOf: invoiceValue, kindOf: filterKind, today: now });
+// The invoices a filter view keeps. `kindOf` knows the lab's custom fields;
+// `me` is the person looking, for "Me" on a person field.
+export const keptInvoices = (invoices, view, now = today(), { kindOf = invoiceFilterKind, me = null } = {}) => filterJobs(invoices, view, { valueOf: invoiceValue, kindOf, late: null, me, today: now });
 
 // Rows per page, kept on this device.
 function readSize() {
@@ -194,11 +195,27 @@ export async function renderInvoiceList(main, ui) {
   const opening = views.opening();
   if (opening) state.view = normaliseInvoicesView(opening);
   views.draw();
+  // The same fields the Columns menu offers: the invoice's columns, its
+  // job's columns, then the lab's custom fields (view-bar.js draws them).
+  const fieldById = (id) => state.fields.find((f) => f.id === id) ?? null;
+  const kindOf = (field) => invoiceKindOf(state.fields)(field);
+  const labels = (list) => (list ?? []).filter(Boolean).map((v) => ({ value: v, label: v }));
   const filterMenu = viewBar(h).filterMenu({
-    fields: () => Object.entries(FILTER_FIELDS).map(([value, f]) => ({ value, label: f.label, icon: f.icon })),
-    kindOf: filterKind,
-    opsOf: (field) => (field === 'problem' ? PROBLEM_OPS : null),
-    choicesOf: (field) => (field === 'client' ? (raw?.clients ?? []).map((v) => ({ value: v, label: v })) : []),
+    fields: () => [
+      ...Object.entries(FILTER_FIELDS).map(([value, f]) => ({ value, label: f.label, icon: f.icon })),
+      { group: 'Custom fields', options: state.fields.filter((f) => KIND_OF_TYPE[f.type]).map((f) => ({ value: fieldGroup(f.id), label: f.name })) },
+    ],
+    kindOf,
+    opsOf: (field) => (field === 'problem' ? PROBLEM_OPS : field === 'status' ? STATUS_OPS : null),
+    choicesOf: (field) => {
+      if (field === 'client') return labels(raw?.clients);
+      if (field === 'status') return INVOICE_FILTER_STATUSES;
+      if (field === 'linked') return (raw?.linksTo ?? []).filter((s) => s.kind === 'work').map((s) => ({ value: s.id, label: s.name }));
+      if (field === 'practitioner') return labels(raw?.practitioners);
+      const custom = fieldById(fieldIdOf(field));
+      if (custom?.type === 'person') return [{ value: 'me', label: 'Me' }, ...state.people.map((p) => ({ value: p.id, label: p.name }))];
+      return (custom?.options ?? []).map((o) => ({ value: o.id, label: o.archived ? `${o.name} (archived)` : o.name, color: o.color }));
+    },
     view: () => state.view,
     change: setView,
     first: 'client',
@@ -402,7 +419,7 @@ export async function renderInvoiceList(main, ui) {
     const query = new URLSearchParams({
       status: state.status, offset: String(state.offset), limit: String(state.limit), today: today(),
       ...(state.q ? { q: state.q } : {}),
-      ...(filterCount(state.view, filterKind) ? { filter: JSON.stringify(state.view) } : {}),
+      ...(filterCount(state.view, kindOf) ? { filter: JSON.stringify(state.view) } : {}),
     });
     const key = String(query);
     const mine = ++asked;
@@ -459,7 +476,7 @@ export async function renderInvoiceList(main, ui) {
     drawTabs(body.counts);
     drawBar();
     if (!body.invoices.length) {
-      host.replaceChildren(h('p', { class: 'fx-empty' }, filterCount(state.view, filterKind)
+      host.replaceChildren(h('p', { class: 'fx-empty' }, filterCount(state.view, kindOf)
         ? 'No invoice in this tab passes the filter.'
         : state.q
         ? 'No invoice matches that search.'
