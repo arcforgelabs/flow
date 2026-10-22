@@ -235,7 +235,7 @@ names its card in the Flow Design System.
 | `listFrame(main, content)`, `edgeFade(scroller, { target, edges })` | `server/ui/kit.js` | ListFrame | The window a list or board sits in under `listHead`: fills the page, scrolls inside itself both ways, sticky table head, a foot bar with the count and tools. `edgeFade`: a soft fade where content scrolls past an edge |
 | `notice` | `server/ui/kit.js` | Notice | A note on the page that stays until the cause is gone |
 | `fieldError(field, on)`, `.fx-input[aria-invalid="true"]` | `server/ui/kit.js`, `server/ui/flow.css` | FieldError | A field that fails a check glows red, like a required field, until the person types in it |
-| `toast` | `server/ui/kit.js` | Toast | A short result after an action |
+| `toast(text, tone, { stay })` | `server/ui/kit.js` | Toast | A short result after an action. `stay: true` keeps it until the person closes it (a failed Send) |
 | `dialog({ title, body, confirm, tone })` | `server/ui/kit.js` | Dialog | A confirm step before an action that is hard to undo |
 | `holdButton(button, ms)` | `server/ui/kit.js` | HoldButton | A button that waits between presses (Xero, Seazona) and shows the time left |
 | `settingRow({ label, hint, control })`, `sectionTitle`, `.fx-setting` | `server/ui/kit.js` | SettingRow | One setting row: short name, one hint line, the control at the right |
@@ -253,7 +253,7 @@ names its card in the Flow Design System.
 | `filterJobs`, `cleanFilterView`, `sortJobs`, `groupJobs`, `OPERATORS`, `DATE_VALUES` | `server/ui/job-view.js` | | The rules behind Filter, Sort and Group (no DOM). Every list's filter uses them with its own fields |
 | `bulkBar(ui, { label })` | `server/ui/bulk-bar.js` | BulkBar | The bar at the foot while rows are ticked: icon and one word per action, More |
 | `listPager(h, { label, sizes, change })`, `pageNumbers`, `pageRange` | `server/ui/pager.js` | ListPager | The pages of a long list in its foot bar: rows per page, "1–100 of 1,204", numbered pages. The server cuts the page and counts every match. Invoices |
-| `.fx-pager` | `server/ui/flow.css` | Pager | "← Back", "n of N", previous and next over one record. Built three times today (Invoices, Reconcile, Price list › Reconcile); issue #220 makes one helper. Do not add a fourth copy |
+| `pager(h, { label, back })` → `{ element, draw({ count, prev, next, … }) }` | `server/ui/pager.js` | Pager | "← Back", "n of N", previous and next over one record. Invoices, Reconcile, Price list › Reconcile |
 | `.fx-tabs`, `.fx-tabs__count` | `server/ui/flow.css` | Tabs | Tabs with counts (Invoices, Price list) |
 | `alertStrip(ui, page)` | `server/ui/alerts.js` | | The slim alert line on a page (`docs/ALERTS.md`) |
 | `lucide(h, name, label)` | `server/ui/custom-fields.js` | Icon | A Lucide icon in the text colour; with `label` it is named |
@@ -262,6 +262,7 @@ names its card in the Flow Design System.
 | `sidecar(h, { label, overlay, escape, tabs })` | `server/ui/sidecar.js` | Sidecar | The right-hand panel: tabs with an icon and one word, ×, closed takes no room. A job's panel (Activity, Review); over a page with `overlay` (Custom fields manager) |
 | `formatCents`, `xeroTag`, `linkIcon`, `accountingIcon` | `server/ui/invoicing.js` | | Money, an accounting status tag, a link to the other system |
 | `automationSection`, `rulesSection`, `sendModeSection`, `lineMappingSection` | `server/ui/automations.js`, `invoice-rules.js`, `invoicing-settings.js`, `line-mappings.js` | | Settings sections a page mounts |
+| `messagePage({ title, text, tone, integration, organisation, mode, autoReturnSeconds })` | `server/ui/page.js` | MessagePage | The shared HTML card after an integration approval (OAuth callback). Flow mark + maker logo, status line (organisation · mode), tick or cross, "Back to Flow". Success may auto-return after a few seconds with a polite countdown; failure never does. Every integration with an approval step uses this, not its own copy. |
 
 ## Adding a family
 

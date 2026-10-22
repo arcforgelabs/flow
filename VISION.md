@@ -54,16 +54,16 @@ column per stage, a card per job), with a list view of the same jobs. It
 shows every job from the case system and from Flow, with its practice, due
 date and department. Lab staff and the manager work from it.
 
-Two parts follow the board (#48):
+Two parts follow the board:
 
-- **An intake reader.** A photo, a form or a note becomes a proposed job
-  action: update a job, create one, or add a note. A handwriting reader and a
-  low-cost decision model propose it; a person confirms it. Nothing changes
-  until a person accepts. The model steps are optional and cost money per
-  page, so the manager sees the month's cost.
-- **A practice portal.** Practice staff sign in to follow their own jobs,
-  on desktop first, with a simpler view on phones. The server limits each
-  person to their practice.
+- **An intake reader** (#267). A photo, a form or a note becomes a proposed
+  job action: update a job, create one, or add a note. A handwriting reader
+  and a low-cost decision model propose it; a person confirms it. Nothing
+  changes until a person accepts. The model steps are optional and cost money
+  per page, so the manager sees the month's cost.
+- **A practice portal** (#268). Practice staff sign in to follow their own
+  jobs, on desktop first, with a simpler view on phones. The server limits
+  each person to their practice.
 
 Job management is a bundled module, built the same way as the integrations,
 and a lab can remove it. Where the case system cannot take a change through

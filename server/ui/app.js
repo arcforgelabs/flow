@@ -18,6 +18,7 @@ import { renderCustomFields } from '/assets/ui/custom-fields.js';
 import { renderJobs } from '/assets/ui/jobs.js';
 import { renderReconcile } from '/assets/ui/reconcile.js';
 import { renderXeroImport } from '/assets/ui/xero-import.js';
+import { xeroUsage } from '/assets/ui/xero-usage.js';
 import { startMonitoring } from '/assets/ui/monitoring.js';
 import { isSearchKey, openSearch } from '/assets/ui/search.js';
 import { alertStrip } from '/assets/ui/alerts.js';
@@ -970,10 +971,11 @@ function xeroImportSection(organisations) {
 // Once Xero is on: each organisation's connection, the history copy, and
 // Connect, which goes to Xero and comes back.
 function xeroConnection(organisations, canChange) {
-  const host = h('div', { class: 'fx-settings' });
+  const host = h('div', { class: 'fx-xero-orgs' });
   for (const organisation of organisations) {
+    const usage = h('div');
     const row = settingRow({ label: organisation.name, hint: 'Checking…' });
-    host.append(row);
+    host.append(h('div', { class: 'fx-xero-org' }, usage, row));
     (async () => {
       let hint;
       let control = null;
@@ -981,6 +983,7 @@ function xeroConnection(organisations, canChange) {
       let refused = false;
       try {
         const status = await flow(`/api/xero/status?organisationId=${organisation.id}`);
+        usage.replaceChildren(xeroUsage(status) ?? '');
         if (status.connected && status.calls?.stopped) {
           // A refused connection stopped calls (the call guard): say so, and
           // make Connect again the main button, which starts them again.

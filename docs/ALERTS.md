@@ -23,6 +23,8 @@ Issue #117. An alert says that something on one page needs a person.
 
 A paused circuit or a spent daily budget ends by itself, so it makes no alert.
 
+Other open `review_items` kinds (`link.*`, `write.failed`, `job.dead`, reconcile, job changes) are not quiet alerts yet: they have no page where a person can act, so the rule above keeps them out. When that screen exists (#59), those kinds join this table.
+
 An integration's own page (for example /integrations/xero) shows the same line, for that integration only (`scope`). Its status says "Calls stopped" while a danger alert is open, even after a person dismissed the line. The Xero page also turns the organisation row red and makes "Connect again" its main button. Connect again starts the calls again.
 
 ## How it works

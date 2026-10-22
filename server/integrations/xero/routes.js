@@ -14,6 +14,7 @@ import { accountingStatus, checkSentInvoices } from './reconcile.js';
 import { decryptToken, deleteConnection, describeConnection, readConnection, saveConnection } from './connections.js';
 import { authorizeUrl, exchangeCode, fetchConnections, revokeToken, selectConnection } from './oauth.js';
 import { writesAllowed } from './settings.js';
+import { readXeroUsage } from './usage.js';
 import { saveEvents, signatureValid } from './webhooks.js';
 import { DEFAULT_FAMILY } from '../../theme/themes.js';
 import { messagePage as themedMessagePage } from '../../ui/page.js';
@@ -109,8 +110,12 @@ export function callsState(status) {
   return { stopped: Boolean(status.haltedReason) || resources.length > 0, all: Boolean(status.haltedReason), resources, since };
 }
 
+const XERO_INTEGRATION = Object.freeze({ name: 'Xero', logo: 'xero.svg' });
+
 export function createXeroRouter({ db, personAuth, runtime, log = console, buttonCooldowns = true, actions = createActionGuard({ integration: 'xero', actions: XERO_ACTIONS, off: !buttonCooldowns }), messagePage = (options) => themedMessagePage({ ...options, defaultFamily: DEFAULT_FAMILY }) }) {
-  const page = (title, text, tone) => messagePage({ title, text, tone });
+  // Shared callback card (server/ui/page.js): integration marks, status line,
+  // and a short auto-return on success only (issue #211).
+  const page = (title, text, tone, extra = {}) => messagePage({ title, text, tone, integration: XERO_INTEGRATION, ...extra });
   const { settings } = runtime;
   const router = express.Router();
   const act = (name, key) => actions.route(name, { key });
@@ -144,16 +149,29 @@ export function createXeroRouter({ db, personAuth, runtime, log = console, butto
   router.get('/status', ...signedIn, handle(log, async (req, res) => {
     const organisationId = await requireOrganisation(db, req.query.organisationId);
     const connection = await readConnection(db, organisationId);
+    const connected = Boolean(connection && connection.mode === settings.mode);
+    const picture = connected
+      ? await readXeroUsage(db, {
+        organisationId,
+        tenantId: connection.tenantId,
+        governor: runtime.governor.status(connection.tenantId),
+        warningFraction: settings.usageWarningFraction,
+        refreshedAt: connection.refreshedAt,
+        now: runtime.now(),
+      })
+      : { usage: null, freshness: null };
     res.json({
       ok: true,
       mode: settings.mode,
       writesAllowed: writesAllowed(settings),
       redirectUri: settings.redirectUri,
-      connected: Boolean(connection && connection.mode === settings.mode),
+      connected,
       connection: describeConnection(connection),
-      rateLimit: connection ? runtime.governor.status(connection.tenantId) : null,
-      calls: connection ? callsState(await runtime.guardFor(db).status(connection.tenantId)) : null,
+      rateLimit: connected ? runtime.governor.status(connection.tenantId) : null,
+      calls: connected ? callsState(await runtime.guardFor(db).status(connection.tenantId)) : null,
       lastSync: await lastSync(db, organisationId),
+      usage: picture.usage,
+      freshness: picture.freshness,
     });
   }));
 
@@ -213,7 +231,13 @@ export function createXeroRouter({ db, personAuth, runtime, log = console, butto
       if (previous && previous.tenantId !== connection.tenantId) await resetImport(db, entry.organisationId);
       await queueHistoryImport(db, entry.organisationId, { reason: 'connected' });
       log.info?.(`[xero] organisation ${entry.organisationId} connected to Xero tenant ${connection.tenantId} (${settings.mode}) by person ${entry.personId}`);
-      return res.type('html').send(page('Xero is connected', `Flow is connected to ${connection.tenantName || 'your Xero organisation'} (${settings.mode}). Flow is now copying its invoice and payment history in the background. You can close this tab.`, 'success'));
+      const organisation = connection.tenantName || 'your Xero organisation';
+      return res.type('html').send(page(
+        'Xero is connected',
+        'Flow is now copying its invoice and payment history in the background.',
+        'success',
+        { organisation, mode: settings.mode, autoReturnSeconds: 5 },
+      ));
     } catch (error) {
       log.error?.(`[xero] connect failed: ${error.code ?? 'error'}: ${error.message}`);
       const message = error instanceof FlowError ? error.message : 'Something went wrong talking to Xero. Try again.';

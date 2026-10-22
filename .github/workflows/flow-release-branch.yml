@@ -153,8 +153,8 @@ jobs:
         run: git switch --quiet -c "$BRANCH" "refs/remotes/origin/${BRANCH}"
 
       # The version's files only (YYYY.M.N, its betas and corrections), with
-      # their records and the index written again. Nothing else of notes_ref
-      # reaches the branch.
+      # their records, the index and the docs pages written again. Nothing
+      # else of notes_ref reaches the branch.
       - name: Take the changelog files from notes_ref
         if: inputs.notes_ref != ''
         id: notes
@@ -191,7 +191,7 @@ jobs:
           NOTES: ${{ steps.notes.outputs.versions }}
         run: |
           set -euo pipefail
-          git add -A package.json package-lock.json CHANGELOG.md CHANGELOG
+          git add -A package.json package-lock.json CHANGELOG.md CHANGELOG docs/releases
           if ! git diff --cached --quiet; then
             if [[ "$OPERATION" == "cut" ]]; then
               git commit --quiet -m "chore(release): ${VERSION}"

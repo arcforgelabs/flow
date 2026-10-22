@@ -114,6 +114,13 @@ describe('connecting Xero', { skip: skipWithoutDatabase }, () => {
       assert.match(authorize.searchParams.get('scope'), /offline_access/);
       assert.equal(back.status, 200, back.text);
       assert.match(back.text, /Xero is connected/);
+      assert.match(back.text, /\/assets\/ui\/logos\/xero\.svg/, 'success card shows the Xero logo');
+      assert.match(back.text, /check-circle\.svg/);
+      assert.match(back.text, /data-return-after="5"/);
+      assert.match(back.text, /aria-live="polite"/);
+      assert.match(back.text, /fx-message__status/);
+      assert.match(back.text, /Example Lab \(Demo\) · Replay/);
+      assert.doesNotMatch(back.text, /[?&](code|state)=/, 'page HTML must not echo the OAuth query');
 
       const { rows } = await handle.db.execute(sql`select * from xero_connections`);
       assert.equal(rows.length, 1);
