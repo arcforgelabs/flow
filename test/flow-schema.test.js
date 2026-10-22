@@ -88,6 +88,12 @@ test('Flow\'s tables live in "flow"', { skip: skipWithoutDatabase }, async (t) =
       assert.match(path, /^flow, public$/);
       const { rows: [{ n }] } = await client.query('select count(*)::int as n from organisations');
       assert.equal(n, 0);
+      // Set for Flow's role too, which a transaction pooler's sessions also get.
+      const { rows: settings } = await client.query(
+        `select s.setconfig from pg_db_role_setting s join pg_database d on d.oid = s.setdatabase
+          where d.datname = current_database() and s.setrole = (select oid from pg_roles where rolname = current_user)`,
+      );
+      assert.deepEqual(settings.map((row) => row.setconfig), [['search_path=flow, public']]);
     } finally {
       await client.end().catch(() => {});
       await handle.close();

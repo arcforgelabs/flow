@@ -40,8 +40,14 @@ BEGIN
 			EXECUTE format('ALTER FUNCTION flow.%I() SET search_path = flow, public', t);
 		END IF;
 	END LOOP;
-	-- New sessions, a pooler's included, search "flow" first. Only the
-	-- database's owner may set this; Flow's own connections set it anyway.
+	-- New sessions, a pooler's included, search "flow" first: a transaction
+	-- pooler does not keep a session's SET. Flow's role sets it for itself, and
+	-- the database too when Flow owns it; Flow's own connections set it anyway.
+	BEGIN
+		EXECUTE format('ALTER ROLE %I IN DATABASE %I SET search_path TO flow, public', current_user, current_database());
+	EXCEPTION WHEN insufficient_privilege THEN
+		RAISE NOTICE 'flow: this role cannot set its own search_path; Flow sets its own';
+	END;
 	BEGIN
 		EXECUTE format('ALTER DATABASE %I SET search_path TO flow, public', current_database());
 	EXCEPTION WHEN insufficient_privilege THEN

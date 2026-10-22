@@ -7,8 +7,10 @@ the server starts.
 Flow's tables, the integrations' included, live in the PostgreSQL schema
 `flow`, not `public` (migration `0021`). Each of Flow's connections searches
 `flow, public` (`FLOW_SEARCH_PATH` in `server/db/index.js`), and the
-migration sets the same default on the database when Flow owns it, so SQL
-names tables without a schema. The reason is Replit: its publish compares
+migration sets the same default for Flow's role (and for the database when
+Flow owns it), so SQL names tables without a schema. A transaction pooler
+(Neon's `-pooler` hosts) does not keep a session's `SET`, but every new
+session gets the role's default. The reason is Replit: its publish compares
 the workspace's `public` schema with production's and offers to make
 production match, deletes included (`docs/REPLIT.md`, "The workspace
 database"). The migration journals stay in `drizzle`.
