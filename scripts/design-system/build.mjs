@@ -221,6 +221,76 @@ export function cardNames() {
   return readdirSync(join(SOURCE, 'components')).filter((n) => n !== 'Cover' && statSync(join(SOURCE, 'components', n)).isDirectory()).sort();
 }
 
+const esc = (value) => String(value ?? '').replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+
+function ruleRows(rule) {
+  const slots = rule.phone.slots ? Object.entries(rule.phone.slots).map(([name, count]) => `${name} ${count}`).join(', ') : '';
+  const phone = [rule.phone.layout, rule.phone.rowHeight ? `${rule.phone.rowHeight}px` : '', slots].filter(Boolean).join(' · ');
+  const tablet = [rule.tablet.layout, rule.tablet.sticky ? `sticky ${rule.tablet.sticky}` : ''].filter(Boolean).join(' · ');
+  const rows = [
+    ['Direction', rule.direction],
+    ['Phone', phone],
+    ['Tablet', tablet],
+    ['Desk', rule.desk?.layout ?? rule.tablet.layout],
+    ['Touch', `${rule.touch}px`],
+    ['Overflow', rule.pageOverflow],
+    ...(rule.minRowsAt375 ? [['Rows at 375', String(rule.minRowsAt375)]] : []),
+    ['Screens', rule.screens.length ? rule.screens.join(', ') : '—'],
+  ];
+  return rows.map(([name, value]) => `<tr><th scope="row">${esc(name)}</th><td>${esc(value)}</td></tr>`).join('\n');
+}
+
+// A phone-width frame of the card, plus the rules from its mobile.json.
+// The frame is a copy of the card at 375px, so the phone CSS applies.
+function phoneBlock(rule) {
+  return `<section class="fds-phone-block" aria-label="Phone">
+  <figure class="fds-phone">
+    <div class="fds-phone__bezel">
+      <iframe class="fds-phone__screen" title="Phone preview"></iframe>
+    </div>
+    <figcaption>${esc(rule.direction)}</figcaption>
+  </figure>
+  <table class="fds-rules">
+    <caption>Phone rules</caption>
+    <tbody>
+${ruleRows(rule)}
+    </tbody>
+  </table>
+</section>
+<script>
+(() => {
+  const block = document.currentScript.previousElementSibling;
+  const frame = block.querySelector('iframe');
+  const paint = () => {
+    const doc = frame.contentDocument;
+    if (!doc) return;
+    doc.documentElement.replaceChildren();
+    const head = doc.createElement('head');
+    const body = doc.createElement('body');
+    doc.documentElement.append(head, body);
+    const style = doc.createElement('style');
+    const css = [];
+    for (const sheet of document.styleSheets) {
+      try { css.push([...sheet.cssRules].map((r) => r.cssText).join('\\n')); } catch { /* a sheet from another origin */ }
+    }
+    style.textContent = css.join('\\n');
+    head.append(style);
+    for (const child of document.body.children) {
+      if (child === block || child.tagName === 'SCRIPT') continue;
+      body.append(child.cloneNode(true));
+    }
+  };
+  frame.addEventListener('load', paint);
+  frame.src = 'about:blank';
+})();
+</script>`;
+}
+
+function withPhonePreview(html, rule) {
+  const taller = html.replace(/^(<!-- @dsCard\b[^>]*?)height=(\d+)/, (_, start, height) => `${start}height=${Number(height) + 360}`);
+  return `${taller.replace(/\s*$/, '')}\n${phoneBlock(rule)}\n`;
+}
+
 function copyTree(from, to) {
   for (const entry of readdirSync(from, { recursive: true })) {
     const src = join(from, String(entry));
@@ -236,6 +306,12 @@ export async function buildDesignSystem(outDir = join(ROOT, '.artifacts/design-s
   mkdirSync(join(project, 'fonts'), { recursive: true });
   for (const file of readdirSync(SOURCE).filter((f) => f.endsWith('.md'))) copyFileSync(join(SOURCE, file), join(project, file));
   copyTree(join(SOURCE, 'components'), join(project, 'components'));
+  for (const card of readdirSync(join(SOURCE, 'components')).filter((name) => existsSync(join(SOURCE, 'components', name, 'mobile.json')))) {
+    const rule = JSON.parse(readFileSync(join(SOURCE, 'components', card, 'mobile.json'), 'utf8'));
+    const screens = [...new Set([...(rule.screens ?? []), ...(rule.also ?? []).flatMap((part) => part.screens ?? [])])];
+    const preview = join(project, 'components', card, 'preview.html');
+    writeFileSync(preview, withPhonePreview(readFileSync(preview, 'utf8'), { ...rule, screens }));
+  }
   copyTree(join(SOURCE, 'assets'), join(project, 'assets'));
   mkdirSync(join(project, 'components/Themes'), { recursive: true });
   writeFileSync(join(project, 'components/Themes/preview.html'), themesCard());
@@ -249,6 +325,15 @@ export async function buildDesignSystem(outDir = join(ROOT, '.artifacts/design-s
     '/* Cards: a plain frame with Flow\'s own page under it. */',
     'body { margin: 0; padding: 12px; background: var(--t-bg); color: var(--t-text); font-family: var(--t-body); }',
     '.fds { display: grid; gap: 16px; } .fds-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; } .fds-cap { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--t-dim); }',
+    '.fds-phone-block { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 16px; align-items: start; margin-top: 20px; }',
+    '.fds-phone { margin: 0; } .fds-phone figcaption { margin-top: 8px; color: var(--t-dim); font-size: 12px; }',
+    '.fds-phone__bezel { height: 320px; padding: 12px 10px; border: 1px solid var(--t-brd); border-radius: 28px; background: var(--t-s1); }',
+    '.fds-phone__screen { width: 100%; height: 100%; border: 0; border-radius: 16px; background: var(--t-bg); }',
+    '.fds-rules { width: 100%; border-collapse: collapse; color: var(--t-text); font: 13px/1.4 var(--t-body); }',
+    '.fds-rules caption { caption-side: top; padding: 0 0 8px; color: var(--t-strong); font-weight: 650; text-align: left; }',
+    '.fds-rules th, .fds-rules td { padding: 6px 8px; border-bottom: 1px solid var(--t-brd); text-align: left; vertical-align: top; }',
+    '.fds-rules th { width: 7.5rem; color: var(--t-dim); font-weight: 600; }',
+    '@media (max-width: 639px) { .fds-phone-block { grid-template-columns: 1fr; } }',
     iconCss(),
   ].join('\n');
   writeFileSync(join(project, 'components/bundle.css'), css.replace(/<\/style/gi, '<\\/style'));

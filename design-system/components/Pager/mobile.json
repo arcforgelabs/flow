@@ -1,0 +1,20 @@
+{
+  "component": "fx-pager",
+  "direction": "record bar",
+  "phone": {
+    "layout": "bar"
+  },
+  "tablet": {
+    "layout": "bar"
+  },
+  "desk": {
+    "layout": "bar"
+  },
+  "touch": 44,
+  "pageOverflow": "none",
+  "screens": [
+    "invoice"
+  ],
+  "mark": false,
+  "selector": ".fx-pager"
+}

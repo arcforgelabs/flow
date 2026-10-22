@@ -30,6 +30,7 @@ flowchart LR
 | `SENTRY_ENVIRONMENT` | The environment Sentry shows for this installation. | `production`; `workspace` in a Replit workspace |
 | `SENTRY_CLIENT` | The name a support desk files this installation's reports under. Every event gets the tag `client` with it, and always `product: flow`. | none: no `client` tag |
 | `SENTRY_FEEDBACK` | `on`: "Report a problem" shows in the sidebar and the account menu for everyone signed in. | `on` |
+| `SENTRY_REPLAY` | `on`: each report and each browser error keeps up to the last minute of the page as a replay, with every word hidden. | `on` |
 | `SENTRY_TRACES_SAMPLE_RATE` | The share of clicks, page loads and requests traced, from `0` (off) to `1` (all). | `0.2` |
 
 A change in Flow applies at once, with no restart. The adapter has no tables.
@@ -56,6 +57,7 @@ A change in Flow applies at once, with no restart. The adapter has no tables.
   addresses.
 - **Release.** `flow@<release>` from the Flow release tag, else the commit.
 
+- **Replays.** While `SENTRY_REPLAY` is on: see below.
 - **Traces.** While `SENTRY_TRACES_SAMPLE_RATE` is above 0: see below.
 
 With Sentry off, Flow loads no Sentry code in the browser, sends nothing, and
@@ -93,13 +95,37 @@ flowchart LR
   use. Lower `SENTRY_TRACES_SAMPLE_RATE` to send fewer. `0` turns traces off.
 
 With traces on, the browser loads Sentry's bundle that also traces
-(`SENTRY_BROWSER_TRACING`). It has session replay in it too; Flow never turns
-replay on.
+(`SENTRY_BROWSER_TRACING`). It has session replay in it too.
+
+## Replays
+
+A click on "Report a problem" closes an open menu and ends a hover, so the
+screenshot cannot show them. A replay can. While `SENTRY_REPLAY` is on, the
+browser keeps up to the last minute of the page in memory. It sends that
+minute only when the person opens the report form or the page has an error.
+Sentry links the replay to the report. Flow never records a whole visit
+(`replaysSessionSampleRate` is 0).
+
+- **What a replay keeps.** The page's shape, the pointer, scrolls and clicks.
+  Every word is hidden: all text, all inputs, and the attributes that can
+  carry a name (`title`, `aria-label`, `placeholder`, `alt`, `value` and
+  others). Images, video, frames and canvases are blocked, and so are
+  `mailto:`, `tel:` and `sms:` links and links with a query string. No
+  network detail is kept. A clicked element keeps only its tag, id, class and
+  role. A page address keeps its path, never its query string
+  (`scrubRecordingEvent` in `server/ui/monitoring.js`).
+- **Volume.** One replay for each report and each browser error. Sentry's
+  plan includes 50 replays a month; its Settings, Subscription page shows the
+  use. Turn `SENTRY_REPLAY` off to send none.
+
+With replay on and traces off, the browser loads the bundle with replay
+(`SENTRY_BROWSER_REPLAY`). With both off, the smallest bundle
+(`SENTRY_BROWSER`).
 
 The browser SDK loads from Sentry's CDN, pinned to one version and checked
-against its integrity hash (`SENTRY_BROWSER` and `SENTRY_BROWSER_TRACING` in
+against its integrity hash (`SENTRY_BROWSER`, `SENTRY_BROWSER_REPLAY` and `SENTRY_BROWSER_TRACING` in
 `server/integrations/sentry/index.js`). To update it, change the version and
-both hashes together.
+every hash together.
 
 ## Reports into an issue tracker
 

@@ -192,11 +192,11 @@ describe('invoicing API', { skip: skipWithoutDatabase }, () => {
     await issueInvoice(handle.db, lab.id, issued.id, { issuedBy: 'user:test', issueDate: '2026-10-19' });
     const refused = await call(`/invoices/${issued.id}`, { method: 'DELETE' });
     assert.equal(refused.status, 409);
-    assert.equal(refused.body.code, 'accounting_unavailable');
+    assert.equal(refused.body.code, 'was_issued');
     await reviseInvoice(handle.db, lab.id, issued.id);
     const revised = await call(`/invoices/${issued.id}`, { method: 'DELETE' });
     assert.equal(revised.status, 409);
-    assert.equal(revised.body.code, 'accounting_unavailable');
+    assert.equal(revised.body.code, 'was_issued');
   });
 
   test('a draft can move to another customer, never to a supplier', async () => {

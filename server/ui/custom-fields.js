@@ -15,6 +15,21 @@
 
 import { orderStatuses, statusRank } from '/assets/ui/job-board.js';
 import { sidecar } from '/assets/ui/sidecar.js';
+import { assignPhoneSlots, phoneSlot } from './mobile.js';
+
+// The manager row uses the same phone slots as a column list.
+const FIELD_SLOTS = assignPhoneSlots([
+  { id: 'name', kind: 'text' },
+  { id: 'type', kind: 'text' },
+  { id: 'by', kind: 'person' },
+  { id: 'date', kind: 'date' },
+  { id: 'where', kind: 'text' },
+  { id: 'menu', kind: 'text', phone: 'end' },
+]);
+const fieldSlot = (id) => {
+  const slot = phoneSlot(FIELD_SLOTS.find((column) => column.id === id));
+  return slot ? { 'data-phone-slot': slot } : {};
+};
 
 const DOCS = 'https://github.com/arcforgelabs/flow/blob/main/docs/CUSTOM_FIELDS.md';
 const TYPE_LABELS = {
@@ -395,12 +410,12 @@ export async function renderCustomFields(main, ui) {
       });
       input.addEventListener('blur', () => { if (view.renaming === field.id) rename(field, input.value); });
       queueMicrotask(() => { input.focus(); input.select(); });
-      return h('div', { class: 'fx-cfm__name', role: 'cell' }, input);
+      return h('div', { class: 'fx-cfm__name', role: 'cell', ...fieldSlot('name') }, input);
     }
     const editButton = field.archived || disabled || field.source ? null
       : h('button', { class: 'fx-cfm__edit', type: 'button', onclick: () => edit(field) }, 'Edit', lucide(h, 'panel-right'));
     const viewButton = field.source ? h('button', { class: 'fx-cfm__edit', type: 'button', onclick: () => edit(field) }, 'View', lucide(h, 'panel-right')) : null;
-    return h('div', { class: 'fx-cfm__name', role: 'cell' },
+    return h('div', { class: 'fx-cfm__name', role: 'cell', ...fieldSlot('name') },
       h('div', { class: 'fx-cfm__title' },
         field.source ? lucide(h, 'lock', 'Read only') : null,
         h('span', { class: 'fx-cfm__label', title: field.name }, field.name), editButton, viewButton));
@@ -418,11 +433,11 @@ export async function renderCustomFields(main, ui) {
     });
     return h('div', { class: 'fx-cfm__row', role: 'row', 'data-id': field.id, 'data-open': sideFor === field.id ? 'true' : null, 'data-archived': field.archived ? 'true' : null },
       nameCell(field),
-      h('div', { class: 'fx-cfm__type', role: 'cell' }, picker ? [picker.button, picker.panel] : h('span', { class: 'fx-cfm__icon', 'data-color': color }, icon)),
-      h('div', { class: 'fx-cfm__by', role: 'cell' }, by ? h('span', { class: 'fx-cfm__avatar', title: by }, field.source ? lucide(h, 'plug') : initials(by)) : h('span', { class: 'fx-dim' }, '—')),
-      h('div', { class: 'fx-cfm__date', role: 'cell', title: field.source ? `${field.sourceLabel} connected` : null }, field.createdAt ? createdDay(field.createdAt) : h('span', { class: 'fx-dim' }, '—')),
-      h('div', { class: 'fx-cfm__where', role: 'cell' }, field.source ? `${field.sourceLabel} jobs` : 'Jobs'),
-      h('div', { class: 'fx-cfm__end', role: 'cell' }, field.source ? null : rowMenu(field, picker)));
+      h('div', { class: 'fx-cfm__type', role: 'cell', ...fieldSlot('type') }, picker ? [picker.button, picker.panel] : h('span', { class: 'fx-cfm__icon', 'data-color': color }, icon)),
+      h('div', { class: 'fx-cfm__by', role: 'cell', ...fieldSlot('by') }, by ? h('span', { class: 'fx-cfm__avatar', title: by }, field.source ? lucide(h, 'plug') : initials(by)) : h('span', { class: 'fx-dim' }, '—')),
+      h('div', { class: 'fx-cfm__date', role: 'cell', ...fieldSlot('date'), title: field.source ? `${field.sourceLabel} connected` : null }, field.createdAt ? createdDay(field.createdAt) : h('span', { class: 'fx-dim' }, '—')),
+      h('div', { class: 'fx-cfm__where', role: 'cell', ...fieldSlot('where') }, field.source ? `${field.sourceLabel} jobs` : 'Jobs'),
+      h('div', { class: 'fx-cfm__end', role: 'cell', ...fieldSlot('menu') }, field.source ? null : rowMenu(field, picker)));
   }
 
   // One group: a header that folds it, its rows, and "Create … field". A

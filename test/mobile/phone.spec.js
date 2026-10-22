@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
 import { measure } from './checks.js';
+import { RULES, rulesFor } from '../../server/ui/mobile.js';
 import { SCREENS } from './screens.js';
 
 // The phone suite (docs/MOBILE_TESTS.md). Each screen, in each project (size,
@@ -57,6 +58,51 @@ function clerkStub(token, name, theme) {
   };`;
 }
 
+// The layout a card's mobile.json names at this width.
+function layoutOf(rule, width) {
+  if (width <= 639) return rule.phone.layout;
+  if (width <= 1023) return rule.tablet.layout;
+  return rule.desk?.layout ?? rule.tablet.layout;
+}
+
+// Each card's phone rules, on the screens the card lists. A component marks
+// itself from those rules (server/ui/mobile.js); a screen the card lists
+// shows that mark.
+async function ruleProblems(page, screen, width) {
+  const found = await page.evaluate(() => [...document.querySelectorAll('[data-phone-rule]')].map((el) => {
+    const box = el.getBoundingClientRect();
+    const hidden = el.hidden || Boolean(el.closest('[hidden]'));
+    return {
+      component: el.dataset.phoneRule,
+      layout: el.dataset.phoneLayout,
+      touch: el.dataset.phoneTouch,
+      rowHeight: el.dataset.phoneRowHeight || '',
+      visible: !hidden && box.width > 0 && box.height > 0,
+    };
+  }));
+  const problems = [];
+  for (const hit of found.filter((item) => item.visible)) {
+    const rule = RULES[hit.component];
+    if (!rule) { problems.push(`${hit.component} has no phone rules`); continue; }
+    const layout = layoutOf(rule, width);
+    if (hit.layout !== layout) problems.push(`${hit.component} shows ${hit.layout}; its card says ${layout}`);
+    if (hit.touch !== String(rule.touch)) problems.push(`${hit.component} touch is ${hit.touch}; its card says ${rule.touch}`);
+    if (width <= 639 && rule.phone.rowHeight && hit.rowHeight !== String(rule.phone.rowHeight)) {
+      problems.push(`${hit.component} row height is ${hit.rowHeight || 'unset'}; its card says ${rule.phone.rowHeight}`);
+    }
+  }
+  for (const rule of rulesFor(screen.id)) {
+    if (rule.pageOverflow !== 'none') problems.push(`${rule.component} lets the page overflow`);
+    if (rule.selector) {
+      if (await page.locator(rule.selector).count() === 0) problems.push(`${rule.component} (${rule.selector}) is not on this screen`);
+      continue;
+    }
+    if (rule.mark === false) continue;
+    if (!found.some((hit) => hit.component === rule.component && hit.visible)) problems.push(`${rule.component} is not on this screen`);
+  }
+  return problems;
+}
+
 function record(project, screen, data) {
   mkdirSync(MEASURED, { recursive: true });
   writeFileSync(join(MEASURED, `${project}__${screen}.json`), JSON.stringify(data));
@@ -85,6 +131,7 @@ for (const screen of SCREENS) {
     record(project.name, screen.id, result);
 
     const budget = BUDGET[`${project.name}/${screen.id}`] ?? {};
+    const ruleOver = await ruleProblems(page, screen, size.width);
     const over = [];
     if (result.overflow > (budget.overflow ?? 0)) over.push(`the page is ${result.overflow}px wider than the screen`);
     if (result.small > (budget.small ?? 0)) over.push(`${result.small} controls are under ${TOUCH}px: ${found.small.join(', ')}`);
@@ -92,11 +139,12 @@ for (const screen of SCREENS) {
     for (const [rule, nodes] of Object.entries(result.axe ?? {})) {
       if (nodes > (budget.axe?.[rule] ?? 0)) over.push(`axe ${rule}: ${nodes}`);
     }
-    if (phone && screen.list && size.id === 'phone-s' && result.rows < 7) {
-      info.annotations.push({ type: 'rows', description: `${result.rows} rows on the first screen; the goal is 7 (#281)` });
+    const rowsRule = rulesFor(screen.id).find((rule) => rule.minRowsAt375);
+    if (phone && screen.list && size.id === 'phone-s' && rowsRule && result.rows < rowsRule.minRowsAt375) {
+      over.push(`${result.rows} rows on the first screen; ${rowsRule.component} asks for ${rowsRule.minRowsAt375}`);
     }
     // MOBILE_RECORD=1 measures without failing, to write a new budget.
-    if (!process.env.MOBILE_RECORD) expect(over, `${project.name} ${screen.id} is over its budget (test/mobile/budget.json)`).toEqual([]);
+    if (!process.env.MOBILE_RECORD) expect([...over, ...ruleOver], `${project.name} ${screen.id} is over its budget or its phone rules (test/mobile/budget.json, design-system/components/*/mobile.json)`).toEqual([]);
 
     if (project.metadata.shots) await expect(page).toHaveScreenshot(`${screen.id}.png`);
   });

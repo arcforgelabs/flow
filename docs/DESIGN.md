@@ -139,9 +139,13 @@ The page at `/sign-in`, `/people`, `/account` and `/appearance`
   the choice stays in the browser. On narrow screens the sidebar is a bar
   across the top (menu button, Flow mark, account photo, Search), and the menu
   button opens the pages as a panel below the bar.
-- **Jobs**: the board (one lane per group, a fixed phone width that never
-  stretches, with empty space past the last lane on a wide screen, filling the
-  window to its bottom edge, each lane scrolling inside itself) or the list.
+- **Jobs**: the board (one lane per group) or the list. On a phone one lane
+  fills the width and snaps when swiped; stage tabs with counts sit in the
+  toolbar, and a long press opens Move to. A job opens as a full page: back,
+  the client, previous and next, and a menu, with Activity and Fix as tabs
+  and the main action at the foot. On a wider screen each lane is a
+  fixed width that never stretches, with empty space past the last lane,
+  filling the window to its bottom edge, each lane scrolling inside itself.
   The toolbar has Group, Sort and Filter at the left, and the search icon
   (it opens into a box, `findBox`) and Board/List at the right. Each opens a panel of rows, laid out as
   ClickUp's, in Flow's own look; each row has a bin that deletes it, and
@@ -225,7 +229,8 @@ Every page builds from these. Reuse one, or give it a new option; do not
 copy its code into a page (`AGENTS.md`, "UI: reuse first"). A new shared
 component gets a row here and a card in the design system
 (`docs/DESIGN_SYSTEM.md`) in the pull request that adds it. The Card column
-names its card in the Flow Design System.
+names its card in the Flow Design System. Read the card's `mobile.json`
+before changing it on a phone: the component reads those rules.
 
 | Component | Where | Card | Use it for |
 | --- | --- | --- | --- |
@@ -246,7 +251,7 @@ names its card in the Flow Design System.
 | `.fx-btn` and its modifiers | `server/ui/flow.css` | Button | Every button |
 | `named`, `startTips` | `server/ui/tip.js` | Tip | An icon-only control's name, shown on hover and focus |
 | `viewBar(h)`: `menu`, `option`, `filterMenu` and the rows-panel parts | `server/ui/view-bar.js` | Filter | Group, Sort, Filter and Columns chips and their panels, on every list (Jobs, Invoices, Reconcile) |
-| `columnTable(h, { order, widths, change, hidden, extra })`, `rowCells`, `viewSaver`, `dateCell`, `personCell`, `fieldColumn` | `server/ui/columns.js` (rules in `job-view.js`) | Columns | A list's table (`fieldColumn`: a custom field as a column, on Jobs and Invoices): drag an edge to resize (a minimum per column kind), drag a head to move, the head menu (Move, Hide, Reset width), + for hidden columns; the end column fills each row to the right edge (no stretch); order and widths kept with the account. Jobs, Invoices, Reconcile, Price list |
+| `columnTable(h, { order, widths, change, hidden, extra })`, `rowCells`, `viewSaver`, `dateCell`, `personCell`, `fieldColumn` | `server/ui/columns.js` (rules in `job-view.js`) | Columns | A list's table (`fieldColumn`: a custom field as a column, on Jobs and Invoices): drag an edge to resize (a minimum per column kind), drag a head to move, the head menu (Move, Hide, Reset width), + for hidden columns; the end column fills each row to the right edge (no stretch); order and widths kept with the account. On a phone the row is two lines and 56px: line 1 is the title columns and the amount, line 2 is the status and up to three meta columns. A column's `phone` flag is `title`, `meta`, `end` or `hide` (the first column, the money column and a stage or status are the defaults). Jobs, Invoices, Reconcile, Price list |
 | `findBox(h, { label, oninput })` | `server/ui/view-bar.js` | FindBox | A list's own search: an icon that opens into a box |
 | `ICONS`, `svg`, `today` | `server/ui/view-bar.js` | | The toolbar icons, an SVG string as a node, the local day |
 | `personLabel`, `initialsOf`, `clipLabel` | `server/ui/person.js` | | A person's name everywhere (pickers, filters, lanes, badges, People): full name, else the whole email; a badge's letters; a native menu's label cut with "…" |
@@ -259,7 +264,7 @@ names its card in the Flow Design System.
 | `lucide(h, name, label)` | `server/ui/custom-fields.js` | Icon | A Lucide icon in the text colour; with `label` it is named |
 | `colorPicker`, `optionPill` | `server/ui/custom-fields.js` | OptionPill | A colour choice; a dropdown option as a coloured pill |
 | `jobChangeBanner(ui, change)`, `jobChangeReview(ui, change, { canAccept, done })` | `server/ui/job-change.js` | JobChangeBanner | "The job changed" on a draft, with Accept change; `jobChangeReview` wires Accept and the recheck (invoice page, a job's Review sidecar) |
-| `sidecar(h, { label, overlay, escape, tabs })` | `server/ui/sidecar.js` | Sidecar | The right-hand panel: tabs with an icon and one word, ×, closed takes no room. A job's panel (Activity, Review); over a page with `overlay` (Custom fields manager) |
+| `sidecar(h, { label, overlay, escape, tabs, phone })`, `recordBar` | `server/ui/sidecar.js` | Sidecar | The right-hand panel: tabs with an icon and one word, ×, closed takes no room. A job's panel (Activity, Fix); over a page with `overlay` (Custom fields). `phone: 'page'` opens that panel as a full page on a phone: `recordBar` (back, title, previous and next, menu), the tabs under it, and the main action at the foot. The invoice page uses the same bar |
 | `formatCents`, `xeroTag`, `linkIcon`, `accountingIcon` | `server/ui/invoicing.js` | | Money, an accounting status tag, a link to the other system |
 | `automationSection`, `rulesSection`, `sendModeSection`, `lineMappingSection` | `server/ui/automations.js`, `invoice-rules.js`, `invoicing-settings.js`, `line-mappings.js` | | Settings sections a page mounts |
 | `messagePage({ title, text, tone, integration, organisation, mode, autoReturnSeconds })` | `server/ui/page.js` | MessagePage | The shared HTML card after an integration approval (OAuth callback). Flow mark + maker logo, status line (organisation · mode), tick or cross, "Back to Flow". Success may auto-return after a few seconds with a polite countdown; failure never does. Every integration with an approval step uses this, not its own copy. |

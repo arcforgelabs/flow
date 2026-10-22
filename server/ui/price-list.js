@@ -22,7 +22,7 @@ const LINE_PRICES = [
 // person's account; + shows a hidden one again.
 const COLUMN_DEFS = {
   code: { kind: 'number', className: 'fx-price__code', cell: (item) => item.code },
-  name: { kind: 'client', cell: (item) => item.name },
+  name: { kind: 'client', phone: 'title', cell: (item) => item.name },
   price: { kind: 'total', num: true, cell: (item) => money(item.unitAmountCents) },
   tax: { kind: 'case', className: 'fx-dim', cell: (item) => TAX_LABELS[item.taxCode] ?? item.taxCode },
 };

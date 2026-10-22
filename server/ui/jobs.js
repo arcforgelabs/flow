@@ -9,8 +9,8 @@
 // (docs/JOB_BOARD_MOVES.md). Grouped by a custom field, the move sets the
 // job's value, in Flow only. Grouped by status, the move is a stage move
 // in the work system: Seazona cannot take one through its API, so Flow
-// shows what to do there and the card waits in its new lane. On a phone,
-// or with a keyboard, the job's panel has the same moves.
+// shows what to do there and the card waits in its new lane. On a phone a
+// long press opens Move to. With a keyboard, the job's panel has the same moves.
 
 import { bulkBar } from '/assets/ui/bulk-bar.js';
 import { columnTable, dateCell, fieldColumn, onRightButton, personCell, rowCells, viewSaver } from '/assets/ui/columns.js';
@@ -18,15 +18,17 @@ import { lucide } from '/assets/ui/custom-fields.js';
 import { formatCents } from '/assets/ui/invoicing.js';
 import { jobChangeReview } from '/assets/ui/job-change.js';
 import {
-  caseNumber, FINAL_RANK, fixes, INVOICE_STAGES, invoiceStage, matches, NO_STATUS, orderStatuses, problemSummary, statusRank,
+  caseNumber, FINAL_RANK, fixes, INVOICE_STAGES, invoiceStage, matches, NO_STATUS, orderStatuses, phoneLaneIndex, PHONE_HOLD_MS, problemSummary, statusRank,
 } from '/assets/ui/job-board.js';
+import { rowMenu } from '/assets/ui/kit.js';
+import { isPhone } from '/assets/ui/mobile.js';
 import {
   COLUMNS, DEFAULT_VIEW, fieldGroup, fieldIdOf, fieldLanes, FILTER_FIELDS, filterJobs, groupJobs, GROUPS, KIND_OF_TYPE, keptStatuses, laneOf,
   normaliseJobsView, NOT_SET, OPERATORS, sortJobs, SORTS,
 } from '/assets/ui/job-view.js';
 import { clipLabel } from '/assets/ui/person.js';
 import { savedViews } from '/assets/ui/saved-views.js';
-import { sidecar } from '/assets/ui/sidecar.js';
+import { recordBar, sidecar } from '/assets/ui/sidecar.js';
 import { findBox, ICONS, svg, today, viewBar } from '/assets/ui/view-bar.js';
 
 const LAYOUT_KEY = 'flow_jobs_layout';
@@ -324,6 +326,7 @@ export async function renderJobs(main, ui) {
 
   function draw() {
     if (!state.jobs.length) {
+      boardTabs.hidden = true;
       main.classList.remove('fx-main--board');
       host.replaceChildren(h('div', { class: 'fx-panel fx-empty' },
         h('p', {}, 'No jobs yet. Jobs appear here once the lab system is connected under Integrations.'),
@@ -339,6 +342,7 @@ export async function renderJobs(main, ui) {
     for (const key of state.ticked) if (!shown.has(key)) state.ticked.delete(key);
     state.found = found;
     frame.count(`${found.length} ${found.length === 1 ? 'job' : 'jobs'}`);
+    if (state.view.layout !== 'board') boardTabs.hidden = true;
     host.replaceChildren(state.view.layout === 'list' ? list(groups, found.length) : board(groups));
     drawBulk();
   }
@@ -389,7 +393,7 @@ export async function renderJobs(main, ui) {
     const system = SYSTEM_NAME[job.sourceSystem] ?? job.sourceSystem;
     const card = h('article', {
       class: 'fx-job', tabindex: '0', role: 'button', 'aria-label': `${clientOf(job)}, open the job`,
-      onclick: () => { if (!dragged) openJob(job); },
+      onclick: () => { if (dragged) { dragged = false; return; } openJob(job); },
       onkeydown: (event) => { if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); openJob(job); } },
     },
     h('div', { class: 'fx-job__client' }, clientOf(job)),
@@ -450,17 +454,106 @@ export async function renderJobs(main, ui) {
   const totalOf = (jobs) => jobs.reduce((sum, job) => sum + (job.totalCents ?? 0), 0);
 
   function board(groups) {
-    if (!groups.length) return h('div', { class: 'fx-panel' }, h('p', { class: 'fx-empty' }, 'No job matches the search or filter.'));
+    if (!groups.length) {
+      boardTabs.hidden = true;
+      return h('div', { class: 'fx-panel' }, h('p', { class: 'fx-empty' }, 'No job matches the search or filter.'));
+    }
     const element = h('div', { class: 'fx-board' }, groups.map(({ label, jobs, rank, color }, index) => h('section', { class: 'fx-board__col', 'aria-label': label, 'data-lane': String(index) },
       h('header', { class: 'fx-board__head' },
         color ? h('span', { class: 'fx-cf__opt fx-board__lane', 'data-color': color }, label, h('span', { class: 'fx-stage__count' }, String(jobs.length))) : stagePill(label, jobs.length, rank),
         h('span', { class: 'fx-board__sum' }, jobs.length ? formatCents(totalOf(jobs)) : '')),
       h('div', { class: 'fx-board__cards' }, jobs.length ? jobs.map(jobCard) : h('p', { class: 'fx-board__none' }, 'None')))));
     if (groups.some((g) => g.drop)) enableDrag(element, groups);
+    phoneLanes(element, groups);
     // Lanes past the frame's sides, and cards past a lane's foot, fade.
     edgeFade(element, { target: frame.view, edges: ['left', 'right'] });
     element.querySelectorAll('.fx-board__cards').forEach((cards) => edgeFade(cards, { target: cards.parentElement, edges: ['top', 'bottom'] }));
     return element;
+  }
+
+  // Stage tabs for the phone: one per lane, with its count. A tap brings
+  // that lane across; a swipe updates the tab. Hidden on a wider screen.
+  const boardTabs = h('div', { class: 'fx-board-tabs', role: 'tablist', 'aria-label': 'Stages', hidden: true });
+  function phoneLanes(element, groups) {
+    const bar = main.querySelector('.fx-toolbar');
+    if (bar && !boardTabs.isConnected) bar.prepend(boardTabs);
+    const buttons = groups.map((group, index) => {
+      const count = group.jobs.length;
+      const name = `${group.label}, ${count} ${count === 1 ? 'job' : 'jobs'}`;
+      return h('button', {
+        type: 'button', role: 'tab', id: `fx-lane-tab-${index}`,
+        'aria-controls': `fx-lane-${index}`, 'aria-selected': 'false', title: name,
+        onclick: () => element.scrollTo({ left: element.querySelector(`#fx-lane-${index}`)?.offsetLeft ?? 0, behavior: 'smooth' }),
+      }, h('span', {}, group.label), h('span', { class: 'fx-tabs__count' }, String(count)));
+    });
+    boardTabs.replaceChildren(...buttons);
+    boardTabs.hidden = false;
+    const cols = [...element.querySelectorAll(':scope > .fx-board__col')];
+    cols.forEach((col, index) => {
+      col.id = `fx-lane-${index}`;
+      col.setAttribute('role', 'tabpanel');
+      col.setAttribute('aria-labelledby', `fx-lane-tab-${index}`);
+    });
+    let shown = -1;
+    const mark = () => {
+      const at = phoneLaneIndex(element.scrollLeft, element.clientWidth, cols.length);
+      if (at === shown) return;
+      shown = at;
+      buttons.forEach((button, index) => {
+        const on = index === at;
+        button.setAttribute('aria-selected', String(on));
+        if (on) button.scrollIntoView({ inline: 'nearest', block: 'nearest' });
+      });
+    };
+    element.addEventListener('scroll', () => requestAnimationFrame(mark), { passive: true });
+    mark();
+    enableHold(element, groups);
+  }
+
+  // A long press on a phone opens Move to. A drag stays a mouse or pen
+  // move on a wider screen (enableDrag). A small move cancels the press,
+  // so a swipe still changes lane.
+  function enableHold(element, groups) {
+    element.addEventListener('pointerdown', (event) => {
+      if (!isPhone() || event.pointerType !== 'touch' || event.button !== 0) return;
+      const card = event.target.closest('.fx-job');
+      if (!card || event.target.closest('button, a')) return;
+      const startX = event.clientX;
+      const startY = event.clientY;
+      let held = false;
+      const timer = setTimeout(() => {
+        held = true;
+        dragged = true;
+        const from = Number(card.closest('.fx-board__col')?.dataset.lane);
+        openMoveSheet(cardJobs.get(card), groups, from);
+      }, PHONE_HOLD_MS);
+      // The release may land outside the card (a tap still ends on the page),
+      // so the press is watched on the document.
+      const stop = (end) => {
+        if (end.type === 'pointermove' && Math.hypot(end.clientX - startX, end.clientY - startY) <= 10) return;
+        clearTimeout(timer);
+        document.removeEventListener('pointermove', stop);
+        document.removeEventListener('pointerup', stop);
+        document.removeEventListener('pointercancel', stop);
+        if (held) setTimeout(() => { dragged = false; }, 0);
+      };
+      document.addEventListener('pointermove', stop);
+      document.addEventListener('pointerup', stop);
+      document.addEventListener('pointercancel', stop);
+      card.addEventListener('contextmenu', (menu) => { if (held) menu.preventDefault(); }, { once: true });
+    });
+  }
+
+  async function openMoveSheet(job, groups, from) {
+    const choices = groups.flatMap((group, index) => {
+      if (index === from || !group.drop) return [];
+      if (group.drop.kind !== 'field' && !movesStages(job)) return [];
+      return [{ label: group.label, value: String(index), detail: group.jobs.length }];
+    });
+    if (!choices.length || !job) return;
+    const picked = await ui.dialog({ title: 'Move to', choices });
+    const target = picked == null ? null : groups[Number(picked)];
+    if (target?.drop) moveJob(job, target.drop);
   }
 
   // ── Moves ────────────────────────────────────────────────────────────────
@@ -486,7 +579,7 @@ export async function renderJobs(main, ui) {
       drag = null;
     };
     element.addEventListener('pointerdown', (event) => {
-      if (event.button !== 0 || event.pointerType === 'touch') return;
+      if (event.button !== 0 || event.pointerType === 'touch' || isPhone()) return;
       const card = event.target.closest('.fx-job');
       if (!card || event.target.closest('button, a')) return;
       const rect = card.getBoundingClientRect();
@@ -1091,12 +1184,15 @@ export async function renderJobs(main, ui) {
 
   // The job's page: a large panel over the board, like a task page. A
   // breadcrumb, the client's name, the stage, the job's fields, what to fix
-  // and its lines. At the side (below on a phone), the sidecar: Activity,
-  // and Fix when the job has a problem (for a changed job: what changed,
-  // and Accept change). The sidecar closes, and the main area takes its room.
-  // Esc, the X or a click outside closes the panel. `atFix` opens the
-  // Fix tab on the first problem (or scrolls to the invoice choice). The job's custom fields can
-  // be changed here (in Flow only), and its stage moved (a hand-off to the
+  // and its lines. At the side, the sidecar: Activity, and Fix when the job
+  // has a problem (for a changed job: what changed, and Accept change). The
+  // sidecar closes, and the main area takes its room. On a phone the same
+  // panel is the whole screen: back (the board stays where it was scrolled),
+  // the client, the previous and next job, a menu, the sidecar's tabs under
+  // the bar, and the main action fixed at the foot. Esc, the X or a click
+  // outside closes the panel. `atFix` opens the Fix tab on the first problem
+  // (or scrolls to the invoice choice). The job's custom fields can be
+  // changed here (in Flow only), and its stage moved (a hand-off to the
   // work system).
   function openJob(job, { atFix = false } = {}) {
     const o = job.obligation;
@@ -1131,11 +1227,9 @@ export async function renderJobs(main, ui) {
       class: 'fx-task__fixchip', type: 'button', 'aria-pressed': 'false', onclick: () => toggleFix(i),
     }, lucide(h, 'triangle-alert'), f.label));
     function toggleFix(i) {
-      if (picked === i && side.tab() === 'fix') { side.close(); return; }
+      if (!isPhone() && picked === i && side.tab() === 'fix') { side.close(); return; }
       picked = i;
       side.open('fix');
-      // On a phone the sidecar is below the job: bring it into view.
-      if (matchMedia('(max-width: 720px)').matches) side.element.scrollIntoView({ block: 'start' });
     }
     // No invoice, and the match is unclear: one line and two buttons. The
     // possible matches are compared on the Reconcile page, not here.
@@ -1221,6 +1315,7 @@ export async function renderJobs(main, ui) {
     }, lucide(h, 'panel-right'));
     const side = sidecar(h, {
       label: 'Job side panel',
+      phone: 'page',
       tabs: [
         { id: 'activity', label: 'Activity', icon: 'history', render: () => activityBody },
         hasFix ? { id: 'fix', label: 'Fix', icon: 'triangle-alert', mark: true, render: () => { picked ??= 0; return fixBody(); } } : null,
@@ -1233,7 +1328,40 @@ export async function renderJobs(main, ui) {
       },
     });
     side.element.classList.add('fx-task__side');
-    element.append(h('div', { class: 'fx-task__grid' },
+    const jobs = state.found ?? [];
+    const at = jobs.findIndex((item) => jobKey(item) === jobKey(job));
+    // Back closes the page. The board is still underneath, at the same scroll.
+    const stepTo = (delta) => {
+      const other = jobs[at + delta];
+      if (!other) return;
+      const board = document.querySelector('.fx-board');
+      const frame = document.querySelector('.fx-frame__body');
+      const saved = { y: window.scrollY, frame: frame?.scrollTop ?? 0, board: board?.scrollLeft ?? 0 };
+      close();
+      openJob(other);
+      const restore = () => {
+        window.scrollTo(0, saved.y);
+        const nextFrame = document.querySelector('.fx-frame__body');
+        const nextBoard = document.querySelector('.fx-board');
+        if (nextFrame) nextFrame.scrollTop = saved.frame;
+        if (nextBoard) nextBoard.scrollLeft = saved.board;
+      };
+      restore();
+      requestAnimationFrame(restore);
+    };
+    const menuItems = [];
+    if (choose && o?.id) menuItems.push({ icon: 'git-compare', text: 'Reconcile', run: () => { close(); ui.go(`/reconcile/${o.id}`); } });
+    if (job.link?.url) menuItems.push({ icon: 'external-link', text: `Open in ${system}`, run: () => window.open(job.link.url, '_blank', 'noopener') });
+    const menu = menuItems.length ? rowMenu('More', menuItems, { className: 'fx-record__menu' }) : null;
+    const bar = recordBar(h, {
+      title: clientOf(job),
+      label: 'Job',
+      onBack: close,
+      prev: { label: 'Previous job', disabled: at <= 0, onclick: () => stepTo(-1) },
+      next: { label: 'Next job', disabled: at < 0 || at >= jobs.length - 1, onclick: () => stepTo(1) },
+      menu: menu?.[0] ?? null,
+    });
+    element.append(bar, h('div', { class: 'fx-task__grid' },
       h('div', { class: 'fx-task__main' },
         h('header', { class: 'fx-task__head' },
           h('nav', { class: 'fx-task__crumb', 'aria-label': 'Breadcrumb' },
@@ -1276,12 +1404,15 @@ export async function renderJobs(main, ui) {
             : h('p', { class: 'fx-dim' }, 'No lines.')),
         h('div', { class: 'fx-task__actions' }, actions(job, close))),
       side.element));
+    if (menu) element.append(menu[1]);
     element.addEventListener('click', (event) => { if (event.target === element) close(); });
     element.addEventListener('close', () => element.remove());
     document.body.append(element);
     element.showModal();
     const last = readSide();
-    if (atFix && hasFix) toggleFix(0);
+    // On a phone the tabs are the page, so the sidecar stays open.
+    if (isPhone()) side.open((atFix || last === 'fix') && hasFix ? 'fix' : 'activity');
+    else if (atFix && hasFix) toggleFix(0);
     else if (last !== 'closed') side.open(last === 'fix' && hasFix ? 'fix' : 'activity');
     if (atFix && chooseBox) chooseBox.scrollIntoView({ block: 'start' });
     if (!o) return;

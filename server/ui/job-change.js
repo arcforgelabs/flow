@@ -5,6 +5,7 @@
 // and a recheck button that reads the job from the work system again. Flow
 // never writes to the work system. Kept apart from
 // invoicing.js so tests can load it without a browser.
+import { applyPhoneRule } from './mobile.js';
 
 // Rows shown before "Show all".
 export const FIRST_ROWS = 5;
@@ -55,7 +56,7 @@ export function jobChangeBanner(ui, change, { money, onAccept = null, onRecheck 
     }, `Open in ${system} ↗`)
     : null;
   const accept = change.canAccept && onAccept
-    ? h('button', { class: 'fx-btn fx-btn--sm fx-btn--primary', type: 'button', title: `This invoice takes the Now in ${system} column.`, onclick: onAccept }, 'Accept change')
+    ? h('button', { class: 'fx-btn fx-btn--sm fx-btn--primary', type: 'button', 'data-action': 'accept', title: `This invoice takes the Now in ${system} column.`, onclick: onAccept }, 'Accept change')
     : null;
   const recheck = onRecheck
     ? h('button', {
@@ -77,7 +78,7 @@ export function jobChangeBanner(ui, change, { money, onAccept = null, onRecheck 
   const more = rows.length > FIRST_ROWS
     ? h('button', { class: 'fx-btn fx-btn--ghost fx-btn--sm', type: 'button', onclick: (event) => { draw(true); event.currentTarget.remove(); } }, `Show all ${rows.length}`)
     : null;
-  return h('section', { class: 'fx-change', role: 'alert' },
+  return applyPhoneRule(h('section', { class: 'fx-change', role: 'alert' },
     h('div', { class: 'fx-change__head' },
       h('p', {}, h('strong', {}, 'Problem.'), ' ', changeSummary(change, rows.filter((row) => row.field !== 'Total').length)),
       h('div', { class: 'fx-change__acts' }, link, accept, recheck)),
@@ -85,7 +86,7 @@ export function jobChangeBanner(ui, change, { money, onAccept = null, onRecheck 
     rows.length ? h('div', { class: 'fx-change__scroll' }, h('table', { class: 'fx-change__table' },
       h('thead', {}, h('tr', {}, h('th', { scope: 'col' }, 'Field'), h('th', { scope: 'col' }, 'Was'), h('th', { scope: 'col' }, `Now in ${system}`))),
       body)) : null,
-    more);
+    more), 'jobChangeBanner');
 }
 
 // The banner with Accept change and the recheck wired, for the invoice page

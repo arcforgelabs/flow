@@ -1,0 +1,18 @@
+{
+  "component": "sidecar",
+  "direction": "full page",
+  "phone": {
+    "layout": "page"
+  },
+  "tablet": {
+    "layout": "panel"
+  },
+  "desk": {
+    "layout": "panel"
+  },
+  "touch": 44,
+  "pageOverflow": "none",
+  "screens": [
+    "job-panel"
+  ]
+}

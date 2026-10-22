@@ -46,7 +46,8 @@ or admin), before Void. The confirm says `Also deletes the draft in Xero.`
 Flow reads that invoice live, deletes it there while it is still a draft,
 then voids it in Flow. The issued versions stay, and the job is freed the
 same way. Delete is hidden when the copy says Approved or Paid. With no
-accounting system, an issued invoice is voided, not deleted.
+accounting delete, an invoice that was issued, including one opened to revise,
+is voided, not deleted.
 
 The Problem banner gives the first sentence of each problem: what is wrong.
 The field the failed check reads glows red, like a required field
@@ -225,9 +226,11 @@ Xero's `SentToContact` flag.
   accounting adapter deletes the draft there, or reports it already gone:
   Flow then voids the invoice (the issued versions stay) and frees the job.
   Approved or paid answers `accounting_approved` (`Approved in Xero. Void it in Xero first.` when the adapter is Xero) and changes nothing.
-  Not connected, writes off, or no adapter answers `accounting_not_connected`,
-  `accounting_writes_off` or `accounting_unavailable`, and changes nothing.
-  A timeout leaves the invoice as it was.
+  Not connected or writes off answers `accounting_not_connected` or
+  `accounting_writes_off`, and changes nothing. A connected adapter that
+  cannot delete it answers `accounting_unavailable`. With no accounting
+  delete, an issued invoice answers `was_issued`. A timeout leaves the
+  invoice as it was.
 - `POST /api/invoicing/jobs/:id/use-new-lines` `{ accept? }`: the draft takes
   the work system's lines. With `accept: true` it also replaces lines changed
   in both places, while the invoice is not sent.

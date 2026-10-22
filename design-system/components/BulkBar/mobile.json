@@ -1,0 +1,18 @@
+{
+  "component": "bulkBar",
+  "direction": "foot bar",
+  "phone": {
+    "layout": "foot"
+  },
+  "tablet": {
+    "layout": "foot"
+  },
+  "desk": {
+    "layout": "foot"
+  },
+  "touch": 44,
+  "pageOverflow": "none",
+  "screens": [
+    "invoices-ticked"
+  ]
+}

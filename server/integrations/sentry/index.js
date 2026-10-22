@@ -9,12 +9,16 @@ import { scrubSpan } from '../../ui/monitoring.js';
 // the host setting SENTRY_DSN. It has no tables.
 
 // The browser SDK, loaded from Sentry's CDN only while this adapter is on
-// (server/ui/monitoring.js). Pinned, with its integrity hash. With traces on,
-// the bundle that also traces; Sentry ships it only with session replay in
-// it too, which Flow never turns on.
+// (server/ui/monitoring.js). Pinned, with its integrity hash. With replay on,
+// the bundle with session replay; with traces on, the bundle that also traces
+// (Sentry ships it only with replay in it).
 export const SENTRY_BROWSER = Object.freeze({
   src: 'https://browser.sentry-cdn.com/11.4.0/bundle.feedback.min.js',
   integrity: 'sha384-H9RmZ/VaqOPZrUezgCSqHp4t3LoQMd/5+0Y4oEGUB2bddZzSnwZiOYoWneK4diWt',
+});
+export const SENTRY_BROWSER_REPLAY = Object.freeze({
+  src: 'https://browser.sentry-cdn.com/11.4.0/bundle.replay.feedback.min.js',
+  integrity: 'sha384-9Iyc17wHvpK0bqZe+cuAedQDHoWwenMrxXR+HgLLkQ3rHM4zQD+amLzBnmrQgowj',
 });
 export const SENTRY_BROWSER_TRACING = Object.freeze({
   src: 'https://browser.sentry-cdn.com/11.4.0/bundle.tracing.replay.feedback.min.js',
@@ -44,6 +48,7 @@ export const SENTRY_SETUP = {
     { name: 'SENTRY_ENVIRONMENT', label: 'Environment', help: 'How Sentry labels this installation, for example production. Empty: production, or workspace in a Replit workspace.' },
     { name: 'SENTRY_CLIENT', label: 'Client', help: 'The name your support desk files this installation\'s reports under. Sent as the client tag. Empty: no client tag.' },
     { name: 'SENTRY_FEEDBACK', label: 'Report a problem button', kind: 'onoff', help: 'On: everyone signed in can send a report, with a screenshot, to this Sentry project.' },
+    { name: 'SENTRY_REPLAY', label: 'Replay with reports', kind: 'onoff', help: 'On: each report and each browser error keeps up to the last minute of the page, as a replay with every word hidden.' },
     { name: 'SENTRY_TRACES_SAMPLE_RATE', label: 'Traces', help: 'The share of clicks, page loads and requests timed, from 0 (off) to 1 (all). Empty: 0.2.' },
   ],
 };
@@ -56,6 +61,7 @@ export function readSentrySettings(env) {
   // labelled apart so they never read as the live app's.
   const environment = String(env.SENTRY_ENVIRONMENT ?? '').trim() || (isReplitWorkspace(env) ? 'workspace' : 'production');
   const feedback = String(env.SENTRY_FEEDBACK ?? 'on').trim() !== 'off';
+  const replay = String(env.SENTRY_REPLAY ?? 'on').trim() !== 'off';
   const rate = String(env.SENTRY_TRACES_SAMPLE_RATE ?? '').trim();
   const tracesSampleRate = rate === '' ? DEFAULT_TRACES_SAMPLE_RATE : Number(rate);
   if (!/^\d*\.?\d+$/.test(rate || '0') || !(tracesSampleRate >= 0 && tracesSampleRate <= 1)) {
@@ -66,7 +72,7 @@ export function readSentrySettings(env) {
   // Every event says which product and, when set, which client it is from,
   // so one support desk can serve many installations.
   const tags = client ? { product: 'flow', client } : { product: 'flow' };
-  return { dsn, environment, feedback, tracesSampleRate, tags };
+  return { dsn, environment, feedback, replay, tracesSampleRate, tags };
 }
 
 // No trace for the host's health check: it is not a person waiting.
@@ -108,7 +114,7 @@ export function createSentryAdapter({ sdk = SentryNode, env: hostEnv = process.e
         ),
         beforeSendSpan: scrubSpan,
       });
-      log.info?.(`[sentry] on: environment ${settings.environment}; report button ${settings.feedback ? 'on' : 'off'}; traces ${settings.tracesSampleRate > 0 ? settings.tracesSampleRate : 'off'}`);
+      log.info?.(`[sentry] on: environment ${settings.environment}; report button ${settings.feedback ? 'on' : 'off'}; replay ${settings.replay ? 'on' : 'off'}; traces ${settings.tracesSampleRate > 0 ? settings.tracesSampleRate : 'off'}`);
     },
     async stop() {
       if (settings) await sdk.close(2000);
@@ -133,15 +139,16 @@ export function createSentryAdapter({ sdk = SentryNode, env: hostEnv = process.e
       // meant for browsers.
       browserMonitoring() {
         if (!settings) return null;
-        const { tracesSampleRate } = settings;
+        const { tracesSampleRate, replay } = settings;
         return {
           dsn: settings.dsn,
           environment: settings.environment,
           release,
           feedback: settings.feedback,
+          replay,
           tags: settings.tags,
           tracesSampleRate,
-          script: tracesSampleRate > 0 ? SENTRY_BROWSER_TRACING : SENTRY_BROWSER,
+          script: tracesSampleRate > 0 ? SENTRY_BROWSER_TRACING : replay ? SENTRY_BROWSER_REPLAY : SENTRY_BROWSER,
         };
       },
       // Runs `work` in a span of the current trace (server/core/tracing.js).

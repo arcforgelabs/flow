@@ -8,9 +8,10 @@ import { invoiceTotals, lineTotals } from './money.js';
 // version. To change an issued invoice, revise it back to a draft and issue
 // it again: the number stays and the earlier versions stay as they were.
 // A draft that was never issued can be deleted. An issued invoice is voided.
-// When that invoice's accounting copy is still a draft, deleteDraft asks the
-// accounting adapter to delete it there first, and voids in Flow only after
-// the adapter confirms (docs/XERO.md, "Deleting a draft").
+// When its accounting copy is still a draft, deleteDraft asks the accounting
+// adapter to delete it there first, and voids in Flow only after the adapter
+// confirms (docs/XERO.md, "Deleting a draft"). With no accounting delete, an
+// issued invoice answers was_issued.
 
 async function loadInvoice(tx, organisationId, invoiceId, { lock = false } = {}) {
   let query = tx.select().from(invoices)
@@ -209,10 +210,11 @@ async function freeJobs(tx, organisationId, invoice, actor) {
 }
 
 // Same words as the Send gate (server/core/sending.js): writes that are off,
-// or a system that is not connected, stop before anything changes.
+// or a system that is not connected, stop before anything changes. An issued
+// invoice with no accounting delete answers was_issued.
 async function deleteInAccounting(accounting, organisationId, invoiceId, actor) {
   if (!accounting || typeof accounting.capabilities?.deleteInvoice !== 'function') {
-    throw new FlowError('accounting_unavailable', 'No accounting system is connected. An issued invoice stays as it is.');
+    throw new FlowError('was_issued', 'an invoice that was issued cannot be deleted; void it');
   }
   const status = typeof accounting.capabilities.sendStatus === 'function'
     ? await accounting.capabilities.sendStatus({ organisationId })
@@ -231,10 +233,11 @@ async function deleteInAccounting(accounting, organisationId, invoiceId, actor) 
   throw new FlowError('accounting_unavailable', answer?.message || 'The accounting system cannot delete this invoice. Nothing was changed.');
 }
 
-// Removes a draft that was never issued. An invoice that was issued is voided
-// only after its accounting adapter deletes the draft there, or reports it
-// already gone. The issued versions stay. With no adapter, or when the
-// accounting invoice is approved or paid, nothing in Flow changes.
+// Removes a draft that was never issued, and frees its job. An invoice that
+// was issued is voided only after its accounting adapter deletes the draft
+// there, or reports it already gone. The issued versions stay. With no
+// accounting delete, or when the accounting invoice is approved or paid,
+// nothing in Flow changes.
 export async function deleteDraft(db, organisationId, invoiceId, { actor = null, accounting = null } = {}) {
   const current = await loadInvoice(db, organisationId, invoiceId);
   if (current.status === 'void') throw new FlowError('conflict', 'a void invoice is final');

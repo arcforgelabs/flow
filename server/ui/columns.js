@@ -31,6 +31,7 @@
 // Jobs and on Invoices, where it is the invoice's job's value).
 import { lucide } from '/assets/ui/custom-fields.js';
 import { endWidth, LEAD_WIDTH, MAX_WIDTH, minWidth, moveColumn, TAIL_WIDTH, tableWidth, widthOf } from '/assets/ui/job-view.js';
+import { applyPhoneRule, assignPhoneSlots, phoneSlot } from './mobile.js';
 import { initialsOf } from '/assets/ui/person.js';
 
 const fullDate = (iso) => new Date(`${iso}T00:00:00`).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' });
@@ -81,10 +82,12 @@ export function fieldColumn(h, field, { id, valueOf, people }) {
 // A row's cells for the shown columns: a class per kind, the label for
 // the phone layout, the full text as the cell's name on hover.
 export function rowCells(h, columns, row) {
-  return columns.map((c) => {
+  return assignPhoneSlots(columns).map((c) => {
+    const slot = phoneSlot(c);
     const td = h('td', {
       class: [`fx-c-${c.kind}`, c.num ? 'fx-num' : null, c.className].filter(Boolean).join(' '),
       'data-label': c.label,
+      ...(slot ? { 'data-phone-slot': slot } : {}),
     }, c.cell(row));
     // A cell stays on one line and ends in "…" when the column is narrow
     // (flow.css, .fx-table--sized); the whole text shows on hover.
@@ -173,7 +176,7 @@ export function columnTable(h, config) {
       h('colgroup', {}, leadCols, cols, endCol),
       h('thead', {}, h('tr', {}, lead, heads, tail)),
       rows);
-    const box = h('div', { class: 'fx-table-scroll' }, node);
+    const box = applyPhoneRule(h('div', { class: 'fx-table-scroll' }, node), 'columnTable');
     // The width the columns need; past the window the table scrolls
     // sideways. A browser shares spare width among fixed columns, so the
     // end column is sized here, and again when the window changes size.
