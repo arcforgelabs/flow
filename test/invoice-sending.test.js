@@ -215,7 +215,7 @@ describe('ready, problem and send', { skip: skipWithoutDatabase }, () => {
     const failed = workReader(() => ({ state: 'unavailable', reason: 'calls are stopped' }));
     await assert.rejects(sendThese([one.invoice.id], failed.work), {
       code: 'not_ready',
-      message: /Nothing was sent/,
+      message: '1 job could not be read from the work system. Nothing was sent.',
     });
     assert.equal((await row(one.invoice.id)).status, 'draft');
     assert.deepEqual(failed.reads, [one.ref]);
@@ -239,6 +239,18 @@ describe('ready, problem and send', { skip: skipWithoutDatabase }, () => {
     assert.equal((await row(keep.invoice.id)).status, 'issued');
     assert.equal((await row(drop.invoice.id)).status, 'draft');
     assert.deepEqual(reads.sort(), [keep.ref, drop.ref].sort());
+  });
+
+  test('a bulk send that confirms none names how many jobs could not be read', async () => {
+    const one = await invoicedJob();
+    const two = await invoicedJob();
+    const three = await invoicedJob();
+    const { work } = workReader(() => ({ state: 'unavailable', reason: 'calls are stopped' }));
+    await assert.rejects(sendThese([one.invoice.id, two.invoice.id, three.invoice.id], work), {
+      code: 'not_ready',
+      message: '3 jobs could not be read from the work system. Nothing was sent.',
+    });
+    for (const item of [one, two, three]) assert.equal((await row(item.invoice.id)).status, 'draft');
   });
 
   test('a bulk send reads at most 20 old jobs and reports the rest as waiting', async () => {
@@ -284,9 +296,24 @@ describe('ready, problem and send', { skip: skipWithoutDatabase }, () => {
     const two = await good();
     await assert.rejects(sendAllReady(handle.db, lab.id, {
       accounting: fake.adapter, personId: owner.id, issueDate: ISSUE_DATE, invoiceIds: [one.id, two.id],
-    }), { code: 'not_ready', message: /Nothing was sent/ });
+    }), { code: 'not_ready', message: 'calls are stopped. Nothing was sent.' });
     assert.equal((await row(one.id)).status, 'draft');
     assert.equal((await row(two.id)).status, 'draft');
+  });
+
+  test('a stopped press names when the accounting copy has more changes than one read takes', async () => {
+    const fake = fakeAccounting();
+    fake.adapter.capabilities.readChanges = async () => ({
+      state: 'unavailable', reason: 'Xero has more changes than one read takes',
+    });
+    const one = await good();
+    await assert.rejects(sendAllReady(handle.db, lab.id, {
+      accounting: fake.adapter, personId: owner.id, issueDate: ISSUE_DATE, invoiceIds: [one.id],
+    }), {
+      code: 'not_ready',
+      message: 'The accounting copy has more changes than one read takes. Nothing was sent.',
+    });
+    assert.equal((await row(one.id)).status, 'draft');
   });
 
   test('an accounting system that is not connected or takes no writes stops the send before anything is issued', async () => {

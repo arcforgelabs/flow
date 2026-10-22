@@ -107,12 +107,17 @@ asks first. There is no separate send bar. Then:
    Then the accounting system reads its latest changes (issue #45, see
    [XERO.md](XERO.md#read-before-draft-and-send)). When that read cannot
    run, nothing is issued and every draft in the press waits. A ticked press,
-   including a bulk press, answers `not_ready`: that one read covers them all.
-   Send on one invoice is all or nothing: if that job cannot be confirmed,
-   nothing is sent (`not_ready`). A bulk press (more than one ticked invoice)
-   sends the ones Flow confirmed. The rest stay in Ready, or move to Pending
-   when the job went to review, and the toast names how many could not be
-   confirmed.
+   including a bulk press, answers `not_ready` and names the cause (for
+   example "the accounting copy has more changes than one read takes"): that
+   one read covers them all. Send on one invoice is all or nothing: if that
+   job cannot be confirmed, nothing is sent (`not_ready`), and the answer
+   names the cause and the count (for example "1 job could not be read from
+   the work system"). A bulk press (more than one ticked invoice) sends the
+   ones Flow confirmed. The rest stay in Ready, or move to Pending when the
+   job went to review, and the toast names how many could not be confirmed.
+   When a bulk press confirms none, it answers `not_ready` with that count
+   (for example "3 jobs could not be read from the work system"). A danger
+   toast for a stopped press stays until the person closes it.
    Every draft check then runs again, the lab's pending rules
    ([INVOICE_RULES.md](INVOICE_RULES.md#pending-rules)) included. A draft
    that fails one now stays on Pending and is not sent. When a person ticked
@@ -197,9 +202,11 @@ Xero's `SentToContact` flag.
   older pages; they no longer change the tab.
 - `POST /api/invoicing/invoices/send-ready` `{ issueDate, invoiceIds? }`:
   with `invoiceIds`, only those drafts. One id is all or nothing (`not_ready`
-  when it is not ready, or its job cannot be confirmed). More than one id
-  sends the ones that are ready and confirmed; `held` counts drafts that
-  failed a check, and `waiting` counts jobs that could not be confirmed.
+  when it is not ready, or its job cannot be confirmed; the message names the
+  cause). More than one id sends the ones that are ready and confirmed;
+  `held` counts drafts that failed a check, and `waiting` counts jobs that
+  could not be confirmed. When none can go, the answer is `not_ready` and
+  names the cause and the count.
 - `POST /api/invoicing/invoices/send-again` `{ invoiceIds? }`.
 - `POST /api/invoicing/jobs/:id/use-new-lines` `{ accept? }`: the draft takes
   the work system's lines. With `accept: true` it also replaces lines changed
