@@ -9,8 +9,8 @@ import { createMonitoredLog } from '../server/core/monitoring.js';
 import { adapters } from '../server/integrations/adapters.js';
 import { createRegistry } from '../server/integrations/port.js';
 import { createTracing, requestName, sqlName, traceQueries } from '../server/core/tracing.js';
-import { createSentryAdapter, readSentrySettings, SENTRY_BROWSER, SENTRY_BROWSER_TRACING, sentryRelease } from '../server/integrations/sentry/index.js';
-import { routePattern, scrubSpan, tagNotify } from '../server/ui/monitoring.js';
+import { createSentryAdapter, readSentrySettings, SENTRY_BROWSER, SENTRY_BROWSER_REPLAY, SENTRY_BROWSER_TRACING, sentryRelease } from '../server/integrations/sentry/index.js';
+import { routePattern, scrubRecordingEvent, scrubSpan, tagNotify } from '../server/ui/monitoring.js';
 import { fakeClerk, request, TEST_PUBLISHABLE_KEY } from './support/clerk.js';
 import { freshDatabase, skipWithoutDatabase } from './support/db.js';
 
@@ -57,15 +57,15 @@ test('with the real SDK, a logged line reaches Sentry as the title, with no stac
 test('Flow ships the Sentry adapter, with no DSN of its own', () => {
   const sentry = adapters.find((a) => a.id === 'sentry');
   assert.ok(sentry);
-  assert.deepEqual(sentry.setup.fields.map((f) => f.name), ['SENTRY_DSN', 'SENTRY_ENVIRONMENT', 'SENTRY_CLIENT', 'SENTRY_FEEDBACK', 'SENTRY_TRACES_SAMPLE_RATE']);
+  assert.deepEqual(sentry.setup.fields.map((f) => f.name), ['SENTRY_DSN', 'SENTRY_ENVIRONMENT', 'SENTRY_CLIENT', 'SENTRY_FEEDBACK', 'SENTRY_REPLAY', 'SENTRY_TRACES_SAMPLE_RATE']);
   assert.equal(sentry.schema, undefined);
 });
 
 test('the settings need a Sentry DSN; environment and the report button have defaults', () => {
   assert.throws(() => readSentrySettings({}), /SENTRY_DSN is not set/);
   assert.throws(() => readSentrySettings({ SENTRY_DSN: 'https://example.test/1' }), /not a Sentry DSN/);
-  assert.deepEqual(readSentrySettings({ SENTRY_DSN: DSN }), { dsn: DSN, environment: 'production', feedback: true, tracesSampleRate: 0.2, tags: { product: 'flow' } });
-  assert.deepEqual(readSentrySettings({ SENTRY_DSN: ` ${DSN} `, SENTRY_ENVIRONMENT: 'staging', SENTRY_FEEDBACK: 'off', SENTRY_TRACES_SAMPLE_RATE: '0' }), { dsn: DSN, environment: 'staging', feedback: false, tracesSampleRate: 0, tags: { product: 'flow' } });
+  assert.deepEqual(readSentrySettings({ SENTRY_DSN: DSN }), { dsn: DSN, environment: 'production', feedback: true, replay: true, tracesSampleRate: 0.2, tags: { product: 'flow' } });
+  assert.deepEqual(readSentrySettings({ SENTRY_DSN: ` ${DSN} `, SENTRY_ENVIRONMENT: 'staging', SENTRY_FEEDBACK: 'off', SENTRY_REPLAY: 'off', SENTRY_TRACES_SAMPLE_RATE: '0' }), { dsn: DSN, environment: 'staging', feedback: false, replay: false, tracesSampleRate: 0, tags: { product: 'flow' } });
   assert.deepEqual(readSentrySettings({ SENTRY_DSN: DSN, SENTRY_CLIENT: ' Example Lab ' }).tags, { product: 'flow', client: 'Example Lab' });
   assert.throws(() => readSentrySettings({ SENTRY_DSN: DSN, SENTRY_CLIENT: 'a\nb' }), /SENTRY_CLIENT must be one short line/);
 });
@@ -91,8 +91,11 @@ test('the browser SDK is pinned with an integrity hash', () => {
   assert.match(SENTRY_BROWSER.integrity, /^sha384-[A-Za-z0-9+/]{64}$/);
   assert.match(SENTRY_BROWSER_TRACING.src, /^https:\/\/browser\.sentry-cdn\.com\/\d+\.\d+\.\d+\/bundle\.tracing\.replay\.feedback\.min\.js$/);
   assert.match(SENTRY_BROWSER_TRACING.integrity, /^sha384-[A-Za-z0-9+/]{64}$/);
-  // One SDK version for both bundles.
+  assert.match(SENTRY_BROWSER_REPLAY.src, /^https:\/\/browser\.sentry-cdn\.com\/\d+\.\d+\.\d+\/bundle\.replay\.feedback\.min\.js$/);
+  assert.match(SENTRY_BROWSER_REPLAY.integrity, /^sha384-[A-Za-z0-9+/]{64}$/);
+  // One SDK version for every bundle.
   assert.equal(SENTRY_BROWSER.src.split('/')[3], SENTRY_BROWSER_TRACING.src.split('/')[3]);
+  assert.equal(SENTRY_BROWSER.src.split('/')[3], SENTRY_BROWSER_REPLAY.src.split('/')[3]);
 });
 
 test('the adapter starts the SDK without personal data, and sends errors only while started', async () => {
@@ -124,7 +127,7 @@ test('the adapter starts the SDK without personal data, and sends errors only wh
   assert.deepEqual(sdk.calls[2][2].tags, { source: 'http' });
 
   assert.deepEqual(adapter.capabilities.browserMonitoring(), {
-    dsn: DSN, environment: 'production', release: 'flow@2026.10.26', feedback: true, tags: { product: 'flow' }, tracesSampleRate: 0.2, script: SENTRY_BROWSER_TRACING,
+    dsn: DSN, environment: 'production', release: 'flow@2026.10.26', feedback: true, replay: true, tags: { product: 'flow' }, tracesSampleRate: 0.2, script: SENTRY_BROWSER_TRACING,
   });
   assert.deepEqual(await adapter.capabilities.health(), { ok: true, environment: 'production', feedback: true });
 
@@ -133,14 +136,41 @@ test('the adapter starts the SDK without personal data, and sends errors only wh
   assert.equal(adapter.capabilities.browserMonitoring(), null);
 });
 
-test('with traces at 0 the adapter traces nothing and the browser loads the smaller SDK', async () => {
+test('with traces at 0 the adapter traces nothing and the browser loads the SDK without tracing', async () => {
   const sdk = fakeSdk();
   const adapter = createSentryAdapter({ sdk, env: {} });
   await adapter.start({ log: quiet, env: { SENTRY_DSN: DSN, SENTRY_TRACES_SAMPLE_RATE: '0' } });
-  assert.equal(adapter.capabilities.browserMonitoring().script, SENTRY_BROWSER);
+  assert.equal(adapter.capabilities.browserMonitoring().script, SENTRY_BROWSER_REPLAY);
   assert.equal(adapter.capabilities.traceRequest(), null);
   assert.equal(adapter.capabilities.traceSpan({ name: 'q', op: 'db' }, () => 7), 7);
   assert.equal(sdk.calls.filter(([kind]) => kind === 'span').length, 0);
+});
+
+test('with replay and traces off the browser loads the smallest SDK', async () => {
+  const adapter = createSentryAdapter({ sdk: fakeSdk(), env: {} });
+  await adapter.start({ log: quiet, env: { SENTRY_DSN: DSN, SENTRY_TRACES_SAMPLE_RATE: '0', SENTRY_REPLAY: 'off' } });
+  assert.equal(adapter.capabilities.browserMonitoring().replay, false);
+  assert.equal(adapter.capabilities.browserMonitoring().script, SENTRY_BROWSER);
+});
+
+test('a replay keeps no attribute values, element text or query strings', () => {
+  const click = scrubRecordingEvent({ type: 5, data: { tag: 'breadcrumb', payload: {
+    category: 'ui.click',
+    message: 'main > li.row[title="Jane Citizen"] > button[aria-label="Delete Jane Citizen"]',
+    data: { nodeId: 7, node: { id: 7, tagName: 'button', textContent: 'Jane', attributes: { id: 'del', class: 'icon', role: 'button', 'aria-label': 'Delete Jane Citizen', title: 'Jane' } } },
+  } } });
+  assert.equal(click.data.payload.message, 'main > li.row > button');
+  assert.deepEqual(click.data.payload.data.node, { id: 7, tagName: 'button', textContent: '', attributes: { id: 'del', class: 'icon', role: 'button' } });
+  assert.equal(click.data.tag, 'breadcrumb');
+
+  const move = scrubRecordingEvent({ type: 5, data: { tag: 'breadcrumb', payload: { category: 'navigation', data: { from: '/invoices?q=Jane', to: '/clients/7#notes' } } } });
+  assert.deepEqual(move.data.payload.data, { from: '/invoices', to: '/clients/7' });
+
+  const span = scrubRecordingEvent({ type: 5, data: { tag: 'performanceSpan', payload: { op: 'navigation.navigate', description: 'https://flow.test/search?q=Jane' } } });
+  assert.equal(span.data.payload.description, 'https://flow.test/search');
+
+  const snapshot = { type: 2, data: { node: {} } };
+  assert.equal(scrubRecordingEvent(snapshot), snapshot);
 });
 
 test('with traces on, spans join the request\'s trace and the request is named by its route', async () => {
@@ -341,6 +371,7 @@ describe('monitoring API', { skip: skipWithoutDatabase }, () => {
     assert.equal(body.service, 'sentry');
     assert.equal(body.dsn, DSN);
     assert.equal(body.feedback, true);
+    assert.equal(body.replay, true);
     assert.equal(body.tracesSampleRate, 0.2);
     assert.equal(body.script.src, SENTRY_BROWSER_TRACING.src);
     await on.integrations.stop();
