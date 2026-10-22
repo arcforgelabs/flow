@@ -352,6 +352,15 @@ export async function renderInvoiceList(main, ui) {
         run: () => voidAll(voidable),
       });
     }
+    // A draft that was never issued is deleted, not voided. Pending and Ready
+    // hold those drafts; an issued invoice on Pending is retried, not deleted.
+    const deletable = rows.filter((i) => i.status === 'draft' && i.issuedVersion === 0);
+    if (['pending', 'ready'].includes(state.status) && context.canIssue && deletable.length) {
+      danger.push({
+        icon: 'trash-2', label: 'Delete', iconOnly: true, tone: 'danger', title: 'Delete',
+        run: () => deleteAll(deletable),
+      });
+    }
     const all = body.invoices.map((i) => i.id);
     const selection = [
       { icon: 'list-checks', label: 'Tick all shown', run: () => setTicks(all) },
@@ -421,6 +430,29 @@ export async function renderInvoiceList(main, ui) {
       } catch (e) { error = e; }
     }
     toast(error ? `${done} of ${rows.length} void. ${error.message}` : `${plural(done, 'invoice', 'invoices')} void.`, error ? 'danger' : 'success');
+    state.ticked.clear();
+    seen.clear();
+    await load();
+    alerts.refresh();
+  }
+
+  // Delete, one never-issued draft after another, as on one invoice's page.
+  async function deleteAll(rows) {
+    const ok = await ui.dialog({
+      title: `Delete ${plural(rows.length, 'invoice', 'invoices')}?`,
+      body: h('p', {}, 'A draft that was never issued is removed. Its job can be invoiced again, and the rules decide.'),
+      confirm: `Delete ${rows.length}`, tone: 'danger',
+    });
+    if (!ok) return;
+    let done = 0;
+    let error = null;
+    for (const invoice of rows) {
+      try {
+        await flow(`/api/invoicing/invoices/${invoice.id}`, { method: 'DELETE' });
+        done += 1;
+      } catch (e) { error = e; }
+    }
+    toast(error ? `${done} of ${rows.length} deleted. ${error.message}` : `${plural(done, 'invoice', 'invoices')} deleted.`, error ? 'danger' : 'success');
     state.ticked.clear();
     seen.clear();
     await load();
@@ -1049,6 +1081,30 @@ function draftView(invoice, ui, context, redraw) {
   // fine too.
   const fromJob = isNew && context.canIssue
     ? h('button', { class: 'fx-btn fx-btn--ghost', type: 'button', onclick: () => pickJob(ui) }, 'From a job') : null;
+  // A draft that was never issued is deleted. An issued invoice, including
+  // one opened for a revision, is voided instead.
+  const deleteButton = !isNew && context.canIssue && invoice.status === 'draft' && invoice.issuedVersion === 0
+    ? h('button', {
+      class: 'fx-btn fx-btn--ghost fx-btn--danger', type: 'button',
+      onclick: async () => {
+        const ok = await ui.dialog({
+          title: 'Delete this invoice?',
+          body: h('p', {}, invoice.job
+            ? 'It was never issued. The job can be invoiced again, and the rules decide.'
+            : 'It was never issued, so it is removed.'),
+          confirm: 'Delete', tone: 'danger',
+        });
+        if (!ok) return;
+        try {
+          await flow(`/api/invoicing/invoices/${invoice.id}`, { method: 'DELETE' });
+          toast('Invoice deleted.', 'success');
+          sessionStorage.setItem(NAV_BACK, '1');
+          go('/invoices');
+        } catch (error) {
+          toast(error.message, 'danger');
+        }
+      },
+    }, 'Delete') : null;
 
   // A draft with no problem is in Ready by itself; one with a problem is
   // Pending. A changed job is fixed at its source or accepted here.
@@ -1073,7 +1129,7 @@ function draftView(invoice, ui, context, redraw) {
   return [
     navBar(ui, invoice),
     ui.pageHeader(isNew ? 'New invoice' : ready ? 'Ready invoice' : 'Pending invoice', {
-      actions: [fromJob, isNew ? null : previewButton(ui, invoice.id, 'Shows the saved invoice.'), saveButton, sendButton ?? issueButton].filter(Boolean),
+      actions: [fromJob, deleteButton, isNew ? null : previewButton(ui, invoice.id, 'Shows the saved invoice.'), saveButton, sendButton ?? issueButton].filter(Boolean),
     }),
     draftNote(to, invoice) ? ui.notice(draftNote(to, invoice), 'warn') : null,
     ...problems,

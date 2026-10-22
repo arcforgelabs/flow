@@ -6,7 +6,7 @@ import { createPersonAuth } from '../server/auth/session.js';
 import { createField, setJobFieldValue } from '../server/core/custom-fields.js';
 import { createContact, createOrganisation, createPriceItem } from '../server/core/directory.js';
 import { createRule, deleteRule } from '../server/core/invoice-rules.js';
-import { createDraftInvoice } from '../server/core/invoices.js';
+import { createDraftInvoice, issueInvoice, reviseInvoice } from '../server/core/invoices.js';
 import { draftInvoiceForObligation, observeJob, recordAccountingEvidence, setReady } from '../server/core/ledger.js';
 import { linkRecord } from '../server/core/links.js';
 import { createRegistry } from '../server/integrations/port.js';
@@ -43,8 +43,9 @@ describe('invoicing API', { skip: skipWithoutDatabase }, () => {
   function invoicingApp({ integrations = null } = {}) {
     const settings = { mode: 'clerk', keys: { publishableKey: TEST_PUBLISHABLE_KEY, proxyUrl: null } };
     const personAuth = createPersonAuth({ db: handle.db, clerk, ownerGoogleDomains: ['example.test'], log: quiet });
-    // These tests read the list many times. The lab's limit is not what they check.
-    return createApp({ database: handle, auth: { settings, clerk, personAuth }, integrations, log: quiet, buttonCooldowns: false, rateLimitPerMinute: 1000 });
+    // The suite is one long sequence of requests. The lab's per-minute limit
+    // is not what these tests measure.
+    return createApp({ database: handle, auth: { settings, clerk, personAuth }, integrations, log: quiet, buttonCooldowns: false, rateLimitPerMinute: 10_000 });
   }
 
   before(async () => {
@@ -174,6 +175,28 @@ describe('invoicing API', { skip: skipWithoutDatabase }, () => {
     const voided = await call(`/invoices/${draft.id}/void`, { method: 'POST' });
     assert.equal(voided.status, 200);
     assert.equal(voided.body.invoice.status, 'void');
+  });
+
+  test('an owner deletes a never-issued draft; an issued invoice and a staff person are refused', async () => {
+    const { body } = await call('/invoices', { method: 'POST', body: { contactId: practice.id, lines: [{ priceItemId: crown.id }] } });
+    const id = body.invoice.id;
+    const staff = await call(`/invoices/${id}`, { method: 'DELETE', token: staffToken });
+    assert.equal(staff.status, 403);
+    assert.equal(staff.body.code, 'role_required');
+    const removed = await call(`/invoices/${id}`, { method: 'DELETE' });
+    assert.equal(removed.status, 200);
+    assert.equal(removed.body.ok, true);
+    assert.equal((await call(`/invoices/${id}`)).status, 404);
+
+    const issued = await createDraftInvoice(handle.db, lab.id, { contactId: practice.id, lines: [{ priceItemId: crown.id }] });
+    await issueInvoice(handle.db, lab.id, issued.id, { issuedBy: 'user:test', issueDate: '2026-10-19' });
+    const refused = await call(`/invoices/${issued.id}`, { method: 'DELETE' });
+    assert.equal(refused.status, 409);
+    assert.equal(refused.body.code, 'was_issued');
+    await reviseInvoice(handle.db, lab.id, issued.id);
+    const revised = await call(`/invoices/${issued.id}`, { method: 'DELETE' });
+    assert.equal(revised.status, 409);
+    assert.equal(revised.body.code, 'was_issued');
   });
 
   test('a draft can move to another customer, never to a supplier', async () => {

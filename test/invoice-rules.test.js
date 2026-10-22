@@ -5,8 +5,9 @@ import { createContact, createOrganisation, createPriceItem } from '../server/co
 import {
   createRule, deleteRule, FIELDS, listRules, readRule, rulePending, ruleReasons, ruleSkip, starterRules, TESTS, updateRule,
 } from '../server/core/invoice-rules.js';
+import { deleteDraft, getInvoice } from '../server/core/invoices.js';
 import { autoDraftJobs, saveInvoicingSettings } from '../server/core/invoicing-rules.js';
-import { draftInvoiceForObligation, observeJob, setReady } from '../server/core/ledger.js';
+import { draftInvoiceForObligation, explainObligation, observeJob, setReady } from '../server/core/ledger.js';
 import { invoiceViews, sendAllReady } from '../server/core/sending.js';
 import { billingObligations, invoices } from '../server/db/schema.js';
 import { freshDatabase, skipWithoutDatabase } from './support/db.js';
@@ -316,5 +317,38 @@ describe('rules a lab keeps', { skip: skipWithoutDatabase }, () => {
     assert.equal(views.problems.get(invoice.id)?.[0]?.message, note);
     assert.equal(views.ready.includes(invoice.id), false);
     await deleteRule(handle.db, lab.id, made.id);
+  });
+
+  test('deleting a never-issued draft frees the job, and a Never draft rule does not draft it again', async () => {
+    const observe = async (status) => {
+      const row = await observeJob(handle.db, lab.id, {
+        sourceSystem: 'seazona', sourceJobRef: `job-${++counter}`, caseRef: `CASE-${counter}`, contactId: practice.id,
+        sourceStatus: status, jobDate: '2026-10-15', lines: [{ itemCode: 'CROWN', description: 'Crown' }], observedAt: NOW,
+      });
+      await setReady(handle.db, lab.id, row.id, { actor: 'person:test' });
+      return row;
+    };
+    const reload = async (row) => (await handle.db.select().from(billingObligations).where(eq(billingObligations.id, row.id)))[0];
+    const internal = await observe('Internal');
+    await autoDraftJobs(handle.db, lab.id, { now: NOW });
+    const drafted = await reload(internal);
+    assert.ok(drafted.invoiceId, 'the job is drafted before the rule exists');
+    const rule = await createRule(handle.db, lab.id, {
+      name: 'Never draft', conditions: [{ field: 'job_status', test: 'is', value: 'internal' }], action: { kind: 'skip' },
+    });
+    await deleteDraft(handle.db, lab.id, drafted.invoiceId, { actor: 'person:test' });
+    await assert.rejects(getInvoice(handle.db, lab.id, drafted.invoiceId), { code: 'not_found' });
+    const freed = await reload(internal);
+    assert.equal(freed.invoiceId, null);
+    assert.equal(freed.draftBasis, null);
+    const explained = await explainObligation(handle.db, lab.id, internal.id, { accounting: false, now: NOW });
+    assert.equal(explained.view, 'ready');
+    assert.equal(explained.events.at(-1).kind, 'draft_deleted');
+
+    const open = await observe('Shipped');
+    await autoDraftJobs(handle.db, lab.id, { now: NOW });
+    assert.equal((await reload(internal)).invoiceId, null, 'a Never draft rule does not draft the job again');
+    assert.ok((await reload(open)).invoiceId, 'a job the rule does not match is drafted');
+    await deleteRule(handle.db, lab.id, rule.id);
   });
 });

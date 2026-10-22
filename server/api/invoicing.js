@@ -6,7 +6,7 @@ import { listFields, listJobFieldValues } from '../core/custom-fields.js';
 import { FlowError } from '../core/errors.js';
 import { createActionGuard } from '../integrations/call-guard.js';
 import {
-  createDraftInvoice, getInvoice, issueInvoice, listInvoiceVersions, reviseInvoice, updateDraftInvoice, voidInvoice,
+  createDraftInvoice, deleteDraft, getInvoice, issueInvoice, listInvoiceVersions, reviseInvoice, updateDraftInvoice, voidInvoice,
 } from '../core/invoices.js';
 import { listAutomations, saveAutomation, workStatuses } from '../core/automations.js';
 import {
@@ -60,6 +60,8 @@ import {
 //   POST  /invoices/:id/issue         owner or admin: number it and keep the document as sent
 //   POST  /invoices/:id/revise        owner or admin: an issued invoice back to a draft
 //   POST  /invoices/:id/void          owner or admin
+//   DELETE /invoices/:id              owner or admin: a draft that was never issued.
+//                                     Frees its job, and the lab's rules then decide.
 //   GET   /contacts?q=&limit=         customers, by name
 //   GET   /price-items?q=             the price list, by code
 //   GET   /jobs?view=&limit=          billable jobs (the obligation ledger), with counts by view;
@@ -128,7 +130,7 @@ const MAX_UNIT_CENTS = 100_000_000;
 
 const ERROR_STATUS = {
   invalid: 400, organisation_required: 400, not_found: 404, not_draft: 409, not_issued: 409,
-  never_issued: 409, not_ready: 409, live_check_unavailable: 409, conflict: 409,
+  never_issued: 409, was_issued: 409, not_ready: 409, live_check_unavailable: 409, conflict: 409,
   accounting_not_connected: 409, accounting_writes_off: 409,
 };
 
@@ -646,6 +648,14 @@ export function createInvoicingRouter({
     await voidInvoice(db, organisationId, invoiceId);
     log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} voided invoice ${invoiceId}`);
     res.json({ ok: true, invoice: await invoiceDetail(db, organisationId, invoiceId, accounting(), work()) });
+  }));
+
+  router.delete('/invoices/:id', ...manager, handle(log, async (req, res) => {
+    const invoiceId = pathId(req.params.id, 'invoice');
+    const organisationId = await organisationOf(req);
+    await deleteDraft(db, organisationId, invoiceId, { actor: `person:${req.person.id}` });
+    log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} deleted draft invoice ${invoiceId}`);
+    res.json({ ok: true });
   }));
 
   router.get('/contacts', ...signedIn, handle(log, async (req, res) => {

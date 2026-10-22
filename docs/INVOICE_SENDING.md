@@ -36,9 +36,13 @@ then it goes to Ready by itself. There is no half-made Flow draft: every
 invoice before it is sent is Pending (a check fails) or Ready (every check
 passes). Draft is the accounting system's word for an invoice it holds.
 
-On the invoice the buttons are, left to right, **Preview**, **Save**, then
+On the invoice the buttons are, left to right, **Delete** (a draft that was
+never issued; an owner or admin), **Preview**, **Save**, then
 **Send to Xero** (accounting system on) or **Approve** (no accounting system).
-A Pending draft has no send button.
+A Pending draft has no send button. Delete asks first, removes the draft,
+and frees its job: the lab's rules then decide whether Flow drafts it again.
+An invoice that was issued, including one opened to revise, is voided, not
+deleted.
 
 The Problem banner gives the first sentence of each problem: what is wrong.
 The field the failed check reads glows red, like a required field
@@ -64,8 +68,8 @@ Invert ticks and Clear ticks. An icon-only action shows its name on hover.
 
 | Tab | Actions |
 | --- | --- |
-| Pending | **Retry** (send-again for the ticked issued ones the accounting system refused), Copy references, Export CSV |
-| Ready | **Send to Xero** (send-ready for the ticked ids; **Approve** with no accounting system), Copy references, Export CSV |
+| Pending | **Retry** (send-again for the ticked issued ones the accounting system refused), Copy references, Export CSV, **Delete** (a ticked draft that was never issued; asks first) |
+| Ready | **Send to Xero** (send-ready for the ticked ids; **Approve** with no accounting system), Copy references, Export CSV, **Delete** (asks first) |
 | Draft, Approved, Sent | Copy numbers, Export CSV, Download PDFs, Void (asks first; Flow does not change the accounting system) |
 | Void | Copy numbers, Export CSV, Download PDFs |
 
@@ -209,6 +213,11 @@ Xero's `SentToContact` flag.
   could not be confirmed. When none can go, the answer is `not_ready` and
   names the cause and the count.
 - `POST /api/invoicing/invoices/send-again` `{ invoiceIds? }`.
+- `DELETE /api/invoicing/invoices/:id` (owner or admin) removes a draft that
+  was never issued (`status` draft and `issuedVersion` 0). Its job's billing
+  obligation is freed, so the job is ready again and the lab's rules decide
+  whether to draft it. An invoice that was issued answers `was_issued`: void
+  it instead.
 - `POST /api/invoicing/jobs/:id/use-new-lines` `{ accept? }`: the draft takes
   the work system's lines. With `accept: true` it also replaces lines changed
   in both places, while the invoice is not sent.
