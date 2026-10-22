@@ -1691,7 +1691,7 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
 .fx-xu-row span { color: var(--t-text); }
 .fx-xu-row b { color: var(--t-strong); font-weight: 650; font-variant-numeric: tabular-nums; }
 .fx-xu .fx-notice { margin-top: 4px; }
-@media (max-width: 640px) {
+@media (max-width: 639px) {
   .fx-xu__top { gap: 14px; }
   .fx-xu-ring { width: 96px; height: 96px; }
   .fx-xu-ring__num { font-size: 20px; }
