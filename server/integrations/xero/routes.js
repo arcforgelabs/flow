@@ -14,6 +14,7 @@ import { accountingStatus, checkSentInvoices } from './reconcile.js';
 import { decryptToken, deleteConnection, describeConnection, readConnection, saveConnection } from './connections.js';
 import { authorizeUrl, exchangeCode, fetchConnections, revokeToken, selectConnection } from './oauth.js';
 import { writesAllowed } from './settings.js';
+import { readXeroUsage } from './usage.js';
 import { saveEvents, signatureValid } from './webhooks.js';
 import { DEFAULT_FAMILY } from '../../theme/themes.js';
 import { messagePage as themedMessagePage } from '../../ui/page.js';
@@ -144,16 +145,29 @@ export function createXeroRouter({ db, personAuth, runtime, log = console, butto
   router.get('/status', ...signedIn, handle(log, async (req, res) => {
     const organisationId = await requireOrganisation(db, req.query.organisationId);
     const connection = await readConnection(db, organisationId);
+    const connected = Boolean(connection && connection.mode === settings.mode);
+    const picture = connected
+      ? await readXeroUsage(db, {
+        organisationId,
+        tenantId: connection.tenantId,
+        governor: runtime.governor.status(connection.tenantId),
+        warningFraction: settings.usageWarningFraction,
+        refreshedAt: connection.refreshedAt,
+        now: runtime.now(),
+      })
+      : { usage: null, freshness: null };
     res.json({
       ok: true,
       mode: settings.mode,
       writesAllowed: writesAllowed(settings),
       redirectUri: settings.redirectUri,
-      connected: Boolean(connection && connection.mode === settings.mode),
+      connected,
       connection: describeConnection(connection),
-      rateLimit: connection ? runtime.governor.status(connection.tenantId) : null,
-      calls: connection ? callsState(await runtime.guardFor(db).status(connection.tenantId)) : null,
+      rateLimit: connected ? runtime.governor.status(connection.tenantId) : null,
+      calls: connected ? callsState(await runtime.guardFor(db).status(connection.tenantId)) : null,
       lastSync: await lastSync(db, organisationId),
+      usage: picture.usage,
+      freshness: picture.freshness,
     });
   }));
 

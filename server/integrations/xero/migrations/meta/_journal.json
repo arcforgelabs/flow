@@ -71,6 +71,13 @@
       "when": 1792520000000,
       "tag": "0009_xero_sent_to_contact",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1792530000000,
+      "tag": "0010_xero_call_usage",
+      "breakpoints": true
     }
   ]
 }
