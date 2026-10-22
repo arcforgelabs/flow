@@ -56,7 +56,7 @@ export function jobChangeBanner(ui, change, { money, onAccept = null, onRecheck 
     }, `Open in ${system} ↗`)
     : null;
   const accept = change.canAccept && onAccept
-    ? h('button', { class: 'fx-btn fx-btn--sm fx-btn--primary', type: 'button', title: `This invoice takes the Now in ${system} column.`, onclick: onAccept }, 'Accept change')
+    ? h('button', { class: 'fx-btn fx-btn--sm fx-btn--primary', type: 'button', 'data-action': 'accept', title: `This invoice takes the Now in ${system} column.`, onclick: onAccept }, 'Accept change')
     : null;
   const recheck = onRecheck
     ? h('button', {
