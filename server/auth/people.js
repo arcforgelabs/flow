@@ -2,7 +2,7 @@ import { and, asc, eq, isNull, ne, sql } from 'drizzle-orm';
 import { people, PERSON_ROLES } from '../db/schema.js';
 import { FlowError } from '../core/errors.js';
 import { isThemeFamily, normalizeAccent } from '../theme/themes.js';
-import { INVOICE_COLUMNS, normaliseJobsView, normaliseListView, PRICE_COLUMNS, RECONCILE_COLUMNS } from '../ui/job-view.js';
+import { invoiceColumnsView, normaliseJobsView, normaliseListView, PRICE_COLUMNS, RECONCILE_COLUMNS } from '../ui/job-view.js';
 import { normaliseSavedViews, SAVED_VIEW_PAGES } from '../ui/list-views.js';
 import { isPlainEmail } from './settings.js';
 
@@ -58,7 +58,7 @@ export async function setPersonAppearance(db, { id, appearance }) {
 function viewCheck(page) {
   switch (page) {
     case 'jobs': return normaliseJobsView;
-    case 'invoices': return (view) => normaliseListView(view, INVOICE_COLUMNS);
+    case 'invoices': return invoiceColumnsView;
     case 'reconcile': return (view) => normaliseListView(view, RECONCILE_COLUMNS);
     case 'price-list': return (view) => normaliseListView(view, PRICE_COLUMNS);
     default: return null;

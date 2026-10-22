@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
-  cleanColumnIds, cleanWidths, COLUMN_MIN, endWidth, INVOICE_COLUMNS, LEAD_WIDTH, MAX_WIDTH, moveColumn, normaliseJobsView, normaliseListView, PRICE_COLUMNS, RECONCILE_COLUMNS, TAIL_WIDTH, tableWidth, widthOf,
+  cleanColumnIds, cleanWidths, COLUMN_MIN, endWidth, INVOICE_COLUMNS, INVOICE_SHOWN, invoiceColumnsView, LEAD_WIDTH, MAX_WIDTH, moveColumn, normaliseJobsView, normaliseListView, PRICE_COLUMNS, RECONCILE_COLUMNS, TAIL_WIDTH, tableWidth, widthOf,
 } from '../server/ui/job-view.js';
 import { normaliseViews } from '../server/auth/people.js';
 
@@ -53,11 +53,35 @@ test('the Jobs view keeps column widths; Invoices and Reconcile keep columns and
   assert.deepEqual(normaliseListView(null, INVOICE_COLUMNS), { columns: Object.keys(INVOICE_COLUMNS), widths: {} });
   assert.deepEqual(normaliseListView({ columns: ['total', 'client', 'other'], widths: { total: 150 } }, INVOICE_COLUMNS), { columns: ['total', 'client'], widths: { total: 150 } });
   assert.deepEqual(normaliseViews({ reconcile: { columns: ['date', 'kind'] }, invoices: { widths: { client: 300 } } }), {
-    invoices: { columns: Object.keys(INVOICE_COLUMNS), widths: { client: 300 } },
+    invoices: { columns: [...INVOICE_SHOWN], widths: { client: 300 } },
     reconcile: { columns: ['date', 'kind'], widths: {} },
   });
   assert.ok(Object.keys(RECONCILE_COLUMNS).includes('possible'));
   // The Price list keeps its columns and widths the same way.
   assert.deepEqual(normaliseViews({ 'price-list': { columns: ['name', 'code', 'nope'], widths: { name: 320 } } })['price-list'], { columns: ['name', 'code'], widths: { name: 320 } });
   assert.deepEqual(normaliseListView(null, PRICE_COLUMNS).columns, ['code', 'name', 'price', 'tax']);
+});
+
+test('Invoices can show job dates, job facts and custom fields as columns', () => {
+  const field = 'field:0b6a3a4e-6f3d-4b52-9d8e-2f1c7a9e5d10';
+  // A person who has not chosen sees the usual columns; the new ones wait in +.
+  assert.deepEqual(invoiceColumnsView(null).columns, [...INVOICE_SHOWN]);
+  for (const id of ['due', 'case', 'practitioner', 'shipped']) {
+    assert.ok(INVOICE_COLUMNS[id], id);
+    assert.ok(!INVOICE_SHOWN.includes(id), id);
+  }
+  assert.equal(INVOICE_COLUMNS.shipped, 'Shipped');
+  // A chosen job column or custom field is kept, in the person's order.
+  assert.deepEqual(invoiceColumnsView({ columns: ['client', 'shipped', field, 'field:nope', 'total'], widths: { [field]: 180 } }),
+    { columns: ['client', 'shipped', field, 'total'], widths: { [field]: 180 } });
+  assert.deepEqual(normaliseViews({ invoices: { columns: ['client', field] } }).invoices.columns, ['client', field]);
+  // A view saved by 2026.10.45 (its seven columns, moved and resized) loads
+  // as it was saved: same columns, same order, same widths, nothing added.
+  const saved = { columns: ['client', 'number', 'total', 'reference', 'date', 'status', 'linked'], widths: { client: 300, total: 140 } };
+  assert.deepEqual(invoiceColumnsView(saved), saved);
+  assert.deepEqual(normaliseViews({ invoices: saved }).invoices, saved);
+  // One saved with widths only still shows the same seven columns as before.
+  assert.deepEqual(invoiceColumnsView({ widths: { client: 300 } }), { columns: ['number', 'client', 'reference', 'date', 'total', 'status', 'linked'], widths: { client: 300 } });
+  // Other lists do not take custom fields.
+  assert.deepEqual(normaliseListView({ columns: ['code', field] }, PRICE_COLUMNS).columns, ['code']);
 });

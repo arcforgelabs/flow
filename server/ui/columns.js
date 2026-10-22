@@ -25,8 +25,57 @@
 //            column keeps its place: no drag, no Move, no Hide.
 //   rows     the <tbody> nodes (rowCells builds a row's cells)
 //   lead     <th> nodes before the columns (the tick column)
+//
+// Cells every list shares: dateCell (a short date), personCell (a person's
+// initials) and fieldColumn (one of the lab's custom fields as a column, on
+// Jobs and on Invoices, where it is the invoice's job's value).
 import { lucide } from '/assets/ui/custom-fields.js';
 import { endWidth, LEAD_WIDTH, MAX_WIDTH, minWidth, moveColumn, TAIL_WIDTH, tableWidth, widthOf } from '/assets/ui/job-view.js';
+import { initialsOf } from '/assets/ui/person.js';
+
+const fullDate = (iso) => new Date(`${iso}T00:00:00`).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' });
+// A list date, short: Today, Tomorrow or Yesterday, else day/month (and
+// year when it is not this year).
+export function shortDate(iso) {
+  if (!iso) return '—';
+  const at = new Date(`${iso}T00:00:00`);
+  const now = new Date();
+  const days = Math.round((at - new Date(now.getFullYear(), now.getMonth(), now.getDate())) / 86_400_000);
+  if (days === 0) return 'Today';
+  if (days === 1) return 'Tomorrow';
+  if (days === -1) return 'Yesterday';
+  return at.toLocaleDateString('en-AU', at.getFullYear() === now.getFullYear() ? { day: '2-digit', month: '2-digit' } : { day: '2-digit', month: '2-digit', year: '2-digit' });
+}
+
+// A date cell: the short date, the whole date on hover.
+export const dateCell = (h, iso) => h('time', { datetime: iso ?? null, title: iso ? fullDate(iso) : null }, shortDate(iso));
+
+// A person as a badge (initials), the name on hover; `people` is
+// [{ id, name }] (GET /api/custom-fields).
+export function personCell(h, personId, people) {
+  if (!personId) return h('span', { class: 'fx-dim' }, '—');
+  const name = people.find((p) => p.id === personId)?.name ?? 'Former person';
+  return h('span', { class: 'fx-avatar fx-avatar--sm', role: 'img', 'aria-label': name, title: name }, initialsOf(name));
+}
+
+// A custom field's value as text.
+export function fieldText(field, value, people) {
+  if (value == null || value === false) return '—';
+  if (field.type === 'checkbox') return 'Yes';
+  if (field.type === 'person') return people.find((p) => p.id === value)?.name ?? 'Former person';
+  if (field.type === 'dropdown') return field.options?.find((o) => o.id === value)?.name ?? '—';
+  if (field.type === 'date') return shortDate(value);
+  return String(value);
+}
+
+// One custom field as a list column: `valueOf(row)` is the row's value
+// (null when it has none), `people` names a person field's value.
+export function fieldColumn(h, field, { id, valueOf, people }) {
+  const cell = field.type === 'person' ? (row) => personCell(h, valueOf(row), people)
+    : field.type === 'date' ? (row) => dateCell(h, valueOf(row)) : (row) => fieldText(field, valueOf(row), people);
+  const kind = field.type === 'date' ? 'date' : field.type === 'person' ? 'person' : field.type === 'number' ? 'total' : 'text';
+  return { id, label: field.name, kind, num: field.type === 'number', className: 'fx-dim', cell };
+}
 
 
 // A row's cells for the shown columns: a class per kind, the label for
