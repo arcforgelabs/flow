@@ -22,6 +22,7 @@ import { statusRank } from '/assets/ui/job-board.js';
 import { filterJobs, KIND_OF_TYPE, normaliseListView, RECONCILE_COLUMNS } from '/assets/ui/job-view.js';
 import { normaliseReconcileView, RECONCILE_FILTER_FIELDS } from '/assets/ui/list-views.js';
 import { savedViews } from '/assets/ui/saved-views.js';
+import { pager } from '/assets/ui/pager.js';
 import { findBox, today, viewBar } from '/assets/ui/view-bar.js';
 import { formatCents } from '/assets/ui/invoicing.js';
 
@@ -95,7 +96,6 @@ function jobCandidateFacts(job) {
 }
 
 
-const CHEVRONS = { prev: 'M14.5 6l-6 6 6 6', next: 'M9.5 6l6 6-6 6' };
 // The list's filter rows (view-bar.js), kept per viewer in this browser.
 // The list a person opened a gap from, for the pager.
 const FILTER_KEY = 'flow_reconcile_filters';
@@ -351,15 +351,16 @@ async function renderGap(main, ui, id) {
     order = lists ? reconcileRows(lists).filter((r) => r.kind === kind).map(({ kind: k, id: i }) => ({ kind: k, id: i })) : [];
   }
   const at = order.findIndex((r) => r.id === id);
-  const step = (to, label, path) => {
-    const button = h('button', { class: 'fx-pager__step', type: 'button', disabled: !to, 'aria-label': label, title: label, onclick: () => ui.go(pathOf(to)) });
-    button.innerHTML = `<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="${path}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
-    return button;
-  };
-  const pager = h('nav', { class: 'fx-pager', 'aria-label': 'Reconcile' },
-    h('button', { class: 'fx-pager__back', type: 'button', onclick: () => ui.go('/reconcile') }, '← Back'),
-    h('span', { class: 'fx-pager__count' }, at >= 0 ? `${at + 1} of ${order.length}` : ''),
-    h('span', { class: 'fx-pager__steps' }, step(at > 0 ? order[at - 1] : null, 'Previous', CHEVRONS.prev), step(at >= 0 ? order[at + 1] : null, 'Next', CHEVRONS.next)));
+  const { element: pagerBar, draw: drawPager } = pager(h, {
+    label: 'Reconcile',
+    back: () => ui.go('/reconcile'),
+  });
+  const goRow = (row) => (row ? () => ui.go(pathOf(row)) : null);
+  drawPager({
+    count: at >= 0 ? `${at + 1} of ${order.length}` : '',
+    prev: goRow(at > 0 ? order[at - 1] : null),
+    next: goRow(at >= 0 ? order[at + 1] : null),
+  });
   const next = () => {
     const rest = order.filter((r) => r.id !== id);
     writeStored(sessionStorage, NAV_KEY, { ...readStored(sessionStorage, NAV_KEY, {}), rows: rest });
@@ -380,7 +381,7 @@ async function renderGap(main, ui, id) {
     },
   });
   const card = h('section', { class: 'fx-rec fx-rec__gap', 'aria-label': 'Compare' },
-    pager,
+    pagerBar,
     h('header', { class: 'fx-ph' }, h('div', { class: 'fx-ph__text' }, title, sub), actions),
     // The search sits where it does on Jobs and Invoices: the right of the
     // toolbar over the rows it searches.

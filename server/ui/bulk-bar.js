@@ -9,8 +9,10 @@
 // bar for a screen reader ("Ticked invoices", "Ticked jobs"). state = { count, onClear,
 // groups: [[action]], more: [{ head, actions: [action] }] }; an action is
 // { icon, label, title?, run, primary?, iconOnly?, tone? }. title is the
-// long name, for the hover tip and the More menu. A count of 0 hides the
-// bar; Esc clears the ticks while it shows.
+// long name, for the hover tip and the More menu. run(working) may call
+// working('Sending') once the step really starts (after its dialog): the
+// pressed button then shows a spinner and that word until run ends. A count
+// of 0 hides the bar; Esc clears the ticks while it shows.
 import { lucide } from '/assets/ui/custom-fields.js';
 import { applyPhoneRule } from './mobile.js';
 
@@ -28,14 +30,24 @@ export function bulkBar(ui, { label = 'Ticked invoices' } = {}) {
     if (busy) return;
     busy = true;
     element.setAttribute('aria-busy', 'true');
-    try { await action.run(); } finally {
+    // The step is on its way: its button (on the bar, or More's) spins.
+    const working = (word) => {
+      const pressed = [...element.querySelectorAll('.fx-bulk__act')].find((b) => b.dataset.action === action.label);
+      if (!pressed) return;
+      pressed.dataset.busy = '';
+      pressed.firstChild?.replaceWith(h('span', { class: 'fx-spinner fx-spinner--sm', 'aria-hidden': 'true' }));
+      const text = pressed.querySelector('.fx-bulk__word');
+      if (text && word) text.textContent = `${word}…`;
+    };
+    try { await action.run(working); } finally {
       busy = false;
       element.removeAttribute('aria-busy');
+      if (current) draw(current);
     }
   };
 
   const button = (action) => h('button', {
-    type: 'button',
+    type: 'button', 'data-action': action.label,
     class: `fx-bulk__act${action.primary ? ' fx-bulk__act--primary' : ''}${action.iconOnly ? ' fx-bulk__act--icon' : ''}`,
     ...(action.tone ? { 'data-tone': action.tone } : {}),
     ...(action.iconOnly ? { 'aria-label': action.title ?? action.label, 'data-tip': action.title ?? action.label } : action.title ? { title: action.title } : {}),

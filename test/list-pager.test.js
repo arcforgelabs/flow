@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { listPager, pageNumbers, pageRange } from '../server/ui/pager.js';
+import { listPager, pageNumbers, pageRange, pager } from '../server/ui/pager.js';
 
 // The pages of a long list (server/ui/pager.js), in the list window's foot.
+// The record pager (.fx-pager) is tested further down.
 
 test('page numbers show the ends and the pages near the one shown', () => {
   assert.deepEqual(pageNumbers(1, 1), [1]);
@@ -60,4 +61,50 @@ test('a page button asks for its rows; a new size starts at the first page', () 
   assert.equal(pager.element.all((el) => el.tag === 'select').length, 1);
   assert.match(pager.element.text, /1–30 of 30/);
   assert.doesNotMatch(pager.element.text, /null/);
+});
+
+// One record at a time (.fx-pager): Back, "n of N", previous and next.
+test('the record pager starts with Back only, then draws count and steps', () => {
+  const clicks = [];
+  const bar = pager(h, { label: 'Invoices', back: () => clicks.push('back') });
+  assert.equal(bar.element.attrs.class, 'fx-pager');
+  assert.equal(bar.element.attrs['aria-label'], 'Invoices');
+  assert.equal(bar.element.children.length, 1);
+  assert.equal(bar.element.children[0].attrs.class, 'fx-pager__back');
+  assert.equal(bar.element.children[0].text, '← Back');
+  bar.element.children[0].onclick();
+  assert.deepEqual(clicks, ['back']);
+
+  bar.draw({
+    count: '2 of 5',
+    prev: () => clicks.push('prev'),
+    next: () => clicks.push('next'),
+    prevLabel: 'Previous invoice',
+    nextLabel: 'Next invoice',
+  });
+  assert.match(bar.element.text, /2 of 5/);
+  const steps = bar.element.all((el) => el.attrs.class === 'fx-pager__step');
+  assert.equal(steps.length, 2);
+  assert.equal(steps[0].attrs['aria-label'], 'Previous invoice');
+  assert.equal(steps[1].attrs['aria-label'], 'Next invoice');
+  assert.equal(steps[0].attrs.disabled, undefined);
+  assert.equal(steps[1].attrs.disabled, undefined);
+  steps[0].onclick();
+  steps[1].onclick();
+  assert.deepEqual(clicks, ['back', 'prev', 'next']);
+});
+
+test('the record pager disables missing neighbours and can hide steps', () => {
+  const bar = pager(h, { label: 'Reconcile', back: () => {} });
+  bar.draw({ count: '1 of 3', prev: null, next: () => {} });
+  const [prev, next] = bar.element.all((el) => el.attrs.class === 'fx-pager__step');
+  assert.equal(prev.attrs.disabled, 'true');
+  assert.equal(next.attrs.disabled, undefined);
+  assert.equal(prev.onclick, undefined);
+  assert.equal(typeof next.onclick, 'function');
+
+  bar.draw({ steps: false });
+  assert.equal(bar.element.children.length, 1);
+  assert.equal(bar.element.children[0].attrs.class, 'fx-pager__back');
+  assert.doesNotMatch(bar.element.text, /null/);
 });

@@ -9,7 +9,7 @@ shared component.
 ```text
 test/mobile/server.js ──► fresh PostgreSQL, synthetic lab, jobs, invoices,
                           one owner per project, fake sign-in
-test/mobile/phone.spec.js ─► 16 screens × 5 sizes × 2 engines × 3 themes
+test/mobile/phone.spec.js ─► 17 screens × 5 sizes × 2 engines × 3 themes
         │
         ├─ checks against test/mobile/budget.json
         └─ screenshots against test/mobile/__screenshots__/

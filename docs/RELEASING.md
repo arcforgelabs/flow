@@ -37,9 +37,19 @@ The notes are the release's changelog file, `CHANGELOG/<version>.md`
 (`CONTRIBUTING.md`, `.agents/skills/flow-changelog-update/SKILL.md`). Every
 release needs one: Flow Release Prepare refuses to tag a release unless the
 file's record lists every pull request in its range with GitHub's credit,
-and a stable release has 5 to 8 highlights. After the GitHub Release is
-published, Publish checks that its body is the file. A release tagged before
-the changelog existed keeps GitHub's generated notes.
+and a stable release has 5 to 8 highlights. A small change ships as a
+**beta**, never as a stable release with fewer highlights. A stable release
+needs 5 real user stories. After the GitHub Release is published, Publish
+checks that its body is the file. A release tagged before the changelog
+existed keeps GitHub's generated notes.
+
+Each stable release and correction also gets a docs page,
+`docs/releases/<version>.md`, which `changelog.mjs write` writes from the
+file. The closeout brings it to `main`, and the docs site shows it at
+https://arcforgelabs.github.io/docs/flow/releases/. After the docs site
+serves it, the release's GitHub Release body becomes the roster body
+(`changelog.mjs thanks`): the numbers, the docs and changelog links, and
+every person GitHub credits.
 
 ## Versions and channels
 
@@ -127,7 +137,7 @@ npm run release:stable -- 2026.10.34
 ```
 
 It is a resumable state machine with the phases `cut → validate → publish →
-flip-github → sync-beta → closeout`. State lives in
+flip-github → sync-beta → closeout → docs → thanks`. State lives in
 `.artifacts/release-<version>/state.json`; running the command again
 continues from the first phase not completed, `--from <phase>` starts again
 from a phase, `--status` prints the table, and `--dry-run` prints every
@@ -165,8 +175,17 @@ closeout).
    (Flow Release Promote), so beta users are never behind stable.
 6. **closeout.** Flow NPM Release started Flow Release Closeout; the
    command opens its pull request if GitHub Actions could not, waits for
-   `test` and `gitleaks`, and merges it. The release is done when `main`
-   carries the shipped changelog file and version.
+   `test` and `gitleaks`, and merges it. `main` then carries the shipped
+   changelog file, its docs page and the version.
+7. **docs.** Docs Sync Publish mirrors `docs/` to `arcforgelabs/docs`, and
+   its Pages workflow deploys the site. The phase ends when
+   `https://arcforgelabs.github.io/docs/flow/releases/<version>.md` is the
+   page `main` has.
+8. **thanks.** openclaw/openclaw's step after the docs deploy: the command
+   reads the GitHub Release again, replaces only its body with
+   `node scripts/release/changelog.mjs thanks --version <version>`, and
+   reads it back (`verify --check-github --post-docs`). The release is done
+   here.
 
 A beta needs no command of its own: after the cut, start one from the
 branch. Its notes are its own file, `CHANGELOG/<version>-beta.<n>.md`, from
@@ -283,10 +302,13 @@ installation's deploy as the one step):
    Prepare tags as `IAMSamuelRodda <7961255+IAMSamuelRodda@users.noreply.github.com>`;
    a repository variable `RELEASE_TAGGER` (`Name <email>`) names another
    account that holds the signing key.
-3. **Pull requests from GitHub Actions.** Settings → Actions → General →
-   Workflow permissions: tick **Allow GitHub Actions to create and approve
-   pull requests**, so Flow Release Closeout opens its pull request. Without
-   it, `release:stable` opens the pull request itself.
+3. **The closeout pull request.** Arc Forge's enterprise policy keeps
+   **Allow GitHub Actions to create and approve pull requests** off, so
+   Flow Release Closeout opens its pull request with the Barnacle App token
+   (`BARNACLE_APP_ID` variable, `BARNACLE_APP_PRIVATE_KEY` secret), as
+   openclaw/openclaw's workflows use an App token. The App needs **Pull
+   requests: Read and write** on this repository. Without the token,
+   `release:stable` opens the pull request itself.
 
 Later, when Flow has many paying clients and becomes a target: sign each
 tag with a key that a person holds, as openclaw/openclaw's maintainers do.

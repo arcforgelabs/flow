@@ -25,6 +25,7 @@ import { alertStrip } from '/assets/ui/alerts.js';
 import { initialsOf, personLabel } from '/assets/ui/person.js';
 import { startTips } from '/assets/ui/tip.js';
 import { crumbs, dialog, edgeFade, fieldError, h, holdButton, linksOpenWith, listFrame, listHead, notice, pageHeader, rowMenu, sectionTitle, settingRow, tileCard, tileSection, toast } from '/assets/ui/kit.js';
+import { NAV_DEFAULT, NAV_LOCKED } from '/assets/ui/nav-pins.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -143,19 +144,20 @@ function roleSelect(value, attrs = {}) {
 
 let me = null;
 
-// Where each view sits: the sidebar, in this order, daily work first (no
-// `place`); the sidebar's More menu (`place: 'more'`, `more` names its Lucide
-// icon); the account menu (`place: 'account'`). `sidebar: false` views open
-// by link and Search only.
+// Where each view sits, in sidebar order, daily work first. No `place`: a
+// sidebar page, pinned until the person unpins it. `place: 'more'`: a sidebar
+// page that starts in More until they pin it. `place: 'account'`: the account
+// menu. `sidebar: false`: opened by a link or Search only. Jobs and Invoices
+// cannot be unpinned (nav-pins.js).
 const VIEWS = {
   jobs: { label: 'Jobs', icon: 'jobs', render: (main) => renderJobs(main, ui()) },
   invoices: { label: 'Invoices', icon: 'invoices', render: (main, id) => (id ? renderInvoice(main, ui(), id) : renderInvoiceList(main, ui())) },
   reconcile: { label: 'Reconcile', icon: 'reconcile', render: (main, id) => renderReconcile(main, ui(), id) },
   'price-list': { label: 'Price list', icon: 'tag', render: (main, id) => (id === 'reconcile' ? renderPriceReconcile(main, ui()) : renderPriceList(main, ui())) },
   'invoicing-settings': { label: 'Rules', icon: 'rules', render: (main, id) => renderInvoicingSettings(main, ui(), id) },
-  automations: { label: 'Automations', icon: 'bolt', place: 'more', more: 'zap', render: (main) => renderAutomations(main, ui()) },
-  'custom-fields': { label: 'Custom fields', icon: 'fields', place: 'more', more: 'form-input', render: (main) => renderCustomFields(main, ui()) },
-  integrations: { label: 'Integrations', icon: 'plug', place: 'more', more: 'plug', ownerOnly: true, render: (main, id) => (id ? renderIntegration(main, id) : renderIntegrations(main)) },
+  automations: { label: 'Automations', icon: 'bolt', place: 'more', render: (main) => renderAutomations(main, ui()) },
+  'custom-fields': { label: 'Custom fields', icon: 'fields', place: 'more', render: (main) => renderCustomFields(main, ui()) },
+  integrations: { label: 'Integrations', icon: 'plug', place: 'more', ownerOnly: true, render: (main, id) => (id ? renderIntegration(main, id) : renderIntegrations(main)) },
   people: { label: 'People', icon: 'people', place: 'account', ownerOnly: true, render: renderPeople },
   // Not in the sidebar: "Manage account" in the account menu opens the same
   // Clerk profile. The page stays for links and Search.
@@ -301,11 +303,7 @@ async function route() {
   const [view, id] = currentView();
   const path = id ? `/${view}/${id}` : `/${view}`;
   if (location.pathname !== path) history.replaceState(null, '', path);
-  for (const link of document.querySelectorAll('a[data-nav]')) {
-    link.setAttribute('aria-current', link.dataset.nav === view ? 'page' : 'false');
-  }
-  // More shows as current while one of its pages is open.
-  document.querySelector('[data-nav="more"]')?.setAttribute('aria-current', VIEWS[view].place === 'more' ? 'page' : 'false');
+  markNavCurrent(view);
   main.replaceChildren();
   main.className = 'fx-main';
   document.title = `${VIEWS[view].label} · Flow`;
@@ -359,26 +357,108 @@ function renderSignedOut() {
   });
 }
 
+// Sidebar pages this person may open. Account pages stay in the account menu.
+function sidebarViews() {
+  return Object.entries(VIEWS).filter(([, view]) => view.sidebar !== false && view.place !== 'account' && (!view.ownerOnly || me?.person.role === 'owner'));
+}
+
+// Null until the shell reads the account. Jobs and Invoices are always in it.
+let pinned = null;
+let pinEpoch = 0;
+let pinWrite = Promise.resolve();
+let morePanel = null;
+
+function pinSet() {
+  if (!pinned) {
+    pinned = new Set(me?.views?.nav?.pinned ?? NAV_DEFAULT);
+    for (const name of NAV_LOCKED) pinned.add(name);
+  }
+  return pinned;
+}
+
+function navLink(name, view) {
+  return h('a', { href: `/${name}`, 'data-nav': name, 'data-label': view.label, onclick: navigate }, icon(view.icon), h('span', { class: 'fx-nav__label' }, view.label));
+}
+
+// More is the current page while the open page is a sidebar page that is
+// not pinned, so it has no row of its own.
+function markNavCurrent(view = currentView()[0]) {
+  for (const link of document.querySelectorAll('a[data-nav]')) {
+    link.setAttribute('aria-current', link.dataset.nav === view ? 'page' : 'false');
+  }
+  const shown = [...document.querySelectorAll('a[data-nav]')].some((link) => link.dataset.nav === view);
+  const inSidebar = sidebarViews().some(([name]) => name === view);
+  document.querySelector('[data-nav="more"]')?.setAttribute('aria-current', inSidebar && !shown ? 'page' : 'false');
+}
+
+function syncSidebar() {
+  const nav = $('nav');
+  const moreButton = nav?.querySelector('[data-nav="more"]');
+  if (!moreButton) return;
+  for (const link of [...nav.querySelectorAll('a[data-nav]')]) link.remove();
+  const links = sidebarViews().filter(([name]) => pinSet().has(name)).map(([name, view]) => navLink(name, view));
+  if (links.length) moreButton.before(...links);
+  morePanel?.refresh?.();
+  drawMenu();
+  markNavCurrent();
+}
+
+function moreItems() {
+  const pins = pinSet();
+  return sidebarViews().map(([name, view]) => {
+    const on = pins.has(name);
+    const locked = NAV_LOCKED.includes(name);
+    return {
+      icon: icon(view.icon),
+      text: view.label,
+      run: () => { closeMenu(); go(`/${name}`); },
+      trailing: locked
+        ? { icon: 'pin', label: 'Pinned', pressed: true, locked: true }
+        : { icon: 'pin', label: on ? 'Unpin' : 'Pin', pressed: on, run: () => togglePin(name) },
+    };
+  });
+}
+
+function togglePin(name) {
+  if (NAV_LOCKED.includes(name)) return;
+  const next = new Set(pinSet());
+  if (next.has(name)) next.delete(name);
+  else next.add(name);
+  for (const locked of NAV_LOCKED) next.add(locked);
+  const epoch = ++pinEpoch;
+  pinned = next;
+  syncSidebar();
+  const body = { pinned: [...next] };
+  pinWrite = pinWrite.then(() => savePins(body, epoch), () => savePins(body, epoch));
+}
+
+async function savePins(body, epoch) {
+  try {
+    const saved = await flow('/api/me/views/nav', { method: 'PUT', body: JSON.stringify(body) });
+    if (epoch !== pinEpoch) return;
+    pinned = new Set(saved.view.pinned);
+    me.views = { ...(me.views ?? {}), nav: saved.view };
+    syncSidebar();
+  } catch (error) {
+    if (epoch !== pinEpoch) return;
+    pinned = new Set(me?.views?.nav?.pinned ?? NAV_DEFAULT);
+    for (const locked of NAV_LOCKED) pinned.add(locked);
+    syncSidebar();
+    toast(error.message, 'danger');
+  }
+}
+
 function renderShell() {
   document.body.dataset.state = 'signed-in';
   const nav = $('nav');
-  const items = [];
-  const more = [];
-  for (const [name, view] of Object.entries(VIEWS)) {
-    if (view.ownerOnly && me?.person.role !== 'owner') continue;
-    if (view.sidebar === false || view.place === 'account') continue;
-    if (view.place === 'more') more.push({ icon: view.more, text: view.label, run: () => { closeMenu(); go(`/${name}`); } });
-    else items.push(h('a', { href: `/${name}`, 'data-nav': name, 'data-label': view.label, onclick: navigate }, icon(view.icon), h('span', { class: 'fx-nav__label' }, view.label)));
-  }
-  // The rest of the setup pages, behind More (the shared ⋯ menu).
-  const [moreButton, morePanel] = rowMenu('More', more, { trigger: [icon('more'), h('span', { class: 'fx-nav__label' }, 'More')], className: 'fx-nav__more', align: 'start' });
+  const [moreButton, panel] = rowMenu('More', moreItems, { trigger: [icon('more'), h('span', { class: 'fx-nav__label' }, 'More')], className: 'fx-nav__more', align: 'start', place: 'side' });
+  morePanel = panel;
   Object.assign(moreButton.dataset, { nav: 'more', label: 'More' });
-  items.push(moreButton, morePanel);
   // "Report a problem" sits at the foot of the menu, above the account chip,
   // while Sentry and its report form are on (monitoring.js).
   const report = h('button', { type: 'button', class: 'fx-nav__report', 'data-nav': 'report', 'data-label': 'Report a problem', hidden: true },
     icon('flag'), h('span', { class: 'fx-nav__label' }, 'Report a problem'));
-  nav.replaceChildren(...items, report);
+  nav.replaceChildren(moreButton, panel, report);
   // Folded or narrow, the logo is the sidebar button: it shows the mark and
   // turns into the sidebar icon under the pointer or keyboard focus.
   const mark = h('span', { class: 'fx-toggle__mark', 'aria-hidden': 'true' });
@@ -387,7 +467,7 @@ function renderShell() {
   sidebar.classList.add('fx-toggle__icon');
   $('menu-toggle').replaceChildren(mark, sidebar);
   $('menu-toggle').onclick = toggleMenu;
-  drawMenu();
+  syncSidebar();
   // The sidebar foot shows who is signed in: photo or initial, then the name
   // (the email when the account has no name). It opens the account menu.
   // People (owners) and Appearance live in the account menu.

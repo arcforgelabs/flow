@@ -196,23 +196,61 @@ async function assertCanSend(accounting, organisationId) {
 // Read before act (issue #141): the jobs behind these drafts whose work
 // system report is old are read again first. Answers the drafts that may go
 // now; a draft whose job went to review, or could not be read, waits.
+// `stops` names each held draft: `unread` (read failed or past the cap) or
+// `review` (the job changed).
 async function readJobsFirst(db, organisationId, invoiceIds, { work, now, personId }) {
-  if (!invoiceIds.length || typeof work?.capabilities?.readWorkItem !== 'function') return { go: invoiceIds, waiting: [] };
+  if (!invoiceIds.length || typeof work?.capabilities?.readWorkItem !== 'function') {
+    return { go: invoiceIds, waiting: [], stops: [] };
+  }
   const jobs = await db.select().from(billingObligations)
     .where(and(eq(billingObligations.organisationId, organisationId), inArray(billingObligations.invoiceId, invoiceIds)));
   const old = jobs.filter((job) => needsRead(job, { work, now }));
   const outcomes = await readBeforeAct(db, organisationId, old.slice(0, READS_PER_PASS), { work, now, actor: `person:${personId}` });
-  const held = new Set(old.slice(READS_PER_PASS).map((job) => job.invoiceId));
-  for (const { outcome, obligation } of outcomes.values()) {
-    if (outcome === 'waiting' || outcome === 'review') held.add(obligation.invoiceId);
+  const held = new Set();
+  const stops = [];
+  for (const job of old.slice(READS_PER_PASS)) {
+    held.add(job.invoiceId);
+    stops.push({ invoiceId: job.invoiceId, kind: 'deferred' });
   }
-  return { go: invoiceIds.filter((id) => !held.has(id)), waiting: invoiceIds.filter((id) => held.has(id)) };
+  for (const { outcome, obligation } of outcomes.values()) {
+    if (outcome === 'waiting') {
+      held.add(obligation.invoiceId);
+      stops.push({ invoiceId: obligation.invoiceId, kind: 'unread' });
+    } else if (outcome === 'review') {
+      held.add(obligation.invoiceId);
+      stops.push({ invoiceId: obligation.invoiceId, kind: 'review' });
+    }
+  }
+  return { go: invoiceIds.filter((id) => !held.has(id)), waiting: invoiceIds.filter((id) => held.has(id)), stops };
+}
+
+// The error when a ticked press sends nothing: name the cause (and the count
+// for jobs), never one shared sentence.
+function stoppedSendMessage({ accountingWaiting, accountingReason, stops, waiting }) {
+  if (accountingWaiting) {
+    if (accountingReason && /more changes than one read takes/i.test(accountingReason)) {
+      return 'The accounting copy has more changes than one read takes. Nothing was sent.';
+    }
+    if (accountingReason) return `${accountingReason.replace(/\.?$/, '')}. Nothing was sent.`;
+    return 'The accounting copy could not be read. Nothing was sent.';
+  }
+  const unread = stops.filter((stop) => stop.kind === 'unread').length;
+  const reviews = stops.filter((stop) => stop.kind === 'review').length;
+  if (unread) {
+    return `${unread} ${unread === 1 ? 'job' : 'jobs'} could not be read from the work system. Nothing was sent.`;
+  }
+  if (reviews) {
+    return `${reviews} ${reviews === 1 ? 'job' : 'jobs'} changed and ${reviews === 1 ? 'needs' : 'need'} a look. Nothing was sent.`;
+  }
+  const n = waiting.length || 1;
+  return `${n} ${n === 1 ? 'job' : 'jobs'} could not be confirmed with the work system. Nothing was sent.`;
 }
 
 // Send all ready: issues each ready draft, then queues it for the accounting
-// system. With `invoiceIds`, only those drafts, and each must be ready (the
-// Send button on one invoice). `work` is the work integration, for the read
-// before act. Answers { issued, queued, remaining, waiting }.
+// system. With `invoiceIds`, only those drafts. One id (the invoice page) is
+// all or nothing. More than one id (the bulk bar) sends the ones Flow could
+// confirm and leaves the rest. `work` is the work integration, for the read
+// before act. Answers { issued, queued, remaining, waiting, held }.
 export async function sendAllReady(db, organisationId, { accounting = null, work = null, personId, issueDate, invoiceIds = null, now = new Date() }) {
   await assertCanSend(accounting, organisationId);
   // Issue #45: the accounting copy reads its latest changes first, so the
@@ -236,11 +274,23 @@ export async function sendAllReady(db, organisationId, { accounting = null, work
         : 'Only a ready invoice can be sent. Mark it ready first.');
     }
   }
-  const { go, waiting } = accountingRead.outcome === 'waiting'
-    ? { go: [], waiting: ready.slice(0, SEND_BATCH) }
+  const accountingWaiting = accountingRead.outcome === 'waiting';
+  const { go, waiting, stops } = accountingWaiting
+    ? { go: [], waiting: ready.slice(0, SEND_BATCH), stops: [] }
     : await readJobsFirst(db, organisationId, ready.slice(0, SEND_BATCH), { work, now, personId });
-  if (invoiceIds && waiting.length) {
-    throw new FlowError('not_ready', 'Flow could not confirm the job with the work system or the accounting system just now, or the job changed. Nothing was sent. Look at the invoice, then try again.');
+  // One invoice (the invoice page) is all or nothing: a job Flow could not
+  // confirm stops the send. A bulk press sends the ones it confirmed. The
+  // rest stay for the next press (`waiting`), or on Pending when the read
+  // sent the job to review. An accounting read that cannot run still stops
+  // every ticked invoice: that one read covers the whole press. When nothing
+  // can go, the error names the cause and the count.
+  if (invoiceIds && waiting.length && go.length === 0) {
+    throw new FlowError('not_ready', stoppedSendMessage({
+      accountingWaiting,
+      accountingReason: accountingRead.reason,
+      stops,
+      waiting,
+    }));
   }
   const batch = go;
   let issued = 0;
