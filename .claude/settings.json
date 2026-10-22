@@ -3,7 +3,10 @@
     "allow": [
       "Bash(gh api -X PUT repos/arcforgelabs/flow/pulls/*/merge *)",
       "mcp__Replit_for_Horizon__publish_app",
-      "mcp__Replit_for_Horizon__get_publish_status"
+      "mcp__Replit_for_Horizon__get_publish_status",
+      "mcp__ClickUp__clickup_create_task_comment",
+      "mcp__ClickUp__clickup_create_comment",
+      "mcp__ClickUp__clickup_update_task"
     ]
   }
 }
