@@ -1,0 +1,17 @@
+{
+  "component": "lucide",
+  "direction": "icon",
+  "phone": {
+    "layout": "icon"
+  },
+  "tablet": {
+    "layout": "icon"
+  },
+  "desk": {
+    "layout": "icon"
+  },
+  "touch": 44,
+  "pageOverflow": "none",
+  "screens": [],
+  "mark": false
+}

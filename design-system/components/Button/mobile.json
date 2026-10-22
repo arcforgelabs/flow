@@ -1,0 +1,34 @@
+{
+  "component": "fx-btn",
+  "direction": "44px control",
+  "phone": {
+    "layout": "control"
+  },
+  "tablet": {
+    "layout": "control"
+  },
+  "desk": {
+    "layout": "control"
+  },
+  "touch": 44,
+  "pageOverflow": "none",
+  "screens": [
+    "jobs-board",
+    "jobs-list",
+    "job-panel",
+    "invoices-ready",
+    "invoices-pending",
+    "invoices-approved",
+    "invoices-ticked",
+    "invoices-filter",
+    "invoice",
+    "reconcile",
+    "price-list",
+    "rules",
+    "automations",
+    "integrations",
+    "custom-fields",
+    "appearance"
+  ],
+  "mark": false
+}

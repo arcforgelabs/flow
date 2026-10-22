@@ -17,6 +17,8 @@
 // invoice is not yet in the list. Invoices, Reconcile and Price list ›
 // Reconcile use it (issue #220).
 
+import { applyPhoneRule } from './mobile.js';
+
 export const PAGE_SIZES = Object.freeze([25, 50, 100, 200]);
 
 const chevron = (d) => `<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="${d}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
@@ -79,7 +81,7 @@ export function pageRange({ offset, limit, total }) {
 }
 
 export function listPager(h, { label = 'Pages', sizes = PAGE_SIZES, change }) {
-  const element = h('nav', { class: 'fx-pages', 'aria-label': label });
+  const element = applyPhoneRule(h('nav', { class: 'fx-pages', 'aria-label': label }), 'listPager');
   const icon = (markup) => { const span = h('span', { 'aria-hidden': 'true' }); span.innerHTML = markup; return span; };
 
   function draw({ offset = 0, limit = sizes[0], total = 0 }) {

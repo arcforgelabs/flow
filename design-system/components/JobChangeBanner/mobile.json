@@ -1,0 +1,16 @@
+{
+  "component": "jobChangeBanner",
+  "direction": "banner",
+  "phone": {
+    "layout": "banner"
+  },
+  "tablet": {
+    "layout": "banner"
+  },
+  "desk": {
+    "layout": "banner"
+  },
+  "touch": 44,
+  "pageOverflow": "none",
+  "screens": []
+}

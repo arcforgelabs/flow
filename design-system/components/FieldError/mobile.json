@@ -1,0 +1,16 @@
+{
+  "component": "fieldError",
+  "direction": "field",
+  "phone": {
+    "layout": "field"
+  },
+  "tablet": {
+    "layout": "field"
+  },
+  "desk": {
+    "layout": "field"
+  },
+  "touch": 44,
+  "pageOverflow": "none",
+  "screens": []
+}

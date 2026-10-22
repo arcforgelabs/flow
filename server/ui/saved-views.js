@@ -14,6 +14,7 @@
 import { lucide } from '/assets/ui/custom-fields.js';
 import { rowMenu } from '/assets/ui/kit.js';
 import { MAX_SAVED_VIEWS, normaliseSavedViews, sameView } from '/assets/ui/list-views.js';
+import { applyPhoneRule } from './mobile.js';
 
 const ACTIVE_KEY = (page) => `flow_view_tab_${page}`;
 
@@ -33,7 +34,7 @@ export function savedViews(ui, { page, current, apply }) {
   const { h, flow, dialog, toast } = ui;
   let saved = normaliseSavedViews(page, ui.me?.views?.saved?.[page]);
   let active = null;
-  const element = h('div', { class: 'fx-views', role: 'tablist', 'aria-label': 'Views' });
+  const element = applyPhoneRule(h('div', { class: 'fx-views', role: 'tablist', 'aria-label': 'Views' }), 'savedViews');
   const chosen = () => saved.list.find((v) => v.id === active) ?? null;
 
   async function store(next) {

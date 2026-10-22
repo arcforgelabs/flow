@@ -27,6 +27,14 @@ test/mobile/phone.spec.js ─► 17 screens × 5 sizes × 2 engines × 3 themes
 | Accessibility | axe, WCAG 2.2 A and AA | Phone |
 | Screenshot | The screen matches its saved image (0.2% of pixels may differ) | Meridian light at every size; the other themes at the phone size |
 
+Each design-system card has phone rules in `mobile.json`
+(`docs/DESIGN_SYSTEM.md`). The suite reads them. On every screen a card
+lists, that component is on the page and shows the layout, touch size and
+row height the card names for this width (`server/ui/mobile.js` marks the
+element). A list's row count at 375×667 is still a note until #281: the
+Columns card asks for 7, and the suite records how many it saw. Page
+overflow and touch targets stay on the budget below.
+
 The sizes are 375×667, 393×852, 412×915, 768×1024 and 1280×800; the engines
 WebKit (iPhone Safari) and Chromium; the themes Meridian light, Meridian dark
 and Harbour light (`test/mobile/themes.js`). The screens are in

@@ -1,0 +1,22 @@
+{
+  "component": "listPager",
+  "direction": "slim foot",
+  "phone": {
+    "layout": "slim"
+  },
+  "tablet": {
+    "layout": "full"
+  },
+  "desk": {
+    "layout": "full"
+  },
+  "touch": 44,
+  "pageOverflow": "none",
+  "screens": [
+    "invoices-ready",
+    "invoices-pending",
+    "invoices-approved",
+    "invoices-ticked",
+    "invoices-filter"
+  ]
+}

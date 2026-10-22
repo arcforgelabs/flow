@@ -14,13 +14,14 @@
 // pressed button then shows a spinner and that word until run ends. A count
 // of 0 hides the bar; Esc clears the ticks while it shows.
 import { lucide } from '/assets/ui/custom-fields.js';
+import { applyPhoneRule } from './mobile.js';
 
 let barCount = 0;
 
 export function bulkBar(ui, { label = 'Ticked invoices' } = {}) {
   const { h } = ui;
   const id = `fx-bulk-more-${++barCount}`;
-  const element = h('div', { class: 'fx-bulk', role: 'toolbar', 'aria-label': label, hidden: true });
+  const element = applyPhoneRule(h('div', { class: 'fx-bulk', role: 'toolbar', 'aria-label': label, hidden: true }), 'bulkBar');
   const panel = h('div', { class: 'fx-pop fx-bulk__more', id, popover: 'auto', role: 'menu' });
   let current = null;
   let busy = false;

@@ -13,9 +13,10 @@
 // `onChange(id)` hears each open (the tab id) and close (null).
 
 import { lucide } from '/assets/ui/custom-fields.js';
+import { applyPhoneRule } from './mobile.js';
 
 export function sidecar(h, { label, overlay = false, escape = false, tabs = [], onChange = null } = {}) {
-  const element = h('aside', { class: `fx-sidecar${overlay ? ' fx-sidecar--over' : ''}`, 'aria-label': label, hidden: true });
+  const element = applyPhoneRule(h('aside', { class: `fx-sidecar${overlay ? ' fx-sidecar--over' : ''}`, 'aria-label': label, hidden: true }), 'sidecar');
   let list = tabs;
   let current = null;
 

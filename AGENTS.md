@@ -25,3 +25,6 @@ Before you build a UI element, read the
   values.
 - People use Flow on a phone. Use only the three widths (639/640, 1023/1024px)
   and check the phone suite (`docs/MOBILE_TESTS.md`); a fix lowers its budget.
+- Read the card's phone rules (`design-system/components/<Card>/mobile.json`)
+  before building. The shared component reads those breakpoints and flags
+  (`server/ui/mobile.js`).

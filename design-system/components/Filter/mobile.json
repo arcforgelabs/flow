@@ -1,0 +1,26 @@
+{
+  "component": "viewBar",
+  "direction": "sheet",
+  "phone": {
+    "layout": "sheet"
+  },
+  "tablet": {
+    "layout": "panel"
+  },
+  "desk": {
+    "layout": "panel"
+  },
+  "touch": 44,
+  "pageOverflow": "none",
+  "screens": [
+    "jobs-board",
+    "jobs-list",
+    "job-panel",
+    "invoices-ready",
+    "invoices-pending",
+    "invoices-approved",
+    "invoices-ticked",
+    "invoices-filter",
+    "reconcile"
+  ]
+}
