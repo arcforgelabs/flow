@@ -26,21 +26,33 @@ export async function renderPermissions(main, ui) {
     host.replaceChildren(notice(error.message, 'danger'));
     return;
   }
+  async function saveRole(role, changes) {
+    if (!changes.length) return;
+    const previous = Object.fromEntries(changes.map(([key]) => [key, body.grants[role][key]]));
+    for (const [key, allowed] of changes) body.grants[role][key] = allowed;
+    draw();
+    const failed = [];
+    await Promise.all(changes.map(async ([key, allowed]) => {
+      try {
+        await flow(`/api/permissions/roles/${role}`, { method: 'PUT', body: JSON.stringify({ key, allowed }) });
+      } catch (error) {
+        failed.push(error);
+        body.grants[role][key] = previous[key];
+      }
+    }));
+    if (failed.length) {
+      draw();
+      toast(failed[0].message, 'danger');
+    }
+  }
   const draw = () => {
     host.replaceChildren(permissionGrid(h, {
       groups: body.groups,
       grants: body.grants,
-      onChange: async (role, key, allowed) => {
-        const previous = body.grants[role][key];
-        body.grants[role][key] = allowed;
-        draw();
-        try {
-          await flow(`/api/permissions/roles/${role}`, { method: 'PUT', body: JSON.stringify({ key, allowed }) });
-        } catch (error) {
-          body.grants[role][key] = previous;
-          draw();
-          toast(error.message, 'danger');
-        }
+      onChange: (role, key, allowed) => saveRole(role, [[key, allowed]]),
+      onChangeAll: (role, allowed) => {
+        const keys = body.groups.flatMap((group) => group.permissions.map((permission) => permission.key));
+        saveRole(role, keys.filter((key) => body.grants[role][key] !== allowed).map((key) => [key, allowed]));
       },
     }));
   };
@@ -64,7 +76,38 @@ export function openPersonPermissions(main, ui, person) {
     render: () => {
       const body = h('div', { class: 'fx-settings' }, h('p', { class: 'fx-dim' }, 'Loading…'));
       flow(`/api/permissions/people/${person.id}`).then(({ permissions }) => {
+        const rows = [];
         const groups = [];
+        const allOn = () => permissions.every((permission) => permission.effect === 'allow');
+        const allSwitch = h('button', {
+          class: 'fx-switch', type: 'button', role: 'switch',
+          'aria-label': `All for ${who}`, 'aria-checked': String(allOn()),
+        });
+        const paintAll = () => allSwitch.setAttribute('aria-checked', String(allOn()));
+        allSwitch.onclick = async () => {
+          const effect = allOn() ? 'inherit' : 'allow';
+          const changing = permissions.filter((permission) => permission.effect !== effect);
+          const previous = new Map(changing.map((permission) => [permission.key, permission.effect]));
+          for (const permission of changing) {
+            permission.effect = effect;
+            const select = rows.find((row) => row.key === permission.key)?.select;
+            if (select) select.value = effect;
+          }
+          paintAll();
+          const failed = [];
+          await Promise.all(changing.map(async (permission) => {
+            try {
+              await flow(`/api/permissions/people/${person.id}`, { method: 'PUT', body: JSON.stringify({ key: permission.key, effect }) });
+            } catch (error) {
+              failed.push(error);
+              permission.effect = previous.get(permission.key);
+              const select = rows.find((row) => row.key === permission.key)?.select;
+              if (select) select.value = permission.effect;
+            }
+          }));
+          paintAll();
+          if (failed.length) toast(failed[0].message, 'danger');
+        };
         for (const permission of permissions) {
           let group = groups.find((item) => item.label === permission.group);
           if (!group) {
@@ -76,18 +119,26 @@ export function openPersonPermissions(main, ui, person) {
             'aria-label': `${permission.label} for ${who}`,
             onchange: async (event) => {
               const effect = event.target.value;
+              const previous = permission.effect;
+              permission.effect = effect;
+              paintAll();
               try {
                 await flow(`/api/permissions/people/${person.id}`, { method: 'PUT', body: JSON.stringify({ key: permission.key, effect }) });
                 toast(`${permission.label} updated.`, 'success');
               } catch (error) {
-                event.target.value = permission.effect;
+                permission.effect = previous;
+                event.target.value = previous;
+                paintAll();
                 toast(error.message, 'danger');
               }
             },
           }, EFFECTS.map(([value, label]) => h('option', { value, selected: value === permission.effect }, label)));
+          rows.push({ key: permission.key, select });
           group.rows.push(settingRow({ label: permission.label, control: select }));
         }
-        body.replaceChildren(...groups.flatMap((group) => [sectionTitle(group.label), ...group.rows]));
+        body.replaceChildren(
+          settingRow({ label: 'All', control: h('label', { class: 'fx-perm__hit' }, allSwitch) }),
+          ...groups.flatMap((group) => [sectionTitle(group.label), ...group.rows]));
       }).catch((error) => {
         body.replaceChildren(h('p', {}, error.message));
       });

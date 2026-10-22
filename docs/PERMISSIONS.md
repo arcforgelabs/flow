@@ -18,11 +18,13 @@ Fields are the edits on those pages. Run is a sync, a mirror, a payment
 read, a recheck, and a history import. Connect is connecting and
 disconnecting Xero, and opening Integrations. People is the people list.
 
-The owner column stays on. People cannot be granted or taken away: those
+The owner column stays on. All turns every permission for that role on or
+off; the owner All stays on. People cannot be granted or taken away: those
 routes still require an owner, and a verified owner sign-in.
 
 A person row beats the role. On the People page, ⋯ then Permissions sets
-Inherit, Allow or Deny for that person. Inherit removes the row.
+Inherit, Allow or Deny for that person. All there allows every permission,
+or puts them back to Inherit. Inherit removes the row.
 
 Connecting and disconnecting still need a verified sign-in (a second factor,
 or Google Workspace on the owner domain with no password), the same check an

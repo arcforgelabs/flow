@@ -15,16 +15,46 @@ function roleSwitch(h, { label, on, locked, change }) {
   return h('label', { class: 'fx-perm__hit' }, button);
 }
 
-// permissionGrid(h, { groups, grants, onChange }) draws the grid.
+function everyOn(grants, role, keys) {
+  return keys.every((key) => Boolean(grants?.[role]?.[key]));
+}
+
+// permissionGrid(h, { groups, grants, onChange, onChangeAll }) draws the grid.
 // groups: [{ label, permissions: [{ key, label }] }]
 // grants: { owner: { key: true }, admin: {}, staff: {} }
-// onChange(role, key, allowed) is the switch. The owner column does not call it.
-export function permissionGrid(h, { groups, grants, onChange }) {
+// onChange(role, key, allowed) is one switch. onChangeAll(role, allowed) is
+// the All switch: on turns every permission for that role on, off turns them
+// off. The owner column does not call either.
+export function permissionGrid(h, { groups, grants, onChange, onChangeAll }) {
+  const keys = groups.flatMap((group) => group.permissions.map((permission) => permission.key));
+  const setAll = (role, allowed) => {
+    if (onChangeAll) {
+      onChangeAll(role, allowed);
+      return;
+    }
+    for (const key of keys) {
+      if (Boolean(grants?.[role]?.[key]) !== allowed) onChange(role, key, allowed);
+    }
+  };
+  const allControls = () => ROLES.map(([role, roleLabel]) => roleSwitch(h, {
+    label: `All for ${roleLabel}`,
+    on: role === 'owner' || everyOn(grants, role, keys),
+    locked: role === 'owner',
+    change: (allowed) => setAll(role, allowed),
+  }));
+  const deskAll = allControls();
+  const phoneAll = allControls();
   const head = h('tr', {},
     h('th', { scope: 'col' }, 'Permission'),
     ...ROLES.map(([, label]) => h('th', { class: 'fx-perm__role', scope: 'col' }, label)));
-  const rows = [];
-  const cards = [];
+  const rows = [h('tr', { class: 'fx-perm__all' },
+    h('th', { scope: 'row' }, 'All'),
+    ...deskAll.map((control) => h('td', {}, control)))];
+  const cards = [h('article', { class: 'fx-perm__card' },
+    h('h3', {}, 'All'),
+    ...ROLES.map(([, roleLabel], index) => h('div', { class: 'fx-perm__line' },
+      h('span', {}, roleLabel),
+      phoneAll[index])))];
   for (const group of groups) {
     rows.push(h('tr', { class: 'fx-perm__group' }, h('th', { colspan: '4', scope: 'colgroup' }, group.label)));
     const cardRows = [];

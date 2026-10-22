@@ -1468,6 +1468,7 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
 .fx-perm__table th, .fx-perm__table td { padding: 4px 8px; border-bottom: 1px solid var(--t-brd); text-align: left; font-weight: 500; color: var(--t-text); }
 .fx-perm__table thead th { color: var(--t-dim); font: 600 12px/1.2 var(--t-body); }
 .fx-perm__role, .fx-perm__table td { width: 96px; text-align: center; }
+.fx-perm__all th { color: var(--t-strong); }
 .fx-perm__group th { padding-top: 18px; color: var(--t-strong); font: 600 13px/1.2 var(--t-body); background: var(--t-s1); }
 .fx-perm__hit { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; }
 .fx-perm__phone { display: none; }
