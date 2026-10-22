@@ -414,18 +414,22 @@ function shieldBehindDialogs() {
     else child.removeAttribute('inert');
   }
 }
-const openDialog = HTMLDialogElement.prototype.showModal;
-const closeDialog = HTMLDialogElement.prototype.close;
-HTMLDialogElement.prototype.showModal = function showModal() {
-  const result = openDialog.call(this);
-  shieldBehindDialogs();
-  return result;
-};
-HTMLDialogElement.prototype.close = function close(...args) {
-  const result = closeDialog.apply(this, args);
-  shieldBehindDialogs();
-  return result;
-};
+// Node tests import this module and have no HTMLDialogElement. The wrap only
+// matters in the browser, where showModal and close are the three call sites.
+if (typeof HTMLDialogElement !== 'undefined') {
+  const openDialog = HTMLDialogElement.prototype.showModal;
+  const closeDialog = HTMLDialogElement.prototype.close;
+  HTMLDialogElement.prototype.showModal = function showModal() {
+    const result = openDialog.call(this);
+    shieldBehindDialogs();
+    return result;
+  };
+  HTMLDialogElement.prototype.close = function close(...args) {
+    const result = closeDialog.apply(this, args);
+    shieldBehindDialogs();
+    return result;
+  };
+}
 
 // The trail above a page one level down: crumbs(['/integrations', 'Integrations'], 'Xero').
 export function crumbs(...trail) {
