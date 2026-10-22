@@ -150,6 +150,16 @@ export async function customerBillingByContact(db, organisationId, contactIds) {
   return new Map(rows.map((r) => [r.contactId, pick(r, CUSTOMER_KEYS)]));
 }
 
+// The customers' names, by contact id. Customer "contains" reads the name
+// (invoice-rules.js), not the contact id the menu tests use.
+async function customerNames(db, organisationId, contactIds) {
+  const ids = [...new Set(contactIds.filter(Boolean))];
+  if (!ids.length) return new Map();
+  const rows = await db.select({ id: contacts.id, name: contacts.name }).from(contacts)
+    .where(and(eq(contacts.organisationId, organisationId), inArray(contacts.id, ids)));
+  return new Map(rows.map((r) => [r.id, r.name]));
+}
+
 // The settings that apply to one customer: its own, else the organisation's.
 // `autoDraft` is the customer's own switch for the draft automation.
 export function effectiveSettings(settings, customer = CUSTOMER_DEFAULTS) {
@@ -255,13 +265,16 @@ export async function autoDraftJobs(db, organisationId, { accounting = null, wor
     sql`${billingObligations.contactId} is not null`,
     // Newest first: a backlog of jobs that wait on a rule never hides new work.
   )).orderBy(sql`${billingObligations.jobDate} desc nulls last`, billingObligations.id).limit(limit);
-  const customers = await customerBillingByContact(db, organisationId, candidates.map((o) => o.contactId));
+  const contactIds = candidates.map((o) => o.contactId);
+  const customers = await customerBillingByContact(db, organisationId, contactIds);
+  const names = await customerNames(db, organisationId, contactIds);
+  const named = (contactId) => ({ ...effectiveSettings(settings, customers.get(contactId)), name: names.get(contactId) ?? null });
   const liveCheck = accounting ? copyCheck(accounting, organisationId) : null;
   const invoiceDate = isoDay(now);
   let accountingRead = null;
 
   for (const candidate of candidates) {
-    let effective = effectiveSettings(settings, customers.get(candidate.contactId));
+    let effective = named(candidate.contactId);
     if (!effective.autoDraft) {
       result.off += 1;
       continue;
@@ -302,7 +315,11 @@ export async function autoDraftJobs(db, organisationId, { accounting = null, wor
       }
     }
     if (obligation !== candidate) {
-      effective = effectiveSettings(settings, customers.get(obligation.contactId));
+      if (obligation.contactId && !names.has(obligation.contactId)) {
+        const extra = await customerNames(db, organisationId, [obligation.contactId]);
+        for (const [id, name] of extra) names.set(id, name);
+      }
+      effective = named(obligation.contactId);
       if (!effective.autoDraft || ruleBlockers(obligation, effective, { now, rules }).length) {
         result.waiting += 1;
         continue;

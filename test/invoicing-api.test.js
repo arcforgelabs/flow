@@ -42,7 +42,7 @@ describe('invoicing API', { skip: skipWithoutDatabase }, () => {
   function invoicingApp({ integrations = null } = {}) {
     const settings = { mode: 'clerk', keys: { publishableKey: TEST_PUBLISHABLE_KEY, proxyUrl: null } };
     const personAuth = createPersonAuth({ db: handle.db, clerk, ownerGoogleDomains: ['example.test'], log: quiet });
-    return createApp({ database: handle, auth: { settings, clerk, personAuth }, integrations, log: quiet, buttonCooldowns: false });
+    return createApp({ database: handle, auth: { settings, clerk, personAuth }, integrations, log: quiet, buttonCooldowns: false, rateLimitPerMinute: 1000 });
   }
 
   before(async () => {
@@ -428,6 +428,9 @@ describe('invoicing API', { skip: skipWithoutDatabase }, () => {
     // A job with no invoice lists the rules it waits on.
     const jobs = await call(`/jobs?organisationId=${lab.id}&view=pending`);
     assert.ok(jobs.body.jobs.every((j) => j.waitingFor.includes('rule "Customer not billable": not drafted by rule')), JSON.stringify(jobs.body.jobs.map((j) => j.waitingFor)));
+    // Later tests approve this customer's drafts. Send now holds a draft
+    // whose job matches the starter skip rule, so the customer is billable again.
+    assert.equal((await call(`/contacts/${practice.id}/billing`, { method: 'PUT', body: { organisationId: lab.id, billable: true } })).status, 200);
   });
 
   test('invoice rules: everyone reads them and their menus, an owner or admin changes them', async () => {
@@ -437,6 +440,9 @@ describe('invoicing API', { skip: skipWithoutDatabase }, () => {
     const fields = await call(`/rule-fields?organisationId=${lab.id}`, { token: staffToken });
     assert.equal(fields.status, 200);
     assert.ok(fields.body.fields.some((f) => f.key === 'line_share' && f.tests.includes('is_not')));
+    const customer = fields.body.fields.find((f) => f.key === 'customer');
+    assert.ok(customer.tests.includes('contains') && customer.tests.includes('does_not_contain'));
+    assert.equal(customer.tests.includes('starts_with'), false);
     assert.ok(fields.body.options.customers.some((c) => c.value === practice.id));
     assert.ok(fields.body.options.customers.every((c) => c.value !== supplier.id));
     assert.ok(Array.isArray(fields.body.options.items));
@@ -557,5 +563,28 @@ describe('invoicing API', { skip: skipWithoutDatabase }, () => {
     await deleteRule(handle.db, lab.id, rule.id);
     const approved = await call(`/invoices/${invoice.id}/issue`, { method: 'POST', body: { organisationId: lab.id } });
     assert.equal(approved.status, 200, JSON.stringify(approved.body));
+  });
+
+  test('Approve holds a draft a skip rule matches, and approves one it does not', async () => {
+    const branch = await createContact(handle.db, lab.id, { kind: 'customer', name: 'North - Example Group' });
+    const smiles = await createContact(handle.db, lab.id, { kind: 'customer', name: 'Harbour Smiles' });
+    const draft = async (contact, ref) => {
+      const job = await observeJob(handle.db, lab.id, { sourceSystem: 'worksystem', sourceJobRef: ref, contactId: contact.id, sourceStatus: 'Shipped', lines: [{ itemCode: 'CRN' }] });
+      await recordAccountingEvidence(handle.db, lab.id, job.id, { state: 'not_found', actor: 'user:test' });
+      const { invoice } = await draftInvoiceForObligation(handle.db, lab.id, job.id, { actor: 'user:test', liveCheck: async () => ({ state: 'not_found' }) });
+      return invoice;
+    };
+    const held = await draft(branch, 'JOB-SKIP');
+    const fine = await draft(smiles, 'JOB-SEND');
+    const rule = await createRule(handle.db, lab.id, {
+      name: 'Own branches', conditions: [{ field: 'customer', test: 'contains', value: 'example' }], action: { kind: 'skip' },
+    });
+    const refused = await call(`/invoices/${held.id}/issue`, { method: 'POST', body: { organisationId: lab.id } });
+    assert.equal(refused.status, 409);
+    assert.equal(refused.body.error, 'Rule "Own branches": not invoiced. Void this draft or change the rule. Nothing was approved.');
+    const approved = await call(`/invoices/${fine.id}/issue`, { method: 'POST', body: { organisationId: lab.id } });
+    assert.equal(approved.status, 200, JSON.stringify(approved.body));
+    assert.equal(approved.body.invoice.status, 'issued');
+    await deleteRule(handle.db, lab.id, rule.id);
   });
 });

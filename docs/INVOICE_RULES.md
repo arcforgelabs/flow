@@ -14,8 +14,9 @@ flowchart LR
   then -- skip --> skip[Never drafted by rule]
   then -- pending --> flagged[Draft, on Pending with the note]
   each -- no rule matches --> draft[Draft invoice in Flow]
-  draft --> check{Pending rules check the draft}
-  check -- a rule matches --> flagged
+  draft --> check{Pending rules and skip rules check the draft}
+  check -- a pending rule matches --> flagged
+  check -- a skip rule matches --> held[Stays Pending: not invoiced]
   check -- none match --> readyTab[Ready]
 ```
 
@@ -25,7 +26,7 @@ flowchart LR
 | --- | --- |
 | When | `job_ready`: the job is ready to invoice and has no invoice |
 | If | 1 to 10 conditions. All must match |
-| Then | `wait`: the job waits for a person. `skip`: rules never draft it. `pending`: Flow drafts it, and the draft is on the Pending tab with the rule's note |
+| Then | `wait`: the job waits for a person. `skip`: rules never draft it, and Send holds a draft that already matches. `pending`: Flow drafts it, and the draft is on the Pending tab with the rule's note |
 
 A person can still draft a waiting job from the Jobs board. The job lists
 each rule that stops it, for example `rule "Old job": waits for a person`.
@@ -44,6 +45,11 @@ someone edited, or whose job changed, and that now fails a check is not sent.
 It stays on the Pending tab with its problem. The other ticked drafts go, and
 the message counts the ones held. Approve on one invoice refuses a draft that
 fails a pending rule.
+
+Send also holds a draft whose job matches an enabled skip rule. That includes
+a draft made by hand, and a draft made before the rule existed. The draft
+stays on Pending. The list shows the rule's name. The note is
+`Rule "<name>": not invoiced. Void this draft or change the rule.`
 
 The draft goes to Ready when the cause is fixed:
 
@@ -77,7 +83,7 @@ reads each part between ` - ` and finds a number only next to words, as in
 | `job_status` | menu of the work system's statuses | The job's status there | is, is not, is one of, is empty |
 | `practitioner` | text, with a menu of the practitioners on jobs | The job's practitioner, else the customer's default | is, is not, is one of, is not one of, contains, does not contain, starts with, does not start with, has a number, has a number beside words, is one word, is empty, is not empty |
 | `reference` | text | The draft's Reference. Pending rules only | the same tests as `practitioner` |
-| `customer` | menu of customers | The job's customer | is, is not, is one of, is empty |
+| `customer` | menu of customers | The job's customer. Contains and does not contain read the customer's name | is, is not, is one of, contains, does not contain, is empty |
 | `customer_billable` | yes or no | The customer's `billable` setting | is |
 | `line_item` | menu of price items | The item codes on the job's lines | has, does not have |
 | `line_share` | price item and percent | That item's lines as a share of the other lines, to within 1 cent | is, is not |
@@ -86,8 +92,9 @@ Text and menu values match in any case and with spaces trimmed. A value that
 Flow knows is picked from a menu, never typed: `GET /api/invoicing/rule-fields`
 answers the fields, their tests, and the menus (statuses, customers, price
 items, and the practitioners on jobs with their counts). Contains and starts
-with take typed text. An empty text matches only is empty, is not and is
-not empty.
+with take typed text. On Customer, contains and does not contain take typed
+text and read the customer's name. An empty text matches only is empty, is
+not and is not empty.
 
 ## Starter rules
 

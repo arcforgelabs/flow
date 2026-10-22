@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
-import { billingObligations, invoiceLines, invoices } from '../db/schema.js';
+import { billingObligations, contacts, invoiceLines, invoices } from '../db/schema.js';
 import { FlowError } from './errors.js';
-import { listRules, rulePending } from './invoice-rules.js';
+import { listRules, rulePending, ruleSkip } from './invoice-rules.js';
 import { customerBillingByContact, effectiveSettings, readInvoicingSettings } from './invoicing-rules.js';
 import { issueInvoice } from './invoices.js';
 import { CHANGED_REASON, diffJobLines, STATUS_BACK_REASON } from './ledger.js';
@@ -17,7 +17,9 @@ import { deadHoldSince, deadSince, enqueueJob, runNextJob } from './queue.js';
 // charge, an account) on every line. When an accounting
 // system is connected, its own checks are added (for Xero: the customer
 // matches one Xero contact, every item is in Xero), and the lab's pending
-// rules (invoice-rules.js) add their notes. A draft with a problem is
+// rules (invoice-rules.js) add their notes. An enabled skip rule does too:
+// a draft whose job it matches stays Pending, even when the draft was made
+// by hand or before the rule existed. A draft with a problem is
 // Pending (the "problem" view). A draft without one is Ready.
 //
 // Send all ready issues every ready draft (each gets its number) and, when an
@@ -81,19 +83,21 @@ async function checkDrafts(db, organisationId, drafts, accounting) {
     const found = draftProblems(draft, linesOf.get(draft.id) ?? []);
     if (found.length) problems.set(draft.id, found);
   }
-  const jobs = await db.select({ obligation: billingObligations, reference: invoices.reference }).from(billingObligations)
+  const jobs = await db.select({ obligation: billingObligations, reference: invoices.reference, customerName: contacts.name }).from(billingObligations)
     .innerJoin(invoices, eq(invoices.id, billingObligations.invoiceId))
+    .leftJoin(contacts, and(eq(contacts.id, billingObligations.contactId), eq(contacts.organisationId, billingObligations.organisationId)))
     .where(and(eq(billingObligations.organisationId, organisationId), inArray(billingObligations.invoiceId, ids)));
-  // The lab's pending rules (invoice-rules.js): a draft from a job that
-  // matches one waits on Pending with the rule's note, such as a Reference
-  // with no real practitioner.
-  const rules = (await listRules(db, organisationId)).filter((r) => r.enabled && r.action.kind === 'pending');
+  // The lab's rules (invoice-rules.js). A pending rule puts its note on the
+  // draft. A skip rule holds a draft that already exists: void it, or change
+  // the rule. Matching stays in invoice-rules.js.
+  const rules = (await listRules(db, organisationId)).filter((r) => r.enabled && (r.action.kind === 'pending' || r.action.kind === 'skip'));
   if (rules.length && jobs.length) {
     const settings = await readInvoicingSettings(db, organisationId);
     const customers = await customerBillingByContact(db, organisationId, jobs.map((j) => j.obligation.contactId));
-    for (const { obligation, reference } of jobs) {
-      const customer = effectiveSettings(settings, customers.get(obligation.contactId));
-      const found = rulePending(rules, { ...obligation, reference }, { customer });
+    for (const { obligation, reference, customerName } of jobs) {
+      const customer = { ...effectiveSettings(settings, customers.get(obligation.contactId)), name: customerName ?? null };
+      const job = { ...obligation, reference };
+      const found = [...rulePending(rules, job, { customer }), ...ruleSkip(rules, job, { customer })];
       if (found.length) problems.set(obligation.invoiceId, [...(problems.get(obligation.invoiceId) ?? []), ...found]);
     }
   }

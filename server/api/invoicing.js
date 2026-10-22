@@ -595,8 +595,8 @@ export function createInvoicingRouter({
     // the job at its source or adopt the change (ledger.js), as Move to
     // Ready and Send do.
     const { problems } = await invoiceView(db, organisationId, await getInvoice(db, organisationId, invoiceId));
-    // A lab's pending rule (invoice-rules.js) is a gate too: fix its cause
-    // or turn the rule off.
+    // A lab's pending rule, or a skip rule the job matches (invoice-rules.js),
+    // is a gate too: fix its cause, void the draft, or turn the rule off.
     const held = problems.find((p) => p.code === 'job_review' || p.code === 'rule');
     if (held) throw new FlowError('not_ready', `${held.message.replace(/\.?$/, '.')} Nothing was approved.`);
     const issued = await issueInvoice(db, organisationId, invoiceId, { issuedBy: `person:${req.person.id}`, issueDate });
@@ -844,7 +844,7 @@ export function createInvoicingRouter({
     res.json({
       ok: true,
       fields: Object.entries(FIELDS).map(([key, f]) => ({
-        key, label: f.label, kind: f.kind, options: f.options ?? null, tests: TESTS[f.kind], draftOnly: Boolean(f.draftOnly),
+        key, label: f.label, kind: f.kind, options: f.options ?? null, tests: f.tests ?? TESTS[f.kind], draftOnly: Boolean(f.draftOnly),
       })),
       actions: ACTIONS,
       options: {

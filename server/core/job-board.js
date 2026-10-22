@@ -55,7 +55,7 @@ export async function describeObligations(db, organisationId, listed, { accounti
   // The invoicing rules a job with no invoice waits on, for every view a
   // draft can still come from.
   const waitingFor = (o, v) => (o.invoiceId || !['in_work', 'ready', 'pending', 'held'].includes(v)
-    ? [] : ruleBlockers(o, effectiveSettings(settings, customers.get(o.contactId)), { rules }));
+    ? [] : ruleBlockers(o, { ...effectiveSettings(settings, customers.get(o.contactId)), name: nameOf.get(o.contactId) ?? null }, { rules }));
   return listed.map(({ obligation: { lineFingerprint: _fingerprint, organisationId: _org, draftBasis: _basis, ...o }, view, reasons }) => ({
     ...o,
     canUseNewLines: offers.has(o.id),

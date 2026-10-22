@@ -80,6 +80,7 @@ each failed check; the full text is its hover title.
 | The total is above zero | Total $0 | The total is $0.00 or less. |
 | Every line has a price item | Line N: no item | Line N has no price item. |
 | The job is not in review | Line 4 added, Client changed, Job changed, Job deleted, Status moved back, Job needs a look | The job needs a look before this invoice goes: (the review reason). |
+| A skip rule matches the job | the rule's name | Rule "<name>": not invoiced. Void this draft or change the rule. |
 
 When an accounting system is on and connected, its own checks are added
 (`checkDrafts`). For Xero these come from Flow's copy of Xero, so they cost no
@@ -118,7 +119,7 @@ asks first. There is no separate send bar. Then:
    When a bulk press confirms none, it answers `not_ready` with that count
    (for example "3 jobs could not be read from the work system"). A danger
    toast for a stopped press stays until the person closes it.
-   Every draft check then runs again, the lab's pending rules
+   Every draft check then runs again, the lab's pending rules and skip rules
    ([INVOICE_RULES.md](INVOICE_RULES.md#pending-rules)) included. A draft
    that fails one now stays on Pending and is not sent. When a person ticked
    drafts, the rest go and the answer counts the ones held (`held`); when
