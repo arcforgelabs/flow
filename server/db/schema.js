@@ -202,6 +202,53 @@ export const people = pgTable('people', {
   check('people_status_valid', sql`${t.status} in ('active', 'pending', 'disabled')`),
 ]);
 
+// What each role may do, beyond the defaults in server/auth/permissions.js.
+// A missing row means the default. The owner role is never stored as denied:
+// the API refuses that, and `can` ignores a deny row if one is written.
+export const rolePermissions = pgTable('role_permissions', {
+  role: text('role').notNull(),
+  key: text('key').notNull(),
+  allowed: boolean('allowed').notNull(),
+  updatedBy: uuid('updated_by').references(() => people.id, { onDelete: 'set null' }),
+  updatedAt: updatedAt(),
+}, (t) => [
+  primaryKey({ name: 'role_permissions_pk', columns: [t.role, t.key] }),
+  check('role_permissions_role_valid', sql`${t.role} in ('owner', 'admin', 'staff')`),
+  check('role_permissions_key_valid', sql`${t.key} in ('invoices.send', 'invoices.approve', 'invoices.void', 'invoices.draft', 'priceList.edit', 'rules.edit', 'customFields.edit', 'integrations.run', 'integrations.connect', 'people.manage')`),
+]);
+
+// One person's exception to their role: allow or deny. No row means inherit.
+// A person row beats the role. `people.manage` is never stored here.
+export const personPermissions = pgTable('person_permissions', {
+  personId: uuid('person_id').notNull().references(() => people.id, { onDelete: 'cascade' }),
+  key: text('key').notNull(),
+  effect: text('effect').notNull(),
+  updatedBy: uuid('updated_by').references(() => people.id, { onDelete: 'set null' }),
+  updatedAt: updatedAt(),
+}, (t) => [
+  primaryKey({ name: 'person_permissions_pk', columns: [t.personId, t.key] }),
+  check('person_permissions_effect_valid', sql`${t.effect} in ('allow', 'deny')`),
+  check('person_permissions_key_valid', sql`${t.key} in ('invoices.send', 'invoices.approve', 'invoices.void', 'invoices.draft', 'priceList.edit', 'rules.edit', 'customFields.edit', 'integrations.run', 'integrations.connect', 'people.manage')`),
+]);
+
+// Who changed a permission, and from what to what. Append-only in practice:
+// the API inserts a row and never updates one.
+export const permissionEvents = pgTable('permission_events', {
+  id: id(),
+  actorId: uuid('actor_id').references(() => people.id, { onDelete: 'set null' }),
+  targetRole: text('target_role'),
+  targetPersonId: uuid('target_person_id').references(() => people.id, { onDelete: 'set null' }),
+  key: text('key').notNull(),
+  fromValue: text('from_value').notNull(),
+  toValue: text('to_value').notNull(),
+  createdAt: createdAt(),
+}, (t) => [
+  index('permission_events_created').on(t.createdAt),
+  check('permission_events_one_target', sql`(${t.targetRole} is not null) <> (${t.targetPersonId} is not null)`),
+  check('permission_events_role_valid', sql`${t.targetRole} is null or ${t.targetRole} in ('owner', 'admin', 'staff')`),
+  check('permission_events_value_valid', sql`${t.fromValue} in ('allow', 'deny', 'inherit') and ${t.toValue} in ('allow', 'deny', 'inherit')`),
+]);
+
 // Billing obligations (issue 3). One billable job in a work system gives one
 // obligation. The obligation keeps the evidence for its state: what the work
 // system reported, what the accounting system reported, each payment, and each

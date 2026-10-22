@@ -183,7 +183,7 @@ export async function saveSettings(db, { adapter, secrets, actor, enabled, value
 // what is set. PUT /api/integrations/:id (owner): save and apply.
 export function createSetupRouter({ db, registry, personAuth, secrets, baseEnv = process.env, log = console }) {
   const router = express.Router();
-  const owner = [personAuth.requireSession, personAuth.requireRole('owner')];
+  const owner = [personAuth.requireSession, personAuth.requirePermission('integrations.connect')];
   // A change needs a verified owner sign-in, as connecting Xero does.
   const verifiedOwner = [personAuth.requireSession, personAuth.requireOwner];
 

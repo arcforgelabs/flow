@@ -14,6 +14,8 @@ erDiagram
   price_items |o--o{ invoice_lines : "fills"
   invoices ||--o{ invoice_versions : "was sent as"
   people |o--o{ people : "invited"
+  people ||--o{ person_permissions : overrides
+  people ||--o{ permission_events : "is explained by"
   organisations ||--o{ billing_obligations : tracks
   contacts |o--o{ billing_obligations : "is billed for"
   billing_obligations |o--o| invoices : "is invoiced by"
@@ -66,6 +68,13 @@ colour, and when Flow made the Assignee field.
 
 `people` lists who may sign in and their role (`owner`, `admin`, `staff`).
 One installation serves one lab, so it is installation-wide.
+
+`role_permissions` stores a role's exception to the default for one
+permission key (`allowed`). No row means the default (`docs/PERMISSIONS.md`).
+`person_permissions` stores one person's exception (`allow` or `deny`); no
+row means they inherit the role, and a person row beats the role.
+`permission_events` records each change: who, the role or person, the key,
+and the old value and the new one (`allow`, `deny` or `inherit`).
 
 Each integration adapter owns its own tables, named after it (`seazona_…`).
 They exist only once the adapter has been on at a start, and they are not in

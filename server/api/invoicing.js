@@ -1,4 +1,5 @@
 import { and, asc, desc, eq, ilike, inArray, isNull, or, sql } from 'drizzle-orm';
+import { permissionsFor } from '../auth/permissions.js';
 import express from 'express';
 import { invoicePage, INVOICE_SORTS, normaliseInvoicesView } from '../ui/list-views.js';
 import { FlowError } from '../core/errors.js';
@@ -401,7 +402,7 @@ export function createInvoicingRouter({
   const rechecked = new Map();
 
   const signedIn = [personAuth.requireSession];
-  const manager = [...signedIn, personAuth.requireRole('owner', 'admin')];
+  const permit = (key) => [...signedIn, personAuth.requirePermission(key)];
   const organisationOf = (req) => resolveOrganisation(db, req.method === 'GET' ? req.query.organisationId : (req.body?.organisationId ?? req.query.organisationId));
 
   router.get('/context', ...signedIn, handle(log, async (req, res) => {
@@ -409,7 +410,13 @@ export function createInvoicingRouter({
       id: organisations.id, name: organisations.name, invoicePrefix: organisations.invoicePrefix, nextInvoiceNumber: organisations.nextInvoiceNumber,
     }).from(organisations).orderBy(asc(organisations.name));
     // sendsTo: the accounting system a sent invoice goes to, or null.
-    res.json({ ok: true, organisations: rows, canIssue: ['owner', 'admin'].includes(req.person.role), sendsTo: accounting()?.name ?? null });
+    // canIssue stays for pages that have not moved to permissions yet: it is
+    // send or approve, which is what owner and admin could do before.
+    const permissions = await permissionsFor(db, req.person);
+    res.json({
+      ok: true, organisations: rows, sendsTo: accounting()?.name ?? null,
+      canIssue: Boolean(permissions['invoices.send'] || permissions['invoices.approve']),
+    });
   }));
 
   router.get('/invoices', ...signedIn, handle(log, async (req, res) => {
@@ -517,7 +524,7 @@ export function createInvoicingRouter({
     res.json({ ok: true, ...(await markNotReady(db, organisationId, invoiceIdsOf(req.body))) });
   }));
 
-  router.post('/invoices/send-ready', ...manager, act('sendReady'), handle(log, async (req, res) => {
+  router.post('/invoices/send-ready', ...permit('invoices.send'), act('sendReady'), handle(log, async (req, res) => {
     const organisationId = await organisationOf(req);
     const issueDate = optionalDate(req.body?.issueDate, 'issueDate') ?? today();
     const ids = req.body?.invoiceIds === undefined ? null : invoiceIdsOf(req.body);
@@ -528,7 +535,7 @@ export function createInvoicingRouter({
     res.json({ ok: true, ...result });
   }));
 
-  router.post('/invoices/send-again', ...manager, act('sendAgain'), handle(log, async (req, res) => {
+  router.post('/invoices/send-again', ...permit('invoices.send'), act('sendAgain'), handle(log, async (req, res) => {
     const organisationId = await organisationOf(req);
     const ids = req.body?.invoiceIds === undefined ? null : invoiceIdsOf(req.body);
     const result = await sendAgain(db, organisationId, { accounting: accounting(), personId: req.person.id, invoiceIds: ids });
@@ -585,7 +592,7 @@ export function createInvoicingRouter({
     res.json({ ok: true, invoice: await invoiceDetail(db, organisationId, invoiceId, accounting(), work()) });
   }));
 
-  router.post('/invoices/:id/issue', ...manager, handle(log, async (req, res) => {
+  router.post('/invoices/:id/issue', ...permit('invoices.approve'), handle(log, async (req, res) => {
     const invoiceId = pathId(req.params.id, 'invoice');
     const organisationId = await organisationOf(req);
     const issueDate = optionalDate(req.body?.issueDate, 'issueDate') ?? today();
@@ -602,7 +609,7 @@ export function createInvoicingRouter({
     res.json({ ok: true, invoice: await invoiceDetail(db, organisationId, invoiceId, accounting(), work()) });
   }));
 
-  router.post('/invoices/:id/revise', ...manager, handle(log, async (req, res) => {
+  router.post('/invoices/:id/revise', ...permit('invoices.approve'), handle(log, async (req, res) => {
     const invoiceId = pathId(req.params.id, 'invoice');
     const organisationId = await organisationOf(req);
     await reviseInvoice(db, organisationId, invoiceId);
@@ -610,7 +617,7 @@ export function createInvoicingRouter({
     res.json({ ok: true, invoice: await invoiceDetail(db, organisationId, invoiceId, accounting(), work()) });
   }));
 
-  router.post('/invoices/:id/void', ...manager, handle(log, async (req, res) => {
+  router.post('/invoices/:id/void', ...permit('invoices.void'), handle(log, async (req, res) => {
     const invoiceId = pathId(req.params.id, 'invoice');
     const organisationId = await organisationOf(req);
     await voidInvoice(db, organisationId, invoiceId);
@@ -666,7 +673,7 @@ export function createInvoicingRouter({
     res.json({ ok: true, jobs, statuses, accountingName: accounting()?.name ?? null });
   }));
 
-  router.post('/jobs/:id/draft', ...manager, act('draftJob', (req) => req.params.id), handle(log, async (req, res) => {
+  router.post('/jobs/:id/draft', ...permit('invoices.draft'), act('draftJob', (req) => req.params.id), handle(log, async (req, res) => {
     const obligationId = pathId(req.params.id, 'job');
     const organisationId = await organisationOf(req);
     // With no accounting system connected, Flow's own records are the check.
@@ -691,7 +698,7 @@ export function createInvoicingRouter({
 
   // "Use new lines": the job changed in the work system after its draft was
   // made, and only there. Flow changes its own draft; no other system.
-  router.post('/jobs/:id/use-new-lines', ...manager, handle(log, async (req, res) => {
+  router.post('/jobs/:id/use-new-lines', ...permit('invoices.draft'), handle(log, async (req, res) => {
     const obligationId = pathId(req.params.id, 'job');
     const organisationId = await organisationOf(req);
     const { invoice } = await useSourceLines(db, organisationId, obligationId, { actor: `person:${req.person.id}`, accept: req.body?.accept === true });
@@ -757,7 +764,7 @@ export function createInvoicingRouter({
     res.json({ ok: true, ...await invoiceMatchDetail(db, organisationId, invoiceId, { q: text(req.query.q) ?? '' }) });
   }));
 
-  router.post('/jobs/:id/no-invoice', ...manager, handle(log, async (req, res) => {
+  router.post('/jobs/:id/no-invoice', ...permit('invoices.draft'), handle(log, async (req, res) => {
     const obligationId = pathId(req.params.id, 'job');
     const organisationId = await organisationOf(req);
     const job = await confirmNoInvoice(db, organisationId, obligationId, { actor: `person:${req.person.id}` });
@@ -765,7 +772,7 @@ export function createInvoicingRouter({
   }));
 
   // Links a job to a Flow invoice that already exists.
-  router.post('/jobs/:id/link', ...manager, handle(log, async (req, res) => {
+  router.post('/jobs/:id/link', ...permit('invoices.draft'), handle(log, async (req, res) => {
     const obligationId = pathId(req.params.id, 'job');
     const organisationId = await organisationOf(req);
     const invoiceId = pathId(text(req.body?.invoiceId) ?? '', 'invoice');
@@ -808,7 +815,7 @@ export function createInvoicingRouter({
     res.json({ ok: true, statuses: await workStatuses(db, organisationId) });
   }));
 
-  router.put('/automations/:key', ...manager, handle(log, async (req, res) => {
+  router.put('/automations/:key', ...permit('rules.edit'), handle(log, async (req, res) => {
     const organisationId = await organisationOf(req);
     const { organisationId: _named, ...changes } = req.body ?? {};
     const automation = await saveAutomation(db, organisationId, String(req.params.key), changes, { personId: req.person.id });
@@ -858,7 +865,7 @@ export function createInvoicingRouter({
     });
   }));
 
-  router.post('/rules', ...manager, handle(log, async (req, res) => {
+  router.post('/rules', ...permit('rules.edit'), handle(log, async (req, res) => {
     const organisationId = await organisationOf(req);
     const { organisationId: _named, ...raw } = req.body ?? {};
     const rule = await createRule(db, organisationId, raw, { personId: req.person.id });
@@ -866,7 +873,7 @@ export function createInvoicingRouter({
     res.status(201).json({ ok: true, rule });
   }));
 
-  router.put('/rules/:id', ...manager, handle(log, async (req, res) => {
+  router.put('/rules/:id', ...permit('rules.edit'), handle(log, async (req, res) => {
     const ruleId = pathId(req.params.id, 'rule');
     const organisationId = await organisationOf(req);
     const { organisationId: _named, ...changes } = req.body ?? {};
@@ -875,7 +882,7 @@ export function createInvoicingRouter({
     res.json({ ok: true, rule });
   }));
 
-  router.delete('/rules/:id', ...manager, handle(log, async (req, res) => {
+  router.delete('/rules/:id', ...permit('rules.edit'), handle(log, async (req, res) => {
     const ruleId = pathId(req.params.id, 'rule');
     const organisationId = await organisationOf(req);
     await deleteRule(db, organisationId, ruleId);
@@ -903,7 +910,7 @@ export function createInvoicingRouter({
     res.json({ ok: true, labels: rows });
   }));
 
-  router.post('/line-mappings', ...manager, handle(log, async (req, res) => {
+  router.post('/line-mappings', ...permit('rules.edit'), handle(log, async (req, res) => {
     const organisationId = await organisationOf(req);
     const { organisationId: _named, ...raw } = req.body ?? {};
     const mapping = await createMapping(db, organisationId, raw, { personId: req.person.id });
@@ -911,7 +918,7 @@ export function createInvoicingRouter({
     res.status(201).json({ ok: true, mapping });
   }));
 
-  router.put('/line-mappings/:id', ...manager, handle(log, async (req, res) => {
+  router.put('/line-mappings/:id', ...permit('rules.edit'), handle(log, async (req, res) => {
     const mappingId = pathId(req.params.id, 'mapping');
     const organisationId = await organisationOf(req);
     const { organisationId: _named, ...changes } = req.body ?? {};
@@ -920,7 +927,7 @@ export function createInvoicingRouter({
     res.json({ ok: true, mapping });
   }));
 
-  router.delete('/line-mappings/:id', ...manager, handle(log, async (req, res) => {
+  router.delete('/line-mappings/:id', ...permit('rules.edit'), handle(log, async (req, res) => {
     const mappingId = pathId(req.params.id, 'mapping');
     const organisationId = await organisationOf(req);
     await deleteMapping(db, organisationId, mappingId);
@@ -937,13 +944,13 @@ export function createInvoicingRouter({
     res.json({ ok: true, ...(await readPriceList(db, organisationId, { catalogues: await catalogues(organisationId) })) });
   }));
 
-  router.post('/price-list/check', ...manager, handle(log, async (req, res) => {
+  router.post('/price-list/check', ...permit('priceList.edit'), handle(log, async (req, res) => {
     const organisationId = await organisationOf(req);
     const summary = await checkPrices(db, organisationId, { catalogues: await catalogues(organisationId), actor: `person:${req.person.id}` });
     res.json({ ok: true, summary });
   }));
 
-  router.post('/price-items', ...manager, handle(log, async (req, res) => {
+  router.post('/price-items', ...permit('priceList.edit'), handle(log, async (req, res) => {
     const organisationId = await organisationOf(req);
     const { organisationId: _named, ...raw } = req.body ?? {};
     const item = await createPriceItem(db, organisationId, raw, { personId: req.person.id });
@@ -951,7 +958,7 @@ export function createInvoicingRouter({
     res.status(201).json({ ok: true, item });
   }));
 
-  router.put('/price-items/:id', ...manager, handle(log, async (req, res) => {
+  router.put('/price-items/:id', ...permit('priceList.edit'), handle(log, async (req, res) => {
     const itemId = pathId(req.params.id, 'price item');
     const organisationId = await organisationOf(req);
     const { organisationId: _named, ...changes } = req.body ?? {};
@@ -960,7 +967,7 @@ export function createInvoicingRouter({
     res.json({ ok: true, item });
   }));
 
-  router.post('/price-items/:id/archive', ...manager, handle(log, async (req, res) => {
+  router.post('/price-items/:id/archive', ...permit('priceList.edit'), handle(log, async (req, res) => {
     const itemId = pathId(req.params.id, 'price item');
     const organisationId = await organisationOf(req);
     const archived = req.body?.archived ?? true;
@@ -970,7 +977,7 @@ export function createInvoicingRouter({
     res.json({ ok: true, item });
   }));
 
-  router.post('/price-items/:id/links', ...manager, handle(log, async (req, res) => {
+  router.post('/price-items/:id/links', ...permit('priceList.edit'), handle(log, async (req, res) => {
     const itemId = pathId(req.params.id, 'price item');
     const organisationId = await organisationOf(req);
     const system = text(req.body?.system);
@@ -981,7 +988,7 @@ export function createInvoicingRouter({
     res.status(201).json({ ok: true, link: { id: link.id, system: link.system, externalId: link.externalId, externalCode: link.externalCode, matchedBy: link.matchedBy } });
   }));
 
-  router.post('/price-links', ...manager, handle(log, async (req, res) => {
+  router.post('/price-links', ...permit('priceList.edit'), handle(log, async (req, res) => {
     const organisationId = await organisationOf(req);
     const raw = req.body?.links;
     if (!Array.isArray(raw) || !raw.length || raw.length > MAX_LINKS_AT_ONCE) throw invalid(`links must be a list of 1 to ${MAX_LINKS_AT_ONCE} links`);
@@ -996,14 +1003,14 @@ export function createInvoicingRouter({
     res.status(201).json({ ok: true, linked: made.length });
   }));
 
-  router.post('/price-items/:id/resolve', ...manager, handle(log, async (req, res) => {
+  router.post('/price-items/:id/resolve', ...permit('priceList.edit'), handle(log, async (req, res) => {
     const itemId = pathId(req.params.id, 'price item');
     const organisationId = await organisationOf(req);
     const result = await acceptFindings(db, organisationId, itemId, { catalogues: await catalogues(organisationId), actor: `person:${req.person.id}` });
     res.json({ ok: true, ...result });
   }));
 
-  router.delete('/price-links/:id', ...manager, handle(log, async (req, res) => {
+  router.delete('/price-links/:id', ...permit('priceList.edit'), handle(log, async (req, res) => {
     const linkId = pathId(req.params.id, 'link');
     const organisationId = await organisationOf(req);
     await unlinkPriceItem(db, organisationId, linkId);
@@ -1016,7 +1023,7 @@ export function createInvoicingRouter({
     res.json({ ok: true, settings: await readInvoicingSettings(db, organisationId), defaults: INVOICING_DEFAULTS });
   }));
 
-  router.put('/settings', ...manager, handle(log, async (req, res) => {
+  router.put('/settings', ...permit('rules.edit'), handle(log, async (req, res) => {
     const organisationId = await organisationOf(req);
     const { organisationId: _named, ...changes } = req.body ?? {};
     const settings = await saveInvoicingSettings(db, organisationId, changes, { personId: req.person.id });
@@ -1031,7 +1038,7 @@ export function createInvoicingRouter({
     res.json({ ok: true, billing, effective: effectiveSettings(settings, billing) });
   }));
 
-  router.put('/contacts/:id/billing', ...manager, handle(log, async (req, res) => {
+  router.put('/contacts/:id/billing', ...permit('rules.edit'), handle(log, async (req, res) => {
     const contactId = pathId(req.params.id, 'customer');
     const organisationId = await organisationOf(req);
     const { organisationId: _named, ...changes } = req.body ?? {};

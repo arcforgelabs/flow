@@ -1,0 +1,30 @@
+<!-- @dsCard group="Forms" height=520 -->
+<div id="root"></div>
+<script>
+const { h, permissionGrid } = window.FlowDesignSystem;
+const groups = [
+  { label: 'Invoices', permissions: [
+    { key: 'invoices.send', label: 'Send' },
+    { key: 'invoices.approve', label: 'Approve' },
+    { key: 'invoices.void', label: 'Void' },
+    { key: 'invoices.draft', label: 'Draft' },
+  ] },
+  { label: 'Integrations', permissions: [
+    { key: 'integrations.run', label: 'Run' },
+    { key: 'integrations.connect', label: 'Connect' },
+  ] },
+];
+const grants = {
+  owner: { 'invoices.send': true, 'invoices.approve': true, 'invoices.void': true, 'invoices.draft': true, 'integrations.run': true, 'integrations.connect': true },
+  admin: { 'invoices.send': true, 'invoices.approve': true, 'invoices.void': true, 'invoices.draft': true, 'integrations.run': true, 'integrations.connect': false },
+  staff: { 'invoices.send': false, 'invoices.approve': false, 'invoices.void': false, 'invoices.draft': false, 'integrations.run': false, 'integrations.connect': false },
+};
+const root = document.getElementById('root');
+function draw() {
+  root.replaceChildren(permissionGrid(h, {
+    groups, grants,
+    onChange: (role, key, allowed) => { grants[role][key] = allowed; draw(); },
+  }));
+}
+draw();
+</script>

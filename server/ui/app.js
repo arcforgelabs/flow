@@ -16,6 +16,7 @@ import { renderPriceList } from '/assets/ui/price-list.js';
 import { renderPriceReconcile } from '/assets/ui/price-reconcile.js';
 import { renderCustomFields } from '/assets/ui/custom-fields.js';
 import { renderJobs } from '/assets/ui/jobs.js';
+import { openPersonPermissions, renderPermissions } from '/assets/ui/permissions.js';
 import { renderReconcile } from '/assets/ui/reconcile.js';
 import { renderXeroImport } from '/assets/ui/xero-import.js';
 import { xeroUsage } from '/assets/ui/xero-usage.js';
@@ -30,9 +31,9 @@ const $ = (id) => document.getElementById(id);
 
 const ROLE_LABEL = { owner: 'Owner', admin: 'Admin', staff: 'Staff' };
 const ROLE_HINT = {
-  owner: 'Manages people, connections and every record.',
-  admin: 'Runs invoicing and connections day to day.',
-  staff: 'Works on jobs and invoices.',
+  owner: 'Manages people, permissions, connections and every record.',
+  admin: 'Runs invoicing day to day. An owner can allow more.',
+  staff: 'Works on jobs and invoices. An owner can allow more.',
 };
 
 // ── Clerk ──────────────────────────────────────────────────────────────────
@@ -155,8 +156,9 @@ const VIEWS = {
   'invoicing-settings': { label: 'Rules', icon: 'rules', render: (main, id) => renderInvoicingSettings(main, ui(), id) },
   automations: { label: 'Automations', icon: 'bolt', place: 'more', more: 'zap', render: (main) => renderAutomations(main, ui()) },
   'custom-fields': { label: 'Custom fields', icon: 'fields', place: 'more', more: 'form-input', render: (main) => renderCustomFields(main, ui()) },
-  integrations: { label: 'Integrations', icon: 'plug', place: 'more', more: 'plug', ownerOnly: true, render: (main, id) => (id ? renderIntegration(main, id) : renderIntegrations(main)) },
+  integrations: { label: 'Integrations', icon: 'plug', place: 'more', more: 'plug', allow: (session) => Boolean(session?.permissions?.['integrations.connect']), render: (main, id) => (id ? renderIntegration(main, id) : renderIntegrations(main)) },
   people: { label: 'People', icon: 'people', place: 'account', ownerOnly: true, render: renderPeople },
+  permissions: { label: 'Permissions', icon: 'key', place: 'account', ownerOnly: true, render: (main) => renderPermissions(main, ui()) },
   // Not in the sidebar: "Manage account" in the account menu opens the same
   // Clerk profile. The page stays for links and Search.
   // Opened from the Xero integration page: Xero invoices against Flow's own.
@@ -182,6 +184,7 @@ const ICON_PATHS = {
   sidebar: '<rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M9.5 4v16"/>',
   more: '<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>',
   palette: '<path d="M12 3a9 9 0 100 18c1.1 0 1.5-.8 1.5-1.6 0-1-.8-1.4-.8-2.4 0-.9.7-1.5 1.6-1.5H17a4 4 0 004-4c0-4.7-4-8.5-9-8.5z"/><circle cx="7.5" cy="11" r="1"/><circle cx="10" cy="7" r="1"/><circle cx="15" cy="7" r="1"/>',
+  key: '<circle cx="8" cy="15" r="4"/><path d="M11.5 15H21M17 15v3M20 15v2"/>',
 };
 
 function icon(name) {
@@ -255,9 +258,13 @@ document.addEventListener('click', (event) => {
 
 // Search, from the sidebar foot or Ctrl+K (⌘K): the pages this person may
 // open, invoices and jobs (search.js).
+function mayOpen(view) {
+  return view.allow ? view.allow(me) : !view.ownerOnly || me?.person.role === 'owner';
+}
+
 function search() {
   const views = Object.entries(VIEWS)
-    .filter(([, view]) => !view.ownerOnly || me?.person.role === 'owner')
+    .filter(([, view]) => mayOpen(view))
     .map(([name, view]) => ({ name, label: view.label, icon: view.icon }));
   openSearch({ h, flow, go, icon, views });
 }
@@ -291,7 +298,7 @@ const START_VIEW = 'invoices';
 // The view and, for one record, its id: /invoices/<id> is ['invoices', '<id>'].
 function currentView() {
   const [name, id = null] = location.pathname.replace(/^\/+|\/+$/g, '').split('/');
-  if (VIEWS[name] && (!VIEWS[name].ownerOnly || me?.person.role === 'owner')) return [name, id];
+  if (VIEWS[name] && mayOpen(VIEWS[name])) return [name, id];
   return [START_VIEW, null];
 }
 
@@ -365,7 +372,7 @@ function renderShell() {
   const items = [];
   const more = [];
   for (const [name, view] of Object.entries(VIEWS)) {
-    if (view.ownerOnly && me?.person.role !== 'owner') continue;
+    if (!mayOpen(view)) continue;
     if (view.sidebar === false || view.place === 'account') continue;
     if (view.place === 'more') more.push({ icon: view.more, text: view.label, run: () => { closeMenu(); go(`/${name}`); } });
     else items.push(h('a', { href: `/${name}`, 'data-nav': name, 'data-label': view.label, onclick: navigate }, icon(view.icon), h('span', { class: 'fx-nav__label' }, view.label)));
@@ -392,7 +399,7 @@ function renderShell() {
   // (the email when the account has no name). It opens the account menu.
   // People (owners) and Appearance live in the account menu.
   const accountItems = Object.entries(VIEWS)
-    .filter(([, view]) => view.place === 'account' && (!view.ownerOnly || me?.person.role === 'owner'))
+    .filter(([, view]) => view.place === 'account' && mayOpen(view))
     .map(([name, view]) => accountMenuItem(view.label, view.icon, () => go(`/${name}`)));
   const userButton = { afterSignOutUrl: '/sign-in', showName: true, customMenuItems: accountItems };
   $('search').replaceChildren(icon('search'));
@@ -443,6 +450,7 @@ async function renderPeople(main) {
     tableHost.replaceChildren(h('p', { class: 'fx-empty' }, 'The people list opens after a verified owner sign-in.'));
     return;
   }
+  tableHost.fxPage = main;
   await refreshPeople(tableHost);
 }
 
@@ -494,6 +502,7 @@ function personRow(person, host) {
       actions.push(h('button', { class: 'fx-btn fx-btn--primary fx-btn--sm', type: 'button', onclick: () => act(() => patch({ status: 'active' }), `${person.email} can sign in.`) }, 'Approve'));
     }
     const items = [];
+    items.push({ icon: 'key', text: 'Permissions', run: () => openPersonPermissions(host.fxPage, ui(), person) });
     if (person.invited && person.status === 'active') {
       items.push({ icon: 'mail', text: 'Email invite again', run: () => act(() => flow(`/api/people/${person.id}/invite`, { method: 'POST' }), `Invite emailed to ${person.email}.`) });
     }

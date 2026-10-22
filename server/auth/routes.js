@@ -17,6 +17,8 @@ import {
   setPersonView,
   updatePerson,
 } from './people.js';
+import { createPermissionRouter } from './permission-routes.js';
+import { permissionsFor } from './permissions.js';
 import { isPlainEmail } from './settings.js';
 import { APP_PATHS, appPage } from '../ui/app-page.js';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -86,7 +88,7 @@ export function createSignInRouter({ settings, db, clerk, personAuth, defaultFam
   });
 
   if (!signInOn) {
-    router.use(['/api/me', '/api/people'], (_req, res) => res.status(503).json({
+    router.use(['/api/me', '/api/people', '/api/permissions'], (_req, res) => res.status(503).json({
       ok: false,
       code: 'sign_in_not_configured',
       error: 'Sign-in is not configured on this installation (FLOW_AUTH is unset).',
@@ -94,10 +96,10 @@ export function createSignInRouter({ settings, db, clerk, personAuth, defaultFam
     return router;
   }
 
-  const { requireSession, requireOwner, ownerVerification } = personAuth;
+  const { requireSession, requireOwner, requirePermission, ownerVerification } = personAuth;
 
   router.get('/api/me', requireSession, async (req, res) => {
-    const body = { ok: true, person: publicPerson(req.person) };
+    const body = { ok: true, person: publicPerson(req.person), permissions: await permissionsFor(db, req.person) };
     if (req.person.role === 'owner') {
       const check = await ownerVerification(req.person, req.clerkAuth);
       body.ownerActions = { allowed: Boolean(check.verified), by: check.by ?? null };
@@ -138,9 +140,10 @@ export function createSignInRouter({ settings, db, clerk, personAuth, defaultFam
     }
   });
 
-  // Only an owner manages people.
+  // Only an owner manages people. people.manage cannot be granted, and the
+  // route still checks a verified owner sign-in.
   const people = express.Router();
-  people.use(requireSession, requireOwner, express.json({ limit: '16kb' }));
+  people.use(requireSession, requirePermission('people.manage'), requireOwner, express.json({ limit: '16kb' }));
   people.param('id', (_req, res, next, id) => (UUID.test(id) ? next() : res.status(404).json({ ok: false, code: 'not_found', error: 'person not found' })));
 
   people.get('/', async (_req, res) => {
@@ -232,5 +235,6 @@ export function createSignInRouter({ settings, db, clerk, personAuth, defaultFam
   });
 
   router.use('/api/people', people);
+  router.use('/api/permissions', createPermissionRouter({ db, personAuth, log }));
   return router;
 }

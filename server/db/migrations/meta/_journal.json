@@ -148,6 +148,13 @@
       "when": 1792507133665,
       "tag": "0020_custom_field_colours",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1792640555979,
+      "tag": "0021_permissions",
+      "breakpoints": true
     }
   ]
 }

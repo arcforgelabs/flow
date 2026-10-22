@@ -62,7 +62,7 @@ export function createSeazonaRouter({ db, personAuth, settings, log = console })
   const signedIn = personAuth
     ? [personAuth.requireSession]
     : [(_req, res) => res.status(503).json({ ok: false, code: 'sign_in_not_configured', error: 'Sign-in is not configured on this installation (FLOW_AUTH is unset).' })];
-  const manager = personAuth ? [...signedIn, personAuth.requireRole('owner', 'admin')] : signedIn;
+  const run = personAuth ? [...signedIn, personAuth.requirePermission('integrations.run')] : signedIn;
   const actor = (req) => (req.person?.id ? `person:${req.person.id}` : 'person:unknown');
   const json = express.json({ limit: MAX_UPLOAD });
   const csv = express.text({ type: ['text/csv', 'text/plain', 'application/csv'], limit: MAX_UPLOAD });
@@ -78,7 +78,7 @@ export function createSeazonaRouter({ db, personAuth, settings, log = console })
 
   router.get('/history/columns', ...signedIn, (req, res) => res.json({ ok: true, profile: 'invoice_lines', columns: describeColumns() }));
 
-  router.post('/history/batches', ...manager, csv, json, handle(log, async (req, res) => {
+  router.post('/history/batches', ...run, csv, json, handle(log, async (req, res) => {
     const body = typeof req.body === 'string' ? { csv: req.body, fileName: req.query.fileName } : (req.body ?? {});
     const batch = await stageBatch(db, {
       csv: body.csv,
@@ -96,21 +96,21 @@ export function createSeazonaRouter({ db, personAuth, settings, log = console })
     res.json({ ok: true, batch: await readBatch(db, req.params.id, { outcome: outcome || null, limit, offset }) });
   }));
 
-  router.post('/history/batches/:id/reconcile', ...manager, handle(log, async (req, res) => {
+  router.post('/history/batches/:id/reconcile', ...run, handle(log, async (req, res) => {
     res.json({ ok: true, batch: await reconcileBatch(db, req.params.id) });
   }));
 
-  router.post('/history/batches/:id/decisions', ...manager, json, handle(log, async (req, res) => {
+  router.post('/history/batches/:id/decisions', ...run, json, handle(log, async (req, res) => {
     res.json({ ok: true, batch: await decideJobs(db, req.params.id, req.body?.decisions, { by: actor(req) }) });
   }));
 
-  router.post('/history/batches/:id/apply', ...manager, handle(log, async (req, res) => {
+  router.post('/history/batches/:id/apply', ...run, handle(log, async (req, res) => {
     const batch = await applyBatch(db, req.params.id, { by: actor(req) });
     log.info?.(`[seazona] history import: batch ${batch.id} applied by ${actor(req)}: ${batch.applied} new, ${batch.updated} updated`);
     res.json({ ok: true, batch });
   }));
 
-  router.post('/history/batches/:id/cancel', ...manager, handle(log, async (req, res) => {
+  router.post('/history/batches/:id/cancel', ...run, handle(log, async (req, res) => {
     res.json({ ok: true, batch: await cancelBatch(db, req.params.id) });
   }));
 
@@ -120,13 +120,13 @@ export function createSeazonaRouter({ db, personAuth, settings, log = console })
     return id;
   };
 
-  router.post('/history/backfill', ...manager, json, handle(log, async (req, res) => {
+  router.post('/history/backfill', ...run, json, handle(log, async (req, res) => {
     const backfill = await startBackfill(db, { from: req.body?.from, through: req.body?.through ?? null, createdBy: actor(req), settings });
     log.info?.(`[seazona] history backfill from ${backfill.from} to ${backfill.through} started by ${actor(req)}`);
     res.status(201).json({ ok: true, backfill });
   }));
 
-  router.post('/history/backfill/stop', ...manager, handle(log, async (req, res) => {
+  router.post('/history/backfill/stop', ...run, handle(log, async (req, res) => {
     res.json({ ok: true, backfill: await stopBackfill(db) });
   }));
 
@@ -135,7 +135,7 @@ export function createSeazonaRouter({ db, personAuth, settings, log = console })
     res.json({ ok: true, ...(await listHistoryJobs(db, await organisation(), { state: state || null, limit, offset })) });
   }));
 
-  router.post('/history/ledger/:obligationId/release', ...manager, handle(log, async (req, res) => {
+  router.post('/history/ledger/:obligationId/release', ...run, handle(log, async (req, res) => {
     const row = await releaseHistoryJob(db, await organisation(), req.params.obligationId, { actor: actor(req) });
     log.info?.(`[seazona] history import: job ${row.sourceJobRef} released by ${actor(req)}`);
     res.json({ ok: true, job: { id: row.id, holdState: row.holdState } });

@@ -71,14 +71,14 @@ test('the sidebar shows daily work, Price list and Rules; More holds the rest; P
   const order = [...views.matchAll(/^  '?([a-z-]+)'?: \{/gm)].map((m) => m[1]);
   assert.deepEqual(order.slice(0, 5), ['jobs', 'invoices', 'reconcile', 'price-list', 'invoicing-settings']);
   for (const name of ['automations', 'custom-fields', 'integrations']) assert.match(views, new RegExp(`'?${name}'?: \\{[^\\n]*place: 'more'`));
-  for (const name of ['people', 'appearance']) assert.match(views, new RegExp(`${name}: \\{[^\\n]*place: 'account'`));
+  for (const name of ['people', 'permissions', 'appearance']) assert.match(views, new RegExp(`${name}: \\{[^\\n]*place: 'account'`));
   // No group headings in the sidebar.
   assert.doesNotMatch(app, /fx-nav__group/);
   // More is the shared row menu, opened under its left edge, and shows as
   // current while one of its pages is open.
   assert.match(app, /rowMenu\('More', more, \{ trigger: \[icon\('more'\), h\('span', \{ class: 'fx-nav__label' \}, 'More'\)\], className: 'fx-nav__more', align: 'start' \}\)/);
   assert.match(app, /setAttribute\('aria-current', VIEWS\[view\]\.place === 'more' \? 'page' : 'false'\)/);
-  // The account menu: People (owners), Appearance, then Report a problem.
+  // The account menu: People and Permissions (owners), Appearance, then Report a problem.
   assert.match(app, /customMenuItems: accountItems \}/);
   assert.match(app, /customMenuItems: \[\.\.\.accountItems, reportMenuItem\(openReport\)\]/);
   const kit = read('../server/ui/kit.js');

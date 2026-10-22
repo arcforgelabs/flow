@@ -237,7 +237,7 @@ describe('Clerk sign-in', { skip: skipWithoutDatabase }, () => {
     const adminToken = clerk.signIn(await clerk.findUserIdByEmail('admin@example.test'));
     const res = await request(app, '/api/people', { token: adminToken, method: 'POST', body: { email: 'x@example.test', role: 'owner' } });
     assert.equal(res.status, 403);
-    assert.equal(res.body.code, 'owner_required');
+    assert.equal(res.body.code, 'permission_required');
     assert.equal((await request(app, '/api/people', { token: adminToken })).status, 403);
   });
 

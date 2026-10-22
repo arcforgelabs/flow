@@ -18,6 +18,7 @@ them from its own copy.
 ## How Flow works
 
 - [Data model](DATA_MODEL.md) and the [data spine](DATA_SPINE.md) that every integration shares.
+- [Permissions](PERMISSIONS.md): what each role and person may do.
 - [Integrations](INTEGRATIONS.md): [Xero](XERO.md), [Seazona](SEAZONA.md) and [Sentry](SENTRY.md).
 - [Invoice rules](INVOICE_RULES.md) and [automations](AUTOMATIONS.md).
 
