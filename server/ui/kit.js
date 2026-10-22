@@ -187,24 +187,36 @@ export function toast(text, tone = 'info', { stay = false } = {}) {
 }
 
 // A modal built on <dialog>: resolves with the button's value, or null.
-export function dialog({ title, body, confirm, tone = 'primary' }) {
+export function dialog({ title, body, confirm, tone = 'primary', choices = null }) {
   return new Promise((resolve) => {
+    const choiceList = choices
+      ? h('div', { class: 'fx-sheet__choices', role: 'group', 'aria-label': title },
+        choices.map((choice) => h('button', { class: 'fx-sheet__choice', type: 'submit', value: choice.value },
+          h('span', {}, choice.label),
+          choice.detail == null ? null : h('span', { class: 'fx-tabs__count' }, String(choice.detail)))))
+      : null;
+    const actions = choices ? null : h('div', { class: 'fx-dialog__actions' },
+      h('button', { class: 'fx-btn fx-btn--ghost', value: 'cancel', type: 'submit', formnovalidate: true }, 'Cancel'),
+      h('button', { class: `fx-btn fx-btn--${tone}`, value: 'ok', type: 'submit' }, confirm));
     const form = h('form', { method: 'dialog', class: 'fx-dialog__form' },
       h('h2', { class: 'fx-dialog__title' }, title),
-      body,
-      h('div', { class: 'fx-dialog__actions' },
-        h('button', { class: 'fx-btn fx-btn--ghost', value: 'cancel', type: 'submit', formnovalidate: true }, 'Cancel'),
-        h('button', { class: `fx-btn fx-btn--${tone}`, value: 'ok', type: 'submit' }, confirm)));
+      choiceList ?? body,
+      actions);
     const element = applyPhoneRule(h('dialog', { class: 'fx-dialog' }, form), 'dialog');
     element.addEventListener('close', () => {
-      const ok = element.returnValue === 'ok';
-      const data = ok ? new FormData(form) : null;
+      const value = element.returnValue;
       element.remove();
-      resolve(ok ? data : null);
+      if (choices) {
+        resolve(value && value !== 'cancel' ? value : null);
+        return;
+      }
+      const ok = value === 'ok';
+      resolve(ok ? new FormData(form) : null);
     });
+    if (choices) element.addEventListener('click', (event) => { if (event.target === element) element.close(); });
     document.body.append(element);
     element.showModal();
-    element.querySelector('input, select, button[value="ok"]')?.focus();
+    element.querySelector(choices ? '.fx-sheet__choice' : 'input, select, button[value="ok"]')?.focus();
   });
 }
 

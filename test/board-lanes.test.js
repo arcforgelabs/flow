@@ -11,3 +11,11 @@ test('board lanes keep one fixed phone width and never stretch to fill a wide sc
   assert.match(board, /justify-content: start;/);
   assert.doesNotMatch(board, /1fr/, 'a lane must not take a share of spare width');
 });
+
+test('on a phone one board lane fills the width and snaps', () => {
+  const phone = css.slice(css.indexOf('/* Phone: one lane fills the width'));
+  assert.match(phone, /@media \(max-width: 639px\)/);
+  assert.match(phone, /\.fx-main--board \.fx-board \{[^}]*grid-auto-columns: 100%/);
+  assert.match(phone, /scroll-snap-type: x mandatory/);
+  assert.match(phone, /\.fx-main--board \.fx-board__head \{ display: none; \}/);
+});

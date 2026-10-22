@@ -139,9 +139,11 @@ The page at `/sign-in`, `/people`, `/account` and `/appearance`
   the choice stays in the browser. On narrow screens the sidebar is a bar
   across the top (menu button, Flow mark, account photo, Search), and the menu
   button opens the pages as a panel below the bar.
-- **Jobs**: the board (one lane per group, a fixed phone width that never
-  stretches, with empty space past the last lane on a wide screen, filling the
-  window to its bottom edge, each lane scrolling inside itself) or the list.
+- **Jobs**: the board (one lane per group) or the list. On a phone one lane
+  fills the width and snaps when swiped; stage tabs with counts sit in the
+  toolbar, and a long press opens Move to. On a wider screen each lane is a
+  fixed width that never stretches, with empty space past the last lane,
+  filling the window to its bottom edge, each lane scrolling inside itself.
   The toolbar has Group, Sort and Filter at the left, and the search icon
   (it opens into a box, `findBox`) and Board/List at the right. Each opens a panel of rows, laid out as
   ClickUp's, in Flow's own look; each row has a bin that deletes it, and
