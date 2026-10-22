@@ -13,7 +13,7 @@ import { jobChangeReview } from '/assets/ui/job-change.js';
 import { columnTable, dateCell, fieldColumn, rowCells, viewSaver } from '/assets/ui/columns.js';
 import { fieldGroup, filterCount, filterJobs, INVOICE_COLUMNS, invoiceColumnsView } from '/assets/ui/job-view.js';
 import { INVOICE_FILTER_FIELDS, invoiceFilterKind, invoiceValue, normaliseInvoicesView } from '/assets/ui/list-views.js';
-import { listPager, PAGE_SIZES } from '/assets/ui/pager.js';
+import { listPager, pager, PAGE_SIZES } from '/assets/ui/pager.js';
 import { savedViews } from '/assets/ui/saved-views.js';
 import { findBox, today, viewBar } from '/assets/ui/view-bar.js';
 
@@ -629,23 +629,21 @@ function saveNav(nav) {
 function navBar(ui, invoice) {
   const { h, go, flow } = ui;
   const id = invoice?.id ?? null;
-  const back = () => { sessionStorage.setItem(NAV_BACK, '1'); go('/invoices'); };
-  const step = (to, label, path) => {
-    const button = h('button', {
-      class: 'fx-pager__step', type: 'button', disabled: !to, 'aria-label': label, title: label,
-      onclick: () => go(`/invoices/${to}`),
-    });
-    button.innerHTML = `<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="${path}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
-    return button;
-  };
-  const bar = h('nav', { class: 'fx-pager', 'aria-label': 'Invoices' },
-    h('button', { class: 'fx-pager__back', type: 'button', onclick: back }, '← Back'));
+  const { element: bar, draw } = pager(h, {
+    label: 'Invoices',
+    back: () => { sessionStorage.setItem(NAV_BACK, '1'); go('/invoices'); },
+  });
   const fill = (ids) => {
     const at = ids.indexOf(id);
     if (at < 0) return false;
-    bar.replaceChildren(bar.firstChild,
-      h('span', { class: 'fx-pager__count' }, `${at + 1} of ${ids.length}`),
-      h('span', { class: 'fx-pager__steps' }, step(ids[at - 1], 'Previous invoice', 'M14.5 6l-6 6 6 6'), step(ids[at + 1], 'Next invoice', 'M9.5 6l6 6-6 6')));
+    const to = (other) => (other ? () => go(`/invoices/${other}`) : null);
+    draw({
+      count: `${at + 1} of ${ids.length}`,
+      prev: to(ids[at - 1]),
+      next: to(ids[at + 1]),
+      prevLabel: 'Previous invoice',
+      nextLabel: 'Next invoice',
+    });
     return true;
   };
   const tab = invoice?.tab ?? null;
