@@ -13,11 +13,12 @@ export function migrationsTable(adapter) {
   return `__drizzle_migrations_${adapter.id.replaceAll('-', '_')}`;
 }
 
-// The adapter's declared tables that do not exist.
+// The adapter's declared tables that do not exist where Flow's connections
+// look (FLOW_SEARCH_PATH, server/db/index.js).
 export async function missingAdapterTables(db, adapter) {
   const missing = [];
   for (const table of adapter.schema.tables) {
-    const { rows } = await db.execute(sql`select to_regclass(${`public.${table}`}) is null as missing`);
+    const { rows } = await db.execute(sql`select to_regclass(${`"${table.replaceAll('"', '""')}"`}) is null as missing`);
     if (rows[0].missing) missing.push(table);
   }
   return missing;

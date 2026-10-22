@@ -108,7 +108,7 @@ describe('import from the earlier Flow codebase: write', { skip: skipWithoutData
   });
 
   test('the command reads the source read-only and moves the records', async () => {
-    await handle.pool.query('DROP SCHEMA IF EXISTS drizzle CASCADE; DROP SCHEMA public CASCADE; CREATE SCHEMA public;');
+    await handle.pool.query('DROP SCHEMA IF EXISTS drizzle CASCADE; DROP SCHEMA IF EXISTS flow CASCADE; DROP SCHEMA public CASCADE; CREATE SCHEMA public;');
     await handle.pool.query(`
       DROP SCHEMA IF EXISTS earlier CASCADE;
       CREATE SCHEMA earlier;
@@ -125,7 +125,7 @@ describe('import from the earlier Flow codebase: write', { skip: skipWithoutData
 
     const dry = await run(process.execPath, [cli, '--dry-run'], { env });
     assert.match(dry.stdout, /"priceItems": 1/);
-    const { rows: [{ exists }] } = await handle.pool.query("select to_regclass('public.organisations') is not null as exists");
+    const { rows: [{ exists }] } = await handle.pool.query("select to_regclass('organisations') is not null as exists");
     assert.equal(exists, false, 'a dry run writes nothing');
 
     const real = await run(process.execPath, [cli, '--organisation', 'Example Lab'], { env });

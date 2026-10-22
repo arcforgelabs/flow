@@ -61,7 +61,7 @@ removes each.
 ## Run it
 
 ```sh
-# A throwaway database: the suite drops and remakes its public schema.
+# A throwaway database: the suite drops Flow's schema and remakes its public schema.
 FLOW_TEST_DATABASE_URL=postgres://flow:flow@localhost:5432/flow_mobile npm run test:mobile
 # Without WebKit installed, Chromium only:
 MOBILE_ENGINES=chromium npm run test:mobile

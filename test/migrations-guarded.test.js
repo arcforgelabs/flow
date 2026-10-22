@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { migrateEverything } from '../server/db/migrate-all.js';
 import { adapters } from '../server/integrations/adapters.js';
 import { migrationsTable } from '../server/integrations/schema.js';
-import { GUARD_FROM, guardSql, migrationFiles } from '../scripts/db-guard-migrations.js';
+import { GUARD_FROM, expectedSql, guardSql, inFlowSchema, migrationFiles, namesFlowSchema } from '../scripts/db-guard-migrations.js';
 import { freshDatabase, skipWithoutDatabase } from './support/db.js';
 
 const journal = JSON.parse(readFileSync(fileURLToPath(new URL('../server/db/migrations/meta/_journal.json', import.meta.url)), 'utf8'));
@@ -19,10 +19,21 @@ test('every migration from GUARD_FROM on is guarded and only adds', () => {
   assert.ok(files.length > 0);
   for (const file of files) {
     const sql = readFileSync(file, 'utf8');
-    const { sql: guarded, problems } = guardSql(sql);
+    const { sql: guarded, problems } = expectedSql(file, sql);
     assert.deepEqual(problems, [], file);
     assert.equal(guarded, sql, `${file} is not guarded: run node scripts/db-guard-migrations.js`);
   }
+});
+
+test('migrations from 0021 on, and every adapter\'s, name Flow\'s tables in "flow"', () => {
+  const files = migrationFiles();
+  assert.ok(files.some((file) => /0021_flow_schema\.sql$/.test(file) && namesFlowSchema(file)));
+  assert.ok(files.some((file) => /0020_[^/]*\.sql$/.test(file) && !namesFlowSchema(file)), 'older core migrations stay as they ran');
+  assert.ok(files.some((file) => /integrations\/xero\//.test(file) && namesFlowSchema(file)));
+  assert.equal(
+    inFlowSchema('ALTER TABLE "a" ADD CONSTRAINT "f" FOREIGN KEY ("o") REFERENCES "public"."organisations"("id");'),
+    'ALTER TABLE "a" ADD CONSTRAINT "f" FOREIGN KEY ("o") REFERENCES "flow"."organisations"("id");',
+  );
 });
 
 test('guardSql refuses drops and renames', () => {
@@ -34,12 +45,12 @@ test('guardSql refuses drops and renames', () => {
 async function schemaShape(pool) {
   const { rows } = await pool.query(`
     select 'c' as k, table_name || '.' || column_name || ' ' || data_type || ' ' || is_nullable || ' ' || coalesce(column_default, '') as v
-      from information_schema.columns where table_schema = 'public'
+      from information_schema.columns where table_schema = 'flow'
     union all
     select 'k', conrelid::regclass::text || ' ' || conname || ' ' || pg_get_constraintdef(oid)
-      from pg_constraint where connamespace = 'public'::regnamespace
+      from pg_constraint where connamespace = 'flow'::regnamespace
     union all
-    select 'i', indexdef from pg_indexes where schemaname = 'public'
+    select 'i', indexdef from pg_indexes where schemaname = 'flow'
     order by 1, 2`);
   return rows.map((row) => `${row.k} ${row.v}`);
 }

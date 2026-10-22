@@ -168,8 +168,13 @@ read a renamed column as a drop. So:
 - **The rule**: at "Development database changes detected", always press
   Cancel. The same rule as
   [Field](https://github.com/arcforgelabs/field/blob/main/docs/REPLIT.md).
-- **The workspace database follows production**, so the prompt does not
-  appear. The tables differ only when the workspace has fewer migrations
+- **Flow's tables are not in `public`.** Replit compares only the `public`
+  schema, and Flow keeps its tables in `flow` (migration `0021`,
+  `docs/DATA_MODEL.md`), so a difference between the two databases'
+  migrations shows no list. The same rule holds for every app on Replit:
+  keep the app's tables out of `public`.
+- **The workspace database follows production** as well, so the two
+  databases also match in `flow`. The tables differ only when the workspace has fewer migrations
   than production (production gained a release's migrations when it
   started) or more (the workspace applied migrations production does not
   run).
@@ -314,6 +319,21 @@ says it can (`# FLOW_DEPLOY_DRIVER=2`). So a fix to those steps reaches an
 installation with the next release, without a pull. A release from before
 this builds the old way. As in OpenClaw's updater, the part that cannot
 update itself (the fetch and its checks) stays small.
+
+### Moving to the `flow` schema (once)
+
+The release with migration `0021` moves an installation's tables from
+`public` to `flow`. Until both databases ran it, `public` still differs once:
+
+1. Before publishing that release, press Run. Its last line must say the
+   workspace database matches production.
+2. Publish. Replit shows no list; production moves its tables when it starts.
+3. Press Run again (or leave the workspace open for ten minutes): the
+   workspace follows production and moves its tables too. A publish before
+   that may list tables to create in `public`: press Cancel.
+
+After that, `public` is empty in both, and no release's migrations show a
+list again.
 
 ### Later: removing a table or column
 

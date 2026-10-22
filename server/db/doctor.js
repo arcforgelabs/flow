@@ -82,7 +82,7 @@ export async function diagnoseDatabase(pool, { adapters = [] } = {}) {
     .map((journal) => ({ journal: journal.id, applied: applied[journal.id], shipped: journal.tags.length, next: journal.tags.slice(applied[journal.id]) }));
 
   const { rows } = await pool.query(
-    "select table_name, column_name from information_schema.columns where table_schema = 'public'",
+    "select table_name, column_name from information_schema.columns where table_schema = current_schema()",
   );
   const actual = new Map();
   for (const row of rows) {
