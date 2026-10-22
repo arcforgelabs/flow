@@ -995,13 +995,74 @@ th:hover > .fx-th-grip::after { background: var(--t-brd-hi); }
 .fx-task__activity li::after { content: ""; position: absolute; left: 5.5px; top: 16px; bottom: 0; width: 1px; background: var(--fx-line); }
 .fx-task__activity li:last-child::after { display: none; }
 .fx-task__activity time { display: block; margin-top: 1px; color: var(--t-mute); font-size: 11.5px; }
-@media (max-width: 760px) {
-  .fx-dialog.fx-task { width: 100vw; max-width: 100vw; height: 100vh; max-height: 100vh; margin: 0; border-radius: 0; }
-  .fx-task__grid { grid-template-columns: minmax(0, 1fr); }
-  .fx-task__main { padding: 16px; }
-  .fx-task__fields { grid-template-columns: minmax(0, 1fr); }
-  .fx-task__grid:has(> .fx-sidecar [data-tab="fix"][aria-selected="true"]) { grid-template-columns: minmax(0, 1fr); }
-  .fx-task__side { border-top: 1px solid var(--fx-line); border-left: 0; }
+/* A record's phone bar and foot. Hidden above a phone, so the desk panel and
+   the invoice header stay as they are. */
+.fx-record, .fx-record__foot { display: none; }
+@media (max-width: 639px) {
+  /* The job panel is the whole screen. Back, the client and the next job
+     sit in the bar; Activity and Fix are tabs under it; the action is fixed
+     at the foot, in thumb reach. */
+  .fx-dialog.fx-task {
+    display: flex; flex-direction: column; inset: 0; width: 100%; max-width: none;
+    height: 100%; max-height: none; margin: 0; border-radius: 0; overflow: hidden;
+  }
+  .fx-dialog.fx-task > .fx-record { flex: none; }
+  .fx-dialog.fx-task .fx-task__grid {
+    display: flex; flex-direction: column; flex: 1; min-height: 0; overflow-y: auto;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .fx-dialog.fx-task .fx-task__main { padding: 16px; }
+  .fx-dialog.fx-task .fx-task__fields { grid-template-columns: minmax(0, 1fr); }
+  .fx-dialog.fx-task .fx-task__head, .fx-dialog.fx-task .fx-task__title { display: none; }
+  .fx-dialog.fx-task .fx-task__grid:has(> .fx-sidecar [data-tab="fix"][aria-selected="true"]) { grid-template-columns: minmax(0, 1fr); }
+  .fx-task__grid > .fx-sidecar__head {
+    position: sticky; top: 0; z-index: 2; flex: none;
+    background: var(--t-paper); border-bottom: 1px solid var(--fx-line-soft);
+  }
+  .fx-task__grid > .fx-sidecar__head .fx-sidecar__close, .fx-sidecar--page .fx-sidecar__close { display: none; }
+  .fx-task__grid > .fx-sidecar__head .fx-sidecar__tab, .fx-sidecar--page .fx-sidecar__tab { min-width: 44px; min-height: 44px; }
+  .fx-sidecar--page { border-left: 0; border-top: 1px solid var(--fx-line); }
+  .fx-sidecar--page .fx-sidecar__body { scroll-margin-top: 52px; }
+  .fx-dialog.fx-task .fx-task__actions:not(:empty) {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 5; margin: 0;
+    padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
+    background: var(--t-paper); border-top: 1px solid var(--fx-line);
+  }
+  .fx-dialog.fx-task .fx-task__actions .fx-btn { flex: 1; min-height: 44px; }
+  .fx-dialog.fx-task:has(.fx-task__actions:not(:empty)) .fx-task__grid,
+  .fx-dialog.fx-task:has([data-action="accept"]) .fx-task__grid { padding-bottom: 68px; }
+  .fx-dialog.fx-task:has([data-action="accept"]) .fx-task__actions { display: none; }
+  .fx-invoice [data-action="accept"], .fx-dialog.fx-task [data-action="accept"] {
+    position: fixed; left: 8px; right: 8px; bottom: 8px; z-index: 6; width: auto; min-height: 44px;
+  }
+  .fx-record {
+    display: flex; align-items: center; gap: 2px; min-height: 48px; padding: 2px 4px;
+    background: var(--t-paper); border-bottom: 1px solid var(--fx-line-soft);
+  }
+  .fx-record__back, .fx-record__step, .fx-record__menu {
+    flex: none; display: inline-grid; place-items: center; width: 44px; height: 44px;
+    min-width: 44px; min-height: 44px; padding: 0; border: 0; border-radius: var(--t-radius);
+    background: transparent; color: var(--t-strong); cursor: pointer;
+  }
+  .fx-record__back:disabled, .fx-record__step:disabled { opacity: 0.35; cursor: default; }
+  .fx-record__back:focus-visible, .fx-record__step:focus-visible, .fx-record__menu:focus-visible { box-shadow: var(--fx-focus); }
+  .fx-record__menu[hidden] { display: none; }
+  .fx-record__title, .fx-record .fx-title {
+    flex: 1; min-width: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    color: var(--t-strong); font: 600 16px/1.2 var(--t-body); letter-spacing: 0;
+  }
+  .fx-record .fx-ph { flex: 1; min-width: 0; min-height: 0; gap: 8px; background: transparent; }
+  .fx-record .fx-ph__text { min-width: 0; }
+  .fx-record__end { display: flex; flex: none; align-items: center; }
+  .fx-record__foot:not([hidden]) {
+    display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: 5; gap: 8px;
+    padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
+    background: var(--t-paper); border-top: 1px solid var(--fx-line);
+  }
+  .fx-record__foot .fx-btn { flex: 1; min-height: 44px; }
+  .fx-invoice > .fx-pager, .fx-invoice .fx-ph__actions { display: none; }
+  .fx-invoice:has(.fx-record__foot:not([hidden])), .fx-invoice:has([data-action="accept"]) { padding-bottom: 72px; }
+  .fx-invoice:has([data-action="accept"]) .fx-record__foot { display: none; }
 }
 
 /* ── Dialog ─────────────────────────────────────────────────────────────── */
@@ -1507,15 +1568,13 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
 .fx-cfs__delete { color: var(--t-danger); background: color-mix(in srgb, var(--t-danger) 12%, transparent); }
 .fx-cfs__delete:hover { background: color-mix(in srgb, var(--t-danger) 28%, transparent); }
 .fx-cfs__delete .fx-lucide { width: 16px; height: 16px; }
-@media (max-width: 720px) {
+@media (max-width: 639px) {
   .fx-cfm { grid-template-columns: minmax(0, 1fr) 36px 32px; column-gap: 8px; }
   .fx-cfm .fx-cfm__by, .fx-cfm .fx-cfm__date, .fx-cfm .fx-cfm__where { display: none; }
   .fx-cfm__head, .fx-cfm__row { padding-left: 16px; }
   .fx-cfm__create { padding-left: 16px; }
   .fx-cfm__search { flex: 1 1 100%; width: auto; }
   .fx-cfm__edit { display: none !important; }
-}
-@media (max-width: 639px) {
   /* Custom fields uses the same phone slots as a column list: name and the
      menu on line 1, up to three facts on line 2, 56px. */
   .fx-cfm__row {

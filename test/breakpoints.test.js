@@ -9,8 +9,6 @@ import { test } from 'node:test';
 // list. Never add one.
 const EDGES = new Set(['max-width: 639px', 'min-width: 640px', 'max-width: 1023px', 'min-width: 1024px']);
 const OLDER = new Map([
-  ['max-width: 720px', 'job panel, custom fields manager (#283)'],
-  ['max-width: 760px', 'job panel (#283)'],
   ['max-width: 820px', 'navigation (#288)'],
   ['min-width: 821px', 'navigation (#288)'],
   ['max-width: 900px', 'Integrations page (#287)'],

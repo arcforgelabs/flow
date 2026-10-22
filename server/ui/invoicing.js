@@ -10,6 +10,9 @@ import { bulkBar } from '/assets/ui/bulk-bar.js';
 import { draftNote, sendModeNote } from '/assets/ui/invoice-notes.js';
 import { caseNumber } from '/assets/ui/job-board.js';
 import { jobChangeReview } from '/assets/ui/job-change.js';
+import { rowMenu } from '/assets/ui/kit.js';
+import { isPhone, WIDTHS } from '/assets/ui/mobile.js';
+import { recordBar, watchPhonePrimary } from '/assets/ui/sidecar.js';
 import { columnTable, dateCell, fieldColumn, rowCells, viewSaver } from '/assets/ui/columns.js';
 import { fieldGroup, filterCount, filterJobs, INVOICE_COLUMNS, invoiceColumnsView } from '/assets/ui/job-view.js';
 import { INVOICE_FILTER_FIELDS, invoiceFilterKind, invoiceValue, normaliseInvoicesView } from '/assets/ui/list-views.js';
@@ -596,10 +599,12 @@ function saveNav(nav) {
 // The bar above one invoice: Back to the list as it was, and the previous and
 // next invoice of that list. An invoice opened from elsewhere (the job board,
 // search, a link) steps through its own tab, read once here.
-function navBar(ui, invoice) {
+function navBar(ui, invoice, title = 'Invoice') {
   const { h, go, flow } = ui;
   const id = invoice?.id ?? null;
   const back = () => { sessionStorage.setItem(NAV_BACK, '1'); go('/invoices'); };
+  const ends = { prev: null, next: null };
+  const goTo = (key) => { if (ends[key]) go(`/invoices/${ends[key]}`); };
   const step = (to, label, path) => {
     const button = h('button', {
       class: 'fx-pager__step', type: 'button', disabled: !to, 'aria-label': label, title: label,
@@ -608,14 +613,27 @@ function navBar(ui, invoice) {
     button.innerHTML = `<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="${path}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
     return button;
   };
+  const record = recordBar(h, {
+    title,
+    label: 'Invoices',
+    onBack: back,
+    prev: { label: 'Previous invoice', disabled: true, onclick: () => goTo('prev') },
+    next: { label: 'Next invoice', disabled: true, onclick: () => goTo('next') },
+  });
   const bar = h('nav', { class: 'fx-pager', 'aria-label': 'Invoices' },
     h('button', { class: 'fx-pager__back', type: 'button', onclick: back }, '← Back'));
   const fill = (ids) => {
     const at = ids.indexOf(id);
     if (at < 0) return false;
+    ends.prev = ids[at - 1] ?? null;
+    ends.next = ids[at + 1] ?? null;
+    record.setSteps(
+      { label: 'Previous invoice', disabled: !ends.prev, onclick: () => goTo('prev') },
+      { label: 'Next invoice', disabled: !ends.next, onclick: () => goTo('next') },
+    );
     bar.replaceChildren(bar.firstChild,
       h('span', { class: 'fx-pager__count' }, `${at + 1} of ${ids.length}`),
-      h('span', { class: 'fx-pager__steps' }, step(ids[at - 1], 'Previous invoice', 'M14.5 6l-6 6 6 6'), step(ids[at + 1], 'Next invoice', 'M9.5 6l6 6-6 6')));
+      h('span', { class: 'fx-pager__steps' }, step(ends.prev, 'Previous invoice', 'M14.5 6l-6 6 6 6'), step(ends.next, 'Next invoice', 'M9.5 6l6 6-6 6')));
     return true;
   };
   const tab = invoice?.tab ?? null;
@@ -627,7 +645,60 @@ function navBar(ui, invoice) {
       try { sessionStorage.setItem('flow_invoice_tab', tab); } catch { /* Back opens the last tab */ }
     }).catch(() => { /* Back only */ });
   }
-  return bar;
+  return { pager: bar, record };
+}
+
+// A menu entry that presses a header button. Hidden and foot actions are skipped.
+function menuEntry(button, icon, skip) {
+  if (!button || button.hidden || skip.has(button)) return null;
+  return {
+    icon,
+    text: button.textContent.trim(),
+    tone: button.classList.contains('fx-btn--danger') ? 'danger' : undefined,
+    run: () => button.click(),
+  };
+}
+
+// The phone record: the shared bar, the primary action in the foot, and the
+// other actions in ⋯. Above a phone the header and the pager stay as they
+// are; the bar and the foot are hidden by CSS. The page's h1 moves into the
+// bar so the phone suite still finds the invoice title.
+function mountRecord(ui, invoice, header, primaryOf, menuOf) {
+  const { h } = ui;
+  const titleNode = header.querySelector('h1');
+  const nav = navBar(ui, invoice, titleNode.textContent);
+  const slot = nav.record.querySelector('.fx-record__title');
+  const foot = h('div', { class: 'fx-record__foot', hidden: true });
+  const items = [];
+  const [menuButton, menuPanel] = rowMenu('More', items, { className: 'fx-record__menu' });
+  nav.record.setMenu(menuButton);
+  const home = header.querySelector('.fx-ph__actions');
+  // The page header is the bar's title, so the phone suite still sees it.
+  // Above a phone it stays above the invoice, and the bar is hidden.
+  const placeHeader = () => {
+    const end = nav.record.querySelector('.fx-record__end');
+    if (!isPhone()) {
+      slot.hidden = false;
+      titleNode.removeAttribute('title');
+      if (header.parentElement === nav.record) nav.pager.after(header);
+      return;
+    }
+    slot.hidden = true;
+    titleNode.title = titleNode.textContent;
+    if (header.parentElement !== nav.record) nav.record.insertBefore(header, end);
+  };
+  const placeMenu = () => {
+    const skip = new Set([primaryOf()].filter(Boolean));
+    items.length = 0;
+    if (isPhone()) for (const entry of menuOf(skip)) if (entry) items.push(entry);
+    menuButton.hidden = items.length === 0;
+  };
+  const placePrimary = home ? watchPhonePrimary(home, foot, primaryOf) : () => {};
+  const sync = () => { placeHeader(); placeMenu(); placePrimary(); };
+  sync();
+  queueMicrotask(sync);
+  if (typeof matchMedia === 'function') matchMedia(WIDTHS.phone).addEventListener('change', sync);
+  return { pager: nav.pager, record: nav.record, foot, menuPanel, sync };
 }
 
 // After a send, an Approve or a Save that makes a Pending invoice Ready, the
@@ -933,7 +1004,11 @@ function draftView(invoice, ui, context, redraw) {
   }, 'Save');
   const opened = JSON.stringify(body());
   const changed = () => !isNew && JSON.stringify(body()) !== opened;
-  const watchChanges = () => { if (!keepsSave) saveButton.hidden = !changed(); };
+  let syncRecord = () => {};
+  const watchChanges = () => {
+    if (!keepsSave) saveButton.hidden = !changed();
+    syncRecord();
+  };
   // With an accounting system on, a ready invoice is sent there: Flow issues
   // it and queues it, the same as Send all ready. With none, Flow issues it
   // and keeps it. A Pending draft has no send: fix its problem first.
@@ -1025,11 +1100,24 @@ function draftView(invoice, ui, context, redraw) {
     if (banner) boxes[name].setAttribute('aria-describedby', banner.id);
   }
 
+  const previewBtn = isNew ? null : previewButton(ui, invoice.id, 'Shows the saved invoice.');
+  const showAccept = Boolean(jobChange?.canAccept && context.canIssue);
+  const header = ui.pageHeader(isNew ? 'New invoice' : ready ? 'Ready invoice' : 'Pending invoice', {
+    actions: [fromJob, previewBtn, saveButton, sendButton ?? issueButton].filter(Boolean),
+  });
+  const primaryOf = () => (showAccept ? null : (sendButton ?? issueButton ?? (saveButton.hidden ? null : saveButton)));
+  const chrome = mountRecord(ui, invoice, header, primaryOf, (skip) => [
+    menuEntry(fromJob, 'briefcase', skip),
+    menuEntry(previewBtn, 'eye', skip),
+    menuEntry(saveButton, 'check', skip),
+    menuEntry(sendButton, 'mail', skip),
+    menuEntry(issueButton, 'check', skip),
+  ]);
+  syncRecord = chrome.sync;
   return [
-    navBar(ui, invoice),
-    ui.pageHeader(isNew ? 'New invoice' : ready ? 'Ready invoice' : 'Pending invoice', {
-      actions: [fromJob, isNew ? null : previewButton(ui, invoice.id, 'Shows the saved invoice.'), saveButton, sendButton ?? issueButton].filter(Boolean),
-    }),
+    chrome.record,
+    chrome.pager,
+    header,
     draftNote(to, invoice) ? ui.notice(draftNote(to, invoice), 'warn') : null,
     ...problems,
     h('div', { class: 'fx-invoice__grid' },
@@ -1050,6 +1138,8 @@ function draftView(invoice, ui, context, redraw) {
             h('button', { class: 'fx-btn fx-btn--ghost fx-btn--sm', type: 'button', onclick: () => { lines.push({ description: '', quantity: 1, unitAmountCents: null, taxCode: 'GST', priceItemId: null }); drawLines(); } }, '+ Add line'),
             totalsHost))),
       h('aside', { class: 'fx-invoice__aside' }, linkedCard(ui, invoice))),
+    chrome.foot,
+    chrome.menuPanel,
   ].map((part) => {
     // Any edit on the page shows Save changes; undoing it hides it again.
     for (const kind of ['input', 'change', 'click']) part?.addEventListener?.(kind, () => setTimeout(watchChanges));
@@ -1126,20 +1216,27 @@ function issuedView(invoice, ui, context, redraw) {
       h('p', {}, 'The number stays used. A void invoice cannot be used again.'),
       live ? h('p', { class: 'fx-problem' }, `Xero still holds it as ${xeroStatus.label.replace(/ in Xero$/, '').toLowerCase()}${xeroStatus.xero.number ? ` (${xeroStatus.xero.number})` : ''}. Flow does not change Xero: void it in Xero too.`) : null);
   };
-  const actions = invoice.status === 'issued' && context.canIssue ? [
-    h('button', {
-      class: 'fx-btn fx-btn--ghost fx-btn--danger', type: 'button',
-      onclick: () => act('void', `${invoice.number} is void.`, { title: `Void ${invoice.number}?`, body: voidBody(), confirm: 'Void', tone: 'danger' }),
-    }, 'Void'),
-    h('button', { class: 'fx-btn', type: 'button', onclick: () => act('revise', `${invoice.number} is a draft again.`) }, 'Revise'),
-  ] : [];
+  const voidButton = invoice.status === 'issued' && context.canIssue ? h('button', {
+    class: 'fx-btn fx-btn--ghost fx-btn--danger', type: 'button',
+    onclick: () => act('void', `${invoice.number} is void.`, { title: `Void ${invoice.number}?`, body: voidBody(), confirm: 'Void', tone: 'danger' }),
+  }, 'Void') : null;
+  const reviseButton = invoice.status === 'issued' && context.canIssue
+    ? h('button', { class: 'fx-btn', type: 'button', onclick: () => act('revise', `${invoice.number} is a draft again.`) }, 'Revise') : null;
+  const preview = previewButton(ui, invoice.id);
+  const header = h('header', { class: 'fx-ph' },
+    h('div', { class: 'fx-ph__text' },
+      h('h1', { class: 'fx-title' }, invoice.number),
+      h('span', { class: 'fx-status', 'data-tone': TAB_TONE[invoice.tab] }, TAB_LABEL[invoice.tab] ?? 'Approved')),
+    h('div', { class: 'fx-ph__actions' }, [voidButton, reviseButton, preview, send].filter(Boolean)));
+  const chrome = mountRecord(ui, invoice, header, () => send, (skip) => [
+    menuEntry(voidButton, 'ban', skip),
+    menuEntry(reviseButton, 'pencil', skip),
+    menuEntry(preview, 'eye', skip),
+  ]);
   return [
-    navBar(ui, invoice),
-    h('header', { class: 'fx-ph' },
-      h('div', { class: 'fx-ph__text' },
-        h('h1', { class: 'fx-title' }, invoice.number),
-        h('span', { class: 'fx-status', 'data-tone': TAB_TONE[invoice.tab] }, TAB_LABEL[invoice.tab] ?? 'Approved')),
-      h('div', { class: 'fx-ph__actions' }, actions, previewButton(ui, invoice.id), send)),
+    chrome.record,
+    chrome.pager,
+    header,
     h('div', { class: 'fx-invoice__grid' },
       h('div', { class: 'fx-invoice__main' },
         h('section', { class: 'fx-card fx-doc' },
@@ -1165,6 +1262,8 @@ function issuedView(invoice, ui, context, redraw) {
           h('ol', { class: 'fx-timeline' }, invoice.versions.map((v) => h('li', {},
             h('span', { class: 'fx-strong' }, v.version === 1 ? 'Version 1' : `Revised (version ${v.version})`),
             h('span', { class: 'fx-dim' }, new Date(v.issuedAt).toLocaleString('en-AU', { dateStyle: 'medium', timeStyle: 'short' })))))) : null)),
+    chrome.foot,
+    chrome.menuPanel,
   ];
 }
 
