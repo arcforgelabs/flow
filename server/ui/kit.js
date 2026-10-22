@@ -381,14 +381,19 @@ function inPlace(event) {
 export function tileCard({ href, mark, title, status, blurb, meta, action = 'Manage', row = false }) {
   const logo = typeof mark === 'string' ? h('span', { class: 'fx-logo fx-logo--icon', 'aria-hidden': 'true' }, lucide(h, mark)) : mark;
   const pill = status ? h('span', { class: 'fx-status', 'data-tone': status.tone ?? 'mute' }, status.label) : null;
+  // The name is cut with "…" on a narrow row; its title is the full name.
+  // The › shows only on a phone, where every card is one row.
+  const name = h('h3', { title }, title);
+  const go = h('span', { class: 'fx-tile__go', 'aria-hidden': 'true' }, lucide(h, 'chevron-right'));
   if (row) {
     return applyPhoneRule(h('a', { class: 'fx-tile', href, onclick: inPlace },
       logo,
-      h('h3', {}, title),
-      pill ?? (meta ? h('span', { class: 'fx-tile__meta' }, meta) : null)), 'tileCard');
+      name,
+      pill ?? (meta ? h('span', { class: 'fx-tile__meta' }, meta) : null),
+      go), 'tileCard');
   }
   return applyPhoneRule(h('a', { class: `fx-int-card${blurb ? '' : ' fx-int-card--bare'}`, href, onclick: inPlace },
-    h('header', { class: 'fx-int-card__head' }, logo, h('h3', {}, title), pill),
+    h('header', { class: 'fx-int-card__head' }, logo, name, pill, go),
     blurb ? h('p', { class: 'fx-int-card__blurb' }, blurb) : null,
     h('span', { class: 'fx-int-card__btn' }, action)), 'tileCard');
 }

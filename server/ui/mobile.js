@@ -564,7 +564,8 @@ export const RULES = {
     "component": "tileCard",
     "direction": "one-line rows",
     "phone": {
-      "layout": "one-line"
+      "layout": "one-line",
+      "rowHeight": 56
     },
     "tablet": {
       "layout": "cards"
@@ -575,7 +576,8 @@ export const RULES = {
     "touch": 44,
     "pageOverflow": "none",
     "screens": [
-      "rules"
+      "rules",
+      "integrations"
     ],
     "card": "Tiles"
   },
@@ -583,7 +585,8 @@ export const RULES = {
     "component": "tileSection",
     "direction": "one-line rows",
     "phone": {
-      "layout": "one-line"
+      "layout": "one-line",
+      "rowHeight": 56
     },
     "tablet": {
       "layout": "cards"

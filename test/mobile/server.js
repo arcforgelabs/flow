@@ -4,6 +4,7 @@ import { createPersonAuth } from '../../server/auth/session.js';
 import { createField } from '../../server/core/custom-fields.js';
 import { createContact, createOrganisation, createPriceItem } from '../../server/core/directory.js';
 import { createDraftInvoice, issueInvoice } from '../../server/core/invoices.js';
+import { adapters as shippedAdapters } from '../../server/integrations/adapters.js';
 import { createRegistry } from '../../server/integrations/port.js';
 import { fakeClerk, TEST_PUBLISHABLE_KEY } from '../support/clerk.js';
 import { freshDatabase } from '../support/db.js';
@@ -116,6 +117,8 @@ export async function startFlow({ port = 0 } = {}) {
   const integrations = createRegistry({ log: quiet, env: {} });
   integrations.register(workSystem());
   integrations.enable('worksystem');
+  // The shipped adapters, each off, so Integrations shows its cards.
+  for (const adapter of shippedAdapters) integrations.register(adapter);
   await integrations.start(db);
   const settings = { mode: 'clerk', keys: { publishableKey: TEST_PUBLISHABLE_KEY, proxyUrl: null } };
   const personAuth = createPersonAuth({ db, clerk, ownerGoogleDomains: ['example.test'], log: quiet });
