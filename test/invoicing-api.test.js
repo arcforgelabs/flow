@@ -3,6 +3,7 @@ import { after, before, describe, test } from 'node:test';
 import { createApp } from '../server/app.js';
 import { invitePerson, seedFirstOwner } from '../server/auth/people.js';
 import { createPersonAuth } from '../server/auth/session.js';
+import { createField, setJobFieldValue } from '../server/core/custom-fields.js';
 import { createContact, createOrganisation, createPriceItem } from '../server/core/directory.js';
 import { createRule, deleteRule } from '../server/core/invoice-rules.js';
 import { createDraftInvoice } from '../server/core/invoices.js';
@@ -42,6 +43,7 @@ describe('invoicing API', { skip: skipWithoutDatabase }, () => {
   function invoicingApp({ integrations = null } = {}) {
     const settings = { mode: 'clerk', keys: { publishableKey: TEST_PUBLISHABLE_KEY, proxyUrl: null } };
     const personAuth = createPersonAuth({ db: handle.db, clerk, ownerGoogleDomains: ['example.test'], log: quiet });
+    // These tests read the list many times. The lab's limit is not what they check.
     return createApp({ database: handle, auth: { settings, clerk, personAuth }, integrations, log: quiet, buttonCooldowns: false, rateLimitPerMinute: 1000 });
   }
 
@@ -283,6 +285,40 @@ describe('invoicing API', { skip: skipWithoutDatabase }, () => {
     assert.equal((await call('/invoices?dir=up')).status, 400);
     assert.equal((await call('/invoices?filter=%7B')).status, 400);
     assert.equal((await call('/invoices?today=2026-02-30')).status, 400);
+  });
+
+  test('a filter on a due date, a job column or a custom field pages the whole list', async () => {
+    const early = await createDraftInvoice(handle.db, lab.id, { contactId: practice.id, reference: 'FILTER-DUE', dueDate: '2026-01-15', lines: [{ priceItemId: crown.id }] });
+    await createDraftInvoice(handle.db, lab.id, { contactId: practice.id, reference: 'FILTER-LATER', dueDate: '2026-12-01', lines: [{ priceItemId: crown.id }] });
+    const job = await observeJob(handle.db, lab.id, {
+      sourceSystem: 'worksystem', sourceJobRef: 'JOB-FILTER', caseRef: 'CASE-FILTER', contactId: practice.id, practitioner: 'Dr Filter', shippedOn: '2026-05-02', lines: [{ itemCode: 'CRN' }],
+    });
+    const drafted = await draftInvoiceForObligation(handle.db, lab.id, job.id, { liveCheck: null, actor: 'person:test' });
+    const field = await createField(handle.db, lab.id, { name: 'Rush filter', type: 'checkbox' });
+    await setJobFieldValue(handle.db, lab.id, { sourceSystem: 'worksystem', sourceJobRef: 'JOB-FILTER', fieldId: field.id, value: true });
+
+    const view = (filters) => encodeURIComponent(JSON.stringify({ match: 'all', groups: [{ match: 'all', filters }] }));
+    const ask = (filters) => call(`/invoices?limit=1&today=2026-06-01&filter=${view(filters)}`).then((r) => r.body);
+
+    // Newer rows exist; the filter still returns the one match, and the total is that one.
+    const due = await ask([{ field: 'due', op: 'is', value: 'on:2026-01-15' }]);
+    assert.equal(due.total, 1);
+    assert.equal(due.invoices[0].id, early.id);
+    assert.equal(due.totalCents, early.totalCents);
+
+    const byWho = await ask([{ field: 'practitioner', op: 'is', value: ['Dr Filter'] }]);
+    assert.equal(byWho.total, 1);
+    assert.equal(byWho.invoices[0].id, drafted.invoice.id);
+    assert.equal(byWho.invoices[0].job.caseRef, 'CASE-FILTER');
+    assert.equal(byWho.invoices[0].job.shippedOn, '2026-05-02');
+    assert.ok(byWho.practitioners.includes('Dr Filter'));
+
+    const rush = await ask([{ field: `field:${field.id}`, op: 'yes' }]);
+    assert.equal(rush.total, 1);
+    assert.equal(rush.invoices[0].id, drafted.invoice.id);
+    const all = await call('/invoices?limit=1&today=2026-06-01');
+    const quiet = await ask([{ field: `field:${field.id}`, op: 'no' }]);
+    assert.equal(quiet.total, all.body.total - 1);
   });
 
   test('jobs list by view; a job drafts its invoice after the live check, and the invoice shows the job', async () => {

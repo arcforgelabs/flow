@@ -117,10 +117,17 @@ The page at `/sign-in`, `/people`, `/account` and `/appearance`
 - **Sign-in**: a brand panel (the primary colour in light mode, a raised
   surface in dark) beside Clerk's sign-in card. On a phone the panel is a
   band above the card.
-- **Sidebar**: the Flow mark and the views the person may open, daily work
-  first: Jobs, Invoices, Reconcile, Price list, Rules, then More. More opens
-  the shared row menu with Automations, Custom fields and Integrations (owners);
-  it shows as current while one of those pages is open. People (owners) and
+- **Sidebar**: the Flow mark and the views the person has pinned, daily work
+  first, then More. More opens the shared row menu as a floating popover to
+  the right of that row (on a phone, inside the slide-out menu, with 44px
+  targets). The menu lists every sidebar page this person may open: Jobs,
+  Invoices, Reconcile, Price list, Rules, Automations, Custom fields and
+  Integrations (owners). Each row has a pin. A pinned page sits in the
+  sidebar; an unpinned page shows only in More. Jobs and Invoices stay
+  pinned. The pins are saved with the person (`PUT /api/me/views/nav`) and
+  follow the account. With none saved yet, Jobs, Invoices, Reconcile, Price
+  list and Rules are pinned. More shows as current while the open page is
+  one of these and is not pinned. People (owners) and
   Appearance are in the account menu. Account is not in the list: "Manage account" in
   the account menu opens it. At its foot: the account chip (Clerk's photo or
   initial, then the name, or the email when there is no name, clipped to fit)
@@ -234,7 +241,7 @@ names its card in the Flow Design System.
 | `settingRow({ label, hint, control })`, `sectionTitle`, `.fx-setting` | `server/ui/kit.js` | SettingRow | One setting row: short name, one hint line, the control at the right |
 | `tileCard({ href, mark, title, status, blurb, meta, action, row })`, `tileSection(title, cards, { href, more })` | `server/ui/kit.js` | Tiles | Cards that open a page. `row: true` with `tileSection`: one-line cards, three columns, like Claude's Customize categories (Rules). Without `row`: the large card (Integrations) |
 | `crumbs([href, label]…, here)` | `server/ui/kit.js` | Crumbs | The trail above a page one level down (Rules › Invoices, Integrations › Xero) |
-| `rowMenu(label, items, { trigger, className, align })` | `server/ui/kit.js` | RowMenu | The ⋯ menu on a row; `align: 'start'` lines the menu up with the button's left edge; with `trigger`, the sidebar's More |
+| `rowMenu(label, items, { trigger, className, align, place })` | `server/ui/kit.js` | RowMenu | The ⋯ menu on a row. `align: 'start'` lines the menu up with the button's left edge. `place: 'side'` floats it to the right of the button (the sidebar's More); on a phone that menu stays inside the slide-out. An item's `trailing` is a control that does not close the menu (the pin). `trigger` replaces the ⋯ icon. |
 | `savedViews(ui, { page, current, apply })` | `server/ui/saved-views.js` | SavedViews | The named view tabs of a list, in the toolbar beside Group, Sort and Filter, as ClickUp's: + View, Save / Revert, and each tab's ⋯ (Set as my default, Rename, Delete). The rules are in `list-views.js` |
 | `.fx-btn` and its modifiers | `server/ui/flow.css` | Button | Every button |
 | `named`, `startTips` | `server/ui/tip.js` | Tip | An icon-only control's name, shown on hover and focus |

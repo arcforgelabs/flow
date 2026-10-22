@@ -1,6 +1,8 @@
 import { and, asc, desc, eq, ilike, inArray, isNull, or, sql } from 'drizzle-orm';
 import express from 'express';
-import { invoicePage, INVOICE_SORTS, normaliseInvoicesView } from '../ui/list-views.js';
+import { invoiceKindOf, invoicePage, INVOICE_SORTS, normaliseInvoicesView } from '../ui/list-views.js';
+import { fieldIdOf, filterRows } from '../ui/job-view.js';
+import { listFields, listJobFieldValues } from '../core/custom-fields.js';
 import { FlowError } from '../core/errors.js';
 import { createActionGuard } from '../integrations/call-guard.js';
 import {
@@ -451,17 +453,43 @@ export function createInvoicingRouter({
       const pattern = containing(q);
       where.push(or(ilike(invoices.number, pattern), ilike(invoices.reference, pattern), ilike(contacts.name, pattern)));
     }
-    // First the few columns the filter and sort read, for every row; then
-    // the whole rows of the one page.
-    const light = (await db.select({
+    // First the columns the filter and sort read, for every row; then the
+    // whole rows of the one page. A job column and a custom field read the
+    // invoice's job, so those values are on every row before the page is cut.
+    const lightRows = await db.select({
       id: invoices.id, number: invoices.number, reference: invoices.reference, issueDate: invoices.issueDate,
-      createdAt: invoices.createdAt, totalCents: invoices.totalCents, contactName: contacts.name,
+      dueDate: invoices.dueDate, createdAt: invoices.createdAt, totalCents: invoices.totalCents, contactName: contacts.name,
     }).from(invoices)
       .leftJoin(contacts, eq(contacts.id, invoices.contactId))
       .where(and(...where))
-      .orderBy(desc(invoices.createdAt), desc(invoices.id)))
-      .map((row) => ({ ...row, problems: tabs.problems.get(row.id) ?? [] }));
-    const page = invoicePage(light, { view, sort, dir, offset, limit, today: day });
+      .orderBy(desc(invoices.createdAt), desc(invoices.id));
+    const jobs = await jobsByInvoice(db, organisationId, lightRows.map((r) => r.id));
+    const customOn = filterRows(view).some((f) => fieldIdOf(f.field));
+    const [fieldDefs, fieldValues] = customOn
+      ? await Promise.all([
+        listFields(db, organisationId),
+        listJobFieldValues(db, organisationId, { jobs: [...jobs.values()].filter(Boolean) }),
+      ])
+      : [[], []];
+    const valuesOf = new Map();
+    for (const v of fieldValues) {
+      const key = `${v.sourceSystem}\u0000${v.sourceJobRef}`;
+      const bag = valuesOf.get(key) ?? {};
+      bag[v.fieldId] = v.value;
+      valuesOf.set(key, bag);
+    }
+    const light = lightRows.map((row) => {
+      const job = jobs.get(row.id) ?? null;
+      return {
+        ...row,
+        problems: tabs.problems.get(row.id) ?? [],
+        tab: tabs.tabOf.get(row.id) ?? null,
+        sending: tabs.sending.has(row.id),
+        job,
+        fields: job ? valuesOf.get(`${job.sourceSystem}\u0000${job.sourceJobRef}`) ?? {} : {},
+      };
+    });
+    const page = invoicePage(light, { view, sort, dir, offset, limit, today: day, kindOf: invoiceKindOf(fieldDefs), me: req.person.id });
     const pageIds = page.rows.map((r) => r.id);
     const full = pageIds.length
       ? await db.select({ invoice: invoices, contactName: contacts.name }).from(invoices)
@@ -470,7 +498,6 @@ export function createInvoicingRouter({
       : [];
     const byId = new Map(full.map((r) => [r.invoice.id, r]));
     const rows = pageIds.map((id) => byId.get(id)).filter(Boolean);
-    const jobs = await jobsByInvoice(db, organisationId, rows.map((r) => r.invoice.id));
     const systems = work();
     res.json({
       ok: true,
@@ -488,8 +515,9 @@ export function createInvoicingRouter({
       limit,
       total: page.total,
       totalCents: page.totalCents,
-      // The Filter chip's Client choices: every client of the tab.
+      // The Filter chip's choices, from every row of the tab.
       clients: [...new Set(light.map((r) => r.contactName).filter(Boolean))].sort((a, b) => a.localeCompare(b)),
+      practitioners: [...new Set(light.map((r) => r.job?.practitioner).filter(Boolean))].sort((a, b) => a.localeCompare(b)),
       sendsTo: system?.name ?? null,
       sendMode: mode,
       // The Linked column: one icon for each connected system.

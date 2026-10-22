@@ -19,6 +19,7 @@ import {
 } from './people.js';
 import { isPlainEmail } from './settings.js';
 import { APP_PATHS, appPage } from '../ui/app-page.js';
+import { navPinsFromViews } from '../ui/nav-pins.js';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const ERROR_STATUS = { invalid: 400, forbidden: 403, not_found: 404, conflict: 409 };
 
@@ -104,6 +105,8 @@ export function createSignInRouter({ settings, db, clerk, personAuth, defaultFam
     }
     body.appearance = req.person.appearance ? normaliseAppearance(req.person.appearance) : null;
     body.views = normaliseViews(req.person.views);
+    // No pins saved yet: today's sidebar. A saved choice is checked the same way.
+    body.views.nav = navPinsFromViews(req.person.views);
     res.json(body);
   });
 
@@ -118,7 +121,7 @@ export function createSignInRouter({ settings, db, clerk, personAuth, defaultFam
   });
 
   // Each person sets their own view of a page (how Jobs groups, sorts and
-  // filters); it follows their account.
+  // filters, and which pages are pinned: `nav`). It follows their account.
   router.put('/api/me/views/:page', requireSession, express.json({ limit: '8kb' }), async (req, res) => {
     try {
       const view = await setPersonView(db, { id: req.person.id, page: req.params.page, view: req.body });
