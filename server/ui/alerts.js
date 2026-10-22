@@ -33,8 +33,9 @@ export function alertStrip(ui, page, { onTab = () => {}, scope = null, onLoad = 
     let action = null;
     if (first.action?.href && first.action.href !== location.pathname) action = h('a', { class: 'fx-alerts__action', href: first.action.href, onclick: go }, first.action.label);
     else if (first.action?.tab) action = h('button', { class: 'fx-alerts__action', type: 'button', onclick: () => onTab(first.action.tab) }, first.action.label);
+    const line = first.moneyAtRiskCents > 0 ? `${first.title} ${money.format(first.moneyAtRiskCents / 100)} at risk.` : first.title;
     element.replaceChildren(...[
-      h('p', { class: 'fx-alerts__text' },
+      h('p', { class: 'fx-alerts__text', title: line },
         first.title,
         first.moneyAtRiskCents > 0 ? h('span', { class: 'fx-alerts__money' }, ` ${money.format(first.moneyAtRiskCents / 100)} at risk.`) : null),
       action,

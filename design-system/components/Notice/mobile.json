@@ -1,0 +1,16 @@
+{
+  "component": "notice",
+  "direction": "note",
+  "phone": {
+    "layout": "note"
+  },
+  "tablet": {
+    "layout": "note"
+  },
+  "desk": {
+    "layout": "note"
+  },
+  "touch": 44,
+  "pageOverflow": "none",
+  "screens": []
+}

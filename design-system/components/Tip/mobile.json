@@ -1,0 +1,17 @@
+{
+  "component": "named",
+  "direction": "tip",
+  "phone": {
+    "layout": "tip"
+  },
+  "tablet": {
+    "layout": "tip"
+  },
+  "desk": {
+    "layout": "tip"
+  },
+  "touch": 44,
+  "pageOverflow": "none",
+  "screens": [],
+  "mark": false
+}

@@ -1,0 +1,16 @@
+{
+  "component": "rowMenu",
+  "direction": "menu",
+  "phone": {
+    "layout": "menu"
+  },
+  "tablet": {
+    "layout": "menu"
+  },
+  "desk": {
+    "layout": "menu"
+  },
+  "touch": 44,
+  "pageOverflow": "none",
+  "screens": []
+}

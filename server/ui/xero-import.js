@@ -10,6 +10,16 @@
 import { bulkBar } from '/assets/ui/bulk-bar.js';
 import { lucide } from '/assets/ui/custom-fields.js';
 import { formatCents } from '/assets/ui/invoicing.js';
+import { applyPhoneRule, assignPhoneSlots, phoneSlot } from './mobile.js';
+
+// The list rows use the same phone slots as a column list.
+const phoneAt = (defs) => {
+  const columns = assignPhoneSlots(defs);
+  return (index) => {
+    const slot = phoneSlot(columns[index]);
+    return slot ? { 'data-phone-slot': slot } : {};
+  };
+};
 
 const XERO_STATUS = { DRAFT: 'Draft', SUBMITTED: 'Awaiting approval', AUTHORISED: 'Approved', PAID: 'Paid' };
 const XERO_TONE = { DRAFT: 'neutral', SUBMITTED: 'warn', AUTHORISED: 'info', PAID: 'success' };
@@ -212,13 +222,23 @@ export async function renderXeroImport(main, ui) {
       drawBar();
     } });
     const sure = rows.filter((r) => r.sure);
+    const at = phoneAt([
+      { kind: 'text', label: 'Number' },
+      { kind: 'client', label: 'Client', phone: 'title' },
+      { kind: 'date', label: 'Date', phone: 'meta' },
+      { kind: 'total', num: true, label: 'Total' },
+      { kind: 'status', label: 'Match', phone: 'meta' },
+      { kind: 'text', label: 'Flow', phone: 'meta' },
+      { kind: 'date', label: 'Flow date', phone: 'hide' },
+      { kind: 'total', label: 'Flow total', phone: 'hide' },
+    ]);
     host.replaceChildren(
       h('div', { class: 'fx-xi__bulk' }, icon('list-checks'), h('span', { class: 'fx-xi__bulk-text' }, 'Tick rows, then use the bar below.'),
         canAct && sure.length ? h('button', { class: 'fx-btn fx-btn--sm', type: 'button', onclick: () => {
           for (const r of sure) { ticked.add(r.xeroInvoiceId); boxes.get(r.xeroInvoiceId).checked = true; }
           drawBar();
         } }, icon('check-check'), `Tick ${sure.length} sure`) : null),
-      h('div', { class: 'fx-xi__scroll' }, h('table', { class: 'fx-table fx-table--rows fx-xi-list' },
+      applyPhoneRule(h('div', { class: 'fx-xi__scroll' }, h('table', { class: 'fx-table fx-table--rows fx-xi-list' },
         h('thead', {}, h('tr', {},
           canAct ? h('th', { class: 'fx-tick-cell' }, all) : null,
           h('th', { colspan: '4' }, xeroMark()), h('th', { class: 'fx-xi-list__mid' }), h('th', { colspan: '3' }, flowMark()))),
@@ -231,15 +251,15 @@ export async function renderXeroImport(main, ui) {
           boxes.set(row.xeroInvoiceId, box);
           return h('tr', {},
             canAct ? h('td', { class: 'fx-tick-cell' }, box) : null,
-            h('td', { class: 'fx-num' }, row.number ?? '—'),
-            h('td', {}, row.clientName ?? '—'),
-            h('td', { class: 'fx-dim' }, shortDate(row.issuedOn)),
-            h('td', { class: 'fx-num fx-strong' }, money(row.totalCents)),
-            h('td', { class: 'fx-xi-list__mid' }, row.sure ? icon('check-check', 'Sure') : fitIcon(fit), fit.count > 1 ? h('span', { class: 'fx-dim' }, `${fit.count}`) : null),
-            h('td', { class: 'fx-num' }, fit.name),
-            h('td', { class: 'fx-dim' }, shortDate(fit.date)),
-            h('td', { class: 'fx-num fx-strong' }, money(fit.totalCents)));
-        })))));
+            h('td', { class: 'fx-num', ...at(0) }, row.number ?? '—'),
+            h('td', { ...at(1) }, row.clientName ?? '—'),
+            h('td', { class: 'fx-dim', ...at(2) }, shortDate(row.issuedOn)),
+            h('td', { class: 'fx-num fx-strong', ...at(3) }, money(row.totalCents)),
+            h('td', { class: 'fx-xi-list__mid', ...at(4) }, row.sure ? icon('check-check', 'Sure') : fitIcon(fit), fit.count > 1 ? h('span', { class: 'fx-dim' }, `${fit.count}`) : null),
+            h('td', { class: 'fx-num', ...at(5) }, fit.name),
+            h('td', { class: 'fx-dim', ...at(6) }, shortDate(fit.date)),
+            h('td', { class: 'fx-num fx-strong', ...at(7) }, money(fit.totalCents)));
+        })))), 'columnTable'));
     drawBar();
   }
 
@@ -259,13 +279,22 @@ export async function renderXeroImport(main, ui) {
     } });
     const more = h('div', {});
     const STATE = { linked: ['check', 'In Flow'], invoice_fits: ['receipt', 'A Flow invoice fits'], job_fits: ['briefcase', 'A job fits'], none: ['circle-dashed', 'Not in Flow'] };
+    const at = phoneAt([
+      { kind: 'status', label: 'State', phone: 'meta' },
+      { kind: 'text', label: 'Number' },
+      { kind: 'client', label: 'Client', phone: 'title' },
+      { kind: 'date', label: 'Date', phone: 'meta' },
+      { kind: 'total', num: true, label: 'Total' },
+      { kind: 'status', label: 'Xero', phone: 'meta' },
+      { kind: 'text', label: 'Flow', phone: 'hide' },
+    ]);
     host.replaceChildren(
       h('div', { class: 'fx-xi__bulk' }, icon('search'), search),
-      h('div', { class: 'fx-xi__scroll' }, h('table', { class: 'fx-table fx-table--rows fx-xi-list' },
+      applyPhoneRule(h('div', { class: 'fx-xi__scroll' }, h('table', { class: 'fx-table fx-table--rows fx-xi-list' },
         h('thead', {}, h('tr', {},
           canAct ? h('th', { class: 'fx-tick-cell' }, all) : null,
           h('th', {}, ''), h('th', {}, 'Number'), h('th', {}, 'Client'), h('th', {}, 'Date'), h('th', { class: 'fx-num' }, 'Total'), h('th', {}, xeroMark()), h('th', {}, flowMark()))),
-        body)),
+        body)), 'columnTable'),
       more);
     let timer = null;
     search.addEventListener('input', () => {
@@ -295,13 +324,13 @@ export async function renderXeroImport(main, ui) {
       } });
       return h('tr', { 'data-state': row.state },
         canAct ? h('td', { class: 'fx-tick-cell' }, box) : null,
-        h('td', { class: 'fx-xi-list__mid' }, row.state === 'linked' || row.state === 'none' ? icon(glyph, label) : h('a', { href: '/xero-import', onclick: (event) => ui.go(event), 'aria-label': label, title: label }, icon(glyph))),
-        h('td', { class: 'fx-num' }, row.number ?? '—'),
-        h('td', {}, row.clientName ?? '—'),
-        h('td', { class: 'fx-dim' }, shortDate(row.issuedOn)),
-        h('td', { class: 'fx-num fx-strong' }, money(row.totalCents)),
-        h('td', {}, pill(row)),
-        h('td', { class: 'fx-num' }, row.state === 'linked' ? go(`/invoices/${row.link.invoiceId}`, row.link.number ?? 'Draft') : ''));
+        h('td', { class: 'fx-xi-list__mid', ...at(0) }, row.state === 'linked' || row.state === 'none' ? icon(glyph, label) : h('a', { href: '/xero-import', onclick: (event) => ui.go(event), 'aria-label': label, title: label }, icon(glyph))),
+        h('td', { class: 'fx-num', ...at(1) }, row.number ?? '—'),
+        h('td', { ...at(2) }, row.clientName ?? '—'),
+        h('td', { class: 'fx-dim', ...at(3) }, shortDate(row.issuedOn)),
+        h('td', { class: 'fx-num fx-strong', ...at(4) }, money(row.totalCents)),
+        h('td', { ...at(5) }, pill(row)),
+        h('td', { class: 'fx-num', ...at(6) }, row.state === 'linked' ? go(`/invoices/${row.link.invoiceId}`, row.link.number ?? 'Draft') : ''));
     };
     async function load() {
       let page;

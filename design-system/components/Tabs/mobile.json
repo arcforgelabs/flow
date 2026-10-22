@@ -1,0 +1,25 @@
+{
+  "component": "fx-tabs",
+  "direction": "scrolling tabs",
+  "phone": {
+    "layout": "scroll"
+  },
+  "tablet": {
+    "layout": "tabs"
+  },
+  "desk": {
+    "layout": "tabs"
+  },
+  "touch": 44,
+  "pageOverflow": "none",
+  "screens": [
+    "invoices-ready",
+    "invoices-pending",
+    "invoices-approved",
+    "invoices-ticked",
+    "invoices-filter",
+    "price-list"
+  ],
+  "mark": false,
+  "selector": ".fx-tabs"
+}

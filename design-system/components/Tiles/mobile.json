@@ -1,0 +1,26 @@
+{
+  "component": "tileCard",
+  "direction": "one-line rows",
+  "phone": {
+    "layout": "one-line"
+  },
+  "tablet": {
+    "layout": "cards"
+  },
+  "desk": {
+    "layout": "cards"
+  },
+  "touch": 44,
+  "pageOverflow": "none",
+  "screens": [
+    "rules"
+  ],
+  "also": [
+    {
+      "component": "tileSection",
+      "screens": [
+        "rules"
+      ]
+    }
+  ]
+}

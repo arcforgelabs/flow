@@ -306,12 +306,12 @@ async function renderList(main, ui) {
       ? h('span', { class: 'fx-rec__possible', 'data-state': 'some' }, icon('link-2', 'Possible match'), String(r.possible))
       : h('span', { class: 'fx-rec__possible' }, icon('circle-dashed', 'No possible match')));
     const ALL = {
-      kind: { kind: 'icon', icon: 'layers', className: 'fx-rec-list__kind', cell: (r) => icon(...KIND_ICON[r.kind]) },
-      client: { kind: 'client', className: 'fx-strong', cell: (r) => r.client ?? h('span', { class: 'fx-dim' }, 'No client') },
-      detail: { kind: 'text', cell: (r) => h('span', { class: r.kind === 'invoice' ? 'fx-num' : 'fx-dim' }, r.who ?? '—', r.kind === 'invoice' ? h('span', { class: 'fx-dim' }, ` · ${statusWords(r.status)}`) : null) },
-      date: { kind: 'date', className: 'fx-dim', cell: (r) => shortDate(r.date) },
-      total: { kind: 'total', num: true, cell: (r) => money(r.totalCents) },
-      possible: { kind: 'status', className: 'fx-rec-list__mid', cell: possible },
+      kind: { kind: 'icon', phone: 'meta', icon: 'layers', className: 'fx-rec-list__kind', cell: (r) => icon(...KIND_ICON[r.kind]) },
+      client: { kind: 'client', phone: 'title', className: 'fx-strong', cell: (r) => r.client ?? h('span', { class: 'fx-dim' }, 'No client') },
+      detail: { kind: 'text', phone: 'meta', cell: (r) => h('span', { class: r.kind === 'invoice' ? 'fx-num' : 'fx-dim' }, r.who ?? '—', r.kind === 'invoice' ? h('span', { class: 'fx-dim' }, ` · ${statusWords(r.status)}`) : null) },
+      date: { kind: 'date', phone: 'hide', className: 'fx-dim', cell: (r) => shortDate(r.date) },
+      total: { kind: 'total', phone: 'end', num: true, cell: (r) => money(r.totalCents) },
+      possible: { kind: 'status', phone: 'meta', className: 'fx-rec-list__mid', cell: possible },
     };
     const columns = state.columns.columns.map((id) => ({ id, label: RECONCILE_COLUMNS[id], ...ALL[id] }));
     host.replaceChildren(h('div', { class: 'fx-panel' }, heads.table({

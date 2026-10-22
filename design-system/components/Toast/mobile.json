@@ -1,0 +1,16 @@
+{
+  "component": "toast",
+  "direction": "toast",
+  "phone": {
+    "layout": "toast"
+  },
+  "tablet": {
+    "layout": "toast"
+  },
+  "desk": {
+    "layout": "toast"
+  },
+  "touch": 44,
+  "pageOverflow": "none",
+  "screens": []
+}

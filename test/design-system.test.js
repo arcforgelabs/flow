@@ -4,6 +4,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { buildDesignSystem, cardNames } from '../scripts/design-system/build.mjs';
+import { loadCardRules } from '../scripts/design-system/mobile-rules.mjs';
+import { RULES, WIDTHS, assignPhoneSlots, phoneSlot } from '../server/ui/mobile.js';
+import { SCREENS } from './mobile/screens.js';
 
 const ROOT = new URL('..', import.meta.url).pathname;
 const read = (path) => readFileSync(join(ROOT, path), 'utf8');
@@ -27,6 +30,63 @@ test('every shared component has a design system card', () => {
       assert.ok(covered.has(name), `${name} (${file}) has a card in design-system/components/, or is listed as a helper in this test`);
     }
   }
+});
+
+test('every visible card has phone rules, and the browser reads those rules', () => {
+  const screens = new Set(SCREENS.map((screen) => screen.id));
+  const rules = loadCardRules();
+  assert.deepEqual(RULES, rules, 'server/ui/mobile.js is behind the cards; run node scripts/design-system/mobile-rules.mjs');
+  assert.deepEqual(WIDTHS, {
+    phone: '(max-width: 639px)',
+    tabletMin: '(min-width: 640px)',
+    tabletMax: '(max-width: 1023px)',
+    desk: '(min-width: 1024px)',
+  });
+  for (const name of cardNames()) {
+    const file = `design-system/components/${name}/mobile.json`;
+    assert.ok(existsSync(join(ROOT, file)), `${name} has no mobile.json`);
+    const raw = JSON.parse(read(file));
+    assert.equal(raw.touch, 44, `${name} touch`);
+    assert.equal(raw.pageOverflow, 'none', `${name} page overflow`);
+    assert.ok(raw.direction && raw.phone?.layout && raw.tablet?.layout && raw.desk?.layout, `${name} names a direction and a layout at each width`);
+    const code = /^Code: (.+)$/m.exec(read(`design-system/components/${name}/README.md`));
+    const sources = [...code[1].matchAll(/server\/ui\/[\w.-]+\.js/g)].map((match) => read(match[0])).join('\n');
+    for (const component of [raw.component, ...(raw.also ?? []).map((part) => part.component)]) {
+      assert.match(code[1], new RegExp(component.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), `${name} Code line names ${component}`);
+      const rule = rules[component];
+      assert.ok(rule, `${component} is in the phone rules`);
+      for (const screen of rule.screens) assert.ok(screens.has(screen), `${component} lists an unknown screen ${screen}`);
+      if (rule.mark === false) continue;
+      assert.match(sources, new RegExp(`applyPhoneRule\\([\\s\\S]*?['"]${component}['"]\\)`), `${component} reads its phone rules`);
+    }
+  }
+  assert.equal(phoneSlot({ phone: 'title' }), 'title');
+  assert.equal(phoneSlot({ phone: 'meta' }), 'meta');
+  assert.equal(phoneSlot({ phone: 'end' }), 'end');
+  assert.equal(phoneSlot({ phone: 'hide' }), 'hide');
+  assert.equal(phoneSlot({ phone: 'wide' }), null);
+  assert.equal(phoneSlot({}), null);
+  const placed = assignPhoneSlots([
+    { id: 'number', kind: 'text' },
+    { id: 'client', kind: 'client', phone: 'title' },
+    { id: 'reference', kind: 'text' },
+    { id: 'date', kind: 'date' },
+    { id: 'total', kind: 'total', num: true },
+    { id: 'status', kind: 'status' },
+    { id: 'linked', kind: 'link' },
+    { id: 'extra', kind: 'text', phone: 'title' },
+  ]);
+  assert.deepEqual(placed.map((column) => column.phone), ['meta', 'title', 'meta', 'hide', 'end', 'meta', 'hide', 'title']);
+  assert.deepEqual(assignPhoneSlots([
+    { id: 'client', kind: 'client' },
+    { id: 'practitioner', kind: 'text' },
+    { id: 'stage', kind: 'stage' },
+    { id: 'total', kind: 'total', num: true },
+  ]).map((column) => column.phone), ['title', 'meta', 'meta', 'end']);
+  assert.equal(assignPhoneSlots([{ id: 'only', kind: 'text', phone: 'hide' }])[0].phone, 'hide');
+  assert.deepEqual(rules.columnTable.phone.slots, { title: 2, end: 1, meta: 3 });
+  assert.equal(rules.columnTable.phone.columnFlag, 'phone');
+  assert.equal(rules.columnTable.minRowsAt375, 7);
 });
 
 test('each card names its group on line 1 and has a README', () => {
@@ -62,6 +122,12 @@ test('the build writes tokens the Design System page can read, and a bundle it c
     assert.doesNotMatch(css, /<\/style/i);
     assert.match(css, /\[data-theme="meridian-dark"\]/);
     for (const name of [...cardNames(), 'Cover', 'Themes']) assert.ok(files.includes(`components/${name}/preview.html`), `${name} card is built`);
+    for (const name of cardNames()) assert.ok(files.includes(`components/${name}/mobile.json`), `${name} phone rules are built`);
+    const columns = readFileSync(join(project, 'components/Columns/preview.html'), 'utf8');
+    assert.match(columns, /class="fds-phone"/);
+    assert.match(columns, /Phone rules/);
+    assert.match(columns, /two-line/);
+    assert.match(columns, /56px/);
     assert.ok(!readdirSync(project).includes('design-system.json'), 'the index is written at publish, never by the build');
   } finally {
     rmSync(out, { recursive: true, force: true });

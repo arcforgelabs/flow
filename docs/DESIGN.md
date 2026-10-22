@@ -225,7 +225,8 @@ Every page builds from these. Reuse one, or give it a new option; do not
 copy its code into a page (`AGENTS.md`, "UI: reuse first"). A new shared
 component gets a row here and a card in the design system
 (`docs/DESIGN_SYSTEM.md`) in the pull request that adds it. The Card column
-names its card in the Flow Design System.
+names its card in the Flow Design System. Read the card's `mobile.json`
+before changing it on a phone: the component reads those rules.
 
 | Component | Where | Card | Use it for |
 | --- | --- | --- | --- |
@@ -246,7 +247,7 @@ names its card in the Flow Design System.
 | `.fx-btn` and its modifiers | `server/ui/flow.css` | Button | Every button |
 | `named`, `startTips` | `server/ui/tip.js` | Tip | An icon-only control's name, shown on hover and focus |
 | `viewBar(h)`: `menu`, `option`, `filterMenu` and the rows-panel parts | `server/ui/view-bar.js` | Filter | Group, Sort, Filter and Columns chips and their panels, on every list (Jobs, Invoices, Reconcile) |
-| `columnTable(h, { order, widths, change, hidden, extra })`, `rowCells`, `viewSaver`, `dateCell`, `personCell`, `fieldColumn` | `server/ui/columns.js` (rules in `job-view.js`) | Columns | A list's table (`fieldColumn`: a custom field as a column, on Jobs and Invoices): drag an edge to resize (a minimum per column kind), drag a head to move, the head menu (Move, Hide, Reset width), + for hidden columns; the end column fills each row to the right edge (no stretch); order and widths kept with the account. Jobs, Invoices, Reconcile, Price list |
+| `columnTable(h, { order, widths, change, hidden, extra })`, `rowCells`, `viewSaver`, `dateCell`, `personCell`, `fieldColumn` | `server/ui/columns.js` (rules in `job-view.js`) | Columns | A list's table (`fieldColumn`: a custom field as a column, on Jobs and Invoices): drag an edge to resize (a minimum per column kind), drag a head to move, the head menu (Move, Hide, Reset width), + for hidden columns; the end column fills each row to the right edge (no stretch); order and widths kept with the account. On a phone the row is two lines and 56px: line 1 is the title columns and the amount, line 2 is the status and up to three meta columns. A column's `phone` flag is `title`, `meta`, `end` or `hide` (the first column, the money column and a stage or status are the defaults). Jobs, Invoices, Reconcile, Price list |
 | `findBox(h, { label, oninput })` | `server/ui/view-bar.js` | FindBox | A list's own search: an icon that opens into a box |
 | `ICONS`, `svg`, `today` | `server/ui/view-bar.js` | | The toolbar icons, an SVG string as a node, the local day |
 | `personLabel`, `initialsOf`, `clipLabel` | `server/ui/person.js` | | A person's name everywhere (pickers, filters, lanes, badges, People): full name, else the whole email; a badge's letters; a native menu's label cut with "…" |
