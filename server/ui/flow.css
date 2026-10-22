@@ -1036,13 +1036,27 @@ th:hover > .fx-th-grip::after { background: var(--t-brd-hi); }
   .fx-auth__title { font-size: 26px; max-width: none; }
 }
 
-/* A one-message page (sign-in off, an error, no access, Xero's return). */
+/* A one-message page (sign-in off, an error, no access, an OAuth return). */
 .fx-message, .fx-centre .fx-message { min-height: 100vh; place-content: center; justify-items: center; gap: 20px; padding: 32px 16px; }
 .fx-centre .fx-message { display: grid; }
 .fx-message__card { display: grid; gap: 12px; width: min(460px, 100%); padding: 28px; }
 .fx-message__card[data-tone="success"] { border-top: 3px solid var(--t-success); }
 .fx-message__card[data-tone="danger"] { border-top: 3px solid var(--t-danger); }
 .fx-message__card .fx-btn { justify-self: start; }
+.fx-message__marks {
+  display: flex; align-items: center; gap: 10px; margin-bottom: 4px;
+}
+.fx-message__marks--solo { justify-content: flex-start; }
+.fx-message__flow .fx-mark { width: 34px; height: 34px; display: block; }
+.fx-message__plus { color: var(--t-dim); font: 600 18px/1 var(--t-body); }
+.fx-message__result {
+  display: grid; place-items: center; width: 28px; height: 28px; margin-left: 4px;
+  border-radius: 50%; color: var(--t-success); background: var(--t-success-bg);
+}
+.fx-message__result[data-tone="danger"] { color: var(--t-danger); background: var(--t-danger-bg); }
+.fx-message__result .fx-lucide { width: 16px; height: 16px; }
+.fx-message__status { margin: 0; }
+.fx-message__return { margin: 0; color: var(--t-dim); font-size: 13.5px; }
 
 .fx-loading { display: none; min-height: 100vh; place-content: center; gap: 12px; color: var(--t-dim); }
 body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
@@ -1625,3 +1639,63 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
 .fx-find__input { display: none; width: min(240px, 60vw); height: 32px; padding: 0 10px; }
 .fx-find--open .fx-find__input { display: block; }
 .fx-find--open .fx-find__button { display: none; }
+
+/* Xero usage on the Xero card (server/ui/xero-usage.js). Colours are tokens. */
+.fx-xero-orgs { display: grid; gap: 18px; }
+.fx-xero-org { display: grid; gap: 12px; }
+.fx-xu { display: grid; gap: 14px; }
+.fx-xu__top { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
+.fx-xu__chips { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.fx-xu-ring { position: relative; width: 112px; height: 112px; flex: none; }
+.fx-xu-ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+.fx-xu-ring__track { fill: none; stroke: var(--fx-line); stroke-width: 3; }
+.fx-xu-ring__used { fill: none; stroke: var(--t-accent); stroke-width: 3; stroke-linecap: round; }
+.fx-xu[data-tone="warn"] .fx-xu-ring__used { stroke: var(--t-warn); }
+.fx-xu[data-tone="danger"] .fx-xu-ring__used { stroke: var(--t-danger); }
+.fx-xu-ring__label { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 2px; }
+.fx-xu-ring__num { color: var(--t-strong); font: 650 22px/1 var(--t-body); font-variant-numeric: tabular-nums; }
+.fx-xu-ring__of { color: var(--t-dim); font-size: 12px; font-variant-numeric: tabular-nums; }
+.fx-xu__fold { display: grid; gap: 12px; padding: 12px 14px; border: 1px solid var(--fx-line); border-radius: var(--t-radius-lg); background: var(--t-paper); }
+.fx-xu__fold summary { cursor: pointer; color: var(--t-strong); font-weight: 650; }
+.fx-xu__fold summary:focus-visible { outline: 2px solid var(--t-ring, var(--t-accent)); outline-offset: 2px; }
+.fx-xu-legend { display: flex; flex-wrap: wrap; gap: 8px 14px; }
+.fx-xu-legend span { display: inline-flex; align-items: center; gap: 6px; color: var(--t-dim); font-size: 12.5px; }
+.fx-xu-legend i, .fx-xu-lane { display: inline-block; }
+.fx-xu-legend i { width: 8px; height: 8px; border-radius: 2px; }
+.fx-xu-hours { display: flex; align-items: flex-end; gap: 3px; height: 88px; }
+.fx-xu-hour { flex: 1; min-width: 0; height: 100%; display: flex; align-items: flex-end; }
+.fx-xu-hour__stack { display: flex; flex-direction: column-reverse; width: 100%; height: var(--h, 0%); border-radius: 2px 2px 0 0; overflow: hidden; }
+.fx-xu-hour__stack i { display: block; width: 100%; height: var(--part, 0%); }
+.fx-xu-lane[data-lane="writes"] { background: var(--t-accent); }
+.fx-xu-lane[data-lane="sync"] { background: var(--t-success); }
+.fx-xu-lane[data-lane="reads"] { background: var(--t-warn); }
+.fx-xu-lane[data-lane="other"] { background: color-mix(in srgb, var(--t-text) 35%, var(--t-bg)); }
+.fx-xu-budget { display: flex; height: 10px; border-radius: 999px; overflow: hidden; background: var(--fx-hover); }
+.fx-xu-budget i { flex: none; width: var(--part, 0%); height: 100%; }
+.fx-xu-dots { display: flex; flex-wrap: wrap; gap: 12px 16px; }
+.fx-xu-dot { display: inline-flex; align-items: center; gap: 6px; color: var(--t-dim); font-size: 12.5px; }
+.fx-xu-dot::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--t-dim); }
+.fx-xu-dot[data-tone="success"]::before { background: var(--t-success); }
+.fx-xu-dot[data-tone="warn"]::before { background: var(--t-warn); }
+.fx-xu-dot[data-tone="danger"]::before { background: var(--t-danger); }
+.fx-xu-days { position: relative; display: flex; align-items: stretch; gap: 8px; height: 108px; }
+.fx-xu-days__line { position: absolute; left: 0; right: 0; bottom: calc(16px + (100% - 20px) * var(--warn, 0.7)); height: 0; border-top: 1px dashed var(--t-warn); pointer-events: none; }
+.fx-xu-day { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.fx-xu-day__bar { flex: 1; display: flex; align-items: flex-end; justify-content: center; width: 100%; }
+.fx-xu-day b { display: block; width: 70%; max-width: 28px; height: var(--h, 0%); border-radius: 3px 3px 0 0; background: var(--t-accent); }
+.fx-xu-day[data-warning="true"] b { background: var(--t-warn); }
+.fx-xu-day[data-over="true"] b { background: var(--t-danger); }
+.fx-xu-day > span:last-child { color: var(--t-dim); font-size: 11px; font-variant-numeric: tabular-nums; }
+.fx-xu-rows { display: grid; gap: 6px; }
+.fx-xu-row { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; }
+.fx-xu-row span { color: var(--t-text); }
+.fx-xu-row b { color: var(--t-strong); font-weight: 650; font-variant-numeric: tabular-nums; }
+.fx-xu .fx-notice { margin-top: 4px; }
+@media (max-width: 640px) {
+  .fx-xu__top { gap: 14px; }
+  .fx-xu-ring { width: 96px; height: 96px; }
+  .fx-xu-ring__num { font-size: 20px; }
+  .fx-xu-hours { overflow-x: auto; }
+  .fx-xu-hour { flex: none; width: 10px; }
+  .fx-xu__fold { padding: 12px; }
+}

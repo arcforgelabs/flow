@@ -1,0 +1,24 @@
+<!-- @dsCard group="Feedback" height=320 -->
+<section class="fx-card fx-message__card" data-tone="success" style="width: min(420px, 100%); margin: 12px;">
+  <div class="fx-message__marks" aria-hidden="true">
+    <span class="fx-logo fx-logo--lg fx-message__flow">
+      <svg class="fx-mark" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+        <rect width="32" height="32" rx="8" fill="var(--t-primary)"/>
+        <path d="M7 13.5c3-3 6-3 9 0s6 3 9 0M7 20.5c3-3 6-3 9 0s6 3 9 0" fill="none" stroke="var(--t-on-primary)" stroke-width="2.4" stroke-linecap="round"/>
+      </svg>
+    </span>
+    <span class="fx-message__plus">+</span>
+    <span class="fx-logo fx-logo--lg fx-logo--icon" id="plug"></span>
+    <span class="fx-message__result" data-tone="success" id="tick"></span>
+  </div>
+  <h1 class="fx-title" style="font-size: 22px; margin: 0;">Xero is connected</h1>
+  <p class="fx-message__status"><span class="fx-status" data-tone="success">Example Lab · Demo</span></p>
+  <p style="margin: 0;">Flow is now copying its invoice and payment history in the background.</p>
+  <p class="fx-message__return" style="margin: 0;">Going back to Flow in 5 seconds</p>
+  <a class="fx-btn" href="#">Back to Flow</a>
+</section>
+<script>
+const { h, lucide } = window.FlowDesignSystem;
+document.getElementById('plug').append(lucide(h, 'plug'));
+document.getElementById('tick').append(lucide(h, 'check-circle'));
+</script>

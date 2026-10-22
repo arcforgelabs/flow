@@ -1,4 +1,5 @@
 import { FlowError } from '../../core/errors.js';
+import { currentXeroLane } from './governor.js';
 import { XERO_ENDPOINTS } from './settings.js';
 
 // The Xero Accounting API client. Every call goes through the rate-limit
@@ -130,7 +131,7 @@ export function createXeroClient({
       } catch (error) {
         if (error?.code === 'xero_replay_no_match') throw error;
         const timedOut = error?.name === 'AbortError';
-        await guard?.record(tenantId, { ...call, failureKind: timedOut ? 'timeout' : 'network', durationMs: Date.now() - startedAt });
+        await guard?.record(tenantId, { ...call, failureKind: timedOut ? 'timeout' : 'network', durationMs: Date.now() - startedAt, lane: currentXeroLane() });
         throw xeroError(timedOut ? 'xero_timeout' : 'xero_unreachable',
           timedOut ? `Xero did not answer within ${timeoutMs} ms.` : 'Flow could not reach Xero.',
           { status: timedOut ? 504 : 503 });
@@ -169,7 +170,16 @@ export function createXeroClient({
       // A first 401 usually means the access token expired: it is not counted,
       // and the call is tried once more with a fresh token.
       const expiredToken = response.status === 401 && !refreshed;
-      if (!expiredToken) await guard?.record(tenantId, { ...call, statusCode: response.status, durationMs });
+      const problem = response.status === 429 ? response.headers?.get?.('x-rate-limit-problem')?.trim() || null : null;
+      if (!expiredToken) {
+        await guard?.record(tenantId, {
+          ...call,
+          statusCode: response.status,
+          durationMs,
+          lane: currentXeroLane(),
+          rateLimitProblem: problem,
+        });
+      }
       if (response.ok) return payload ?? {};
 
       const error = apiError(response, payload);

@@ -21,6 +21,11 @@ export const XERO_CALL_GUARD = Object.freeze({
   name: 'Xero',
   tables: Object.freeze({ state: 'xero_call_guard', calls: 'xero_calls' }),
   policy: Object.freeze({ authStops: 'resource' }),
+  // Kept on the call row so the Xero card can show lanes and 429s after a restart.
+  telemetry: Object.freeze({
+    lane: Object.freeze(['writes', 'sync', 'reads', 'other']),
+    rateLimitProblem: true,
+  }),
 });
 
 export function requireXeroSettings(env = process.env) {
