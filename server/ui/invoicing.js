@@ -272,7 +272,7 @@ export async function renderInvoiceList(main, ui) {
       else await load();
       alerts.refresh();
     } catch (error) {
-      toast(error.message, 'danger');
+      toast(error.message, 'danger', { stay: true });
     }
   }
 
@@ -298,9 +298,15 @@ export async function renderInvoiceList(main, ui) {
           working(to ? 'Sending' : 'Approving');
           // The sent ones show on Draft as Sending until the accounting
           // system has them; the approved ones on Approved.
-          await post('send-ready', { issueDate: localDate(), invoiceIds: ticked },
-            (res) => [`${to ? `${res.issued} on the way to ${to}.` : `${res.issued} approved.`}${res.held ? ` ${res.held} failed a check and went to Pending.` : ''}${res.remaining ? ` ${res.remaining} more stay in Ready: tick them and press again.` : ''}`, res.held ? 'info' : 'success'],
-            (res) => (res.issued ? (to ? 'draft' : 'approved') : null));
+          await post('send-ready', { issueDate: localDate(), invoiceIds: ticked }, (res) => {
+            const sent = to ? `${res.issued} on the way to ${to}.` : `${res.issued} approved.`;
+            const notes = [
+              res.held ? `${res.held} failed a check and went to Pending.` : '',
+              res.waiting ? `${res.waiting} could not be confirmed with the work system yet: press Send again.` : '',
+              res.remaining ? `${res.remaining} more stay in Ready: tick them and press again.` : '',
+            ].filter(Boolean);
+            return [`${sent}${notes.length ? ` ${notes.join(' ')}` : ''}`, res.held || res.waiting ? 'info' : 'success'];
+          }, (res) => (res.issued ? (to ? 'draft' : 'approved') : null));
         },
       });
     }
@@ -981,7 +987,7 @@ function draftView(invoice, ui, context, redraw) {
         toast(`${fresh.number} is on the way to ${to}.`, 'success');
         openNext(ui, invoice.id);
       } catch (error) {
-        toast(error.message, 'danger');
+        toast(error.message, 'danger', { stay: true });
       }
     },
   }, emails ? `Send to ${to} and email` : `Send to ${to}`) : null;

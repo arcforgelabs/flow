@@ -282,6 +282,14 @@ a.fx-link:hover, a.fx-link:focus-visible { border-color: var(--t-strong); }
   box-shadow: 0 8px 24px rgba(0, 0, 0, .18); animation: fx-rise 160ms var(--fx-ease);
 }
 .fx-toast[data-tone="danger"] { background: var(--t-danger); color: var(--t-paper); }
+.fx-toast--stay { display: flex; align-items: flex-start; gap: 12px; }
+.fx-toast__text { flex: 1; min-width: 0; }
+.fx-toast__close {
+  flex: none; display: grid; place-items: center; width: 28px; height: 28px; margin: -6px -8px -6px 0;
+  border: 0; border-radius: var(--t-radius); background: transparent; color: inherit; cursor: pointer; opacity: .85;
+}
+.fx-toast__close:hover { opacity: 1; background: color-mix(in srgb, currentColor 14%, transparent); }
+.fx-toast__close svg { width: 16px; height: 16px; }
 
 /* ── Table and people ───────────────────────────────────────────────────── */
 .fx-table { width: 100%; border-collapse: collapse; font-size: 14px; }

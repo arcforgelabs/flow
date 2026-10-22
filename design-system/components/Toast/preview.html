@@ -1,8 +1,9 @@
-<!-- @dsCard group="Feedback" height=120 -->
+<!-- @dsCard group="Feedback" height=160 -->
 <div class="fds-row" id="root"></div>
 <script>
 const { h, toast } = window.FlowDesignSystem;
 document.getElementById('root').append(
   h('button', { class: 'fx-btn', type: 'button', onclick: () => toast('3 invoices sent.', 'success') }, 'Success'),
-  h('button', { class: 'fx-btn', type: 'button', onclick: () => toast('Xero asks Flow to wait. Try again in a minute.', 'warn') }, 'Warn'));
+  h('button', { class: 'fx-btn', type: 'button', onclick: () => toast('Xero asks Flow to wait. Try again in a minute.', 'warn') }, 'Warn'),
+  h('button', { class: 'fx-btn fx-btn--danger', type: 'button', onclick: () => toast('3 jobs could not be read from the work system. Nothing was sent.', 'danger', { stay: true }) }, 'Danger stay'));
 </script>
