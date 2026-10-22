@@ -798,6 +798,29 @@ th:hover > .fx-th-grip::after { background: var(--t-brd-hi); }
   .fx-main--board .fx-board { height: 100%; overflow-y: hidden; align-items: stretch; }
   .fx-main--board .fx-board__cards { flex: 1; max-height: none; }
 }
+/* Phone: one lane fills the width and snaps. Stage tabs (jobs.js) name the
+   lane; the lane's own head is hidden. Drag stays on a wider screen. */
+.fx-board-tabs { display: none; }
+@media (max-width: 639px) {
+  .fx-main--board .fx-board-tabs:not([hidden]) {
+    display: flex; flex: 1 1 100%; order: -1; gap: 2px; min-width: 0; max-width: 100%;
+    overflow-x: auto; scrollbar-width: none;
+  }
+  .fx-board-tabs button {
+    flex: none; display: inline-flex; align-items: center; gap: 8px; min-width: 44px; min-height: 44px;
+    padding: 0 12px; border: 0; border-bottom: 2px solid transparent; background: transparent;
+    color: var(--t-dim); font: 600 14px var(--t-body); cursor: pointer;
+  }
+  .fx-board-tabs button[aria-selected="true"] { color: var(--t-strong); border-bottom-color: var(--t-brand); }
+  .fx-main--board .fx-frame__body { padding: 0; }
+  .fx-main--board .fx-board {
+    --fx-lane: 100%; grid-auto-columns: 100%; gap: 0; min-width: 0; width: 100%;
+    scroll-snap-type: x mandatory; scrollbar-width: none;
+  }
+  .fx-main--board .fx-board__col { scroll-snap-align: start; scroll-snap-stop: always; border-radius: 0; }
+  .fx-main--board .fx-board__head { display: none; }
+  .fx-main--board .fx-board__cards { max-height: none; padding: 8px; }
+}
 .fx-board__none { padding: 8px 4px; color: var(--t-dim); font-size: 13px; }
 .fx-table--jobs tbody tr { cursor: pointer; }
 
@@ -992,6 +1015,17 @@ th:hover > .fx-th-grip::after { background: var(--t-brd-hi); }
 .fx-dialog__form { display: grid; gap: 16px; padding: 22px; }
 .fx-dialog__title { color: var(--t-strong); font: var(--t-display-weight) 21px/1.2 var(--t-display); }
 .fx-dialog__actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+.fx-dialog[data-phone-layout="sheet"] {
+  position: fixed; inset: auto 0 0 0; width: 100%; max-width: 100%; max-height: min(80vh, 100%);
+  margin: 0; border-radius: var(--t-radius-lg) var(--t-radius-lg) 0 0;
+}
+.fx-sheet__choices { display: grid; gap: 4px; }
+.fx-sheet__choice {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%;
+  min-height: 44px; padding: 0 12px; border: 0; border-radius: var(--t-radius);
+  background: transparent; color: var(--t-strong); font: 600 15px var(--t-body); text-align: left; cursor: pointer;
+}
+.fx-sheet__choice:hover { background: var(--fx-hover); }
 
 /* Search (search.js): a box near the top, results grouped under it. */
 .fx-search-dialog { width: min(600px, calc(100vw - 32px)); margin-top: 12vh; }

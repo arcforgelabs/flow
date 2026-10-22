@@ -192,3 +192,13 @@ export function matches(job, q) {
   return [job.caseRef, job.sourceJobRef, job.clientName, job.workClientName, job.practitioner, job.obligation?.invoiceNumber]
     .some((value) => value && String(value).toLowerCase().includes(needle));
 }
+
+// How long a press on a phone card is held before Move to opens.
+export const PHONE_HOLD_MS = 500;
+
+// The lane showing when one lane fills the phone and the board snaps.
+// A lane just past halfway counts as the next. `count` is how many lanes.
+export function phoneLaneIndex(scrollLeft, laneWidth, count) {
+  if (!(laneWidth > 0) || !(count > 0)) return 0;
+  return Math.max(0, Math.min(count - 1, Math.round(scrollLeft / laneWidth)));
+}

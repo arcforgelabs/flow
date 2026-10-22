@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
-  caseNumber, fixes, GO, invoiceStage, matches, NO_STATUS, orderStatuses, problemSummary,
+  caseNumber, fixes, GO, invoiceStage, matches, NO_STATUS, orderStatuses, phoneLaneIndex, problemSummary,
 } from '../server/ui/job-board.js';
 
 // The Jobs board's rules (server/ui/job-board.js). Synthetic data only.
@@ -114,4 +114,12 @@ test('search finds a job by case, client or practitioner', () => {
   const job = { caseRef: 'CASE-77', clientName: 'Example Practice', practitioner: 'Dr Sample', obligation: null };
   for (const q of ['case-77', 'example', 'SAMPLE', '']) assert.ok(matches(job, q), q);
   assert.ok(!matches(job, 'nothing'));
+});
+
+test('a phone swipe names the lane that is more than halfway across', () => {
+  assert.equal(phoneLaneIndex(0, 375, 6), 0);
+  assert.equal(phoneLaneIndex(180, 375, 6), 0);
+  assert.equal(phoneLaneIndex(200, 375, 6), 1);
+  assert.equal(phoneLaneIndex(2000, 375, 6), 5);
+  assert.equal(phoneLaneIndex(10, 0, 6), 0);
 });
