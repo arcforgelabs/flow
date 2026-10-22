@@ -1,7 +1,7 @@
 // scripts/release/release-stable.mjs: the one-command stable release, with
 // `gh` and `npm` replaced by a fake that answers from a table.
 import assert from "node:assert/strict";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -10,6 +10,7 @@ import { loadState, parseArgs, PHASES, ReleaseRefusal, runReleaseStable } from "
 const CUT = "c".repeat(40);
 const HEAD = "d".repeat(40);
 const REPO = "arcforgelabs/flow";
+const PAGE = "---\ntitle: \"v2026.10.40\"\n---\n";
 
 function options(extra = []) {
   return { ...parseArgs(["2026.10.40", ...extra]), stateDir: mkdtempSync(join(tmpdir(), "flow-release-stable-")) };
@@ -43,6 +44,15 @@ function fake(world) {
       if (path.startsWith(`repos/${REPO}/commits/${"e".repeat(40)}/check-runs`)) {
         return JSON.stringify({ check_runs: ["test", "gitleaks"].map((name, id) => ({ id, name, app: { id: 15368 }, status: "completed", conclusion: "success" })) });
       }
+    }
+    if (path === `repos/${REPO}/contents/docs/releases/2026.10.40.md?ref=main`) return JSON.stringify({ content: Buffer.from(PAGE).toString("base64") });
+    if (path === `repos/${REPO}/releases/tags/v2026.10.40`) return JSON.stringify({ id: 5, html_url: "r", body: world.body ?? "notes" });
+    if (command === "curl") return world.served ?? PAGE;
+    if (command === "node" && args[1] === "thanks") return "roster\n";
+    if (command === "node" && args[1] === "verify") return "ok\n";
+    if (args[0] === "api" && args[1] === "-X" && args[2] === "PATCH") {
+      world.body = "roster";
+      return "{}";
     }
     if (args[0] === "api" && args[1] === "-X" && args[2] === "PUT") return "{}";
     const dispatched = /actions\/workflows\/([\w.-]+)\/dispatches$/.exec(args[3] ?? "");
@@ -81,7 +91,7 @@ test("the options name one stable version and full commit hashes", () => {
   assert.throws(() => parseArgs(["2026.10.40", "--yes"]), /Unknown option --yes/);
   assert.equal(parseArgs(["2026.10.40"]).hold, false);
   assert.equal(parseArgs(["2026.10.40", "--hold"]).hold, true);
-  assert.deepEqual(PHASES, ["cut", "validate", "publish", "flip-github", "sync-beta", "closeout"]);
+  assert.deepEqual(PHASES, ["cut", "validate", "publish", "flip-github", "sync-beta", "closeout", "docs", "thanks"]);
 });
 
 test("the cut needs the notes, and prints how to write them at the newest validated main commit", () => {
@@ -132,6 +142,10 @@ test("with the notes named, it runs every phase once with no stop, and a rerun d
     `${start("flow-release-promote.yml")} -f inputs[tag]=v2026.10.40`,
   ]);
   assert.ok(calls.includes(`gh api -X PUT repos/${REPO}/pulls/12/merge -f merge_method=squash`));
+  assert.ok(calls.includes("curl -fsSL https://arcforgelabs.github.io/docs/flow/releases/2026.10.40.md"));
+  assert.ok(calls.some((call) => call.startsWith(`gh api -X PATCH repos/${REPO}/releases/5 -F body=@`)));
+  assert.ok(calls.includes("node scripts/release/changelog.mjs verify --version 2026.10.40 --check-github --post-docs"));
+  assert.equal(state.docs.page, "https://arcforgelabs.github.io/docs/flow/releases/2026.10.40/");
   const again = fake(world);
   runReleaseStable(opts, { exec: again.exec, ...quiet });
   assert.deepEqual(again.calls.filter((call) => call.includes("/dispatches") || call.includes("/merge")), []);
@@ -143,6 +157,27 @@ test("with --hold, publication waits for approval; a failed validation stops the
   assert.throws(() => runReleaseStable(opts, { exec: fake(world).exec, ...quiet }), /Approve publishing v2026.10.40/);
   const failing = { ...world, validation: "failure" };
   assert.throws(() => runReleaseStable(options(), { exec: fake(failing).exec, ...quiet }), /Flow Full Release Validation of release\/2026.10.40 ended failure/);
+});
+
+test("the roster waits until the docs site serves the page main has", () => {
+  const world = { runs: {}, beta: "2026.10.40", branch: true, tagged: true, npm: true, closedOut: true, served: "old" };
+  const opts = options(["--notes-ref", "notes"]);
+  let now = 0;
+  assert.throws(() => runReleaseStable(opts, { exec: fake(world).exec, sleep: (ms) => (now += ms), now: () => now, log: () => {} }), /does not serve docs\/releases\/2026\.10\.40\.md/);
+  assert.equal(loadState(opts).phases.thanks.status, "pending");
+});
+
+test("a state file from before the docs phases resumes at them", () => {
+  const opts = options();
+  const state = loadState(opts);
+  delete state.phases.docs;
+  delete state.phases.thanks;
+  delete state.docs;
+  delete state.thanks;
+  writeFileSync(join(opts.stateDir, "state.json"), JSON.stringify(state));
+  const loaded = loadState(opts);
+  assert.equal(loaded.phases.docs.status, "pending");
+  assert.deepEqual(loaded.thanks, {});
 });
 
 test("a dry run prints the commands that change anything and runs none of them", () => {

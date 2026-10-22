@@ -23,6 +23,12 @@
 //   closeout     the closeout pull request (Flow Release Closeout) that
 //                brings what shipped back to main: opens it if GitHub Actions
 //                could not, waits for its checks, and merges it.
+//   docs         waits until the docs site (arcforgelabs/docs) serves the
+//                release's page, docs/releases/<v>.md, as main has it.
+//   thanks       OpenClaw's step after the docs deploy: reads the GitHub
+//                Release again and replaces only its body with the roster
+//                body (`changelog.mjs thanks`: numbers, docs and changelog
+//                links, every credited person), then reads it back.
 //
 // State lives in .artifacts/release-<v>/state.json. Running the command again
 // continues from the first phase not completed; --from <phase> starts again
@@ -41,9 +47,10 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { evaluateChecks } from "../deploy-checks.js";
+import { DOCS_SITE } from "./changelog.mjs";
 import { parseBaseVersion } from "./release.mjs";
 
-export const PHASES = ["cut", "validate", "publish", "flip-github", "sync-beta", "closeout"];
+export const PHASES = ["cut", "validate", "publish", "flip-github", "sync-beta", "closeout", "docs", "thanks"];
 export const PACKAGE = "@arcforgelabs/flow";
 const POLL_MS = 30_000;
 // How long a phase waits for a run to start, and for one to finish.
@@ -161,6 +168,8 @@ export function emptyState(options) {
     "flip-github": {},
     "sync-beta": {},
     closeout: {},
+    docs: {},
+    thanks: {},
   };
 }
 
@@ -170,6 +179,11 @@ export function loadState(options) {
   const state = JSON.parse(readFileSync(file, "utf8"));
   if (state.version !== options.version || state.repo !== options.repo) {
     throw new ReleaseRefusal(`${file} belongs to ${state.repo} ${state.version}`, [`npm run release:stable -- ${options.version} --state-dir ${options.stateDir}-${options.version}`]);
+  }
+  // A state file from before a phase existed: that phase has not run.
+  for (const phase of PHASES) {
+    state.phases[phase] ??= { status: "pending" };
+    state[phase] ??= {};
   }
   return state;
 }
@@ -428,6 +442,46 @@ const phases = {
     }
     ctx.run("gh", ["api", "-X", "PUT", `repos/${state.repo}/pulls/${pr.number}/merge`, "-f", "merge_method=squash"], { mutates: true });
     state.closeout.mergedAt = new Date(ctx.now()).toISOString();
+  },
+
+  docs(ctx) {
+    const { state, options } = ctx;
+    const path = `docs/releases/${state.version}.md`;
+    const url = `${DOCS_SITE}/releases/${state.version}.md`;
+    state.docs.page = `${DOCS_SITE}/releases/${state.version}/`;
+    if (options.dryRun) return;
+    const source = api(ctx, `repos/${state.repo}/contents/${path}?ref=main`, { allowFailure: true });
+    if (!source) throw new ReleaseRefusal(`main has no ${path}; the closeout pull request carries it`, [`node scripts/release/changelog.mjs index`, ctx.resume()]);
+    const want = Buffer.from(source.content, "base64").toString("utf8");
+    // Docs Sync Publish mirrors docs/ after the closeout merges, and the docs
+    // repository's Pages workflow deploys it.
+    const deadline = ctx.now() + FINISH_MS;
+    for (;;) {
+      if (ctx.run("curl", ["-fsSL", url], { allowFailure: true }) === want) break;
+      if (ctx.now() > deadline) throw new ReleaseRefusal(`the docs site does not serve ${path} as main has it: ${url}`, [`gh workflow run docs-sync-publish.yml --repo ${state.repo} --ref main`, ctx.resume()]);
+      ctx.sleep(POLL_MS);
+    }
+    state.docs.servedAt = new Date(ctx.now()).toISOString();
+  },
+
+  thanks(ctx) {
+    const { state, options } = ctx;
+    const changelog = ["scripts/release/changelog.mjs"];
+    const body = ctx.run("node", [...changelog, "thanks", "--version", state.version], { mutates: true, dryValue: "" });
+    if (options.dryRun) return;
+    const release = api(ctx, `repos/${state.repo}/releases/tags/${state.tag}`);
+    const normal = (text) => String(text ?? "").replace(/\r\n/g, "\n").trimEnd();
+    if (normal(release.body) === normal(body)) {
+      ctx.log(`the ${state.tag} body is already the roster body`);
+    } else {
+      mkdirSync(options.stateDir, { recursive: true });
+      const file = join(options.stateDir, "release-body.md");
+      writeFileSync(file, body);
+      ctx.run("gh", ["api", "-X", "PATCH", `repos/${state.repo}/releases/${release.id}`, "-F", `body=@${file}`], { mutates: true });
+    }
+    ctx.run("node", [...changelog, "verify", "--version", state.version, "--check-github", "--post-docs"]);
+    state.thanks.release = release.html_url;
+    state.thanks.updatedAt = new Date(ctx.now()).toISOString();
   },
 };
 

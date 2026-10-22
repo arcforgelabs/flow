@@ -21,7 +21,10 @@ import {
   releaseNotes,
   renderIndex,
   renderRecordFile,
+  renderDocsPage,
   renderSection,
+  renderThanksBody,
+  verificationTail,
 } from "../scripts/release/changelog.mjs";
 
 const root = join(import.meta.dirname, "..");
@@ -226,6 +229,32 @@ test("draft, write and verify work from a git history and GitHub", () => {
   assert.match(main(["verify", "--version", "2026.10.2", "--check-github"], dir, { request: published }), /body is CHANGELOG\/2026\.10\.2\.md/);
   assert.throws(() => main(["verify", "--version", "2026.10.2", "--check-github"], dir, { request: fakeGithub({ releases: { "v2026.10.2": { body: "generated" } } }) }), /not the changelog section/);
 
+  // The docs page: written with the file, checked against it.
+  const page = join(dir, "docs", "releases", "2026.10.2.md");
+  assert.equal(readFileSync(page, "utf8"), renderDocsPage("2026.10.2", edited));
+  writeFileSync(page, `${readFileSync(page, "utf8")}\nEdited by hand.\n`);
+  assert.throws(() => main(["check"], dir), /docs\/releases\/2026\.10\.2\.md is not the docs page of CHANGELOG\/2026\.10\.2\.md/);
+  main(["index"], dir);
+  writeFileSync(join(dir, "docs", "releases", "2026.10.7.md"), "# v2026.10.7\n");
+  assert.throws(() => main(["check"], dir), /docs\/releases\/2026\.10\.7\.md has no stable CHANGELOG\/2026\.10\.7\.md/);
+  execFileSync("rm", [join(dir, "docs", "releases", "2026.10.7.md")]);
+
+  // After the docs deploy: the roster body, with the maintainer, the direct
+  // commit's people, and the published verification section.
+  const proof = "### Release verification\n\n- Flow Full Release Validation passed.";
+  const deployed = (body) => (path) => {
+    if (/commits\/[0-9a-f]{40}$/.test(path)) return { author: { login: "IAMSamuelRodda", type: "User" }, commit: { message: "chore: direct commit\n\nCo-authored-by: Ken <7+ken@users.noreply.github.com>\nCo-authored-by: Claude <noreply@anthropic.com>" } };
+    if (/releases\/tags\//.test(path)) return { body };
+    return request(path);
+  };
+  const thanks = main(["thanks", "--version", "2026.10.2"], dir, { request: deployed(`${notes}\n${proof}\n`) });
+  assert.equal(thanks, renderThanksBody({ version: "2026.10.2", pullRequests: 3, directCommits: 1, roster: ["ada", "IAMSamuelRodda", "ken"], verification: proof }));
+  assert.match(thanks, /^## 2026\.10\.2\n\nThis release covers \*\*3 pull requests, 1 direct commit, and 3 contributors\.\*\*\n/);
+  assert.match(thanks, /- Release notes: https:\/\/arcforgelabs\.github\.io\/docs\/flow\/releases\/2026\.10\.2\/\n/);
+  assert.match(thanks, /### Thanks\n\n@ada, @IAMSamuelRodda, @ken\n\n### Release verification\n/);
+  assert.match(main(["verify", "--version", "2026.10.2", "--check-github", "--post-docs"], dir, { request: deployed(thanks) }), /roster body/);
+  assert.throws(() => main(["verify", "--version", "2026.10.2", "--check-github", "--post-docs"], dir, { request: deployed(notes) }), /not the roster body/);
+
   // A beta starts at what npm's beta tag selects before it publishes.
   commit("feat: invoices (#5)");
   assert.match(main(["draft", "--version", "2026.10.3-beta.1"], dir, { request: fakeGithub({ pulls: { 5: {} } }), npm: () => "2026.10.2" }), /- \*\*PR #5\*\*\n$/);
@@ -265,6 +294,22 @@ test("a release on its own branch starts where it split from the previous releas
   assert.match(draft, /#### Pull requests\n\n- \*\*PR #3\*\*\n- \*\*PR #5\*\*\n- \*\*PR #6\*\*\n$/);
   assert.ok(draft.includes(`${run("rev-parse", "v2026.10.2").trim()}..${run("rev-parse", "HEAD").trim()} history: 3 in-range PRs`));
   assert.deepEqual(JSON.parse(readFileSync(manifest, "utf8")).shippedByBase, [4]);
+});
+
+test("a docs page links the prose's pull requests, issues and people, and has no record rows", () => {
+  const text = section("2026.10.5", {
+    highlights: ["- Invoices sync. (#12) Thanks @ada.", "- b. (#13)", "- c. (#13)", "- d. (#13)", "- e. (#13)"],
+    changes: ["- Invoices sync, as #9 asked. (#12) Thanks @ada."],
+    rows: ["- **PR #12** Related #9. Thanks @ada.", "- **PR #13**"],
+  });
+  const page = renderDocsPage("2026.10.5", text);
+  assert.match(page, /^---\ntitle: "v2026\.10\.5"\nsummary: "Invoices sync\."\n/);
+  assert.match(page, /\n# v2026\.10\.5\n\n<!-- Written by/);
+  assert.match(page, /This release covers \*\*2 pull requests, with thanks to 1 contributor\.\*\*/);
+  assert.match(page, /- Invoices sync, as \[#9\]\(https:\/\/github\.com\/arcforgelabs\/flow\/issues\/9\) asked\. \(\[#12\]\(https:\/\/github\.com\/arcforgelabs\/flow\/pull\/12\)\) Thanks \[@ada\]\(https:\/\/github\.com\/ada\)\./);
+  assert.doesNotMatch(page, /## Fixes|\*\*PR #/);
+  assert.equal(verificationTail("notes\n\n### Release verification\n\n- ok\n"), "### Release verification\n\n- ok");
+  assert.equal(verificationTail("notes"), "");
 });
 
 test("Prepare verifies the changelog before it tags, and Publish uses it and checks the published body", () => {
