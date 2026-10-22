@@ -1,3 +1,4 @@
+import { can } from './permissions.js';
 import { displayNameOf, googleWorkspaceOwner, primaryEmailOf, secondFactorVerified } from './clerk.js';
 import { fillPersonName, findPersonByClerkId, findPersonByEmail, linkPerson, recordPendingPerson } from './people.js';
 import { DEFAULT_OWNER_MFA_MAX_AGE_MINUTES, isPlainEmail } from './settings.js';
@@ -17,6 +18,7 @@ const DENIALS = {
   access_pending: [403, "You're signed in, but a Flow owner still needs to approve your access."],
   access_disabled: [403, 'Your Flow access has been turned off. Ask a Flow owner if this is a mistake.'],
   role_required: [403, 'Your Flow role does not allow this.'],
+  permission_required: [403, 'You do not have permission to do this.'],
   owner_required: [403, 'Only a Flow owner can do this.'],
   owner_verification_required: [403, null],
   sign_in_unavailable: [503, 'Sign-in is unavailable right now. Try again shortly.'],
@@ -149,6 +151,20 @@ export function createPersonAuth({
     return (req, res, next) => (roles.includes(req.person?.role) ? next() : deny(res, 'role_required'));
   }
 
+  // The same list the Settings page edits (server/auth/permissions.js). A
+  // database error fails closed.
+  function requirePermission(key) {
+    return async (req, res, next) => {
+      try {
+        if (await can(db, req.person, key)) return next();
+        return deny(res, 'permission_required');
+      } catch (error) {
+        log.error?.(`[auth] permission check failed: ${error.message}`);
+        return deny(res, 'sign_in_unavailable');
+      }
+    };
+  }
+
   async function cachedClerkUser(clerkUserId) {
     const cached = clerkUsers.get(clerkUserId);
     if (cached && cached.expiresAt > now()) return cached.user;
@@ -178,15 +194,22 @@ export function createPersonAuth({
     }
   }
 
-  // Owner-only routes: managing people, and later settings. Use after
-  // requireSession.
-  async function requireOwner(req, res, next) {
-    if (req.person?.role !== 'owner') return deny(res, 'owner_required');
+  // The verified-sign-in half of an owner action: a second factor, or Google
+  // Workspace on the owner domain with no password. Use after requireSession.
+  async function requireVerified(req, res, next) {
     const check = await ownerVerification(req.person, req.clerkAuth);
     if (check.unavailable) return deny(res, 'sign_in_unavailable');
     if (!check.verified) return deny(res, 'owner_verification_required', ownerMessage);
     return next();
   }
 
-  return { requireSession, requireRole, requireOwner, ownerVerification };
+  // Owner-only routes: managing people, and settings that stay with the owner.
+  // Use after requireSession. The role check is here; the sign-in check is
+  // requireVerified, so Connect can keep the sign-in check without the role.
+  async function requireOwner(req, res, next) {
+    if (req.person?.role !== 'owner') return deny(res, 'owner_required');
+    return requireVerified(req, res, next);
+  }
+
+  return { requireSession, requireRole, requirePermission, requireOwner, requireVerified, ownerVerification };
 }

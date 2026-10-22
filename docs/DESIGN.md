@@ -119,12 +119,13 @@ The page at `/sign-in`, `/people`, `/account` and `/appearance`
   band above the card.
 - **Sidebar**: the Flow mark and the views the person may open, daily work
   first: Jobs, Invoices, Reconcile, Price list, Rules, then More. More opens
-  the shared row menu with Automations, Custom fields and Integrations (owners);
-  it shows as current while one of those pages is open. People (owners) and
+  the shared row menu with Automations, Custom fields and Integrations (a person
+  allowed to connect one);
+  it shows as current while one of those pages is open. People, Permissions (owners) and
   Appearance are in the account menu. Account is not in the list: "Manage account" in
   the account menu opens it. At its foot: the account chip (Clerk's photo or
   initial, then the name, or the email when there is no name, clipped to fit)
-  that opens the account menu (Manage account, People, Appearance, Report a problem when Sentry
+  that opens the account menu (Manage account, People, Permissions, Appearance, Report a problem when Sentry
   is on, Sign out; as wide as its rows, 220px to 280px, with a long name or
   email clipped), and Search (also Ctrl+K or ⌘K) for pages, invoices and
   jobs. While Sentry's report form is on, "Report a problem" sits at the
@@ -196,6 +197,10 @@ The page at `/sign-in`, `/people`, `/account` and `/appearance`
   the custom field, then its value, in Flow only. Move says "Not yet available": a
   work system's stages cannot be moved from Flow in bulk yet. Every item
   in the bar is a working tool or says plainly that it is not available.
+- **Permissions** (owners): a title only. A grid of what Owner, Admin and Staff
+  may do. The owner column is on and locked. On a phone, one card per
+  permission. A person's ⋯ menu opens Permissions in the sidecar: Inherit,
+  Allow or Deny.
 - **People** (owners): a title with one primary action, Invite (a dialog:
   email, and role with its one-line hint). One row per person: initials, the
   name (the email under it only when there is a name), the role as a select
@@ -253,6 +258,7 @@ names its card in the Flow Design System.
 | `colorPicker`, `optionPill` | `server/ui/custom-fields.js` | OptionPill | A colour choice; a dropdown option as a coloured pill |
 | `jobChangeBanner(ui, change)`, `jobChangeReview(ui, change, { canAccept, done })` | `server/ui/job-change.js` | JobChangeBanner | "The job changed" on a draft, with Accept change; `jobChangeReview` wires Accept and the recheck (invoice page, a job's Review sidecar) |
 | `sidecar(h, { label, overlay, escape, tabs })` | `server/ui/sidecar.js` | Sidecar | The right-hand panel: tabs with an icon and one word, ×, closed takes no room. A job's panel (Activity, Review); over a page with `overlay` (Custom fields manager) |
+| `permissionGrid(h, { groups, grants, onChange })` | `server/ui/permissions-grid.js` | PermissionGrid | What each role may do: a switch per cell. The owner column is locked on. On a phone, one card per permission with the three switches stacked |
 | `formatCents`, `xeroTag`, `linkIcon`, `accountingIcon` | `server/ui/invoicing.js` | | Money, an accounting status tag, a link to the other system |
 | `automationSection`, `rulesSection`, `sendModeSection`, `lineMappingSection` | `server/ui/automations.js`, `invoice-rules.js`, `invoicing-settings.js`, `line-mappings.js` | | Settings sections a page mounts |
 | `messagePage({ title, text, tone, integration, organisation, mode, autoReturnSeconds })` | `server/ui/page.js` | MessagePage | The shared HTML card after an integration approval (OAuth callback). Flow mark + maker logo, status line (organisation · mode), tick or cross, "Back to Flow". Success may auto-return after a few seconds with a polite countdown; failure never does. Every integration with an approval step uses this, not its own copy. |

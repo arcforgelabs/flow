@@ -255,6 +255,34 @@ test('ticked rows bring up the bulk bar: N selected, the tab\'s actions, and × 
   assert.deepEqual(words(), ['Copy numbers', 'Export CSV', 'Download PDFs', 'Void', 'More']);
 });
 
+test('a staff person given invoices.send sees Send to Xero; without it, the Ready bar does not', async () => {
+  globalThis.sessionStorage = { getItem: () => null, setItem() {}, removeItem() {} };
+  globalThis.document = { visibilityState: 'visible', addEventListener() {}, removeEventListener() {}, createElement: (tag) => new El(tag) };
+  const { main, ui, asked } = page();
+  const flow = ui.flow;
+  ui.flow = (path, options) => (path === '/api/invoicing/context'
+    ? Promise.resolve({ canIssue: true, sendsTo: 'Xero' })
+    : flow(path, options));
+  ui.me = { permissions: { 'invoices.send': false, 'invoices.approve': true, 'invoices.void': false } };
+  const opened = renderInvoiceList(main, ui);
+  await settle();
+  asked.shift().answer({ ...list('ready', ['R-1']), sendsTo: 'Xero' });
+  await opened;
+  const bulk = () => main.all((el) => el.getAttribute('class') === 'fx-bulk')[0];
+  const words = () => bulk().all((el) => /fx-bulk__act( |$)/.test(el.getAttribute('class') ?? '')).map((el) => el.getAttribute('data-tip') ?? el.text);
+  const box = panel(main).all((el) => el.tag === 'input' && el.getAttribute('aria-label')?.startsWith('Tick R-'))[0];
+  box.checked = true;
+  box.onchange();
+  assert.equal(words().includes('Send to Xero'), false);
+
+  ui.me.permissions['invoices.send'] = true;
+  box.checked = false;
+  box.onchange();
+  box.checked = true;
+  box.onchange();
+  assert.equal(words().includes('Send to Xero'), true);
+});
+
 test('the list asks the server for one page; a page button asks for the next rows', async () => {
   globalThis.sessionStorage = { getItem: () => null, setItem() {}, removeItem() {} };
   globalThis.document = { visibilityState: 'visible', addEventListener() {}, removeEventListener() {}, createElement: (tag) => new El(tag) };

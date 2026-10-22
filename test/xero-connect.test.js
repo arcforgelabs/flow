@@ -103,7 +103,7 @@ describe('connecting Xero', { skip: skipWithoutDatabase }, () => {
     test('only an owner can start a connection', async () => {
       const res = await request(app, '/api/xero/connect', { token: lab.staffToken, method: 'POST', body: { organisationId: lab.organisation.id } });
       assert.equal(res.status, 403);
-      assert.equal(res.body.code, 'owner_required');
+      assert.equal(res.body.code, 'permission_required');
     });
 
     test('an owner connects; the redirect URI comes from settings and the refresh token is stored sealed', async () => {

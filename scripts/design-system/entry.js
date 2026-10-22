@@ -11,6 +11,7 @@ import { jobChangeBanner } from '/assets/ui/job-change.js';
 import { named, startTips } from '/assets/ui/tip.js';
 import { savedViews } from '/assets/ui/saved-views.js';
 import { sidecar } from '/assets/ui/sidecar.js';
+import { permissionGrid } from '/assets/ui/permissions-grid.js';
 
 // The colours of a custom field's options, read from server/core/custom-fields.js at build.
 /* global __FLOW_OPTION_COLORS__ */
@@ -29,6 +30,6 @@ else ready();
 
 export {
   bulkBar, colorPicker, columnTable, crumbs, dialog, edgeFade, fieldError, findBox, h, helpLink, holdButton, ICONS, jobChangeBanner, listFrame, listHead, listPager, lucide, named,
-  notice, onRightButton, OPTION_COLORS, optionPill, pageHeader, rowCells, rowMenu, savedViews, sectionTitle, settingRow, sidecar, svg, tileCard,
+  notice, onRightButton, OPTION_COLORS, optionPill, pageHeader, permissionGrid, rowCells, rowMenu, savedViews, sectionTitle, settingRow, sidecar, svg, tileCard,
   tileSection, toast, ui, viewBar, viewSaver,
 };

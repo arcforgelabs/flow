@@ -33,7 +33,7 @@ export function createCustomFieldsRouter({ db, personAuth, work = () => [], log 
   const router = express.Router();
   router.use(express.json({ limit: '32kb' }));
   const signedIn = [personAuth.requireSession];
-  const manager = [...signedIn, personAuth.requireRole('owner', 'admin')];
+  const editor = [...signedIn, personAuth.requirePermission('customFields.edit')];
 
   const handle = (fn) => async (req, res) => {
     try {
@@ -82,17 +82,17 @@ export function createCustomFieldsRouter({ db, personAuth, work = () => [], log 
     res.json({ ok: true, fields, systemFields: system, people: chosen, types: CUSTOM_FIELD_TYPES, groupable: GROUPABLE_TYPES, colors: OPTION_COLORS, groupColors });
   }));
 
-  router.post('/', ...manager, handle(async (req, res) => {
+  router.post('/', ...editor, handle(async (req, res) => {
     const field = await createField(db, await organisationOf(req), req.body, { personId: req.person.id });
     res.status(201).json({ ok: true, field });
   }));
 
-  router.put('/order', ...manager, handle(async (req, res) => {
+  router.put('/order', ...editor, handle(async (req, res) => {
     const fields = await orderFields(db, await organisationOf(req), req.body?.ids, { personId: req.person.id });
     res.json({ ok: true, fields });
   }));
 
-  router.put('/groups/:type', ...manager, handle(async (req, res) => {
+  router.put('/groups/:type', ...editor, handle(async (req, res) => {
     const groupColors = await setGroupColor(db, await organisationOf(req), req.params.type, req.body?.color, { personId: req.person.id });
     res.json({ ok: true, groupColors });
   }));
@@ -111,19 +111,19 @@ export function createCustomFieldsRouter({ db, personAuth, work = () => [], log 
     res.json({ ok: true, history });
   }));
 
-  router.put('/:id', ...manager, handle(async (req, res) => {
+  router.put('/:id', ...editor, handle(async (req, res) => {
     const field = await updateField(db, await organisationOf(req), req.params.id, req.body, { personId: req.person.id });
     res.json({ ok: true, field });
   }));
 
-  router.post('/:id/archive', ...manager, handle(async (req, res) => {
+  router.post('/:id/archive', ...editor, handle(async (req, res) => {
     const archived = req.body?.archived ?? true;
     if (typeof archived !== 'boolean') throw new FlowError('invalid', 'archived must be true or false');
     const field = await archiveField(db, await organisationOf(req), req.params.id, { archived, personId: req.person.id });
     res.json({ ok: true, field });
   }));
 
-  router.delete('/:id', ...manager, handle(async (req, res) => {
+  router.delete('/:id', ...editor, handle(async (req, res) => {
     const deleted = await deleteField(db, await organisationOf(req), req.params.id);
     log.info?.(`[custom-fields] deleted field ${deleted.id} with ${deleted.valuesDeleted} values`);
     res.json({ ok: true, deleted });

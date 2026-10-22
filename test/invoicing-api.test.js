@@ -146,7 +146,7 @@ describe('invoicing API', { skip: skipWithoutDatabase }, () => {
 
     const staffIssue = await call(`/invoices/${draft.id}/issue`, { method: 'POST', token: staffToken, body: {} });
     assert.equal(staffIssue.status, 403);
-    assert.equal(staffIssue.body.code, 'role_required');
+    assert.equal(staffIssue.body.code, 'permission_required');
 
     const issued = await call(`/invoices/${draft.id}/issue`, { method: 'POST', body: { issueDate: '2026-10-19' } });
     assert.equal(issued.status, 200);

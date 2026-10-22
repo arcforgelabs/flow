@@ -37,6 +37,15 @@ const EMPTY = {
 const money = new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' });
 export const formatCents = (cents) => money.format((cents ?? 0) / 100);
 
+// Whether this person may do one thing. The signed-in payload
+// (ui.me.permissions) is the list; canIssue remains for a page that loaded
+// before that list existed.
+export function allows(me, context, key) {
+  const permissions = me?.permissions;
+  if (permissions && Object.prototype.hasOwnProperty.call(permissions, key)) return Boolean(permissions[key]);
+  return Boolean(context?.canIssue);
+}
+
 // Xero's status of an issued invoice, from Flow's copy of Xero (issue #132).
 // A finding (a difference, or a void on one side only) shows as Out of sync.
 const XERO_TONE = {
@@ -281,7 +290,10 @@ export async function renderInvoiceList(main, ui) {
     const numbered = NUMBERED.includes(state.status);
     const status = [];
     const apply = [];
-    if (state.status === 'ready' && context.canIssue) {
+    const canSend = allows(ui.me, context, 'invoices.send');
+    const canApprove = allows(ui.me, context, 'invoices.approve');
+    const canVoid = allows(ui.me, context, 'invoices.void');
+    if (state.status === 'ready' && (to ? canSend : canApprove)) {
       status.push({
         icon: to ? 'send' : 'circle-check-big', label: to ? `Send to ${to}` : 'Approve', primary: true,
         title: to ? `Send to ${to}` : 'Approve',
@@ -298,7 +310,7 @@ export async function renderInvoiceList(main, ui) {
       });
     }
     const failed = rows.filter((i) => i.status === 'issued').map((i) => i.id);
-    if (state.status === 'pending' && context.canIssue && to && failed.length) {
+    if (state.status === 'pending' && canSend && to && failed.length) {
       status.push({
         icon: 'refresh-cw', label: 'Retry', primary: true, title: `Send again to ${to}`,
         run: () => post('send-again', { invoiceIds: failed }, (res) => [`${res.queued} on the way to ${to} again.`, 'success']),
@@ -312,7 +324,7 @@ export async function renderInvoiceList(main, ui) {
     if (numbered) apply.push({ icon: 'file-down', label: 'PDFs', iconOnly: true, title: 'Download PDFs', run: () => downloadPdfs(rows) });
     const danger = [];
     const voidable = rows.filter((i) => i.status === 'issued');
-    if (['draft', 'approved', 'sent'].includes(state.status) && context.canIssue && voidable.length) {
+    if (['draft', 'approved', 'sent'].includes(state.status) && canVoid && voidable.length) {
       danger.push({
         icon: 'ban', label: 'Void', iconOnly: true, tone: 'danger', title: 'Void',
         run: () => voidAll(voidable),
@@ -941,7 +953,7 @@ function draftView(invoice, ui, context, redraw) {
   const ready = invoice?.view === 'ready';
   const nextNumber = `${context.organisations[0]?.invoicePrefix ?? ''}${String(context.organisations[0]?.nextInvoiceNumber ?? '').padStart(4, '0')}`;
   const emails = invoice?.sendMode?.mode === 'approve_and_email';
-  const sendButton = context.canIssue && to && ready ? h('button', {
+  const sendButton = allows(ui.me, context, 'invoices.send') && to && ready ? h('button', {
     class: 'fx-btn fx-btn--primary', type: 'button',
     onclick: async () => {
       if (changed() && !(await save())) return;
@@ -963,7 +975,7 @@ function draftView(invoice, ui, context, redraw) {
   }, emails ? `Send to ${to} and email` : `Send to ${to}`) : null;
   // With no accounting system, Approve gives the draft its number and locks
   // it. A changed job blocks it.
-  const issueButton = context.canIssue && !to ? h('button', {
+  const issueButton = allows(ui.me, context, 'invoices.approve') && !to ? h('button', {
     class: 'fx-btn fx-btn--primary', type: 'button',
     onclick: async () => {
       const saved = await save();
@@ -1002,7 +1014,7 @@ function draftView(invoice, ui, context, redraw) {
   // the header. Flow drafts it the way the invoicing rules do (client,
   // Reference, lines) and links it to the job. An invoice with no job is
   // fine too.
-  const fromJob = isNew && context.canIssue
+  const fromJob = isNew && allows(ui.me, context, 'invoices.draft')
     ? h('button', { class: 'fx-btn fx-btn--ghost', type: 'button', onclick: () => pickJob(ui) }, 'From a job') : null;
 
   // A draft with no problem is in Ready by itself; one with a problem is
@@ -1013,7 +1025,7 @@ function draftView(invoice, ui, context, redraw) {
   const otherProblems = (invoice?.problems ?? []).filter((p) => !(jobChange && p.code === 'job_review'));
   const problems = [
     // Accepting changes the draft for the business: owners and admins only.
-    jobChange ? jobChangeReview(ui, jobChange, { money: formatCents, canAccept: context.canIssue, unsaved: changed, done: redraw }) : null,
+    jobChange ? jobChangeReview(ui, jobChange, { money: formatCents, canAccept: allows(ui.me, context, 'invoices.draft'), unsaved: changed, done: redraw }) : null,
     otherProblems.length ? notice([...new Set(otherProblems.map((p) => brief(p.message)))].join(' '), 'danger', 'Problem.') : null,
   ];
   // A red field names the banner as its reason (for a screen reader).
@@ -1110,7 +1122,7 @@ function issuedView(invoice, ui, context, redraw) {
   const xeroHost = h('div');
   const linkedHost = h('div', {}, linkedCard(ui, invoice) ?? '');
   let xeroStatus = null;
-  const send = invoice.status === 'issued' && context.canIssue ? sendToXero(invoice, ui, context) : null;
+  const send = invoice.status === 'issued' && allows(ui.me, context, 'invoices.send') ? sendToXero(invoice, ui, context) : null;
   const loadXero = async () => {
     if (!context.xero) return;
     xeroStatus = (await xeroStatuses(ui, organisationId, [invoice.id])).get(invoice.id) ?? null;
@@ -1126,13 +1138,13 @@ function issuedView(invoice, ui, context, redraw) {
       h('p', {}, 'The number stays used. A void invoice cannot be used again.'),
       live ? h('p', { class: 'fx-problem' }, `Xero still holds it as ${xeroStatus.label.replace(/ in Xero$/, '').toLowerCase()}${xeroStatus.xero.number ? ` (${xeroStatus.xero.number})` : ''}. Flow does not change Xero: void it in Xero too.`) : null);
   };
-  const actions = invoice.status === 'issued' && context.canIssue ? [
-    h('button', {
+  const actions = invoice.status === 'issued' ? [
+    allows(ui.me, context, 'invoices.void') ? h('button', {
       class: 'fx-btn fx-btn--ghost fx-btn--danger', type: 'button',
       onclick: () => act('void', `${invoice.number} is void.`, { title: `Void ${invoice.number}?`, body: voidBody(), confirm: 'Void', tone: 'danger' }),
-    }, 'Void'),
-    h('button', { class: 'fx-btn', type: 'button', onclick: () => act('revise', `${invoice.number} is a draft again.`) }, 'Revise'),
-  ] : [];
+    }, 'Void') : null,
+    allows(ui.me, context, 'invoices.approve') ? h('button', { class: 'fx-btn', type: 'button', onclick: () => act('revise', `${invoice.number} is a draft again.`) }, 'Revise') : null,
+  ].filter(Boolean) : [];
   return [
     navBar(ui, invoice),
     h('header', { class: 'fx-ph' },
@@ -1180,7 +1192,7 @@ function xeroCard(invoice, ui, context, status, reload) {
     h('td', {}, FIELD_LABEL[d.field] ?? d.field),
     h('td', { class: 'fx-num' }, showField(d.field, d.flow)),
     h('td', { class: 'fx-num' }, showField(d.field, d.xero))));
-  const resolve = status.finding && context.canIssue ? h('button', {
+  const resolve = status.finding && allows(ui.me, context, 'integrations.run') ? h('button', {
     class: 'fx-btn fx-btn--sm', type: 'button',
     onclick: async () => {
       resolve.disabled = true;

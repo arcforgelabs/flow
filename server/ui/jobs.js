@@ -15,7 +15,7 @@
 import { bulkBar } from '/assets/ui/bulk-bar.js';
 import { columnTable, dateCell, fieldColumn, onRightButton, personCell, rowCells, viewSaver } from '/assets/ui/columns.js';
 import { lucide } from '/assets/ui/custom-fields.js';
-import { formatCents } from '/assets/ui/invoicing.js';
+import { allows, formatCents } from '/assets/ui/invoicing.js';
 import { jobChangeReview } from '/assets/ui/job-change.js';
 import {
   caseNumber, FINAL_RANK, fixes, INVOICE_STAGES, invoiceStage, matches, NO_STATUS, orderStatuses, problemSummary, statusRank,
@@ -352,7 +352,7 @@ export async function renderJobs(main, ui) {
       ]);
       state.jobs = body.jobs;
       state.statuses = body.statuses;
-      state.canDraft = context.canIssue;
+      state.canDraft = allows(ui.me, context, 'invoices.draft');
       state.fields = fields?.fields ?? [];
       state.systemFields = fields?.systemFields ?? [];
       state.people = fields?.people ?? [];
@@ -1173,7 +1173,7 @@ export async function renderJobs(main, ui) {
       if (go === 'work' && job.link?.url) return button('external-link', system, { href: job.link.url, target: '_blank', rel: 'noopener' });
       if (go === 'price-list') return inFlow('tag', '/price-list', 'Price list');
       if (go === 'invoicing-settings') return inFlow('list-checks', '/invoicing-settings', 'Rules');
-      if (go === 'integrations' && ui.me?.person?.role === 'owner') return inFlow('plug', '/integrations', 'Integrations');
+      if (go === 'integrations' && ui.me?.permissions?.['integrations.connect']) return inFlow('plug', '/integrations', 'Integrations');
       return null;
     }
     const lines = job.lines ?? [];
