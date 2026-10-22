@@ -484,7 +484,11 @@ connected organisation:
   Xero returns the first result instead of a second invoice.
 
 Calls count against a lane (`writes`, `sync`, `reads`, `other`) so the status
-shows where the day's budget went.
+shows where the day's budget went. The lane, and a 429's
+`X-Rate-Limit-Problem`, are stored on the call row. Integrations › Xero reads
+that row, the governor's day limit, and the copy's own timestamps
+(webhook, poll, nightly read). It does not call Xero. A call from before the
+lane column has no lane, and the card does not invent one.
 
 Every call also goes through the call guard (`docs/INTEGRATIONS.md`,
 "Outbound calls"), keyed by the Xero organisation, with its state in

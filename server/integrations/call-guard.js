@@ -203,6 +203,10 @@ export function createCallGuard({
   lockName = `${integration}-call-guard`,
   report: reports = true,
   policy: overrides = {},
+  // Optional columns on this adapter's call table, filled from record().
+  // `lane` is the allow-list (anything else is stored null). `rateLimitProblem`
+  // keeps a short token such as Xero's X-Rate-Limit-Problem.
+  telemetry = {},
   now = Date.now,
   log = console,
 } = {}) {
@@ -215,6 +219,14 @@ export function createCallGuard({
   const C = { key: sql.identifier(columns.key ?? 'key'), at: sql.identifier(columns.at ?? 'at') };
   const tag = `[${integration}]`;
   const failed = sql`(failure_kind is not null or status_code >= 500 or (status_code >= 400 and status_code <> 404))`;
+  const laneAllowed = Array.isArray(telemetry.lane) ? telemetry.lane : null;
+  const keepProblem = telemetry.rateLimitProblem === true;
+  const cleanLane = (value) => (laneAllowed?.includes(value) ? value : null);
+  const cleanProblem = (value) => {
+    if (!keepProblem || typeof value !== 'string') return null;
+    const text = value.trim();
+    return /^[A-Za-z][A-Za-z0-9_-]{0,39}$/.test(text) ? text : null;
+  };
 
   const lock = (tx, key) => tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`${lockName}:${key}`}))`);
   const extraColumns = Object.keys(callDefaults).map((column) => sql`, ${sql.identifier(column)}`);
@@ -263,12 +275,17 @@ export function createCallGuard({
   // resourceResumed, opened, closed, budgetSpent }),
   // each of which was just reported once. `callId` names a call row the
   // adapter wrote when it admitted the call: that row is updated, not added.
-  async function record(rawKey, { callId = null, resource = null, path = null, statusCode = null, failureKind = null, durationMs = null } = {}) {
+  async function record(rawKey, { callId = null, resource = null, path = null, statusCode = null, failureKind = null, durationMs = null, lane: laneRaw = null, rateLimitProblem = null } = {}) {
     const key = cleanKey(rawKey);
     const where = cleanResource(resource);
     const nowMs = Number(now());
     const nowAt = new Date(nowMs);
     const status = Number.isInteger(statusCode) ? statusCode : null;
+    const lane = cleanLane(laneRaw);
+    const problem = cleanProblem(rateLimitProblem);
+    const extraCols = sql`${laneAllowed ? sql`, lane` : sql``}${keepProblem ? sql`, rate_limit_problem` : sql``}`;
+    const extraVals = sql`${laneAllowed ? sql`, ${lane}` : sql``}${keepProblem ? sql`, ${problem}` : sql``}`;
+    const extraSet = sql`${laneAllowed ? sql`, lane = ${lane}` : sql``}${keepProblem ? sql`, rate_limit_problem = ${problem}` : sql``}`;
     const outcome = await db.transaction(async (tx) => {
       await lock(tx, key);
       await ensureRow(tx, key);
@@ -276,10 +293,10 @@ export function createCallGuard({
       const took = Number.isFinite(durationMs) ? Math.max(0, Math.round(durationMs)) : null;
       if (callId !== null) {
         await tx.execute(sql`update ${T.calls} set resource = ${where}, request_path = ${normaliseRequestPath(path)}, status_code = ${status},
-          failure_kind = ${kind}, duration_ms = ${took} where id = ${callId} and ${C.key} = ${key}`);
+          failure_kind = ${kind}, duration_ms = ${took}${extraSet} where id = ${callId} and ${C.key} = ${key}`);
       } else {
-        await tx.execute(sql`insert into ${T.calls} (${C.key}, ${C.at}, resource, request_path, status_code, failure_kind, duration_ms${sql.join(extraColumns, sql``)})
-          values (${key}, ${nowAt}, ${where}, ${normaliseRequestPath(path)}, ${status}, ${kind}, ${took}${sql.join(extraValues, sql``)})`);
+        await tx.execute(sql`insert into ${T.calls} (${C.key}, ${C.at}, resource, request_path, status_code, failure_kind, duration_ms${extraCols}${sql.join(extraColumns, sql``)})
+          values (${key}, ${nowAt}, ${where}, ${normaliseRequestPath(path)}, ${status}, ${kind}, ${took}${extraVals}${sql.join(extraValues, sql``)})`);
       }
       const state = await readState(tx, key);
       if (!countsAsFailure({ statusCode: status, failureKind })) {
