@@ -131,7 +131,7 @@ const MAX_UNIT_CENTS = 100_000_000;
 const ERROR_STATUS = {
   invalid: 400, organisation_required: 400, not_found: 404, not_draft: 409, not_issued: 409,
   never_issued: 409, was_issued: 409, not_ready: 409, live_check_unavailable: 409, conflict: 409,
-  accounting_not_connected: 409, accounting_writes_off: 409,
+  accounting_not_connected: 409, accounting_writes_off: 409, accounting_unavailable: 409, accounting_approved: 409,
 };
 
 function sendError(res, error, log) {
@@ -653,8 +653,8 @@ export function createInvoicingRouter({
   router.delete('/invoices/:id', ...manager, handle(log, async (req, res) => {
     const invoiceId = pathId(req.params.id, 'invoice');
     const organisationId = await organisationOf(req);
-    await deleteDraft(db, organisationId, invoiceId, { actor: `person:${req.person.id}` });
-    log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} deleted draft invoice ${invoiceId}`);
+    const removed = await deleteDraft(db, organisationId, invoiceId, { actor: `person:${req.person.id}`, accounting: accounting() });
+    log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} ${removed.status === 'void' ? 'voided invoice' : 'deleted draft invoice'} ${invoiceId}`);
     res.json({ ok: true });
   }));
 

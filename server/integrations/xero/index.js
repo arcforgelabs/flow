@@ -1,6 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import { sql } from 'drizzle-orm';
 import { guardAlerts } from '../call-guard.js';
+import { deleteXeroInvoice } from './delete-invoice.js';
 import { checkDrafts, documentFacts, pushInvoice, pushInvoices } from './drafts.js';
 import { readConnection } from './connections.js';
 import { createImportWorker } from './import.js';
@@ -115,6 +116,9 @@ export function createXeroAdapter({ runtime: given = null } = {}) {
       // One issued invoice to a Xero draft (drafts.js). The Flow invoice id
       // and version are the idempotency key.
       pushInvoice: ({ organisationId, invoiceId, pushedBy = null }) => pushInvoice(database, current(), { organisationId, invoiceId, pushedBy }),
+      // Read the linked Xero invoice, and delete it only while it is a draft
+      // (delete-invoice.js). The core voids in Flow after deleted or gone.
+      deleteInvoice: ({ organisationId, invoiceId, actor = null }) => deleteXeroInvoice(database, current(), { organisationId, invoiceId, actor }),
       // Several issued invoices, in batches of MAX_BATCH (drafts.js).
       pushInvoices: ({ organisationId, invoiceIds, pushedBy = null }) => pushInvoices(database, current(), { organisationId, invoiceIds, pushedBy }),
       // The Invoices page tab of each issued invoice (reconcile.js), from

@@ -41,8 +41,13 @@ never issued; an owner or admin), **Preview**, **Save**, then
 **Send to Xero** (accounting system on) or **Approve** (no accounting system).
 A Pending draft has no send button. Delete asks first, removes the draft,
 and frees its job: the lab's rules then decide whether Flow drafts it again.
-An invoice that was issued, including one opened to revise, is voided, not
-deleted.
+An issued invoice whose accounting copy is a draft also has **Delete** (owner
+or admin), before Void. The confirm says `Also deletes the draft in Xero.`
+Flow reads that invoice live, deletes it there while it is still a draft,
+then voids it in Flow. The issued versions stay, and the job is freed the
+same way. Delete is hidden when the copy says Approved or Paid. With no
+accounting delete, an invoice that was issued, including one opened to revise,
+is voided, not deleted.
 
 The Problem banner gives the first sentence of each problem: what is wrong.
 The field the failed check reads glows red, like a required field
@@ -70,7 +75,8 @@ Invert ticks and Clear ticks. An icon-only action shows its name on hover.
 | --- | --- |
 | Pending | **Retry** (send-again for the ticked issued ones the accounting system refused), Copy references, Export CSV, **Delete** (a ticked draft that was never issued; asks first) |
 | Ready | **Send to Xero** (send-ready for the ticked ids; **Approve** with no accounting system), Copy references, Export CSV, **Delete** (asks first) |
-| Draft, Approved, Sent | Copy numbers, Export CSV, Download PDFs, Void (asks first; Flow does not change the accounting system) |
+| Draft | Copy numbers, Export CSV, Download PDFs, **Delete** (a ticked invoice whose accounting copy is a draft; the confirm says `Also deletes the draft in Xero.`; each row reports deleted or refused, with the reason), Void (asks first; Void does not change the accounting system) |
+| Approved, Sent | Copy numbers, Export CSV, Download PDFs, Void (asks first; Flow does not change the accounting system). Delete is hidden: the copy says Approved or Paid. |
 | Void | Copy numbers, Export CSV, Download PDFs |
 
 ## Checks
@@ -216,8 +222,15 @@ Xero's `SentToContact` flag.
 - `DELETE /api/invoicing/invoices/:id` (owner or admin) removes a draft that
   was never issued (`status` draft and `issuedVersion` 0). Its job's billing
   obligation is freed, so the job is ready again and the lab's rules decide
-  whether to draft it. An invoice that was issued answers `was_issued`: void
-  it instead.
+  whether to draft it. An invoice that was issued is deleted only when its
+  accounting adapter deletes the draft there, or reports it already gone:
+  Flow then voids the invoice (the issued versions stay) and frees the job.
+  Approved or paid answers `accounting_approved` (`Approved in Xero. Void it in Xero first.` when the adapter is Xero) and changes nothing.
+  Not connected or writes off answers `accounting_not_connected` or
+  `accounting_writes_off`, and changes nothing. A connected adapter that
+  cannot delete it answers `accounting_unavailable`. With no accounting
+  delete, an issued invoice answers `was_issued`. A timeout leaves the
+  invoice as it was.
 - `POST /api/invoicing/jobs/:id/use-new-lines` `{ accept? }`: the draft takes
   the work system's lines. With `accept: true` it also replaces lines changed
   in both places, while the invoice is not sent.

@@ -292,6 +292,24 @@ export function createXeroClient({
     },
     // One invoice. `idempotencyKey` makes a retry within Xero's window
     // return the first result instead of a second invoice.
+    // Deletes one draft. The body is only the id and Status DELETED: Flow never
+    // changes any other field. The caller has already read the invoice and
+    // seen DRAFT or SUBMITTED. A result that is not DELETED is uncertain.
+    async deleteInvoice(invoiceId) {
+      if (!invoiceId) throw new TypeError('deleteInvoice: invoiceId is required');
+      const payload = await request('POST', `Invoices/${encodeURIComponent(invoiceId)}`, {
+        body: { InvoiceID: invoiceId, Status: 'DELETED' },
+      });
+      const updated = first(payload.Invoices);
+      const messages = validationMessages(updated);
+      if (!updated || updated.HasErrors || updated.StatusAttributeString === 'ERROR' || messages.length || updated.Status !== 'DELETED') {
+        throw xeroError('xero_uncertain', messages.join(' ') || 'Xero did not confirm the invoice was deleted.', {
+          status: 502,
+          details: messages.length ? { validationErrors: messages } : undefined,
+        });
+      }
+      return updated;
+    },
     async createInvoice(invoice, { idempotencyKey }) {
       if (!idempotencyKey) throw new TypeError('createInvoice: idempotencyKey is required');
       const payload = await request('POST', 'Invoices', {

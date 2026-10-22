@@ -78,7 +78,11 @@ adapter's own copy, never a live call, with the copy's state (`complete`,
 `checkInvoice({ organisationId,
 obligation })` answers whether the accounting system holds an invoice for a
 billable job, in the ledger's evidence shape; it is the live check before
-Flow drafts a job's invoice (`POST /api/invoicing/jobs/:id/draft`). An adapter declares only the ones it has, and
+Flow drafts a job's invoice (`POST /api/invoicing/jobs/:id/draft`).
+`deleteInvoice({ organisationId, invoiceId, actor })` reads that system's
+invoice live and answers `{ state, status }`: `deleted`, `gone`, `approved`
+or `unavailable`. The core voids an issued Flow invoice only after `deleted`
+or `gone` (`docs/XERO.md`, "Deleting a draft"). An adapter declares only the ones it has, and
 must declare `health`.
 
 An adapter may also declare `routes(context)`: a function that returns an
