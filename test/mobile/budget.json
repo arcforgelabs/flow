@@ -61,7 +61,7 @@
   }
  },
  "phone-chromium-harbour-light/invoice": {
-  "small": 14,
+  "small": 9,
   "axe": {
    "aria-prohibited-attr": 1
   }
@@ -81,7 +81,7 @@
   }
  },
  "phone-chromium-harbour-light/invoices-filter-row": {
-  "small": 25,
+  "small": 20,
   "axe": {
    "aria-prohibited-attr": 42,
    "aria-required-children": 1
@@ -110,7 +110,7 @@
   }
  },
  "phone-chromium-harbour-light/job-panel": {
-  "small": 16,
+  "small": 14,
   "axe": {
    "color-contrast": 1
   }
@@ -167,7 +167,7 @@
   }
  },
  "phone-chromium-meridian-dark/invoice": {
-  "small": 14,
+  "small": 9,
   "axe": {
    "aria-prohibited-attr": 1
   }
@@ -187,7 +187,7 @@
   }
  },
  "phone-chromium-meridian-dark/invoices-filter-row": {
-  "small": 25,
+  "small": 20,
   "axe": {
    "aria-prohibited-attr": 42,
    "aria-required-children": 1
@@ -216,7 +216,7 @@
   }
  },
  "phone-chromium-meridian-dark/job-panel": {
-  "small": 16
+  "small": 14
  },
  "phone-chromium-meridian-dark/jobs-board": {
   "small": 9,
@@ -269,7 +269,7 @@
   }
  },
  "phone-chromium-meridian-light/invoice": {
-  "small": 14,
+  "small": 9,
   "axe": {
    "aria-prohibited-attr": 1
   }
@@ -289,7 +289,7 @@
   }
  },
  "phone-chromium-meridian-light/invoices-filter-row": {
-  "small": 25,
+  "small": 20,
   "axe": {
    "aria-prohibited-attr": 42,
    "aria-required-children": 1
@@ -318,7 +318,7 @@
   }
  },
  "phone-chromium-meridian-light/job-panel": {
-  "small": 16
+  "small": 14
  },
  "phone-chromium-meridian-light/jobs-board": {
   "small": 9,
@@ -365,7 +365,7 @@
   "small": 6
  },
  "phone-l-chromium-harbour-light/invoice": {
-  "small": 14
+  "small": 9
  },
  "phone-l-chromium-harbour-light/invoices-approved": {
   "small": 12
@@ -374,7 +374,7 @@
   "small": 13
  },
  "phone-l-chromium-harbour-light/invoices-filter-row": {
-  "small": 26
+  "small": 20
  },
  "phone-l-chromium-harbour-light/invoices-pending": {
   "small": 13
@@ -386,7 +386,7 @@
   "small": 17
  },
  "phone-l-chromium-harbour-light/job-panel": {
-  "small": 18
+  "small": 14
  },
  "phone-l-chromium-harbour-light/jobs-board": {
   "small": 9
@@ -423,7 +423,7 @@
   "small": 6
  },
  "phone-l-chromium-meridian-dark/invoice": {
-  "small": 14
+  "small": 9
  },
  "phone-l-chromium-meridian-dark/invoices-approved": {
   "small": 12
@@ -432,7 +432,7 @@
   "small": 13
  },
  "phone-l-chromium-meridian-dark/invoices-filter-row": {
-  "small": 26
+  "small": 20
  },
  "phone-l-chromium-meridian-dark/invoices-pending": {
   "small": 13
@@ -444,7 +444,7 @@
   "small": 17
  },
  "phone-l-chromium-meridian-dark/job-panel": {
-  "small": 18
+  "small": 14
  },
  "phone-l-chromium-meridian-dark/jobs-board": {
   "small": 9
@@ -481,7 +481,7 @@
   "small": 6
  },
  "phone-l-chromium-meridian-light/invoice": {
-  "small": 14
+  "small": 9
  },
  "phone-l-chromium-meridian-light/invoices-approved": {
   "small": 12
@@ -490,7 +490,7 @@
   "small": 13
  },
  "phone-l-chromium-meridian-light/invoices-filter-row": {
-  "small": 26
+  "small": 20
  },
  "phone-l-chromium-meridian-light/invoices-pending": {
   "small": 13
@@ -502,7 +502,7 @@
   "small": 17
  },
  "phone-l-chromium-meridian-light/job-panel": {
-  "small": 18
+  "small": 14
  },
  "phone-l-chromium-meridian-light/jobs-board": {
   "small": 9
@@ -540,7 +540,7 @@
  },
  "phone-l-webkit-harbour-light/invoice": {
   "overflow": 234,
-  "small": 12
+  "small": 7
  },
  "phone-l-webkit-harbour-light/invoices-approved": {
   "small": 13
@@ -549,7 +549,7 @@
   "small": 13
  },
  "phone-l-webkit-harbour-light/invoices-filter-row": {
-  "small": 26
+  "small": 20
  },
  "phone-l-webkit-harbour-light/invoices-pending": {
   "small": 13
@@ -561,7 +561,7 @@
   "small": 17
  },
  "phone-l-webkit-harbour-light/job-panel": {
-  "small": 18
+  "small": 14
  },
  "phone-l-webkit-harbour-light/jobs-board": {
   "small": 9
@@ -599,7 +599,7 @@
  },
  "phone-l-webkit-meridian-dark/invoice": {
   "overflow": 234,
-  "small": 12
+  "small": 7
  },
  "phone-l-webkit-meridian-dark/invoices-approved": {
   "small": 13
@@ -608,7 +608,7 @@
   "small": 13
  },
  "phone-l-webkit-meridian-dark/invoices-filter-row": {
-  "small": 26
+  "small": 20
  },
  "phone-l-webkit-meridian-dark/invoices-pending": {
   "small": 13
@@ -620,7 +620,7 @@
   "small": 17
  },
  "phone-l-webkit-meridian-dark/job-panel": {
-  "small": 16
+  "small": 14
  },
  "phone-l-webkit-meridian-dark/jobs-board": {
   "small": 9
@@ -658,7 +658,7 @@
  },
  "phone-l-webkit-meridian-light/invoice": {
   "overflow": 234,
-  "small": 12
+  "small": 7
  },
  "phone-l-webkit-meridian-light/invoices-approved": {
   "small": 13
@@ -667,7 +667,7 @@
   "small": 13
  },
  "phone-l-webkit-meridian-light/invoices-filter-row": {
-  "small": 26
+  "small": 20
  },
  "phone-l-webkit-meridian-light/invoices-pending": {
   "small": 13
@@ -679,7 +679,7 @@
   "small": 17
  },
  "phone-l-webkit-meridian-light/job-panel": {
-  "small": 16
+  "small": 14
  },
  "phone-l-webkit-meridian-light/jobs-board": {
   "small": 9
@@ -716,7 +716,7 @@
   "small": 6
  },
  "phone-s-chromium-harbour-light/invoice": {
-  "small": 14
+  "small": 9
  },
  "phone-s-chromium-harbour-light/invoices-approved": {
   "small": 12
@@ -725,7 +725,7 @@
   "small": 13
  },
  "phone-s-chromium-harbour-light/invoices-filter-row": {
-  "small": 23
+  "small": 20
  },
  "phone-s-chromium-harbour-light/invoices-pending": {
   "small": 12
@@ -737,7 +737,7 @@
   "small": 16
  },
  "phone-s-chromium-harbour-light/job-panel": {
-  "small": 15
+  "small": 13
  },
  "phone-s-chromium-harbour-light/jobs-board": {
   "small": 9
@@ -774,7 +774,7 @@
   "small": 6
  },
  "phone-s-chromium-meridian-dark/invoice": {
-  "small": 14
+  "small": 9
  },
  "phone-s-chromium-meridian-dark/invoices-approved": {
   "small": 12
@@ -783,7 +783,7 @@
   "small": 13
  },
  "phone-s-chromium-meridian-dark/invoices-filter-row": {
-  "small": 24
+  "small": 20
  },
  "phone-s-chromium-meridian-dark/invoices-pending": {
   "small": 12
@@ -795,7 +795,7 @@
   "small": 16
  },
  "phone-s-chromium-meridian-dark/job-panel": {
-  "small": 15
+  "small": 13
  },
  "phone-s-chromium-meridian-dark/jobs-board": {
   "small": 9
@@ -832,7 +832,7 @@
   "small": 6
  },
  "phone-s-chromium-meridian-light/invoice": {
-  "small": 14
+  "small": 9
  },
  "phone-s-chromium-meridian-light/invoices-approved": {
   "small": 12
@@ -841,7 +841,7 @@
   "small": 13
  },
  "phone-s-chromium-meridian-light/invoices-filter-row": {
-  "small": 24
+  "small": 20
  },
  "phone-s-chromium-meridian-light/invoices-pending": {
   "small": 12
@@ -853,7 +853,7 @@
   "small": 16
  },
  "phone-s-chromium-meridian-light/job-panel": {
-  "small": 15
+  "small": 13
  },
  "phone-s-chromium-meridian-light/jobs-board": {
   "small": 9
@@ -891,7 +891,7 @@
  },
  "phone-s-webkit-harbour-light/invoice": {
   "overflow": 271,
-  "small": 12
+  "small": 7
  },
  "phone-s-webkit-harbour-light/invoices-approved": {
   "small": 12
@@ -900,7 +900,7 @@
   "small": 13
  },
  "phone-s-webkit-harbour-light/invoices-filter-row": {
-  "small": 24
+  "small": 20
  },
  "phone-s-webkit-harbour-light/invoices-pending": {
   "small": 12
@@ -912,7 +912,7 @@
   "small": 16
  },
  "phone-s-webkit-harbour-light/job-panel": {
-  "small": 15
+  "small": 13
  },
  "phone-s-webkit-harbour-light/jobs-board": {
   "small": 9
@@ -950,7 +950,7 @@
  },
  "phone-s-webkit-meridian-dark/invoice": {
   "overflow": 271,
-  "small": 12
+  "small": 7
  },
  "phone-s-webkit-meridian-dark/invoices-approved": {
   "small": 13
@@ -959,7 +959,7 @@
   "small": 13
  },
  "phone-s-webkit-meridian-dark/invoices-filter-row": {
-  "small": 24
+  "small": 20
  },
  "phone-s-webkit-meridian-dark/invoices-pending": {
   "small": 12
@@ -971,7 +971,7 @@
   "small": 16
  },
  "phone-s-webkit-meridian-dark/job-panel": {
-  "small": 15
+  "small": 13
  },
  "phone-s-webkit-meridian-dark/jobs-board": {
   "small": 9
@@ -1009,7 +1009,7 @@
  },
  "phone-s-webkit-meridian-light/invoice": {
   "overflow": 271,
-  "small": 12
+  "small": 7
  },
  "phone-s-webkit-meridian-light/invoices-approved": {
   "small": 13
@@ -1018,7 +1018,7 @@
   "small": 13
  },
  "phone-s-webkit-meridian-light/invoices-filter-row": {
-  "small": 24
+  "small": 20
  },
  "phone-s-webkit-meridian-light/invoices-pending": {
   "small": 12
@@ -1030,7 +1030,7 @@
   "small": 16
  },
  "phone-s-webkit-meridian-light/job-panel": {
-  "small": 15
+  "small": 13
  },
  "phone-s-webkit-meridian-light/jobs-board": {
   "small": 9
@@ -1075,7 +1075,7 @@
  },
  "phone-webkit-harbour-light/invoice": {
   "overflow": 253,
-  "small": 12,
+  "small": 7,
   "axe": {
    "aria-prohibited-attr": 1
   }
@@ -1095,7 +1095,7 @@
   }
  },
  "phone-webkit-harbour-light/invoices-filter-row": {
-  "small": 25,
+  "small": 20,
   "axe": {
    "aria-prohibited-attr": 42,
    "aria-required-children": 1
@@ -1124,7 +1124,7 @@
   }
  },
  "phone-webkit-harbour-light/job-panel": {
-  "small": 16,
+  "small": 14,
   "axe": {
    "color-contrast": 1
   }
@@ -1182,7 +1182,7 @@
  },
  "phone-webkit-meridian-dark/invoice": {
   "overflow": 253,
-  "small": 12,
+  "small": 7,
   "axe": {
    "aria-prohibited-attr": 1
   }
@@ -1202,7 +1202,7 @@
   }
  },
  "phone-webkit-meridian-dark/invoices-filter-row": {
-  "small": 25,
+  "small": 20,
   "axe": {
    "aria-prohibited-attr": 42,
    "aria-required-children": 1
@@ -1231,7 +1231,7 @@
   }
  },
  "phone-webkit-meridian-dark/job-panel": {
-  "small": 16
+  "small": 14
  },
  "phone-webkit-meridian-dark/jobs-board": {
   "small": 9,
@@ -1285,7 +1285,7 @@
  },
  "phone-webkit-meridian-light/invoice": {
   "overflow": 253,
-  "small": 12,
+  "small": 7,
   "axe": {
    "aria-prohibited-attr": 1
   }
@@ -1305,7 +1305,7 @@
   }
  },
  "phone-webkit-meridian-light/invoices-filter-row": {
-  "small": 25,
+  "small": 20,
   "axe": {
    "aria-prohibited-attr": 42,
    "aria-required-children": 1
@@ -1334,7 +1334,7 @@
   }
  },
  "phone-webkit-meridian-light/job-panel": {
-  "small": 16
+  "small": 14
  },
  "phone-webkit-meridian-light/jobs-board": {
   "small": 9,
