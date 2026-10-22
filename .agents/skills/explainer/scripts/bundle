@@ -1,0 +1,15 @@
+#!/usr/bin/env node
+// Inline the kit into one self-contained HTML file (for a Claude artifact or an email).
+// Usage: scripts/bundle <page.html> [out.html]   Local <link rel="stylesheet" href> and <script src> are inlined.
+'use strict';
+const fs = require('fs');
+const path = require('path');
+const [src, out] = process.argv.slice(2);
+if (!src) { console.error('usage: scripts/bundle <page.html> [out.html]'); process.exit(2); }
+const dir = path.dirname(path.resolve(src));
+const local = (href) => !/^(https?:)?\/\//.test(href);
+const read = (href) => fs.readFileSync(path.resolve(dir, href), 'utf8');
+let html = fs.readFileSync(src, 'utf8');
+html = html.replace(/<link rel="stylesheet" href="([^"]+)">/g, (m, href) => local(href) ? `<style>\n${read(href)}</style>` : m);
+html = html.replace(/<script src="([^"]+)"><\/script>/g, (m, href) => local(href) ? `<script>\n${read(href).replace(/<\/script/gi, '<\\/script')}</script>` : m);
+if (out) fs.writeFileSync(out, html); else process.stdout.write(html);

@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Structure and syntax checks for the explainer skill. Runs scripts/check too when Playwright is installed.
+set -euo pipefail
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$here"
+for f in SKILL.md references/pattern.md references/charts.md kit/tokens.css kit/explainer.css kit/charts.js kit/explainer.js examples/starter.html examples/explainer-kit.html; do
+  test -s "$f" || { echo "missing: $f" >&2; exit 1; }
+done
+node --check kit/charts.js
+node --check kit/explainer.js
+tmp="$(mktemp)"; trap 'rm -f "$tmp"' EXIT
+scripts/bundle examples/explainer-kit.html "$tmp"
+if grep -q '<script src="\.\./kit/\|href="\.\./kit/' "$tmp"; then echo "bundle left a kit link" >&2; exit 1; fi
+if node -e "require('playwright')" 2>/dev/null || [ -d "$(dirname "$(command -v node)")/../lib/node_modules/playwright" ]; then
+  scripts/check examples/explainer-kit.html
+  scripts/check examples/starter.html
+else
+  echo "skip: Playwright not installed; scripts/check not run"
+fi
+echo "explainer: ok"

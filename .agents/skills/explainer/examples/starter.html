@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Page Title</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="../kit/tokens.css">
+<link rel="stylesheet" href="../kit/explainer.css">
+</head>
+<body class="ex-page">
+<nav class="ex-rail" aria-label="Sections"></nav>
+<div class="ex-shell">
+<section class="ex-section" style="padding-top:0">
+  <div class="ex-title"><h1>Page title</h1><p>One fact. One more fact.</p><div class="ex-meta">Source · date</div></div>
+</section>
+
+<section class="ex-section" id="parts">
+  <div class="ex-head"><span class="ex-n">01</span><h2>Subject name</h2><p>First sentence defines the subject. Second sentence is one fact.</p></div>
+  <div class="ex-figure" id="fig-parts"></div>
+  <details class="ex-facts" data-def="One sentence that defines this section's subject."></details>
+</section>
+</div>
+
+<script src="../kit/charts.js"></script>
+<script>
+// One entry per part: t = title, l = layer (where it sits, caps), d = definition (what it IS), x = facts.
+window.EX = {
+  "client": {"t": "Client", "l": "CALLER", "d": "A client is the program that sends the request.", "x": ["It retries once after a failure."]},
+  "server": {"t": "Server", "l": "HOST", "d": "The server is the process that answers requests.", "x": ["It runs on one host."]},
+  "store": {"t": "Store", "l": "HOST", "d": "The store is where the server keeps data.", "x": ["It is a Postgres database."]},
+  "e.req": {"t": "Request", "l": "ARROW", "d": "A request is one call from the client to the server.", "x": ["It carries a JSON body."]}
+};
+ExCharts.connection(document.getElementById('fig-parts'), {
+  label: 'Client, server and store', cols: ['CALLER', 'HOST'],
+  nodes: [
+    {id: 'client', col: 0, row: 0, title: 'Client', sub: 'sends requests', ex: 'client'},
+    {id: 'server', col: 1, row: 0, title: 'Server', sub: 'answers', layer: 'key', ex: 'server'},
+    {id: 'store', col: 1, row: 1, title: 'Store', sub: 'keeps data', ex: 'store'}
+  ],
+  edges: [
+    {from: 'client', to: 'server', label: 'request', ex: 'e.req'},
+    {from: 'server', to: 'store', label: 'rows'}
+  ]
+});
+</script>
+<script src="../kit/explainer.js"></script>
+</body>
+</html>
