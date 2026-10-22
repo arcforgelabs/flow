@@ -37,9 +37,11 @@ The notes are the release's changelog file, `CHANGELOG/<version>.md`
 (`CONTRIBUTING.md`, `.agents/skills/flow-changelog-update/SKILL.md`). Every
 release needs one: Flow Release Prepare refuses to tag a release unless the
 file's record lists every pull request in its range with GitHub's credit,
-and a stable release has 5 to 8 highlights. After the GitHub Release is
-published, Publish checks that its body is the file. A release tagged before
-the changelog existed keeps GitHub's generated notes.
+and a stable release has 5 to 8 highlights. A small change ships as a
+**beta**, never as a stable release with fewer highlights. A stable release
+needs 5 real user stories. After the GitHub Release is published, Publish
+checks that its body is the file. A release tagged before the changelog
+existed keeps GitHub's generated notes.
 
 ## Versions and channels
 

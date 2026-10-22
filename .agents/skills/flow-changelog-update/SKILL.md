@@ -66,11 +66,11 @@ stable release gets a new, cumulative file, and a correction
    direct commits. They are editorial input; they get no row.
 
 3. Read the manifest, then edit the prose, not the record:
-   - Highlights: 5 to 8 bullets for a stable release, 0 to 8 for a beta.
-     One user story per bullet, in one sentence, with every pull request
-     that tells it: `- Text. (#N, #M) Thanks @a.` Leave out tests, CI,
-     refactors and docs unless the outcome is a material install, update or
-     data-safety change.
+   - Highlights: 5 to 8 bullets for a stable release, 0 to 8 for a beta; do
+     not invent highlights for small hotfix betas. One user story per
+     bullet, in one sentence, with every pull request that tells it:
+     `- Text. (#N, #M) Thanks @a.` Leave out tests, CI, refactors and docs
+     unless the outcome is a material install, update or data-safety change.
    - Changes: new capabilities and behaviour changes. Fixes: user-facing
      fixes first. Group pull requests that tell one story into one bullet.
    - A bullet that names a pull request keeps every thanks from its record
