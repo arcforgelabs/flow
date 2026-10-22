@@ -210,9 +210,10 @@ async function readJobsFirst(db, organisationId, invoiceIds, { work, now, person
 }
 
 // Send all ready: issues each ready draft, then queues it for the accounting
-// system. With `invoiceIds`, only those drafts, and each must be ready (the
-// Send button on one invoice). `work` is the work integration, for the read
-// before act. Answers { issued, queued, remaining, waiting }.
+// system. With `invoiceIds`, only those drafts. One id (the invoice page) is
+// all or nothing. More than one id (the bulk bar) sends the ones Flow could
+// confirm and leaves the rest. `work` is the work integration, for the read
+// before act. Answers { issued, queued, remaining, waiting, held }.
 export async function sendAllReady(db, organisationId, { accounting = null, work = null, personId, issueDate, invoiceIds = null, now = new Date() }) {
   await assertCanSend(accounting, organisationId);
   // Issue #45: the accounting copy reads its latest changes first, so the
@@ -236,10 +237,16 @@ export async function sendAllReady(db, organisationId, { accounting = null, work
         : 'Only a ready invoice can be sent. Mark it ready first.');
     }
   }
-  const { go, waiting } = accountingRead.outcome === 'waiting'
+  const accountingWaiting = accountingRead.outcome === 'waiting';
+  const { go, waiting } = accountingWaiting
     ? { go: [], waiting: ready.slice(0, SEND_BATCH) }
     : await readJobsFirst(db, organisationId, ready.slice(0, SEND_BATCH), { work, now, personId });
-  if (invoiceIds && waiting.length) {
+  // One invoice (the invoice page) is all or nothing: a job Flow could not
+  // confirm stops the send. A bulk press sends the ones it confirmed. The
+  // rest stay for the next press (`waiting`), or on Pending when the read
+  // sent the job to review. An accounting read that cannot run still stops
+  // every ticked invoice: that one read covers the whole press.
+  if (invoiceIds && waiting.length && (invoiceIds.length === 1 || accountingWaiting)) {
     throw new FlowError('not_ready', 'Flow could not confirm the job with the work system or the accounting system just now, or the job changed. Nothing was sent. Look at the invoice, then try again.');
   }
   const batch = go;

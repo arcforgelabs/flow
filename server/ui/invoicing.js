@@ -292,8 +292,15 @@ export async function renderInvoiceList(main, ui) {
             confirm: to ? `Send ${ticked.length}` : `Approve ${ticked.length}`,
           });
           if (!ok) return;
-          await post('send-ready', { issueDate: localDate(), invoiceIds: ticked },
-            (res) => [`${to ? `${res.issued} on the way to ${to}.` : `${res.issued} approved.`}${res.held ? ` ${res.held} failed a check and went to Pending.` : ''}${res.remaining ? ` ${res.remaining} more stay in Ready: tick them and press again.` : ''}`, res.held ? 'info' : 'success']);
+          await post('send-ready', { issueDate: localDate(), invoiceIds: ticked }, (res) => {
+            const sent = to ? `${res.issued} on the way to ${to}.` : `${res.issued} approved.`;
+            const notes = [
+              res.held ? `${res.held} failed a check and went to Pending.` : '',
+              res.waiting ? `${res.waiting} could not be confirmed with the work system yet: press Send again.` : '',
+              res.remaining ? `${res.remaining} more stay in Ready: tick them and press again.` : '',
+            ].filter(Boolean);
+            return [`${sent}${notes.length ? ` ${notes.join(' ')}` : ''}`, res.held || res.waiting ? 'info' : 'success'];
+          });
         },
       });
     }
