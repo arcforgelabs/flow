@@ -1207,13 +1207,34 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
 /* ── Phones ─────────────────────────────────────────────────────────────── */
 @media (max-width: 639px) {
   .fx-main { padding-top: 20px; }
+  /* A two-line list needs the rows, not the gaps, so seven fit at 375×667.
+     The alert stays one line. The toolbar stays one scrolling row. */
+  .fx-main--frame:has([data-phone-layout="two-line"]) { gap: 8px; padding-top: 12px; }
+  .fx-alerts { flex-wrap: nowrap; }
+  .fx-alerts__text { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* Tabs stay on their own row. The tools beside them stay one row and
+     scroll, so a chip is never covered by the next control. */
+  .fx-listhead, .fx-listhead > .fx-toolbar { min-width: 0; max-width: 100%; }
+  .fx-listhead .fx-toolbar__tools { flex: 1 1 auto; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+  .fx-listhead .fx-toolbar__end,
+  .fx-listhead .fx-toolbar__end:has(> .fx-toolbar__tools) {
+    flex: 1 1 100%; flex-wrap: nowrap; min-width: 0; overflow-x: auto; scrollbar-width: none; row-gap: 0;
+  }
   .fx-title { font-size: 22px; }
   .fx-table thead { display: none; }
   .fx-table.fx-table--sized { width: 100% !important; min-width: 0; table-layout: auto; }
   .fx-table--sized td { white-space: normal; }
   .fx-table--sized colgroup { display: none; }
   .fx-table--sized td.fx-c-end { display: none; }
-  .fx-table, .fx-table tbody, .fx-table tr, .fx-table td { display: block; width: 100%; }
+  /* Tables outside a column list still stack. People keeps its own grid. */
+  .fx-table-scroll:not([data-phone-layout="two-line"]) .fx-table,
+  .fx-table-scroll:not([data-phone-layout="two-line"]) .fx-table tbody,
+  .fx-table-scroll:not([data-phone-layout="two-line"]) .fx-table tr,
+  .fx-table-scroll:not([data-phone-layout="two-line"]) .fx-table td,
+  .fx-table:not(.fx-table--sized, .fx-people),
+  .fx-table:not(.fx-table--sized, .fx-people) tbody,
+  .fx-table:not(.fx-table--sized, .fx-people) tr,
+  .fx-table:not(.fx-table--sized, .fx-people) td { display: block; width: 100%; }
   .fx-table tr { padding: 12px 14px; border-bottom: 1px solid var(--fx-line-soft); }
   .fx-table td { padding: 4px 0; border: 0; }
   .fx-table td:nth-child(2), .fx-table td:nth-child(3) { display: inline-flex; width: auto; margin: 6px 10px 0 0; vertical-align: middle; }
@@ -1230,20 +1251,58 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
   .fx-people td:nth-child(2) .fx-select { width: 100%; }
   .fx-people td:nth-child(3) { grid-area: 3 / 1 / 4 / -1; }
   .fx-people td:nth-child(3):empty { display: none; }
-  /* Jobs list: the tick at the left of each row and group head; the client
-     and total on the first line, then each other column on its own line,
-     with its name. */
-  .fx-table--jobs tr { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; align-items: center; gap: 4px 8px; }
-  .fx-table--jobs td, .fx-table--jobs td:nth-child(2), .fx-table--jobs td:nth-child(3) { display: block; width: auto; margin: 0; padding: 0; }
-  .fx-table--jobs tr > td.fx-tick-cell { grid-column: 1; grid-row: 1; align-self: start; padding-top: 2px; }
-  .fx-table--jobs tr.fx-row-link > td:not(.fx-tick-cell) { grid-column: 2 / -1; }
-  .fx-table--jobs tr.fx-row-link > td.fx-c-client { grid-area: 1 / 2; }
-  .fx-table--jobs tr.fx-row-link > td.fx-c-total { grid-area: 1 / 3; }
-  .fx-table--jobs td.fx-c-end { display: none; }
-  .fx-table--jobs tr.fx-row-link > td[data-label]:not(.fx-c-client, .fx-c-total, .fx-c-stage)::before { content: attr(data-label) " "; color: var(--t-dim); font-size: 12px; }
-  .fx-table--jobs tr.fx-table__group { grid-template-columns: 28px minmax(0, 1fr); background: var(--t-s1); }
-  .fx-table--jobs tr.fx-table__group > td.fx-tick-cell { grid-row: 1; align-self: center; padding: 0; }
-  .fx-table--jobs tr.fx-table__group > td { background: none; }
+  /* Column lists (columns.js): two lines, 56px. Line 1 is the title columns
+     and the amount. Line 2 is the status and up to three meta columns.
+     The tick stays at the left with a 44px hit area. */
+  [data-phone-layout="two-line"] .fx-table,
+  [data-phone-layout="two-line"] .fx-table tbody { display: block; width: 100% !important; min-width: 0; }
+  [data-phone-layout="two-line"] .fx-table tbody tr:not(.fx-table__group) {
+    display: flex; flex-wrap: wrap; align-items: center; position: relative;
+    box-sizing: border-box; height: 56px; min-height: 56px; max-height: 56px;
+    margin: 0; padding: 6px 12px 6px 44px; overflow: hidden;
+    border-bottom: 1px solid var(--fx-line-soft);
+  }
+  [data-phone-layout="two-line"] .fx-table tbody tr:not(.fx-table__group)::after {
+    content: ""; order: 3; flex-basis: 100%; height: 0;
+  }
+  [data-phone-layout="two-line"] .fx-table td,
+  [data-phone-layout="two-line"] .fx-table td:nth-child(2),
+  [data-phone-layout="two-line"] .fx-table td:nth-child(3) {
+    display: block; width: auto; margin: 0; padding: 0; border: 0;
+    white-space: nowrap; background: none;
+  }
+  [data-phone-layout="two-line"] .fx-tick-cell {
+    position: absolute; top: 0; left: 0; display: flex; align-items: center; justify-content: center;
+    width: 44px; height: 56px; padding: 0;
+  }
+  [data-phone-layout="two-line"] .fx-tick-cell .fx-tick { width: 44px; height: 44px; margin: 0; }
+  [data-phone-layout="two-line"] [data-phone-slot="title"] {
+    order: 1; flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+    color: var(--t-strong); font-weight: 600;
+  }
+  [data-phone-layout="two-line"] [data-phone-slot="title"] :is(a, button) {
+    display: inline-flex; align-items: center; max-width: 100%; min-height: 44px;
+  }
+  [data-phone-layout="two-line"] [data-phone-slot="end"] {
+    order: 2; flex: none; margin-left: 8px; font-variant-numeric: tabular-nums;
+  }
+  [data-phone-layout="two-line"] [data-phone-slot="meta"] {
+    order: 5; flex: 0 1 auto; min-width: 0; max-width: 42%; overflow: hidden; text-overflow: ellipsis;
+    color: var(--t-dim); font-size: 12px; line-height: 16px;
+  }
+  [data-phone-layout="two-line"] td.fx-c-stage,
+  [data-phone-layout="two-line"] td.fx-c-status { order: 4; color: inherit; }
+  [data-phone-layout="two-line"] .fx-stage { padding-block: 0; line-height: 16px; }
+  [data-phone-layout="two-line"] [data-phone-slot="hide"],
+  [data-phone-layout="two-line"] td.fx-c-end { display: none; }
+  [data-phone-layout="two-line"] tr.fx-table__group {
+    display: flex; align-items: center; box-sizing: border-box; height: 32px; min-height: 32px; max-height: 32px;
+    margin: 0; padding: 0 8px 0 44px; overflow: visible; background: var(--t-s1);
+    border-bottom: 1px solid var(--fx-line-soft);
+  }
+  [data-phone-layout="two-line"] tr.fx-table__group td { height: 32px; padding: 0; background: none; }
+  [data-phone-layout="two-line"] tr.fx-table__group .fx-tick-cell { height: 32px; }
+  [data-phone-layout="two-line"] tr.fx-table__group .fx-tick-cell .fx-tick { width: 44px; height: 44px; }
 }
 
 @keyframes fx-rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
@@ -1272,7 +1331,10 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
 .fx-price { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 .fx-price__head { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 8px 16px; }
 .fx-price__head .fx-search { margin: 0 0 6px; width: 260px; }
-@media (max-width: 639px) { .fx-price__head .fx-search { width: 100%; } }
+@media (max-width: 639px) {
+  .fx-price__head .fx-search { width: 100%; }
+  .fx-price__settings .fx-select { min-height: 44px; }
+}
 .fx-price__table th { position: sticky; top: 0; z-index: 1; }
 .fx-price__table td { padding-top: 9px; padding-bottom: 9px; }
 .fx-price__table td.fx-num, .fx-price__table th.fx-num { text-align: right; white-space: nowrap; }
@@ -1451,6 +1513,22 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
   .fx-cfm__create { padding-left: 16px; }
   .fx-cfm__search { flex: 1 1 100%; width: auto; }
   .fx-cfm__edit { display: none !important; }
+}
+@media (max-width: 639px) {
+  /* Custom fields uses the same phone slots as a column list: name and the
+     menu on line 1, up to three facts on line 2, 56px. */
+  .fx-cfm__row {
+    display: flex; flex-wrap: wrap; align-items: center; box-sizing: border-box;
+    height: 56px; min-height: 56px; max-height: 56px; padding: 6px 8px 6px 16px; overflow: hidden;
+  }
+  .fx-cfm__row::after { content: ""; order: 3; flex-basis: 100%; height: 0; }
+  .fx-cfm__row > * { display: none; }
+  .fx-cfm__row > [data-phone-slot="title"] { display: block; order: 1; flex: 1 1 0; min-width: 0; }
+  .fx-cfm__row > [data-phone-slot="end"] { display: flex; order: 2; flex: none; align-items: center; }
+  .fx-cfm__row > [data-phone-slot="meta"] {
+    display: block; order: 5; flex: 0 1 auto; min-width: 0; max-width: 40%; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; color: var(--t-dim); font-size: 12px; line-height: 16px;
+  }
 }
 /* Invoice rules (invoice-rules.js): a row's Edit button and switch, and the
    rule dialog's condition lines. */

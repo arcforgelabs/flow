@@ -23,7 +23,7 @@ test/mobile/phone.spec.js ─► 17 screens × 5 sizes × 2 engines × 3 themes
 | Touch targets | Every control on screen is 44px or more both ways (a label around a control counts) | Phone and tablet |
 | Cut text | Text cut with "…" has its full text on hover or press (`title`, `aria-label` or a tip) | Every size |
 | Toolbar | The list toolbar sits in the same place on every list page | Every size |
-| Rows | A list shows 7 rows or more on a 375×667 screen (a note, not a failure, until #281) | Small phone |
+| Rows | A list shows 7 rows or more on a 375×667 screen | Small phone |
 | Accessibility | axe, WCAG 2.2 A and AA | Phone |
 | Screenshot | The screen matches its saved image (0.2% of pixels may differ) | Meridian light at every size; the other themes at the phone size |
 
@@ -31,9 +31,9 @@ Each design-system card has phone rules in `mobile.json`
 (`docs/DESIGN_SYSTEM.md`). The suite reads them. On every screen a card
 lists, that component is on the page and shows the layout, touch size and
 row height the card names for this width (`server/ui/mobile.js` marks the
-element). A list's row count at 375×667 is still a note until #281: the
-Columns card asks for 7, and the suite records how many it saw. Page
-overflow and touch targets stay on the budget below.
+element). A list at 375×667 has to show the row count its card asks for
+(the Columns card asks for 7). Page overflow and touch targets stay on
+the budget below.
 
 The sizes are 375×667, 393×852, 412×915, 768×1024 and 1280×800; the engines
 WebKit (iPhone Safari) and Chromium; the themes Meridian light, Meridian dark

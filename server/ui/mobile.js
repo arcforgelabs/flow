@@ -691,3 +691,36 @@ export function phoneSlot(column) {
   const value = column?.[found.phone.columnFlag];
   return found.phone.flags?.includes(value) ? value : null;
 }
+
+// Defaults for one list's columns. An explicit phone flag wins, up to the
+// card's slot counts. Otherwise the first column is the title, the money
+// column (kind total, or num) is the end, a stage or status leads the meta
+// line, and further columns are meta in order. Past the slot counts, hide.
+export function assignPhoneSlots(columns) {
+  const { slots } = rule('columnTable').phone;
+  const counts = { title: 0, end: 0, meta: 0 };
+  const room = (slot) => slot === 'hide' || counts[slot] < slots[slot];
+  const claim = (slot) => {
+    if (slot !== 'hide') counts[slot] += 1;
+    return slot;
+  };
+  const chosen = columns.map((column) => {
+    const explicit = phoneSlot(column);
+    if (!explicit) return null;
+    return room(explicit) ? claim(explicit) : 'hide';
+  });
+  const open = () => chosen.findIndex((slot) => slot == null);
+  const give = (index, slot) => {
+    if (index < 0 || !room(slot)) return;
+    chosen[index] = claim(slot);
+  };
+  give(open(), 'title');
+  give(columns.findIndex((column, index) => chosen[index] == null && (column.kind === 'total' || column.num)), 'end');
+  give(columns.findIndex((column, index) => chosen[index] == null && (column.kind === 'stage' || column.kind === 'status')), 'meta');
+  let index = open();
+  while (index >= 0) {
+    chosen[index] = room('meta') ? claim('meta') : 'hide';
+    index = open();
+  }
+  return columns.map((column, i) => (column.phone === chosen[i] ? column : { ...column, phone: chosen[i] }));
+}

@@ -141,7 +141,7 @@ for (const screen of SCREENS) {
     }
     const rowsRule = rulesFor(screen.id).find((rule) => rule.minRowsAt375);
     if (phone && screen.list && size.id === 'phone-s' && rowsRule && result.rows < rowsRule.minRowsAt375) {
-      info.annotations.push({ type: 'rows', description: `${result.rows} rows on the first screen; ${rowsRule.component} asks for ${rowsRule.minRowsAt375} (#281)` });
+      over.push(`${result.rows} rows on the first screen; ${rowsRule.component} asks for ${rowsRule.minRowsAt375}`);
     }
     // MOBILE_RECORD=1 measures without failing, to write a new budget.
     if (!process.env.MOBILE_RECORD) expect([...over, ...ruleOver], `${project.name} ${screen.id} is over its budget or its phone rules (test/mobile/budget.json, design-system/components/*/mobile.json)`).toEqual([]);
