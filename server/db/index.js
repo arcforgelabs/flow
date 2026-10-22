@@ -13,10 +13,28 @@ const migrationsFolder = fileURLToPath(new URL('./migrations', import.meta.url))
 export const MIGRATION_LOCK_KEY = 7_139_000_101n;
 const DEFAULT_MIGRATION_LOCK_TIMEOUT_MS = 300_000;
 
+// Flow's tables live in their own schema, not "public": Replit's publish
+// compares the workspace's "public" with production's and offers to make
+// production match, deletes included (migration 0021, docs/REPLIT.md). Every
+// connection searches "flow" first, so queries keep plain table names; the
+// database's own default says the same for a pooler's sessions.
+export const FLOW_SCHEMA = 'flow';
+export const FLOW_SEARCH_PATH = `${FLOW_SCHEMA}, public`;
+const setSearchPath = (client) => client.query(`set search_path to ${FLOW_SEARCH_PATH}`);
+
 // Opens Flow's PostgreSQL database. The caller owns the pool: call close().
 export function openDatabase({ url = process.env.DATABASE_URL, max = 10 } = {}) {
   if (!url) throw new Error('flow: DATABASE_URL is not set');
   const pool = new pg.Pool({ connectionString: url, max });
+  // A client runs its queries in order, so this comes before any other.
+  pool.on('connect', (client) => {
+    setSearchPath(client).catch(() => {});
+  });
+  // The server can close an idle connection (a restart, a pooler, migration
+  // 0021); the pool drops it and opens another. Unheard, it would stop Flow.
+  pool.on('error', (error) => {
+    console.warn(`[db] an idle database connection closed: ${error.message}`);
+  });
   const db = drizzle(pool, { schema });
   return { db, pool, close: () => pool.end() };
 }
@@ -56,6 +74,7 @@ export async function withMigrationLock(db, fn, { timeoutMs = migrationLockTimeo
   if (direct) {
     client = new pg.Client({ connectionString: direct });
     await client.connect();
+    await setSearchPath(client);
   } else {
     client = source instanceof pg.Pool ? await source.connect() : source;
   }

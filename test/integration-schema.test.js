@@ -13,7 +13,7 @@ const quiet = { error() {}, info() {}, warn() {} };
 const health = async () => ({ ok: true });
 
 async function tablesPresent(db) {
-  const { rows } = await db.execute(sql`select table_name from information_schema.tables where table_schema = 'public' and table_name like 'sample\\_%' order by table_name`);
+  const { rows } = await db.execute(sql`select table_name from information_schema.tables where table_schema = 'flow' and table_name like 'sample\\_%' order by table_name`);
   return rows.map((r) => r.table_name);
 }
 

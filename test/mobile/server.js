@@ -102,7 +102,7 @@ export async function startFlow({ port = 0 } = {}) {
   // screenshot. Append-only records refuse the change and keep their own.
   await handle.pool.query(`DO $$ DECLARE c record; BEGIN
     FOR c IN SELECT table_name, column_name FROM information_schema.columns
-      WHERE table_schema = 'public' AND data_type LIKE 'timestamp%' AND column_name IN ('created_at', 'updated_at', 'issued_at')
+      WHERE table_schema = current_schema() AND data_type LIKE 'timestamp%' AND column_name IN ('created_at', 'updated_at', 'issued_at')
     LOOP
       BEGIN EXECUTE format('UPDATE %I SET %I = %L', c.table_name, c.column_name, '2026-10-20T09:00:00Z');
       EXCEPTION WHEN others THEN NULL; END;

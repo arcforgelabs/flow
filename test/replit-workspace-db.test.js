@@ -257,10 +257,12 @@ describe('the workspace sync on PostgreSQL', { skip: skipWithoutDatabase }, () =
   let admin;
   before(async () => {
     admin = new pg.Pool({ connectionString: testDatabaseUrl, max: 2 });
+    // Migration 0021 closes this role's idle sessions; the pool opens others.
+    admin.on('error', () => {});
   });
   after(async () => { await admin?.end(); });
 
-  const empty = () => admin.query('DROP SCHEMA IF EXISTS drizzle CASCADE; DROP SCHEMA public CASCADE; CREATE SCHEMA public;');
+  const empty = () => admin.query('DROP SCHEMA IF EXISTS drizzle CASCADE; DROP SCHEMA IF EXISTS flow CASCADE; DROP SCHEMA public CASCADE; CREATE SCHEMA public;');
   const syncWith = (command, migrations, env = {}) =>
     run({
       command,
@@ -288,10 +290,10 @@ describe('the workspace sync on PostgreSQL', { skip: skipWithoutDatabase }, () =
     assert.equal(synced.summary.state, 'level');
     assert.equal(synced.summary.appliedNow, production.core + production.xero);
     assert.deepEqual(synced.summary.migrations.seazona, { production: 0, workspace: 0 });
-    assert.equal(await tableExists('public.invoices'), true);
-    assert.equal(await tableExists('public.xero_connections'), true);
+    assert.equal(await tableExists('flow.invoices'), true);
+    assert.equal(await tableExists('flow.xero_connections'), true);
     // Seazona is off in production, so its tables are not made in the workspace.
-    assert.equal(await tableExists('public.seazona_api_governor'), false);
+    assert.equal(await tableExists('flow.seazona_api_governor'), false);
     assert.doesNotMatch(JSON.stringify(synced.summary), /postgres:\/\//);
 
     const again = await syncWith('sync', production);
@@ -362,7 +364,7 @@ describe('the workspace sync on PostgreSQL', { skip: skipWithoutDatabase }, () =
     const synced = await syncWith('sync', production);
     assert.equal(synced.exitCode, EXIT.ok, JSON.stringify(synced.summary));
     assert.equal(synced.summary.state, 'level');
-    assert.equal(await tableExists('public.job_field_settings'), true);
+    assert.equal(await tableExists('flow.job_field_settings'), true);
   });
 
   test('production stopped part-way through a journal: the workspace does not copy that', async () => {

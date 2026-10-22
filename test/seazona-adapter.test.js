@@ -170,7 +170,7 @@ describe('Seazona adapter on the integration port', { skip: skipWithoutDatabase 
   }
 
   async function tablesPresent() {
-    const { rows } = await db.execute(sql`select count(*)::int as n from pg_tables where schemaname = 'public' and tablename like 'seazona\\_%'`);
+    const { rows } = await db.execute(sql`select count(*)::int as n from pg_tables where schemaname = 'flow' and tablename like 'seazona\\_%'`);
     return rows[0].n;
   }
 

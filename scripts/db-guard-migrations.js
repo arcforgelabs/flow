@@ -16,6 +16,12 @@
 // A migration never drops or renames (docs/DATA_MODEL.md); --check refuses one
 // that does, and any other statement that would fail on a second run.
 //
+// Flow's tables are in the schema "flow" from core migration FLOW_SCHEMA_FROM
+// on (0021). drizzle-kit still writes REFERENCES "public"."t", so from
+// FLOW_SCHEMA_FROM on, and in every adapter's migrations, "public"."t" becomes
+// "flow"."t". Older core migrations stay as they ran: drizzle records each
+// file's hash.
+//
 //   node scripts/db-guard-migrations.js          # rewrite the migrations in place
 //   node scripts/db-guard-migrations.js --check  # exit 1 if one is not guarded
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -23,6 +29,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const GUARD_FROM = 10;
+export const FLOW_SCHEMA_FROM = 21;
 export const BREAKPOINT = '--> statement-breakpoint';
 const MIGRATIONS = fileURLToPath(new URL('../server/db/migrations', import.meta.url));
 const INTEGRATIONS = fileURLToPath(new URL('../server/integrations', import.meta.url));
@@ -73,6 +80,8 @@ export function guardSql(sql) {
   return { sql: parts.join(BREAKPOINT), problems };
 }
 
+export const inFlowSchema = (sql) => sql.replaceAll('"public".', '"flow".');
+
 const sqlFiles = (folder) => readdirSync(folder).filter((name) => /^\d{4}_.*\.sql$/.test(name)).sort();
 
 // The core migrations from GUARD_FROM on, then every adapter's.
@@ -88,12 +97,24 @@ export function migrationFiles({ core = MIGRATIONS, integrations = INTEGRATIONS 
   return files;
 }
 
+// Whether a migration names its tables in "flow" (FLOW_SCHEMA_FROM).
+export function namesFlowSchema(file, { core = MIGRATIONS } = {}) {
+  if (!file.startsWith(`${core}/`)) return true;
+  return Number(file.slice(core.length + 1, core.length + 5)) >= FLOW_SCHEMA_FROM;
+}
+
+// A migration file as it must be: guarded, and in "flow" when it is due.
+export function expectedSql(file, text) {
+  const { sql, problems } = guardSql(text);
+  return { sql: namesFlowSchema(file) ? inFlowSchema(sql) : sql, problems };
+}
+
 if (import.meta.url === `file://${process.argv[1]}`) {
   const check = process.argv.includes('--check');
   let failed = false;
   for (const file of migrationFiles()) {
     const before = readFileSync(file, 'utf8');
-    const { sql, problems } = guardSql(before);
+    const { sql, problems } = expectedSql(file, before);
     for (const problem of problems) {
       console.error(`${file}: ${problem}`);
       failed = true;

@@ -4,6 +4,19 @@ Flow keeps its records in PostgreSQL. The schema is in
 `server/db/schema.js`; migrations are in `server/db/migrations/` and run when
 the server starts.
 
+Flow's tables, the integrations' included, live in the PostgreSQL schema
+`flow`, not `public` (migration `0021`). Each of Flow's connections searches
+`flow, public` (`FLOW_SEARCH_PATH` in `server/db/index.js`), and the
+migration sets the same default for Flow's role (and for the database when
+Flow owns it), so SQL names tables without a schema. A transaction pooler
+(Neon's `-pooler` hosts) does not keep a session's `SET`, but every new
+session gets the role's default. The pooler's sessions from before the move
+keep the old one, so the migration closes this role's idle sessions and the
+pooler opens new ones (tested against PgBouncer in transaction mode). The reason is Replit: its publish compares
+the workspace's `public` schema with production's and offers to make
+production match, deletes included (`docs/REPLIT.md`, "The workspace
+database"). The migration journals stay in `drizzle`.
+
 ```mermaid
 erDiagram
   organisations ||--o{ contacts : has
@@ -193,6 +206,8 @@ installation low maintenance.
    (`docs/REPLIT.md`, "The workspace database"). Removal
    is planned as expand, then contract (`docs/REPLIT.md`, "Later: removing a
    table or column").
+   The guard also turns drizzle-kit's `REFERENCES "public"."t"` into
+   `"flow"."t"` in core migrations from `0021` on and in every adapter's.
 6. `flow-server doctor` checks a database against the build: each journal's
    applied migrations, and every table and column the latest snapshot and
    each adapter declare (`server/db/doctor.js`). `flow-server migrate`
@@ -202,7 +217,7 @@ installation low maintenance.
 ## Tests
 
 Tests that need PostgreSQL read `FLOW_TEST_DATABASE_URL`. Setup drops and
-recreates the whole `public` schema, so point it only at a throwaway database.
+drops `flow` and recreates the whole `public` schema, so point it only at a throwaway database.
 For the same reason `npm test` runs one test file at a time.
 Outside CI those tests skip when it is unset; CI runs them against a
 PostgreSQL service.

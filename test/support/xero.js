@@ -52,7 +52,7 @@ export function xeroRuntime(interactions, env = {}, log = quietLog()) {
 }
 
 export async function xeroTables(db) {
-  const { rows } = await db.execute(sql`select table_name from information_schema.tables where table_schema = 'public' and table_name like 'xero\\_%' order by table_name`);
+  const { rows } = await db.execute(sql`select table_name from information_schema.tables where table_schema = 'flow' and table_name like 'xero\\_%' order by table_name`);
   return rows.map((r) => r.table_name);
 }
 
