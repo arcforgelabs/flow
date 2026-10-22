@@ -1,0 +1,26 @@
+{
+  "component": "findBox",
+  "direction": "icon",
+  "phone": {
+    "layout": "icon"
+  },
+  "tablet": {
+    "layout": "icon"
+  },
+  "desk": {
+    "layout": "icon"
+  },
+  "touch": 44,
+  "pageOverflow": "none",
+  "screens": [
+    "jobs-board",
+    "jobs-list",
+    "job-panel",
+    "invoices-ready",
+    "invoices-pending",
+    "invoices-approved",
+    "invoices-ticked",
+    "invoices-filter",
+    "reconcile"
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "component": "settingRow",
+  "direction": "sheet",
+  "phone": {
+    "layout": "sheet"
+  },
+  "tablet": {
+    "layout": "row"
+  },
+  "desk": {
+    "layout": "row"
+  },
+  "touch": 44,
+  "pageOverflow": "none",
+  "screens": [
+    "appearance"
+  ]
+}

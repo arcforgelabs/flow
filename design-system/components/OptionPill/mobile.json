@@ -1,0 +1,17 @@
+{
+  "component": "optionPill",
+  "direction": "pill",
+  "phone": {
+    "layout": "pill"
+  },
+  "tablet": {
+    "layout": "pill"
+  },
+  "desk": {
+    "layout": "pill"
+  },
+  "touch": 44,
+  "pageOverflow": "none",
+  "screens": [],
+  "mark": false
+}

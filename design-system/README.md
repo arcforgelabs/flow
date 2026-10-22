@@ -9,6 +9,8 @@ built from. It is generated from the code in
 ## Before you build anything
 
 1. Look here first. Each card is a shared component, drawn by the real code.
+   Read its phone rules (`mobile.json`) before building: the layout at phone,
+   tablet and desk, and the flags the component reads.
 2. A card fits: use it as is.
 3. A card almost fits: give the component an option (a flag) in its file. Keep one copy.
 4. Nothing fits and two pages need it: make a shared component, and add its

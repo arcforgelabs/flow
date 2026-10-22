@@ -1,0 +1,16 @@
+{
+  "component": "crumbs",
+  "direction": "trail",
+  "phone": {
+    "layout": "trail"
+  },
+  "tablet": {
+    "layout": "trail"
+  },
+  "desk": {
+    "layout": "trail"
+  },
+  "touch": 44,
+  "pageOverflow": "none",
+  "screens": []
+}

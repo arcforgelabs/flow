@@ -218,7 +218,8 @@ Every page builds from these. Reuse one, or give it a new option; do not
 copy its code into a page (`AGENTS.md`, "UI: reuse first"). A new shared
 component gets a row here and a card in the design system
 (`docs/DESIGN_SYSTEM.md`) in the pull request that adds it. The Card column
-names its card in the Flow Design System.
+names its card in the Flow Design System. Read the card's `mobile.json`
+before changing it on a phone: the component reads those rules.
 
 | Component | Where | Card | Use it for |
 | --- | --- | --- | --- |

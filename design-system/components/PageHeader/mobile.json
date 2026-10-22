@@ -1,0 +1,33 @@
+{
+  "component": "pageHeader",
+  "direction": "title",
+  "phone": {
+    "layout": "title"
+  },
+  "tablet": {
+    "layout": "title"
+  },
+  "desk": {
+    "layout": "title"
+  },
+  "touch": 44,
+  "pageOverflow": "none",
+  "screens": [
+    "jobs-board",
+    "jobs-list",
+    "job-panel",
+    "invoices-ready",
+    "invoices-pending",
+    "invoices-approved",
+    "invoices-ticked",
+    "invoices-filter",
+    "invoice",
+    "reconcile",
+    "price-list",
+    "rules",
+    "automations",
+    "integrations",
+    "custom-fields",
+    "appearance"
+  ]
+}

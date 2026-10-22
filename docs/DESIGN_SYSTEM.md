@@ -24,7 +24,7 @@ design-system/ ─────────┘                                   
 | `fonts/*.woff2` | The fontsource packages Flow serves (latin, variable weight) |
 | `components/bundle.js` | The real shared modules (`server/ui/kit.js`, `view-bar.js`, `bulk-bar.js`, `tip.js`, `custom-fields.js`, `job-change.js`, `sidecar.js`, `columns.js`) bundled by esbuild as `window.FlowDesignSystem` (`scripts/design-system/entry.js`) |
 | `components/bundle.css` | `server/ui/flow.css`, every family's `--t-*` tokens as `[data-theme="<family>-<mode>"]`, and the Lucide icons the app names, inlined |
-| `components/<Card>/` | `design-system/components/<Card>/`: `preview.html` (line 1 the `@dsCard` marker) and `README.md` (first sentence the summary, a `Code:` line naming the code) |
+| `components/<Card>/` | `design-system/components/<Card>/`: `preview.html` (line 1 the `@dsCard` marker), `README.md` (first sentence the summary, a `Code:` line naming the code) and `mobile.json` (the phone rules) |
 | `components/Themes/` | Generated: every family, light and dark |
 | `README.md`, `assets/` | `design-system/README.md`, `design-system/assets/` |
 
@@ -38,7 +38,18 @@ A pull request that adds or changes a shared component changes its card in
 `design-system/components/` too. `test/design-system.test.js` fails when an
 export of a shared module (`kit.js`, `view-bar.js`, `bulk-bar.js`, `tip.js`,
 `job-change.js`, `sidecar.js`, `columns.js`) has no card naming it, when a card has no README or marker,
-or when the build writes something the artifact cannot read.
+when a visible card has no `mobile.json`, or when the build writes something the artifact cannot read.
+
+## Phone rules
+
+Read the card's `mobile.json` before building. It names the picked direction,
+the layout at phone, tablet and desk, the touch size, the page overflow rule,
+and the screens that use the component. The build shows that card in a phone
+frame with the rules in a table. The shared component reads the same file
+through `server/ui/mobile.js` (`rule`, `applyPhoneRule`, `WIDTHS`): the three
+widths are 639/640 and 1023/1024, and a flag such as a column's `phone` slot
+comes from the card, not from a second copy. The phone suite asserts those
+rules on each listed screen (`docs/MOBILE_TESTS.md`).
 
 A card calls `window.FlowDesignSystem.<name>`, so it shows what the app draws.
 A card for CSS only (Button, Pager, Tabs) uses the real classes; it says

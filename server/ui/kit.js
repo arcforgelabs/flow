@@ -5,6 +5,7 @@
 // functions, so a card is the real thing. Reuse one or give it an option;
 // never copy it into a page (AGENTS.md, "UI: reuse first").
 import { lucide } from '/assets/ui/custom-fields.js';
+import { applyPhoneRule } from './mobile.js';
 import { named } from '/assets/ui/tip.js';
 
 // h('p', { class: 'x', onclick }, 'text', child) — children are text or nodes.
@@ -53,12 +54,12 @@ export function holdButton(button, ms) {
 // `count` is a live number beside the name (2 to check); `help` is a docs
 // link, an icon with its name as a tip.
 export function pageHeader(title, { count = null, help = null, actions = [] } = {}) {
-  return h('header', { class: 'fx-ph' },
+  return applyPhoneRule(h('header', { class: 'fx-ph' },
     h('div', { class: 'fx-ph__text' },
       h('h1', { class: 'fx-title' }, title),
       count != null ? h('span', { class: 'fx-ph__count' }, count) : null,
       help ? helpLink(help) : null),
-    actions.length ? h('div', { class: 'fx-ph__actions' }, actions) : null);
+    actions.length ? h('div', { class: 'fx-ph__actions' }, actions) : null), 'pageHeader');
 }
 
 // The top of a list page (Jobs, Invoices, Reconcile), laid out the same on
@@ -77,8 +78,8 @@ export function listHead(title, { count = null, help = null, actions = [], start
   const tools = h('div', { class: 'fx-toolbar__tools' }, controls, views);
   const left = controlsAt === 'end' ? [start].flat() : [start, tools].flat();
   const right = controlsAt === 'end' ? [tools, end].flat() : [end].flat();
-  const bar = h('div', { class: 'fx-listhead', 'data-sticky': sticky },
-    h('div', { class: `fx-toolbar${line ? '' : ' fx-toolbar--plain'}` }, left, h('div', { class: 'fx-toolbar__end' }, right, actions)));
+  const bar = applyPhoneRule(h('div', { class: 'fx-listhead', 'data-sticky': sticky },
+    h('div', { class: `fx-toolbar${line ? '' : ' fx-toolbar--plain'}` }, left, h('div', { class: 'fx-toolbar__end' }, right, actions))), 'listHead');
   const edge = sticky ? h('div', { class: 'fx-listhead__edge', 'aria-hidden': 'true' }) : null;
   if (edge && typeof IntersectionObserver === 'function') {
     const top = window.matchMedia?.('(max-width: 820px)').matches ? 61 : 1;
@@ -99,7 +100,7 @@ export function listFrame(main, content) {
   const tools = h('div', { class: 'fx-frame__tools' });
   const body = h('div', { class: 'fx-frame__body' }, content);
   const view = h('div', { class: 'fx-frame__view' }, body);
-  const element = h('section', { class: 'fx-frame' }, view, h('footer', { class: 'fx-frame__foot' }, count, tools));
+  const element = applyPhoneRule(h('section', { class: 'fx-frame' }, view, h('footer', { class: 'fx-frame__foot' }, count, tools)), 'listFrame');
   edgeFade(body, { target: view, edges: ['bottom', 'left', 'right'] });
   return { element, body, view, tools, count: (text) => { count.textContent = text ?? ''; } };
 }
@@ -149,9 +150,9 @@ export function sectionTitle(text, help = null) {
 }
 
 export function notice(text, tone = 'info', title = null) {
-  return h('div', { class: 'fx-notice', 'data-tone': tone, role: tone === 'danger' ? 'alert' : 'status' },
+  return applyPhoneRule(h('div', { class: 'fx-notice', 'data-tone': tone, role: tone === 'danger' ? 'alert' : 'status' },
     title ? h('strong', {}, title) : null,
-    h('span', {}, text));
+    h('span', {}, text)), 'notice');
 }
 
 // A field that fails a check glows red, like a required field, until the
@@ -159,6 +160,7 @@ export function notice(text, tone = 'info', title = null) {
 // `on` false clears it. Answers the field.
 export function fieldError(field, on = true) {
   if (!on) { field.removeAttribute('aria-invalid'); return field; }
+  applyPhoneRule(field, 'fieldError');
   field.setAttribute('aria-invalid', 'true');
   field.addEventListener('input', () => field.removeAttribute('aria-invalid'), { once: true });
   return field;
@@ -166,7 +168,7 @@ export function fieldError(field, on = true) {
 
 export function toast(text, tone = 'info') {
   const region = document.getElementById('toasts');
-  const item = h('div', { class: 'fx-toast', 'data-tone': tone, role: 'status' }, text);
+  const item = applyPhoneRule(h('div', { class: 'fx-toast', 'data-tone': tone, role: 'status' }, text), 'toast');
   region.append(item);
   setTimeout(() => item.remove(), 4200);
 }
@@ -180,7 +182,7 @@ export function dialog({ title, body, confirm, tone = 'primary' }) {
       h('div', { class: 'fx-dialog__actions' },
         h('button', { class: 'fx-btn fx-btn--ghost', value: 'cancel', type: 'submit', formnovalidate: true }, 'Cancel'),
         h('button', { class: `fx-btn fx-btn--${tone}`, value: 'ok', type: 'submit' }, confirm)));
-    const element = h('dialog', { class: 'fx-dialog' }, form);
+    const element = applyPhoneRule(h('dialog', { class: 'fx-dialog' }, form), 'dialog');
     element.addEventListener('close', () => {
       const ok = element.returnValue === 'ok';
       const data = ok ? new FormData(form) : null;
@@ -200,11 +202,11 @@ export function dialog({ title, body, confirm, tone = 'primary' }) {
 export function settingRow({ label, hint, control, wide = false, tone = null }) {
   const target = control?.matches?.('input, select, textarea') ? control : control?.querySelector?.('input:not([type=color]), select, textarea');
   const id = target ? (target.id ||= `fx-set-${++settingRow.next}`) : null;
-  return h('div', { class: `fx-setting${wide ? ' fx-setting--wide' : ''}`, 'data-tone': tone },
+  return applyPhoneRule(h('div', { class: `fx-setting${wide ? ' fx-setting--wide' : ''}`, 'data-tone': tone },
     h('div', { class: 'fx-setting__text' },
       id ? h('label', { class: 'fx-setting__name', for: id }, label) : h('span', { class: 'fx-setting__name' }, label),
       hint ? h('p', { class: 'fx-setting__hint' }, hint) : null),
-    h('div', { class: 'fx-setting__control' }, control));
+    h('div', { class: 'fx-setting__control' }, control)), 'settingRow');
 }
 settingRow.next = 0;
 
@@ -217,7 +219,7 @@ let rowMenus = 0;
 // `trigger` swaps the ⋯ icon for the given contents (the sidebar's More).
 export function rowMenu(label, items, { trigger = null, className = 'fx-cfm__more', align = 'end' } = {}) {
   const id = `fx-row-menu-${++rowMenus}`;
-  const button = h('button', { class: className, type: 'button', 'aria-label': label, popovertarget: id, 'aria-haspopup': 'menu', 'aria-expanded': 'false' }, trigger ?? lucide(h, 'ellipsis'));
+  const button = applyPhoneRule(h('button', { class: className, type: 'button', 'aria-label': label, popovertarget: id, 'aria-haspopup': 'menu', 'aria-expanded': 'false' }, trigger ?? lucide(h, 'ellipsis')), 'rowMenu');
   const panel = h('div', { class: 'fx-pop', id, popover: 'auto', role: 'menu' });
   panel.addEventListener('toggle', (event) => {
     button.setAttribute('aria-expanded', String(event.newState === 'open'));
@@ -255,31 +257,31 @@ export function tileCard({ href, mark, title, status, blurb, meta, action = 'Man
   const logo = typeof mark === 'string' ? h('span', { class: 'fx-logo fx-logo--icon', 'aria-hidden': 'true' }, lucide(h, mark)) : mark;
   const pill = status ? h('span', { class: 'fx-status', 'data-tone': status.tone ?? 'mute' }, status.label) : null;
   if (row) {
-    return h('a', { class: 'fx-tile', href, onclick: inPlace },
+    return applyPhoneRule(h('a', { class: 'fx-tile', href, onclick: inPlace },
       logo,
       h('h3', {}, title),
-      pill ?? (meta ? h('span', { class: 'fx-tile__meta' }, meta) : null));
+      pill ?? (meta ? h('span', { class: 'fx-tile__meta' }, meta) : null)), 'tileCard');
   }
-  return h('a', { class: `fx-int-card${blurb ? '' : ' fx-int-card--bare'}`, href, onclick: inPlace },
+  return applyPhoneRule(h('a', { class: `fx-int-card${blurb ? '' : ' fx-int-card--bare'}`, href, onclick: inPlace },
     h('header', { class: 'fx-int-card__head' }, logo, h('h3', {}, title), pill),
     blurb ? h('p', { class: 'fx-int-card__blurb' }, blurb) : null,
-    h('span', { class: 'fx-int-card__btn' }, action));
+    h('span', { class: 'fx-int-card__btn' }, action)), 'tileCard');
 }
 
 // A titled group of one-line cards, three columns where they fit, with "Show all" at the right
 // when `href` is given (Claude's Customize page).
 export function tileSection(title, cards, { href, more = 'Show all' } = {}) {
-  return h('section', { class: 'fx-tiles' },
+  return applyPhoneRule(h('section', { class: 'fx-tiles' },
     h('header', { class: 'fx-tiles__head' },
       h('h2', {}, title),
       href ? h('a', { class: 'fx-tiles__more', href, onclick: inPlace }, more, lucide(h, 'chevron-right')) : null),
-    h('div', { class: 'fx-tiles__grid' }, cards));
+    h('div', { class: 'fx-tiles__grid' }, cards)), 'tileSection');
 }
 
 // The trail above a page one level down: crumbs(['/integrations', 'Integrations'], 'Xero').
 export function crumbs(...trail) {
   const here = trail.pop();
-  return h('nav', { class: 'fx-crumbs', 'aria-label': 'Breadcrumb' },
+  return applyPhoneRule(h('nav', { class: 'fx-crumbs', 'aria-label': 'Breadcrumb' },
     ...trail.flatMap(([href, label]) => [h('a', { href, onclick: inPlace }, label), h('span', { 'aria-hidden': 'true' }, '›')]),
-    h('span', {}, here));
+    h('span', {}, here)), 'crumbs');
 }

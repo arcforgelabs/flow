@@ -1,0 +1,40 @@
+{
+  "component": "columnTable",
+  "direction": "two-line row",
+  "phone": {
+    "layout": "two-line",
+    "rowHeight": 56,
+    "slots": {
+      "title": 2,
+      "end": 1,
+      "meta": 3
+    },
+    "columnFlag": "phone",
+    "flags": [
+      "title",
+      "meta",
+      "end",
+      "hide"
+    ]
+  },
+  "tablet": {
+    "layout": "table",
+    "sticky": "first"
+  },
+  "desk": {
+    "layout": "table"
+  },
+  "touch": 44,
+  "pageOverflow": "none",
+  "screens": [
+    "jobs-list",
+    "invoices-ready",
+    "invoices-pending",
+    "invoices-approved",
+    "invoices-ticked",
+    "invoices-filter",
+    "reconcile",
+    "price-list"
+  ],
+  "minRowsAt375": 7
+}

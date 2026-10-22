@@ -22,6 +22,7 @@
 //       first             the field a new row starts on
 //       empty             the words when no filter is on
 import { lucide } from '/assets/ui/custom-fields.js';
+import { applyPhoneRule } from './mobile.js';
 import { DATE_VALUES, dateValueIsOn, filterCount, KIND_ICONS, OPERATORS } from '/assets/ui/job-view.js';
 
 const DAY_BETWEEN = /^between:(\d{4}-\d{2}-\d{2})\.\.(\d{4}-\d{2}-\d{2})$/;
@@ -59,7 +60,7 @@ export function viewBar(h) {
     const panel = h('div', { class: `fx-pop${rows ? ' fx-pop--rows' : ''}`, id, popover: 'auto', role: rows ? 'dialog' : 'menu' });
     const button = h('button', { type: 'button', class: 'fx-chip', popovertarget: id, 'aria-haspopup': rows ? 'dialog' : 'menu', 'aria-expanded': 'false' });
     const clear = h('button', { type: 'button', class: 'fx-chip__clear', 'aria-label': clearLabel, title: clearLabel, hidden: true }, lucide(h, 'x'));
-    const wrap = h('span', { class: 'fx-chipset' }, button, clear);
+    const wrap = applyPhoneRule(h('span', { class: 'fx-chipset' }, button, clear), 'viewBar');
     let onClear = null;
     clear.addEventListener('click', () => onClear?.());
     const fill = () => panel.replaceChildren(...build(fill, () => panel.hidePopover()).filter(Boolean));
@@ -328,7 +329,7 @@ export function viewBar(h) {
 export function findBox(h, { label, value = '', oninput }) {
   const input = h('input', { class: 'fx-input fx-input--sm fx-find__input', type: 'search', placeholder: label, 'aria-label': label, value });
   const button = h('button', { type: 'button', class: 'fx-chip fx-find__button', 'aria-label': label, title: label }, lucide(h, 'search'));
-  const element = h('span', { class: `fx-find${value ? ' fx-find--open' : ''}` }, button, input);
+  const element = applyPhoneRule(h('span', { class: `fx-find${value ? ' fx-find--open' : ''}` }, button, input), 'findBox');
   button.addEventListener('click', () => { element.classList.add('fx-find--open'); input.focus(); });
   input.addEventListener('input', () => oninput(input.value));
   input.addEventListener('blur', () => { if (!input.value) element.classList.remove('fx-find--open'); });

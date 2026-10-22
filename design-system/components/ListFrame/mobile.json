@@ -1,0 +1,26 @@
+{
+  "component": "listFrame",
+  "direction": "frame",
+  "phone": {
+    "layout": "page"
+  },
+  "tablet": {
+    "layout": "frame"
+  },
+  "desk": {
+    "layout": "frame"
+  },
+  "touch": 44,
+  "pageOverflow": "none",
+  "screens": [
+    "jobs-board",
+    "jobs-list",
+    "job-panel",
+    "invoices-ready",
+    "invoices-pending",
+    "invoices-approved",
+    "invoices-ticked",
+    "invoices-filter",
+    "reconcile"
+  ]
+}

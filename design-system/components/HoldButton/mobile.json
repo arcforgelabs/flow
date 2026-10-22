@@ -1,0 +1,17 @@
+{
+  "component": "holdButton",
+  "direction": "wait",
+  "phone": {
+    "layout": "wait"
+  },
+  "tablet": {
+    "layout": "wait"
+  },
+  "desk": {
+    "layout": "wait"
+  },
+  "touch": 44,
+  "pageOverflow": "none",
+  "screens": [],
+  "mark": false
+}
