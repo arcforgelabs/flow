@@ -344,6 +344,24 @@ export const RULES = {
     ],
     "card": "ListPager"
   },
+  "messagePage": {
+    "component": "messagePage",
+    "direction": "card",
+    "phone": {
+      "layout": "card"
+    },
+    "tablet": {
+      "layout": "card"
+    },
+    "desk": {
+      "layout": "card"
+    },
+    "touch": 44,
+    "pageOverflow": "none",
+    "mark": false,
+    "screens": [],
+    "card": "MessagePage"
+  },
   "notice": {
     "component": "notice",
     "direction": "note",
