@@ -141,7 +141,9 @@ The page at `/sign-in`, `/people`, `/account` and `/appearance`
   button opens the pages as a panel below the bar.
 - **Jobs**: the board (one lane per group) or the list. On a phone one lane
   fills the width and snaps when swiped; stage tabs with counts sit in the
-  toolbar, and a long press opens Move to. On a wider screen each lane is a
+  toolbar, and a long press opens Move to. A job opens as a full page: back,
+  the client, previous and next, and a menu, with Activity and Fix as tabs
+  and the main action at the foot. On a wider screen each lane is a
   fixed width that never stretches, with empty space past the last lane,
   filling the window to its bottom edge, each lane scrolling inside itself.
   The toolbar has Group, Sort and Filter at the left, and the search icon
@@ -262,7 +264,7 @@ before changing it on a phone: the component reads those rules.
 | `lucide(h, name, label)` | `server/ui/custom-fields.js` | Icon | A Lucide icon in the text colour; with `label` it is named |
 | `colorPicker`, `optionPill` | `server/ui/custom-fields.js` | OptionPill | A colour choice; a dropdown option as a coloured pill |
 | `jobChangeBanner(ui, change)`, `jobChangeReview(ui, change, { canAccept, done })` | `server/ui/job-change.js` | JobChangeBanner | "The job changed" on a draft, with Accept change; `jobChangeReview` wires Accept and the recheck (invoice page, a job's Review sidecar) |
-| `sidecar(h, { label, overlay, escape, tabs })` | `server/ui/sidecar.js` | Sidecar | The right-hand panel: tabs with an icon and one word, ×, closed takes no room. A job's panel (Activity, Review); over a page with `overlay` (Custom fields manager) |
+| `sidecar(h, { label, overlay, escape, tabs, phone })`, `recordBar` | `server/ui/sidecar.js` | Sidecar | The right-hand panel: tabs with an icon and one word, ×, closed takes no room. A job's panel (Activity, Fix); over a page with `overlay` (Custom fields). `phone: 'page'` opens that panel as a full page on a phone: `recordBar` (back, title, previous and next, menu), the tabs under it, and the main action at the foot. The invoice page uses the same bar |
 | `formatCents`, `xeroTag`, `linkIcon`, `accountingIcon` | `server/ui/invoicing.js` | | Money, an accounting status tag, a link to the other system |
 | `automationSection`, `rulesSection`, `sendModeSection`, `lineMappingSection` | `server/ui/automations.js`, `invoice-rules.js`, `invoicing-settings.js`, `line-mappings.js` | | Settings sections a page mounts |
 | `messagePage({ title, text, tone, integration, organisation, mode, autoReturnSeconds })` | `server/ui/page.js` | MessagePage | The shared HTML card after an integration approval (OAuth callback). Flow mark + maker logo, status line (organisation · mode), tick or cross, "Back to Flow". Success may auto-return after a few seconds with a polite countdown; failure never does. Every integration with an approval step uses this, not its own copy. |

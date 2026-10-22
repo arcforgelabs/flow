@@ -20,6 +20,7 @@ import { jobChangeReview } from '/assets/ui/job-change.js';
 import {
   caseNumber, FINAL_RANK, fixes, INVOICE_STAGES, invoiceStage, matches, NO_STATUS, orderStatuses, phoneLaneIndex, PHONE_HOLD_MS, problemSummary, statusRank,
 } from '/assets/ui/job-board.js';
+import { rowMenu } from '/assets/ui/kit.js';
 import { isPhone } from '/assets/ui/mobile.js';
 import {
   COLUMNS, DEFAULT_VIEW, fieldGroup, fieldIdOf, fieldLanes, FILTER_FIELDS, filterJobs, groupJobs, GROUPS, KIND_OF_TYPE, keptStatuses, laneOf,
@@ -27,7 +28,7 @@ import {
 } from '/assets/ui/job-view.js';
 import { clipLabel } from '/assets/ui/person.js';
 import { savedViews } from '/assets/ui/saved-views.js';
-import { sidecar } from '/assets/ui/sidecar.js';
+import { recordBar, sidecar } from '/assets/ui/sidecar.js';
 import { findBox, ICONS, svg, today, viewBar } from '/assets/ui/view-bar.js';
 
 const LAYOUT_KEY = 'flow_jobs_layout';
@@ -1183,12 +1184,15 @@ export async function renderJobs(main, ui) {
 
   // The job's page: a large panel over the board, like a task page. A
   // breadcrumb, the client's name, the stage, the job's fields, what to fix
-  // and its lines. At the side (below on a phone), the sidecar: Activity,
-  // and Fix when the job has a problem (for a changed job: what changed,
-  // and Accept change). The sidecar closes, and the main area takes its room.
-  // Esc, the X or a click outside closes the panel. `atFix` opens the
-  // Fix tab on the first problem (or scrolls to the invoice choice). The job's custom fields can
-  // be changed here (in Flow only), and its stage moved (a hand-off to the
+  // and its lines. At the side, the sidecar: Activity, and Fix when the job
+  // has a problem (for a changed job: what changed, and Accept change). The
+  // sidecar closes, and the main area takes its room. On a phone the same
+  // panel is the whole screen: back (the board stays where it was scrolled),
+  // the client, the previous and next job, a menu, the sidecar's tabs under
+  // the bar, and the main action fixed at the foot. Esc, the X or a click
+  // outside closes the panel. `atFix` opens the Fix tab on the first problem
+  // (or scrolls to the invoice choice). The job's custom fields can be
+  // changed here (in Flow only), and its stage moved (a hand-off to the
   // work system).
   function openJob(job, { atFix = false } = {}) {
     const o = job.obligation;
@@ -1223,11 +1227,9 @@ export async function renderJobs(main, ui) {
       class: 'fx-task__fixchip', type: 'button', 'aria-pressed': 'false', onclick: () => toggleFix(i),
     }, lucide(h, 'triangle-alert'), f.label));
     function toggleFix(i) {
-      if (picked === i && side.tab() === 'fix') { side.close(); return; }
+      if (!isPhone() && picked === i && side.tab() === 'fix') { side.close(); return; }
       picked = i;
       side.open('fix');
-      // On a phone the sidecar is below the job: bring it into view.
-      if (matchMedia('(max-width: 720px)').matches) side.element.scrollIntoView({ block: 'start' });
     }
     // No invoice, and the match is unclear: one line and two buttons. The
     // possible matches are compared on the Reconcile page, not here.
@@ -1313,6 +1315,7 @@ export async function renderJobs(main, ui) {
     }, lucide(h, 'panel-right'));
     const side = sidecar(h, {
       label: 'Job side panel',
+      phone: 'page',
       tabs: [
         { id: 'activity', label: 'Activity', icon: 'history', render: () => activityBody },
         hasFix ? { id: 'fix', label: 'Fix', icon: 'triangle-alert', mark: true, render: () => { picked ??= 0; return fixBody(); } } : null,
@@ -1325,7 +1328,40 @@ export async function renderJobs(main, ui) {
       },
     });
     side.element.classList.add('fx-task__side');
-    element.append(h('div', { class: 'fx-task__grid' },
+    const jobs = state.found ?? [];
+    const at = jobs.findIndex((item) => jobKey(item) === jobKey(job));
+    // Back closes the page. The board is still underneath, at the same scroll.
+    const stepTo = (delta) => {
+      const other = jobs[at + delta];
+      if (!other) return;
+      const board = document.querySelector('.fx-board');
+      const frame = document.querySelector('.fx-frame__body');
+      const saved = { y: window.scrollY, frame: frame?.scrollTop ?? 0, board: board?.scrollLeft ?? 0 };
+      close();
+      openJob(other);
+      const restore = () => {
+        window.scrollTo(0, saved.y);
+        const nextFrame = document.querySelector('.fx-frame__body');
+        const nextBoard = document.querySelector('.fx-board');
+        if (nextFrame) nextFrame.scrollTop = saved.frame;
+        if (nextBoard) nextBoard.scrollLeft = saved.board;
+      };
+      restore();
+      requestAnimationFrame(restore);
+    };
+    const menuItems = [];
+    if (choose && o?.id) menuItems.push({ icon: 'git-compare', text: 'Reconcile', run: () => { close(); ui.go(`/reconcile/${o.id}`); } });
+    if (job.link?.url) menuItems.push({ icon: 'external-link', text: `Open in ${system}`, run: () => window.open(job.link.url, '_blank', 'noopener') });
+    const menu = menuItems.length ? rowMenu('More', menuItems, { className: 'fx-record__menu' }) : null;
+    const bar = recordBar(h, {
+      title: clientOf(job),
+      label: 'Job',
+      onBack: close,
+      prev: { label: 'Previous job', disabled: at <= 0, onclick: () => stepTo(-1) },
+      next: { label: 'Next job', disabled: at < 0 || at >= jobs.length - 1, onclick: () => stepTo(1) },
+      menu: menu?.[0] ?? null,
+    });
+    element.append(bar, h('div', { class: 'fx-task__grid' },
       h('div', { class: 'fx-task__main' },
         h('header', { class: 'fx-task__head' },
           h('nav', { class: 'fx-task__crumb', 'aria-label': 'Breadcrumb' },
@@ -1368,12 +1404,15 @@ export async function renderJobs(main, ui) {
             : h('p', { class: 'fx-dim' }, 'No lines.')),
         h('div', { class: 'fx-task__actions' }, actions(job, close))),
       side.element));
+    if (menu) element.append(menu[1]);
     element.addEventListener('click', (event) => { if (event.target === element) close(); });
     element.addEventListener('close', () => element.remove());
     document.body.append(element);
     element.showModal();
     const last = readSide();
-    if (atFix && hasFix) toggleFix(0);
+    // On a phone the tabs are the page, so the sidecar stays open.
+    if (isPhone()) side.open((atFix || last === 'fix') && hasFix ? 'fix' : 'activity');
+    else if (atFix && hasFix) toggleFix(0);
     else if (last !== 'closed') side.open(last === 'fix' && hasFix ? 'fix' : 'activity');
     if (atFix && chooseBox) chooseBox.scrollIntoView({ block: 'start' });
     if (!o) return;
