@@ -164,4 +164,28 @@ describe('quiet alerts against PostgreSQL', { skip: skipWithoutDatabase }, () =>
     const noMembers = { integrations: [integrationAlertsSource(() => [{ id: 'books', name: 'Books', capabilities: { alerts: async () => [{ id: 'a', title: 'x', members: [] }] } }])] };
     await assert.rejects(alertsFor(handle.db, lab.id, { id: owner.id, role: 'owner' }, { page: 'integrations', sources: noMembers }), /needs members/);
   });
+
+  // Other review kinds wait for a page a person can act on (#59). Until then
+  // only price_check is an alert source; the rest must stay silent.
+  test('open review kinds without a page make no quiet alert', async () => {
+    const id = '00000000-0000-4000-8000-000000000059';
+    await openReview(handle.db, lab.id, {
+      kind: 'link.conflict', entity: 'contact', flowId: id, systems: ['books'], evidence: { both: true },
+    });
+    await openReview(handle.db, lab.id, {
+      kind: 'write.failed', entity: 'invoice', flowId: id, systems: ['books'], evidence: { code: 'gone' },
+    });
+    await openReview(handle.db, lab.id, {
+      kind: 'job.dead', entity: 'background_job', flowId: id, systems: [], evidence: { attempts: 5 },
+    });
+    const sources = {
+      invoices: [],
+      'price-list': [priceDifferencesSource(handle.db)],
+      integrations: [integrationAlertsSource(() => [])],
+    };
+    const ownerPerson = { id: owner.id, role: 'owner' };
+    for (const page of ['invoices', 'price-list', 'integrations']) {
+      assert.deepEqual(await alertsFor(handle.db, lab.id, ownerPerson, { page, sources }), [], page);
+    }
+  });
 });

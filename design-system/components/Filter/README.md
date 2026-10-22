@@ -8,5 +8,6 @@ The Filter chip over every list (Jobs, Invoices, Reconcile), as ClickUp's: group
 - The view is `{ match, groups: [{ match, filters }] }`; `cleanFilterView` checks a saved one.
 - Group, Sort and Columns are chips from the same `viewBar(h).menu`.
 - A new list page uses this chip. It never builds its own filter.
+- The panel is placed again after its rows draw, with the same left-edge rule, so a wider row stays on screen (field, operator, value and delete).
 
 Code: `viewBar` in `server/ui/view-bar.js`; `filterJobs`, `OPERATORS` in `server/ui/job-view.js`.

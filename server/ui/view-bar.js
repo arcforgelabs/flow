@@ -63,14 +63,19 @@ export function viewBar(h) {
     const wrap = applyPhoneRule(h('span', { class: 'fx-chipset' }, button, clear), 'viewBar');
     let onClear = null;
     clear.addEventListener('click', () => onClear?.());
-    const fill = () => panel.replaceChildren(...build(fill, () => panel.hidePopover()).filter(Boolean));
+    // Place again after the rows draw. A filter row is wider than the empty
+    // panel, and the panel is measured once it is open; without this a button
+    // at the right (Invoices) leaves the value and the bin off the screen.
+    const placeMenu = () => { if (panel.matches(':popover-open')) place(button, panel, 6); };
+    const fill = () => {
+      panel.replaceChildren(...build(fill, () => panel.hidePopover()).filter(Boolean));
+      placeMenu();
+      requestAnimationFrame(placeMenu);
+    };
     panel.addEventListener('toggle', (event) => {
       button.setAttribute('aria-expanded', String(event.newState === 'open'));
       if (event.newState !== 'open') return;
       fill();
-      const at = button.getBoundingClientRect();
-      panel.style.top = `${Math.round(at.bottom + 6)}px`;
-      panel.style.left = `${Math.round(Math.max(8, Math.min(at.left, innerWidth - panel.offsetWidth - 8)))}px`;
     });
     return {
       node: [wrap, panel],
@@ -145,11 +150,16 @@ export function viewBar(h) {
     });
     return [button, pop];
   }
-  const place = (button, pop) => {
-    const at = button.getBoundingClientRect();
-    pop.style.top = `${Math.round(at.bottom + 4)}px`;
-    pop.style.left = `${Math.round(Math.max(8, Math.min(at.left, innerWidth - pop.offsetWidth - 8)))}px`;
-  };
+  // Keep a popover on the screen: at the control's left edge, shifted left
+  // when it would run off the right. Called again after a filter row draws,
+  // because that row is wider than the empty panel.
+  function place(anchor, pop, gap = 4) {
+    const at = anchor.getBoundingClientRect();
+    const width = pop.offsetWidth;
+    const left = Math.max(8, Math.min(at.left, innerWidth - width - 8));
+    pop.style.top = `${Math.round(at.bottom + gap)}px`;
+    pop.style.left = `${Math.round(left)}px`;
+  }
 
   // ── Filters ──
   // As ClickUp's: groups of rows of field, operator and value, with a bin on

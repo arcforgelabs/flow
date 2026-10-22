@@ -1,11 +1,17 @@
-<!-- @dsCard group="Actions" height=90 -->
+<!-- @dsCard group="Actions" height=120 -->
 <div class="fds-row" id="root"></div>
 <script>
-const { rowMenu, toast } = window.FlowDesignSystem;
-document.getElementById('root').append(...rowMenu('More for Alex', [
+const { h, rowMenu, toast } = window.FlowDesignSystem;
+const root = document.getElementById('root');
+root.append(...rowMenu('More for Alex', [
   { icon: 'mail', text: 'Email invite again', run: () => toast('Invite sent.', 'success') },
   { icon: 'power', text: 'Turn off', run: () => toast('Turned off.') },
   '-',
   { icon: 'trash-2', text: 'Remove', tone: 'danger', run: () => toast('Removed.') },
 ]));
+root.append(...rowMenu('More', [
+  { icon: 'briefcase', text: 'Jobs', run: () => toast('Jobs'), trailing: { icon: 'pin', label: 'Pinned', pressed: true, locked: true } },
+  { icon: 'receipt', text: 'Invoices', run: () => toast('Invoices'), trailing: { icon: 'pin', label: 'Pinned', pressed: true, locked: true } },
+  { icon: 'zap', text: 'Automations', run: () => toast('Automations'), trailing: { icon: 'pin', label: 'Pin', pressed: false, run: () => toast('Pinned.', 'success') } },
+], { place: 'side', align: 'start', className: 'fx-btn fx-btn--ghost', trigger: h('span', {}, 'More') }));
 </script>
