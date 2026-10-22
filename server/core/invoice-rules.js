@@ -47,7 +47,14 @@ export const FIELDS = Object.freeze({
   practitioner: { label: 'Practitioner', kind: 'text', options: 'practitioners', read: (j, { customer }) => j.practitioner || customer.defaultPractitioner || null },
   // Only a draft has a Reference, so only a pending rule may read it.
   reference: { label: 'Reference', kind: 'text', draftOnly: true, read: (j) => j.reference || null },
-  customer: { label: 'Customer', kind: 'choice', options: 'customers', read: (j) => j.contactId },
+  // Menu tests read the contact id. Contains and does not contain read the
+  // customer's name (matches): a lab can exclude every name that contains
+  // one marker, so a new branch needs no new rule.
+  customer: {
+    label: 'Customer', kind: 'choice', options: 'customers',
+    tests: ['is', 'is_not', 'is_one_of', 'contains', 'does_not_contain', 'is_empty'],
+    read: (j) => j.contactId,
+  },
   customer_billable: { label: 'Customer is billable', kind: 'boolean', read: (j, { customer }) => customer.billable !== false },
   line_item: { label: 'Line item', kind: 'items', options: 'items', read: (j) => (j.lines ?? []).flatMap((l) => [norm(l.itemCode), norm(l.label)].filter(Boolean)) },
   line_share: { label: 'Line share of other lines (%)', kind: 'share', options: 'items', read: (j) => j.lines ?? [] },
@@ -71,7 +78,8 @@ function readCondition(raw, index) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw invalid(`condition ${index + 1} must be an object`);
   const field = FIELDS[raw.field];
   if (!field) throw invalid(`condition ${index + 1}: unknown field ${raw.field}`);
-  if (!TESTS[field.kind].includes(raw.test)) throw invalid(`condition ${index + 1}: ${field.label} takes ${TESTS[field.kind].join(', ')}`);
+  const allowed = field.tests ?? TESTS[field.kind];
+  if (!allowed.includes(raw.test)) throw invalid(`condition ${index + 1}: ${field.label} takes ${allowed.join(', ')}`);
   const out = { field: raw.field, test: raw.test };
   if (NO_VALUE.has(raw.test)) return out;
   const { value } = raw;
@@ -125,9 +133,13 @@ function matches(condition, job, context) {
   const { test, value } = condition;
   if (test === 'is_empty') return have === null || have === '' || have === undefined;
   if (test === 'is_not_empty') return !(have === null || have === '' || have === undefined);
-  if (field.kind === 'text' && !['is', 'is_not', 'is_one_of'].includes(test)) {
+  // Customer contains reads the contact's name, in any case and with the
+  // spaces trimmed, the same way a practitioner's name is read. is, is not
+  // and is one of still compare the contact id. `customer.name` is that name.
+  const named = condition.field === 'customer' && (test === 'contains' || test === 'does_not_contain');
+  if ((field.kind === 'text' || named) && !['is', 'is_not', 'is_one_of'].includes(test)) {
     // An empty text matches no test that reads its words; is_empty finds it.
-    const left = norm(have);
+    const left = norm(named ? (context.customer?.name ?? job.customerName ?? null) : have);
     if (!left) return false;
     if (test === 'is_not_one_of') return !value.some((v) => norm(v) === left);
     if (test === 'has_number') return /\d/.test(left);
@@ -193,6 +205,24 @@ export function rulePending(rules, job, { customer = {}, now = new Date() } = {}
     .filter((r) => r.enabled && r.trigger === 'job_ready' && r.action.kind === 'pending')
     .filter((r) => r.conditions.every((c) => matches(c, job, context)))
     .map((r) => ({ code: 'rule', message: r.action.note, short: r.name.slice(0, 40), rule: r.id ?? null, fields: [...new Set(r.conditions.map((c) => c.field))] }));
+}
+
+// Drafts an enabled skip rule matches stay on Pending at Send (sending.js).
+// A person drafted the job by hand, or the rule was made after the draft.
+// The list shows the rule's name. The note says to void the draft or change
+// the rule. A wait rule does not hold a draft: a person may still send one.
+export function ruleSkip(rules, job, { customer = {}, now = new Date() } = {}) {
+  const context = { customer, now };
+  return rules
+    .filter((r) => r.enabled && r.trigger === 'job_ready' && r.action.kind === 'skip')
+    .filter((r) => r.conditions.every((c) => matches(c, job, context)))
+    .map((r) => ({
+      code: 'rule',
+      message: `Rule "${r.name}": not invoiced. Void this draft or change the rule.`,
+      short: r.name.slice(0, 40),
+      rule: r.id ?? null,
+      fields: [...new Set(r.conditions.map((c) => c.field))],
+    }));
 }
 
 // The starter rules made from the earlier fixed settings.

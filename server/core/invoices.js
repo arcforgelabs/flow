@@ -1,5 +1,5 @@
 import { and, asc, desc, eq, sql } from 'drizzle-orm';
-import { contacts, invoiceLines, invoices, invoiceVersions, organisations, priceItems } from '../db/schema.js';
+import { billingObligations, contacts, invoiceLines, invoices, invoiceVersions, obligationEvents, organisations, priceItems } from '../db/schema.js';
 import { FlowError, notFound } from './errors.js';
 import { invoiceTotals, lineTotals } from './money.js';
 
@@ -7,6 +7,7 @@ import { invoiceTotals, lineTotals } from './money.js';
 // invoice its number and stores the document exactly as sent, as a new
 // version. To change an issued invoice, revise it back to a draft and issue
 // it again: the number stays and the earlier versions stay as they were.
+// A draft that was never issued can be deleted. An issued invoice is voided.
 
 async function loadInvoice(tx, organisationId, invoiceId, { lock = false } = {}) {
   let query = tx.select().from(invoices)
@@ -179,6 +180,44 @@ export async function voidInvoice(db, organisationId, invoiceId) {
     const [row] = await tx.update(invoices).set({ status: 'void', updatedAt: sql`now()` })
       .where(eq(invoices.id, invoice.id)).returning();
     return row;
+  });
+}
+
+// Removes a draft that was never issued. The job it billed is free again:
+// its obligation no longer points at the draft, so the lab's rules decide
+// whether Flow drafts it once more. An invoice that was issued is voided,
+// not deleted (the database holds the same rule).
+export async function deleteDraft(db, organisationId, invoiceId, { actor = null } = {}) {
+  return db.transaction(async (tx) => {
+    const invoice = await loadInvoice(tx, organisationId, invoiceId, { lock: true });
+    if (invoice.status !== 'draft' || invoice.issuedVersion !== 0) {
+      throw new FlowError('was_issued', 'an invoice that was issued cannot be deleted; void it');
+    }
+    const linked = await tx.select().from(billingObligations)
+      .where(and(eq(billingObligations.organisationId, organisationId), eq(billingObligations.invoiceId, invoice.id)))
+      .for('update');
+    if (linked.length && !actor) throw new FlowError('invalid', 'actor is required');
+    for (const obligation of linked) {
+      await tx.update(billingObligations)
+        .set({ invoiceId: null, draftBasis: null, updatedAt: sql`now()` })
+        .where(eq(billingObligations.id, obligation.id));
+      await tx.insert(obligationEvents).values({
+        createdAt: sql`clock_timestamp()`,
+        organisationId,
+        obligationId: obligation.id,
+        kind: 'draft_deleted',
+        actor,
+        evidence: { invoiceId: invoice.id },
+      });
+    }
+    try {
+      await tx.delete(invoices).where(eq(invoices.id, invoice.id));
+    } catch (error) {
+      const code = error?.code ?? error?.cause?.code;
+      if (code === '23503') throw new FlowError('conflict', 'this draft is still linked; remove the link, then delete it');
+      throw error;
+    }
+    return invoice;
   });
 }
 

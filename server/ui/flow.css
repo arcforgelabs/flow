@@ -1790,6 +1790,11 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
   .fx-bulk__sep { margin: 0 2px; }
   .fx-bulk__act:not(.fx-bulk__act--primary) .fx-bulk__word { display: none; }
 }
+/* Phone and tablet: Delete and Void are a full touch target. */
+@media (max-width: 1023px) {
+  .fx-invoice .fx-ph__actions .fx-btn--danger { min-height: 44px; }
+  .fx-bulk__act[data-tone="danger"] { min-width: 44px; min-height: 44px; justify-content: center; }
+}
 
 /* Xero › Import (server/ui/xero-import.js): Review compares one fact per row
    with ✓ or ≠ between the sides; the list and history tick rows for the bulk

@@ -36,9 +36,13 @@ then it goes to Ready by itself. There is no half-made Flow draft: every
 invoice before it is sent is Pending (a check fails) or Ready (every check
 passes). Draft is the accounting system's word for an invoice it holds.
 
-On the invoice the buttons are, left to right, **Preview**, **Save**, then
+On the invoice the buttons are, left to right, **Delete** (a draft that was
+never issued; an owner or admin), **Preview**, **Save**, then
 **Send to Xero** (accounting system on) or **Approve** (no accounting system).
-A Pending draft has no send button.
+A Pending draft has no send button. Delete asks first, removes the draft,
+and frees its job: the lab's rules then decide whether Flow drafts it again.
+An invoice that was issued, including one opened to revise, is voided, not
+deleted.
 
 The Problem banner gives the first sentence of each problem: what is wrong.
 The field the failed check reads glows red, like a required field
@@ -64,8 +68,8 @@ Invert ticks and Clear ticks. An icon-only action shows its name on hover.
 
 | Tab | Actions |
 | --- | --- |
-| Pending | **Retry** (send-again for the ticked issued ones the accounting system refused), Copy references, Export CSV |
-| Ready | **Send to Xero** (send-ready for the ticked ids; **Approve** with no accounting system), Copy references, Export CSV |
+| Pending | **Retry** (send-again for the ticked issued ones the accounting system refused), Copy references, Export CSV, **Delete** (a ticked draft that was never issued; asks first) |
+| Ready | **Send to Xero** (send-ready for the ticked ids; **Approve** with no accounting system), Copy references, Export CSV, **Delete** (asks first) |
 | Draft, Approved, Sent | Copy numbers, Export CSV, Download PDFs, Void (asks first; Flow does not change the accounting system) |
 | Void | Copy numbers, Export CSV, Download PDFs |
 
@@ -80,6 +84,7 @@ each failed check; the full text is its hover title.
 | The total is above zero | Total $0 | The total is $0.00 or less. |
 | Every line has a price item | Line N: no item | Line N has no price item. |
 | The job is not in review | Line 4 added, Client changed, Job changed, Job deleted, Status moved back, Job needs a look | The job needs a look before this invoice goes: (the review reason). |
+| A skip rule matches the job | the rule's name | Rule "<name>": not invoiced. Void this draft or change the rule. |
 
 When an accounting system is on and connected, its own checks are added
 (`checkDrafts`). For Xero these come from Flow's copy of Xero, so they cost no
@@ -118,7 +123,7 @@ asks first. There is no separate send bar. Then:
    When a bulk press confirms none, it answers `not_ready` with that count
    (for example "3 jobs could not be read from the work system"). A danger
    toast for a stopped press stays until the person closes it.
-   Every draft check then runs again, the lab's pending rules
+   Every draft check then runs again, the lab's pending rules and skip rules
    ([INVOICE_RULES.md](INVOICE_RULES.md#pending-rules)) included. A draft
    that fails one now stays on Pending and is not sent. When a person ticked
    drafts, the rest go and the answer counts the ones held (`held`); when
@@ -208,6 +213,11 @@ Xero's `SentToContact` flag.
   could not be confirmed. When none can go, the answer is `not_ready` and
   names the cause and the count.
 - `POST /api/invoicing/invoices/send-again` `{ invoiceIds? }`.
+- `DELETE /api/invoicing/invoices/:id` (owner or admin) removes a draft that
+  was never issued (`status` draft and `issuedVersion` 0). Its job's billing
+  obligation is freed, so the job is ready again and the lab's rules decide
+  whether to draft it. An invoice that was issued answers `was_issued`: void
+  it instead.
 - `POST /api/invoicing/jobs/:id/use-new-lines` `{ accept? }`: the draft takes
   the work system's lines. With `accept: true` it also replaces lines changed
   in both places, while the invoice is not sent.

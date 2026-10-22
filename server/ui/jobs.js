@@ -40,7 +40,7 @@ const SYSTEM_NAME = { seazona: 'Seazona', xero: 'Xero' };
 // A job's events (server/core/ledger.js), in plain words.
 const ACTIVITY = {
   observed: 'Flow read the job', source_changed: 'The job changed in the lab system', ready: 'Marked ready to invoice',
-  in_work: 'Put back in work', drafted: 'Draft invoice made', draft_refused: 'Draft invoice refused', invoice_linked: 'Linked to an invoice',
+  in_work: 'Put back in work', drafted: 'Draft invoice made', draft_deleted: 'Draft invoice deleted', draft_refused: 'Draft invoice refused', invoice_linked: 'Linked to an invoice',
   accounting_checked: 'Checked in the accounting system', payment_recorded: 'Payment recorded', paid: 'Paid in full',
   held: 'Put on hold', review: 'Sent to review', released: 'Hold removed',
   status_moved_back: 'The job status moved back in the lab system', source_lines_used: 'New job lines used on the draft',

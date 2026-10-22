@@ -3,10 +3,11 @@ import { after, before, describe, test } from 'node:test';
 import { eq } from 'drizzle-orm';
 import { createContact, createOrganisation, createPriceItem } from '../server/core/directory.js';
 import {
-  createRule, deleteRule, listRules, readRule, rulePending, ruleReasons, starterRules, updateRule,
+  createRule, deleteRule, FIELDS, listRules, readRule, rulePending, ruleReasons, ruleSkip, starterRules, TESTS, updateRule,
 } from '../server/core/invoice-rules.js';
+import { deleteDraft, getInvoice } from '../server/core/invoices.js';
 import { autoDraftJobs, saveInvoicingSettings } from '../server/core/invoicing-rules.js';
-import { observeJob, setReady } from '../server/core/ledger.js';
+import { draftInvoiceForObligation, explainObligation, observeJob, setReady } from '../server/core/ledger.js';
 import { invoiceViews, sendAllReady } from '../server/core/sending.js';
 import { billingObligations, invoices } from '../server/db/schema.js';
 import { freshDatabase, skipWithoutDatabase } from './support/db.js';
@@ -81,6 +82,22 @@ describe('one rule against one job', () => {
     assert.equal(p('Ann Lee', { test: 'does_not_start_with', value: 'Dr ' }), true);
     assert.equal(p('Not  Listed', { test: 'contains', value: 'not listed' }), true);
     assert.equal(p('Dr Ann Lee', { test: 'does_not_contain', value: 'listed' }), true);
+    // Customer contains reads the customer's name, ignoring case and extra spaces.
+    const named = (name, test, value) => reasons([{ field: 'customer', test, value }], job(), { name }).length === 1;
+    assert.equal(named('North - Example Group', 'contains', 'example'), true);
+    assert.equal(named('NORTH  -  EXAMPLE GROUP', 'contains', 'Example'), true);
+    assert.equal(named('North - Example Group', 'contains', '  EXAMPLE  '), true);
+    assert.equal(named('North - Example Group', 'contains', 'other'), false);
+    assert.equal(named('North - Example Group', 'does_not_contain', 'example'), false);
+    assert.equal(named('North - Example Group', 'does_not_contain', 'other'), true);
+    assert.equal(named('Harbour Smiles', 'does_not_contain', 'example'), true);
+    // An empty name matches no word test, the same as an empty practitioner.
+    assert.equal(named(null, 'contains', 'example'), false);
+    assert.equal(named(null, 'does_not_contain', 'example'), false);
+    // is still matches the contact id, not the name.
+    assert.equal(reasons([{ field: 'customer', test: 'is', value: 'c-1' }], job(), { name: 'North - Example Group' }).length, 1);
+    assert.deepEqual(FIELDS.customer.tests, [...TESTS.choice.filter((t) => t !== 'is_empty'), 'contains', 'does_not_contain', 'is_empty']);
+    assert.throws(() => readRule({ name: 'x', conditions: [{ field: 'customer', test: 'starts_with', value: 'ex' }], action: { kind: 'skip' } }), /Customer takes/);
     // An empty practitioner matches no word test; "is empty" finds it.
     for (const test of ['one_word', 'has_number', 'number_in_words', 'does_not_start_with', 'is_not_one_of']) {
       assert.equal(p(null, { test, value: test.endsWith('of') ? ['Dr Ann Lee'] : 'Dr' }), false, test);
@@ -108,6 +125,22 @@ describe('one rule against one job', () => {
     ]);
     assert.deepEqual(rulePending(rules, job({ practitioner: 'Dr Ann Lee', reference: 'Dr Ann Lee - Ben Ng' }), { now: NOW }), []);
     assert.deepEqual(rulePending([{ ...rules[0], enabled: false }], odd, { now: NOW }), []);
+  });
+
+  test('a skip rule holds a matching draft; a wait rule does not', () => {
+    const skip = { ...rule([{ field: 'customer', test: 'contains', value: 'example' }], 'skip', 'Own branches'), id: 'r-9', trigger: 'job_ready' };
+    const wait = { ...rule([{ field: 'customer', test: 'contains', value: 'example' }], 'wait', 'Hold branches'), id: 'r-8', trigger: 'job_ready' };
+    const opts = { customer: { name: 'North - Example Group' }, now: NOW };
+    assert.deepEqual(ruleSkip([skip, wait], job(), opts), [{
+      code: 'rule',
+      message: 'Rule "Own branches": not invoiced. Void this draft or change the rule.',
+      short: 'Own branches',
+      rule: 'r-9',
+      fields: ['customer'],
+    }]);
+    assert.deepEqual(ruleSkip([{ ...skip, enabled: false }], job(), opts), []);
+    assert.deepEqual(ruleSkip([skip], job(), { customer: { name: 'Harbour Smiles' }, now: NOW }), []);
+    assert.deepEqual(ruleReasons([skip], job(), opts), ['rule "Own branches": not drafted by rule']);
   });
 
   test('the starter rules come from the earlier settings', () => {
@@ -230,5 +263,92 @@ describe('rules a lab keeps', { skip: skipWithoutDatabase }, () => {
     assert.deepEqual([await status(obligation.invoiceId), await status(good)], ['draft', 'issued']);
     assert.ok((await invoiceViews(handle.db, lab.id)).problems.has(obligation.invoiceId));
     await deleteRule(handle.db, lab.id, made.id);
+  });
+
+  test('Send holds a draft a skip rule matches, and sends one it does not', async () => {
+    const branch = await createContact(handle.db, lab.id, { kind: 'customer', name: 'North - Example Group' });
+    const smiles = await createContact(handle.db, lab.id, { kind: 'customer', name: 'Harbour Smiles' });
+    const draftFor = async (contact) => {
+      const row = await observeJob(handle.db, lab.id, {
+        sourceSystem: 'seazona', sourceJobRef: `job-${++counter}`, caseRef: `CASE-${counter}`, contactId: contact.id,
+        sourceStatus: 'Shipped', jobDate: '2026-10-15', lines: [{ itemCode: 'CROWN', description: 'Crown' }], observedAt: NOW,
+      });
+      await setReady(handle.db, lab.id, row.id, { actor: 'person:test' });
+      await autoDraftJobs(handle.db, lab.id, { now: NOW });
+      const [obligation] = await handle.db.select().from(billingObligations).where(eq(billingObligations.id, row.id));
+      assert.ok(obligation.invoiceId);
+      return obligation;
+    };
+    const held = await draftFor(branch);
+    const fine = await draftFor(smiles);
+    const made = await createRule(handle.db, lab.id, {
+      name: 'Own branches', conditions: [{ field: 'customer', test: 'contains', value: 'example' }], action: { kind: 'skip' },
+    });
+    let views = await invoiceViews(handle.db, lab.id);
+    assert.deepEqual(views.problems.get(held.invoiceId), [{
+      code: 'rule',
+      message: 'Rule "Own branches": not invoiced. Void this draft or change the rule.',
+      short: 'Own branches',
+      rule: made.id,
+      fields: ['customer'],
+    }]);
+    assert.equal(views.ready.includes(held.invoiceId), false);
+    assert.equal(views.ready.includes(fine.invoiceId), true);
+    const note = 'Rule "Own branches": not invoiced. Void this draft or change the rule.';
+    await assert.rejects(sendAllReady(handle.db, lab.id, { personId: null, issueDate: '2026-10-21', invoiceIds: [held.invoiceId] }),
+      { code: 'not_ready', message: `Not sent: ${note} The invoice is on Pending.` });
+    const sent = await sendAllReady(handle.db, lab.id, { personId: null, issueDate: '2026-10-21', invoiceIds: [held.invoiceId, fine.invoiceId] });
+    assert.deepEqual([sent.issued, sent.held], [1, 1]);
+    const status = async (id) => (await handle.db.select().from(invoices).where(eq(invoices.id, id)))[0].status;
+    assert.deepEqual([await status(held.invoiceId), await status(fine.invoiceId)], ['draft', 'issued']);
+
+    // A job that arrives after the rule is not drafted. A person can still
+    // draft it from the board; Send holds that draft too.
+    const later = await observeJob(handle.db, lab.id, {
+      sourceSystem: 'seazona', sourceJobRef: `job-${++counter}`, caseRef: `CASE-${counter}`, contactId: branch.id,
+      sourceStatus: 'Shipped', jobDate: '2026-10-15', lines: [{ itemCode: 'CROWN', description: 'Crown' }], observedAt: NOW,
+    });
+    await setReady(handle.db, lab.id, later.id, { actor: 'person:test' });
+    await autoDraftJobs(handle.db, lab.id, { now: NOW });
+    const [waiting] = await handle.db.select().from(billingObligations).where(eq(billingObligations.id, later.id));
+    assert.equal(waiting.invoiceId, null);
+    const { invoice } = await draftInvoiceForObligation(handle.db, lab.id, later.id, { actor: 'person:test', liveCheck: null, now: NOW, reference: 'CASE-hand' });
+    views = await invoiceViews(handle.db, lab.id);
+    assert.equal(views.problems.get(invoice.id)?.[0]?.message, note);
+    assert.equal(views.ready.includes(invoice.id), false);
+    await deleteRule(handle.db, lab.id, made.id);
+  });
+
+  test('deleting a never-issued draft frees the job, and a Never draft rule does not draft it again', async () => {
+    const observe = async (status) => {
+      const row = await observeJob(handle.db, lab.id, {
+        sourceSystem: 'seazona', sourceJobRef: `job-${++counter}`, caseRef: `CASE-${counter}`, contactId: practice.id,
+        sourceStatus: status, jobDate: '2026-10-15', lines: [{ itemCode: 'CROWN', description: 'Crown' }], observedAt: NOW,
+      });
+      await setReady(handle.db, lab.id, row.id, { actor: 'person:test' });
+      return row;
+    };
+    const reload = async (row) => (await handle.db.select().from(billingObligations).where(eq(billingObligations.id, row.id)))[0];
+    const internal = await observe('Internal');
+    await autoDraftJobs(handle.db, lab.id, { now: NOW });
+    const drafted = await reload(internal);
+    assert.ok(drafted.invoiceId, 'the job is drafted before the rule exists');
+    const rule = await createRule(handle.db, lab.id, {
+      name: 'Never draft', conditions: [{ field: 'job_status', test: 'is', value: 'internal' }], action: { kind: 'skip' },
+    });
+    await deleteDraft(handle.db, lab.id, drafted.invoiceId, { actor: 'person:test' });
+    await assert.rejects(getInvoice(handle.db, lab.id, drafted.invoiceId), { code: 'not_found' });
+    const freed = await reload(internal);
+    assert.equal(freed.invoiceId, null);
+    assert.equal(freed.draftBasis, null);
+    const explained = await explainObligation(handle.db, lab.id, internal.id, { accounting: false, now: NOW });
+    assert.equal(explained.view, 'ready');
+    assert.equal(explained.events.at(-1).kind, 'draft_deleted');
+
+    const open = await observe('Shipped');
+    await autoDraftJobs(handle.db, lab.id, { now: NOW });
+    assert.equal((await reload(internal)).invoiceId, null, 'a Never draft rule does not draft the job again');
+    assert.ok((await reload(open)).invoiceId, 'a job the rule does not match is drafted');
+    await deleteRule(handle.db, lab.id, rule.id);
   });
 });
