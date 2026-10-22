@@ -1,0 +1,88 @@
+name: Mobile
+
+# The phone suite (docs/MOBILE_TESTS.md): the real app with synthetic data in
+# WebKit and Chromium at five sizes and three themes. It checks page
+# overflow, touch targets, cut text, the toolbar's place and accessibility
+# against test/mobile/budget.json, and compares each screen with its saved
+# image in test/mobile/__screenshots__. The images are made in the Playwright
+# image only (Mobile Baseline), so fonts match on every run.
+
+on:
+  pull_request:
+    paths:
+      - server/ui/**
+      - server/theme/**
+      - design-system/**
+      - test/mobile/**
+      - package-lock.json
+      - .github/workflows/mobile.yml
+  push:
+    branches: [main]
+    paths:
+      - server/ui/**
+      - server/theme/**
+      - design-system/**
+      - test/mobile/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: flow-mobile-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  mobile:
+    name: mobile (${{ matrix.shard }}/4)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    container:
+      image: mcr.microsoft.com/playwright:v1.56.1-noble
+      options: --ipc=host
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: flow
+          POSTGRES_PASSWORD: flow
+          POSTGRES_DB: flow_mobile
+        options: >-
+          --health-cmd "pg_isready -U flow"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # A throwaway database inside this job; not a secret.
+      FLOW_TEST_DATABASE_URL: postgres://flow:flow@postgres:5432/flow_mobile
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Phone suite
+        run: npm run test:mobile -- --shard=${{ matrix.shard }}/4
+
+      - name: Keep the report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: mobile-report-${{ matrix.shard }}
+          path: |
+            test/mobile/report
+            test/mobile/results
+          retention-days: 14

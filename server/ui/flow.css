@@ -423,7 +423,7 @@ a.fx-strong:hover { text-decoration: underline; }
 .fx-toolbar { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--fx-line); }
 .fx-tabs { display: flex; gap: 2px; }
 .fx-tabs button { flex: none; }
-@media (max-width: 640px) { .fx-tabs { max-width: 100%; overflow-x: auto; scrollbar-width: none; } }
+@media (max-width: 639px) { .fx-tabs { max-width: 100%; overflow-x: auto; scrollbar-width: none; } }
 .fx-tabs button {
   display: inline-flex; align-items: center; gap: 8px; padding: 10px 14px; margin-bottom: -1px;
   border: 0; border-bottom: 2px solid transparent; background: transparent; cursor: pointer;
@@ -460,7 +460,7 @@ a.fx-strong:hover { text-decoration: underline; }
 .fx-views__end { display: inline-flex; gap: 6px; margin-left: 4px; }
 @media (hover: none) { .fx-views__item .fx-cfm__more { opacity: 1; } }
 /* A phone keeps the tools on one row of their own that scrolls sideways. */
-@media (max-width: 560px) {
+@media (max-width: 639px) {
   .fx-toolbar__tools { flex: 1 1 100%; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
   .fx-toolbar__tools > *, .fx-views { flex: none; flex-wrap: nowrap; }
   .fx-toolbar__end:has(> .fx-toolbar__tools) { flex-wrap: wrap; row-gap: 8px; }
@@ -479,7 +479,7 @@ a.fx-strong:hover { text-decoration: underline; }
 .fx-alerts__close:hover { background: var(--fx-hover); color: var(--t-strong); }
 .fx-alerts__close svg { width: 14px; height: 14px; }
 .fx-alerts__action:focus-visible, .fx-alerts__close:focus-visible { outline: 2px solid var(--t-ring); outline-offset: 2px; }
-@media (max-width: 560px) {
+@media (max-width: 639px) {
   .fx-alerts { flex-wrap: wrap; }
   .fx-alerts__text { flex-basis: calc(100% - 52px); }
   .fx-alerts__action, .fx-alerts__more { order: 2; }
@@ -662,7 +662,7 @@ a.fx-strong:hover { text-decoration: underline; }
 .fx-dot--stage[data-rank="7"] { --stage: var(--t-dim); }
 .fx-pop--choices .fx-input { min-height: 32px; margin-bottom: 4px; font-size: 13px; }
 .fx-pop__end { display: inline-grid; margin-left: auto; color: var(--t-accent); }
-@media (max-width: 640px) {
+@media (max-width: 639px) {
   .fx-pop.fx-pop--rows { min-width: 0; width: calc(100vw - 16px); }
   .fx-rows__row, .fx-rows__row--sort { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 32px; }
   .fx-rows__row > .fx-rows__lead, .fx-rows__row > .fx-select:first-child, .fx-rows__row > .fx-rows__join { grid-column: 1 / -1; }
@@ -1071,7 +1071,7 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
 .fx-setting__value { font-size: 12.5px; color: var(--t-strong); overflow-wrap: anywhere; text-align: right; }
 .fx-setting--wide { grid-template-columns: minmax(0, 1fr); }
 .fx-setting--wide .fx-setting__control { display: block; }
-@media (max-width: 640px) {
+@media (max-width: 639px) {
   .fx-setting { grid-template-columns: minmax(0, 1fr); }
   .fx-setting__control { justify-content: flex-start; }
   .fx-setting__stack { justify-items: start; }
@@ -1158,7 +1158,7 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
 }
 
 /* ── Phones ─────────────────────────────────────────────────────────────── */
-@media (max-width: 640px) {
+@media (max-width: 639px) {
   .fx-main { padding-top: 20px; }
   .fx-title { font-size: 22px; }
   .fx-table thead { display: none; }
@@ -1225,7 +1225,7 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
 .fx-price { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 .fx-price__head { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 8px 16px; }
 .fx-price__head .fx-search { margin: 0 0 6px; width: 260px; }
-@media (max-width: 560px) { .fx-price__head .fx-search { width: 100%; } }
+@media (max-width: 639px) { .fx-price__head .fx-search { width: 100%; } }
 .fx-price__table th { position: sticky; top: 0; z-index: 1; }
 .fx-price__table td { padding-top: 9px; padding-bottom: 9px; }
 .fx-price__table td.fx-num, .fx-price__table th.fx-num { text-align: right; white-space: nowrap; }
@@ -1418,10 +1418,10 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
 .fx-rule__value { display: flex; gap: 6px; align-items: center; min-width: 0; }
 .fx-rule__many { display: grid; gap: 2px; max-height: 160px; overflow: auto; padding: 4px 8px; border: 1px solid var(--fx-line); border-radius: 8px; width: 100%; }
 .fx-rule__delete { justify-self: start; color: var(--t-danger); }
-@media (max-width: 640px) {
+@media (max-width: 639px) {
   .fx-rule__condition { grid-template-columns: minmax(0, 1fr); }
 }
-@media (max-width: 560px) {
+@media (max-width: 639px) {
   .fx-set__row { gap: 12px; }
   .fx-set__control .fx-input { width: 140px; }
   .fx-set__control .fx-input[type="number"] { width: 72px; }
@@ -1429,7 +1429,7 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
 }
 .fx-multi { position: relative; width: 220px; max-width: 100%; }
 .fx-multi__summary { display: flex; align-items: center; list-style: none; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-@media (max-width: 600px) { .fx-multi { width: 150px; } }
+@media (max-width: 639px) { .fx-multi { width: 150px; } }
 .fx-multi__summary::-webkit-details-marker { display: none; }
 .fx-multi__list { position: absolute; right: 0; top: calc(100% + 4px); z-index: 30; display: grid; gap: 2px; min-width: 100%; max-height: 280px; overflow-y: auto; padding: 6px; background: var(--t-paper); border: 1px solid var(--fx-line); border-radius: var(--t-radius-lg); box-shadow: var(--t-shadow); }
 .fx-multi__option { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 6px 8px; cursor: pointer; white-space: nowrap; }
@@ -1529,7 +1529,7 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
 .fx-listhead > .fx-toolbar:not(.fx-toolbar--plain) > :not(.fx-tabs) { margin-bottom: 8px; }
 @media (max-width: 820px) { .fx-listhead[data-sticky] { top: 60px; } }
 /* On a phone the head would hide too many rows: it scrolls away. */
-@media (max-width: 560px) { .fx-listhead[data-sticky] { position: static; } }
+@media (max-width: 639px) { .fx-listhead[data-sticky] { position: static; } }
 
 /* The bulk action bar (bulk-bar.js): floats at the foot while rows are
    ticked. "N selected ×", then icon actions in groups, then More. It takes
@@ -1563,7 +1563,7 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
 .fx-bulk__grid { display: grid; }
 .fx-bulk__grid .fx-pop__item[data-tone="danger"] { color: var(--t-danger); }
 .fx-bulk__none { margin: 8px 10px; color: var(--t-dim); font-size: 13.5px; }
-@media (max-width: 560px) {
+@media (max-width: 639px) {
   .fx-bulk { bottom: 10px; padding: 4px; }
   .fx-bulk__count { margin-right: 2px; padding-left: 8px; }
   .fx-bulk__act { padding: 7px 6px; }

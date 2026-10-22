@@ -1,0 +1,1623 @@
+{
+ "desk-chromium-harbour-light/toolbar": {
+  "moved": [
+   "jobs-list",
+   "price-list",
+   "reconcile"
+  ]
+ },
+ "desk-chromium-meridian-dark/toolbar": {
+  "moved": [
+   "jobs-list",
+   "price-list",
+   "reconcile"
+  ]
+ },
+ "desk-chromium-meridian-light/toolbar": {
+  "moved": [
+   "jobs-list",
+   "price-list",
+   "reconcile"
+  ]
+ },
+ "desk-webkit-harbour-light/toolbar": {
+  "moved": [
+   "jobs-list",
+   "price-list",
+   "reconcile"
+  ]
+ },
+ "desk-webkit-meridian-dark/toolbar": {
+  "moved": [
+   "jobs-list",
+   "price-list",
+   "reconcile"
+  ]
+ },
+ "desk-webkit-meridian-light/toolbar": {
+  "moved": [
+   "jobs-list",
+   "price-list",
+   "reconcile"
+  ]
+ },
+ "phone-chromium-harbour-light/appearance": {
+  "small": 17
+ },
+ "phone-chromium-harbour-light/automations": {
+  "small": 6
+ },
+ "phone-chromium-harbour-light/custom-fields": {
+  "small": 26,
+  "axe": {
+   "aria-required-children": 5,
+   "color-contrast": 4
+  }
+ },
+ "phone-chromium-harbour-light/integrations": {
+  "small": 6,
+  "axe": {
+   "aria-allowed-attr": 2
+  }
+ },
+ "phone-chromium-harbour-light/invoice": {
+  "small": 14,
+  "axe": {
+   "aria-prohibited-attr": 1
+  }
+ },
+ "phone-chromium-harbour-light/invoices-approved": {
+  "small": 16,
+  "axe": {
+   "aria-prohibited-attr": 14,
+   "aria-required-children": 1
+  }
+ },
+ "phone-chromium-harbour-light/invoices-filter": {
+  "small": 18,
+  "axe": {
+   "aria-prohibited-attr": 42,
+   "aria-required-children": 1
+  }
+ },
+ "phone-chromium-harbour-light/invoices-pending": {
+  "small": 17,
+  "axe": {
+   "aria-prohibited-attr": 8,
+   "aria-required-children": 1
+  }
+ },
+ "phone-chromium-harbour-light/invoices-ready": {
+  "small": 17,
+  "axe": {
+   "aria-prohibited-attr": 42,
+   "aria-required-children": 1
+  }
+ },
+ "phone-chromium-harbour-light/invoices-ticked": {
+  "small": 21,
+  "axe": {
+   "aria-prohibited-attr": 8,
+   "aria-required-children": 1,
+   "button-name": 1
+  }
+ },
+ "phone-chromium-harbour-light/job-panel": {
+  "small": 16,
+  "axe": {
+   "color-contrast": 1
+  }
+ },
+ "phone-chromium-harbour-light/jobs-board": {
+  "small": 9,
+  "axe": {
+   "aria-required-children": 1
+  }
+ },
+ "phone-chromium-harbour-light/jobs-list": {
+  "small": 16,
+  "axe": {
+   "aria-required-children": 1,
+   "color-contrast": 8
+  }
+ },
+ "phone-chromium-harbour-light/price-list": {
+  "small": 7
+ },
+ "phone-chromium-harbour-light/reconcile": {
+  "small": 5,
+  "axe": {
+   "aria-required-children": 1
+  }
+ },
+ "phone-chromium-harbour-light/rules": {
+  "small": 3
+ },
+ "phone-chromium-harbour-light/toolbar": {
+  "moved": [
+   "jobs-list",
+   "price-list",
+   "reconcile"
+  ]
+ },
+ "phone-chromium-meridian-dark/appearance": {
+  "small": 17
+ },
+ "phone-chromium-meridian-dark/automations": {
+  "small": 6
+ },
+ "phone-chromium-meridian-dark/custom-fields": {
+  "small": 26,
+  "axe": {
+   "aria-required-children": 5,
+   "color-contrast": 4
+  }
+ },
+ "phone-chromium-meridian-dark/integrations": {
+  "small": 6,
+  "axe": {
+   "aria-allowed-attr": 2
+  }
+ },
+ "phone-chromium-meridian-dark/invoice": {
+  "small": 14,
+  "axe": {
+   "aria-prohibited-attr": 1
+  }
+ },
+ "phone-chromium-meridian-dark/invoices-approved": {
+  "small": 16,
+  "axe": {
+   "aria-prohibited-attr": 14,
+   "aria-required-children": 1
+  }
+ },
+ "phone-chromium-meridian-dark/invoices-filter": {
+  "small": 18,
+  "axe": {
+   "aria-prohibited-attr": 42,
+   "aria-required-children": 1
+  }
+ },
+ "phone-chromium-meridian-dark/invoices-pending": {
+  "small": 17,
+  "axe": {
+   "aria-prohibited-attr": 8,
+   "aria-required-children": 1
+  }
+ },
+ "phone-chromium-meridian-dark/invoices-ready": {
+  "small": 17,
+  "axe": {
+   "aria-prohibited-attr": 42,
+   "aria-required-children": 1
+  }
+ },
+ "phone-chromium-meridian-dark/invoices-ticked": {
+  "small": 21,
+  "axe": {
+   "aria-prohibited-attr": 8,
+   "aria-required-children": 1,
+   "button-name": 1
+  }
+ },
+ "phone-chromium-meridian-dark/job-panel": {
+  "small": 16
+ },
+ "phone-chromium-meridian-dark/jobs-board": {
+  "small": 9,
+  "axe": {
+   "aria-required-children": 1
+  }
+ },
+ "phone-chromium-meridian-dark/jobs-list": {
+  "small": 16,
+  "axe": {
+   "aria-required-children": 1
+  }
+ },
+ "phone-chromium-meridian-dark/price-list": {
+  "small": 7
+ },
+ "phone-chromium-meridian-dark/reconcile": {
+  "small": 5,
+  "axe": {
+   "aria-required-children": 1
+  }
+ },
+ "phone-chromium-meridian-dark/rules": {
+  "small": 3
+ },
+ "phone-chromium-meridian-dark/toolbar": {
+  "moved": [
+   "jobs-list",
+   "price-list",
+   "reconcile"
+  ]
+ },
+ "phone-chromium-meridian-light/appearance": {
+  "small": 17
+ },
+ "phone-chromium-meridian-light/automations": {
+  "small": 6
+ },
+ "phone-chromium-meridian-light/custom-fields": {
+  "small": 26,
+  "axe": {
+   "aria-required-children": 5,
+   "color-contrast": 4
+  }
+ },
+ "phone-chromium-meridian-light/integrations": {
+  "small": 6,
+  "axe": {
+   "aria-allowed-attr": 2
+  }
+ },
+ "phone-chromium-meridian-light/invoice": {
+  "small": 14,
+  "axe": {
+   "aria-prohibited-attr": 1
+  }
+ },
+ "phone-chromium-meridian-light/invoices-approved": {
+  "small": 16,
+  "axe": {
+   "aria-prohibited-attr": 14,
+   "aria-required-children": 1
+  }
+ },
+ "phone-chromium-meridian-light/invoices-filter": {
+  "small": 18,
+  "axe": {
+   "aria-prohibited-attr": 42,
+   "aria-required-children": 1
+  }
+ },
+ "phone-chromium-meridian-light/invoices-pending": {
+  "small": 17,
+  "axe": {
+   "aria-prohibited-attr": 8,
+   "aria-required-children": 1
+  }
+ },
+ "phone-chromium-meridian-light/invoices-ready": {
+  "small": 17,
+  "axe": {
+   "aria-prohibited-attr": 42,
+   "aria-required-children": 1
+  }
+ },
+ "phone-chromium-meridian-light/invoices-ticked": {
+  "small": 21,
+  "axe": {
+   "aria-prohibited-attr": 8,
+   "aria-required-children": 1,
+   "button-name": 1
+  }
+ },
+ "phone-chromium-meridian-light/job-panel": {
+  "small": 16
+ },
+ "phone-chromium-meridian-light/jobs-board": {
+  "small": 9,
+  "axe": {
+   "aria-required-children": 1
+  }
+ },
+ "phone-chromium-meridian-light/jobs-list": {
+  "small": 16,
+  "axe": {
+   "aria-required-children": 1,
+   "color-contrast": 1
+  }
+ },
+ "phone-chromium-meridian-light/price-list": {
+  "small": 7
+ },
+ "phone-chromium-meridian-light/reconcile": {
+  "small": 5,
+  "axe": {
+   "aria-required-children": 1
+  }
+ },
+ "phone-chromium-meridian-light/rules": {
+  "small": 3
+ },
+ "phone-chromium-meridian-light/toolbar": {
+  "moved": [
+   "jobs-list",
+   "price-list",
+   "reconcile"
+  ]
+ },
+ "phone-l-chromium-harbour-light/appearance": {
+  "small": 17
+ },
+ "phone-l-chromium-harbour-light/automations": {
+  "small": 6
+ },
+ "phone-l-chromium-harbour-light/custom-fields": {
+  "small": 26
+ },
+ "phone-l-chromium-harbour-light/integrations": {
+  "small": 6
+ },
+ "phone-l-chromium-harbour-light/invoice": {
+  "small": 14
+ },
+ "phone-l-chromium-harbour-light/invoices-approved": {
+  "small": 17
+ },
+ "phone-l-chromium-harbour-light/invoices-filter": {
+  "small": 19
+ },
+ "phone-l-chromium-harbour-light/invoices-pending": {
+  "small": 18
+ },
+ "phone-l-chromium-harbour-light/invoices-ready": {
+  "small": 18
+ },
+ "phone-l-chromium-harbour-light/invoices-ticked": {
+  "small": 22
+ },
+ "phone-l-chromium-harbour-light/job-panel": {
+  "small": 18
+ },
+ "phone-l-chromium-harbour-light/jobs-board": {
+  "small": 9
+ },
+ "phone-l-chromium-harbour-light/jobs-list": {
+  "small": 16
+ },
+ "phone-l-chromium-harbour-light/price-list": {
+  "small": 7
+ },
+ "phone-l-chromium-harbour-light/reconcile": {
+  "small": 5
+ },
+ "phone-l-chromium-harbour-light/rules": {
+  "small": 3
+ },
+ "phone-l-chromium-harbour-light/toolbar": {
+  "moved": [
+   "jobs-list",
+   "price-list",
+   "reconcile"
+  ]
+ },
+ "phone-l-chromium-meridian-dark/appearance": {
+  "small": 17
+ },
+ "phone-l-chromium-meridian-dark/automations": {
+  "small": 6
+ },
+ "phone-l-chromium-meridian-dark/custom-fields": {
+  "small": 26
+ },
+ "phone-l-chromium-meridian-dark/integrations": {
+  "small": 6
+ },
+ "phone-l-chromium-meridian-dark/invoice": {
+  "small": 14
+ },
+ "phone-l-chromium-meridian-dark/invoices-approved": {
+  "small": 17
+ },
+ "phone-l-chromium-meridian-dark/invoices-filter": {
+  "small": 19
+ },
+ "phone-l-chromium-meridian-dark/invoices-pending": {
+  "small": 18
+ },
+ "phone-l-chromium-meridian-dark/invoices-ready": {
+  "small": 18
+ },
+ "phone-l-chromium-meridian-dark/invoices-ticked": {
+  "small": 22
+ },
+ "phone-l-chromium-meridian-dark/job-panel": {
+  "small": 18
+ },
+ "phone-l-chromium-meridian-dark/jobs-board": {
+  "small": 9
+ },
+ "phone-l-chromium-meridian-dark/jobs-list": {
+  "small": 16
+ },
+ "phone-l-chromium-meridian-dark/price-list": {
+  "small": 7
+ },
+ "phone-l-chromium-meridian-dark/reconcile": {
+  "small": 5
+ },
+ "phone-l-chromium-meridian-dark/rules": {
+  "small": 3
+ },
+ "phone-l-chromium-meridian-dark/toolbar": {
+  "moved": [
+   "jobs-list",
+   "price-list",
+   "reconcile"
+  ]
+ },
+ "phone-l-chromium-meridian-light/appearance": {
+  "small": 17
+ },
+ "phone-l-chromium-meridian-light/automations": {
+  "small": 6
+ },
+ "phone-l-chromium-meridian-light/custom-fields": {
+  "small": 26
+ },
+ "phone-l-chromium-meridian-light/integrations": {
+  "small": 6
+ },
+ "phone-l-chromium-meridian-light/invoice": {
+  "small": 14
+ },
+ "phone-l-chromium-meridian-light/invoices-approved": {
+  "small": 17
+ },
+ "phone-l-chromium-meridian-light/invoices-filter": {
+  "small": 19
+ },
+ "phone-l-chromium-meridian-light/invoices-pending": {
+  "small": 18
+ },
+ "phone-l-chromium-meridian-light/invoices-ready": {
+  "small": 18
+ },
+ "phone-l-chromium-meridian-light/invoices-ticked": {
+  "small": 22
+ },
+ "phone-l-chromium-meridian-light/job-panel": {
+  "small": 18
+ },
+ "phone-l-chromium-meridian-light/jobs-board": {
+  "small": 9
+ },
+ "phone-l-chromium-meridian-light/jobs-list": {
+  "small": 16
+ },
+ "phone-l-chromium-meridian-light/price-list": {
+  "small": 7
+ },
+ "phone-l-chromium-meridian-light/reconcile": {
+  "small": 5
+ },
+ "phone-l-chromium-meridian-light/rules": {
+  "small": 3
+ },
+ "phone-l-chromium-meridian-light/toolbar": {
+  "moved": [
+   "jobs-list",
+   "price-list",
+   "reconcile"
+  ]
+ },
+ "phone-l-webkit-harbour-light/appearance": {
+  "small": 17
+ },
+ "phone-l-webkit-harbour-light/automations": {
+  "small": 6
+ },
+ "phone-l-webkit-harbour-light/custom-fields": {
+  "small": 26
+ },
+ "phone-l-webkit-harbour-light/integrations": {
+  "small": 6
+ },
+ "phone-l-webkit-harbour-light/invoice": {
+  "overflow": 234,
+  "small": 12
+ },
+ "phone-l-webkit-harbour-light/invoices-approved": {
+  "small": 18
+ },
+ "phone-l-webkit-harbour-light/invoices-filter": {
+  "small": 19
+ },
+ "phone-l-webkit-harbour-light/invoices-pending": {
+  "small": 18
+ },
+ "phone-l-webkit-harbour-light/invoices-ready": {
+  "small": 18
+ },
+ "phone-l-webkit-harbour-light/invoices-ticked": {
+  "small": 22
+ },
+ "phone-l-webkit-harbour-light/job-panel": {
+  "small": 18
+ },
+ "phone-l-webkit-harbour-light/jobs-board": {
+  "small": 9
+ },
+ "phone-l-webkit-harbour-light/jobs-list": {
+  "small": 16
+ },
+ "phone-l-webkit-harbour-light/price-list": {
+  "small": 7
+ },
+ "phone-l-webkit-harbour-light/reconcile": {
+  "small": 5
+ },
+ "phone-l-webkit-harbour-light/rules": {
+  "small": 3
+ },
+ "phone-l-webkit-harbour-light/toolbar": {
+  "moved": [
+   "jobs-list",
+   "price-list",
+   "reconcile"
+  ]
+ },
+ "phone-l-webkit-meridian-dark/appearance": {
+  "small": 17
+ },
+ "phone-l-webkit-meridian-dark/automations": {
+  "small": 6
+ },
+ "phone-l-webkit-meridian-dark/custom-fields": {
+  "small": 26
+ },
+ "phone-l-webkit-meridian-dark/integrations": {
+  "small": 6
+ },
+ "phone-l-webkit-meridian-dark/invoice": {
+  "overflow": 234,
+  "small": 12
+ },
+ "phone-l-webkit-meridian-dark/invoices-approved": {
+  "small": 18
+ },
+ "phone-l-webkit-meridian-dark/invoices-filter": {
+  "small": 19
+ },
+ "phone-l-webkit-meridian-dark/invoices-pending": {
+  "small": 18
+ },
+ "phone-l-webkit-meridian-dark/invoices-ready": {
+  "small": 18
+ },
+ "phone-l-webkit-meridian-dark/invoices-ticked": {
+  "small": 22
+ },
+ "phone-l-webkit-meridian-dark/job-panel": {
+  "small": 16
+ },
+ "phone-l-webkit-meridian-dark/jobs-board": {
+  "small": 9
+ },
+ "phone-l-webkit-meridian-dark/jobs-list": {
+  "small": 16
+ },
+ "phone-l-webkit-meridian-dark/price-list": {
+  "small": 7
+ },
+ "phone-l-webkit-meridian-dark/reconcile": {
+  "small": 5
+ },
+ "phone-l-webkit-meridian-dark/rules": {
+  "small": 3
+ },
+ "phone-l-webkit-meridian-dark/toolbar": {
+  "moved": [
+   "jobs-list",
+   "price-list",
+   "reconcile"
+  ]
+ },
+ "phone-l-webkit-meridian-light/appearance": {
+  "small": 17
+ },
+ "phone-l-webkit-meridian-light/automations": {
+  "small": 6
+ },
+ "phone-l-webkit-meridian-light/custom-fields": {
+  "small": 26
+ },
+ "phone-l-webkit-meridian-light/integrations": {
+  "small": 6
+ },
+ "phone-l-webkit-meridian-light/invoice": {
+  "overflow": 234,
+  "small": 12
+ },
+ "phone-l-webkit-meridian-light/invoices-approved": {
+  "small": 18
+ },
+ "phone-l-webkit-meridian-light/invoices-filter": {
+  "small": 19
+ },
+ "phone-l-webkit-meridian-light/invoices-pending": {
+  "small": 18
+ },
+ "phone-l-webkit-meridian-light/invoices-ready": {
+  "small": 18
+ },
+ "phone-l-webkit-meridian-light/invoices-ticked": {
+  "small": 22
+ },
+ "phone-l-webkit-meridian-light/job-panel": {
+  "small": 16
+ },
+ "phone-l-webkit-meridian-light/jobs-board": {
+  "small": 9
+ },
+ "phone-l-webkit-meridian-light/jobs-list": {
+  "small": 16
+ },
+ "phone-l-webkit-meridian-light/price-list": {
+  "small": 7
+ },
+ "phone-l-webkit-meridian-light/reconcile": {
+  "small": 5
+ },
+ "phone-l-webkit-meridian-light/rules": {
+  "small": 3
+ },
+ "phone-l-webkit-meridian-light/toolbar": {
+  "moved": [
+   "jobs-list",
+   "price-list",
+   "reconcile"
+  ]
+ },
+ "phone-s-chromium-harbour-light/appearance": {
+  "small": 17
+ },
+ "phone-s-chromium-harbour-light/automations": {
+  "small": 6
+ },
+ "phone-s-chromium-harbour-light/custom-fields": {
+  "small": 22
+ },
+ "phone-s-chromium-harbour-light/integrations": {
+  "small": 6
+ },
+ "phone-s-chromium-harbour-light/invoice": {
+  "small": 14
+ },
+ "phone-s-chromium-harbour-light/invoices-approved": {
+  "small": 15
+ },
+ "phone-s-chromium-harbour-light/invoices-filter": {
+  "small": 16
+ },
+ "phone-s-chromium-harbour-light/invoices-pending": {
+  "small": 15
+ },
+ "phone-s-chromium-harbour-light/invoices-ready": {
+  "small": 15
+ },
+ "phone-s-chromium-harbour-light/invoices-ticked": {
+  "small": 19
+ },
+ "phone-s-chromium-harbour-light/job-panel": {
+  "small": 15
+ },
+ "phone-s-chromium-harbour-light/jobs-board": {
+  "small": 9
+ },
+ "phone-s-chromium-harbour-light/jobs-list": {
+  "small": 15
+ },
+ "phone-s-chromium-harbour-light/price-list": {
+  "small": 7
+ },
+ "phone-s-chromium-harbour-light/reconcile": {
+  "small": 5
+ },
+ "phone-s-chromium-harbour-light/rules": {
+  "small": 3
+ },
+ "phone-s-chromium-harbour-light/toolbar": {
+  "moved": [
+   "jobs-list",
+   "price-list",
+   "reconcile"
+  ]
+ },
+ "phone-s-chromium-meridian-dark/appearance": {
+  "small": 17
+ },
+ "phone-s-chromium-meridian-dark/automations": {
+  "small": 6
+ },
+ "phone-s-chromium-meridian-dark/custom-fields": {
+  "small": 22
+ },
+ "phone-s-chromium-meridian-dark/integrations": {
+  "small": 6
+ },
+ "phone-s-chromium-meridian-dark/invoice": {
+  "small": 14
+ },
+ "phone-s-chromium-meridian-dark/invoices-approved": {
+  "small": 15
+ },
+ "phone-s-chromium-meridian-dark/invoices-filter": {
+  "small": 17
+ },
+ "phone-s-chromium-meridian-dark/invoices-pending": {
+  "small": 16
+ },
+ "phone-s-chromium-meridian-dark/invoices-ready": {
+  "small": 16
+ },
+ "phone-s-chromium-meridian-dark/invoices-ticked": {
+  "small": 20
+ },
+ "phone-s-chromium-meridian-dark/job-panel": {
+  "small": 15
+ },
+ "phone-s-chromium-meridian-dark/jobs-board": {
+  "small": 9
+ },
+ "phone-s-chromium-meridian-dark/jobs-list": {
+  "small": 15
+ },
+ "phone-s-chromium-meridian-dark/price-list": {
+  "small": 7
+ },
+ "phone-s-chromium-meridian-dark/reconcile": {
+  "small": 5
+ },
+ "phone-s-chromium-meridian-dark/rules": {
+  "small": 3
+ },
+ "phone-s-chromium-meridian-dark/toolbar": {
+  "moved": [
+   "jobs-list",
+   "price-list",
+   "reconcile"
+  ]
+ },
+ "phone-s-chromium-meridian-light/appearance": {
+  "small": 17
+ },
+ "phone-s-chromium-meridian-light/automations": {
+  "small": 6
+ },
+ "phone-s-chromium-meridian-light/custom-fields": {
+  "small": 22
+ },
+ "phone-s-chromium-meridian-light/integrations": {
+  "small": 6
+ },
+ "phone-s-chromium-meridian-light/invoice": {
+  "small": 14
+ },
+ "phone-s-chromium-meridian-light/invoices-approved": {
+  "small": 15
+ },
+ "phone-s-chromium-meridian-light/invoices-filter": {
+  "small": 17
+ },
+ "phone-s-chromium-meridian-light/invoices-pending": {
+  "small": 16
+ },
+ "phone-s-chromium-meridian-light/invoices-ready": {
+  "small": 16
+ },
+ "phone-s-chromium-meridian-light/invoices-ticked": {
+  "small": 20
+ },
+ "phone-s-chromium-meridian-light/job-panel": {
+  "small": 15
+ },
+ "phone-s-chromium-meridian-light/jobs-board": {
+  "small": 9
+ },
+ "phone-s-chromium-meridian-light/jobs-list": {
+  "small": 15
+ },
+ "phone-s-chromium-meridian-light/price-list": {
+  "small": 7
+ },
+ "phone-s-chromium-meridian-light/reconcile": {
+  "small": 5
+ },
+ "phone-s-chromium-meridian-light/rules": {
+  "small": 3
+ },
+ "phone-s-chromium-meridian-light/toolbar": {
+  "moved": [
+   "jobs-list",
+   "price-list",
+   "reconcile"
+  ]
+ },
+ "phone-s-webkit-harbour-light/appearance": {
+  "small": 17
+ },
+ "phone-s-webkit-harbour-light/automations": {
+  "small": 6
+ },
+ "phone-s-webkit-harbour-light/custom-fields": {
+  "small": 22
+ },
+ "phone-s-webkit-harbour-light/integrations": {
+  "small": 6
+ },
+ "phone-s-webkit-harbour-light/invoice": {
+  "overflow": 271,
+  "small": 12
+ },
+ "phone-s-webkit-harbour-light/invoices-approved": {
+  "small": 16
+ },
+ "phone-s-webkit-harbour-light/invoices-filter": {
+  "small": 17
+ },
+ "phone-s-webkit-harbour-light/invoices-pending": {
+  "small": 16
+ },
+ "phone-s-webkit-harbour-light/invoices-ready": {
+  "small": 16
+ },
+ "phone-s-webkit-harbour-light/invoices-ticked": {
+  "small": 20
+ },
+ "phone-s-webkit-harbour-light/job-panel": {
+  "small": 15
+ },
+ "phone-s-webkit-harbour-light/jobs-board": {
+  "small": 9
+ },
+ "phone-s-webkit-harbour-light/jobs-list": {
+  "small": 15
+ },
+ "phone-s-webkit-harbour-light/price-list": {
+  "small": 7
+ },
+ "phone-s-webkit-harbour-light/reconcile": {
+  "small": 5
+ },
+ "phone-s-webkit-harbour-light/rules": {
+  "small": 3
+ },
+ "phone-s-webkit-harbour-light/toolbar": {
+  "moved": [
+   "jobs-list",
+   "price-list",
+   "reconcile"
+  ]
+ },
+ "phone-s-webkit-meridian-dark/appearance": {
+  "small": 17
+ },
+ "phone-s-webkit-meridian-dark/automations": {
+  "small": 6
+ },
+ "phone-s-webkit-meridian-dark/custom-fields": {
+  "small": 22
+ },
+ "phone-s-webkit-meridian-dark/integrations": {
+  "small": 6
+ },
+ "phone-s-webkit-meridian-dark/invoice": {
+  "overflow": 271,
+  "small": 12
+ },
+ "phone-s-webkit-meridian-dark/invoices-approved": {
+  "small": 16
+ },
+ "phone-s-webkit-meridian-dark/invoices-filter": {
+  "small": 17
+ },
+ "phone-s-webkit-meridian-dark/invoices-pending": {
+  "small": 16
+ },
+ "phone-s-webkit-meridian-dark/invoices-ready": {
+  "small": 16
+ },
+ "phone-s-webkit-meridian-dark/invoices-ticked": {
+  "small": 20
+ },
+ "phone-s-webkit-meridian-dark/job-panel": {
+  "small": 15
+ },
+ "phone-s-webkit-meridian-dark/jobs-board": {
+  "small": 9
+ },
+ "phone-s-webkit-meridian-dark/jobs-list": {
+  "small": 15
+ },
+ "phone-s-webkit-meridian-dark/price-list": {
+  "small": 7
+ },
+ "phone-s-webkit-meridian-dark/reconcile": {
+  "small": 5
+ },
+ "phone-s-webkit-meridian-dark/rules": {
+  "small": 3
+ },
+ "phone-s-webkit-meridian-dark/toolbar": {
+  "moved": [
+   "jobs-list",
+   "price-list",
+   "reconcile"
+  ]
+ },
+ "phone-s-webkit-meridian-light/appearance": {
+  "small": 17
+ },
+ "phone-s-webkit-meridian-light/automations": {
+  "small": 6
+ },
+ "phone-s-webkit-meridian-light/custom-fields": {
+  "small": 22
+ },
+ "phone-s-webkit-meridian-light/integrations": {
+  "small": 6
+ },
+ "phone-s-webkit-meridian-light/invoice": {
+  "overflow": 271,
+  "small": 12
+ },
+ "phone-s-webkit-meridian-light/invoices-approved": {
+  "small": 16
+ },
+ "phone-s-webkit-meridian-light/invoices-filter": {
+  "small": 17
+ },
+ "phone-s-webkit-meridian-light/invoices-pending": {
+  "small": 16
+ },
+ "phone-s-webkit-meridian-light/invoices-ready": {
+  "small": 16
+ },
+ "phone-s-webkit-meridian-light/invoices-ticked": {
+  "small": 20
+ },
+ "phone-s-webkit-meridian-light/job-panel": {
+  "small": 15
+ },
+ "phone-s-webkit-meridian-light/jobs-board": {
+  "small": 9
+ },
+ "phone-s-webkit-meridian-light/jobs-list": {
+  "small": 15
+ },
+ "phone-s-webkit-meridian-light/price-list": {
+  "small": 7
+ },
+ "phone-s-webkit-meridian-light/reconcile": {
+  "small": 5
+ },
+ "phone-s-webkit-meridian-light/rules": {
+  "small": 3
+ },
+ "phone-s-webkit-meridian-light/toolbar": {
+  "moved": [
+   "jobs-list",
+   "price-list",
+   "reconcile"
+  ]
+ },
+ "phone-webkit-harbour-light/appearance": {
+  "small": 17
+ },
+ "phone-webkit-harbour-light/automations": {
+  "small": 6
+ },
+ "phone-webkit-harbour-light/custom-fields": {
+  "small": 26,
+  "axe": {
+   "aria-required-children": 5,
+   "color-contrast": 4
+  }
+ },
+ "phone-webkit-harbour-light/integrations": {
+  "small": 6,
+  "axe": {
+   "aria-allowed-attr": 2
+  }
+ },
+ "phone-webkit-harbour-light/invoice": {
+  "overflow": 253,
+  "small": 12,
+  "axe": {
+   "aria-prohibited-attr": 1
+  }
+ },
+ "phone-webkit-harbour-light/invoices-approved": {
+  "small": 17,
+  "axe": {
+   "aria-prohibited-attr": 14,
+   "aria-required-children": 1
+  }
+ },
+ "phone-webkit-harbour-light/invoices-filter": {
+  "small": 18,
+  "axe": {
+   "aria-prohibited-attr": 42,
+   "aria-required-children": 1
+  }
+ },
+ "phone-webkit-harbour-light/invoices-pending": {
+  "small": 17,
+  "axe": {
+   "aria-prohibited-attr": 8,
+   "aria-required-children": 1
+  }
+ },
+ "phone-webkit-harbour-light/invoices-ready": {
+  "small": 17,
+  "axe": {
+   "aria-prohibited-attr": 42,
+   "aria-required-children": 1
+  }
+ },
+ "phone-webkit-harbour-light/invoices-ticked": {
+  "small": 21,
+  "axe": {
+   "aria-prohibited-attr": 8,
+   "aria-required-children": 1,
+   "button-name": 1
+  }
+ },
+ "phone-webkit-harbour-light/job-panel": {
+  "small": 16,
+  "axe": {
+   "color-contrast": 1
+  }
+ },
+ "phone-webkit-harbour-light/jobs-board": {
+  "small": 9,
+  "axe": {
+   "aria-required-children": 1
+  }
+ },
+ "phone-webkit-harbour-light/jobs-list": {
+  "small": 16,
+  "axe": {
+   "aria-required-children": 1,
+   "color-contrast": 8
+  }
+ },
+ "phone-webkit-harbour-light/price-list": {
+  "small": 7
+ },
+ "phone-webkit-harbour-light/reconcile": {
+  "small": 5,
+  "axe": {
+   "aria-required-children": 1
+  }
+ },
+ "phone-webkit-harbour-light/rules": {
+  "small": 3
+ },
+ "phone-webkit-harbour-light/toolbar": {
+  "moved": [
+   "jobs-list",
+   "price-list",
+   "reconcile"
+  ]
+ },
+ "phone-webkit-meridian-dark/appearance": {
+  "small": 17
+ },
+ "phone-webkit-meridian-dark/automations": {
+  "small": 6
+ },
+ "phone-webkit-meridian-dark/custom-fields": {
+  "small": 26,
+  "axe": {
+   "aria-required-children": 5,
+   "color-contrast": 4
+  }
+ },
+ "phone-webkit-meridian-dark/integrations": {
+  "small": 6,
+  "axe": {
+   "aria-allowed-attr": 2
+  }
+ },
+ "phone-webkit-meridian-dark/invoice": {
+  "overflow": 253,
+  "small": 12,
+  "axe": {
+   "aria-prohibited-attr": 1
+  }
+ },
+ "phone-webkit-meridian-dark/invoices-approved": {
+  "small": 17,
+  "axe": {
+   "aria-prohibited-attr": 14,
+   "aria-required-children": 1
+  }
+ },
+ "phone-webkit-meridian-dark/invoices-filter": {
+  "small": 18,
+  "axe": {
+   "aria-prohibited-attr": 42,
+   "aria-required-children": 1
+  }
+ },
+ "phone-webkit-meridian-dark/invoices-pending": {
+  "small": 17,
+  "axe": {
+   "aria-prohibited-attr": 8,
+   "aria-required-children": 1
+  }
+ },
+ "phone-webkit-meridian-dark/invoices-ready": {
+  "small": 17,
+  "axe": {
+   "aria-prohibited-attr": 42,
+   "aria-required-children": 1
+  }
+ },
+ "phone-webkit-meridian-dark/invoices-ticked": {
+  "small": 21,
+  "axe": {
+   "aria-prohibited-attr": 8,
+   "aria-required-children": 1,
+   "button-name": 1
+  }
+ },
+ "phone-webkit-meridian-dark/job-panel": {
+  "small": 16
+ },
+ "phone-webkit-meridian-dark/jobs-board": {
+  "small": 9,
+  "axe": {
+   "aria-required-children": 1
+  }
+ },
+ "phone-webkit-meridian-dark/jobs-list": {
+  "small": 16,
+  "axe": {
+   "aria-required-children": 1
+  }
+ },
+ "phone-webkit-meridian-dark/price-list": {
+  "small": 7
+ },
+ "phone-webkit-meridian-dark/reconcile": {
+  "small": 5,
+  "axe": {
+   "aria-required-children": 1
+  }
+ },
+ "phone-webkit-meridian-dark/rules": {
+  "small": 3
+ },
+ "phone-webkit-meridian-dark/toolbar": {
+  "moved": [
+   "jobs-list",
+   "price-list",
+   "reconcile"
+  ]
+ },
+ "phone-webkit-meridian-light/appearance": {
+  "small": 17
+ },
+ "phone-webkit-meridian-light/automations": {
+  "small": 6
+ },
+ "phone-webkit-meridian-light/custom-fields": {
+  "small": 26,
+  "axe": {
+   "aria-required-children": 5,
+   "color-contrast": 4
+  }
+ },
+ "phone-webkit-meridian-light/integrations": {
+  "small": 6,
+  "axe": {
+   "aria-allowed-attr": 2
+  }
+ },
+ "phone-webkit-meridian-light/invoice": {
+  "overflow": 253,
+  "small": 12,
+  "axe": {
+   "aria-prohibited-attr": 1
+  }
+ },
+ "phone-webkit-meridian-light/invoices-approved": {
+  "small": 17,
+  "axe": {
+   "aria-prohibited-attr": 14,
+   "aria-required-children": 1
+  }
+ },
+ "phone-webkit-meridian-light/invoices-filter": {
+  "small": 18,
+  "axe": {
+   "aria-prohibited-attr": 42,
+   "aria-required-children": 1
+  }
+ },
+ "phone-webkit-meridian-light/invoices-pending": {
+  "small": 17,
+  "axe": {
+   "aria-prohibited-attr": 8,
+   "aria-required-children": 1
+  }
+ },
+ "phone-webkit-meridian-light/invoices-ready": {
+  "small": 17,
+  "axe": {
+   "aria-prohibited-attr": 42,
+   "aria-required-children": 1
+  }
+ },
+ "phone-webkit-meridian-light/invoices-ticked": {
+  "small": 21,
+  "axe": {
+   "aria-prohibited-attr": 8,
+   "aria-required-children": 1,
+   "button-name": 1
+  }
+ },
+ "phone-webkit-meridian-light/job-panel": {
+  "small": 16
+ },
+ "phone-webkit-meridian-light/jobs-board": {
+  "small": 9,
+  "axe": {
+   "aria-required-children": 1
+  }
+ },
+ "phone-webkit-meridian-light/jobs-list": {
+  "small": 16,
+  "axe": {
+   "aria-required-children": 1,
+   "color-contrast": 1
+  }
+ },
+ "phone-webkit-meridian-light/price-list": {
+  "small": 7
+ },
+ "phone-webkit-meridian-light/reconcile": {
+  "small": 5,
+  "axe": {
+   "aria-required-children": 1
+  }
+ },
+ "phone-webkit-meridian-light/rules": {
+  "small": 3
+ },
+ "phone-webkit-meridian-light/toolbar": {
+  "moved": [
+   "jobs-list",
+   "price-list",
+   "reconcile"
+  ]
+ },
+ "tablet-chromium-harbour-light/appearance": {
+  "small": 17
+ },
+ "tablet-chromium-harbour-light/automations": {
+  "small": 6
+ },
+ "tablet-chromium-harbour-light/custom-fields": {
+  "small": 26
+ },
+ "tablet-chromium-harbour-light/integrations": {
+  "small": 6
+ },
+ "tablet-chromium-harbour-light/invoice": {
+  "small": 14
+ },
+ "tablet-chromium-harbour-light/invoices-approved": {
+  "small": 47
+ },
+ "tablet-chromium-harbour-light/invoices-filter": {
+  "small": 32
+ },
+ "tablet-chromium-harbour-light/invoices-pending": {
+  "small": 32
+ },
+ "tablet-chromium-harbour-light/invoices-ready": {
+  "small": 31
+ },
+ "tablet-chromium-harbour-light/invoices-ticked": {
+  "small": 36
+ },
+ "tablet-chromium-harbour-light/job-panel": {
+  "small": 18
+ },
+ "tablet-chromium-harbour-light/jobs-board": {
+  "small": 9
+ },
+ "tablet-chromium-harbour-light/jobs-list": {
+  "small": 36
+ },
+ "tablet-chromium-harbour-light/price-list": {
+  "small": 13
+ },
+ "tablet-chromium-harbour-light/reconcile": {
+  "small": 13
+ },
+ "tablet-chromium-harbour-light/rules": {
+  "small": 3
+ },
+ "tablet-chromium-harbour-light/toolbar": {
+  "moved": [
+   "jobs-list",
+   "price-list",
+   "reconcile"
+  ]
+ },
+ "tablet-chromium-meridian-dark/appearance": {
+  "small": 17
+ },
+ "tablet-chromium-meridian-dark/automations": {
+  "small": 6
+ },
+ "tablet-chromium-meridian-dark/custom-fields": {
+  "small": 26
+ },
+ "tablet-chromium-meridian-dark/integrations": {
+  "small": 6
+ },
+ "tablet-chromium-meridian-dark/invoice": {
+  "small": 14
+ },
+ "tablet-chromium-meridian-dark/invoices-approved": {
+  "small": 47
+ },
+ "tablet-chromium-meridian-dark/invoices-filter": {
+  "small": 32
+ },
+ "tablet-chromium-meridian-dark/invoices-pending": {
+  "small": 32
+ },
+ "tablet-chromium-meridian-dark/invoices-ready": {
+  "small": 31
+ },
+ "tablet-chromium-meridian-dark/invoices-ticked": {
+  "small": 36
+ },
+ "tablet-chromium-meridian-dark/job-panel": {
+  "small": 18
+ },
+ "tablet-chromium-meridian-dark/jobs-board": {
+  "small": 9
+ },
+ "tablet-chromium-meridian-dark/jobs-list": {
+  "small": 36
+ },
+ "tablet-chromium-meridian-dark/price-list": {
+  "small": 13
+ },
+ "tablet-chromium-meridian-dark/reconcile": {
+  "small": 13
+ },
+ "tablet-chromium-meridian-dark/rules": {
+  "small": 3
+ },
+ "tablet-chromium-meridian-dark/toolbar": {
+  "moved": [
+   "jobs-list",
+   "price-list",
+   "reconcile"
+  ]
+ },
+ "tablet-chromium-meridian-light/appearance": {
+  "small": 17
+ },
+ "tablet-chromium-meridian-light/automations": {
+  "small": 6
+ },
+ "tablet-chromium-meridian-light/custom-fields": {
+  "small": 26
+ },
+ "tablet-chromium-meridian-light/integrations": {
+  "small": 6
+ },
+ "tablet-chromium-meridian-light/invoice": {
+  "small": 14
+ },
+ "tablet-chromium-meridian-light/invoices-approved": {
+  "small": 47
+ },
+ "tablet-chromium-meridian-light/invoices-filter": {
+  "small": 32
+ },
+ "tablet-chromium-meridian-light/invoices-pending": {
+  "small": 32
+ },
+ "tablet-chromium-meridian-light/invoices-ready": {
+  "small": 31
+ },
+ "tablet-chromium-meridian-light/invoices-ticked": {
+  "small": 36
+ },
+ "tablet-chromium-meridian-light/job-panel": {
+  "small": 18
+ },
+ "tablet-chromium-meridian-light/jobs-board": {
+  "small": 9
+ },
+ "tablet-chromium-meridian-light/jobs-list": {
+  "small": 36
+ },
+ "tablet-chromium-meridian-light/price-list": {
+  "small": 13
+ },
+ "tablet-chromium-meridian-light/reconcile": {
+  "small": 13
+ },
+ "tablet-chromium-meridian-light/rules": {
+  "small": 3
+ },
+ "tablet-chromium-meridian-light/toolbar": {
+  "moved": [
+   "jobs-list",
+   "price-list",
+   "reconcile"
+  ]
+ },
+ "tablet-webkit-harbour-light/appearance": {
+  "small": 17
+ },
+ "tablet-webkit-harbour-light/automations": {
+  "small": 6
+ },
+ "tablet-webkit-harbour-light/custom-fields": {
+  "small": 26
+ },
+ "tablet-webkit-harbour-light/integrations": {
+  "small": 6
+ },
+ "tablet-webkit-harbour-light/invoice": {
+  "small": 14
+ },
+ "tablet-webkit-harbour-light/invoices-approved": {
+  "small": 47
+ },
+ "tablet-webkit-harbour-light/invoices-filter": {
+  "small": 32
+ },
+ "tablet-webkit-harbour-light/invoices-pending": {
+  "small": 32
+ },
+ "tablet-webkit-harbour-light/invoices-ready": {
+  "small": 31
+ },
+ "tablet-webkit-harbour-light/invoices-ticked": {
+  "small": 36
+ },
+ "tablet-webkit-harbour-light/job-panel": {
+  "small": 18
+ },
+ "tablet-webkit-harbour-light/jobs-board": {
+  "small": 9
+ },
+ "tablet-webkit-harbour-light/jobs-list": {
+  "small": 36
+ },
+ "tablet-webkit-harbour-light/price-list": {
+  "small": 13
+ },
+ "tablet-webkit-harbour-light/reconcile": {
+  "small": 13
+ },
+ "tablet-webkit-harbour-light/rules": {
+  "small": 3
+ },
+ "tablet-webkit-harbour-light/toolbar": {
+  "moved": [
+   "jobs-list",
+   "price-list",
+   "reconcile"
+  ]
+ },
+ "tablet-webkit-meridian-dark/appearance": {
+  "small": 17
+ },
+ "tablet-webkit-meridian-dark/automations": {
+  "small": 6
+ },
+ "tablet-webkit-meridian-dark/custom-fields": {
+  "small": 26
+ },
+ "tablet-webkit-meridian-dark/integrations": {
+  "small": 6
+ },
+ "tablet-webkit-meridian-dark/invoice": {
+  "small": 14
+ },
+ "tablet-webkit-meridian-dark/invoices-approved": {
+  "small": 47
+ },
+ "tablet-webkit-meridian-dark/invoices-filter": {
+  "small": 32
+ },
+ "tablet-webkit-meridian-dark/invoices-pending": {
+  "small": 32
+ },
+ "tablet-webkit-meridian-dark/invoices-ready": {
+  "small": 31
+ },
+ "tablet-webkit-meridian-dark/invoices-ticked": {
+  "small": 36
+ },
+ "tablet-webkit-meridian-dark/job-panel": {
+  "small": 18
+ },
+ "tablet-webkit-meridian-dark/jobs-board": {
+  "small": 9
+ },
+ "tablet-webkit-meridian-dark/jobs-list": {
+  "small": 36
+ },
+ "tablet-webkit-meridian-dark/price-list": {
+  "small": 13
+ },
+ "tablet-webkit-meridian-dark/reconcile": {
+  "small": 13
+ },
+ "tablet-webkit-meridian-dark/rules": {
+  "small": 3
+ },
+ "tablet-webkit-meridian-dark/toolbar": {
+  "moved": [
+   "jobs-list",
+   "price-list",
+   "reconcile"
+  ]
+ },
+ "tablet-webkit-meridian-light/appearance": {
+  "small": 17
+ },
+ "tablet-webkit-meridian-light/automations": {
+  "small": 6
+ },
+ "tablet-webkit-meridian-light/custom-fields": {
+  "small": 26
+ },
+ "tablet-webkit-meridian-light/integrations": {
+  "small": 6
+ },
+ "tablet-webkit-meridian-light/invoice": {
+  "small": 14
+ },
+ "tablet-webkit-meridian-light/invoices-approved": {
+  "small": 47
+ },
+ "tablet-webkit-meridian-light/invoices-filter": {
+  "small": 32
+ },
+ "tablet-webkit-meridian-light/invoices-pending": {
+  "small": 32
+ },
+ "tablet-webkit-meridian-light/invoices-ready": {
+  "small": 31
+ },
+ "tablet-webkit-meridian-light/invoices-ticked": {
+  "small": 36
+ },
+ "tablet-webkit-meridian-light/job-panel": {
+  "small": 18
+ },
+ "tablet-webkit-meridian-light/jobs-board": {
+  "small": 9
+ },
+ "tablet-webkit-meridian-light/jobs-list": {
+  "small": 36
+ },
+ "tablet-webkit-meridian-light/price-list": {
+  "small": 13
+ },
+ "tablet-webkit-meridian-light/reconcile": {
+  "small": 13
+ },
+ "tablet-webkit-meridian-light/rules": {
+  "small": 3
+ },
+ "tablet-webkit-meridian-light/toolbar": {
+  "moved": [
+   "jobs-list",
+   "price-list",
+   "reconcile"
+  ]
+ }
+}

@@ -36,6 +36,7 @@ run a lab.
 | `docs/releases/` | One release notes page per version (`<version>.md`), shown on the docs site |
 | `docs/DESIGN.md` | The design systems (theme families), how pages and Clerk's components take them, and the screens |
 | `docs/DESIGN_SYSTEM.md` | The Flow Design System artifact: how `npm run design-system` builds it from the code, the card per shared component, publishing and review |
+| `docs/MOBILE_TESTS.md` | The phone suite: every screen at phone, tablet and desk sizes in WebKit and Chromium, its checks and budget, the three widths, saved images |
 | `docs/DATA_MODEL.md` | The PostgreSQL records, the rules the database holds, and how to change the schema |
 | `docs/DATA_SPINE.md` | The design of the tables and jobs every integration shares: mirror, identity map, job queue, outbox, review queue |
 | `docs/JOB_INVOICE_LINKS.md` | The pipeline: how each job links to its customer and to the accounting invoice that bills it |

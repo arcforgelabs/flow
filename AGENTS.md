@@ -23,3 +23,5 @@ Before you build a UI element, read the
 - Prefer white space to filler text. Say "Custom field", never "Field".
 - Colours, corners and strokes come from the `--t-*` tokens, never literal
   values.
+- People use Flow on a phone. Use only the three widths (639/640, 1023/1024px)
+  and check the phone suite (`docs/MOBILE_TESTS.md`); a fix lowers its budget.

@@ -26,7 +26,8 @@ import { createUiAssetsRouter } from './ui/routes.js';
 // per client, sized for a lab of a few people: `rateLimitPerMinute` for /api,
 // `signInRateLimitPerMinute` for the sign-in page and its config, and
 // `clerkProxyRateLimitPerMinute` for Clerk's Frontend API, which a signed-in
-// browser calls often. `build` is what GET /health reports
+// browser calls often, and `assetRateLimitPerMinute` for the scripts, styles
+// and faces every page loads. `build` is what GET /health reports
 // (server/deployed-build.js); `updates` is a server/update-check.js checker.
 // `integrations` is the started registry (server/integrations/index.js); each
 // adapter's own routes are mounted under /api/<id>, and GET /health reports
@@ -51,6 +52,7 @@ export function createApp({
   rateLimitPerMinute = 120,
   signInRateLimitPerMinute = 30,
   clerkProxyRateLimitPerMinute = 300,
+  assetRateLimitPerMinute = 600,
   defaultFamily = DEFAULT_FAMILY,
   // Buttons that call Xero or Seazona wait between presses (the action
   // guard, server/integrations/call-guard.js). Off only in tests.
@@ -95,7 +97,7 @@ export function createApp({
   }
 
   // The design systems, Flow's components and the faces every page loads.
-  app.use(createUiAssetsRouter());
+  app.use(createUiAssetsRouter({ rateLimitPerMinute: assetRateLimitPerMinute }));
 
   app.use('/api', rateLimit({ limit: rateLimitPerMinute, windowMs: 60_000 }));
 
