@@ -259,14 +259,17 @@ export async function renderInvoiceList(main, ui) {
   }
 
   // A bulk step on the server: on success the ticks clear and the list loads
-  // again; on a failure the ticks stay, so a person can try again.
-  async function post(path, payload, done) {
+  // again (or `then(res)` names the tab the invoices went to, and it opens);
+  // on a failure the ticks stay, so a person can try again.
+  async function post(path, payload, done, then = () => null) {
     try {
       const res = await flow(`/api/invoicing/invoices/${path}`, { method: 'POST', body: JSON.stringify(payload) });
       toast(...done(res));
       state.ticked.clear();
       seen.clear();
-      await load();
+      const tab = then(res);
+      if (tab && tab !== state.status) openTab(tab);
+      else await load();
       alerts.refresh();
     } catch (error) {
       toast(error.message, 'danger');
@@ -285,15 +288,19 @@ export async function renderInvoiceList(main, ui) {
       status.push({
         icon: to ? 'send' : 'circle-check-big', label: to ? `Send to ${to}` : 'Approve', primary: true,
         title: to ? `Send to ${to}` : 'Approve',
-        run: async () => {
+        run: async (working) => {
           const ok = await ui.dialog({
             title: to ? `Send ${plural(ticked.length, 'invoice', 'invoices')} to ${to}?` : `Approve ${plural(ticked.length, 'invoice', 'invoices')}?`,
             body: h('p', {}, to ? sendModeNote(to, body.sendMode, 'each one') : 'Each one gets the next number and is locked.'),
             confirm: to ? `Send ${ticked.length}` : `Approve ${ticked.length}`,
           });
           if (!ok) return;
+          working(to ? 'Sending' : 'Approving');
+          // The sent ones show on Draft as Sending until the accounting
+          // system has them; the approved ones on Approved.
           await post('send-ready', { issueDate: localDate(), invoiceIds: ticked },
-            (res) => [`${to ? `${res.issued} on the way to ${to}.` : `${res.issued} approved.`}${res.held ? ` ${res.held} failed a check and went to Pending.` : ''}${res.remaining ? ` ${res.remaining} more stay in Ready: tick them and press again.` : ''}`, res.held ? 'info' : 'success']);
+            (res) => [`${to ? `${res.issued} on the way to ${to}.` : `${res.issued} approved.`}${res.held ? ` ${res.held} failed a check and went to Pending.` : ''}${res.remaining ? ` ${res.remaining} more stay in Ready: tick them and press again.` : ''}`, res.held ? 'info' : 'success'],
+            (res) => (res.issued ? (to ? 'draft' : 'approved') : null));
         },
       });
     }
@@ -301,7 +308,11 @@ export async function renderInvoiceList(main, ui) {
     if (state.status === 'pending' && context.canIssue && to && failed.length) {
       status.push({
         icon: 'refresh-cw', label: 'Retry', primary: true, title: `Send again to ${to}`,
-        run: () => post('send-again', { invoiceIds: failed }, (res) => [`${res.queued} on the way to ${to} again.`, 'success']),
+        run: (working) => {
+          working('Sending');
+          return post('send-again', { invoiceIds: failed }, (res) => [`${res.queued} on the way to ${to} again.`, 'success'],
+            (res) => (res.queued ? 'draft' : null));
+        },
       });
     }
     apply.push({
@@ -429,6 +440,19 @@ export async function renderInvoiceList(main, ui) {
     host.removeAttribute('aria-busy');
     delete host.dataset.stale;
     draw(answer);
+    watchSending(answer);
+  }
+
+  // While a shown invoice is still Sending, the list reads again every 15
+  // seconds, so a person sees it reach the accounting system.
+  let sendingTimer = null;
+  function watchSending(answer) {
+    clearTimeout(sendingTimer);
+    if (!answer.invoices?.some((i) => i.sending)) return;
+    const key = state.status;
+    sendingTimer = setTimeout(() => {
+      if (host.isConnected && state.status === key && !state.ticked.size) { seen.clear(); load(); }
+    }, 15_000);
   }
 
   function drawTabs(counts) {

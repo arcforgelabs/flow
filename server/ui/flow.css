@@ -1556,6 +1556,8 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
 }
 .fx-bulk[hidden] { display: none; }
 .fx-bulk[aria-busy="true"] { opacity: .7; pointer-events: none; }
+.fx-bulk[aria-busy="true"]:has([data-busy]) { opacity: 1; }
+.fx-bulk__act .fx-spinner { flex: none; border-color: color-mix(in srgb, currentColor 35%, transparent); border-top-color: currentColor; }
 .fx-bulk__acts { display: flex; align-items: center; gap: 2px; min-width: 0; }
 .fx-bulk__count { display: inline-flex; align-items: center; gap: 6px; flex: none; margin-right: 6px; padding: 3px 4px 3px 10px; border: 1px solid var(--t-accent-brd, var(--fx-line)); border-radius: var(--t-radius); background: var(--t-accent-bg); color: var(--t-accent); font-weight: 600; }
 .fx-bulk__clear, .fx-bulk__act { position: relative; display: inline-flex; align-items: center; gap: 6px; padding: 7px 9px; border: 1px solid transparent; border-radius: var(--t-radius); background: none; color: inherit; font: inherit; cursor: pointer; }
