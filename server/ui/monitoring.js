@@ -4,6 +4,13 @@
 // GET /api/monitoring says so and gives the project's public DSN. The SDK
 // comes from Sentry's CDN, pinned and checked against its integrity hash.
 // With the integration off, nothing loads and there is no "Report a problem".
+//
+// Replay (SENTRY_REPLAY, on by default): the SDK keeps the last minute of the
+// page in the browser's memory and sends it only with a report or a browser
+// error, so a report shows the open menu or hover that the click on "Report a
+// problem" closed. Flow shows customers' and patients' names, addresses and
+// prices: a replay keeps the page's shape, the pointer and the clicks, never
+// its words.
 
 function loadScript({ src, integrity }) {
   return new Promise((resolve, reject) => {
@@ -89,6 +96,36 @@ export function scrubSpan(span) {
   return span;
 }
 
+// Elements a replay never shows: frames, canvases and embedded objects, and
+// links that carry an address, a number or a query.
+const REPLAY_BLOCK = ['iframe', 'canvas', 'embed', 'object', 'a[href^="mailto:" i]', 'a[href^="tel:" i]', 'a[href^="sms:" i]', 'a[href*="?"]'];
+// Attributes that can carry a name; masked like the text.
+const REPLAY_MASKED_ATTRIBUTES = ['title', 'placeholder', 'aria-label', 'aria-description', 'alt', 'download', 'value', 'data-value'];
+// What a replay keeps of a clicked element.
+const KEPT_NODE_ATTRIBUTES = new Set(['id', 'class', 'role']);
+const withoutQuery = (value) => (typeof value === 'string' ? value.replace(/[?#].*$/, '') : value);
+
+// One event of a replay's recording, before it is kept. A click names its
+// element by CSS path, and the path can quote an attribute's value: the
+// values go, and of the element only its id, class and role stay. A page's
+// address keeps its path, never its query string.
+export function scrubRecordingEvent(event) {
+  const payload = event?.data?.payload;
+  if (!payload || typeof payload !== 'object') return event;
+  const next = { ...payload };
+  if (typeof next.category === 'string' && next.category.startsWith('ui.')) {
+    if (typeof next.message === 'string') next.message = next.message.replace(/\[[^\]]*\]/g, '');
+    const node = next.data?.node;
+    if (node) {
+      const attributes = Object.fromEntries(Object.entries(node.attributes ?? {}).filter(([name]) => KEPT_NODE_ATTRIBUTES.has(name)));
+      next.data = { ...next.data, node: { ...node, attributes, textContent: '' } };
+    }
+  }
+  if (next.category === 'navigation' && next.data) next.data = { ...next.data, from: withoutQuery(next.data.from), to: withoutQuery(next.data.to) };
+  if (typeof next.description === 'string') next.description = withoutQuery(next.description);
+  return { ...event, data: { ...event.data, payload: next } };
+}
+
 /** Resolves to a function that opens the "Report a problem" form, or null. */
 export async function startMonitoring({ flow, person }) {
   const config = await flow('/api/monitoring');
@@ -113,6 +150,17 @@ export async function startMonitoring({ flow, person }) {
     submitButtonLabel: 'Send report',
     successMessageText: 'Thank you. Your report is sent.',
   })] : [];
+  if (config.replay && Sentry.replayIntegration) {
+    integrations.push(Sentry.replayIntegration({
+      maskAllText: true,
+      maskAllInputs: true,
+      blockAllMedia: true,
+      maskAttributes: REPLAY_MASKED_ATTRIBUTES,
+      block: REPLAY_BLOCK,
+      networkDetailAllowUrls: [],
+      beforeAddRecordingEvent: scrubRecordingEvent,
+    }));
+  }
   // Traces: page loads, moves between pages and each click's wait, with the
   // calls to Flow's server joined to the server's own trace. Only when the
   // installation set a share above 0 (SENTRY_TRACES_SAMPLE_RATE).
@@ -129,6 +177,9 @@ export async function startMonitoring({ flow, person }) {
     sendDefaultPii: false,
     integrations,
     tracesSampleRate,
+    // Replay: never a whole visit, only the minute before a report or error.
+    replaysSessionSampleRate: 0,
+    replaysOnErrorSampleRate: config.replay ? 1 : 0,
     beforeSendSpan: scrubSpan,
     initialScope: { tags: config.tags ?? {} },
   });
