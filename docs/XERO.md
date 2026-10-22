@@ -177,9 +177,11 @@ The rules:
   version's document (`invoice_versions`), never live lines. A draft or void
   invoice is never sent.
 - **A sent invoice is never changed in place.** Flow never updates a Xero
-  invoice. A revised invoice (version 2) is sent only after the earlier
-  version's Xero invoice is deleted or voided in Xero; Flow checks that live
-  and keeps the earlier record.
+  invoice's contact, lines, amounts or dates. The one write to an existing
+  Xero invoice is Delete, below, and it sends `Status: DELETED` only. A
+  revised invoice (version 2) is sent only after the earlier version's Xero
+  invoice is deleted or voided in Xero; Flow checks that live and keeps the
+  earlier record.
 - **Flow never creates a Xero contact.** The Flow customer's name must match
   exactly one active Xero contact in the synced copy.
 - **Each line names its item.** A line's `itemCode` from the issued document
@@ -242,12 +244,45 @@ pushedBy })` sends one issued invoice and answers as one entry above.
   a repeat never makes a second Xero invoice.
 - A preview never writes; only `push` does, and only for issued versions.
 
+## Deleting a draft
+
+Delete on an issued Flow invoice whose Xero copy is still a draft also
+deletes that Xero draft (`deleteInvoice` on the integration port,
+`server/integrations/xero/delete-invoice.js`). The core stays free of Xero
+statuses. It calls the port and voids in Flow only after the answer is
+`deleted` or `gone`.
+
+Flow reads the Xero invoice live by its id first (the push, or the Import
+link). Then:
+
+| Xero status | What Flow does |
+| --- | --- |
+| `DRAFT` or `SUBMITTED` | `POST Invoices/{id}` with `Status: DELETED` only. After Xero confirms `DELETED`, Flow voids the invoice and frees its job. |
+| `DELETED` or `VOIDED` | No Xero write. Flow voids the invoice and frees its job. |
+| `AUTHORISED` or `PAID` | No Xero write, and nothing in Flow changes. The message is `Approved in Xero. Void it in Xero first.` Flow does not void it in Xero. |
+| No connection, or writes off | No Xero call, and nothing in Flow changes. Writes off uses the same message as Send. With no accounting adapter, Delete of an issued invoice is refused. |
+
+A timeout or a 5xx leaves Flow unchanged. The next Delete reads Xero again
+and does not post a second delete when Xero already shows it gone.
+
+The push (`xero_invoice_pushes`) and the Import link (`xero_invoice_links`)
+record who deleted it and when, and the push stores Xero's status. Flow's
+copy of the invoice takes that status too. The job's ledger state becomes
+`deleted` (or `voided` when Xero had already voided it), and the Flow invoice
+link is cleared the same way as deleting a draft that was never issued. The
+issued versions stay. The invoice's History gains a Void line.
+
+Xero migration `0011_xero_invoice_deleted` adds `deleted_by` and `deleted_at`
+on the push and the link. It is the Xero adapter's own migration.
+
 ## The mirror
 
 Flow keeps a copy of the connected organisation's invoices, credit notes and
 payments (`server/integrations/xero/mirror.js`, issue #54), so its reports
 cover the years before Flow was installed and its records can link to Xero's
-without spending calls. Xero owns these records; Flow never changes them.
+without spending calls. Xero owns these records. Flow does not edit their
+amounts or lines. Delete of a draft, above, sets the copy's status so the
+screen matches, and the next read of Xero replaces that row.
 
 | Table | What it holds |
 | --- | --- |

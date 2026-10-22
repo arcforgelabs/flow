@@ -124,7 +124,7 @@ describe('invoices', { skip: skipWithoutDatabase }, () => {
     await assert.rejects(handle.pool.query("UPDATE invoices SET status = 'issued' WHERE id = $1", [draft.id]), /void invoice cannot change/);
   });
 
-  test('a never-issued draft can be deleted; an issued invoice cannot', async () => {
+  test('a never-issued draft can be deleted; an issued invoice needs an accounting system', async () => {
     const draft = await createDraftInvoice(db, lab.id, { contactId: practice.id, lines: [{ priceItemId: crown.id }] });
     await deleteDraft(db, lab.id, draft.id);
     await assert.rejects(getInvoice(db, lab.id, draft.id), { code: 'not_found' });
@@ -133,13 +133,13 @@ describe('invoices', { skip: skipWithoutDatabase }, () => {
 
     const issued = await createDraftInvoice(db, lab.id, { contactId: practice.id, lines: [{ priceItemId: crown.id }] });
     await issueInvoice(db, lab.id, issued.id, { issuedBy: 'user:test', issueDate: '2026-10-16' });
-    await assert.rejects(deleteDraft(db, lab.id, issued.id), { code: 'was_issued' });
+    await assert.rejects(deleteDraft(db, lab.id, issued.id), { code: 'accounting_unavailable' });
     assert.equal((await getInvoice(db, lab.id, issued.id)).status, 'issued');
 
     const revised = await createDraftInvoice(db, lab.id, { contactId: practice.id, lines: [{ priceItemId: crown.id }] });
     await issueInvoice(db, lab.id, revised.id, { issuedBy: 'user:test', issueDate: '2026-10-16' });
     await reviseInvoice(db, lab.id, revised.id);
-    await assert.rejects(deleteDraft(db, lab.id, revised.id), { code: 'was_issued' });
+    await assert.rejects(deleteDraft(db, lab.id, revised.id), { code: 'accounting_unavailable' });
     assert.equal((await getInvoice(db, lab.id, revised.id)).status, 'draft');
     await assert.rejects(deleteDraft(db, otherLab.id, revised.id), { code: 'not_found' });
   });

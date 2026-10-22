@@ -122,7 +122,7 @@ while the installation has exactly one. Money is integer cents. Answers are
 | `POST /invoices/:id/issue` `{ issueDate? }` | owner or admin | Numbers it and keeps the document as sent; the date defaults to the server's today |
 | `POST /invoices/:id/revise` | owner or admin | An issued invoice back to a draft; the number stays |
 | `POST /invoices/:id/void` | owner or admin | Voids an invoice that was issued |
-| `DELETE /invoices/:id` | owner or admin | Deletes a draft that was never issued, and frees its job. An invoice that was issued answers `was_issued` |
+| `DELETE /invoices/:id` | owner or admin | Deletes a draft that was never issued, and frees its job. An issued invoice is voided only after its accounting draft is deleted there; otherwise it is refused (`docs/INVOICE_SENDING.md`) |
 | `GET /contacts?q=&limit=` | anyone | Customers, by name |
 | `GET /price-items?q=` | anyone | The price list, by code |
 | `GET /jobs?view=&limit=` | anyone | Billable jobs with `contactName`, `view` and `reasons`, and for a job with an invoice its `invoiceView` and `invoiceProblems`; `counts` by view |
@@ -163,7 +163,7 @@ installation low maintenance.
 | Every read and write in the core takes an organisation id. | `server/core/*` |
 | Money is integer cents. GST is 10%, calculated and rounded per line, half away from zero. | `server/core/money.js` |
 | A draft invoice can change. Issuing gives it the organisation's next number and stores the document exactly as sent in `invoice_versions`. Each document line keeps its price item's code (`itemCode`, null for a line typed by hand), so accounting software gets the item even after the price list changes. | `server/core/invoices.js` |
-| What was sent never changes: `invoice_versions` rows cannot be updated or deleted, lines change only on a draft, a number never changes, an issued invoice is voided and never deleted, and a void invoice is final. A draft that was never issued (`issued_version` 0) can be deleted, which frees its job. | Triggers in `0001_records_are_append_only.sql`; `deleteDraft` in `server/core/invoices.js` |
+| What was sent never changes: `invoice_versions` rows cannot be updated or deleted, lines change only on a draft, a number never changes, an issued invoice is voided and never deleted, and a void invoice is final. A draft that was never issued (`issued_version` 0) can be deleted, which frees its job. Deleting an issued invoice whose accounting copy is a draft voids it and keeps the versions. | Triggers in `0001_records_are_append_only.sql`; `deleteDraft` in `server/core/invoices.js` |
 | A person's email is stored lower-case and is unique. A Clerk user links to at most one person. | Constraints on `people` |
 | One job gives one obligation. Its view comes only from stored evidence. A draft invoice is made only when the evidence allows it and a live accounting check just before the write finds no invoice; any doubt refuses it and records why. | `server/core/ledger.js` |
 | `obligation_events` rows cannot be updated or deleted. | Trigger in `0004_ledger_events_append_only.sql` |
