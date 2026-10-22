@@ -53,6 +53,16 @@ BEGIN
 	EXCEPTION WHEN insufficient_privilege THEN
 		RAISE NOTICE 'flow: not the database owner, so its default search_path stays; Flow sets its own';
 	END;
+	-- A pooler keeps the server sessions it opened before this move, with the
+	-- old search_path, and hands them to new clients. Close the idle ones
+	-- of this role: the pooler opens new ones, which take the setting above.
+	BEGIN
+		PERFORM pg_terminate_backend(a.pid) FROM pg_stat_activity a
+		 WHERE a.datname = current_database() AND a.usename = current_user
+		   AND a.pid <> pg_backend_pid() AND a.state = 'idle' AND a.backend_type = 'client backend';
+	EXCEPTION WHEN others THEN
+		RAISE NOTICE 'flow: could not close the idle sessions; a pooler''s open sessions keep the old search_path until they close';
+	END;
 	-- This session too: the migrations after this one create their tables in "flow".
 	PERFORM set_config('search_path', 'flow, public', false);
 END $flow_guard$;

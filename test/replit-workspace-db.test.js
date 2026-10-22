@@ -257,6 +257,8 @@ describe('the workspace sync on PostgreSQL', { skip: skipWithoutDatabase }, () =
   let admin;
   before(async () => {
     admin = new pg.Pool({ connectionString: testDatabaseUrl, max: 2 });
+    // Migration 0021 closes this role's idle sessions; the pool opens others.
+    admin.on('error', () => {});
   });
   after(async () => { await admin?.end(); });
 

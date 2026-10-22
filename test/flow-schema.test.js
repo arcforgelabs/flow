@@ -78,6 +78,27 @@ test('Flow\'s tables live in "flow"', { skip: skipWithoutDatabase }, async (t) =
     }
   });
 
+  await t.test('the move closes idle sessions opened before it, as a pooler keeps them', async () => {
+    const handle = await freshDatabase();
+    await handle.pool.query('DROP SCHEMA IF EXISTS drizzle CASCADE; DROP SCHEMA IF EXISTS flow CASCADE; DROP SCHEMA public CASCADE; CREATE SCHEMA public;');
+    const before = coreBeforeMove();
+    // A pooler's server session: open before the move, searching "public".
+    const stale = new pg.Client({ connectionString: testDatabaseUrl });
+    const closed = new Promise((resolve) => stale.on('error', resolve));
+    try {
+      await migrateDatabase(handle.db, { folder: before });
+      await stale.connect();
+      await stale.query('set search_path to public');
+      await migrateEverything(handle.db);
+      const error = await closed;
+      assert.match(error.message, /terminat/i);
+    } finally {
+      rmSync(before, { recursive: true, force: true });
+      await stale.end().catch(() => {});
+      await handle.close();
+    }
+  });
+
   await t.test('any new session finds the tables by name: the database searches "flow" first', async () => {
     const handle = await freshDatabase();
     const client = new pg.Client({ connectionString: testDatabaseUrl });

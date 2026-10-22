@@ -10,7 +10,9 @@ Flow's tables, the integrations' included, live in the PostgreSQL schema
 migration sets the same default for Flow's role (and for the database when
 Flow owns it), so SQL names tables without a schema. A transaction pooler
 (Neon's `-pooler` hosts) does not keep a session's `SET`, but every new
-session gets the role's default. The reason is Replit: its publish compares
+session gets the role's default. The pooler's sessions from before the move
+keep the old one, so the migration closes this role's idle sessions and the
+pooler opens new ones (tested against PgBouncer in transaction mode). The reason is Replit: its publish compares
 the workspace's `public` schema with production's and offers to make
 production match, deletes included (`docs/REPLIT.md`, "The workspace
 database"). The migration journals stay in `drizzle`.

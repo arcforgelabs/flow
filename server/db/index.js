@@ -30,6 +30,11 @@ export function openDatabase({ url = process.env.DATABASE_URL, max = 10 } = {}) 
   pool.on('connect', (client) => {
     setSearchPath(client).catch(() => {});
   });
+  // The server can close an idle connection (a restart, a pooler, migration
+  // 0021); the pool drops it and opens another. Unheard, it would stop Flow.
+  pool.on('error', (error) => {
+    console.warn(`[db] an idle database connection closed: ${error.message}`);
+  });
   const db = drizzle(pool, { schema });
   return { db, pool, close: () => pool.end() };
 }
