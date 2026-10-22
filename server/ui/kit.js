@@ -403,6 +403,30 @@ export function tileSection(title, cards, { href, more = 'Show all' } = {}) {
     h('div', { class: 'fx-tiles__grid' }, cards)), 'tileSection');
 }
 
+// A dialog that fills the screen has no pixel outside it, so an accessibility
+// check cannot tell it is modal and reads the page underneath. While one is
+// open, every other top-level node is inert. The attribute is what the check
+// reads; the browser's own modal behaviour is unchanged.
+function shieldBehindDialogs() {
+  const top = [...document.querySelectorAll('dialog[open]')].at(-1) ?? null;
+  for (const child of document.body.children) {
+    if (top && child !== top) child.setAttribute('inert', '');
+    else child.removeAttribute('inert');
+  }
+}
+const openDialog = HTMLDialogElement.prototype.showModal;
+const closeDialog = HTMLDialogElement.prototype.close;
+HTMLDialogElement.prototype.showModal = function showModal() {
+  const result = openDialog.call(this);
+  shieldBehindDialogs();
+  return result;
+};
+HTMLDialogElement.prototype.close = function close(...args) {
+  const result = closeDialog.apply(this, args);
+  shieldBehindDialogs();
+  return result;
+};
+
 // The trail above a page one level down: crumbs(['/integrations', 'Integrations'], 'Xero').
 export function crumbs(...trail) {
   const here = trail.pop();
