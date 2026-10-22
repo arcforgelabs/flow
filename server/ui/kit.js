@@ -164,11 +164,24 @@ export function fieldError(field, on = true) {
   return field;
 }
 
-export function toast(text, tone = 'info') {
+// A short result after an action. With `stay: true` it stays until the person
+// closes it (for a danger a failed press must not pass unseen).
+export function toast(text, tone = 'info', { stay = false } = {}) {
   const region = document.getElementById('toasts');
-  const item = h('div', { class: 'fx-toast', 'data-tone': tone, role: 'status' }, text);
+  const item = h('div', {
+    class: stay ? 'fx-toast fx-toast--stay' : 'fx-toast',
+    'data-tone': tone,
+    role: tone === 'danger' ? 'alert' : 'status',
+  }, h('span', { class: 'fx-toast__text' }, text));
+  if (stay) {
+    item.append(h('button', {
+      type: 'button', class: 'fx-toast__close', 'aria-label': 'Close', title: 'Close',
+      onclick: () => item.remove(),
+    }, lucide(h, 'x')));
+  } else {
+    setTimeout(() => item.remove(), 4200);
+  }
   region.append(item);
-  setTimeout(() => item.remove(), 4200);
 }
 
 // A modal built on <dialog>: resolves with the button's value, or null.

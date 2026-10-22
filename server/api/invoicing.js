@@ -47,7 +47,9 @@ import {
 //   POST  /invoices/mark-not-ready    { invoiceIds }: back to To check
 //   POST  /invoices/send-ready        owner or admin: issue every ready draft and queue it for the
 //                                     accounting system { issueDate, invoiceIds? (only these; one that fails
-//                                     a check now stays on Pending and counts as held) }
+//                                     a check now stays on Pending and counts as held; one id is all or
+//                                     nothing when its job cannot be confirmed, more than one id sends the
+//                                     rest and counts the unconfirmed in waiting) }
 //   POST  /invoices/send-again        owner or admin: queue failed sends again { invoiceIds? }
 //   GET   /invoices/:id               one invoice: lines, contact, job, issued versions, and where it sends
 //   GET   /invoices/:id/pdf?version=  the invoice as a PDF, drawn by Flow (server/core/invoice-pdf.js),

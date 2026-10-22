@@ -54,8 +54,10 @@ evidence (the job, the error, the commit).
   needs their word for this release (a tapped card counts).
 - Flow Release Prepare makes the tag (signed when `RELEASE_TAG_SIGNING_KEY`
   is set) and Flow Release Checks checks it. The GitHub Release stays a draft until npm serves the version.
-- The release is done when the closeout pull request has merged and `main`
-  carries the shipped changelog file and version.
+- The release is done when the closeout pull request has merged, `main`
+  carries the shipped changelog file, its docs page and the version, the
+  docs site serves the page, and the GitHub Release body is the roster body
+  (`release:stable` phases `docs` and `thanks`).
 
 ## Corrections
 
