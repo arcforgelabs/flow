@@ -5,7 +5,8 @@ import { getInvoice, listInvoiceVersions } from '../../core/invoices.js';
 import { sendModeFor } from '../../core/invoicing-rules.js';
 import { contacts as flowContacts, invoices as flowInvoices, priceItems } from '../../db/schema.js';
 import { readConnection } from './connections.js';
-import { itemsByCode, lastSuccessfulSyncAt, matchContact, normaliseName } from './catalogue.js';
+import { itemsByCode, lastSuccessfulSyncAt, matchContactFor, normaliseName } from './catalogue.js';
+import { writesAllowed } from './settings.js';
 import { xeroError } from './client.js';
 import { withXeroLane } from './governor.js';
 import { mirrorState } from './lookup.js';
@@ -24,8 +25,9 @@ import { mirrorState } from './lookup.js';
 //   version is never changed, here or in Xero: Flow never updates a Xero
 //   invoice. A revised invoice (version 2) goes to Xero only after the
 //   earlier version's Xero invoice is deleted or voided there.
-// - Flow never creates a Xero contact. The customer must match one Xero
-//   contact by name (the synced copy, catalogue.js).
+// - The customer must match one Xero contact, by the identity-map link or by
+//   name (the synced copy, catalogue.js). When Create missing clients is on,
+//   a missing contact can be created from the Flow contact (create-contact.js).
 // - Before it creates, Flow asks Xero for invoices with the same reference.
 //   One for the same contact and total is the same work: Flow records it and
 //   creates nothing. One for the same contact at another total within 90
@@ -65,6 +67,13 @@ function xeroDate(value) {
 }
 
 const problem = (code, message, extra = {}) => ({ code, message, ...extra });
+
+function missingContact(name, { offerCreate }) {
+  const message = offerCreate
+    ? `No Xero contact is named "${name}". Create the client in Xero from this contact.`
+    : `No Xero contact is named "${name}". Add it in Xero, then sync.`;
+  return problem('xero_contact_missing', message, { short: 'Client not in Xero', ...(offerCreate ? { offerCreate: true } : {}) });
+}
 
 // ---------------------------------------------------------------------------
 // The document to send
@@ -288,8 +297,9 @@ async function previewOne(db, runtime, organisationId, invoiceId) {
   const problems = [];
   if (invoice.status === 'void') problems.push(problem('invoice_void', 'This invoice is void. Flow does not send it to Xero.'));
   if (invoice.status === 'draft') problems.push(problem('invoice_not_issued', 'This invoice is a draft. Issue it, then send it to Xero.'));
-  const match = await matchContact(db, organisationId, document.contact.name);
-  if (match.state === 'missing') problems.push(problem('xero_contact_missing', `No Xero contact is named "${document.contact.name}". Add it in Xero (Flow never creates Xero contacts), then sync.`, { short: 'Client not in Xero' }));
+  const match = await matchContactFor(db, organisationId, { contactId: invoice.contactId, name: document.contact.name });
+  const offerCreate = match.state === 'missing' && runtime.settings.createContacts && writesAllowed(runtime.settings);
+  if (match.state === 'missing') problems.push(missingContact(document.contact.name, { offerCreate }));
   if (match.state === 'ambiguous') problems.push(problem('xero_contact_ambiguous', `More than one Xero contact is named "${document.contact.name}". Merge or rename them in Xero, then sync.`, { short: 'Client twice in Xero' }));
   const items = await itemsByCode(db, organisationId, document.lines.map((l) => l.itemCode));
   const sendMode = await sendModeFor(db, organisationId, invoice.contactId);
@@ -389,7 +399,7 @@ export async function checkDrafts(db, runtime, { organisationId, invoiceIds }) {
     for (const preview of invoices) {
       found.set(preview.invoiceId, preview.problems
         .filter((p) => p.blocking !== false && p.code !== 'invoice_not_issued')
-        .map(({ code, message, short }) => ({ code, message, ...(short ? { short } : {}) })));
+        .map(({ code, message, short, offerCreate }) => ({ code, message, ...(short ? { short } : {}), ...(offerCreate ? { offerCreate: true } : {}) })));
     }
   }
   return found;
@@ -468,11 +478,12 @@ async function pushOne(db, runtime, client, organisationId, invoiceId, { pushedB
     }
   }
 
-  const match = await matchContact(db, organisationId, document.contact.name);
+  const match = await matchContactFor(db, organisationId, { contactId: invoice.contactId, name: document.contact.name });
   if (match.state !== 'matched') {
+    const offerCreate = match.state === 'missing' && runtime.settings.createContacts && writesAllowed(runtime.settings);
     throw xeroError(match.state === 'missing' ? 'xero_contact_missing' : 'xero_contact_ambiguous',
       match.state === 'missing'
-        ? `No Xero contact is named "${document.contact.name}". Add it in Xero (Flow never creates Xero contacts), then sync.`
+        ? missingContact(document.contact.name, { offerCreate }).message
         : `More than one Xero contact is named "${document.contact.name}". Merge or rename them in Xero, then sync.`,
       { status: 409 });
   }

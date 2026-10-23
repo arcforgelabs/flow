@@ -1,11 +1,13 @@
 import { sql } from 'drizzle-orm';
+import { externalIdFor } from '../../core/links.js';
 import { withXeroLane } from './governor.js';
 
-// Flow's copy of a connected organisation's Xero contacts and items. Xero
-// owns them: Flow never creates or changes a Xero contact or item. A sync
+// Flow's copy of a connected organisation's Xero contacts and items. A sync
 // reads them all (a few calls: contacts 100 a page, items in one) and
 // replaces the copy in one transaction, so invoice preview can match
-// contacts and item codes without spending Xero calls.
+// contacts and item codes without spending Xero calls. Creating a missing
+// client (create-contact.js) writes one row into this copy; it does not
+// change any other Xero contact. Flow never changes a Xero item.
 
 // Xero dates come as "/Date(1792000000000+0000)/" or ISO text.
 export function parseXeroDate(value) {
@@ -22,12 +24,45 @@ export function normaliseName(value) {
 }
 
 const toCents = (amount) => (typeof amount === 'number' && Number.isFinite(amount) ? Math.round(amount * 100) : null);
+const blank = (value) => {
+  const text = String(value ?? '').trim();
+  return text || null;
+};
+
+function phoneOf(contact, type) {
+  const phone = (contact.Phones ?? []).find((item) => item.PhoneType === type);
+  if (!phone) return null;
+  return [phone.PhoneCountryCode, phone.PhoneAreaCode, phone.PhoneNumber].map(blank).filter(Boolean).join(' ') || null;
+}
+
+function addressOf(contact) {
+  const list = contact.Addresses ?? [];
+  const raw = list.find((item) => item.AddressType === 'POBOX') ?? list.find((item) => item.AddressType === 'STREET');
+  if (!raw) return null;
+  const address = {
+    line1: blank(raw.AddressLine1),
+    line2: blank(raw.AddressLine2),
+    city: blank(raw.City),
+    region: blank(raw.Region),
+    postalCode: blank(raw.PostalCode),
+    country: blank(raw.Country),
+  };
+  const kept = Object.fromEntries(Object.entries(address).filter(([, value]) => value));
+  return Object.keys(kept).length ? kept : null;
+}
 
 export function mapContact(contact) {
   return {
     xeroContactId: contact.ContactID,
     name: String(contact.Name ?? '').trim(),
+    firstName: blank(contact.FirstName),
+    lastName: blank(contact.LastName),
     email: contact.EmailAddress || null,
+    phone: phoneOf(contact, 'DEFAULT'),
+    mobile: phoneOf(contact, 'MOBILE'),
+    accountNumber: blank(contact.AccountNumber),
+    taxNumber: blank(contact.TaxNumber),
+    address: addressOf(contact),
     status: contact.ContactStatus || 'ACTIVE',
     isCustomer: Boolean(contact.IsCustomer),
     isSupplier: Boolean(contact.IsSupplier),
@@ -50,19 +85,30 @@ export function mapItem(item) {
   };
 }
 
+export async function upsertContact(db, organisationId, contact) {
+  const address = contact.address ? JSON.stringify(contact.address) : null;
+  await db.execute(sql`
+    insert into xero_contacts (
+      organisation_id, xero_contact_id, name, first_name, last_name, email, phone, mobile,
+      account_number, tax_number, address, status, is_customer, is_supplier, sales_tracking, xero_updated_at, synced_at)
+    values (
+      ${organisationId}, ${contact.xeroContactId}, ${contact.name}, ${contact.firstName ?? null}, ${contact.lastName ?? null},
+      ${contact.email ?? null}, ${contact.phone ?? null}, ${contact.mobile ?? null}, ${contact.accountNumber ?? null},
+      ${contact.taxNumber ?? null}, ${address}::jsonb, ${contact.status}, ${contact.isCustomer}, ${contact.isSupplier},
+      ${JSON.stringify(contact.salesTracking ?? [])}::jsonb, ${contact.xeroUpdatedAt ?? null}, now())
+    on conflict (organisation_id, xero_contact_id) do update set
+      name = excluded.name, first_name = excluded.first_name, last_name = excluded.last_name, email = excluded.email,
+      phone = excluded.phone, mobile = excluded.mobile, account_number = excluded.account_number,
+      tax_number = excluded.tax_number, address = excluded.address, status = excluded.status,
+      is_customer = excluded.is_customer, is_supplier = excluded.is_supplier, sales_tracking = excluded.sales_tracking,
+      xero_updated_at = excluded.xero_updated_at, synced_at = now()`);
+}
+
 async function replaceContacts(tx, organisationId, contacts) {
   const ids = contacts.map((c) => c.xeroContactId);
   await tx.execute(sql`delete from xero_contacts where organisation_id = ${organisationId}
     and not (xero_contact_id = any(${sql.param(ids)}::text[]))`);
-  for (const c of contacts) {
-    await tx.execute(sql`
-      insert into xero_contacts (organisation_id, xero_contact_id, name, email, status, is_customer, is_supplier, sales_tracking, xero_updated_at, synced_at)
-      values (${organisationId}, ${c.xeroContactId}, ${c.name}, ${c.email}, ${c.status}, ${c.isCustomer}, ${c.isSupplier}, ${JSON.stringify(c.salesTracking)}::jsonb, ${c.xeroUpdatedAt}, now())
-      on conflict (organisation_id, xero_contact_id) do update set
-        name = excluded.name, email = excluded.email, status = excluded.status, is_customer = excluded.is_customer,
-        is_supplier = excluded.is_supplier, sales_tracking = excluded.sales_tracking,
-        xero_updated_at = excluded.xero_updated_at, synced_at = now()`);
-  }
+  for (const contact of contacts) await upsertContact(tx, organisationId, contact);
 }
 
 async function replaceItems(tx, organisationId, items) {
@@ -129,7 +175,14 @@ export async function lastSuccessfulSyncAt(db, organisationId) {
 const contactRow = (row) => ({
   xeroContactId: row.xero_contact_id,
   name: row.name,
+  firstName: row.first_name ?? null,
+  lastName: row.last_name ?? null,
   email: row.email,
+  phone: row.phone ?? null,
+  mobile: row.mobile ?? null,
+  accountNumber: row.account_number ?? null,
+  taxNumber: row.tax_number ?? null,
+  address: row.address ?? null,
   status: row.status,
   isCustomer: row.is_customer,
   isSupplier: row.is_supplier,
@@ -171,8 +224,9 @@ export async function itemsByCode(db, organisationId, codes) {
 }
 
 // The Xero contact for a Flow contact name: exactly one active contact with
-// the same name, or why not. Flow never creates a Xero contact (as before):
-// a missing or doubled name is for a person to fix in Xero, then sync.
+// the same name, or why not. A missing name can be created from the Flow
+// contact when that setting is on (create-contact.js). A doubled name is
+// still for a person to fix in Xero, then sync.
 export async function matchContact(db, organisationId, name) {
   const wanted = normaliseName(name);
   const { rows } = await db.execute(sql`select * from xero_contacts where organisation_id = ${organisationId}
@@ -181,4 +235,18 @@ export async function matchContact(db, organisationId, name) {
   if (matches.length === 1) return { state: 'matched', contact: matches[0] };
   if (matches.length > 1) return { state: 'ambiguous', matches };
   return { state: 'missing' };
+}
+
+// The Xero contact for a Flow contact: the identity-map link first, then the
+// name. A link Flow made stays matched after a rename on one side.
+export async function matchContactFor(db, organisationId, { contactId = null, name }) {
+  if (contactId) {
+    const linked = await externalIdFor(db, organisationId, { system: 'xero', entity: 'contact', flowId: contactId });
+    if (linked) {
+      const { rows } = await db.execute(sql`select * from xero_contacts where organisation_id = ${organisationId} and xero_contact_id = ${linked}`);
+      const contact = rows[0] ? contactRow(rows[0]) : null;
+      if (contact?.status === 'ACTIVE') return { state: 'matched', contact, by: 'link' };
+    }
+  }
+  return matchContact(db, organisationId, name);
 }

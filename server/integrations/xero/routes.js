@@ -4,6 +4,7 @@ import { FlowError } from '../../core/errors.js';
 import { createActionGuard } from '../call-guard.js';
 import { billingObligations, organisations } from '../../db/schema.js';
 import { lastSync, listContacts, listItems, syncCatalogue } from './catalogue.js';
+import { createCustomer, matchCustomer } from './create-contact.js';
 import { createXeroClient } from './client.js';
 import { describePush, listPushes, MAX_BATCH, previewDrafts, pushDrafts } from './drafts.js';
 import { recordXeroEvidence, recordXeroPayments } from './ledger.js';
@@ -27,6 +28,9 @@ import { messagePage as themedMessagePage } from '../../ui/page.js';
 //   POST /disconnect               owner: revokes and forgets the connection
 //   POST /sync                     owner or admin: copies Xero contacts and items
 //   GET  /contacts?organisationId=&q=   any signed-in person: the copy
+//   GET  /contacts/match?organisationId=&contactId=   any signed-in person:
+//                                  whether this Flow contact is in the copy
+//   POST /contacts                 owner or admin: create the Xero contact
 //   GET  /items?organisationId=    any signed-in person: the copy
 //   POST /invoices/preview         any signed-in person: the Xero drafts Flow
 //                                  would make, and what stops them (no Xero calls)
@@ -59,6 +63,7 @@ export const XERO_ACTIONS = Object.freeze({
   sync: { cooldownMs: 5 * 60_000 },
   recheck: { cooldownMs: 30_000 },
   push: { cooldownMs: 0, budget: false },
+  createContact: { cooldownMs: 30_000 },
   obligationCheck: { cooldownMs: 30_000 },
   paymentsSync: { cooldownMs: 5 * 60_000 },
   mirror: { cooldownMs: 2 * 60_000 },
@@ -270,6 +275,22 @@ export function createXeroRouter({ db, personAuth, runtime, log = console, butto
   router.get('/contacts', ...signedIn, handle(log, async (req, res) => {
     const organisationId = await requireOrganisation(db, req.query.organisationId);
     res.json({ ok: true, contacts: await listContacts(db, organisationId, { q: typeof req.query.q === 'string' ? req.query.q : '' }) });
+  }));
+
+  // Whether this Flow contact is a Xero contact, and whether Create is offered.
+  // No Xero calls: it reads Flow's copy.
+  router.get('/contacts/match', ...signedIn, handle(log, async (req, res) => {
+    const organisationId = await requireOrganisation(db, req.query.organisationId);
+    if (typeof req.query.contactId !== 'string' || !UUID.test(req.query.contactId)) throw new FlowError('invalid', 'contactId must be a Flow contact id');
+    res.json({ ok: true, ...(await matchCustomer(db, runtime, { organisationId, contactId: req.query.contactId })) });
+  }));
+
+  router.post('/contacts', ...manager, act('createContact', (req) => req.body?.contactId), handle(log, async (req, res) => {
+    const organisationId = await requireOrganisation(db, req.body?.organisationId);
+    if (typeof req.body?.contactId !== 'string' || !UUID.test(req.body.contactId)) throw new FlowError('invalid', 'contactId must be a Flow contact id');
+    const result = await createCustomer(db, runtime, { organisationId, contactId: req.body.contactId, actor: `person:${req.person.id}` });
+    log.info?.(`[xero] organisation ${organisationId}: person ${req.person.id} ${result.outcome} Xero contact ${result.contact.xeroContactId} for Flow contact ${req.body.contactId}`);
+    res.status(result.outcome === 'created' ? 201 : 200).json({ ok: true, ...result });
   }));
 
   router.get('/items', ...signedIn, handle(log, async (req, res) => {

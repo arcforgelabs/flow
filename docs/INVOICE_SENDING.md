@@ -95,7 +95,10 @@ each failed check; the full text is its hover title.
 When an accounting system is on and connected, its own checks are added
 (`checkDrafts`). For Xero these come from Flow's copy of Xero, so they cost no
 Xero calls: the customer matches one Xero contact (Client not in Xero, Client
-twice in Xero), and every item is in Xero (CODE not in Xero).
+twice in Xero), and every item is in Xero (CODE not in Xero). With Create
+missing clients on, Client not in Xero offers Create, which adds the client
+in Xero from the Flow contact (`docs/CONTACTS.md`). With it off, add the
+client in Xero, then sync. Owners and admins see Create. Staff see the flag.
 
 An issued invoice that the accounting system refused is in Pending (Send
 failed). It shows the refusal until a person sends it again.

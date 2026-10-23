@@ -55,7 +55,8 @@ credentials. Tests use replay only and never call the real Xero API.
 | `XERO_CLIENT_SECRET` | secret | The Xero app's client secret. Needed for `live` and `sandbox`. |
 | `XERO_TOKEN_KEY` | secret | A 32-byte key (64 hex characters or base64) that encrypts the Xero refresh token at rest. Needed for `live` and `sandbox`. Make one with `openssl rand -hex 32`. |
 | `XERO_TENANT_ID` / `XERO_TENANT_NAME` | configuration | The Xero organisation this installation may connect. `live` needs one of them. |
-| `XERO_ALLOW_LIVE_WRITES` | configuration | `on` lets `live` mode create draft invoices. Default off. |
+| `XERO_ALLOW_LIVE_WRITES` | configuration | `on` lets `live` mode create draft invoices and contacts. Default off. |
+| `XERO_CREATE_CONTACTS` | configuration | `on` (the default, including when unset) offers Create on a pending invoice whose client is not in Xero, and on that contact. `off`: add the client in Xero, then sync. Live mode still needs `XERO_ALLOW_LIVE_WRITES`. |
 | `XERO_REDIRECT_URI` | configuration | The OAuth callback. Default: `FLOW_PUBLIC_ORIGIN` + `/api/xero/oauth/callback`. Register the same address on the Xero app. |
 | `XERO_SCOPE` | configuration | OAuth scopes. Default `offline_access accounting.contacts accounting.invoices accounting.payments.read accounting.settings.read`. A connection made before a scope was added keeps its old scopes until a person connects again. |
 | `XERO_DAY_LIMIT` | configuration | The app's daily call limit per organisation until Xero reports its own: 1000 on the Starter plan (the default), 5000 on Core and above. |
@@ -115,8 +116,19 @@ connects again.
 
 ## Contacts and items
 
-Xero owns the lab's contacts and items. Flow never creates or changes them
-(as before): a missing or doubled contact is for a person to fix in Xero.
+Flow's own contacts stay in `contacts` (`docs/CONTACTS.md`). Xero's contacts
+are copied into `xero_contacts`. A sync replaces that copy and does not
+change Flow's contacts. Flow does not change a Xero contact that already
+exists.
+
+When Create missing clients is on, an owner or admin creates the missing
+Xero contact from a Flow contact (`POST /api/xero/contacts` with
+`{ "organisationId", "contactId" }`). Flow writes one Xero contact, stores
+that copy, and links it (`created_by_flow`). If Xero already has one active
+contact of that name, Flow links that one (`exact_name`) and creates
+nothing. An archived-only name, or more than one active name, is refused.
+`GET /api/xero/contacts/match?organisationId=…&contactId=…` answers whether
+Create is offered, from the copy, with no Xero call.
 
 `POST /api/xero/sync` with `{ "organisationId": "…" }` (owner or admin)
 reads every Xero contact (100 a page) and item (one call) and replaces
@@ -139,6 +151,7 @@ For invoice preparation, `server/integrations/xero/catalogue.js` offers:
 | Function | Answers |
 | --- | --- |
 | `matchContact(db, organisationId, name)` | `matched` with the one active Xero contact whose name is the same (case and doubled spaces ignored), `ambiguous` with the matches, or `missing` |
+| `matchContactFor(db, organisationId, { contactId, name })` | The same, after the identity-map link. A linked contact matches even when the names differ |
 | `itemsByCode(db, organisationId, codes)` | A map from item code to the Xero item (sales price in cents, account code, tax type) |
 | `listContacts`, `listItems` | The copy |
 | `lastSuccessfulSyncAt(db, organisationId)` | When the copy was last refreshed, or null |
@@ -182,8 +195,11 @@ The rules:
   revised invoice (version 2) is sent only after the earlier version's Xero
   invoice is deleted or voided in Xero; Flow checks that live and keeps the
   earlier record.
-- **Flow never creates a Xero contact.** The Flow customer's name must match
-  exactly one active Xero contact in the synced copy.
+- **A missing Xero contact.** The Flow customer must be linked to one Xero
+  contact, or match exactly one active Xero contact by name. With Create
+  missing clients on, a pending invoice offers Create (`docs/CONTACTS.md`).
+  With it off, add the client in Xero, then sync. Flow does not change a
+  Xero contact that already exists.
 - **Each line names its item.** A line's `itemCode` from the issued document
   becomes the Xero `ItemCode`; a code Xero does not have stops the draft. Tax
   types come from `XERO_TAX_TYPE_GST` and `XERO_TAX_TYPE_GST_FREE`; amounts are
