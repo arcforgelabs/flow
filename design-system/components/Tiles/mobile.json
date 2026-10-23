@@ -2,7 +2,8 @@
   "component": "tileCard",
   "direction": "one-line rows",
   "phone": {
-    "layout": "one-line"
+    "layout": "one-line",
+    "rowHeight": 56
   },
   "tablet": {
     "layout": "cards"
@@ -13,7 +14,8 @@
   "touch": 44,
   "pageOverflow": "none",
   "screens": [
-    "rules"
+    "rules",
+    "integrations"
   ],
   "also": [
     {
