@@ -2,12 +2,12 @@
 # flow-release-publish.yml) builds it for each release, and CI's docker-build
 # lane builds and smokes it on every change. Configure it with environment
 # variables (docs/SELF_HOSTING.md); DATABASE_URL is required.
-FROM node:24-bookworm-slim AS deps
+FROM node:24.22.1-bookworm-slim AS deps
 WORKDIR /app
 COPY package.json package-lock.json .npmrc ./
 RUN npm ci --omit=dev --no-audit --no-fund
 
-FROM node:24-bookworm-slim
+FROM node:24.22.1-bookworm-slim
 WORKDIR /app
 ENV NODE_ENV=production
 ARG VCS_REF=unknown
