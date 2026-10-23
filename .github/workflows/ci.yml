@@ -65,7 +65,7 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 24
+          node-version: 24.22.1
           # A release check (workflow_call with a ref) never reads or writes
           # the npm cache, so a release run cannot poison what main reads.
           cache: ${{ !inputs.ref && 'npm' || '' }}
@@ -142,7 +142,7 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 24
+          node-version: 24.22.1
 
       - name: Pack the npm tarball with a shrinkwrap
         run: |
