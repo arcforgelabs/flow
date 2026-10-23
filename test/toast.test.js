@@ -14,4 +14,7 @@ test('toast stays until closed when stay is set, and a failed Send uses it', () 
   const invoicing = read('server/ui/invoicing.js');
   const stays = [...invoicing.matchAll(/toast\(error\.message, 'danger', \{ stay: true \}\)/g)];
   assert.ok(stays.length >= 2, 'bulk post and one-invoice Send keep the danger toast');
+  assert.match(invoicing, /toast\('Invoice deleted\.', 'success', \{ stay: true \}\)/);
+  assert.match(invoicing, /toast\(error \? `\$\{done\} of \$\{rows\.length\} deleted\. \$\{error\.message\}` : `\$\{plural\(done, 'invoice', 'invoices'\)\} deleted\.`, error \? 'danger' : 'success', \{ stay: true \}\)/);
+  assert.match(invoicing, /toast\(results\.join\(' '\), refused \? 'danger' : 'success', \{ stay: true \}\)/);
 });

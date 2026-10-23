@@ -41,6 +41,7 @@ never issued; an owner or admin), **Preview**, **Save**, then
 **Send to Xero** (accounting system on) or **Approve** (no accounting system).
 A Pending draft has no send button. Delete asks first, removes the draft,
 and frees its job: the lab's rules then decide whether Flow drafts it again.
+The result stays until the person closes it.
 An issued invoice whose accounting copy is a draft also has **Delete** (owner
 or admin), before Void. The confirm says `Also deletes the draft in Xero.`
 Flow reads that invoice live, deletes it there while it is still a draft,

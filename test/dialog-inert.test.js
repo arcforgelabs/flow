@@ -166,7 +166,9 @@ test('deleting an invoice on the Invoices page leaves the list clickable', { ski
     await page.getByRole('heading', { name: 'Delete this invoice?' }).waitFor();
     await page.getByRole('dialog').getByRole('button', { name: 'Delete' }).click();
     await page.waitForURL('**/invoices');
-    await page.getByText('Invoice deleted.').waitFor();
+    const deleted = page.getByRole('status').filter({ hasText: 'Invoice deleted.' });
+    await deleted.waitFor();
+    await deleted.getByRole('button', { name: 'Close' }).waitFor();
     assert.equal(await page.locator('dialog[open]').count(), 0);
     assert.equal(await appInert(), false);
 
@@ -181,7 +183,9 @@ test('deleting an invoice on the Invoices page leaves the list clickable', { ski
     await page.locator('.fx-bulk').getByRole('button', { name: 'Delete' }).click();
     await page.getByRole('heading', { name: 'Delete 2 invoices?' }).waitFor();
     await page.getByRole('dialog').getByRole('button', { name: 'Delete 2' }).click();
-    await page.getByText('2 invoices deleted.').waitFor();
+    const bulkDeleted = page.getByRole('status').filter({ hasText: '2 invoices deleted.' });
+    await bulkDeleted.waitFor();
+    await bulkDeleted.getByRole('button', { name: 'Close' }).waitFor();
     assert.equal(await appInert(), false);
     await page.getByRole('tab', { name: /^Approved/ }).click();
     await page.waitForFunction(() => [...document.querySelectorAll('[role="tab"]')].some((tab) => tab.textContent.startsWith('Approved') && tab.getAttribute('aria-selected') === 'true'));

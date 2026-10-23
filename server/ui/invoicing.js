@@ -474,7 +474,9 @@ export async function renderInvoiceList(main, ui) {
         }
       }
       const refused = results.some((line) => line.includes(' refused: '));
-      toast(results.join(' '), refused ? 'danger' : 'success', refused ? { stay: true } : {});
+      // The result stays until it is closed. A success is one short line, and
+      // a refusal names each invoice, so neither should vanish on its own.
+      toast(results.join(' '), refused ? 'danger' : 'success', { stay: true });
     } else {
       let done = 0;
       let error = null;
@@ -484,7 +486,7 @@ export async function renderInvoiceList(main, ui) {
           done += 1;
         } catch (e) { error = e; }
       }
-      toast(error ? `${done} of ${rows.length} deleted. ${error.message}` : `${plural(done, 'invoice', 'invoices')} deleted.`, error ? 'danger' : 'success');
+      toast(error ? `${done} of ${rows.length} deleted. ${error.message}` : `${plural(done, 'invoice', 'invoices')} deleted.`, error ? 'danger' : 'success', { stay: true });
     }
     state.ticked.clear();
     seen.clear();
@@ -1317,7 +1319,7 @@ function deleteControl(ui, invoice, { xeroDraft }) {
       if (!ok) return;
       try {
         await flow(`/api/invoicing/invoices/${invoice.id}`, { method: 'DELETE' });
-        toast('Invoice deleted.', 'success');
+        toast('Invoice deleted.', 'success', { stay: true });
         sessionStorage.setItem(NAV_BACK, '1');
         go('/invoices');
       } catch (error) {
