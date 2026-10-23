@@ -329,6 +329,7 @@ The waits each adapter declares:
 | `POST /api/xero/mirror` | `mirror` | 2 minutes |
 | `POST /api/xero/payments/sync` | `paymentsSync` | 5 minutes |
 | `POST /api/xero/invoices/:id/recheck` (Mark resolved) | `recheck` | 30 seconds per invoice |
+| `POST /api/xero/contacts` (Create) | `createContact` | 30 seconds per contact |
 | `POST /api/xero/obligations/:id/check` | `obligationCheck` | 30 seconds per job |
 | `POST /api/xero/invoices/push` (Send to Xero) | `push` | one at a time; backs off after a failure; no budget |
 | `POST /api/invoicing/invoices/send-ready`, `send-again` | `sendReady`, `sendAgain` | one at a time; backs off; no budget |

@@ -1227,8 +1227,9 @@ function draftView(invoice, ui, context, redraw) {
           const body = await flow(`/api/invoicing/invoices/${invoice.id}`);
           redraw(body.invoice);
         } catch (error) {
-          toast(error.message, 'danger');
-          button.disabled = false;
+          toast(error.message, error.status === 429 ? 'info' : 'danger');
+          if (error.retryAfterMs) ui.holdButton(button, error.retryAfterMs);
+          else button.disabled = false;
         }
       },
     }, 'Create')

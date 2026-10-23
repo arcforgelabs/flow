@@ -242,8 +242,9 @@ async function loadXero(ui, contact, canEdit, host) {
           toast(`${contact.name} is in Xero.`, 'success');
           host.replaceChildren(h('section', { class: 'fx-card' }, notice(`${contact.name} is in Xero.`, 'success')));
         } catch (error) {
-          toast(error.message, 'danger');
-          button.disabled = false;
+          toast(error.message, error.status === 429 ? 'info' : 'danger');
+          if (error.retryAfterMs) ui.holdButton(button, error.retryAfterMs);
+          else button.disabled = false;
         }
       },
     }, 'Create')
