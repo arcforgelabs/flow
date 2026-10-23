@@ -85,6 +85,13 @@
       "when": 1792540000000,
       "tag": "0011_xero_invoice_deleted",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1792550000000,
+      "tag": "0012_xero_contact_details",
+      "breakpoints": true
     }
   ]
 }

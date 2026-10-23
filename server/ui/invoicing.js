@@ -1203,13 +1203,44 @@ function draftView(invoice, ui, context, redraw) {
   // The job changed after the invoice was made: its own banner shows what
   // changed. Other problems stay one line.
   const otherProblems = (invoice?.problems ?? []).filter((p) => !(jobChange && p.code === 'job_review'));
+  const offer = otherProblems.find((p) => p.code === 'xero_contact_missing' && p.offerCreate);
+  const problemNotice = otherProblems.length
+    ? notice([...new Set(otherProblems.map((p) => brief(p.message)))].join(' '), 'danger', 'Problem.')
+    : null;
+  const organisationId = context.organisations[0]?.id;
+  const createClient = offer && context.canIssue && invoice?.contact?.id && organisationId
+    ? h('button', {
+      class: 'fx-btn fx-btn--primary', type: 'button', title: 'Create this client in Xero',
+      onclick: async (event) => {
+        const button = event.currentTarget;
+        const name = invoice.contact.name;
+        const confirmed = await ui.dialog({
+          title: `Create ${name} in Xero?`,
+          body: h('p', {}, 'Flow adds this client to Xero from the contact.'),
+          confirm: 'Create',
+        });
+        if (!confirmed) return;
+        button.disabled = true;
+        try {
+          await flow('/api/xero/contacts', { method: 'POST', body: JSON.stringify({ organisationId, contactId: invoice.contact.id }) });
+          toast(`${name} is in Xero.`, 'success');
+          const body = await flow(`/api/invoicing/invoices/${invoice.id}`);
+          redraw(body.invoice);
+        } catch (error) {
+          toast(error.message, error.status === 429 ? 'info' : 'danger');
+          if (error.retryAfterMs) ui.holdButton(button, error.retryAfterMs);
+          else button.disabled = false;
+        }
+      },
+    }, 'Create')
+    : null;
   const problems = [
     // Accepting changes the draft for the business: owners and admins only.
     jobChange ? jobChangeReview(ui, jobChange, { money: formatCents, canAccept: context.canIssue, unsaved: changed, done: redraw }) : null,
-    otherProblems.length ? notice([...new Set(otherProblems.map((p) => brief(p.message)))].join(' '), 'danger', 'Problem.') : null,
+    problemNotice ? (createClient ? h('div', { class: 'fx-offer' }, problemNotice, createClient) : problemNotice) : null,
   ];
   // A red field names the banner as its reason (for a screen reader).
-  const banner = problems[1];
+  const banner = problemNotice;
   if (banner) banner.id = 'fx-invoice-problem';
   for (const name of failed) {
     if (!boxes[name]) continue;

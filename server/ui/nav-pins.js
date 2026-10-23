@@ -6,6 +6,7 @@
 export const NAV_PAGES = Object.freeze([
   'jobs',
   'invoices',
+  'contacts',
   'reconcile',
   'price-list',
   'invoicing-settings',
@@ -16,11 +17,13 @@ export const NAV_PAGES = Object.freeze([
 
 export const NAV_LOCKED = Object.freeze(['jobs', 'invoices']);
 
-// Today's sidebar, before a person has chosen: daily work, Price list and
-// Rules. Automations, Custom fields and Integrations start in More.
+// Today's sidebar, before a person has chosen: daily work (Jobs, Invoices,
+// Contacts, Reconcile), Price list and Rules. Automations, Custom fields
+// and Integrations start in More.
 export const NAV_DEFAULT = Object.freeze([
   'jobs',
   'invoices',
+  'contacts',
   'reconcile',
   'price-list',
   'invoicing-settings',

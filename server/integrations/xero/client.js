@@ -310,6 +310,25 @@ export function createXeroClient({
       }
       return updated;
     },
+    // One contact. `idempotencyKey` makes a retry within Xero's window return
+    // the first result instead of a second contact.
+    async createContact(contact, { idempotencyKey }) {
+      if (!idempotencyKey) throw new TypeError('createContact: idempotencyKey is required');
+      const payload = await request('POST', 'Contacts', {
+        query: { summarizeErrors: 'false' },
+        body: { Contacts: [contact] },
+        headers: { 'Idempotency-Key': idempotencyKey },
+      });
+      const created = first(payload.Contacts);
+      const messages = validationMessages(created);
+      if (!created?.ContactID || created.HasErrors || created.StatusAttributeString === 'ERROR' || messages.length) {
+        throw xeroError('xero_validation_failed', messages.join(' ') || 'Xero refused the contact.', {
+          status: 422,
+          details: messages.length ? { validationErrors: messages } : undefined,
+        });
+      }
+      return created;
+    },
     async createInvoice(invoice, { idempotencyKey }) {
       if (!idempotencyKey) throw new TypeError('createInvoice: idempotencyKey is required');
       const payload = await request('POST', 'Invoices', {

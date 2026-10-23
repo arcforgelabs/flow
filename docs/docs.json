@@ -10,7 +10,7 @@
           { "group": "Get started", "pages": ["index", "self-hosting", "replit"] },
           {
             "group": "Invoicing",
-            "pages": ["invoice-sending", "invoice-rules", "invoicing-rules", "job-invoice-links", "line-mapping", "price-list", "automations", "alerts"]
+            "pages": ["invoice-sending", "contacts", "invoice-rules", "invoicing-rules", "job-invoice-links", "line-mapping", "price-list", "automations", "alerts"]
           },
           { "group": "Data", "pages": ["data-model", "data-spine", "reconcile"] },
           { "group": "Jobs", "pages": ["custom-fields", "job-board-moves"] },
