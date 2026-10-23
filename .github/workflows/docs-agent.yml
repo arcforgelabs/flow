@@ -290,6 +290,7 @@ jobs:
         run: |
           set -euo pipefail
           npm ci
+          npx playwright install --with-deps chromium
           npm test
 
       # Flow's main ruleset takes no bot pushes (GitHub refuses the workflow
