@@ -2,6 +2,7 @@ import { fileURLToPath } from 'node:url';
 import { sql } from 'drizzle-orm';
 import { guardAlerts } from '../call-guard.js';
 import { deleteXeroInvoice } from './delete-invoice.js';
+import { createCustomer } from './create-contact.js';
 import { checkDrafts, documentFacts, pushInvoice, pushInvoices } from './drafts.js';
 import { readConnection } from './connections.js';
 import { createImportWorker } from './import.js';
@@ -42,6 +43,7 @@ export const XERO_SETUP = {
     { name: 'XERO_CLIENT_SECRET', label: 'Client secret', secret: true, help: 'Stored encrypted. Flow never shows it again.' },
     { name: 'XERO_TENANT_NAME', label: 'Xero organisation name', help: 'Live mode connects only the organisation with this exact name.' },
     { name: 'XERO_ALLOW_LIVE_WRITES', label: 'Create draft invoices in live Xero', kind: 'onoff', help: 'Off: Flow only reads from Xero.' },
+    { name: 'XERO_CREATE_CONTACTS', label: 'Create missing clients', kind: 'onoff', default: 'on', help: 'On: a pending invoice whose client is not in Xero offers Create. Off: add the client in Xero, then sync.' },
     { name: 'XERO_WEBHOOK_KEY', label: 'Webhook key', secret: true, help: 'From the Xero app\'s Webhooks page. Empty: Flow reads Xero\'s changes every 15 minutes instead.' },
   ],
   derivedKeys: ['XERO_TOKEN_KEY'],
@@ -145,6 +147,9 @@ export function createXeroAdapter({ runtime: given = null } = {}) {
       readChanges: ({ organisationId }) => readChangesFirst(database, current(), organisationId),
       // Active Xero contacts, from Flow's copy (lookup.js).
       listCustomers: ({ organisationId }) => listCustomers(database, organisationId),
+      // Create the Xero contact for one Flow contact, when that setting is on
+      // (create-contact.js). The Flow contact id is the idempotency key.
+      createCustomer: ({ organisationId, contactId, actor = null }) => createCustomer(database, current(), { organisationId, contactId, actor }),
       // Sales invoices from the mirror, with the mirror's state (lookup.js).
       findInvoices: ({ organisationId, ...query }) => findInvoices(database, organisationId, query),
       // Xero items, from Flow's copy, for the price list (lookup.js).

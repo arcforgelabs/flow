@@ -1,5 +1,6 @@
 import { and, eq, isNull } from 'drizzle-orm';
-import { contacts, organisations, priceItems, CONTACT_KINDS, TAX_CODES } from '../db/schema.js';
+import { organisations, priceItems, TAX_CODES } from '../db/schema.js';
+import { createContact as insertContact } from './contacts.js';
 import { FlowError } from './errors.js';
 
 // Organisations, contacts and the price list: the records invoices and bills
@@ -13,14 +14,8 @@ export async function createOrganisation(db, { name, invoicePrefix }) {
   return row;
 }
 
-export async function createContact(db, organisationId, { kind, name, email = null }) {
-  if (!CONTACT_KINDS.includes(kind)) throw new FlowError('invalid', `unknown contact kind: ${kind}`);
-  if (!name?.trim()) throw new FlowError('invalid', 'contact name is required');
-  const [row] = await db.insert(contacts)
-    .values({ organisationId, kind, name: name.trim(), email })
-    .returning();
-  return row;
-}
+// Contacts live in contacts.js. This name stays so existing callers keep working.
+export const createContact = insertContact;
 
 export async function createPriceItem(db, organisationId, { code, name, unitAmountCents, taxCode = 'GST' }) {
   if (!code?.trim() || !name?.trim()) throw new FlowError('invalid', 'price item code and name are required');

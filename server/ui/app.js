@@ -10,6 +10,7 @@ import { getAppearance, onAppearanceChange, setAppearance, loadFonts } from '/as
 import { flowClerkAppearance } from '/assets/ui/clerk-appearance.js';
 import { ACCENT_PRESETS, normalizeAccent, THEME_FAMILIES, tokensFor } from '/assets/theme/themes.js';
 import { renderInvoice, renderInvoiceList } from '/assets/ui/invoicing.js';
+import { renderContacts } from '/assets/ui/contacts.js';
 import { automationSection, renderAutomations } from '/assets/ui/automations.js';
 import { renderInvoicingSettings, sendModeSection } from '/assets/ui/invoicing-settings.js';
 import { renderPriceList } from '/assets/ui/price-list.js';
@@ -152,6 +153,7 @@ let me = null;
 const VIEWS = {
   jobs: { label: 'Jobs', icon: 'jobs', render: (main) => renderJobs(main, ui()) },
   invoices: { label: 'Invoices', icon: 'invoices', render: (main, id) => (id ? renderInvoice(main, ui(), id) : renderInvoiceList(main, ui())) },
+  contacts: { label: 'Contacts', icon: 'contacts', render: (main, id) => renderContacts(main, ui(), id) },
   reconcile: { label: 'Reconcile', icon: 'reconcile', render: (main, id) => renderReconcile(main, ui(), id) },
   'price-list': { label: 'Price list', icon: 'tag', render: (main, id) => (id === 'reconcile' ? renderPriceReconcile(main, ui()) : renderPriceList(main, ui())) },
   'invoicing-settings': { label: 'Rules', icon: 'rules', render: (main, id) => renderInvoicingSettings(main, ui(), id) },
@@ -171,6 +173,7 @@ const VIEWS = {
 const ICON_PATHS = {
   jobs: '<rect x="3" y="4" width="5" height="16" rx="1"/><rect x="10" y="4" width="5" height="11" rx="1"/><rect x="17" y="4" width="4" height="14" rx="1"/>',
   invoices: '<path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 13h7M9 17h5"/>',
+  contacts: '<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M6 16c.4-1.6 1.5-2.4 3-2.4s2.6.8 3 2.4M14 9h5M14 13h4"/>',
   bolt: '<path d="M13 3L5 13h6l-1 8 8-10h-6z"/>',
   rules: '<path d="M3 6l2 2 4-4M3 16l2 2 4-4M13 6h8M13 12h8M13 18h8"/>',
   reconcile: '<path d="M4 8h13M13 4l4 4-4 4M20 16H7M11 12l-4 4 4 4"/>',
@@ -756,9 +759,10 @@ async function renderIntegration(main, id) {
       let input;
       if (field.kind === 'choice' || field.kind === 'onoff') {
         const choices = field.kind === 'onoff' ? [{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }] : field.choices;
-        input = h('select', { class: 'fx-select', disabled },
+        const fallback = field.kind === 'onoff' ? (field.default === 'on' || field.default === 'off' ? field.default : 'off') : '';
+        input = h('select', { class: 'fx-select', disabled, 'data-fallback': fallback },
           field.kind === 'choice' ? h('option', { value: '' }, 'Choose…') : null,
-          choices.map((c) => h('option', { value: c.value, selected: (field.value ?? (field.kind === 'onoff' ? 'off' : '')) === c.value }, c.label)));
+          choices.map((c) => h('option', { value: c.value, selected: (field.value ?? fallback) === c.value }, c.label)));
       } else if (field.secret) {
         input = h('input', { class: 'fx-input', type: 'password', autocomplete: 'off', disabled, placeholder: field.set ? 'Saved' : 'Paste it here' });
       } else {
@@ -781,7 +785,8 @@ async function renderIntegration(main, id) {
       for (const [name, { field, input }] of inputs) {
         const value = input.value.trim();
         if (field.secret) { if (value) out[name] = value; continue; }
-        if (value !== (field.value ?? (field.kind === 'onoff' ? 'off' : ''))) out[name] = value || null;
+        const fallback = input.dataset.fallback ?? (field.kind === 'onoff' ? 'off' : '');
+        if (value !== (field.value ?? fallback)) out[name] = value || null;
       }
       return out;
     };

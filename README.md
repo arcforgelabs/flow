@@ -43,6 +43,7 @@ run a lab.
 | `docs/INVOICING_RULES.md` | The invoicing rules that draft a job's invoice, and the two ways an invoice goes to Xero |
 | `docs/INVOICE_RULES.md` | Invoice rules a lab builds (When, If, Then) that make a ready job wait or never draft |
 | `docs/INVOICE_SENDING.md` | The invoice tabs (Pending, Ready, Draft, Approved, Sent, Void), a changed job, and Send all ready to the accounting system |
+| `docs/CONTACTS.md` | Contacts: Flow's own customers and suppliers, and creating a missing Xero client from one |
 | `docs/RECONCILE.md` | The daily reconcile: counts and totals per day across the work system's copy, the ledger and the accounting copy |
 | `docs/ALERTS.md` | Quiet alerts: the slim line on a page when something there needs a person, and how a person dismisses it |
 | `docs/AUTOMATIONS.md` | Automations: Flow routines that mark jobs ready to invoice and draft them, each on or off |

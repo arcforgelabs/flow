@@ -30,7 +30,7 @@ export const exampleAdapter = {
 ```
 
 The capabilities are `pullWorkItems`, `pullHistoryJobs`, `pushInvoice`, `pushBill`,
-`pullPayments`, `checkInvoice`, `listCustomers`, `findInvoices`, `listWork`,
+`pullPayments`, `checkInvoice`, `listCustomers`, `createCustomer`, `findInvoices`, `listWork`,
 `billableJobs`, `listPriceItems`, `jobIssues`, `moveWork`, `cancelMove`, `personSettings`,
 `setPersonSetting`, `captureError`, `browserMonitoring`, `traceSpan`, `traceRequest`, `alerts` and
 `health`. `alerts({ organisationId })` answers what only a person can clear,
@@ -71,7 +71,10 @@ trace, and `traceRequest()` answers a function that names the request's
 trace by its route (`server/core/tracing.js`). The Sentry adapter has all
 four (`docs/SENTRY.md`).
 `listCustomers({ organisationId })` answers the system's customers as
-`{ id, name }`. `findInvoices({ organisationId, invoiceIds, numbers,
+`{ id, name }`. `createCustomer({ organisationId, contactId, actor })`
+creates that system's customer from the Flow contact and answers
+`{ outcome, contact }`. Xero does this when Create missing clients is on
+(`docs/CONTACTS.md`). `findInvoices({ organisationId, invoiceIds, numbers,
 flowInvoiceIds, contactId, from, to })` answers sales invoices from the
 adapter's own copy, never a live call, with the copy's state (`complete`,
 `fresh`, `changedAt`). The pipeline uses both (`docs/JOB_INVOICE_LINKS.md`).

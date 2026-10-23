@@ -41,13 +41,28 @@ export const organisations = pgTable('organisations', {
   check('organisations_next_invoice_number_positive', sql`${t.nextInvoiceNumber} > 0`),
 ]);
 
+// A contact is Flow's own client or supplier (docs/CONTACTS.md). The fields
+// cover what Xero needs to bill the contact and what Seazona keeps for the
+// practice a job belongs to. Practitioners are people at the practice, never
+// patients. An integration keeps its own copy; this row does not.
 export const contacts = pgTable('contacts', {
   id: id(),
   organisationId: organisationId().references(() => organisations.id),
   kind: text('kind').notNull(),
   name: text('name').notNull(),
+  firstName: text('first_name'),
+  lastName: text('last_name'),
   email: text('email'),
+  phone: text('phone'),
+  mobile: text('mobile'),
+  accountNumber: text('account_number'),
+  taxNumber: text('tax_number'),
+  taxRate: text('tax_rate'),
+  address: jsonb('address'),
+  practitioners: jsonb('practitioners').notNull().default([]),
+  active: boolean('active').notNull().default(true),
   createdAt: createdAt(),
+  updatedAt: updatedAt(),
 }, (t) => [
   unique('contacts_org_id').on(t.organisationId, t.id),
   unique('contacts_org_kind_name').on(t.organisationId, t.kind, t.name),

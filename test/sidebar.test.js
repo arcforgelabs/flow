@@ -70,7 +70,7 @@ test('the sidebar shows pinned pages, then More; People and Appearance are in th
   const views = app.match(/const VIEWS = \{([\s\S]*?)\n\};/)[1];
   // The sidebar order: daily work first, then Price list and Rules.
   const order = [...views.matchAll(/^  '?([a-z-]+)'?: \{/gm)].map((m) => m[1]);
-  assert.deepEqual(order.slice(0, 5), ['jobs', 'invoices', 'reconcile', 'price-list', 'invoicing-settings']);
+  assert.deepEqual(order.slice(0, 6), ['jobs', 'invoices', 'contacts', 'reconcile', 'price-list', 'invoicing-settings']);
   for (const name of ['automations', 'custom-fields', 'integrations']) assert.match(views, new RegExp(`'?${name}'?: \\{[^\\n]*place: 'more'`));
   for (const name of ['people', 'appearance']) assert.match(views, new RegExp(`${name}: \\{[^\\n]*place: 'account'`));
   const lineOf = (name) => views.match(new RegExp(`'?${name}'?: \\{[^\\n]*`))[0];

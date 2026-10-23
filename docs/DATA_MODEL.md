@@ -77,6 +77,13 @@ fields for its jobs, each job's values, and who changed them
 `job_field_settings` holds one row per organisation: each type group's
 colour, and when Flow made the Assignee field.
 
+`contacts` is Flow's own customer or supplier (`docs/CONTACTS.md`): name,
+first and last name, email, phone, mobile, account number, tax number, tax
+rate, address, practitioners (people at the practice, up to 30) and whether
+the contact is active. One name per kind in an organisation. An
+integration's copy of the same person stays in that integration's tables
+and links through `external_links`.
+
 `people` lists who may sign in and their role (`owner`, `admin`, `staff`).
 One installation serves one lab, so it is installation-wide.
 
@@ -136,7 +143,10 @@ while the installation has exactly one. Money is integer cents. Answers are
 | `POST /invoices/:id/revise` | owner or admin | An issued invoice back to a draft; the number stays |
 | `POST /invoices/:id/void` | owner or admin | Voids an invoice that was issued |
 | `DELETE /invoices/:id` | owner or admin | Deletes a draft that was never issued, and frees its job. An issued invoice whose accounting copy is a draft is voided only after that draft is deleted there. With no accounting system, it answers `accounting_unavailable` (`docs/INVOICE_SENDING.md`) |
-| `GET /contacts?q=&limit=` | anyone | Customers, by name |
+| `GET /contacts?q=&kind=&active=&limit=&offset=` | anyone | Customers by default (`kind=customer`, `active=true`). `kind=all` and `active=all` list both. `q` matches name, email or account number |
+| `POST /contacts` | owner or admin | Creates one contact (201). A duplicate name for that kind is 409 |
+| `GET /contacts/:id` | anyone | One contact |
+| `PATCH /contacts/:id` | owner or admin | Changes the fields that were sent |
 | `GET /price-items?q=` | anyone | The price list, by code |
 | `GET /jobs?view=&limit=` | anyone | Billable jobs with `contactName`, `view` and `reasons`, and for a job with an invoice its `invoiceView` and `invoiceProblems`; `counts` by view |
 | `GET /board` | anyone | The Jobs board: the work system's jobs from its copy in Flow (`listWork`), with their own `status`, the client name (the Flow customer once linked, else the work system's), lines, and the job's billing `obligation` or null; `statuses` for the columns |

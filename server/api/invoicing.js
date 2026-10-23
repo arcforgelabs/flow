@@ -33,6 +33,7 @@ import {
 import { isHistoryHeld } from '../core/history.js';
 import { invoicePdfDocument, pdfFields, pdfFilename, renderInvoicePdf } from '../core/invoice-pdf.js';
 import { invoiceView, invoiceViews, markNotReady, markReady, sendAgain, sendAllReady } from '../core/sending.js';
+import { createContact, getContact, listContacts, presentContact, updateContact } from '../core/contacts.js';
 import {
   billingObligations, contacts, invoices, INVOICE_STATUSES, organisations, priceItems, TAX_CODES,
 } from '../db/schema.js';
@@ -132,6 +133,7 @@ const ERROR_STATUS = {
   invalid: 400, organisation_required: 400, not_found: 404, not_draft: 409, not_issued: 409,
   never_issued: 409, was_issued: 409, not_ready: 409, live_check_unavailable: 409, conflict: 409,
   accounting_not_connected: 409, accounting_writes_off: 409, accounting_unavailable: 409, accounting_approved: 409,
+  conflict: 409,
 };
 
 function sendError(res, error, log) {
@@ -660,12 +662,37 @@ export function createInvoicingRouter({
 
   router.get('/contacts', ...signedIn, handle(log, async (req, res) => {
     const organisationId = await organisationOf(req);
-    const q = text(req.query.q);
-    const where = [eq(contacts.organisationId, organisationId), eq(contacts.kind, 'customer')];
-    if (q) where.push(ilike(contacts.name, containing(q)));
-    const rows = await db.select({ id: contacts.id, name: contacts.name, email: contacts.email }).from(contacts)
-      .where(and(...where)).orderBy(asc(contacts.name), asc(contacts.id)).limit(limitOf(req.query.limit, 50, 500));
+    const kind = text(req.query.kind);
+    if (kind && !['customer', 'supplier', 'all'].includes(kind)) throw invalid('kind must be customer, supplier or all');
+    const active = text(req.query.active);
+    if (active && !['true', 'false', 'all'].includes(active)) throw invalid('active must be true, false or all');
+    const rows = await listContacts(db, organisationId, {
+      q: text(req.query.q),
+      kind: kind === 'all' ? null : (kind || 'customer'),
+      active: active === 'all' ? null : active === 'false' ? false : true,
+      limit: limitOf(req.query.limit, 50, 500),
+      offset: offsetOf(req.query.offset),
+    });
     res.json({ ok: true, contacts: rows });
+  }));
+
+  router.post('/contacts', ...manager, handle(log, async (req, res) => {
+    const organisationId = await organisationOf(req);
+    const contact = presentContact(await createContact(db, organisationId, req.body ?? {}));
+    log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} created contact ${contact.id}`);
+    res.status(201).json({ ok: true, contact });
+  }));
+
+  router.get('/contacts/:id', ...signedIn, handle(log, async (req, res) => {
+    const organisationId = await organisationOf(req);
+    res.json({ ok: true, contact: presentContact(await getContact(db, organisationId, pathId(req.params.id, 'contact'))) });
+  }));
+
+  router.patch('/contacts/:id', ...manager, handle(log, async (req, res) => {
+    const organisationId = await organisationOf(req);
+    const contact = presentContact(await updateContact(db, organisationId, pathId(req.params.id, 'contact'), req.body ?? {}));
+    log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} updated contact ${contact.id}`);
+    res.json({ ok: true, contact });
   }));
 
   router.get('/price-items', ...signedIn, handle(log, async (req, res) => {

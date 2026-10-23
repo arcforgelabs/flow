@@ -171,6 +171,9 @@ export function resolveXeroSettings(env = process.env) {
     // Free text on Xero records (references, line descriptions) is the lab's
     // own data, and the Import matches on it. On unless the lab turns it off.
     keepReference: readOnOff(env, 'XERO_KEEP_REFERENCE', true),
+    // On unless the lab turns it off: a pending invoice whose client is not
+    // in Xero offers to create that client (docs/CONTACTS.md).
+    createContacts: readOnOff(env, 'XERO_CREATE_CONTACTS', true),
     mirrorPageSize: Math.min(readPositiveInteger(env, 'XERO_MIRROR_PAGE_SIZE', DEFAULT_MIRROR_PAGE_SIZE), MAX_MIRROR_PAGE_SIZE),
     // The share of the day's calls the mirror leaves for drafts and people.
     mirrorReserveFraction: readFraction(env, 'XERO_MIRROR_RESERVE_FRACTION', 0.3),
