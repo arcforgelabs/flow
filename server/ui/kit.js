@@ -411,16 +411,24 @@ export function tileSection(title, cards, { href, more = 'Show all' } = {}) {
 // A dialog that fills the screen has no pixel outside it, so an accessibility
 // check cannot tell it is modal and reads the page underneath. While one is
 // open, every other top-level node is inert. The attribute is what the check
-// reads; the browser's own modal behaviour is unchanged.
-function shieldBehindDialogs() {
-  const top = [...document.querySelectorAll('dialog[open]')].at(-1) ?? null;
+// reads; the browser's own modal behaviour is unchanged. `ignore` is a dialog
+// that is closing: a browser may still mark it open while it fires close.
+function shieldBehindDialogs(ignore = null) {
+  const top = [...document.querySelectorAll('dialog[open]')].filter((el) => el !== ignore).at(-1) ?? null;
   for (const child of document.body.children) {
     if (top && child !== top) child.setAttribute('inert', '');
     else child.removeAttribute('inert');
   }
 }
 // Node tests import this module and have no HTMLDialogElement. The wrap only
-// matters in the browser, where showModal and close are the three call sites.
+// matters in the browser. showModal is patched because nothing else announces
+// that a dialog opened. close() drops the shield for a dialog closed in
+// script. A form with method="dialog", and Escape, close the dialog inside
+// the browser and never call close(). Chrome then fires toggle, and close,
+// on a later turn. Until one of those runs, the inert attribute would stay
+// and no click would land (an invoice Delete did this, until a reload).
+// close does not bubble, so the listeners are on the capture path. A popover
+// toggle is ignored: only a dialog clears the shield.
 if (typeof HTMLDialogElement !== 'undefined') {
   const openDialog = HTMLDialogElement.prototype.showModal;
   const closeDialog = HTMLDialogElement.prototype.close;
@@ -431,9 +439,16 @@ if (typeof HTMLDialogElement !== 'undefined') {
   };
   HTMLDialogElement.prototype.close = function close(...args) {
     const result = closeDialog.apply(this, args);
-    shieldBehindDialogs();
+    shieldBehindDialogs(this);
     return result;
   };
+  const onDialogClosed = (event) => {
+    if (event.target instanceof HTMLDialogElement) shieldBehindDialogs(event.target);
+  };
+  document.addEventListener('close', onDialogClosed, true);
+  document.addEventListener('toggle', (event) => {
+    if (event.newState === 'closed') onDialogClosed(event);
+  }, true);
 }
 
 // The trail above a page one level down: crumbs(['/integrations', 'Integrations'], 'Xero').
