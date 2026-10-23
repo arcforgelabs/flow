@@ -37,6 +37,13 @@ export const CHECK_LIMIT = 500;
 const WORKER_BATCH = 25;
 const WORKER_EVERY_MS = 30 * 1000;
 const LEASE_MS = 15 * 60 * 1000;
+// One error report names this many refused invoices. The count still says
+// how many the accounting system refused.
+const REFUSAL_REPORT_CAP = 5;
+const REFUSAL_MESSAGE_LIMIT = 160;
+const INVOICE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const INVOICE_NUMBER = /^[A-Za-z0-9-]{1,32}$/;
+const REFUSAL_CODE = /^[a-z0-9_]{1,64}$/i;
 // Outcomes that mean the accounting system holds the invoice.
 const SENT = new Set(['created', 'reconciled', 'existing', 'already_in_xero']);
 
@@ -339,14 +346,65 @@ function unqueue(db, organisationId, invoiceId) {
     .where(and(eq(invoices.organisationId, organisationId), eq(invoices.id, invoiceId), eq(invoices.status, 'draft')));
 }
 
+// The short refusal message for an error report. An email address is dropped,
+// and so is a double-quoted name: Flow's own messages put a customer name in
+// quotes. Single quotes stay, because the accounting system quotes an account
+// code that way. The invoice's own problem, shown to a person, keeps the
+// full message.
+function refusalMessage(message) {
+  let text = String(message ?? '')
+    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, '')
+    .replace(/"[^"\n]{0,240}"/g, '')
+    .replace(/\s+/g, ' ')
+    .replace(/\s+([.,;:])/g, '$1')
+    .trim();
+  // Dropping the address and the quoted name can leave an empty "See for."
+  text = text.replace(/(?:^|\.\s*)See for\.$/i, (match) => (match.startsWith('.') ? '.' : '')).trim();
+  return text.slice(0, REFUSAL_MESSAGE_LIMIT);
+}
+
+// One refused invoice, as the error report may name it. Anything that is not
+// an id, a number or a code is left out.
+function refusalFact(row, error) {
+  const invoiceId = INVOICE_ID.test(row?.id ?? '') ? row.id : null;
+  if (!invoiceId) return null;
+  const number = INVOICE_NUMBER.test(row?.number ?? '') ? row.number : null;
+  const code = REFUSAL_CODE.test(error?.code ?? '') ? error.code : 'send_failed';
+  const message = refusalMessage(error?.message);
+  return { invoiceId, ...(number ? { number } : {}), code, ...(message ? { message } : {}) };
+}
+
+function formatRefusal(item) {
+  const fact = refusalFact(
+    { id: item?.invoiceId, number: item?.number },
+    { code: item?.code, message: item?.message },
+  );
+  if (!fact) return null;
+  const who = fact.number ? `${fact.number} (${fact.invoiceId})` : fact.invoiceId;
+  return fact.message ? `${who} ${fact.code}: ${fact.message}` : `${who} ${fact.code}`;
+}
+
+// The line the error service gets when the accounting system refuses invoices.
+// `result` is the send pass summary (`failed`, `refusals`).
+export function refusalReport(result) {
+  const refusals = Array.isArray(result?.refusals) ? result.refusals : [];
+  const count = Number.isInteger(result?.failed) && result.failed > 0 ? result.failed : refusals.length;
+  const shown = refusals.slice(0, REFUSAL_REPORT_CAP).map(formatRefusal).filter(Boolean);
+  const hidden = Math.max(0, refusals.length - REFUSAL_REPORT_CAP);
+  const detail = [...shown, ...(hidden ? [`and ${hidden} more`] : [])].join('; ');
+  const word = count === 1 ? 'invoice' : 'invoices';
+  return `[sending] the accounting system refused ${count} ${word}${detail ? `: ${detail}` : ''}`;
+}
+
 // One pass of the send worker: up to `limit` queued invoices, oldest first.
 export async function sendQueued(db, organisationId, { accounting, limit = WORKER_BATCH }) {
-  const rows = await db.select({ id: invoices.id, by: invoices.sendRequestedBy }).from(invoices)
+  const rows = await db.select({ id: invoices.id, number: invoices.number, by: invoices.sendRequestedBy }).from(invoices)
     .where(and(eq(invoices.organisationId, organisationId), eq(invoices.status, 'issued'), eq(invoices.sendState, 'queued')))
     .orderBy(asc(invoices.sendUpdatedAt), asc(invoices.id))
     .limit(limit);
   const summary = { sent: 0, failed: 0, waiting: 0 };
   for (const [by, group] of Map.groupBy(rows, (r) => r.by ?? null)) {
+    const known = new Map(group.map((row) => [row.id, row]));
     const { invoices: results } = await accounting.capabilities.pushInvoices({
       organisationId, invoiceIds: group.map((r) => r.id), pushedBy: by,
     });
@@ -362,6 +420,8 @@ export async function sendQueued(db, organisationId, { accounting, limit = WORKE
         await settle(db, organisationId, result.invoiceId, { sendState: 'failed', sendError: { code: error.code, message: error.message } });
         summary.failed += 1;
         summary.refused = [...new Set([...(summary.refused ?? []), error.code])];
+        const fact = refusalFact(known.get(result.invoiceId), error);
+        if (fact) summary.refusals = [...(summary.refusals ?? []), fact];
       }
     }
   }
@@ -412,9 +472,10 @@ export function createSendWorker({ db, integrations, log = console, timers = { s
         if (!ran) return;
         const line = `[sending] ${ran.outcome}: ${JSON.stringify(ran.job.result ?? ran.job.lastError ?? {})}`;
         // An invoice the accounting system refused waits in Problem for a
-        // person; it is reported once, when it is refused.
+        // person. The error report names which invoices and why, once, when
+        // they are refused. The host log keeps the same pass on warn.
         if (ran.outcome === 'dead') log.error?.('[sending] the send run gave up after its last attempt');
-        if (ran.job.result?.failed) log.error?.('[sending] the accounting system refused an invoice');
+        if (ran.job.result?.failed) log.error?.(refusalReport(ran.job.result));
         (ran.outcome === 'succeeded' && !ran.job.result?.failed ? log.info : log.warn)?.(line);
       } catch (error) {
         log.error?.(`[sending] ${error?.code ?? 'error'}: ${error?.message ?? error}`);
@@ -436,5 +497,6 @@ export function createSendWorker({ db, integrations, log = console, timers = { s
       timer = null;
       await running;
     },
+    tick,
   };
 }

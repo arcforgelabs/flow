@@ -8,7 +8,7 @@ import { createContact, createOrganisation, createPriceItem } from '../server/co
 import { createDraftInvoice, reviseInvoice, updateDraftInvoice } from '../server/core/invoices.js';
 import { observeJob } from '../server/core/ledger.js';
 import { READ_BEFORE_ACT_MS, READS_PER_PASS } from '../server/core/read-before-act.js';
-import { draftProblems, invoiceViews, markNotReady, markReady, sendAgain, sendAllReady, sendQueued } from '../server/core/sending.js';
+import { createSendWorker, draftProblems, invoiceViews, markNotReady, markReady, refusalReport, sendAgain, sendAllReady, sendQueued } from '../server/core/sending.js';
 import { billingObligations, invoices } from '../server/db/schema.js';
 import { createRegistry } from '../server/integrations/port.js';
 import { createXeroAdapter } from '../server/integrations/xero/index.js';
@@ -29,6 +29,27 @@ test('Flow checks its own draft: lines, an amount, a price item on every line', 
   assert.deepEqual(draftProblems({ totalCents: 100 }, [{ position: 1, priceItemId: 'x' }]), []);
 });
 
+test('a refusal report names each invoice, its code and a short message, without a name or an email', () => {
+  const id = '11111111-1111-4111-8111-111111111111';
+  const message = 'Account code \'999\' is not a valid code for this document. See accounts@example.test for "Example Practice".';
+  const one = refusalReport({
+    failed: 1,
+    refusals: [{ invoiceId: id, number: 'INV-0002', code: 'xero_validation_failed', message, contact: 'Example Practice', email: 'practice@example.test' }],
+  });
+  assert.equal(one, `[sending] the accounting system refused 1 invoice: INV-0002 (${id}) xero_validation_failed: Account code '999' is not a valid code for this document.`);
+  assert.equal(one.includes('Example Practice'), false);
+  assert.equal(one.includes('@'), false);
+
+  const ids = [1, 2, 3, 4, 5, 6].map((n) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`);
+  const many = refusalReport({
+    failed: ids.length,
+    refusals: ids.map((invoiceId, index) => ({ invoiceId, number: `INV-000${index + 1}`, code: 'xero_validation_failed', message: 'Account code \'200\' is not a valid code.' })),
+  });
+  assert.equal(many.includes(ids[5]), false);
+  assert.match(many, /^\[sending\] the accounting system refused 6 invoices: INV-0001 \(00000000-0000-4000-8000-000000000001\) xero_validation_failed: Account code '200' is not a valid code\.; .* and 1 more$/);
+  assert.equal(many.includes('INV-0006'), false);
+});
+
 test('the Xero adapter offers what Send all ready needs', () => {
   const { capabilities } = createXeroAdapter();
   for (const name of ['pushInvoices', 'checkDrafts', 'sendStatus']) assert.equal(typeof capabilities[name], 'function', name);
@@ -41,6 +62,7 @@ function fakeAccounting() {
     status: { connected: true, writesAllowed: true },
     checks: new Map(),
     outcomes: new Map(),
+    errors: new Map(),
     // Each issued invoice's stage there (invoiceStages).
     stages: new Map(),
     pushed: [],
@@ -58,7 +80,10 @@ function fakeAccounting() {
         return {
           invoices: invoiceIds.map((invoiceId) => {
             const outcome = fake.outcomes.get(invoiceId) ?? 'created';
-            if (outcome === 'failed') return { invoiceId, outcome, error: { code: 'xero_contact_missing', message: 'No Xero contact is named "Example Practice".' } };
+            if (outcome === 'failed') {
+              const error = fake.errors.get(invoiceId) ?? { code: 'xero_contact_missing', message: 'No Xero contact is named "Example Practice".' };
+              return { invoiceId, outcome, error };
+            }
             if (outcome === 'not_tried') return { invoiceId, outcome, error: { code: 'xero_rate_limited', message: 'Wait.' } };
             return { invoiceId, outcome };
           }),
@@ -350,13 +375,18 @@ describe('ready, problem and send', { skip: skipWithoutDatabase }, () => {
     assert.deepEqual(views.ready, []);
 
     const sent = await sendQueued(handle.db, lab.id, { accounting: fake.adapter });
-    assert.deepEqual(sent, { sent: 1, failed: 1, waiting: 1, refused: ['xero_contact_missing'] });
+    const refusedNumber = (await row(two.id)).number;
+    assert.deepEqual(sent, {
+      sent: 1, failed: 1, waiting: 1, refused: ['xero_contact_missing'],
+      refusals: [{ invoiceId: two.id, number: refusedNumber, code: 'xero_contact_missing', message: 'No Xero contact is named.' }],
+    });
     assert.ok(fake.pushed.every(([, by]) => by === owner.id));
     assert.equal((await row(one.id)).sendState, 'sent');
     assert.equal((await row(three.id)).sendState, 'queued');
     const failed = await row(two.id);
     assert.equal(failed.sendState, 'failed');
     assert.equal(failed.sendError.code, 'xero_contact_missing');
+    assert.equal(failed.sendError.message, 'No Xero contact is named "Example Practice".');
     views = await invoiceViews(handle.db, lab.id, { accounting: fake.adapter });
     assert.deepEqual(views.problems.get(two.id).map((p) => p.code), ['xero_contact_missing']);
 
@@ -444,5 +474,63 @@ describe('Send all ready over the API', { skip: skipWithoutDatabase }, () => {
     assert.equal(res.body.code, 'accounting_not_connected');
     fake.status = { connected: true, writesAllowed: true };
     assert.equal((await call('/invoices/send-again', { method: 'POST', body: { invoiceIds: ['nope'] } })).status, 400);
+  });
+});
+
+describe('the send worker reports a refusal', { skip: skipWithoutDatabase }, () => {
+  let handle;
+  let lab;
+  let owner;
+
+  before(async () => {
+    handle = await freshDatabase();
+    owner = await seedFirstOwner(handle.db, 'owner@example.test');
+    lab = await createOrganisation(handle.db, { name: 'Example Lab' });
+  });
+  after(async () => handle?.close());
+
+  test('the error names the refused invoice and the accounting system\'s reason, and the invoice stays in Problem', async () => {
+    const practice = await createContact(handle.db, lab.id, { kind: 'customer', name: 'Example Practice', email: 'practice@example.test' });
+    const crown = await createPriceItem(handle.db, lab.id, { code: 'CRN', name: 'Crown', unitAmountCents: 22000 });
+    const draft = (reference) => createDraftInvoice(handle.db, lab.id, {
+      contactId: practice.id, reference, lines: [{ priceItemId: crown.id, quantity: 1 }],
+    });
+    const one = await draft('CASE-1');
+    const two = await draft('CASE-2');
+    const fake = fakeAccounting();
+    const reason = 'Account code \'999\' is not a valid code for this document. See accounts@example.test for "Example Practice".';
+    fake.outcomes.set(two.id, 'failed');
+    fake.errors.set(two.id, { code: 'xero_validation_failed', message: reason, details: { contact: practice.name, email: practice.email } });
+    await sendAllReady(handle.db, lab.id, { accounting: fake.adapter, personId: owner.id, issueDate: ISSUE_DATE });
+    const number = (await handle.db.select().from(invoices).where(eq(invoices.id, two.id)))[0].number;
+
+    const errors = [];
+    const worker = createSendWorker({
+      db: handle.db,
+      integrations: { with: (name) => (name === 'pushInvoices' ? [fake.adapter] : []) },
+      log: { info() {}, warn() {}, error(line) { errors.push(String(line)); } },
+      timers: { setTimeout: () => ({ unref() {} }), clearTimeout() {} },
+    });
+    worker.start();
+    await worker.tick();
+
+    const report = `[sending] the accounting system refused 1 invoice: ${number} (${two.id}) xero_validation_failed: Account code '999' is not a valid code for this document.`;
+    assert.deepEqual(errors, [report]);
+    assert.equal(report.includes('Example Practice'), false);
+    assert.equal(report.includes('CASE-1') || report.includes('CASE-2'), false);
+    assert.equal(report.includes('@'), false);
+
+    const failed = (await handle.db.select().from(invoices).where(eq(invoices.id, two.id)))[0];
+    assert.equal(failed.sendState, 'failed');
+    assert.equal(failed.sendError.message, reason);
+    const views = await invoiceViews(handle.db, lab.id, { accounting: fake.adapter });
+    assert.equal(views.problems.get(two.id)[0].message, reason);
+    assert.equal((await handle.db.select().from(invoices).where(eq(invoices.id, one.id)))[0].sendState, 'sent');
+
+    fake.outcomes.delete(two.id);
+    await sendAgain(handle.db, lab.id, { accounting: fake.adapter, personId: owner.id });
+    await worker.tick();
+    assert.deepEqual(errors, [report]);
+    await worker.stop();
   });
 });

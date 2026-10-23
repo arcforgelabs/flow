@@ -147,7 +147,10 @@ asks first. There is no separate send bar. Then:
    job queue. For Xero, each invoice goes as a Xero draft by default; the
    customer's send mode can make it an approved invoice that Xero emails.
 6. A sent invoice leaves the queue. A refused invoice moves to Pending.
-   An invoice that waits for Xero's call limits stays queued.
+   The send worker reports that refusal once: how many, each invoice's
+   number and id (five at most), and the accounting system's code and short
+   message. The report has no customer name and no email address. An
+   invoice that waits for Xero's call limits stays queued.
 7. With an integration on, every tab has a **Linked** column: one icon for
    each connected system (Seazona, Xero), never one column per system. A dot
    gives the state of this invoice's link: green linked and in step, amber
