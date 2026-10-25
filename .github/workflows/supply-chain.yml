@@ -1,0 +1,72 @@
+name: Supply Chain
+
+# The npm supply-chain kit. ci.yml still runs npm audit for production
+# dependencies. This workflow is not a required check on main
+# (.github/rulesets/main.json).
+
+on:
+  pull_request:
+    paths:
+      - "package.json"
+      - "package-lock.json"
+      # The kit itself, so a change to the check is checked. A pull request
+      # that only edits the workflow or the lock-file script still runs it.
+      - ".github/workflows/supply-chain.yml"
+      - "scripts/check-npm-lock.js"
+  push:
+    branches: [main]
+  schedule:
+    # Monday 14:00 UTC, the same day Dependabot opens its weekly updates.
+    - cron: "0 14 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: supply-chain-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  supply-chain:
+    name: supply-chain
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24.22.1
+          cache: npm
+
+      - name: Check the lock file
+        run: node scripts/check-npm-lock.js
+
+      - name: Review new dependencies
+        id: dependency-review
+        if: github.event_name == 'pull_request'
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          # high and critical. development and unknown are included so a new
+          # devDependency is reviewed too; the action's default is runtime only.
+          fail-on-severity: high
+          fail-on-scopes: runtime, development, unknown
+
+      # The action prints a dependency with no licence and still succeeds.
+      # NOASSERTION is reported in the same unlicensed list.
+      - name: Refuse a new dependency with no licence
+        if: github.event_name == 'pull_request'
+        env:
+          DEPENDENCY_REVIEW_LICENCES: ${{ steps.dependency-review.outputs.invalid-license-changes }}
+        run: node scripts/check-npm-lock.js --unlicensed
+
+      - name: Install without scripts
+        run: npm ci --ignore-scripts
+
+      - name: Check registry signatures
+        run: npm audit signatures
