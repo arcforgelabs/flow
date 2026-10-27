@@ -109,21 +109,23 @@ export async function startFlow({ port = 0 } = {}) {
   }
 
   // Practice portal: Northside Dental's jobs, on, with each project owner
-  // on that team. A second member gives every owner a row menu.
+  // on that team. A second member gives every owner a row menu. These cases
+  // are not the board's work-system jobs: a ledger row on one of those adds
+  // "Mark ready to invoice" to the lab job panel.
   let portalJobId = null;
-  for (let i = 0; i < 42; i += 1) {
+  for (let i = 0; i < 12; i += 1) {
     const product = PRODUCTS[i % PRODUCTS.length];
     const row = await observeJob(db, lab.id, {
       sourceSystem: 'worksystem',
-      sourceJobRef: `CASE-${48200 + i}`,
-      caseRef: String(48200 + i),
-      contactId: contacts[i % contacts.length].id,
+      sourceJobRef: `PORTAL-${91000 + i}`,
+      caseRef: String(91000 + i),
+      contactId: contacts[0].id,
       practitioner: PRACTITIONERS[i % PRACTITIONERS.length],
       jobDate: day(10 + (i % 20)),
       sourceStatus: STAGES[i % STAGES.length],
       lines: [{ description: product[1], unitAmountCents: product[2], itemCode: product[0] }],
     });
-    if (i % CLINICS.length === 0 && !portalJobId) portalJobId = row.id;
+    if (!portalJobId) portalJobId = row.id;
   }
   await db.insert(invoicingSettings).values({
     organisationId: lab.id,
