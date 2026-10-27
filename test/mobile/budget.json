@@ -553,9 +553,6 @@
  "phone-l-webkit-harbour-light/custom-fields": {
   "small": 24
  },
- "phone-l-webkit-harbour-light/integration-xero": {
-  "small": 3
- },
  "phone-l-webkit-harbour-light/integrations": {
   "small": 4
  },
@@ -614,9 +611,6 @@
  "phone-l-webkit-meridian-dark/custom-fields": {
   "small": 24
  },
- "phone-l-webkit-meridian-dark/integration-xero": {
-  "small": 3
- },
  "phone-l-webkit-meridian-dark/integrations": {
   "small": 4
  },
@@ -674,9 +668,6 @@
  },
  "phone-l-webkit-meridian-light/custom-fields": {
   "small": 24
- },
- "phone-l-webkit-meridian-light/integration-xero": {
-  "small": 3
  },
  "phone-l-webkit-meridian-light/integrations": {
   "small": 4
@@ -910,9 +901,6 @@
  "phone-s-webkit-harbour-light/custom-fields": {
   "small": 18
  },
- "phone-s-webkit-harbour-light/integration-xero": {
-  "small": 2
- },
  "phone-s-webkit-harbour-light/integrations": {
   "small": 4
  },
@@ -971,9 +959,6 @@
  "phone-s-webkit-meridian-dark/custom-fields": {
   "small": 18
  },
- "phone-s-webkit-meridian-dark/integration-xero": {
-  "small": 2
- },
  "phone-s-webkit-meridian-dark/integrations": {
   "small": 4
  },
@@ -1031,9 +1016,6 @@
  },
  "phone-s-webkit-meridian-light/custom-fields": {
   "small": 18
- },
- "phone-s-webkit-meridian-light/integration-xero": {
-  "small": 2
  },
  "phone-s-webkit-meridian-light/integrations": {
   "small": 4
@@ -1096,9 +1078,6 @@
    "aria-required-children": 5,
    "color-contrast": 4
   }
- },
- "phone-webkit-harbour-light/integration-xero": {
-  "small": 3
  },
  "phone-webkit-harbour-light/integrations": {
   "small": 4,
@@ -1213,9 +1192,6 @@
    "color-contrast": 4
   }
  },
- "phone-webkit-meridian-dark/integration-xero": {
-  "small": 3
- },
  "phone-webkit-meridian-dark/integrations": {
   "small": 4,
   "axe": {
@@ -1324,9 +1300,6 @@
    "aria-required-children": 5,
    "color-contrast": 4
   }
- },
- "phone-webkit-meridian-light/integration-xero": {
-  "small": 3
  },
  "phone-webkit-meridian-light/integrations": {
   "small": 4,
@@ -1663,7 +1636,7 @@
   "small": 2
  },
  "tablet-webkit-harbour-light/integration-xero": {
-  "small": 5
+  "small": 2
  },
  "tablet-webkit-harbour-light/integrations": {
   "small": 6
@@ -1736,7 +1709,7 @@
   "small": 2
  },
  "tablet-webkit-meridian-dark/integration-xero": {
-  "small": 5
+  "small": 2
  },
  "tablet-webkit-meridian-dark/integrations": {
   "small": 6
@@ -1809,7 +1782,7 @@
   "small": 2
  },
  "tablet-webkit-meridian-light/integration-xero": {
-  "small": 5
+  "small": 2
  },
  "tablet-webkit-meridian-light/integrations": {
   "small": 6
