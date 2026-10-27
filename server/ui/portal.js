@@ -99,6 +99,7 @@ function drawNav() {
 
 function showJoin() {
   setState('signed-out');
+  $('auth-title').textContent = 'Join';
   $('sign-in').hidden = true;
   $('join-link').hidden = true;
   const host = $('join');
@@ -317,9 +318,45 @@ function route() {
   return renderJobs(main);
 }
 
+function installMenu() {
+  const toggle = $('menu-toggle');
+  const shell = $('shell');
+  if (!toggle || !shell || toggle.dataset.ready) return;
+  toggle.dataset.ready = 'true';
+  const mark = document.createElement('span');
+  mark.className = 'fx-toggle__mark';
+  mark.setAttribute('aria-hidden', 'true');
+  mark.innerHTML = document.querySelector('.fx-side__head .fx-brand svg')?.outerHTML ?? '';
+  const icon = document.createElement('span');
+  icon.className = 'fx-ico fx-toggle__icon';
+  icon.setAttribute('aria-hidden', 'true');
+  icon.innerHTML = '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M9.5 4v16"/></svg>';
+  toggle.replaceChildren(mark, icon);
+  const narrow = window.matchMedia('(max-width: 820px)');
+  const sync = () => {
+    const open = shell.hasAttribute('data-menu-open');
+    toggle.setAttribute('aria-expanded', String(open));
+    const label = open ? 'Close the menu' : 'Open the menu';
+    toggle.setAttribute('aria-label', label);
+    toggle.title = label;
+  };
+  toggle.addEventListener('click', () => {
+    if (!narrow.matches) return;
+    shell.toggleAttribute('data-menu-open');
+    sync();
+  });
+  document.addEventListener('click', (event) => {
+    if (!shell.hasAttribute('data-menu-open') || event.target.closest('#menu-toggle')) return;
+    shell.removeAttribute('data-menu-open');
+    sync();
+  });
+  sync();
+}
+
 async function signedIn() {
   me = await api('/portal/api/me');
   setState('signed-in');
+  installMenu();
   window.Clerk.mountUserButton?.($('user-button'), { appearance: appearance() });
   route();
 }
@@ -360,5 +397,4 @@ async function start() {
 }
 
 window.addEventListener('popstate', () => { if (me) route(); });
-$('menu-toggle')?.addEventListener('click', () => document.body.toggleAttribute('data-nav'));
 start();

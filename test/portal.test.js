@@ -21,7 +21,7 @@ const ADA = 'ada@example.test';
 const NORTH_EMAIL = 'north@example.test';
 const QUIET = { info() {}, warn() {}, error() {} };
 
-const portalDir = fileURLToPath(new URL('../server/portal/', import.meta.url));
+const portalDir = new URL('../server/portal/', import.meta.url);
 
 function leaks(body, secrets) {
   const text = JSON.stringify(body ?? null);
@@ -50,7 +50,7 @@ function portalApp(handle, clerk, portalAuth, limits = {}) {
 }
 
 test('portal job reads go through the scoped helper', () => {
-  const files = readdirSync(portalDir).filter((name) => name.endsWith('.js') && name !== 'scope.js');
+  const files = readdirSync(fileURLToPath(portalDir)).filter((name) => name.endsWith('.js') && name !== 'scope.js');
   assert.ok(files.includes('routes.js'));
   for (const name of files) {
     const source = readFileSync(new URL(name, portalDir), 'utf8');
