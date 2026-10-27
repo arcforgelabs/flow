@@ -556,6 +556,15 @@ export async function renderInvoiceList(main, ui) {
       ...(id === 'pending' && counts?.pending ? { 'data-tone': 'danger' } : {}),
       onclick: () => { if (state.status !== id) openTab(id); },
     }, label, h('span', { class: 'fx-tabs__count' }, String(counts?.[id] ?? 0)))));
+    // On a phone the tabs scroll: keep the selected one in view, so the page
+    // says which tab it shows (it opens on the tab used last).
+    const selected = tabs.querySelector('[aria-selected="true"]');
+    requestAnimationFrame(() => {
+      if (!selected?.isConnected) return;
+      const [tab, bar] = [selected.getBoundingClientRect(), tabs.getBoundingClientRect()];
+      if (tab.right > bar.right) tabs.scrollLeft += tab.right - bar.right;
+      else if (tab.left < bar.left) tabs.scrollLeft -= bar.left - tab.left;
+    });
   }
 
   async function draw(answer) {
