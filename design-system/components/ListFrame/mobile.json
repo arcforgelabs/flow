@@ -12,6 +12,7 @@
   },
   "touch": 44,
   "pageOverflow": "none",
+  "scrollX": ".fx-frame, .fx-board, .fx-board-tabs",
   "screens": [
     "jobs-board",
     "jobs-list",

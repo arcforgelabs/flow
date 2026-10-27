@@ -10,7 +10,10 @@
 // - cut: text cut with "…" that has no full text on hover or press.
 // - toolbar: where the list toolbar sits (it must not move between lists).
 // - rows: list rows wholly on the first screen.
-export function measure(min) {
+// - sideways: parts that scroll sideways that no card lets scroll (a card's
+//   mobile.json `scrollX`; CardRows never). A table cut at the right is one.
+// - split: notices whose title sits on a line of its own, away from its text.
+export function measure({ min, scrollX = '' }) {
   const describe = (el) => {
     const label = el.getAttribute('aria-label') || el.getAttribute('title') || el.textContent.trim().replace(/\s+/g, ' ').slice(0, 24);
     const cls = typeof el.className === 'string' && el.className.trim() ? `.${el.className.trim().split(/\s+/)[0]}` : '';
@@ -48,7 +51,26 @@ export function measure(min) {
     if (box.height && box.top >= 0 && box.bottom <= window.innerHeight) rows += 1;
   }
 
+  const sideways = [];
+  for (const el of document.querySelectorAll('body *')) {
+    if (el.scrollWidth <= el.clientWidth + 1) continue;
+    if (!['auto', 'scroll'].includes(getComputedStyle(el).overflowX)) continue;
+    if (!onScreen(el.getBoundingClientRect())) continue;
+    if (scrollX && el.matches(scrollX)) continue;
+    sideways.push(describe(el));
+  }
+
+  const split = [];
+  for (const note of document.querySelectorAll('.fx-notice')) {
+    const [title, text] = [note.querySelector(':scope > strong'), note.querySelector(':scope > span:not(.fx-notice__short)')];
+    if (!title || !text || !onScreen(note.getBoundingClientRect())) continue;
+    const [a, b] = [title.getClientRects()[0], text.getClientRects()[0]];
+    if (a && b && b.top >= a.bottom - 1) split.push(describe(note));
+  }
+
   return {
+    sideways: [...new Set(sideways)].sort(),
+    split: [...new Set(split)].sort(),
     overflow: Math.max(0, document.documentElement.scrollWidth - window.innerWidth),
     small: [...new Set(small)].sort(),
     cut: [...new Set(cut)].sort(),

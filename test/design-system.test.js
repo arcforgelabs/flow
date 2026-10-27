@@ -48,6 +48,8 @@ test('every visible card has phone rules, and the browser reads those rules', ()
     const raw = JSON.parse(read(file));
     assert.equal(raw.touch, 44, `${name} touch`);
     assert.equal(raw.pageOverflow, 'none', `${name} page overflow`);
+    // Only a card that names it may scroll sideways on a phone (the phone suite's sideways check).
+    if ('scrollX' in raw) assert.ok(typeof raw.scrollX === 'string' && raw.scrollX.startsWith('.'), `${name} scrollX is a selector`);
     assert.ok(raw.direction && raw.phone?.layout && raw.tablet?.layout && raw.desk?.layout, `${name} names a direction and a layout at each width`);
     const code = /^Code: (.+)$/m.exec(read(`design-system/components/${name}/README.md`));
     const sources = [...code[1].matchAll(/server\/ui\/[\w.-]+\.js/g)].map((match) => read(match[0])).join('\n');
