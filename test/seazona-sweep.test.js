@@ -253,6 +253,30 @@ describe('Seazona sweep (issue #126)', { skip: skipWithoutDatabase }, () => {
     assert.equal((await getOrder('ORD-9002')).status, 'Delivered');
   });
 
+  test('an invoice changed before the invoice lane first read is not a miss', async () => {
+    // FLOW-HORIZON-K: the invoice lane's first run reads from the start of
+    // its UTC day (SEAZONA_INVOICE_LOOKBACK_DAYS=0). An invoice last changed
+    // the day before was never the lane's to read, so the sweep must not
+    // count it as one the lane missed.
+    await db.execute(sql`truncate seazona_invoices, seazona_clients, seazona_lane_state, seazona_sweep_findings, seazona_api_requests, seazona_api_governor`);
+    state.invoices = [invoice(1), invoice(3, { lastModified: '2026-09-19T15:00:00' })];
+    clock.set('2026-09-20T12:00:00.000Z');
+    const env = { SEAZONA_INVOICE_LOOKBACK_DAYS: '0' };
+    const seeded = await run({ env, only: ['invoices', 'clients'] });
+    assert.equal(seeded.ok, true, JSON.stringify(seeded));
+    clock.set('2026-10-01T12:00:00.000Z');
+    await run({ env, only: ['invoices', 'clients'] });
+    // A real miss: changed after the lane's first read, behind its cursor.
+    state.invoices.push(invoice(4, { lastModified: '2026-09-25T10:00:00' }));
+
+    const result = await sweep(env);
+    assert.equal(result.ok, true, JSON.stringify(result));
+    assert.deepEqual(result.found, { changed: 0, created: 1, deleted: 0, missing: 0 });
+    assert.deepEqual((await findings()).map((row) => [row.resource, row.recordKey, row.kind]), [['invoices', '7004', 'created']]);
+    const [list] = seazona.calls.filter((call) => call.path === 'invoices/');
+    assert.equal(list.query.lastModified, '2026-09-20T00:00:00.000Z', 'the sweep starts where the lane first read');
+  });
+
   test('Seazona times ahead of Flow by more than the overlap are shown and reported once', async () => {
     state.invoices[0] = invoice(1, { total: 220, lastModified: '2026-10-01T13:00:00' });
     await run({ only: ['invoices'] });
