@@ -1,6 +1,8 @@
 import { fileURLToPath } from 'node:url';
 import { sql } from 'drizzle-orm';
+import { listReview } from '../../core/review.js';
 import { guardAlerts } from '../call-guard.js';
+import { CONTACT_DIFFERS } from './contact-sync.js';
 import { deleteXeroInvoice } from './delete-invoice.js';
 import { createCustomer } from './create-contact.js';
 import { checkDrafts, documentFacts, pushInvoice, pushInvoices } from './drafts.js';
@@ -18,7 +20,7 @@ import { readChangesFirst } from './webhooks.js';
 // XERO_MODE says which Xero it acts on. Its tables are created only while it
 // is on (docs/INTEGRATIONS.md).
 
-export const XERO_TABLES = Object.freeze(['xero_connections', 'xero_contacts', 'xero_items', 'xero_sync_runs', 'xero_invoice_pushes', 'xero_payment_cursors', 'xero_invoices', 'xero_credit_notes', 'xero_payments', 'xero_mirror_cursors', 'xero_call_guard', 'xero_calls', 'xero_webhook_events', 'xero_daily_checks', 'xero_invoice_links', 'xero_import_settings']);
+export const XERO_TABLES = Object.freeze(['xero_connections', 'xero_contacts', 'xero_items', 'xero_sync_runs', 'xero_invoice_pushes', 'xero_payment_cursors', 'xero_invoices', 'xero_credit_notes', 'xero_payments', 'xero_mirror_cursors', 'xero_call_guard', 'xero_calls', 'xero_webhook_events', 'xero_daily_checks', 'xero_invoice_links', 'xero_import_settings', 'xero_contact_sync']);
 
 // What an owner enters in Settings, Integrations (server/integrations/setup.js).
 // The refresh token's key comes from Flow's secrets key.
@@ -113,7 +115,18 @@ export function createXeroAdapter({ runtime: given = null } = {}) {
       async alerts({ organisationId }) {
         const connection = await readConnection(database, organisationId);
         if (!connection || connection.mode !== current().settings.mode) return [];
-        return guardAlerts('Xero', await current().guardFor(database).status(connection.tenantId));
+        const alerts = guardAlerts('Xero', await current().guardFor(database).status(connection.tenantId));
+        // Contacts both sides changed (Two-way edits, contact-sync.js).
+        const differ = await listReview(database, organisationId, { kind: CONTACT_DIFFERS, limit: 500 });
+        if (differ.length) {
+          alerts.push({
+            id: 'contacts-differ',
+            tone: 'warn',
+            title: `${differ.length === 1 ? '1 contact differs' : `${differ.length} contacts differ`} in Flow and Xero. Open the contact, then make both sides the same.`,
+            members: differ.map((item) => `${item.flowId}:${JSON.stringify(item.evidence?.fields?.map((f) => f.field) ?? [])}`),
+          });
+        }
+        return alerts;
       },
       // One issued invoice to a Xero draft (drafts.js). The Flow invoice id
       // and version are the idempotency key.

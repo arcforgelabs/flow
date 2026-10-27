@@ -119,7 +119,9 @@ connects again.
 Flow's own contacts stay in `contacts` (`docs/CONTACTS.md`). Xero's contacts
 are copied into `xero_contacts`. A sync replaces that copy and does not
 change Flow's contacts. Flow does not change a Xero contact that already
-exists.
+exists, unless Two-way edits is on: then a Flow edit of a linked contact goes
+to Xero (`docs/CONTACTS.md`, "Two-way edits"; `xero/contact-sync.js`). With
+Add Xero clients on, each Xero client becomes a Flow contact.
 
 When Create missing clients is on, an owner or admin creates the missing
 Xero contact from a Flow contact (`POST /api/xero/contacts` with

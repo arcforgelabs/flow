@@ -22,6 +22,10 @@ import { refreshReferences } from './references.js';
 //     on the Invoices page, until a person changes it or moves it back.
 //   reference_from_rule: a draft made from a job keeps the Reference the
 //     lab's Reference rule gives (references.js), as the job's fields arrive.
+//   add_contacts, add_xero_contacts: a customer of the work system, or of the
+//     accounting system, that no Flow contact is named like becomes one.
+//   sync_contact_edits: contact edits on either side of the Xero link reach
+//     the other (server/integrations/xero/contact-sync.js).
 
 const BATCH = 500;
 
@@ -79,6 +83,26 @@ export const AUTOMATIONS = Object.freeze([
     name: 'Add new clients',
     hint: 'A new Seazona client becomes a contact.',
     defaults: { enabled: true, config: {} },
+    readConfig: () => ({}),
+  },
+  {
+    // Runs inside the pipeline's read of the accounting system's customers
+    // (pipeline.js, linkCustomers). Off until a person turns it on.
+    key: 'add_xero_contacts',
+    place: 'xero',
+    name: 'Add Xero clients',
+    hint: 'Each Xero client becomes a contact.',
+    defaults: { enabled: false, config: {} },
+    readConfig: () => ({}),
+  },
+  {
+    // Runs on the Xero adapter's own worker (xero/contact-sync.js), which
+    // writes to Xero only while writes are allowed. Off until a person turns it on.
+    key: 'sync_contact_edits',
+    place: 'xero',
+    name: 'Two-way edits',
+    hint: 'A contact edit in Flow or Xero reaches the other. A clash waits for you.',
+    defaults: { enabled: false, config: {} },
     readConfig: () => ({}),
   },
   {

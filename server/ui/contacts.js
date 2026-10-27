@@ -236,7 +236,18 @@ async function loadXero(ui, contact, canEdit, host) {
     : match.state === 'ambiguous'
       ? `More than one Xero contact is named "${contact.name}".`
       : `No Xero contact is named "${contact.name}".`;
+  // Fields both sides changed (Two-way edits): alert only. A person makes the
+  // two the same, here or in Xero, and the next check clears it.
+  const differs = match.differs ?? [];
+  const clash = differs.length
+    ? notice(`Changed in both: ${differs.map((d) => FIELD_LABELS[d.field] ?? d.field).join(', ')}. Make Flow and Xero the same.`, 'warn', 'Xero differs.')
+    : null;
   host.replaceChildren(h('section', { class: 'fx-card fx-offer' },
-    notice(text, match.state === 'matched' ? 'success' : 'danger', match.state === 'matched' ? 'Xero.' : 'Xero.'),
+    clash ?? notice(text, match.state === 'matched' ? 'success' : 'danger', match.state === 'matched' ? 'Xero.' : 'Xero.'),
     ...actions));
 }
+
+const FIELD_LABELS = {
+  name: 'Name', firstName: 'First name', lastName: 'Last name', email: 'Email', phone: 'Phone',
+  mobile: 'Mobile', accountNumber: 'Account', taxNumber: 'Tax number', address: 'Address',
+};

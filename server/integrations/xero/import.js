@@ -3,6 +3,7 @@ import { sql } from 'drizzle-orm';
 import { deadHoldSince, deadSince, enqueueJob, runNextJob } from '../../core/queue.js';
 import { isCallsStopped } from '../call-guard.js';
 import { lastSync, syncCatalogue } from './catalogue.js';
+import { syncContactsForAll } from './contact-sync.js';
 import { mirrorState } from './lookup.js';
 import { MIRROR_RESOURCES, mirrorXero } from './mirror.js';
 import { matchXero } from './links.js';
@@ -17,7 +18,8 @@ import { runWebhookWork, WEBHOOK_REFRESH_MS, webhooksActive } from './webhooks.j
 // same job is queued again for REFRESH_MS later and reads only what changed
 // since its cursor (issue #131), so the copy stays fresh (lookup.js). While
 // Xero's webhooks arrive (webhooks.js), it waits WEBHOOK_REFRESH_MS instead.
-// It only reads from Xero.
+// It only reads from Xero; the one write on its tick is a contact edit, with
+// "Two-way edits" on (contact-sync.js).
 
 export const IMPORT_KIND = 'xero.import';
 const IMPORT_KEY = 'history';
@@ -219,6 +221,8 @@ export function createImportWorker({ db, runtime, log = console, timers = { setT
     running = (async () => {
       try {
         await refreshStaleCatalogues(db, runtime, { log });
+        // Two-way contact edits, when that setting is on (contact-sync.js).
+        await syncContactsForAll(db, runtime, { log });
         await keepReadsQueued(db, runtime, { startedAtMs });
         await reportStaleCopies(db, runtime, { stale, log });
         await runWebhookWork(db, runtime, { log, holds });

@@ -38,6 +38,22 @@ function coreBeforeMove() {
   return folder;
 }
 
+// An adapter's migrations as an installation before the move has them: the
+// ones written later (`from` on) create their tables in "flow" after it.
+const ADAPTER_AFTER_MOVE = { xero: 13 };
+function adapterBeforeMove(adapter) {
+  const from = ADAPTER_AFTER_MOVE[adapter.id];
+  if (from === undefined) return adapter;
+  const folder = mkdtempSync(join(tmpdir(), `flow-before-move-${adapter.id}-`));
+  cpSync(adapter.schema.migrationsFolder, folder, { recursive: true });
+  const journalFile = join(folder, 'meta', '_journal.json');
+  const journal = JSON.parse(readFileSync(journalFile, 'utf8'));
+  journal.entries = journal.entries.filter((entry) => entry.idx < from);
+  writeFileSync(journalFile, JSON.stringify(journal));
+  const tables = adapter.schema.tables.filter((table) => !['xero_contact_sync'].includes(table));
+  return { ...adapter, schema: { ...adapter.schema, migrationsFolder: folder, tables } };
+}
+
 test('Flow\'s tables live in "flow"', { skip: skipWithoutDatabase }, async (t) => {
   await t.test('a new database keeps no Flow table or function in "public"', async () => {
     const handle = await freshDatabase();
@@ -60,7 +76,7 @@ test('Flow\'s tables live in "flow"', { skip: skipWithoutDatabase }, async (t) =
     const before = coreBeforeMove();
     try {
       await migrateDatabase(handle.db, { folder: before });
-      for (const adapter of adapters.filter((a) => a.schema)) await migrateAdapterSchema(handle.db, adapter);
+      for (const adapter of adapters.filter((a) => a.schema)) await migrateAdapterSchema(handle.db, adapterBeforeMove(adapter));
       assert.ok((await inSchema(handle.pool, 'public')).includes('xero_calls'));
       await handle.pool.query("insert into organisations (name) values ('Example Lab')");
 
@@ -72,6 +88,7 @@ test('Flow\'s tables live in "flow"', { skip: skipWithoutDatabase }, async (t) =
       // A second start finds nothing to move.
       await migrateEverything(handle.db);
       assert.ok((await inSchema(handle.pool, 'flow')).includes('xero_calls'));
+      assert.ok((await inSchema(handle.pool, 'flow')).includes('xero_contact_sync'));
     } finally {
       rmSync(before, { recursive: true, force: true });
       await handle.close();

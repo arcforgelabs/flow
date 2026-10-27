@@ -39,6 +39,46 @@ person. The automation is **Add new clients** (`add_contacts`, on by
 default, on the Seazona page; `docs/AUTOMATIONS.md`). With it off, a job
 whose client has no contact waits with "Client not linked".
 
+## Xero clients
+
+With **Add Xero clients** on (`add_xero_contacts`, off by default, on the
+Xero page under Contacts), each active Xero contact that no Flow contact is
+named like becomes a Flow customer, linked to it (`imported`). It takes the
+name, person, email, phone, mobile, account, tax number and address from
+Flow's copy of Xero. Names compare as for new clients above, so an existing
+contact links instead. A contact Xero marks a supplier only stays out.
+
+## Two-way edits
+
+With **Two-way edits** on (`sync_contact_edits`, off by default, on the Xero
+page under Contacts), Flow keeps each linked pair in step. The fields are the
+name, first and last name, email, phone, mobile, account, tax number and
+address. Practitioners, the tax rate and Active stay Flow's own.
+
+```mermaid
+flowchart LR
+  base[Base: last agreed value] --> cmp{Which side changed?}
+  flow[Flow contact] --> cmp
+  copy[Flow's copy of Xero] --> cmp
+  cmp -- Flow only --> push[Read Xero, then write the field]
+  cmp -- Xero only --> pull[Flow takes it, no Xero call]
+  cmp -- Both --> clash[Alert: a person makes them the same]
+```
+
+- Flow keeps the base for each pair (`xero_contact_sync`). The first compare
+  has none: a blank on one side takes the other side's value, and two
+  different values are a clash.
+- Before a write Flow reads the Xero contact. When Xero changed that field
+  since the copy, Flow writes nothing and compares again next time.
+- A write needs `XERO_ALLOW_LIVE_WRITES` in live mode. Until then a Flow edit
+  waits; Xero's edits still come in.
+- A clash is alert only. The contact page says which fields differ, and the
+  Xero page counts them. Make the two the same, in Flow or in Xero; the next
+  check closes it. A field Xero refused, or a value too long for Flow, is a
+  clash too.
+- Xero's edits arrive when Flow reads the contacts: once a day, within an
+  hour of a Xero webhook, or on Sync.
+
 ## The page
 
 Contacts sits with daily work. New asks for the name, the kind and the

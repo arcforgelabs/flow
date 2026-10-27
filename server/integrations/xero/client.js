@@ -233,6 +233,9 @@ export function createXeroClient({
     async listContacts({ maxPages } = {}) {
       return collectPages(async (page) => (await request('GET', 'Contacts', { query: { page } })).Contacts, { maxPages });
     },
+    async getContact(contactId) {
+      return first((await request('GET', `Contacts/${encodeURIComponent(contactId)}`)).Contacts);
+    },
     async findContactsByName(name) {
       return (await request('GET', 'Contacts', { query: { where: `Name==${quote(name)}` } })).Contacts ?? [];
     },
@@ -328,6 +331,26 @@ export function createXeroClient({
         });
       }
       return created;
+    },
+    // Changes the fields in `changes` on one contact (contact-sync.js). The
+    // body holds only those fields and the id; Xero keeps every other field.
+    async updateContact(contactId, changes, { idempotencyKey }) {
+      if (!contactId) throw new TypeError('updateContact: contactId is required');
+      if (!idempotencyKey) throw new TypeError('updateContact: idempotencyKey is required');
+      const payload = await request('POST', `Contacts/${encodeURIComponent(contactId)}`, {
+        query: { summarizeErrors: 'false' },
+        body: { Contacts: [{ ...changes, ContactID: contactId }] },
+        headers: { 'Idempotency-Key': idempotencyKey },
+      });
+      const updated = first(payload.Contacts);
+      const messages = validationMessages(updated);
+      if (!updated?.ContactID || updated.HasErrors || updated.StatusAttributeString === 'ERROR' || messages.length) {
+        throw xeroError('xero_validation_failed', messages.join(' ') || 'Xero refused the contact change.', {
+          status: 422,
+          details: messages.length ? { validationErrors: messages } : undefined,
+        });
+      }
+      return updated;
     },
     async createInvoice(invoice, { idempotencyKey }) {
       if (!idempotencyKey) throw new TypeError('createInvoice: idempotencyKey is required');

@@ -1737,6 +1737,13 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
 .fx-switch[aria-checked="true"]::after { transform: translateX(18px); }
 .fx-switch:focus-visible { outline: none; box-shadow: var(--fx-focus); }
 .fx-switch:disabled { cursor: default; opacity: 0.6; }
+/* On a touch screen the switch keeps its look and gets a 44px target: a
+   clear border round it that only the finger sees. */
+@media (max-width: 1023px) {
+  .fx-switch { box-sizing: content-box; border: 11px solid transparent; background-clip: padding-box; margin: -11px; }
+  /* A section title's help link: a 44px target that does not grow the title. */
+  .fx-set__title .fx-help { min-width: 44px; min-height: 44px; justify-content: center; align-items: center; margin-block: -12px; }
+}
 
 /* ── Sentry's report form (monitoring.js) ──────────────────────────────────
    The form lives in a shadow root and reads these variables from its host.
