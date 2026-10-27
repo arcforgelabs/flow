@@ -32,7 +32,7 @@ export const CAPABILITIES = Object.freeze([
   'personSettings', // { personId }: each person's own choices in this integration, as [{ key, label, hint, kind, value }]
   'setPersonSetting', // { personId, key, value }: change one, answers the new list
   'jobIssues', // open issues the integration holds for jobs, by job ref: a short phrase and the page where a person fixes it
-  'listCustomers', // the system's customers, by id and name, for the identity map (Seazona: clients; Xero: contacts)
+  'listCustomers', // the system's customers, by id and name, for the identity map (Seazona: clients; Xero: contacts). An optional `contact` is the Flow contact a new customer becomes (docs/CONTACTS.md)
   'createCustomer', // { organisationId, contactId, actor }: create the system's customer from the Flow contact. Answers { outcome, contact }. Xero, when Create missing clients is on.
   'findInvoices', // sales invoices in the accounting system's copy, for the matcher; never a live call
   'readChanges', // { state: fresh | read | unavailable }: the accounting system's latest changes into its copy now, just before Flow drafts or sends (read before act)

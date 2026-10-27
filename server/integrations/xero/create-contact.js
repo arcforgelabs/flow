@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
+import { sql } from 'drizzle-orm';
 import { getContact } from '../../core/contacts.js';
-import { linkRecord } from '../../core/links.js';
+import { flowIdFor, linkRecord, supersedeLink } from '../../core/links.js';
 import { mapContact, matchContactFor, normaliseName, upsertContact } from './catalogue.js';
 import { xeroError } from './client.js';
 import { readConnection } from './connections.js';
@@ -75,12 +76,13 @@ function activeNamed(contacts, name) {
 export async function matchCustomer(db, runtime, { organisationId, contactId }) {
   const connection = await readConnection(db, organisationId);
   const connected = Boolean(connection && connection.mode === runtime.settings.mode);
-  if (!connected) return { state: 'off', offerCreate: false, xeroContactId: null, name: null };
+  if (!connected) return { state: 'off', offerCreate: false, offerLink: false, xeroContactId: null, name: null };
   const contact = await getContact(db, organisationId, contactId);
   const match = await matchContactFor(db, organisationId, { contactId, name: contact.name });
   return {
     state: match.state,
     offerCreate: match.state === 'missing' && runtime.settings.createContacts && writesAllowed(runtime.settings),
+    offerLink: match.state !== 'matched',
     xeroContactId: match.contact?.xeroContactId ?? null,
     name: match.contact?.name ?? null,
   };
@@ -123,4 +125,39 @@ export async function createCustomer(db, runtime, { organisationId, contactId, a
     const kept = await remember(db, organisationId, contactId, created, 'created_by_flow');
     return { outcome: 'created', ...kept };
   }));
+}
+
+// A person says which Xero contact a Flow contact is, when the names differ
+// or Xero has the name twice. Flow writes only its identity map (`person`);
+// Xero is not called. A link to a Xero contact that is archived or gone from
+// the copy ends first. A Xero contact another Flow contact has is refused.
+export async function linkCustomer(db, runtime, { organisationId, contactId, xeroContactId }) {
+  const connection = await readConnection(db, organisationId);
+  if (!connection || connection.mode !== runtime.settings.mode) {
+    throw xeroError('xero_not_connected', 'Connect Xero first.', { status: 409 });
+  }
+  const flowContact = await getContact(db, organisationId, contactId);
+  const { rows: [row] } = await db.execute(sql`select xero_contact_id, name, status from xero_contacts
+    where organisation_id = ${organisationId} and xero_contact_id = ${xeroContactId}`);
+  if (!row) throw xeroError('xero_contact_unknown', 'Flow has no copy of that Xero contact. Sync, then try again.', { status: 404 });
+  if (row.status !== 'ACTIVE') throw xeroError('xero_contact_archived', `"${row.name}" is archived in Xero. Restore it in Xero, then sync.`, { status: 409 });
+  const owner = await flowIdFor(db, organisationId, { system: 'xero', entity: 'contact', externalId: xeroContactId });
+  if (owner && owner !== contactId) {
+    throw xeroError('xero_contact_linked', `"${row.name}" is already the Xero contact of another Flow contact.`, { status: 409 });
+  }
+  const { rows: [current] } = await db.execute(sql`select l.id, l.external_id, x.status from external_links l
+    left join xero_contacts x on x.organisation_id = l.organisation_id and x.xero_contact_id = l.external_id
+    where l.organisation_id = ${organisationId} and l.system = 'xero' and l.entity = 'contact'
+      and l.flow_id = ${contactId} and l.state = 'active'`);
+  if (current && current.external_id !== xeroContactId) {
+    if (current.status === 'ACTIVE') {
+      throw xeroError('xero_contact_linked', `${flowContact.name} is already linked to a Xero contact.`, { status: 409 });
+    }
+    await supersedeLink(db, organisationId, current.id);
+  }
+  const link = await linkRecord(db, organisationId, {
+    entity: 'contact', flowId: contactId, system: 'xero', externalId: xeroContactId, matchedBy: 'person',
+  });
+  if (link.outcome === 'conflict') throw xeroError('xero_contact_linked', 'One side is already linked. Check the review list.', { status: 409 });
+  return { outcome: link.outcome, xeroContactId, name: row.name };
 }

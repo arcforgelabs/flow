@@ -220,6 +220,62 @@ export function dialog({ title, body, confirm, tone = 'primary', choices = null 
   });
 }
 
+// A dialog that picks one row of a long list (Pick card). A search box over
+// the list; `load(q)` answers the rows for its text (once with '' on open, and
+// again as the person types when `remote`; else the rows filter here).
+// `item(row)` draws a row as { value, title, meta, end }. Answers the picked
+// row, or null on Cancel.
+export async function pickOne({ title, intro = null, label, find = 'Find', load, item, empty, confirm, remote = false }) {
+  const search = h('input', { class: 'fx-input', type: 'search', placeholder: find, 'aria-label': find });
+  const list = h('div', { class: 'fx-pick', role: 'radiogroup', 'aria-label': label }, h('div', { class: 'fx-skeleton' }));
+  let rows = [];
+  const draw = (found) => {
+    rows = found.map((row) => {
+      const { value, title: name, meta = null, end = null } = item(row);
+      const element = h('label', { class: 'fx-pick__row' },
+        h('input', { type: 'radio', name: 'pick', value: String(value), required: true }),
+        h('span', { class: 'fx-pick__main' },
+          h('span', { class: 'fx-strong' }, name),
+          meta ? h('span', { class: 'fx-dim' }, meta) : null),
+        end == null ? h('span') : h('span', { class: 'fx-num fx-strong' }, end));
+      element.dataset.find = `${name} ${meta ?? ''}`.toLowerCase();
+      return { row, value: String(value), element };
+    });
+    list.replaceChildren(...(rows.length ? rows.map((r) => r.element) : [h('p', { class: 'fx-dim' }, empty)]));
+  };
+  let asked = 0;
+  const fill = async (q) => {
+    const turn = ++asked;
+    let found;
+    try {
+      found = await load(q);
+    } catch (error) {
+      found = [];
+      toast(error.message, 'danger');
+    }
+    if (turn === asked) draw(found);
+  };
+  let wait = null;
+  search.addEventListener('input', () => {
+    const q = search.value.trim().toLowerCase();
+    if (remote) {
+      clearTimeout(wait);
+      wait = setTimeout(() => fill(q), 250);
+      return;
+    }
+    for (const r of rows) r.element.hidden = Boolean(q) && !r.element.dataset.find.includes(q);
+  });
+  fill('');
+  const picked = await dialog({
+    title,
+    body: applyPhoneRule(h('div', { class: 'fx-pick__body' }, intro ? h('p', { class: 'fx-dim' }, intro) : null, search, list), 'pickOne'),
+    confirm,
+  });
+  clearTimeout(wait);
+  const value = picked?.get('pick');
+  return value ? rows.find((r) => r.value === value)?.row ?? null : null;
+}
+
 // One setting, laid out the same on every settings screen: a short name, one
 // line of smaller text under it, and the control on the right. Longer help
 // lives behind a link, not here. A wide control (a grid of choices) sits on

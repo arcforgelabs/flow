@@ -4,7 +4,7 @@ import { FlowError } from '../../core/errors.js';
 import { createActionGuard } from '../call-guard.js';
 import { billingObligations, organisations } from '../../db/schema.js';
 import { lastSync, listContacts, listItems, syncCatalogue } from './catalogue.js';
-import { createCustomer, matchCustomer } from './create-contact.js';
+import { createCustomer, linkCustomer, matchCustomer } from './create-contact.js';
 import { createXeroClient } from './client.js';
 import { describePush, listPushes, MAX_BATCH, previewDrafts, pushDrafts } from './drafts.js';
 import { recordXeroEvidence, recordXeroPayments } from './ledger.js';
@@ -31,6 +31,8 @@ import { messagePage as themedMessagePage } from '../../ui/page.js';
 //   GET  /contacts/match?organisationId=&contactId=   any signed-in person:
 //                                  whether this Flow contact is in the copy
 //   POST /contacts                 owner or admin: create the Xero contact
+//   POST /contacts/link            owner or admin: link a Flow contact to a
+//                                  Xero contact of another name (no Xero call)
 //   GET  /items?organisationId=    any signed-in person: the copy
 //   POST /invoices/preview         any signed-in person: the Xero drafts Flow
 //                                  would make, and what stops them (no Xero calls)
@@ -274,7 +276,8 @@ export function createXeroRouter({ db, personAuth, runtime, log = console, butto
 
   router.get('/contacts', ...signedIn, handle(log, async (req, res) => {
     const organisationId = await requireOrganisation(db, req.query.organisationId);
-    res.json({ ok: true, contacts: await listContacts(db, organisationId, { q: typeof req.query.q === 'string' ? req.query.q : '' }) });
+    const limit = Number(req.query.limit) || undefined;
+    res.json({ ok: true, contacts: await listContacts(db, organisationId, { q: typeof req.query.q === 'string' ? req.query.q : '', limit }) });
   }));
 
   // Whether this Flow contact is a Xero contact, and whether Create is offered.
@@ -291,6 +294,17 @@ export function createXeroRouter({ db, personAuth, runtime, log = console, butto
     const result = await createCustomer(db, runtime, { organisationId, contactId: req.body.contactId, actor: `person:${req.person.id}` });
     log.info?.(`[xero] organisation ${organisationId}: person ${req.person.id} ${result.outcome} Xero contact ${result.contact.xeroContactId} for Flow contact ${req.body.contactId}`);
     res.status(result.outcome === 'created' ? 201 : 200).json({ ok: true, ...result });
+  }));
+
+  // A person links a Flow contact to a Xero contact of another name. Flow's
+  // identity map only: no Xero call.
+  router.post('/contacts/link', ...manager, handle(log, async (req, res) => {
+    const organisationId = await requireOrganisation(db, req.body?.organisationId);
+    if (typeof req.body?.contactId !== 'string' || !UUID.test(req.body.contactId)) throw new FlowError('invalid', 'contactId must be a Flow contact id');
+    if (typeof req.body?.xeroContactId !== 'string' || !req.body.xeroContactId.trim()) throw new FlowError('invalid', 'xeroContactId must be a Xero contact id');
+    const result = await linkCustomer(db, runtime, { organisationId, contactId: req.body.contactId, xeroContactId: req.body.xeroContactId.trim() });
+    log.info?.(`[xero] organisation ${organisationId}: person ${req.person.id} linked Xero contact ${result.xeroContactId} to Flow contact ${req.body.contactId}`);
+    res.json({ ok: true, ...result });
   }));
 
   router.get('/items', ...signedIn, handle(log, async (req, res) => {

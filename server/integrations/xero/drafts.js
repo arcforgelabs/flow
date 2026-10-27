@@ -68,12 +68,18 @@ function xeroDate(value) {
 
 const problem = (code, message, extra = {}) => ({ code, message, ...extra });
 
+// A person can always link the Flow contact to a Xero contact of another
+// name (create-contact.js, linkCustomer): no Xero call.
 function missingContact(name, { offerCreate }) {
   const message = offerCreate
-    ? `No Xero contact is named "${name}". Create the client in Xero from this contact.`
-    : `No Xero contact is named "${name}". Add it in Xero, then sync.`;
-  return problem('xero_contact_missing', message, { short: 'Client not in Xero', ...(offerCreate ? { offerCreate: true } : {}) });
+    ? `No Xero contact is named "${name}". Link the Xero client, or create it from this contact.`
+    : `No Xero contact is named "${name}". Link the Xero client, or add it in Xero, then sync.`;
+  return problem('xero_contact_missing', message, { short: 'Client not in Xero', offerLink: true, ...(offerCreate ? { offerCreate: true } : {}) });
 }
+
+const twiceContact = (name) => problem('xero_contact_ambiguous',
+  `More than one Xero contact is named "${name}". Link the right one, or merge or rename them in Xero, then sync.`,
+  { short: 'Client twice in Xero', offerLink: true });
 
 // ---------------------------------------------------------------------------
 // The document to send
@@ -300,7 +306,7 @@ async function previewOne(db, runtime, organisationId, invoiceId) {
   const match = await matchContactFor(db, organisationId, { contactId: invoice.contactId, name: document.contact.name });
   const offerCreate = match.state === 'missing' && runtime.settings.createContacts && writesAllowed(runtime.settings);
   if (match.state === 'missing') problems.push(missingContact(document.contact.name, { offerCreate }));
-  if (match.state === 'ambiguous') problems.push(problem('xero_contact_ambiguous', `More than one Xero contact is named "${document.contact.name}". Merge or rename them in Xero, then sync.`, { short: 'Client twice in Xero' }));
+  if (match.state === 'ambiguous') problems.push(twiceContact(document.contact.name));
   const items = await itemsByCode(db, organisationId, document.lines.map((l) => l.itemCode));
   const sendMode = await sendModeFor(db, organisationId, invoice.contactId);
   const { draft, problems: lineProblems } = buildDraft(document, { settings: runtime.settings, contact: match.contact, items, sendMode });
@@ -399,7 +405,9 @@ export async function checkDrafts(db, runtime, { organisationId, invoiceIds }) {
     for (const preview of invoices) {
       found.set(preview.invoiceId, preview.problems
         .filter((p) => p.blocking !== false && p.code !== 'invoice_not_issued')
-        .map(({ code, message, short, offerCreate }) => ({ code, message, ...(short ? { short } : {}), ...(offerCreate ? { offerCreate: true } : {}) })));
+        .map(({ code, message, short, offerCreate, offerLink }) => ({
+          code, message, ...(short ? { short } : {}), ...(offerCreate ? { offerCreate: true } : {}), ...(offerLink ? { offerLink: true } : {}),
+        })));
     }
   }
   return found;
@@ -484,7 +492,7 @@ async function pushOne(db, runtime, client, organisationId, invoiceId, { pushedB
     throw xeroError(match.state === 'missing' ? 'xero_contact_missing' : 'xero_contact_ambiguous',
       match.state === 'missing'
         ? missingContact(document.contact.name, { offerCreate }).message
-        : `More than one Xero contact is named "${document.contact.name}". Merge or rename them in Xero, then sync.`,
+        : twiceContact(document.contact.name).message,
       { status: 409 });
   }
   const items = await itemsByCode(db, organisationId, document.lines.map((l) => l.itemCode));
