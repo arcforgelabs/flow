@@ -1400,7 +1400,7 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
     display: block; width: auto; margin: 0; padding: 0; border: 0;
     white-space: nowrap; background: none;
   }
-  [data-phone-layout="two-line"] .fx-tick-cell {
+  [data-phone-layout="two-line"] .fx-table td.fx-tick-cell {
     position: absolute; top: 0; left: 0; display: flex; align-items: center; justify-content: center;
     width: 44px; height: 56px; padding: 0;
   }
@@ -1433,9 +1433,10 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
   }
   [data-phone-layout="two-line"] [data-phone-slot="meta"] {
     order: 5; flex: 0 1 auto; min-width: 0; max-width: 42%; overflow: hidden; text-overflow: ellipsis;
-    color: var(--t-dim); font-size: 12px; line-height: 16px;
-    display: flex; align-items: center; height: 20px; overflow: visible;
+    color: var(--t-dim); font-size: 12px; line-height: 16px; height: 20px;
   }
+  /* Line 2 is 20px; its cells centre on it. */
+  [data-phone-layout="two-line"] .fx-table td[data-phone-slot="meta"] { display: flex; align-items: center; overflow: visible; }
   [data-phone-layout="two-line"] td.fx-c-stage,
   [data-phone-layout="two-line"] td.fx-c-status { order: 4; color: inherit; }
   [data-phone-layout="two-line"] .fx-stage { padding-block: 0; line-height: 16px; }
@@ -1447,7 +1448,7 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
     border-bottom: 1px solid var(--fx-line-soft);
   }
   [data-phone-layout="two-line"] tr.fx-table__group td { height: 32px; padding: 0; background: none; }
-  [data-phone-layout="two-line"] tr.fx-table__group .fx-tick-cell { height: 32px; }
+  [data-phone-layout="two-line"] .fx-table tr.fx-table__group td.fx-tick-cell { height: 32px; }
   [data-phone-layout="two-line"] tr.fx-table__group .fx-tick-cell .fx-tick { width: 44px; height: 44px; }
   /* Tiles: every card is one 56px row, as a list row: the mark, the name,
      the status and ›. The blurb and the button stay on the page it opens. */
