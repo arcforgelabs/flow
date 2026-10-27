@@ -80,7 +80,10 @@ release (`build.release`).
 ## Node
 
 Install the exact version on Node 24. The package's shrinkwrap pins every
-dependency to the tree CI tested. Then check its signatures and provenance:
+dependency to the tree CI tested. npm 12 ignores `npm-shrinkwrap.json` in a
+dependency's tarball (`npm --version` prints the npm version), so install
+with npm 11, or check out the release tag and run `npm ci`. Then check its
+signatures and provenance:
 
 ```bash
 mkdir flow && cd flow
