@@ -212,7 +212,7 @@ reads whole lists again on a slow cycle and compares them with Flow's copy:
 | --- | --- | --- |
 | Old orders | `GET orders/?ordered=<day>` and its pages, for each day before the recent-order window that Flow holds orders for, newest day first | A listed order whose list fields changed is read again. An order Flow holds for the day that the list leaves out is read again; a 404 marks it deleted in Seazona (Bad orders, below), so the billing feed withdraws it and its invoice goes to review. |
 | Clients | The whole list, read on from the last row while it is full | A client Flow holds that the list leaves out is read by its id. |
-| Invoices | Every change since a day before the oldest invoice Flow holds, read on the same way | An invoice Flow holds that the list leaves out is read by its id; the orders on it are read again. |
+| Invoices | Every change since the invoice lane first read (the UTC day of its first run, less `SEAZONA_INVOICE_LOOKBACK_DAYS`), read on the same way. An invoice last changed before that was never the lane's to read, so it is not a miss. | An invoice Flow holds that the list leaves out is read by its id; the orders on it are read again. |
 
 - A client or invoice that answers 404 is marked `missing`. Its row is never
   deleted. The mark clears when Seazona lists it again.

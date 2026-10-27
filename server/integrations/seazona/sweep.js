@@ -36,7 +36,7 @@ import {
 //             withdraws it, so its invoice goes to review.
 //   clients   the whole list (GET clients/?lastModified=), read on from the
 //             last row when it is full.
-//   invoices  every change since the oldest invoice Flow holds, read on the
+//   invoices  every change since the invoice lane first read, read on the
 //             same way.
 //
 // A client or invoice that Flow holds and the whole list leaves out is read
@@ -282,12 +282,15 @@ const WHOLE_LISTS = {
     list: (client, since) => client.get('invoices/', { lastModified: since }),
     // The guide: on or after lastModified (inclusive).
     stepBackMs: 0,
-    // A day before the oldest change Flow holds: an invoice older than that
-    // was never in Flow's copy, so it cannot be missing from it.
-    async firstSince(db) {
-      const [{ oldest }] = await db.select({ oldest: sql`min(${seazonaInvoices.lastModifiedText})` }).from(seazonaInvoices);
-      const oldestMs = parseUtc(oldest);
-      return Number.isFinite(oldestMs) ? new Date(floorUtcDay(oldestMs) - DAY_MS).toISOString() : null;
+    // Where the invoice lane first read: the start of the UTC day of its
+    // first run, less SEAZONA_INVOICE_LOOKBACK_DAYS (lanes.js). An invoice
+    // last changed before that was never the lane's to read, so it is not a
+    // miss (FLOW-HORIZON-K: a day's margin before it counted such invoices).
+    // The first row Flow stored marks the first run.
+    async firstSince(db, sync) {
+      const [{ first }] = await db.select({ first: sql`min(${seazonaInvoices.firstSeenAt})` }).from(seazonaInvoices);
+      const firstMs = first ? new Date(first).getTime() : NaN;
+      return Number.isFinite(firstMs) ? new Date(floorUtcDay(firstMs) - sync.invoiceLookbackDays * DAY_MS).toISOString() : null;
     },
   },
 };
@@ -416,7 +419,7 @@ async function sweepWholeList(ctx, resource, cursor, laneStates, helpers, found)
   const readsFrom = laneReadsFrom(laneStates.get(resource), sync);
   if (readsFrom === null) return;
   if (!cursor[resource]?.cycleStartedAt) {
-    const since = await spec.firstSince(db);
+    const since = await spec.firstSince(db, sync);
     if (since === null) {
       cursor[resource] = { lastFinishedAt: at.toISOString(), listed: 0 };
       return;
