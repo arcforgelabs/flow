@@ -61,7 +61,7 @@ function page({ fields = [], people = [], values = [] } = {}) {
 
 const list = (status, numbers) => ({
   invoices: numbers.map((number, i) => ({ id: `${status}-${i}`, number, contactName: `Client ${number}`, status: status === 'issued' ? 'issued' : 'draft', tab: status === 'issued' ? 'approved' : status, totalCents: 100, createdAt: '2026-01-01' })),
-  counts: { pending: 0, ready: 1, draft: 0, approved: 1, sent: 0, void: 0 },
+  counts: { pending: 0, ready: 1, draft: 0, approved: 1, sent: 0, non_chargeable: 0, void: 0 },
   sendsTo: null,
   sendMode: null,
 });

@@ -4,6 +4,7 @@ import {
   billingObligations, invoices, linkRejections, linkSuggestions, obligationEvents, obligationPayments, obligationWritebacks, priceItems,
 } from '../db/schema.js';
 import { FlowError, notFound } from './errors.js';
+import { readStoredRules, settleNonChargeable } from './invoice-rules.js';
 import { createDraftInvoice, getInvoice, updateDraftInvoice } from './invoices.js';
 import { invoiceTotals, lineTotals } from './money.js';
 import { openReview, resolveReviewFor } from './review.js';
@@ -264,7 +265,8 @@ export function compareThreeWays(base, source, flow, { sent = false } = {}) {
 // The invoice has left Flow's hands: issued, queued or sent, or the
 // accounting system holds it.
 function invoiceSent(invoice, obligation) {
-  return invoice.status !== 'draft' || ['queued', 'sent'].includes(invoice.sendState)
+  // A non-chargeable invoice was never issued. A job change is still an offer.
+  return !['draft', 'non_chargeable'].includes(invoice.status) || ['queued', 'sent'].includes(invoice.sendState)
     || LINKED_STATES.includes(obligation.accountingState);
 }
 
@@ -514,6 +516,9 @@ export async function recordAccountingEvidence(db, organisationId, obligationId,
   const checkedAt = evidence.checkedAt ? new Date(evidence.checkedAt) : new Date();
   return db.transaction(async (tx) => {
     const obligation = await loadObligation(tx, organisationId, obligationId, { lock: true });
+    // Non-chargeable work has no accounting invoice. A "not found" read must
+    // not replace that state (docs/INVOICE_RULES.md).
+    if (obligation.accountingState === 'non_chargeable' && state === 'not_found') return obligation;
     let next = state;
     let reason = null;
     if (state !== 'not_found' && !EXACT_MATCHES.includes(matchedBy)) {
@@ -801,7 +806,7 @@ function draftBlockers(o, { now, sourceMaxAgeMs, accounting = true }) {
   if (o.accountingState === 'unknown') {
     if (accounting) reasons.push('the accounting system was not checked');
   }
-  else if (o.accountingState !== 'not_found') reasons.push(`the accounting system reports ${o.accountingState}`);
+  else if (o.accountingState !== 'not_found' && o.accountingState !== 'non_chargeable') reasons.push(`the accounting system reports ${o.accountingState}`);
   if (!o.mappingComplete) reasons.push('a line does not map to a price item');
   if (!o.contactId) reasons.push('the job has no customer contact');
   if (now - new Date(o.sourceSeenAt) > sourceMaxAgeMs) reasons.push('the work system report is out of date');
@@ -819,6 +824,7 @@ export async function draftInvoiceForObligation(db, organisationId, obligationId
   // A null liveCheck says no accounting system is connected (ledgerView).
   if (liveCheck !== null && typeof liveCheck !== 'function') throw new FlowError('invalid', 'liveCheck must be a function, or null with no accounting system');
   const accounting = liveCheck !== null;
+  const rules = await readStoredRules(db, organisationId);
   const outcome = await db.transaction(async (tx) => {
     const obligation = await loadObligation(tx, organisationId, obligationId, { lock: true });
     const reasons = draftBlockers(obligation, { now, sourceMaxAgeMs, accounting });
@@ -852,7 +858,8 @@ export async function draftInvoiceForObligation(db, organisationId, obligationId
       ...(obligation.readyAt ? {} : { readyAt: now, readyBy: actor }),
     });
     await addEvent(tx, row, 'drafted', actor, { invoiceId: invoice.id, totalCents: invoice.totalCents, live });
-    return { obligation: row, invoice };
+    const settled = await settleNonChargeable(tx, organisationId, { invoice, obligation: row, rules, actor, now });
+    return settled ?? { obligation: row, invoice };
   });
   if (outcome.refused) {
     throw new FlowError('not_ready', 'the draft invoice was refused', { reasons: outcome.refused });

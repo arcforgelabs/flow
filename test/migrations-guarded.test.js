@@ -39,7 +39,24 @@ test('migrations from 0021 on, and every adapter\'s, name Flow\'s tables in "flo
 test('guardSql refuses drops and renames', () => {
   assert.match(guardSql('DROP TABLE "x";').problems[0], /drops or renames/);
   assert.match(guardSql('ALTER TABLE "x" RENAME COLUMN "a" TO "b";').problems[0], /drops or renames/);
+  assert.match(guardSql('ALTER TABLE "x" DROP CONSTRAINT "c";').problems[0], /drops or renames/);
   assert.deepEqual(guardSql('ALTER TABLE "x" ADD CONSTRAINT "f" FOREIGN KEY ("a") REFERENCES "y"("id") ON DELETE set null ON UPDATE no action;').problems, []);
+});
+
+test('a check grows by replacing that constraint, and the replacement runs twice', () => {
+  const raw = [
+    'ALTER TABLE "invoices" DROP CONSTRAINT "invoices_status_valid";',
+    'ALTER TABLE "billing_obligations" DROP CONSTRAINT "billing_obligations_accounting_state_valid";',
+    'ALTER TABLE "invoices" ADD CONSTRAINT "invoices_status_valid" CHECK ("invoices"."status" in (\'draft\', \'non_chargeable\'));',
+    'ALTER TABLE "billing_obligations" ADD CONSTRAINT "billing_obligations_accounting_state_valid" CHECK (accounting_state in (\'not_found\', \'non_chargeable\'));',
+  ].join('--> statement-breakpoint\n');
+  const { sql, problems } = guardSql(raw);
+  assert.deepEqual(problems, []);
+  assert.match(sql, /DROP CONSTRAINT IF EXISTS "invoices_status_valid"/);
+  assert.match(sql, /'non_chargeable'/);
+  assert.equal(sql.split('--> statement-breakpoint').length, 2);
+  assert.equal(guardSql(sql).sql, sql);
+  assert.deepEqual(guardSql(sql).problems, []);
 });
 
 async function schemaShape(pool) {

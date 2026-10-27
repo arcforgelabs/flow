@@ -13,10 +13,12 @@ flowchart LR
   then -- wait --> wait[Waits for a person]
   then -- skip --> skip[Never drafted by rule]
   then -- pending --> flagged[Draft, on Pending with the note]
+  then -- non-chargeable --> quiet[Draft, status non-chargeable]
   each -- no rule matches --> draft[Draft invoice in Flow]
-  draft --> check{Pending rules and skip rules check the draft}
+  draft --> check{Pending, skip and non-chargeable rules check the draft}
   check -- a pending rule matches --> flagged
   check -- a skip rule matches --> held[Stays Pending: not invoiced]
+  check -- a non-chargeable rule matches --> quiet
   check -- none match --> readyTab[Ready]
 ```
 
@@ -26,7 +28,7 @@ flowchart LR
 | --- | --- |
 | When | `job_ready`: the job is ready to invoice and has no invoice |
 | If | 1 to 10 conditions. All must match |
-| Then | `wait`: the job waits for a person. `skip`: rules never draft it, and Send holds a draft that already matches. `pending`: Flow drafts it, and the draft is on the Pending tab with the rule's note |
+| Then | `wait`: the job waits for a person. `skip`: rules never draft it, and Send holds a draft that already matches. `pending`: Flow drafts it, and the draft is on the Pending tab with the rule's note. `non_chargeable`: Flow drafts it as non-chargeable (below) |
 
 A person can still draft a waiting job from the Jobs board. The job lists
 each rule that stops it, for example `rule "Old job": waits for a person`.
@@ -74,6 +76,22 @@ so `Dr Ann Lee - 21764` is a good Reference. "Has a number beside words"
 reads each part between ` - ` and finds a number only next to words, as in
 `Coral Smith (OIQ-9902)`.
 
+## Non-chargeable
+
+Some work is done and never billed: a lab's own clinic, a branch in the same group. The accounting system has no invoice for it. Xero's word for work that is done but not billed is non-chargeable, and Flow uses that word.
+
+Then **Non-chargeable** (`action.kind: 'non_chargeable'`) drafts the job on the same path as any other draft. The lines and the total are the same. The invoice's status is `non_chargeable`:
+
+- It has no number from the accounting sequence.
+- It is never queued for the accounting system.
+- It is not on Pending or Ready. The Invoices tab **Non-chargeable** (after Sent, before Void) lists it, with the same count and total as the other tabs.
+- Send, Send all ready and Approve refuse it: "This invoice is non-chargeable. Make it chargeable first."
+- The job's obligation gets `accounting_state = 'non_chargeable'`. Reconcile does not expect an accounting invoice, and a later check does not record the job as `not_found`.
+
+Saving the rule, and each check run, moves a never-issued draft whose job the rule matches onto that status. A draft that was already issued stays where it is.
+
+**Make chargeable** on the invoice page puts it back to a draft. The rule does not move it again unless the job changes (its lines, customer, practitioner, status, total or date). Delete removes it the same way as a never-issued draft, and the job can be drafted again.
+
 ## Fields
 
 | Field | Kind | Reads | Tests |
@@ -109,7 +127,7 @@ deleted starter rule does not come back.
 | --- | --- | --- |
 | `GET /api/invoicing/rules` | everyone | The rules, in order |
 | `GET /api/invoicing/rule-fields` | everyone | Fields, tests and menus |
-| `POST /api/invoicing/rules` | owner, admin | A new rule `{ name, enabled, conditions, action }`. A pending rule's action is `{ kind: 'pending', note }` |
+| `POST /api/invoicing/rules` | owner, admin | A new rule `{ name, enabled, conditions, action }`. A pending rule's action is `{ kind: 'pending', note }`. Non-chargeable is `{ kind: 'non_chargeable' }` |
 | `PUT /api/invoicing/rules/:id` | owner, admin | Change some of a rule; the result must be a whole valid rule |
 | `DELETE /api/invoicing/rules/:id` | owner, admin | Delete a rule |
 

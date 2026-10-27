@@ -185,6 +185,8 @@ difference. The table is `FIELD_OWNERS` in `server/core/ledger.js`.
 | Send | Flow | Sends Flow's draft to the accounting system |
 | Approval, payment, void | Accounting system | Reads them back |
 
+`billing_obligations.accounting_state` may be `non_chargeable`. That job's Flow invoice is real output and is not billed: no accounting invoice is expected, reconcile does not treat the job as missing there, and a later match does not record `not_found` over it (`docs/INVOICE_RULES.md`).
+
 ## When a job changes after its invoice
 
 When Flow drafts an invoice it keeps the job facts it used on the obligation

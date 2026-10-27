@@ -1,6 +1,7 @@
 import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import { billingObligations, contacts, invoiceLines, invoices, invoiceVersions, obligationEvents, organisations, priceItems } from '../db/schema.js';
 import { FlowError, notFound } from './errors.js';
+import { accountingStateBeforeNonChargeable, NON_CHARGEABLE_REFUSAL } from './invoice-rules.js';
 import { invoiceTotals, lineTotals } from './money.js';
 
 // Invoices (accounts receivable). A draft can change. Issuing gives the
@@ -92,7 +93,7 @@ export async function createDraftInvoice(db, organisationId, { contactId, refere
 export async function updateDraftInvoice(db, organisationId, invoiceId, changes) {
   return db.transaction(async (tx) => {
     const invoice = await loadInvoice(tx, organisationId, invoiceId, { lock: true });
-    if (invoice.status !== 'draft') throw new FlowError('not_draft', 'only a draft invoice can change; revise it first');
+    if (!['draft', 'non_chargeable'].includes(invoice.status)) throw new FlowError('not_draft', 'only a draft invoice can change; revise it first');
     const fields = {};
     if ('contactId' in changes && changes.contactId !== invoice.contactId) {
       const [contact] = await tx.select().from(contacts)
@@ -122,6 +123,7 @@ export async function issueInvoice(db, organisationId, invoiceId, { issuedBy, is
   if (!/^\d{4}-\d{2}-\d{2}$/.test(issueDate ?? '')) throw new FlowError('invalid', 'issueDate must be YYYY-MM-DD');
   return db.transaction(async (tx) => {
     const invoice = await loadInvoice(tx, organisationId, invoiceId, { lock: true });
+    if (invoice.status === 'non_chargeable') throw new FlowError('non_chargeable', NON_CHARGEABLE_REFUSAL);
     if (invoice.status !== 'draft') throw new FlowError('not_draft', 'only a draft invoice can be issued');
     // Each line with its price item's code, so the document says which item
     // was sold even if the price list changes later.
@@ -195,8 +197,11 @@ async function freeJobs(tx, organisationId, invoice, actor) {
     .for('update');
   if (linked.length && !actor) throw new FlowError('invalid', 'actor is required');
   for (const obligation of linked) {
+    const accountingState = obligation.accountingState === 'non_chargeable'
+      ? await accountingStateBeforeNonChargeable(tx, organisationId, obligation.id)
+      : obligation.accountingState;
     await tx.update(billingObligations)
-      .set({ invoiceId: null, draftBasis: null, updatedAt: sql`now()` })
+      .set({ invoiceId: null, draftBasis: null, accountingState, updatedAt: sql`now()` })
       .where(eq(billingObligations.id, obligation.id));
     await tx.insert(obligationEvents).values({
       createdAt: sql`clock_timestamp()`,
@@ -241,10 +246,11 @@ async function deleteInAccounting(accounting, organisationId, invoiceId, actor) 
 export async function deleteDraft(db, organisationId, invoiceId, { actor = null, accounting = null } = {}) {
   const current = await loadInvoice(db, organisationId, invoiceId);
   if (current.status === 'void') throw new FlowError('conflict', 'a void invoice is final');
-  if (current.status === 'draft' && current.issuedVersion === 0) {
+  const neverIssued = (row) => ['draft', 'non_chargeable'].includes(row.status) && row.issuedVersion === 0;
+  if (neverIssued(current)) {
     return db.transaction(async (tx) => {
       const invoice = await loadInvoice(tx, organisationId, invoiceId, { lock: true });
-      if (invoice.status !== 'draft' || invoice.issuedVersion !== 0) {
+      if (!neverIssued(invoice)) {
         throw new FlowError('was_issued', 'an invoice that was issued cannot be deleted; void it');
       }
       await freeJobs(tx, organisationId, invoice, actor);

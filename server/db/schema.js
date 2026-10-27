@@ -29,7 +29,7 @@ const updatedAt = () => timestamp('updated_at', { withTimezone: true }).notNull(
 
 export const TAX_CODES = ['GST', 'GST_FREE'];
 export const CONTACT_KINDS = ['customer', 'supplier'];
-export const INVOICE_STATUSES = ['draft', 'issued', 'void'];
+export const INVOICE_STATUSES = ['draft', 'issued', 'void', 'non_chargeable'];
 
 export const organisations = pgTable('organisations', {
   id: id(),
@@ -127,8 +127,10 @@ export const invoices = pgTable('invoices', {
     columns: [t.organisationId, t.contactId],
     foreignColumns: [contacts.organisationId, contacts.id],
   }),
-  check('invoices_status_valid', sql`${t.status} in ('draft', 'issued', 'void')`),
-  check('invoices_issued_has_number', sql`${t.status} = 'draft' or ${t.number} is not null`),
+  check('invoices_status_valid', sql`${t.status} in ('draft', 'issued', 'void', 'non_chargeable')`),
+  // A non-chargeable invoice is never issued, so it takes no number. Issued
+  // and void invoices still must have one.
+  check('invoices_issued_has_number', sql`${t.status} in ('draft', 'non_chargeable') or ${t.number} is not null`),
   check('invoices_send_state_valid', sql`${t.sendState} is null or ${t.sendState} in ('queued', 'sent', 'failed')`),
 ]);
 
@@ -226,7 +228,7 @@ export const people = pgTable('people', {
 
 export const ACCOUNTING_STATES = [
   'unknown', 'not_found', 'drafted', 'authorised', 'part_paid', 'paid',
-  'voided', 'deleted', 'ambiguous', 'conflict',
+  'voided', 'deleted', 'ambiguous', 'conflict', 'non_chargeable',
 ];
 export const HOLD_STATES = ['none', 'held', 'review'];
 export const WRITEBACK_STATES = ['pending', 'sent', 'failed', 'not_supported'];
@@ -688,8 +690,9 @@ export const customerBillingSettings = pgTable('customer_billing_settings', {
 // Invoice rules (server/core/invoice-rules.js, docs/INVOICE_RULES.md): a lab's
 // own checks on a job before Flow drafts its invoice. Each rule is When, If and
 // Then: `conditions` is a list of { field, test, value, item? } that must all
-// match, and `action` is { kind: 'wait' | 'skip' }. `starter_key` marks a rule
-// Flow made from the earlier fixed settings, once per organisation.
+// match, and `action` is { kind: 'wait' | 'skip' | 'pending' | 'non_chargeable' }.
+// `starter_key` marks a rule Flow made from the earlier fixed settings, once
+// per organisation.
 export const invoiceRules = pgTable('invoice_rules', {
   id: id(),
   organisationId: organisationId().references(() => organisations.id),

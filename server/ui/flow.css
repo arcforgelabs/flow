@@ -438,11 +438,11 @@ a.fx-link:hover, a.fx-link:focus-visible { border-color: var(--t-strong); }
 a.fx-strong { text-decoration: none; }
 a.fx-strong:hover { text-decoration: underline; }
 .fx-toolbar { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--fx-line); }
-.fx-tabs { display: flex; gap: 2px; }
-.fx-tabs button { flex: none; }
-@media (max-width: 639px) { .fx-tabs { max-width: 100%; overflow-x: auto; scrollbar-width: none; } }
+/* The strip scrolls when the labels do not fit, at every width, so a new tab
+   never widens the page. min-width 0 lets it shrink inside the toolbar. */
+.fx-tabs { display: flex; gap: 2px; min-width: 0; max-width: 100%; overflow-x: auto; scrollbar-width: none; }
 .fx-tabs button {
-  display: inline-flex; align-items: center; gap: 8px; padding: 10px 14px; margin-bottom: -1px;
+  display: inline-flex; align-items: center; flex: none; gap: 8px; min-height: 44px; padding: 10px 14px; margin-bottom: -1px;
   border: 0; border-bottom: 2px solid transparent; background: transparent; cursor: pointer;
   color: var(--t-dim); font: 600 14px var(--t-body);
 }
@@ -1346,7 +1346,6 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
   /* Touch: every control a thumb uses is 44px (docs/MOBILE_TESTS.md). The
      icons and text keep their size; the box around them grows. */
   #menu-toggle, #search { width: 44px; height: 44px; }
-  .fx-tabs button { min-height: 44px; }
   /* The notice's buttons grow to 44px into its padding, so the notice
      stays one short line. */
   .fx-alerts__close { width: 44px; height: 44px; margin: -12px -8px; }
