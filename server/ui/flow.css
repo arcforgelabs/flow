@@ -2055,16 +2055,16 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
   content: ""; position: absolute; top: 7px; left: calc(50% + 12px); width: calc(100% - 24px); height: 2px; background: var(--fx-line);
 }
 .fx-track li[data-state="done"]:not(:last-child)::after { background: var(--t-accent); }
-.fx-meta { display: grid; grid-template-columns: 7.5rem minmax(0, 1fr); gap: 8px 16px; margin: 0; }
-.fx-meta dt { color: var(--t-dim); }
-.fx-meta dd { margin: 0; }
+.fx-portal .fx-meta { display: grid; grid-template-columns: 7.5rem minmax(0, 1fr); gap: 8px 16px; margin: 0; }
+.fx-portal .fx-meta dt { color: var(--t-dim); }
+.fx-portal .fx-meta dd { margin: 0; }
 .fx-portal-lab { display: grid; gap: 12px; margin-top: 16px; padding: 16px 20px; }
 @media (max-width: 639px) {
   .fx-track { flex-direction: column; align-items: stretch; gap: 12px; }
   .fx-track li { flex-direction: row; justify-content: flex-start; text-align: left; }
   .fx-track li:not(:last-child)::after { display: none; }
-  .fx-meta { grid-template-columns: minmax(0, 1fr); gap: 2px 0; }
-  .fx-meta dd { margin-bottom: 8px; }
+  .fx-portal .fx-meta { grid-template-columns: minmax(0, 1fr); gap: 2px 0; }
+  .fx-portal .fx-meta dd { margin-bottom: 8px; }
 }
 /* .fx-message__card sets display:grid later than the state rule, which would
    show every message card at once. On the portal, only the card for the
