@@ -332,7 +332,7 @@ function navigate(event) {
 // The shared pieces a view module (invoicing.js) builds with. Its `go`
 // takes a path, or a link's click event.
 const ui = () => ({
-  h, flow, toast, notice, fieldError, pageHeader, listHead, listFrame, edgeFade, sectionTitle, dialog, pickOne, me, holdButton, tileCard, tileSection, crumbs,
+  h, flow, toast, notice, fieldError, pageHeader, listHead, listFrame, edgeFade, sectionTitle, settingRow, dialog, pickOne, me, holdButton, tileCard, tileSection, crumbs,
   go: (target, options) => (typeof target === 'string' ? go(target, options) : navigate(target)),
 });
 
