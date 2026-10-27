@@ -14,6 +14,8 @@
   "pageOverflow": "none",
   "screens": [
     "invoice",
-    "invoice-issued"
+    "invoice-issued",
+    "portal-jobs",
+    "portal-team"
   ]
 }

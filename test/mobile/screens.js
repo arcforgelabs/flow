@@ -70,6 +70,10 @@ export const SCREENS = [
   { id: 'integration-sentry', path: '/integrations/sentry', ready: '.fx-main > *' },
   { id: 'custom-fields', path: '/custom-fields', ready: '.fx-main > *' },
   { id: 'appearance', path: '/appearance', ready: '.fx-main > *' },
+  { id: 'portal-jobs', path: '/portal/jobs', ready: '.fx-table' },
+  { id: 'portal-job', path: () => `/portal/jobs/${process.env.MOBILE_PORTAL_JOB}`, ready: '.fx-track' },
+  { id: 'portal-team', path: '/portal/team', ready: '.fx-cfm__more' },
+  { id: 'portal-join', path: '/portal/join', ready: '.fx-portal-join' },
 ];
 
 function layout(name) {

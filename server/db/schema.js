@@ -185,6 +185,10 @@ export const invoiceVersions = pgTable('invoice_versions', {
 
 export const PERSON_ROLES = ['owner', 'admin', 'staff'];
 export const PERSON_STATUSES = ['active', 'pending', 'disabled'];
+export const PRACTICE_ROLES = ['owner', 'admin', 'dentist', 'staff'];
+export const PRACTICE_STATUSES = ['invited', 'active', 'removed'];
+export const PORTAL_STAGES = ['Ordered', 'Received', 'In work', 'Quality check', 'Sent'];
+export const PORTAL_REQUEST_STATUSES = ['open', 'approved', 'declined'];
 
 // Who may sign in to this installation, and with which role. Clerk proves who
 // someone is; this table decides what they may do. One installation serves one
@@ -215,6 +219,64 @@ export const people = pgTable('people', {
   check('people_email_lower', sql`${t.email} = lower(${t.email})`),
   check('people_role_valid', sql`${t.role} in ('owner', 'admin', 'staff')`),
   check('people_status_valid', sql`${t.status} in ('active', 'pending', 'disabled')`),
+]);
+
+// A person at a practice (one customer contact) who may sign in to the
+// practice portal (docs/PORTAL.md). Clerk proves who they are; this row
+// says which practice and which role. One person can have a row at more
+// than one practice. Emails are stored lower-case. `clerk_user_id` is set
+// on the first verified sign-in. Removing someone keeps the row (`removed`).
+export const practiceMembers = pgTable('practice_members', {
+  id: id(),
+  organisationId: organisationId().references(() => organisations.id),
+  contactId: uuid('contact_id').notNull(),
+  email: text('email').notNull(),
+  name: text('name'),
+  role: text('role').notNull(),
+  status: text('status').notNull().default('invited'),
+  clerkUserId: text('clerk_user_id'),
+  practitionerName: text('practitioner_name'),
+  invitedBy: uuid('invited_by'),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, (t) => [
+  unique('practice_members_org_id').on(t.organisationId, t.id),
+  unique('practice_members_contact_email').on(t.contactId, t.email),
+  index('practice_members_clerk').on(t.clerkUserId),
+  foreignKey({
+    name: 'practice_members_contact_same_org',
+    columns: [t.organisationId, t.contactId],
+    foreignColumns: [contacts.organisationId, contacts.id],
+  }),
+  check('practice_members_email_lower', sql`${t.email} = lower(${t.email})`),
+  check('practice_members_role_valid', sql`${t.role} in ('owner', 'admin', 'dentist', 'staff')`),
+  check('practice_members_status_valid', sql`${t.status} in ('invited', 'active', 'removed')`),
+]);
+
+// Someone asking to join a practice (Join). The lab approves it onto a
+// customer contact, or declines it. `contact_id` stays empty until then.
+export const portalAccessRequests = pgTable('portal_access_requests', {
+  id: id(),
+  organisationId: organisationId().references(() => organisations.id),
+  name: text('name').notNull(),
+  email: text('email').notNull(),
+  practiceName: text('practice_name').notNull(),
+  phone: text('phone'),
+  status: text('status').notNull().default('open'),
+  contactId: uuid('contact_id'),
+  decidedBy: uuid('decided_by').references(() => people.id, { onDelete: 'set null' }),
+  decidedAt: timestamp('decided_at', { withTimezone: true }),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, (t) => [
+  index('portal_access_requests_open').on(t.organisationId, t.status),
+  foreignKey({
+    name: 'portal_access_requests_contact_same_org',
+    columns: [t.organisationId, t.contactId],
+    foreignColumns: [contacts.organisationId, contacts.id],
+  }),
+  check('portal_access_requests_email_lower', sql`${t.email} = lower(${t.email})`),
+  check('portal_access_requests_status_valid', sql`${t.status} in ('open', 'approved', 'declined')`),
 ]);
 
 // Billing obligations (issue 3). One billable job in a work system gives one
@@ -651,6 +713,11 @@ export const invoicingSettings = pgTable('invoicing_settings', {
   // The fixed checks above became invoice rules (invoice_rules). True once
   // this organisation's starter rules were made from them.
   rulesSeeded: boolean('rules_seeded').notNull().default(false),
+  // Practice portal (docs/PORTAL.md). Off until the lab turns it on.
+  // `portal_status_names` maps each work-system status to a portal name
+  // (Ordered, Received, In work, Quality check, Sent), or omits it.
+  portalEnabled: boolean('portal_enabled').notNull().default(false),
+  portalStatusNames: jsonb('portal_status_names').notNull().default(sql`'{}'::jsonb`),
   updatedBy: uuid('updated_by').references(() => people.id, { onDelete: 'set null' }),
   updatedAt: updatedAt(),
 }, (t) => [

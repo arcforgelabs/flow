@@ -20,6 +20,11 @@ database"). The migration journals stay in `drizzle`.
 ```mermaid
 erDiagram
   organisations ||--o{ contacts : has
+  organisations ||--o{ practice_members : "signs in"
+  contacts ||--o{ practice_members : "has on its team"
+  organisations ||--o{ portal_access_requests : "hears from"
+  contacts |o--o{ portal_access_requests : "approves onto"
+  people |o--o{ portal_access_requests : "decides"
   organisations ||--o{ price_items : has
   organisations ||--o{ invoices : issues
   contacts ||--o{ invoices : "is billed on"
@@ -86,6 +91,16 @@ and links through `external_links`.
 
 `people` lists who may sign in and their role (`owner`, `admin`, `staff`).
 One installation serves one lab, so it is installation-wide.
+
+`practice_members` lists who may sign in to the practice portal
+(`docs/PORTAL.md`). One row is one person at one practice (a customer
+contact). The same person can have a row at more than one practice. The
+role is `owner`, `admin`, `dentist` or `staff`. Removing someone keeps the
+row (`removed`). Emails are stored lower-case. `portal_access_requests`
+holds a Join request until the lab approves it onto a contact or declines
+it. `invoicing_settings.portal_enabled` turns the portal on, and
+`portal_status_names` maps each work-system status to a portal name
+(Ordered, Received, In work, Quality check, Sent) or leaves it out.
 
 Each integration adapter owns its own tables, named after it (`seazona_…`).
 They exist only once the adapter has been on at a start, and they are not in
@@ -184,6 +199,7 @@ installation low maintenance.
 | --- | --- |
 | Every row except in `people` belongs to one organisation. A child row points at its parent through `(organisation_id, id)`, so a row that joins two organisations is refused. | Composite foreign keys |
 | Every read and write in the core takes an organisation id. | `server/core/*` |
+| A practice portal route reads only that practice's jobs and team. | `server/portal/scope.js` |
 | Money is integer cents. GST is 10%, calculated and rounded per line, half away from zero. | `server/core/money.js` |
 | A draft invoice can change. Issuing gives it the organisation's next number and stores the document exactly as sent in `invoice_versions`. Each document line keeps its price item's code (`itemCode`, null for a line typed by hand), so accounting software gets the item even after the price list changes. | `server/core/invoices.js` |
 | What was sent never changes: `invoice_versions` rows cannot be updated or deleted, lines change only on a draft, a number never changes, an issued invoice is voided and never deleted, and a void invoice is final. A draft that was never issued (`issued_version` 0) can be deleted, which frees its job. With no accounting system, an issued invoice answers `accounting_unavailable`. Deleting an issued invoice whose accounting copy is a draft voids it and keeps the versions. | Triggers in `0001_records_are_append_only.sql`; `deleteDraft` in `server/core/invoices.js` |

@@ -13,7 +13,7 @@
             "pages": ["invoice-sending", "contacts", "invoice-rules", "invoicing-rules", "job-invoice-links", "line-mapping", "price-list", "automations", "alerts"]
           },
           { "group": "Data", "pages": ["data-model", "data-spine", "reconcile"] },
-          { "group": "Jobs", "pages": ["custom-fields", "job-board-moves"] },
+          { "group": "Jobs", "pages": ["custom-fields", "job-board-moves", "portal"] },
           { "group": "Integrations", "pages": ["integrations", "xero", "xero-import", "seazona", "sentry"] }
         ]
       },

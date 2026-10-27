@@ -22,6 +22,7 @@
     "invoices-approved",
     "invoices-ticked",
     "invoices-filter",
-    "reconcile"
+    "reconcile",
+    "portal-jobs"
   ]
 }

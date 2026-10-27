@@ -84,7 +84,9 @@ export const RULES = {
     "pageOverflow": "none",
     "screens": [
       "invoice",
-      "invoice-issued"
+      "invoice-issued",
+      "portal-jobs",
+      "portal-team"
     ],
     "card": "CardRows"
   },
@@ -143,7 +145,9 @@ export const RULES = {
     },
     "touch": 44,
     "pageOverflow": "none",
-    "screens": [],
+    "screens": [
+      "portal-job"
+    ],
     "card": "Crumbs"
   },
   "dialog": {
@@ -203,7 +207,8 @@ export const RULES = {
       "invoices-approved",
       "invoices-ticked",
       "invoices-filter",
-      "reconcile"
+      "reconcile",
+      "portal-jobs"
     ],
     "card": "Filter"
   },
@@ -230,7 +235,8 @@ export const RULES = {
       "invoices-approved",
       "invoices-ticked",
       "invoices-filter",
-      "reconcile"
+      "reconcile",
+      "portal-jobs"
     ],
     "card": "FindBox"
   },
@@ -311,7 +317,8 @@ export const RULES = {
       "invoices-approved",
       "invoices-ticked",
       "invoices-filter",
-      "reconcile"
+      "reconcile",
+      "portal-jobs"
     ],
     "card": "ListFrame"
   },
@@ -339,7 +346,8 @@ export const RULES = {
       "invoices-approved",
       "invoices-ticked",
       "invoices-filter",
-      "reconcile"
+      "reconcile",
+      "portal-jobs"
     ],
     "card": "ListHead"
   },
@@ -452,7 +460,10 @@ export const RULES = {
       "automations",
       "integrations",
       "custom-fields",
-      "appearance"
+      "appearance",
+      "portal-jobs",
+      "portal-job",
+      "portal-team"
     ],
     "card": "PageHeader"
   },
@@ -508,7 +519,9 @@ export const RULES = {
     },
     "touch": 44,
     "pageOverflow": "none",
-    "screens": [],
+    "screens": [
+      "portal-team"
+    ],
     "card": "RowMenu"
   },
   "savedViews": {

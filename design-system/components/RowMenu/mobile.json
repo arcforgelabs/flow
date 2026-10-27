@@ -12,5 +12,7 @@
   },
   "touch": 44,
   "pageOverflow": "none",
-  "screens": []
+  "screens": [
+    "portal-team"
+  ]
 }

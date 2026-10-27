@@ -28,6 +28,9 @@
     "automations",
     "integrations",
     "custom-fields",
-    "appearance"
+    "appearance",
+    "portal-jobs",
+    "portal-job",
+    "portal-team"
   ]
 }

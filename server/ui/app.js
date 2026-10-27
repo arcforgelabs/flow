@@ -16,6 +16,7 @@ import { renderInvoicingSettings, sendModeSection } from '/assets/ui/invoicing-s
 import { renderPriceList } from '/assets/ui/price-list.js';
 import { renderPriceReconcile } from '/assets/ui/price-reconcile.js';
 import { renderCustomFields } from '/assets/ui/custom-fields.js';
+import { renderPortalSettings } from '/assets/ui/portal-settings.js';
 import { renderJobs } from '/assets/ui/jobs.js';
 import { renderReconcile } from '/assets/ui/reconcile.js';
 import { renderXeroImport } from '/assets/ui/xero-import.js';
@@ -159,6 +160,7 @@ const VIEWS = {
   'invoicing-settings': { label: 'Rules', icon: 'rules', render: (main, id) => renderInvoicingSettings(main, ui(), id) },
   automations: { label: 'Automations', icon: 'bolt', place: 'more', render: (main) => renderAutomations(main, ui()) },
   'custom-fields': { label: 'Custom fields', icon: 'fields', place: 'more', render: (main) => renderCustomFields(main, ui()) },
+  'portal-settings': { label: 'Portal', icon: 'portal', place: 'more', managerOnly: true, render: (main) => renderPortalSettings(main, ui()) },
   integrations: { label: 'Integrations', icon: 'plug', place: 'more', ownerOnly: true, render: (main, id) => (id ? renderIntegration(main, id) : renderIntegrations(main)) },
   people: { label: 'People', icon: 'people', place: 'account', ownerOnly: true, render: renderPeople },
   // Not in the sidebar: "Manage account" in the account menu opens the same
@@ -187,6 +189,7 @@ const ICON_PATHS = {
   sidebar: '<rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M9.5 4v16"/>',
   more: '<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>',
   palette: '<path d="M12 3a9 9 0 100 18c1.1 0 1.5-.8 1.5-1.6 0-1-.8-1.4-.8-2.4 0-.9.7-1.5 1.6-1.5H17a4 4 0 004-4c0-4.7-4-8.5-9-8.5z"/><circle cx="7.5" cy="11" r="1"/><circle cx="10" cy="7" r="1"/><circle cx="15" cy="7" r="1"/>',
+  portal: '<path d="M4 21V5a2 2 0 012-2h8a2 2 0 012 2v16"/><path d="M8 21v-5h4v5"/><circle cx="14" cy="11" r="1"/>',
 };
 
 function icon(name) {
@@ -260,9 +263,15 @@ document.addEventListener('click', (event) => {
 
 // Search, from the sidebar foot or Ctrl+K (⌘K): the pages this person may
 // open, invoices and jobs (search.js).
+function mayOpen(view) {
+  if (view.ownerOnly && me?.person.role !== 'owner') return false;
+  if (view.managerOnly && !['owner', 'admin'].includes(me?.person?.role)) return false;
+  return true;
+}
+
 function search() {
   const views = Object.entries(VIEWS)
-    .filter(([, view]) => !view.ownerOnly || me?.person.role === 'owner')
+    .filter(([, view]) => mayOpen(view))
     .map(([name, view]) => ({ name, label: view.label, icon: view.icon }));
   openSearch({ h, flow, go, icon, views });
 }
@@ -296,7 +305,7 @@ const START_VIEW = 'invoices';
 // The view and, for one record, its id: /invoices/<id> is ['invoices', '<id>'].
 function currentView() {
   const [name, id = null] = location.pathname.replace(/^\/+|\/+$/g, '').split('/');
-  if (VIEWS[name] && (!VIEWS[name].ownerOnly || me?.person.role === 'owner')) return [name, id];
+  if (VIEWS[name] && mayOpen(VIEWS[name])) return [name, id];
   return [START_VIEW, null];
 }
 
@@ -362,7 +371,7 @@ function renderSignedOut() {
 
 // Sidebar pages this person may open. Account pages stay in the account menu.
 function sidebarViews() {
-  return Object.entries(VIEWS).filter(([, view]) => view.sidebar !== false && view.place !== 'account' && (!view.ownerOnly || me?.person.role === 'owner'));
+  return Object.entries(VIEWS).filter(([, view]) => view.sidebar !== false && view.place !== 'account' && mayOpen(view));
 }
 
 // Null until the shell reads the account. Jobs and Invoices are always in it.
@@ -475,7 +484,7 @@ function renderShell() {
   // (the email when the account has no name). It opens the account menu.
   // People (owners) and Appearance live in the account menu.
   const accountItems = Object.entries(VIEWS)
-    .filter(([, view]) => view.place === 'account' && (!view.ownerOnly || me?.person.role === 'owner'))
+    .filter(([, view]) => view.place === 'account' && mayOpen(view))
     .map(([name, view]) => accountMenuItem(view.label, view.icon, () => go(`/${name}`)));
   const userButton = { afterSignOutUrl: '/sign-in', showName: true, customMenuItems: accountItems };
   $('search').replaceChildren(icon('search'));

@@ -14,6 +14,8 @@ const DENIALS = {
   email_not_plain: [403, 'Flow only accepts plain (ASCII) email addresses.'],
   email_linked_elsewhere: [403, 'That email address is already linked to a different sign-in. Ask a Flow owner.'],
   not_invited: [403, 'This installation is invitation only. Ask a Flow owner to invite you.'],
+  not_a_member: [403, 'This sign-in is not on a practice team. Ask the lab, or join.'],
+  portal_off: [403, 'The practice portal is turned off.'],
   access_pending: [403, "You're signed in, but a Flow owner still needs to approve your access."],
   access_disabled: [403, 'Your Flow access has been turned off. Ask a Flow owner if this is a mistake.'],
   role_required: [403, 'Your Flow role does not allow this.'],

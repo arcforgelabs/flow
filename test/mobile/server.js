@@ -4,6 +4,8 @@ import { createPersonAuth } from '../../server/auth/session.js';
 import { createField } from '../../server/core/custom-fields.js';
 import { createContact, createOrganisation, createPriceItem } from '../../server/core/directory.js';
 import { createDraftInvoice, issueInvoice } from '../../server/core/invoices.js';
+import { observeJob } from '../../server/core/ledger.js';
+import { invoicingSettings, practiceMembers } from '../../server/db/schema.js';
 import { adapters as shippedAdapters } from '../../server/integrations/adapters.js';
 import { createRegistry } from '../../server/integrations/port.js';
 import { fakeClerk, TEST_PUBLISHABLE_KEY } from '../support/clerk.js';
@@ -66,6 +68,7 @@ export async function startFlow({ port = 0 } = {}) {
   // one.
   const clerk = fakeClerk();
   const tokens = {};
+  const portalUsers = [];
   let firstOwner = null;
   for (const size of SIZES) {
     for (const engine of ENGINES) {
@@ -77,8 +80,10 @@ export async function startFlow({ port = 0 } = {}) {
           : await seedFirstOwner(db, email);
         firstOwner ??= person;
         await setPersonAppearance(db, { id: person.id, appearance: { colorMode: theme.mode, themeFamily: theme.family } });
-        // Long enough for a whole run.
-        tokens[project] = clerk.signIn(clerk.addUser({ email, google: true, password: false }), { expiresIn: 6 * 3600 });
+        // Long enough for a whole run. The same sign-in is a practice member.
+        const userId = clerk.addUser({ email, google: true, password: false });
+        portalUsers.push({ email, userId, name: person.name ?? `Owner ${theme.label}` });
+        tokens[project] = clerk.signIn(userId, { expiresIn: 6 * 3600 });
       }
     }
   }
@@ -102,6 +107,58 @@ export async function startFlow({ port = 0 } = {}) {
     }
     invoiceIds.push(invoice.id);
   }
+
+  // Practice portal: Northside Dental's jobs, on, with each project owner
+  // on that team. A second member gives every owner a row menu.
+  let portalJobId = null;
+  for (let i = 0; i < 42; i += 1) {
+    const product = PRODUCTS[i % PRODUCTS.length];
+    const row = await observeJob(db, lab.id, {
+      sourceSystem: 'worksystem',
+      sourceJobRef: `CASE-${48200 + i}`,
+      caseRef: String(48200 + i),
+      contactId: contacts[i % contacts.length].id,
+      practitioner: PRACTITIONERS[i % PRACTITIONERS.length],
+      jobDate: day(10 + (i % 20)),
+      sourceStatus: STAGES[i % STAGES.length],
+      lines: [{ description: product[1], unitAmountCents: product[2], itemCode: product[0] }],
+    });
+    if (i % CLINICS.length === 0 && !portalJobId) portalJobId = row.id;
+  }
+  await db.insert(invoicingSettings).values({
+    organisationId: lab.id,
+    portalEnabled: true,
+    portalStatusNames: {
+      Received: 'Received',
+      Design: 'In work',
+      Milling: 'In work',
+      Finishing: 'In work',
+      'Quality check': 'Quality check',
+      Shipped: 'Sent',
+    },
+    updatedBy: firstOwner.id,
+  });
+  await db.insert(practiceMembers).values([
+    ...portalUsers.map((user) => ({
+      organisationId: lab.id,
+      contactId: contacts[0].id,
+      email: user.email,
+      name: user.name,
+      role: 'owner',
+      status: 'active',
+      clerkUserId: user.userId,
+      practitionerName: 'Dr A. Example',
+    })),
+    {
+      organisationId: lab.id,
+      contactId: contacts[0].id,
+      email: 'sam.staff@example.test',
+      name: 'Sam Staff',
+      role: 'staff',
+      status: 'active',
+      practitionerName: null,
+    },
+  ]);
 
   // Every row as made on one fixed day, so a "made on" date never changes a
   // screenshot. Append-only records refuse the change and keep their own.
@@ -136,6 +193,8 @@ export async function startFlow({ port = 0 } = {}) {
     tokens,
     invoiceId: invoiceIds[1],
     issuedId,
+    portalJobId,
+    contactId: contacts[0].id,
     async close() {
       await new Promise((resolve) => server.close(resolve));
       await integrations.stop?.();
@@ -151,5 +210,7 @@ export default async function globalSetup() {
   process.env.MOBILE_TOKENS = JSON.stringify(flow.tokens);
   process.env.MOBILE_INVOICE = flow.invoiceId;
   process.env.MOBILE_ISSUED = flow.issuedId;
+  process.env.MOBILE_PORTAL_JOB = flow.portalJobId;
+  process.env.MOBILE_CONTACT = flow.contactId;
   return () => flow.close();
 }

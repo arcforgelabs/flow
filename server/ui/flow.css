@@ -2030,3 +2030,45 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
   .fx-contacts :is(.fx-btn, .fx-input, .fx-select, .fx-check) { min-height: 44px; }
   .fx-contacts .fx-help { min-width: 44px; min-height: 44px; }
 }
+
+/* Practice portal (server/ui/portal.js). Touch targets live on these pages
+   only, so the lab screenshots stay as they are. */
+.fx-portal-practice { margin: 4px 10px 10px; color: var(--t-dim); font-size: 13px; }
+.fx-portal-join { width: min(100%, 360px); }
+.fx-portal-signin-join { margin: 0; color: var(--t-dim); text-align: center; }
+.fx-track { display: flex; gap: 8px; margin: 0; padding: 4px 0 8px; list-style: none; }
+.fx-track li {
+  position: relative; flex: 1; display: flex; flex-direction: column; align-items: center; gap: 8px;
+  color: var(--t-dim); font-size: 13px; text-align: center;
+}
+.fx-track li::before {
+  content: ""; width: 14px; height: 14px; border: 2px solid var(--fx-line); border-radius: 50%;
+  background: var(--t-paper); z-index: 1;
+}
+.fx-track li[data-state="done"] { color: var(--t-strong); }
+.fx-track li[data-state="done"]::before,
+.fx-track li[data-state="current"]::before { border-color: var(--t-accent); }
+.fx-track li[data-state="done"]::before { background: var(--t-accent); }
+.fx-track li[data-state="current"] { color: var(--t-strong); font-weight: 650; }
+.fx-track li[data-state="current"]::before { box-shadow: 0 0 0 3px color-mix(in srgb, var(--t-accent) 35%, transparent); }
+.fx-track li:not(:last-child)::after {
+  content: ""; position: absolute; top: 7px; left: calc(50% + 12px); width: calc(100% - 24px); height: 2px; background: var(--fx-line);
+}
+.fx-track li[data-state="done"]:not(:last-child)::after { background: var(--t-accent); }
+.fx-meta { display: grid; grid-template-columns: 7.5rem minmax(0, 1fr); gap: 8px 16px; margin: 0; }
+.fx-meta dt { color: var(--t-dim); }
+.fx-meta dd { margin: 0; }
+.fx-portal-lab { display: grid; gap: 12px; margin-top: 16px; padding: 16px 20px; }
+@media (max-width: 639px) {
+  .fx-track { flex-direction: column; align-items: stretch; gap: 12px; }
+  .fx-track li { flex-direction: row; justify-content: flex-start; text-align: left; }
+  .fx-track li:not(:last-child)::after { display: none; }
+  .fx-meta { grid-template-columns: minmax(0, 1fr); gap: 2px 0; }
+  .fx-meta dd { margin-bottom: 8px; }
+}
+@media (max-width: 1023px) {
+  .fx-portal { --fx-control-h: 44px; }
+  .fx-portal :is(.fx-btn, .fx-input, .fx-select, .fx-chip, .fx-cfm__more, .fx-nav a, .fx-table a, .fx-auth a, .fx-crumbs a) { min-height: 44px; }
+  .fx-portal :is(.fx-auth a, .fx-table a, .fx-crumbs a) { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; }
+  .fx-portal .fx-cfm__more, .fx-portal #menu-toggle { width: 44px; height: 44px; }
+}

@@ -5,6 +5,7 @@ import { createWorkMovesRouter } from './api/work-moves.js';
 import { createConnectorApi } from './api/connector.js';
 import { createInvoicingRouter } from './api/invoicing.js';
 import { createSignInRouter } from './auth/routes.js';
+import { createPortalRouter } from './portal/routes.js';
 import { integrationAlertsSource, invoiceProblemsSource, priceDifferencesSource } from './core/alerts.js';
 import { reconcileHealth } from './core/reconcile.js';
 import { appliedMigrationCounts } from './db/doctor.js';
@@ -180,6 +181,17 @@ export function createApp({
   for (const { path, handler } of integrations?.routes({ db: database?.db ?? null, personAuth: auth?.personAuth ?? null, log, messagePage: page, buttonCooldowns }) ?? []) {
     app.use(path, handler);
   }
+
+  app.use(createPortalRouter({
+    db: database?.db ?? null,
+    clerk: auth?.clerk ?? null,
+    personAuth: auth?.personAuth ?? null,
+    work: () => integrations?.with('listWork') ?? [],
+    defaultFamily,
+    log,
+    rateLimitPerMinute,
+    joinRateLimitPerMinute: signInRateLimitPerMinute,
+  }));
 
   app.use(createSignInRouter({
     settings: auth?.settings ?? { mode: 'off' },
