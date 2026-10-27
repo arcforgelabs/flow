@@ -14,12 +14,25 @@ export const MIRROR_FRESH_MS = 24 * 60 * 60 * 1000;
 // and must still match jobs.
 export const PROOF_RESOURCES = Object.freeze(['invoices', 'credit_notes']);
 
+// `contact` is the Flow contact a new client becomes (docs/CONTACTS.md,
+// "Add Xero clients"). A contact Xero marks a supplier only still links by
+// name, but never becomes a Flow customer (`adoptable` false).
 export async function listCustomers(db, organisationId) {
   const { rows } = await db.execute(sql`
-    select xero_contact_id, name, status from xero_contacts
+    select xero_contact_id, name, first_name, last_name, email, phone, mobile, account_number, tax_number, address,
+      is_customer, is_supplier
+    from xero_contacts
     where organisation_id = ${organisationId} and status = 'ACTIVE'
     order by name`);
-  return rows.map((r) => ({ id: r.xero_contact_id, name: r.name }));
+  return rows.map((r) => ({
+    id: r.xero_contact_id,
+    name: r.name,
+    adoptable: Boolean(r.is_customer || !r.is_supplier),
+    contact: {
+      kind: 'customer', name: r.name, firstName: r.first_name, lastName: r.last_name, email: r.email, phone: r.phone,
+      mobile: r.mobile, accountNumber: r.account_number, taxNumber: r.tax_number, address: r.address,
+    },
+  }));
 }
 
 // Xero's items, from Flow's copy (catalogue.js, read on each sync), for the

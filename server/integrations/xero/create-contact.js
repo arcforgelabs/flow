@@ -5,6 +5,7 @@ import { flowIdFor, linkRecord, supersedeLink } from '../../core/links.js';
 import { mapContact, matchContactFor, normaliseName, upsertContact } from './catalogue.js';
 import { xeroError } from './client.js';
 import { readConnection } from './connections.js';
+import { contactClashes } from './contact-sync.js';
 import { withXeroLane } from './governor.js';
 import { writesAllowed } from './settings.js';
 
@@ -76,10 +77,12 @@ function activeNamed(contacts, name) {
 export async function matchCustomer(db, runtime, { organisationId, contactId }) {
   const connection = await readConnection(db, organisationId);
   const connected = Boolean(connection && connection.mode === runtime.settings.mode);
-  if (!connected) return { state: 'off', offerCreate: false, offerLink: false, xeroContactId: null, name: null };
+  if (!connected) return { state: 'off', offerCreate: false, offerLink: false, xeroContactId: null, name: null, differs: [] };
   const contact = await getContact(db, organisationId, contactId);
   const match = await matchContactFor(db, organisationId, { contactId, name: contact.name });
   return {
+    // Fields both sides changed (Two-way edits, contact-sync.js): alert only.
+    differs: match.state === 'matched' ? (await contactClashes(db, organisationId, contactId)).map(({ field, flow, xero }) => ({ field, flow, xero })) : [],
     state: match.state,
     offerCreate: match.state === 'missing' && runtime.settings.createContacts && writesAllowed(runtime.settings),
     offerLink: match.state !== 'matched',

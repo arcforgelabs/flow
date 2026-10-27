@@ -106,7 +106,7 @@ export async function linkCustomers(db, organisationId, { system, customers, ado
     for (const customer of external) {
       if (linkedExternal.has(String(customer.id))) result.alreadyLinked += 1;
     }
-    if (adopt && own.length === 0 && external.length === 1 && !linkedExternal.has(String(external[0].id))) {
+    if (adopt && own.length === 0 && external.length === 1 && external[0].adoptable !== false && !linkedExternal.has(String(external[0].id))) {
       if (await adoptCustomer(db, organisationId, { system, customer: external[0] })) {
         result.added += 1;
         continue;
@@ -551,8 +551,9 @@ export async function runPipelineOnce(db, integrations, { now = new Date() } = {
   }
   if (accounting) {
     if (typeof accounting.capabilities.listCustomers === 'function') {
+      const adding = (await listAutomations(db, organisationId)).find((a) => a.key === 'add_xero_contacts');
       summary.accountingCustomers = await linkCustomers(db, organisationId, {
-        system: accounting.id, customers: await accounting.capabilities.listCustomers({ organisationId }),
+        system: accounting.id, customers: await accounting.capabilities.listCustomers({ organisationId }), adopt: Boolean(adding?.enabled),
       });
     }
     const settings = await readInvoicingSettings(db, organisationId);

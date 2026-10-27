@@ -92,6 +92,13 @@
       "when": 1792550000000,
       "tag": "0012_xero_contact_details",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1792560000000,
+      "tag": "0013_xero_contact_sync",
+      "breakpoints": true
     }
   ]
 }
