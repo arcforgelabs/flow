@@ -622,6 +622,11 @@ const CATALOGUE = {
 const CATEGORIES = [['all', 'All'], ['accounting', 'Accounting'], ['lab', 'Lab software'], ['monitoring', 'Monitoring']];
 const CATEGORY_LABEL = Object.fromEntries(CATEGORIES);
 
+// The two notices every integration page can show, each one short line. The
+// detail is on the ? (docs/INTEGRATIONS.md has the rest).
+const readOnlyNotice = () => notice('Verified owner sign-in needed.', 'warn', 'Read only.');
+const secretsKeyNotice = () => notice('Set FLOW_SECRETS_KEY, then restart Flow.', 'warn', 'No secrets key.');
+
 function integrationLogo(integration, size = '') {
   const file = CATALOGUE[integration.id]?.logo;
   return h('span', { class: `fx-logo${size ? ` fx-logo--${size}` : ''}`, 'aria-hidden': 'true' },
@@ -631,7 +636,7 @@ function integrationLogo(integration, size = '') {
 async function renderIntegrations(main) {
   const state = { tab: 'all', category: 'all', q: '' };
   const tabs = h('div', { class: 'fx-seg', role: 'tablist' });
-  const search = h('input', { class: 'fx-input fx-search', type: 'search', placeholder: 'Search integrations', 'aria-label': 'Search integrations' });
+  const search = h('input', { class: 'fx-input fx-search', type: 'search', placeholder: 'Search', 'aria-label': 'Search integrations' });
   const category = h('select', { class: 'fx-select', 'aria-label': 'Category' },
     CATEGORIES.map(([id, label]) => h('option', { value: id }, id === 'all' ? 'All categories' : label)));
   const notices = h('div', { class: 'fx-fields' });
@@ -650,8 +655,8 @@ async function renderIntegrations(main) {
   }
   const canChange = Boolean(me.ownerActions?.allowed);
   notices.replaceChildren(...[
-    canChange ? null : notice('Changing integrations needs a verified owner sign-in: Google Workspace on the owner domain with no password, or a second factor.', 'warn', 'Read only.'),
-    body.secretsKey ? null : notice('Flow cannot store a client secret. Set FLOW_SECRETS_KEY (64 hex characters), then restart Flow.', 'warn', 'No secrets key.'),
+    canChange ? null : readOnlyNotice(),
+    body.secretsKey ? null : secretsKeyNotice(),
   ].filter(Boolean));
   const list = [...body.integrations].sort((a, b) => a.name.localeCompare(b.name));
   const connected = (i) => i.enabled;
@@ -706,8 +711,8 @@ function integrationTile(integration) {
 }
 
 
-// One integration's page (/integrations/<id>): its logo and maker, Connect
-// with each step shown as it happens, the setup steps, its settings, and the
+// One integration's page (/integrations/<id>): its logo, name and Connect
+// (each step shown as it runs), the setup steps (closed), its settings, and the
 // facts beside them.
 async function renderIntegration(main, id) {
   const host = h('div', { class: 'fx-int-page' }, h('div', { class: 'fx-skeleton' }));
@@ -733,6 +738,9 @@ async function renderIntegration(main, id) {
     ? h('span', { class: 'fx-status', 'data-tone': 'danger', 'data-int-status': '' }, 'Calls stopped')
     : h('span', { class: 'fx-status', 'data-tone': STATE_TONE[current.state] ?? 'mute', 'data-int-status': '' }, STATE_LABEL[current.state] ?? current.state));
   let shown = found;
+  // Settings: closed on a phone, open on a wider screen, then as the person
+  // leaves it while the page redraws (Connect).
+  let settingsOpen = !window.matchMedia?.('(max-width: 639px)').matches;
   const alerts = alertStrip(ui(), 'integrations', {
     scope: id,
     onLoad: ({ danger }) => {
@@ -750,7 +758,7 @@ async function renderIntegration(main, id) {
         // The host sets it: a value to read, not a box to type in.
         rows.push(settingRow({
           label: field.label,
-          hint: 'Set by whoever hosts Flow.',
+          help: 'Set by whoever hosts Flow.',
           control: field.secret ? h('span', { class: 'fx-dim' }, 'Set') : h('code', { class: 'fx-setting__value' }, field.value),
         }));
         continue;
@@ -772,10 +780,11 @@ async function renderIntegration(main, id) {
       const suggestion = field.suggest === 'callback' ? `${location.origin}/api/${current.id}/oauth/callback` : null;
       rows.push(settingRow({
         label: field.label,
-        hint: field.unreadable ? 'Stored with another key. Enter it again.' : field.help,
+        hint: field.unreadable ? 'Stored with another key. Enter it again.' : null,
+        help: field.help,
         control: suggestion && !disabled
           ? h('div', { class: 'fx-setting__stack' }, input,
-            h('button', { class: 'fx-btn fx-btn--ghost fx-btn--sm', type: 'button', title: suggestion, onclick: () => { input.value = suggestion; navigator.clipboard?.writeText(suggestion); toast('Address filled in and copied.', 'success'); } }, 'Use this installation\'s address'))
+            h('button', { class: 'fx-btn fx-btn--ghost fx-btn--sm', type: 'button', title: suggestion, onclick: () => { input.value = suggestion; navigator.clipboard?.writeText(suggestion); toast('Address filled in and copied.', 'success'); } }, 'Use this address'))
           : input,
       }));
     }
@@ -831,7 +840,6 @@ async function renderIntegration(main, id) {
     const on = current.enabled;
     const guide = current.guide;
     const hostOwned = current.enabledBy === 'host';
-    const entry = CATALOGUE[current.id];
     const mode = current.fields.find((f) => /_MODE$/.test(f.name));
     const modeLabel = mode?.choices?.find((c) => c.value === mode.value)?.label ?? mode?.value;
     const busy = progress && progress.steps.some((step) => step.state === 'running');
@@ -843,21 +851,18 @@ async function renderIntegration(main, id) {
 
     host.replaceChildren(
       crumbs(['/integrations', 'Integrations'], current.name),
-      h('header', { class: 'fx-int-hero' },
-        integrationLogo(current, 'xl'),
-        h('div', { class: 'fx-int-hero__text' },
-          h('h1', { class: 'fx-title' }, current.name),
-          h('p', { class: 'fx-int-hero__maker' }, entry?.maker ?? current.name, h('span', { class: 'fx-dim' }, CATEGORY_LABEL[entry?.category] ?? 'Integration')),
-          h('p', { class: 'fx-int-hero__blurb' }, entry?.blurb ?? ''),
-          h('div', { class: 'fx-int-hero__actions' },
-            primary,
-            on ? statusPill(current) : null,
-            progress ? connectProgress(progress) : null))),
       h('div', { class: 'fx-int-page__grid' },
         h('div', { class: 'fx-int-page__main' }, ...[
+          h('header', { class: 'fx-int-hero' },
+            integrationLogo(current, 'lg'),
+            h('h1', { class: 'fx-title' }, current.name),
+            h('div', { class: 'fx-int-hero__actions' },
+              on ? statusPill(current) : null,
+              primary,
+              progress ? connectProgress(progress) : null)),
           alerts.element,
-          !canChange ? notice('Changing integrations needs a verified owner sign-in: Google Workspace on the owner domain with no password, or a second factor.', 'warn', 'Read only.') : null,
-          !body.secretsKey ? notice('Flow cannot store a client secret. Set FLOW_SECRETS_KEY (64 hex characters), then restart Flow.', 'warn', 'No secrets key.') : null,
+          !canChange ? readOnlyNotice() : null,
+          !body.secretsKey ? secretsKeyNotice() : null,
           current.state === 'failed' && current.error ? notice(current.error, 'danger', 'It could not start.') : null,
           current.id === 'xero' && current.state === 'ready' ? h('section', { class: 'fx-int-section' }, xeroConnection(body.organisations, canChange)) : null,
           current.id === 'seazona' ? h('section', { class: 'fx-int-section fx-card', style: { padding: '8px 20px 16px' } }, automationSection(ui(), 'seazona', 'Ready to invoice')) : null,
@@ -865,23 +870,22 @@ async function renderIntegration(main, id) {
           current.id === 'xero' && current.state === 'ready' ? xeroImportSection(body.organisations) : null,
           current.id === 'xero' ? h('section', { class: 'fx-int-section fx-card', style: { padding: '8px 20px 16px' } }, automationSection(ui(), 'xero', 'Contacts')) : null,
           current.id === 'xero' ? h('section', { class: 'fx-int-section fx-card', style: { padding: '8px 20px 16px' } }, sendModeSection(ui())) : null,
-          guide ? h('section', { class: 'fx-int-section' },
-            h('h2', { class: 'fx-int-section__title' }, 'Set up'),
+          guide ? h('details', { class: 'fx-int-section fx-int-fold' },
+            h('summary', { class: 'fx-int-section__title' }, 'Set up'),
             h('ol', { class: 'fx-steps' }, guide.steps.map((step) => h('li', {}, step))),
-            guide.link ? h('a', { class: 'fx-btn fx-btn--sm', href: guide.link, target: '_blank', rel: 'noopener' }, `Open ${current.name} developer site ↗`) : null) : null,
-          rows.length ? h('section', { class: 'fx-int-section' },
-            h('h2', { class: 'fx-int-section__title' }, 'Settings'),
+            guide.link ? h('a', { class: 'fx-btn fx-btn--sm', href: guide.link, target: '_blank', rel: 'noopener' }, `${current.name} site ↗`) : null) : null,
+          rows.length ? h('details', { class: 'fx-int-section fx-int-fold', open: settingsOpen, ontoggle: (event) => { settingsOpen = event.currentTarget.open; } },
+            h('summary', { class: 'fx-int-section__title' }, 'Settings'),
             h('div', { class: 'fx-settings' }, rows),
             canChange && on && inputs.size ? h('div', { class: 'fx-row fx-row--end' }, h('button', { class: 'fx-btn', type: 'button', onclick: () => save(undefined) }, 'Save changes')) : null) : null,
         ].filter(Boolean)),
         h('aside', { class: 'fx-int-page__meta' },
           h('dl', { class: 'fx-meta' }, ...[
             ['Status', statusPill(current)],
-            ['Category', h('span', { class: 'fx-chip fx-chip--static' }, CATEGORY_LABEL[entry?.category] ?? 'Integration')],
             modeLabel ? ['Mode', modeLabel] : null,
-            ['Turned on by', current.enabledBy === 'host' ? 'The host' : current.enabledBy === 'flow' ? 'An owner, here' : '—'],
-            current.updatedAt ? ['Last changed', new Date(current.updatedAt).toLocaleString('en-AU', { dateStyle: 'medium', timeStyle: 'short' })] : null,
-            guide?.link ? ['Documentation', h('a', { href: guide.link, target: '_blank', rel: 'noopener' }, 'Developer site ↗')] : null,
+            current.enabledBy === 'host' ? ['On by', 'Host'] : current.enabledBy === 'flow' ? ['On by', 'Owner'] : null,
+            current.updatedAt ? ['Changed', new Date(current.updatedAt).toLocaleString('en-AU', { dateStyle: 'medium', timeStyle: 'short' })] : null,
+            guide?.link ? ['Docs', h('a', { href: guide.link, target: '_blank', rel: 'noopener' }, `${current.name} ↗`)] : null,
           ].filter(Boolean).map(([label, value]) => h('div', {}, h('dt', {}, label), h('dd', {}, value)))))));
   };
   document.title = `${found.name} · Flow`;
@@ -911,7 +915,7 @@ function personSettingsSection(integration) {
         }
         input.disabled = false;
       });
-      return settingRow({ label: setting.label, hint: setting.hint, control: input });
+      return settingRow({ label: setting.label, help: setting.hint, control: input });
     });
     section.replaceChildren(section.firstChild, h('div', { class: 'fx-settings' }, rows));
   }).catch(() => section.remove());
@@ -934,7 +938,7 @@ function xeroImportSection(organisations) {
   const organisationId = organisations?.[0]?.id;
   const canAct = ['owner', 'admin'].includes(me?.person?.role);
   const count = h('span', { class: 'fx-num fx-xi-count' }, '…');
-  const copied = h('span', {}, 'Every Xero invoice Flow copied. Search it with no Xero call.');
+  const copied = h('span', {}, '');
   const switchFor = (name, label) => {
     const button = h('button', { class: 'fx-switch', type: 'button', role: 'switch', 'aria-label': label, 'aria-checked': 'false', disabled: true });
     button.addEventListener('click', async () => {
@@ -955,16 +959,16 @@ function xeroImportSection(organisations) {
   const makeUnmatched = switchFor('makeUnmatched', 'Make Flow invoices for the rest');
   const section = h('section', { class: 'fx-set fx-int-section fx-card', style: { padding: '8px 20px 16px' } },
     h('h2', { class: 'fx-set__title' }, 'Import'),
-    settingRow({ label: 'To check', hint: 'Xero invoices that fit a Flow invoice or a Flow job.',
+    settingRow({ label: 'To check', help: 'Xero invoices that fit a Flow invoice or a Flow job.',
       control: h('span', { class: 'fx-row' }, count, h('a', { class: 'fx-btn fx-btn--sm fx-btn--primary', href: '/xero-import', onclick: navigate }, 'Review')) }),
-    settingRow({ label: 'Link sure matches', hint: 'Same client, total and week, and only one fit. Flow links them.', control: autoLink }),
-    settingRow({ label: 'Make Flow invoices for the rest', hint: 'Off: they stay in the Xero history.', control: makeUnmatched }),
-    settingRow({ label: 'Xero history', hint: copied, control: h('a', { class: 'fx-btn fx-btn--sm', href: '/xero-import?show=all', onclick: navigate }, 'Search') }));
+    settingRow({ label: 'Link sure matches', help: 'Same client, total and week, and only one fit. Flow links them.', control: autoLink }),
+    settingRow({ label: 'Make Flow invoices for the rest', help: 'Off: they stay in the Xero history.', control: makeUnmatched }),
+    settingRow({ label: 'Xero history', hint: copied, help: 'Every Xero invoice Flow copied. A search makes no Xero call.', control: h('a', { class: 'fx-btn fx-btn--sm', href: '/xero-import?show=all', onclick: navigate }, 'Search') }));
   if (organisationId) {
     flow(`/api/xero/import?organisationId=${organisationId}&show=check&limit=1`)
       .then(({ counts: c, settings }) => {
         count.replaceChildren(String(c.job_fits + c.invoice_fits));
-        copied.replaceChildren(`${Object.values(c).reduce((a, b) => a + b, 0)} Xero invoices copied, ${c.linked} in Flow. Search with no Xero call.`);
+        copied.replaceChildren(`${Object.values(c).reduce((a, b) => a + b, 0)} copied, ${c.linked} in Flow`);
         autoLink.setAttribute('aria-checked', String(settings.autoLink));
         makeUnmatched.setAttribute('aria-checked', String(settings.makeUnmatched));
         autoLink.disabled = makeUnmatched.disabled = !canAct;

@@ -102,7 +102,7 @@ function draftsSection(ui) {
     }
   }
 
-  const row = (label, hint, control) => settingRow({ label, hint, control });
+  const row = (label, help, control) => settingRow({ label, help, control });
 
   // A text or number box saves when it loses focus with a new value.
   const box = (key, label, { type = 'text', read = (v) => v, show = (v) => v ?? '', placeholder } = {}) => {
@@ -139,7 +139,7 @@ export function sendModeSection(ui) {
   const select = h('select', { class: 'fx-select', 'aria-label': 'Send to Xero as', disabled },
     SEND_MODES.map((m) => h('option', { value: m.value }, m.label)));
   const section = h('section', { class: 'fx-set' }, ui.sectionTitle('Sending', { href: DOCS, label: 'How sending works' }),
-    ui.settingRow({ label: 'Send to Xero as', hint: 'Draft: approve in Xero. Approved: Xero emails it.', control: select }));
+    ui.settingRow({ label: 'Send to Xero as', help: 'Draft: approve in Xero. Approved: Xero emails it.', control: select }));
   let saved = null;
   (async () => {
     try {

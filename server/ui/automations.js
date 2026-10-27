@@ -27,7 +27,7 @@ export function automationSection(ui, place, title) {
     }
   }
 
-  const row = (label, hint, control) => settingRow({ label, hint, control });
+  const row = (label, help, control) => settingRow({ label, help, control });
 
   // A menu of the statuses the work system reported, each with its job count.
   // A status saved earlier stays in the menu even when no job has it now.

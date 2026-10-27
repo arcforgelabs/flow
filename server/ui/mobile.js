@@ -553,7 +553,9 @@ export const RULES = {
     "touch": 44,
     "pageOverflow": "none",
     "screens": [
-      "appearance"
+      "appearance",
+      "integration-xero",
+      "integration-seazona"
     ],
     "card": "SettingRow"
   },
