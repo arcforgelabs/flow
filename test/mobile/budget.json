@@ -61,7 +61,7 @@
   }
  },
  "phone-chromium-harbour-light/invoice": {
-  "small": 9,
+  "small": 3,
   "axe": {
    "aria-prohibited-attr": 1
   }
@@ -167,7 +167,7 @@
   }
  },
  "phone-chromium-meridian-dark/invoice": {
-  "small": 9,
+  "small": 3,
   "axe": {
    "aria-prohibited-attr": 1
   }
@@ -269,7 +269,7 @@
   }
  },
  "phone-chromium-meridian-light/invoice": {
-  "small": 9,
+  "small": 3,
   "axe": {
    "aria-prohibited-attr": 1
   }
@@ -365,7 +365,7 @@
   "small": 6
  },
  "phone-l-chromium-harbour-light/invoice": {
-  "small": 9
+  "small": 3
  },
  "phone-l-chromium-harbour-light/invoices-approved": {
   "small": 12
@@ -423,7 +423,7 @@
   "small": 6
  },
  "phone-l-chromium-meridian-dark/invoice": {
-  "small": 9
+  "small": 3
  },
  "phone-l-chromium-meridian-dark/invoices-approved": {
   "small": 12
@@ -481,7 +481,7 @@
   "small": 6
  },
  "phone-l-chromium-meridian-light/invoice": {
-  "small": 9
+  "small": 3
  },
  "phone-l-chromium-meridian-light/invoices-approved": {
   "small": 12
@@ -539,8 +539,7 @@
   "small": 6
  },
  "phone-l-webkit-harbour-light/invoice": {
-  "overflow": 234,
-  "small": 7
+  "small": 3
  },
  "phone-l-webkit-harbour-light/invoices-approved": {
   "small": 13
@@ -598,8 +597,7 @@
   "small": 6
  },
  "phone-l-webkit-meridian-dark/invoice": {
-  "overflow": 234,
-  "small": 7
+  "small": 3
  },
  "phone-l-webkit-meridian-dark/invoices-approved": {
   "small": 13
@@ -657,8 +655,7 @@
   "small": 6
  },
  "phone-l-webkit-meridian-light/invoice": {
-  "overflow": 234,
-  "small": 7
+  "small": 3
  },
  "phone-l-webkit-meridian-light/invoices-approved": {
   "small": 13
@@ -716,7 +713,7 @@
   "small": 6
  },
  "phone-s-chromium-harbour-light/invoice": {
-  "small": 9
+  "small": 3
  },
  "phone-s-chromium-harbour-light/invoices-approved": {
   "small": 12
@@ -774,7 +771,7 @@
   "small": 6
  },
  "phone-s-chromium-meridian-dark/invoice": {
-  "small": 9
+  "small": 3
  },
  "phone-s-chromium-meridian-dark/invoices-approved": {
   "small": 12
@@ -832,7 +829,7 @@
   "small": 6
  },
  "phone-s-chromium-meridian-light/invoice": {
-  "small": 9
+  "small": 3
  },
  "phone-s-chromium-meridian-light/invoices-approved": {
   "small": 12
@@ -890,8 +887,7 @@
   "small": 6
  },
  "phone-s-webkit-harbour-light/invoice": {
-  "overflow": 271,
-  "small": 7
+  "small": 3
  },
  "phone-s-webkit-harbour-light/invoices-approved": {
   "small": 12
@@ -949,8 +945,7 @@
   "small": 6
  },
  "phone-s-webkit-meridian-dark/invoice": {
-  "overflow": 271,
-  "small": 7
+  "small": 3
  },
  "phone-s-webkit-meridian-dark/invoices-approved": {
   "small": 13
@@ -1008,8 +1003,7 @@
   "small": 6
  },
  "phone-s-webkit-meridian-light/invoice": {
-  "overflow": 271,
-  "small": 7
+  "small": 3
  },
  "phone-s-webkit-meridian-light/invoices-approved": {
   "small": 13
@@ -1074,8 +1068,7 @@
   }
  },
  "phone-webkit-harbour-light/invoice": {
-  "overflow": 253,
-  "small": 7,
+  "small": 3,
   "axe": {
    "aria-prohibited-attr": 1
   }
@@ -1181,8 +1174,7 @@
   }
  },
  "phone-webkit-meridian-dark/invoice": {
-  "overflow": 253,
-  "small": 7,
+  "small": 3,
   "axe": {
    "aria-prohibited-attr": 1
   }
@@ -1284,8 +1276,7 @@
   }
  },
  "phone-webkit-meridian-light/invoice": {
-  "overflow": 253,
-  "small": 7,
+  "small": 3,
   "axe": {
    "aria-prohibited-attr": 1
   }
