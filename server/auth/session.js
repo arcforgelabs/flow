@@ -18,6 +18,10 @@ const DENIALS = {
   access_disabled: [403, 'Your Flow access has been turned off. Ask a Flow owner if this is a mistake.'],
   role_required: [403, 'Your Flow role does not allow this.'],
   owner_required: [403, 'Only a Flow owner can do this.'],
+  staff_session: [403, 'Practice pages are for a practice. Lab staff use Flow.'],
+  practice_required: [403, 'That practice is not yours.'],
+  portal_off: [403, 'The lab has turned the portal off.'],
+  session_revoked: [401, 'The lab signed you out. Sign in again.'],
   owner_verification_required: [403, null],
   sign_in_unavailable: [503, 'Sign-in is unavailable right now. Try again shortly.'],
 };

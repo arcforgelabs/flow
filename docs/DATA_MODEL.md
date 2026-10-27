@@ -49,6 +49,10 @@ erDiagram
   job_fields ||--o{ job_field_values : "holds"
   job_fields ||--o{ job_field_events : "is explained by"
   organisations ||--o| job_field_settings : "colours its field groups by"
+  contacts ||--o{ practice_members : "signs in through"
+  organisations ||--o{ portal_access_requests : "hears join requests by"
+  contacts ||--o{ audit_events : "is read in"
+  practice_members ||--o{ portal_sessions : "signs in with"
 ```
 
 `external_links`, `background_jobs`, `outbox` and `review_items` are the data
@@ -76,6 +80,14 @@ fields for its jobs, each job's values, and who changed them
 `(source_system, source_job_ref)`, so a job needs no obligation to have one.
 `job_field_settings` holds one row per organisation: each type group's
 colour, and when Flow made the Assignee field.
+
+`practice_members` is one person at one practice (a customer contact), with
+a portal role. `portal_access_requests` is someone asking to join.
+`audit_events` records each portal read and each member change; the rows
+cannot be updated or deleted. `portal_sessions` is a Clerk session the
+portal has seen, so an idle session ends and the lab can sign a member out.
+The portal's on/off switch and status names live on `invoicing_settings`
+(`docs/PORTAL.md`).
 
 `contacts` is Flow's own customer or supplier (`docs/CONTACTS.md`): name,
 first and last name, email, phone, mobile, account number, tax number, tax
@@ -195,6 +207,8 @@ installation low maintenance.
 | One queued or running job per kind and key; a job is finished only by the worker that holds its lease. | A partial unique index on `background_jobs`; `server/core/queue.js` |
 | Every write to another system has an outbox row first, with a unique idempotency key. | `outbox`; `server/core/outbox.js` |
 | One open review item per kind and record; a closed one records who chose what. | A partial unique index and a check on `review_items`; `server/core/review.js` |
+| A practice member's email is stored lower-case and is unique per practice. One practice keeps an owner. | Constraints on `practice_members`; `server/portal/members.js` |
+| `audit_events` rows cannot be updated or deleted. | Trigger in `0024_audit_events_append_only.sql` |
 
 ## Change the schema
 

@@ -4,7 +4,10 @@ import { createCustomFieldsRouter } from './api/custom-fields.js';
 import { createWorkMovesRouter } from './api/work-moves.js';
 import { createConnectorApi } from './api/connector.js';
 import { createInvoicingRouter } from './api/invoicing.js';
+import { createPortalAuth } from './auth/portal.js';
 import { createSignInRouter } from './auth/routes.js';
+import { createPortalRouter } from './portal/routes.js';
+import { createPortalStaffRouter } from './portal/staff.js';
 import { integrationAlertsSource, invoiceProblemsSource, priceDifferencesSource } from './core/alerts.js';
 import { reconcileHealth } from './core/reconcile.js';
 import { appliedMigrationCounts } from './db/doctor.js';
@@ -53,6 +56,9 @@ export function createApp({
   signInRateLimitPerMinute = 30,
   clerkProxyRateLimitPerMinute = 300,
   assetRateLimitPerMinute = 600,
+  portalJoinLimit = 5,
+  portalJoinWindowMs = 15 * 60 * 1000,
+  portalApiLimit = 120,
   defaultFamily = DEFAULT_FAMILY,
   // Buttons that call Xero or Seazona wait between presses (the action
   // guard, server/integrations/call-guard.js). Off only in tests.
@@ -130,6 +136,9 @@ export function createApp({
   if (integrations && database && auth?.personAuth) {
     app.use('/api/integrations', createSetupRouter({ db: database.db, registry: integrations, personAuth: auth.personAuth, secrets, log }));
   }
+  // The Jobs board and the practice portal: every enabled integration that
+  // lists its jobs (Seazona).
+  const work = () => integrations?.with('listWork') ?? [];
   // Invoicing for signed-in people (server/api/invoicing.js). A job's draft
   // invoice needs a live check in the accounting system: the first enabled
   // integration that offers `checkInvoice` (Xero) answers it.
@@ -141,8 +150,6 @@ export function createApp({
     // Send all ready (server/core/sending.js): the first enabled integration
     // that sends invoices (Xero).
     const accounting = () => integrations?.with('pushInvoices')[0] ?? null;
-    // The Jobs board: every enabled integration that lists its jobs (Seazona).
-    const work = () => integrations?.with('listWork') ?? [];
     // The price list: every enabled integration that keeps its own (Xero
     // items, Seazona products).
     const priceSystems = () => integrations?.with('listPriceItems') ?? [];
@@ -165,6 +172,10 @@ export function createApp({
         integrations: [integrationAlertsSource(() => integrations?.with('alerts') ?? [])],
       },
     }));
+    // Lab side of the practice portal: approve, settings, audit, sign-out.
+    app.use('/api/portal', createPortalStaffRouter({
+      db: database.db, personAuth: auth.personAuth, clerk: auth.clerk, work, log,
+    }));
   }
   // What a signed-in browser needs to report its errors and problems to the
   // installation's own error service (docs/SENTRY.md): the first integration
@@ -180,6 +191,23 @@ export function createApp({
   for (const { path, handler } of integrations?.routes({ db: database?.db ?? null, personAuth: auth?.personAuth ?? null, log, messagePage: page, buttonCooldowns }) ?? []) {
     app.use(path, handler);
   }
+
+  const portalAuth = auth?.portalAuth ?? (database?.db && auth?.clerk
+    ? createPortalAuth({ db: database.db, clerk: auth.clerk, log })
+    : null);
+  app.use(createPortalRouter({
+    db: database?.db ?? null,
+    clerk: auth?.clerk ?? null,
+    portalAuth,
+    settings: auth?.settings ?? { mode: 'off' },
+    defaultFamily,
+    work,
+    joinLimit: portalJoinLimit,
+    joinWindowMs: portalJoinWindowMs,
+    apiLimit: portalApiLimit,
+    signInLimit: signInRateLimitPerMinute,
+    log,
+  }));
 
   app.use(createSignInRouter({
     settings: auth?.settings ?? { mode: 'off' },
