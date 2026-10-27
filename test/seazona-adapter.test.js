@@ -261,7 +261,9 @@ describe('Seazona adapter on the integration port', { skip: skipWithoutDatabase 
     await db.execute(sql`insert into seazona_orders (id, client_id, company, status, record_hash, first_seen_at, last_synced_at, last_changed_at)
       values ('ORD-9001', 'CLI-ORDERS-ONLY', ' Example Orders Practice ', 'Shipped', 'h', now(), now(), now())`);
     const after = await adapter.capabilities.listCustomers();
-    assert.deepEqual(after.filter((c) => !before.some((b) => b.id === c.id)), [{ id: 'CLI-ORDERS-ONLY', name: 'Example Orders Practice' }]);
+    assert.deepEqual(after.filter((c) => !before.some((b) => b.id === c.id)), [{
+      id: 'CLI-ORDERS-ONLY', name: 'Example Orders Practice', contact: { kind: 'customer', name: 'Example Orders Practice' },
+    }]);
     await db.execute(sql`delete from seazona_orders where id = 'ORD-9001'`);
   });
 

@@ -1,8 +1,9 @@
 // Contacts (/contacts, /contacts/<id>). Flow's own customers and suppliers
 // (server/core/contacts.js, docs/CONTACTS.md). The list and the record work
 // with no integration on. When Xero is connected, the record says whether
-// that contact is in Xero and, for an owner or admin, offers Create.
+// that contact is in Xero and, for an owner or admin, offers Link and Create.
 import { initialsOf } from '/assets/ui/person.js';
+import { xeroContactActions } from '/assets/ui/xero-contact.js';
 
 const DOCS = 'https://github.com/arcforgelabs/flow/blob/main/docs/CONTACTS.md';
 const KINDS = [['customer', 'Customer'], ['supplier', 'Supplier']];
@@ -225,30 +226,11 @@ async function loadXero(ui, contact, canEdit, host) {
     return;
   }
   if (match.state === 'off') return;
-  const create = match.offerCreate && canEdit
-    ? h('button', {
-      class: 'fx-btn fx-btn--primary', type: 'button', title: 'Create this client in Xero',
-      onclick: async (event) => {
-        const button = event.currentTarget;
-        const confirmed = await ui.dialog({
-          title: `Create ${contact.name} in Xero?`,
-          body: h('p', {}, 'Flow adds this client to Xero from the contact.'),
-          confirm: 'Create',
-        });
-        if (!confirmed) return;
-        button.disabled = true;
-        try {
-          await flow('/api/xero/contacts', { method: 'POST', body: JSON.stringify({ organisationId, contactId: contact.id }) });
-          toast(`${contact.name} is in Xero.`, 'success');
-          host.replaceChildren(h('section', { class: 'fx-card' }, notice(`${contact.name} is in Xero.`, 'success')));
-        } catch (error) {
-          toast(error.message, error.status === 429 ? 'info' : 'danger');
-          if (error.retryAfterMs) ui.holdButton(button, error.retryAfterMs);
-          else button.disabled = false;
-        }
-      },
-    }, 'Create')
-    : null;
+  const actions = canEdit ? xeroContactActions(ui, {
+    organisationId, contact, offerLink: match.offerLink, offerCreate: match.offerCreate,
+    done: (outcome) => host.replaceChildren(h('section', { class: 'fx-card' },
+      notice(outcome === 'linked' ? `${contact.name} is linked to Xero.` : `${contact.name} is in Xero.`, 'success'))),
+  }) : [];
   const text = match.state === 'matched'
     ? `In Xero${match.name ? ` as ${match.name}` : ''}.`
     : match.state === 'ambiguous'
@@ -256,5 +238,5 @@ async function loadXero(ui, contact, canEdit, host) {
       : `No Xero contact is named "${contact.name}".`;
   host.replaceChildren(h('section', { class: 'fx-card fx-offer' },
     notice(text, match.state === 'matched' ? 'success' : 'danger', match.state === 'matched' ? 'Xero.' : 'Xero.'),
-    create));
+    ...actions));
 }

@@ -1,0 +1,16 @@
+{
+  "component": "pickOne",
+  "direction": "sheet list",
+  "phone": {
+    "layout": "sheet"
+  },
+  "tablet": {
+    "layout": "dialog"
+  },
+  "desk": {
+    "layout": "dialog"
+  },
+  "touch": 44,
+  "pageOverflow": "none",
+  "screens": []
+}

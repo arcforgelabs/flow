@@ -10,6 +10,7 @@ import { observeJob, observeWithdrawn, recordAccountingEvidence, setHold } from 
 import { loadMappingContext, mapLines } from './line-mapping.js';
 import { checkPrices, readCatalogues } from './price-list.js';
 import { linkRecord, priorLinkFor } from './links.js';
+import { createContact, readContact } from './contacts.js';
 import { HISTORY_ACTOR, HISTORY_HOLD_REASON, isHistoryHeld } from './history.js';
 import { deadHoldSince, deadSince, enqueueJob, runNextJob } from './queue.js';
 
@@ -88,19 +89,28 @@ function byName(records) {
 }
 
 // Links each customer of one system to the Flow customer with the same name,
-// when one record on each side has it and neither side is linked yet.
-export async function linkCustomers(db, organisationId, { system, customers }) {
+// when one record on each side has it and neither side is linked yet. With
+// `adopt`, a customer no Flow contact is named like becomes a new Flow
+// contact, linked to it (`imported`), so its jobs find their customer
+// (docs/CONTACTS.md). Two customers of one name stay for a person.
+export async function linkCustomers(db, organisationId, { system, customers, adopt = false }) {
   const flow = await db.select({ id: contacts.id, name: contacts.name }).from(contacts)
     .where(and(eq(contacts.organisationId, organisationId), eq(contacts.kind, 'customer')));
   const links = await activeLinks(db, organisationId, { system, entity: 'contact' });
   const linkedFlow = new Set(links.map((l) => l.flowId));
   const linkedExternal = new Set(links.map((l) => l.externalId));
   const flowByName = byName(flow);
-  const result = { linked: 0, alreadyLinked: 0, unmatched: 0, sameName: 0 };
+  const result = { linked: 0, alreadyLinked: 0, unmatched: 0, sameName: 0, added: 0 };
   for (const [key, external] of byName(customers)) {
     const own = flowByName.get(key) ?? [];
     for (const customer of external) {
       if (linkedExternal.has(String(customer.id))) result.alreadyLinked += 1;
+    }
+    if (adopt && own.length === 0 && external.length === 1 && !linkedExternal.has(String(external[0].id))) {
+      if (await adoptCustomer(db, organisationId, { system, customer: external[0] })) {
+        result.added += 1;
+        continue;
+      }
     }
     if (external.length !== 1 || own.length !== 1) {
       const waiting = external.filter((c) => !linkedExternal.has(String(c.id))).length;
@@ -117,6 +127,32 @@ export async function linkCustomers(db, organisationId, { system, customers }) {
     if (outcome === 'linked') result.linked += 1;
   }
   return result;
+}
+
+// The customer's own fields when Flow can keep them all, else its name only.
+async function adoptCustomer(db, organisationId, { system, customer }) {
+  const name = String(customer.name ?? '').trim();
+  const offered = { ...(customer.contact ?? {}), kind: 'customer', name };
+  let values;
+  try {
+    values = readContact(offered);
+  } catch (error) {
+    if (!(error instanceof FlowError)) throw error;
+    values = readContact({ kind: 'customer', name });
+  }
+  return db.transaction(async (tx) => {
+    let row;
+    try {
+      row = await createContact(tx, organisationId, values);
+    } catch (error) {
+      if (error instanceof FlowError && error.code === 'conflict') return false;
+      throw error;
+    }
+    const { outcome } = await linkRecord(tx, organisationId, {
+      entity: 'contact', flowId: row.id, system, externalId: String(customer.id), matchedBy: 'imported',
+    });
+    return outcome === 'linked' || outcome === 'existing';
+  });
 }
 
 async function readCursor(db, organisationId, name) {
@@ -500,9 +536,12 @@ export async function runPipelineOnce(db, integrations, { now = new Date() } = {
   if (work) {
     let restart = (summary.prices?.linked ?? 0) > 0;
     if (typeof work.capabilities.listCustomers === 'function') {
-      summary.workCustomers = await linkCustomers(db, organisationId, { system: work.id, customers: await work.capabilities.listCustomers({ organisationId }) });
+      const adding = (await listAutomations(db, organisationId)).find((a) => a.key === 'add_contacts');
+      summary.workCustomers = await linkCustomers(db, organisationId, {
+        system: work.id, customers: await work.capabilities.listCustomers({ organisationId }), adopt: Boolean(adding?.enabled),
+      });
       // New customer links reach jobs read before them.
-      restart ||= summary.workCustomers.linked > 0;
+      restart ||= summary.workCustomers.linked + summary.workCustomers.added > 0;
     }
     summary.work = await ingestWork(db, organisationId, { adapter: work, restart });
     // After the live feed, so a job both report is the live one.

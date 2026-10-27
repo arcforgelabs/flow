@@ -452,6 +452,23 @@ export const RULES = {
     "selector": ".fx-pager",
     "card": "Pager"
   },
+  "pickOne": {
+    "component": "pickOne",
+    "direction": "sheet list",
+    "phone": {
+      "layout": "sheet"
+    },
+    "tablet": {
+      "layout": "dialog"
+    },
+    "desk": {
+      "layout": "dialog"
+    },
+    "touch": 44,
+    "pageOverflow": "none",
+    "screens": [],
+    "card": "Pick"
+  },
   "rowMenu": {
     "component": "rowMenu",
     "direction": "menu",

@@ -134,12 +134,19 @@ export async function readBillableOrder(db, orderId) {
 // with no company name is listed by its full name. A client the client list
 // never gave (the list can be closed to an API client) is listed by the
 // company name its orders carry, so its jobs still find their customer.
+// `contact` is the Flow contact a new client becomes (docs/CONTACTS.md).
 export async function listClients(db) {
-  const rows = await db.select({ id: seazonaClients.id, company: seazonaClients.company, fullName: seazonaClients.fullName, active: seazonaClients.active })
-    .from(seazonaClients);
+  const rows = await db.select({
+    id: seazonaClients.id, company: seazonaClients.company, fullName: seazonaClients.fullName, active: seazonaClients.active,
+    accountNumber: seazonaClients.accountNumber, email: seazonaClients.email, phone: seazonaClients.phone,
+    address: seazonaClients.address, taxRate: seazonaClients.taxRate, doctors: seazonaClients.doctors,
+  }).from(seazonaClients);
   const listed = rows
     .filter((r) => r.active !== false)
-    .map((r) => ({ id: r.id, name: (r.company || r.fullName || '').trim() }))
+    .map((r) => {
+      const name = (r.company || r.fullName || '').trim();
+      return { id: r.id, name, contact: clientContact(r, name) };
+    })
     .filter((r) => r.name);
   const known = new Set(rows.map((r) => r.id));
   const fromOrders = await db.selectDistinctOn([seazonaOrders.clientId], { id: seazonaOrders.clientId, company: seazonaOrders.company })
@@ -148,8 +155,38 @@ export async function listClients(db) {
     .orderBy(seazonaOrders.clientId, sql`${seazonaOrders.lastChangedAt} desc`);
   return [
     ...listed,
-    ...fromOrders.filter((r) => !known.has(r.id)).map((r) => ({ id: r.id, name: r.company.trim() })),
+    ...fromOrders.filter((r) => !known.has(r.id)).map((r) => {
+      const name = r.company.trim();
+      return { id: r.id, name, contact: { kind: 'customer', name } };
+    }),
   ];
+}
+
+// A Seazona client as a Flow contact: the billing fields and the doctors as
+// practitioners. A field Flow cannot keep is left out.
+const cut = (value, max) => {
+  const text = String(value ?? '').trim();
+  return text && text.length <= max ? text : null;
+};
+export function clientContact(row, name) {
+  const address = row.address ?? {};
+  const kept = {
+    line1: cut(address.address1, 255), line2: cut(address.address2, 255), city: cut(address.city, 255),
+    region: cut(address.region, 255), postalCode: cut(address.postalCode, 255), country: cut(address.countryCode, 255),
+  };
+  const practitioners = (Array.isArray(row.doctors) ? row.doctors : [])
+    .map((doctor) => cut(doctor?.fullName, 255)).filter(Boolean).slice(0, 30).map((person) => ({ name: person }));
+  const contact = { kind: 'customer', name, practitioners };
+  const email = cut(row.email, 255);
+  if (email) contact.email = email;
+  const phone = cut(row.phone, 50);
+  if (phone) contact.phone = phone;
+  const account = cut(row.accountNumber, 50);
+  if (account) contact.accountNumber = account;
+  const taxRate = cut(row.taxRate, 50);
+  if (taxRate) contact.taxRate = taxRate;
+  if (Object.values(kept).some(Boolean)) contact.address = Object.fromEntries(Object.entries(kept).filter(([, v]) => v));
+  return contact;
 }
 
 // Seazona's products, from Flow's copy (the products lane reads them daily),

@@ -72,6 +72,16 @@ export const AUTOMATIONS = Object.freeze([
     remap: true,
   },
   {
+    // Runs inside the pipeline's read of the work system's customers
+    // (pipeline.js, linkCustomers), before its jobs are read.
+    key: 'add_contacts',
+    place: 'seazona',
+    name: 'Add new clients',
+    hint: 'A new Seazona client becomes a contact.',
+    defaults: { enabled: true, config: {} },
+    readConfig: () => ({}),
+  },
+  {
     key: 'mark_ready_from_work_status',
     place: 'seazona',
     name: 'Mark ready to invoice',
