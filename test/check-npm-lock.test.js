@@ -122,8 +122,12 @@ test("dependabot waits before proposing a just-published version", () => {
   const config = readFileSync(join(ROOT, ".github/dependabot.yml"), "utf8");
   const blocks = config.split(/\n {2}- package-ecosystem:/).slice(1);
   assert.equal(blocks.length, 2);
-  for (const block of blocks) {
-    assert.match(block, /default-days: 3/);
-    assert.match(block, /semver-major-days: 7/);
-  }
+  for (const block of blocks) assert.match(block, /default-days: 3/);
+  // semver-*-days is for semver package ecosystems; Dependabot rejects the
+  // whole file when github-actions has it.
+  const [npm, actions] = blocks;
+  assert.match(npm, /^ npm\b/);
+  assert.match(npm, /semver-major-days: 7/);
+  assert.match(actions, /^ github-actions\b/);
+  assert.doesNotMatch(actions, /semver-\w+-days/);
 });
