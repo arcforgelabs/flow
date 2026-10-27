@@ -62,8 +62,9 @@ Two parts follow the board:
   changes until a person accepts. The model steps are optional and cost money
   per page, so the manager sees the month's cost.
 - **A practice portal** (#268). Practice staff sign in to follow their own
-  jobs, on desktop first, with a simpler view on phones. The server limits
-  each person to their practice.
+  jobs, send requests, scans and case notes, chat with the lab and manage
+  their own team. It works on a phone first and on a desktop. The server
+  limits each person to their practice.
 
 Job management is a bundled module, built the same way as the integrations,
 and a lab can remove it. Where the case system cannot take a change through
@@ -110,13 +111,20 @@ record in Flow with who, when and what they saw.
 What a customer was sent is a commercial commitment. A change makes a new
 version; the sent one stays as it was, attributed to whoever sent it.
 
-### Why does Flow keep as little patient data as it can?
+### Why does Flow treat all its data as health data?
 
-Dental cases carry health information, which Australian privacy law treats as
-sensitive. Flow keeps the case number and the practice. It keeps a patient
-reference only when a practice needs one printed on its invoice, and it keeps
-no clinical notes or images. A form photo the intake reader reads is not kept
-after its job is updated.
+Dental work carries health information, which Australian privacy law treats as
+sensitive. A lab or a practice decides what it puts into Flow: case notes,
+scans, photos and patient names can all arrive. So Flow treats every record
+and every file as sensitive health data:
+
+- The server limits each person to what their role and practice allow.
+- Files are encrypted at rest. A download uses a short-lived signed link.
+- Flow records each read and change of practice data in an audit log.
+- Each installation sets how long files and notes are kept. Flow deletes them
+  after that time.
+- Each installation picks its hosting region. Flow documents what a host needs
+  for health data.
 
 ### Why does Flow keep its records in PostgreSQL only?
 
@@ -137,7 +145,8 @@ its own data, configuration and secrets.
 - Replacing the case system, for now. The case system owns the case record.
   Flow's job board shows and updates the work, and does not do clinical
   case management or production scheduling.
-- Patient records, clinical notes, scans and images.
+- Clinical decisions. Flow keeps the notes and files that practices send; it
+  does not diagnose or plan treatment.
 - Acting as the general ledger. Accounting software owns the ledger and the
   bank feed.
 - Browser automation of another product. Integrations use published APIs.
