@@ -27,11 +27,12 @@ const PARTS = [
   { key: 'price-codes', title: 'Price codes', mount: (ui) => lineMappingSection(ui) },
 ];
 
-// What a rule does, as its card's mark: Pending, Waits, Never drafted.
+// What a rule does, as its card's mark: Pending, Waits, Never drafted, Non-chargeable.
 const KIND = {
   pending: { mark: 'flag' },
   wait: { mark: 'clock' },
   skip: { mark: 'ban' },
+  non_chargeable: { mark: 'circle-off' },
 };
 const SHOWN = 6;
 

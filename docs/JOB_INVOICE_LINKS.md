@@ -88,6 +88,8 @@ the same customer at another amount is other work.
 | Wait | No candidate, and the copy is not complete or not fresh, or the job has no date | No change |
 | No contact | The customer has no Xero contact link | No change |
 
+A job whose `accounting_state` is `non_chargeable` is left out of this match. Its work is recorded in Flow and is not billed, so the matcher does not write `not_found` over it (`docs/INVOICE_RULES.md`).
+
 Each suggestion is a row in `link_suggestions`, with its score and its
 signals, so a person can see why. A later run marks a suggestion that it does
 not make again `stale`. A person's decision (`accepted`, `rejected`) stays.

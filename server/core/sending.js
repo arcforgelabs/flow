@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import { billingObligations, contacts, invoiceLines, invoices } from '../db/schema.js';
 import { FlowError } from './errors.js';
-import { listRules, rulePending, ruleSkip } from './invoice-rules.js';
+import { listRules, moveNonChargeableDrafts, NON_CHARGEABLE_REFUSAL, rulePending, ruleSkip } from './invoice-rules.js';
 import { customerBillingByContact, effectiveSettings, readInvoicingSettings } from './invoicing-rules.js';
 import { issueInvoice } from './invoices.js';
 import { CHANGED_REASON, diffJobLines, STATUS_BACK_REASON } from './ledger.js';
@@ -131,6 +131,9 @@ async function checkDrafts(db, organisationId, drafts, accounting) {
 // queued, and a Problem when the accounting system refused it. Answers
 // { toCheck: [ids], ready: [ids], problems: Map(id -> problems), sending: Set(ids) }.
 export async function invoiceViews(db, organisationId, { accounting = null } = {}) {
+  // A non-chargeable rule moves matching never-issued drafts off Pending and
+  // Ready before this check classifies what is left (docs/INVOICE_RULES.md).
+  await moveNonChargeableDrafts(db, organisationId);
   const drafts = await db.select({ id: invoices.id, totalCents: invoices.totalCents, readyAt: invoices.readyAt }).from(invoices)
     .where(and(eq(invoices.organisationId, organisationId), eq(invoices.status, 'draft')))
     .orderBy(asc(invoices.createdAt), asc(invoices.id))
@@ -157,6 +160,7 @@ export async function invoiceViews(db, organisationId, { accounting = null } = {
 
 // The view of one invoice, with its problems, for the invoice page.
 export async function invoiceView(db, organisationId, invoice, { accounting = null } = {}) {
+  if (invoice.status === 'non_chargeable') return { view: 'non_chargeable', problems: [] };
   if (invoice.status === 'void') return { view: null, problems: [] };
   if (invoice.status === 'issued') {
     if (invoice.sendState === 'queued') return { view: 'sending', problems: [] };
@@ -261,7 +265,9 @@ function stoppedSendMessage({ accountingWaiting, accountingReason, stops, waitin
 // system. With `invoiceIds`, only those drafts. One id (the invoice page) is
 // all or nothing. More than one id (the bulk bar) sends the ones Flow could
 // confirm and leaves the rest. `work` is the work integration, for the read
-// before act. Answers { issued, queued, remaining, waiting, held }.
+// before act. Answers { issued, queued, remaining, waiting, held, nonChargeable }.
+// nonChargeable counts ticked invoices a non-chargeable rule holds. Send all
+// ready with no ids never includes them. A press of only those refuses.
 export async function sendAllReady(db, organisationId, { accounting = null, work = null, personId, issueDate, invoiceIds = null, now = new Date() }) {
   await assertCanSend(accounting, organisationId);
   // Issue #45: the accounting copy reads its latest changes first, so the
@@ -274,11 +280,22 @@ export async function sendAllReady(db, organisationId, { accounting = null, work
   // sent and stays on Pending with its problem. The rest go.
   let { ready } = views;
   let held = 0;
+  let nonChargeable = 0;
   if (invoiceIds) {
     const wanted = new Set(invoiceIds);
+    const blocked = invoiceIds.length
+      ? await db.select({ id: invoices.id }).from(invoices).where(and(
+        eq(invoices.organisationId, organisationId),
+        eq(invoices.status, 'non_chargeable'),
+        inArray(invoices.id, invoiceIds),
+      ))
+      : [];
+    const blockedIds = new Set(blocked.map((row) => row.id));
+    nonChargeable = blockedIds.size;
     ready = ready.filter((id) => wanted.has(id));
-    held = wanted.size - ready.length;
+    held = [...wanted].filter((id) => !ready.includes(id) && !blockedIds.has(id)).length;
     if (!ready.length) {
+      if (blockedIds.size === wanted.size) throw new FlowError('non_chargeable', NON_CHARGEABLE_REFUSAL);
       const reason = invoiceIds.map((id) => views.problems.get(id)?.[0]?.message).find(Boolean);
       throw new FlowError('not_ready', reason
         ? `Not sent: ${reason.replace(/\.?$/, '.')} The invoice is on Pending.`
@@ -319,7 +336,9 @@ export async function sendAllReady(db, organisationId, { accounting = null, work
     }
     issued += 1;
   }
-  return { issued, queued: accounting ? issued : 0, remaining: Math.max(0, ready.length - SEND_BATCH), waiting: waiting.length, held };
+  return {
+    issued, queued: accounting ? issued : 0, remaining: Math.max(0, ready.length - SEND_BATCH), waiting: waiting.length, held, nonChargeable,
+  };
 }
 
 // Send again: issued invoices that failed go back on the queue. With no ids,

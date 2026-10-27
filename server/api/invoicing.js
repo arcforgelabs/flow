@@ -10,7 +10,7 @@ import {
 } from '../core/invoices.js';
 import { listAutomations, saveAutomation, workStatuses } from '../core/automations.js';
 import {
-  ACTIONS, createRule, deleteRule, FIELDS, listRules, TESTS, updateRule,
+  ACTIONS, createRule, deleteRule, FIELDS, listRules, makeChargeable, TESTS, updateRule,
 } from '../core/invoice-rules.js';
 import {
   createMapping, deleteMapping, listMappings, STEP_LABELS, STEPS, updateMapping,
@@ -43,7 +43,7 @@ import {
 //
 //   GET   /context                    the organisations, and whether this person may issue
 //   GET   /invoices?organisationId=&status=&q=&limit=   newest first, with counts by tab;
-//                                     status is a tab: pending, ready, draft, approved, sent or void (TABS)
+//                                     status is a tab: pending, ready, draft, approved, sent, non_chargeable or void (TABS)
 //   POST  /invoices/mark-ready        { invoiceIds }: a person checked these drafts; one with a problem stays
 //   POST  /invoices/mark-not-ready    { invoiceIds }: back to To check
 //   POST  /invoices/send-ready        owner or admin: issue every ready draft and queue it for the
@@ -118,7 +118,7 @@ const DATE = /^\d{4}-\d{2}-\d{2}$/;
 // issued invoice, by its stage in the accounting system (its invoiceStages;
 // Draft while it is on its way); with no accounting system, an issued invoice
 // is Approved. Void: void in Flow or in the accounting system.
-const TABS = ['pending', 'ready', 'draft', 'approved', 'sent', 'void'];
+const TABS = ['pending', 'ready', 'draft', 'approved', 'sent', 'non_chargeable', 'void'];
 // Earlier names a saved link may still use.
 const OLD_TABS = { problem: 'pending', to_check: 'ready', issued: 'approved' };
 const VIEWS = ['in_work', 'ready', 'pending', 'drafted', 'invoiced', 'paid', 'held', 'review_required'];
@@ -332,6 +332,10 @@ async function invoiceTabs(db, organisationId, system) {
   for (const { id } of issued) tabOf.set(id, issuedTab(id, { views, stages, system }));
   for (const { id } of voided) tabOf.set(id, 'void');
   for (const id of views.problems.keys()) tabOf.set(id, 'pending');
+  const quiet = await db.select({ id: invoices.id }).from(invoices).where(and(
+    eq(invoices.organisationId, organisationId), eq(invoices.status, 'non_chargeable'),
+  ));
+  for (const { id } of quiet) tabOf.set(id, 'non_chargeable');
   const ids = Object.fromEntries(TABS.map((t) => [t, []]));
   for (const [id, tab] of tabOf) ids[tab].push(id);
   return { tabOf, ids, problems: views.problems, sending: views.sending };
@@ -346,6 +350,7 @@ function issuedTab(id, { views, stages, system }) {
 
 // One invoice's tab, for its page (and its pager).
 async function tabOfInvoice(db, organisationId, invoice, view, accounting) {
+  if (invoice.status === 'non_chargeable') return 'non_chargeable';
   if (invoice.status === 'void') return 'void';
   if (view === 'problem') return 'pending';
   if (invoice.status === 'draft') return 'ready';
@@ -616,6 +621,14 @@ export function createInvoicingRouter({
     if (body.lines !== undefined) changes.lines = readLines(body.lines);
     if (!Object.keys(changes).length) throw invalid('nothing to change: send contactId, reference, dueDate or lines');
     await updateDraftInvoice(db, organisationId, invoiceId, changes);
+    res.json({ ok: true, invoice: await invoiceDetail(db, organisationId, invoiceId, accounting(), work()) });
+  }));
+
+  router.post('/invoices/:id/make-chargeable', ...manager, handle(log, async (req, res) => {
+    const invoiceId = pathId(req.params.id, 'invoice');
+    const organisationId = await organisationOf(req);
+    await makeChargeable(db, organisationId, invoiceId, { actor: `person:${req.person.id}` });
+    log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} made invoice ${invoiceId} chargeable`);
     res.json({ ok: true, invoice: await invoiceDetail(db, organisationId, invoiceId, accounting(), work()) });
   }));
 

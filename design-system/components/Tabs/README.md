@@ -1,6 +1,6 @@
 # Tabs
 
-Tabs with counts over a list: Pending, Ready, Draft, Approved, Sent, Void on Invoices.
+Tabs with counts over a list: Pending, Ready, Draft, Approved, Sent, Non-chargeable, Void on Invoices.
 
 - One word per tab, left to right in the order work moves.
 - `data-tone="danger"` on a tab whose count needs a person.

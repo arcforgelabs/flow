@@ -450,7 +450,7 @@ export async function matchJobs(db, organisationId, { accounting, now = new Date
   const since = mirror.changedAt ?? new Date(0);
   const due = await db.select().from(billingObligations).where(and(
     eq(billingObligations.organisationId, organisationId),
-    sql`${billingObligations.accountingState} <> 'conflict'`,
+    sql`${billingObligations.accountingState} not in ('conflict', 'non_chargeable')`,
     sql`(${billingObligations.accountingCheckedAt} is null
       or ${billingObligations.accountingCheckedAt} < ${billingObligations.sourceSeenAt}
       or ${billingObligations.accountingCheckedAt} < ${since.toISOString()}::timestamptz)`,

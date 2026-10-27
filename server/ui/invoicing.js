@@ -25,15 +25,16 @@ import { findBox, today, viewBar } from '/assets/ui/view-bar.js';
 // person must look), Ready (checks pass), then the accounting system's
 // stages: Draft (a draft there, or on its way), Approved, Sent (to the
 // customer). With no accounting system, an issued invoice is Approved.
-const TABS = [['pending', 'Pending'], ['ready', 'Ready'], ['draft', 'Draft'], ['approved', 'Approved'], ['sent', 'Sent'], ['void', 'Void']];
+const TABS = [['pending', 'Pending'], ['ready', 'Ready'], ['draft', 'Draft'], ['approved', 'Approved'], ['sent', 'Sent'], ['non_chargeable', 'Non-chargeable'], ['void', 'Void']];
 const TAB_LABEL = Object.fromEntries(TABS);
-const TAB_TONE = { pending: 'danger', ready: 'success', draft: 'info', approved: 'info', sent: 'success', void: 'mute' };
+const TAB_TONE = { pending: 'danger', ready: 'success', draft: 'info', approved: 'info', sent: 'success', non_chargeable: 'mute', void: 'mute' };
 // Tab names an earlier Flow kept in this browser.
 const OLD_TAB = { problem: 'pending', to_check: 'ready', issued: 'approved' };
 const NUMBERED = ['draft', 'approved', 'sent', 'void'];
 const EMPTY = {
   pending: 'Nothing needs a look.',
   ready: 'Nothing is ready. Press New invoice to start one.',
+  non_chargeable: 'No non-chargeable invoices.',
 };
 // Every tab's rows can be ticked; the bulk bar (bulkActions) says what the
 // ticked rows can do there.
@@ -325,7 +326,8 @@ export async function renderInvoiceList(main, ui) {
           await post('send-ready', { issueDate: localDate(), invoiceIds: ticked }, (res) => {
             const sent = to ? `${res.issued} on the way to ${to}.` : `${res.issued} approved.`;
             const notes = [
-              res.held ? `${res.held} failed a check and went to Pending.` : '',
+              res.nonChargeable ? `${res.nonChargeable} ${res.nonChargeable === 1 ? 'is' : 'are'} non-chargeable and ${res.nonChargeable === 1 ? 'was' : 'were'} not sent.` : '',
+            res.held ? `${res.held} failed a check and went to Pending.` : '',
               res.waiting ? `${res.waiting} could not be confirmed with the work system yet: press Send again.` : '',
               res.remaining ? `${res.remaining} more stay in Ready: tick them and press again.` : '',
             ].filter(Boolean);
@@ -362,12 +364,12 @@ export async function renderInvoiceList(main, ui) {
     // A draft that was never issued is deleted on Pending and Ready. An issued
     // invoice is deleted only while Flow's copy of Xero says Draft. Approved
     // or paid stays hidden. A mix runs every ticked row and reports each one.
-    const fresh = rows.filter((i) => i.status === 'draft' && i.issuedVersion === 0);
+    const fresh = rows.filter((i) => ['draft', 'non_chargeable'].includes(i.status) && i.issuedVersion === 0);
     const issuedXero = rows.filter((i) => i.status === 'issued' && xeroById.has(i.id));
     const xeroDraft = issuedXero.filter((i) => xeroById.get(i.id)?.state === 'draft');
     const xeroApproved = issuedXero.filter((i) => ['approved', 'part_paid', 'paid'].includes(xeroById.get(i.id)?.state));
     const deletable = [...fresh, ...xeroDraft, ...xeroApproved];
-    const onDraftTabs = ['pending', 'ready'].includes(state.status) && fresh.length;
+    const onDraftTabs = ['pending', 'ready', 'non_chargeable'].includes(state.status) && fresh.length;
     if (context.canIssue && (onDraftTabs || xeroDraft.length)) {
       danger.push({
         icon: 'trash-2', label: 'Delete', iconOnly: true, tone: 'danger', title: 'Delete',
@@ -452,7 +454,7 @@ export async function renderInvoiceList(main, ui) {
   // Delete, one invoice after another, as on one invoice's page. A Xero
   // draft reports each row: deleted, or refused with the reason.
   async function deleteAll(rows, { xero = false } = {}) {
-    const fresh = rows.some((i) => i.status === 'draft' && i.issuedVersion === 0);
+    const fresh = rows.some((i) => ['draft', 'non_chargeable'].includes(i.status) && i.issuedVersion === 0);
     const ok = await ui.dialog({
       title: `Delete ${plural(rows.length, 'invoice', 'invoices')}?`,
       body: xero
@@ -587,7 +589,7 @@ export async function renderInvoiceList(main, ui) {
     const open = (href) => { saveNav({ ...readNav(), scrollY: window.scrollY, frameY: frame.body.scrollTop }); go(href); };
     const link = (href, label) => h('a', { class: 'fx-strong', href, onclick: (event) => { event.preventDefault(); event.stopPropagation(); open(href); } }, label);
     const showProblem = state.status === 'pending';
-    const created = ['pending', 'ready'].includes(state.status);
+    const created = ['pending', 'ready', 'non_chargeable'].includes(state.status);
     // An invoice gets its number when it is sent or issued, so only the
     // Numbered tabs show a Number column; the others open on Client.
     const numbered = !created;
@@ -852,9 +854,11 @@ export async function renderInvoice(main, ui, id) {
   const xero = organisationId ? await flow(`/api/xero/status?organisationId=${organisationId}`).catch(() => null) : null;
   context.xero = Boolean(xero?.connected);
   const draw = (current) => {
-    host.replaceChildren(...(current?.status && current.status !== 'draft'
-      ? issuedView(current, ui, context, draw)
-      : draftView(current, ui, context, draw)).filter(Boolean));
+    host.replaceChildren(...(current?.status === 'non_chargeable'
+      ? nonChargeableView(current, ui, context, draw)
+      : current?.status && current.status !== 'draft'
+        ? issuedView(current, ui, context, draw)
+        : draftView(current, ui, context, draw)).filter(Boolean));
   };
   draw(invoice);
 }
@@ -1348,6 +1352,62 @@ function deleteControl(ui, invoice, { xeroDraft }) {
       }
     },
   }, 'Delete');
+}
+
+// Work the lab recorded and does not bill. Lines and the total are the draft's.
+// Make chargeable puts it back to a draft. Delete frees the job.
+function nonChargeableView(invoice, ui, context, redraw) {
+  const { h, flow, toast } = ui;
+  const make = context.canIssue ? h('button', {
+    class: 'fx-btn fx-btn--primary', type: 'button',
+    onclick: async () => {
+      const ok = await ui.dialog({
+        title: 'Make chargeable?',
+        body: h('p', {}, 'It becomes a draft. The rule leaves it there unless the job changes.'),
+        confirm: 'Make chargeable',
+      });
+      if (!ok) return;
+      make.disabled = true;
+      try {
+        const res = await flow(`/api/invoicing/invoices/${invoice.id}/make-chargeable`, { method: 'POST', body: '{}' });
+        toast('It is a draft.', 'success');
+        redraw(res.invoice);
+      } catch (error) {
+        make.disabled = false;
+        toast(error.message, 'danger');
+      }
+    },
+  }, 'Make chargeable') : null;
+  const deleteButton = context.canIssue ? deleteControl(ui, invoice, { xeroDraft: false }) : null;
+  const header = ui.pageHeader('Non-chargeable', { actions: [deleteButton, make].filter(Boolean) });
+  const chrome = mountRecord(ui, invoice, header, () => make, (skip) => [
+    menuEntry(deleteButton, 'trash-2', skip),
+    menuEntry(make, 'circle-check-big', skip),
+  ]);
+  return [
+    chrome.record,
+    chrome.pager,
+    header,
+    h('div', { class: 'fx-invoice__grid' },
+      h('div', { class: 'fx-invoice__main' },
+        h('section', { class: 'fx-card fx-doc' },
+          h('dl', { class: 'fx-doc__meta' },
+            h('div', {}, h('dt', { class: 'fx-label' }, 'Bill to'), h('dd', {}, invoice.contact?.name ?? '—', invoice.contact?.email ? h('span', { class: 'fx-dim' }, invoice.contact.email) : null)),
+            h('div', {}, h('dt', { class: 'fx-label' }, 'Reference'), h('dd', {}, invoice.reference ?? '—')),
+            h('div', {}, h('dt', { class: 'fx-label' }, 'Due'), h('dd', {}, showDate(invoice.dueDate)))),
+          cardRows(h('table', { class: 'fx-lines__table fx-lines__table--read' },
+            h('thead', {}, h('tr', {}, h('th', {}, 'Description'), h('th', { class: 'fx-num' }, 'Qty'), h('th', { class: 'fx-num' }, 'Unit price'), h('th', {}, 'Tax'), h('th', { class: 'fx-num' }, 'Amount'))),
+            h('tbody', {}, invoice.lines.map((line) => h('tr', {},
+              h('td', { 'data-area': 'desc' }, line.description),
+              h('td', { class: 'fx-num', 'data-area': 'qty', 'data-label': 'Qty' }, String(line.quantity)),
+              h('td', { class: 'fx-num', 'data-area': 'price', 'data-label': 'Unit price' }, formatCents(line.unitAmountCents)),
+              h('td', { class: 'fx-dim', 'data-area': 'gst', 'data-label': 'Tax' }, line.taxCode === 'GST' ? 'GST' : 'GST free'),
+              h('td', { class: 'fx-num fx-strong', 'data-area': 'amount', 'data-end': '' }, formatCents(line.lineAmountCents)))))), LINE_CARD_READ),
+          h('div', { class: 'fx-lines__foot' }, h('span'), totalsBox(ui, invoice)))),
+      h('aside', { class: 'fx-invoice__aside' }, linkedCard(ui, invoice) ?? '')),
+    chrome.foot,
+    chrome.menuPanel,
+  ];
 }
 
 // An issued or void invoice: the document as sent, and what can happen next.

@@ -1,5 +1,7 @@
-import { and, asc, eq, sql } from 'drizzle-orm';
-import { invoiceRules, invoicingSettings } from '../db/schema.js';
+import { and, asc, desc, eq, isNull, sql } from 'drizzle-orm';
+import {
+  billingObligations, contacts, customerBillingSettings, invoiceRules, invoices, invoicingSettings, obligationEvents,
+} from '../db/schema.js';
 import { FlowError, notFound } from './errors.js';
 
 // Invoice rules (docs/INVOICE_RULES.md): a lab's own checks on a job before
@@ -12,7 +14,9 @@ import { FlowError, notFound } from './errors.js';
 //   Then  wait: the job waits for a person; skip: rules never draft it;
 //         pending: Flow drafts it, and the draft is Pending with the rule's
 //         note, which says what to fix (for example a Reference with no
-//         real practitioner).
+//         real practitioner); non_chargeable: Flow drafts it with status
+//         non_chargeable (lines and prices as a normal draft, no number,
+//         never sent). An existing never-issued draft moves there too.
 //
 // The rules read only Flow's own records, so they work with or without an
 // accounting integration. The earlier fixed settings (old job limit, required
@@ -70,7 +74,9 @@ export const TESTS = Object.freeze({
   share: ['is', 'is_not'],
 });
 
-export const ACTIONS = Object.freeze(['wait', 'skip', 'pending']);
+export const ACTIONS = Object.freeze(['wait', 'skip', 'pending', 'non_chargeable']);
+// Send, Send all ready and Approve say this. The invoice stays as it is.
+export const NON_CHARGEABLE_REFUSAL = 'This invoice is non-chargeable. Make it chargeable first.';
 // Tests that take no value.
 const NO_VALUE = new Set(['is_empty', 'is_not_empty', 'has_number', 'number_in_words', 'one_word']);
 
@@ -187,7 +193,7 @@ export function ruleReasons(rules, job, { customer = {}, now = new Date() } = {}
   const context = { customer, now };
   const reasons = [];
   for (const rule of rules) {
-    if (!rule.enabled || rule.trigger !== 'job_ready' || rule.action.kind === 'pending') continue;
+    if (!rule.enabled || rule.trigger !== 'job_ready' || rule.action.kind === 'pending' || rule.action.kind === 'non_chargeable') continue;
     if (!rule.conditions.every((c) => matches(c, job, context))) continue;
     reasons.push(rule.action.kind === 'skip' ? `rule "${rule.name}": not drafted by rule` : `rule "${rule.name}": waits for a person`);
   }
@@ -205,6 +211,211 @@ export function rulePending(rules, job, { customer = {}, now = new Date() } = {}
     .filter((r) => r.enabled && r.trigger === 'job_ready' && r.action.kind === 'pending')
     .filter((r) => r.conditions.every((c) => matches(c, job, context)))
     .map((r) => ({ code: 'rule', message: r.action.note, short: r.name.slice(0, 40), rule: r.id ?? null, fields: [...new Set(r.conditions.map((c) => c.field))] }));
+}
+
+// Enabled non-chargeable rules that match one job. The draft is made on the
+// normal path; only its status differs (settleNonChargeable). A pending or
+// skip rule does not apply here.
+export function ruleNonChargeable(rules, job, { customer = {}, now = new Date() } = {}) {
+  const context = { customer, now };
+  return rules
+    .filter((r) => r.enabled && r.trigger === 'job_ready' && r.action.kind === 'non_chargeable')
+    .filter((r) => r.conditions.every((c) => matches(c, job, context)));
+}
+
+// The job facts "Make chargeable" remembers. The rule moves the invoice
+// again only when one of these changes.
+export function chargeableStamp(obligation) {
+  return {
+    lineFingerprint: obligation.lineFingerprint,
+    contactId: obligation.contactId ?? null,
+    practitioner: obligation.practitioner ?? null,
+    sourceStatus: obligation.sourceStatus ?? null,
+    totalCents: obligation.totalCents,
+    jobDate: obligation.jobDate ?? null,
+  };
+}
+
+// Field by field: jsonb does not keep key order, so a string compare of the
+// whole object would miss a stamp Flow itself wrote.
+const sameStamp = (stamp, obligation) => {
+  if (!stamp || typeof stamp !== 'object') return false;
+  const current = chargeableStamp(obligation);
+  const dayKey = (value) => (value == null || value === '' ? '' : String(value).slice(0, 10));
+  return stamp.lineFingerprint === current.lineFingerprint
+    && (stamp.contactId ?? null) === current.contactId
+    && (stamp.practitioner ?? null) === current.practitioner
+    && (stamp.sourceStatus ?? null) === current.sourceStatus
+    && Number(stamp.totalCents) === Number(current.totalCents)
+    && dayKey(stamp.jobDate) === dayKey(current.jobDate);
+};
+
+async function customerOf(db, organisationId, contactId, name = null) {
+  if (!contactId) return { billable: true, name };
+  const [billing] = await db.select({
+    billable: customerBillingSettings.billable,
+    defaultPractitioner: customerBillingSettings.defaultPractitioner,
+  }).from(customerBillingSettings).where(and(
+    eq(customerBillingSettings.organisationId, organisationId),
+    eq(customerBillingSettings.contactId, contactId),
+  ));
+  let customerName = name;
+  if (customerName === null) {
+    const [contact] = await db.select({ name: contacts.name }).from(contacts).where(and(
+      eq(contacts.organisationId, organisationId),
+      eq(contacts.id, contactId),
+    ));
+    customerName = contact?.name ?? null;
+  }
+  return {
+    billable: billing ? billing.billable !== false : true,
+    defaultPractitioner: billing?.defaultPractitioner ?? null,
+    name: customerName,
+  };
+}
+
+// The latest "Make chargeable" for this invoice still matches the job.
+async function keptChargeable(db, obligation, invoiceId) {
+  const [event] = await db.select({ evidence: obligationEvents.evidence }).from(obligationEvents).where(and(
+    eq(obligationEvents.organisationId, obligation.organisationId),
+    eq(obligationEvents.obligationId, obligation.id),
+    eq(obligationEvents.kind, 'made_chargeable'),
+  )).orderBy(desc(obligationEvents.createdAt)).limit(1);
+  if (!event || event.evidence?.invoiceId !== invoiceId) return false;
+  return sameStamp(event.evidence.stamp, obligation);
+}
+
+async function priorAccountingState(db, organisationId, obligationId) {
+  const [event] = await db.select({ evidence: obligationEvents.evidence }).from(obligationEvents).where(and(
+    eq(obligationEvents.organisationId, organisationId),
+    eq(obligationEvents.obligationId, obligationId),
+    eq(obligationEvents.kind, 'non_chargeable'),
+  )).orderBy(desc(obligationEvents.createdAt)).limit(1);
+  const prior = event?.evidence?.priorAccountingState;
+  return typeof prior === 'string' && prior !== 'non_chargeable' ? prior : 'not_found';
+}
+
+// The accounting state before this invoice was non-chargeable, so a delete
+// or "Make chargeable" leaves the job able to draft again.
+export async function accountingStateBeforeNonChargeable(db, organisationId, obligationId) {
+  return priorAccountingState(db, organisationId, obligationId);
+}
+
+async function markNonChargeable(tx, organisationId, { invoice, obligation, actor }) {
+  const prior = obligation.accountingState === 'non_chargeable'
+    ? await priorAccountingState(tx, organisationId, obligation.id)
+    : obligation.accountingState;
+  await tx.update(invoices).set({
+    status: 'non_chargeable', readyAt: null, readyBy: null, sendState: null, sendError: null, updatedAt: sql`now()`,
+  }).where(eq(invoices.id, invoice.id));
+  await tx.update(billingObligations).set({ accountingState: 'non_chargeable', updatedAt: sql`now()` })
+    .where(eq(billingObligations.id, obligation.id));
+  await tx.insert(obligationEvents).values({
+    createdAt: sql`clock_timestamp()`,
+    organisationId,
+    obligationId: obligation.id,
+    kind: 'non_chargeable',
+    actor,
+    evidence: { invoiceId: invoice.id, priorAccountingState: prior },
+  });
+}
+
+// After the normal draft: a matching non-chargeable rule sets the status and
+// the obligation's accounting state. `rules` is the organisation's list.
+// Returns the invoice and obligation when it moved them, else null.
+export async function settleNonChargeable(tx, organisationId, {
+  invoice, obligation, rules, actor, now = new Date(),
+}) {
+  if (!ruleNonChargeable(rules, { ...obligation, reference: invoice.reference ?? null }, {
+    customer: await customerOf(tx, organisationId, obligation.contactId), now,
+  }).length) return null;
+  if (await keptChargeable(tx, obligation, invoice.id)) return null;
+  await markNonChargeable(tx, organisationId, { invoice, obligation, actor });
+  const [freshInvoice] = await tx.select().from(invoices).where(eq(invoices.id, invoice.id));
+  const [freshObligation] = await tx.select().from(billingObligations).where(eq(billingObligations.id, obligation.id));
+  return { invoice: freshInvoice, obligation: freshObligation };
+}
+
+// Never-issued drafts a non-chargeable rule matches move off Pending and
+// Ready. A person who pressed Make chargeable stays a draft until the job
+// changes. On save of such a rule, and at each check run (invoiceViews).
+export async function moveNonChargeableDrafts(db, organisationId, { actor = 'system:invoice-rules', now = new Date() } = {}) {
+  const applicable = (await listRules(db, organisationId)).filter((r) => r.enabled && r.action.kind === 'non_chargeable');
+  if (!applicable.length) return { moved: 0 };
+  const rows = await db.select({
+    invoice: invoices,
+    obligation: billingObligations,
+    customerName: contacts.name,
+  }).from(invoices)
+    .innerJoin(billingObligations, and(
+      eq(billingObligations.organisationId, invoices.organisationId),
+      eq(billingObligations.invoiceId, invoices.id),
+    ))
+    .leftJoin(contacts, and(
+      eq(contacts.organisationId, invoices.organisationId),
+      eq(contacts.id, billingObligations.contactId),
+    ))
+    .where(and(
+      eq(invoices.organisationId, organisationId),
+      eq(invoices.status, 'draft'),
+      eq(invoices.issuedVersion, 0),
+      isNull(invoices.sendState),
+    ));
+  let moved = 0;
+  for (const { invoice, obligation, customerName } of rows) {
+    const customer = await customerOf(db, organisationId, obligation.contactId, customerName);
+    if (!ruleNonChargeable(applicable, { ...obligation, reference: invoice.reference }, { customer, now }).length) continue;
+    if (await keptChargeable(db, obligation, invoice.id)) continue;
+    const did = await db.transaction(async (tx) => {
+      const [current] = await tx.select().from(invoices).where(and(
+        eq(invoices.organisationId, organisationId), eq(invoices.id, invoice.id),
+      )).for('update');
+      if (!current || current.status !== 'draft' || current.issuedVersion !== 0 || current.sendState) return false;
+      const [locked] = await tx.select().from(billingObligations).where(eq(billingObligations.id, obligation.id)).for('update');
+      if (!locked || locked.invoiceId !== invoice.id) return false;
+      if (await keptChargeable(tx, locked, invoice.id)) return false;
+      await markNonChargeable(tx, organisationId, { invoice: current, obligation: locked, actor });
+      return true;
+    });
+    if (did) moved += 1;
+  }
+  return { moved };
+}
+
+// A person says the rule was wrong. The invoice is a draft again, and the
+// rule leaves it there until the job changes.
+export async function makeChargeable(db, organisationId, invoiceId, { actor }) {
+  if (!actor) throw new FlowError('invalid', 'actor is required');
+  return db.transaction(async (tx) => {
+    const [invoice] = await tx.select().from(invoices).where(and(
+      eq(invoices.organisationId, organisationId), eq(invoices.id, invoiceId),
+    )).for('update');
+    if (!invoice) throw notFound('invoice');
+    if (invoice.status !== 'non_chargeable') {
+      throw new FlowError('not_non_chargeable', 'Only a non-chargeable invoice can be made chargeable.');
+    }
+    const [obligation] = await tx.select().from(billingObligations).where(and(
+      eq(billingObligations.organisationId, organisationId),
+      eq(billingObligations.invoiceId, invoice.id),
+    )).for('update');
+    const [row] = await tx.update(invoices).set({
+      status: 'draft', readyAt: null, readyBy: null, updatedAt: sql`now()`,
+    }).where(eq(invoices.id, invoice.id)).returning();
+    if (obligation) {
+      const accountingState = await priorAccountingState(tx, organisationId, obligation.id);
+      await tx.update(billingObligations).set({ accountingState, updatedAt: sql`now()` })
+        .where(eq(billingObligations.id, obligation.id));
+      await tx.insert(obligationEvents).values({
+        createdAt: sql`clock_timestamp()`,
+        organisationId,
+        obligationId: obligation.id,
+        kind: 'made_chargeable',
+        actor,
+        evidence: { invoiceId: invoice.id, stamp: chargeableStamp(obligation) },
+      });
+    }
+    return row;
+  });
 }
 
 // Drafts an enabled skip rule matches stay on Pending at Send (sending.js).
@@ -260,14 +471,20 @@ const shape = (r) => ({
   conditions: r.conditions, action: r.action, starter: Boolean(r.starterKey), updatedAt: r.updatedAt,
 });
 
+// The organisation's rules, in order, without making starter rules. Drafting
+// reads this so a draft does not seed rules as a side effect.
+export async function readStoredRules(db, organisationId) {
+  const rows = await db.select().from(invoiceRules).where(eq(invoiceRules.organisationId, organisationId))
+    .orderBy(asc(invoiceRules.position), asc(invoiceRules.createdAt));
+  return rows.map(shape);
+}
+
 // The organisation's rules, in order. The first read makes the starter rules.
 export async function listRules(db, organisationId) {
   const [settings] = await db.select({ seeded: invoicingSettings.rulesSeeded }).from(invoicingSettings)
     .where(eq(invoicingSettings.organisationId, organisationId));
   if (!settings?.seeded) await seed(db, organisationId);
-  const rows = await db.select().from(invoiceRules).where(eq(invoiceRules.organisationId, organisationId))
-    .orderBy(asc(invoiceRules.position), asc(invoiceRules.createdAt));
-  return rows.map(shape);
+  return readStoredRules(db, organisationId);
 }
 
 export async function createRule(db, organisationId, raw, { personId = null } = {}) {
@@ -276,6 +493,9 @@ export async function createRule(db, organisationId, raw, { personId = null } = 
   if (existing.length >= MAX_RULES) throw invalid(`an organisation can have ${MAX_RULES} rules at most`);
   const position = existing.length ? Math.max(...existing.map((r) => r.position)) + 1 : 0;
   const [row] = await db.insert(invoiceRules).values({ organisationId, position, ...rule, updatedBy: personId }).returning();
+  if (rule.enabled && rule.action.kind === 'non_chargeable') {
+    await moveNonChargeableDrafts(db, organisationId, { actor: personId ? `person:${personId}` : 'system:invoice-rules' });
+  }
   return shape(row);
 }
 
@@ -293,6 +513,9 @@ export async function updateRule(db, organisationId, ruleId, changes, { personId
   const rule = readRule({ name: row.name, enabled: row.enabled, conditions: row.conditions, action: row.action, ...changes });
   const [saved] = await db.update(invoiceRules).set({ ...rule, updatedBy: personId, updatedAt: sql`now()` })
     .where(eq(invoiceRules.id, row.id)).returning();
+  if (rule.enabled && rule.action.kind === 'non_chargeable') {
+    await moveNonChargeableDrafts(db, organisationId, { actor: personId ? `person:${personId}` : 'system:invoice-rules' });
+  }
   return shape(saved);
 }
 

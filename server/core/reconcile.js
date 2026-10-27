@@ -36,6 +36,7 @@ const TICK_MS = 10 * 60 * 1000;
 const LEASE_MS = 15 * 60 * 1000;
 const FIND_BATCH = 400;
 // Accounting states where the ledger holds a link to an invoice that exists.
+// `non_chargeable` is settled in Flow with no accounting invoice expected.
 const LINKED = ['drafted', 'authorised', 'part_paid', 'paid'];
 
 const isoDay = (ms) => new Date(ms).toISOString().slice(0, 10);

@@ -1,7 +1,7 @@
 # Invoice tabs and Send all ready
 
-The Invoices page has six tabs, left to right: Pending, Ready, Draft,
-Approved, Sent and Void. Earlier names: Problem is now Pending, Drafts is
+The Invoices page has seven tabs, left to right: Pending, Ready, Draft,
+Approved, Sent, Non-chargeable and Void. Earlier names: Problem is now Pending, Drafts is
 gone (a clean draft is Ready), and Finalised is split into Draft, Approved
 and Sent. Code: `server/core/sending.js`, `server/api/invoicing.js`
 (`invoiceTabs`) and `server/integrations/xero/reconcile.js` (`stageOf`).
@@ -13,6 +13,7 @@ and Sent. Code: `server/core/sending.js`, `server/api/invoicing.js`
 | Draft | Issued in Flow and a draft in the accounting system, or on its way there. |
 | Approved | Approved in the accounting system, not yet sent to the customer. With no accounting system, every issued invoice is here. |
 | Sent | The accounting system sent it to the customer, or it is part paid or paid. |
+| Non-chargeable | Work the lab recorded and does not bill. A non-chargeable rule put it here (`docs/INVOICE_RULES.md`). It has lines and a total, no number, and it is never sent. |
 | Void | Voided or deleted. |
 
 The list starts with Number, Client, Reference, Date, Total, Status and
@@ -33,8 +34,8 @@ it again.
 A draft with no problem is in Ready. A saved change keeps it there while the
 checks pass. A draft with a problem is in Pending until the problem is fixed;
 then it goes to Ready by itself. There is no half-made Flow draft: every
-invoice before it is sent is Pending (a check fails) or Ready (every check
-passes). Draft is the accounting system's word for an invoice it holds.
+invoice before it is sent is Pending (a check fails), Ready (every check
+passes), or Non-chargeable (a rule says the work is not billed). Draft is the accounting system's word for an invoice it holds.
 
 On the invoice the buttons are, left to right, **Delete** (a draft that was
 never issued; an owner or admin), **Preview**, **Save**, then

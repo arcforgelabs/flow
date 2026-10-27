@@ -3,13 +3,13 @@ import { after, before, describe, test } from 'node:test';
 import { eq } from 'drizzle-orm';
 import { createContact, createOrganisation, createPriceItem } from '../server/core/directory.js';
 import {
-  createRule, deleteRule, FIELDS, listRules, readRule, rulePending, ruleReasons, ruleSkip, starterRules, TESTS, updateRule,
+  createRule, deleteRule, FIELDS, listRules, makeChargeable, NON_CHARGEABLE_REFUSAL, readRule, ruleNonChargeable, rulePending, ruleReasons, ruleSkip, starterRules, TESTS, updateRule,
 } from '../server/core/invoice-rules.js';
-import { deleteDraft, getInvoice } from '../server/core/invoices.js';
+import { deleteDraft, getInvoice, issueInvoice } from '../server/core/invoices.js';
 import { autoDraftJobs, saveInvoicingSettings } from '../server/core/invoicing-rules.js';
 import { draftInvoiceForObligation, explainObligation, observeJob, setReady } from '../server/core/ledger.js';
 import { invoiceViews, sendAllReady } from '../server/core/sending.js';
-import { billingObligations, invoices } from '../server/db/schema.js';
+import { billingObligations, invoices, organisations } from '../server/db/schema.js';
 import { freshDatabase, skipWithoutDatabase } from './support/db.js';
 
 // Invoice rules a lab builds: When a job is ready, If every condition
@@ -125,6 +125,16 @@ describe('one rule against one job', () => {
     ]);
     assert.deepEqual(rulePending(rules, job({ practitioner: 'Dr Ann Lee', reference: 'Dr Ann Lee - Ben Ng' }), { now: NOW }), []);
     assert.deepEqual(rulePending([{ ...rules[0], enabled: false }], odd, { now: NOW }), []);
+  });
+
+  test('a non-chargeable rule does not stop the draft', () => {
+    const raw = { name: 'Own branch', conditions: [{ field: 'customer', test: 'contains', value: 'example' }], action: { kind: 'non_chargeable' } };
+    assert.equal(readRule(raw).action.kind, 'non_chargeable');
+    const rules = [{ ...readRule(raw), id: 'r-nc', trigger: 'job_ready', enabled: true }];
+    const opts = { customer: { name: 'North - Example Group' }, now: NOW };
+    assert.equal(ruleNonChargeable(rules, job(), opts).length, 1);
+    assert.deepEqual(ruleReasons(rules, job(), opts), []);
+    assert.deepEqual(ruleNonChargeable(rules, job(), { customer: { name: 'Harbour Smiles' }, now: NOW }), []);
   });
 
   test('a skip rule holds a matching draft; a wait rule does not', () => {
@@ -349,6 +359,79 @@ describe('rules a lab keeps', { skip: skipWithoutDatabase }, () => {
     await autoDraftJobs(handle.db, lab.id, { now: NOW });
     assert.equal((await reload(internal)).invoiceId, null, 'a Never draft rule does not draft the job again');
     assert.ok((await reload(open)).invoiceId, 'a job the rule does not match is drafted');
+    await deleteRule(handle.db, lab.id, rule.id);
+  });
+
+  test('a non-chargeable rule drafts the job with its lines, and Send cannot take it', async () => {
+    const linesOf = async (id) => (await getInvoice(handle.db, lab.id, id)).lines.map(({ description, quantity, unitAmountCents, taxCode, lineAmountCents }) => (
+      { description, quantity, unitAmountCents, taxCode, lineAmountCents }
+    ));
+    const statusOf = async (id) => (await handle.db.select().from(invoices).where(eq(invoices.id, id)))[0];
+    const obligationOf = async (id) => (await handle.db.select().from(billingObligations).where(eq(billingObligations.id, id)))[0];
+    const observe = async (status) => {
+      const row = await observeJob(handle.db, lab.id, {
+        sourceSystem: 'seazona', sourceJobRef: `job-${++counter}`, caseRef: `CASE-${counter}`, contactId: practice.id,
+        sourceStatus: status, jobDate: '2026-10-15', lines: [{ itemCode: 'CROWN', description: 'Crown' }], observedAt: NOW,
+      });
+      await setReady(handle.db, lab.id, row.id, { actor: 'person:test' });
+      return row;
+    };
+    const [orgBefore] = await handle.db.select({ next: organisations.nextInvoiceNumber }).from(organisations).where(eq(organisations.id, lab.id));
+    const existing = await observe('Branch');
+    await autoDraftJobs(handle.db, lab.id, { now: NOW });
+    const drafted = await obligationOf(existing.id);
+    const before = await statusOf(drafted.invoiceId);
+    assert.equal(before.status, 'draft');
+    const normalLines = await linesOf(drafted.invoiceId);
+    const rule = await createRule(handle.db, lab.id, {
+      name: 'Own branch', conditions: [{ field: 'job_status', test: 'is', value: 'branch' }], action: { kind: 'non_chargeable' },
+    });
+    const moved = await statusOf(drafted.invoiceId);
+    const movedJob = await obligationOf(existing.id);
+    assert.equal(moved.status, 'non_chargeable');
+    assert.equal(moved.number, null);
+    assert.equal(moved.sendState, null);
+    assert.deepEqual(await linesOf(drafted.invoiceId), normalLines);
+    assert.equal(moved.totalCents, before.totalCents);
+    assert.ok(moved.totalCents > 0);
+    assert.equal(movedJob.accountingState, 'non_chargeable');
+    const views = await invoiceViews(handle.db, lab.id);
+    assert.equal(views.ready.includes(drafted.invoiceId), false);
+    assert.equal(views.problems.has(drafted.invoiceId), false);
+    await assert.rejects(sendAllReady(handle.db, lab.id, { personId: null, issueDate: '2026-10-21', invoiceIds: [drafted.invoiceId] }),
+      { code: 'non_chargeable', message: NON_CHARGEABLE_REFUSAL });
+    await assert.rejects(issueInvoice(handle.db, lab.id, drafted.invoiceId, { issuedBy: 'person:test', issueDate: '2026-10-21' }),
+      { code: 'non_chargeable', message: NON_CHARGEABLE_REFUSAL });
+    const [orgAfter] = await handle.db.select({ next: organisations.nextInvoiceNumber }).from(organisations).where(eq(organisations.id, lab.id));
+    assert.equal(orgAfter.next, orgBefore.next);
+
+    const later = await observe('Branch');
+    const open = await observe('Shipped');
+    await autoDraftJobs(handle.db, lab.id, { now: NOW });
+    const branch = await obligationOf(later.id);
+    const shipped = await obligationOf(open.id);
+    assert.equal((await statusOf(branch.invoiceId)).status, 'non_chargeable');
+    assert.equal(branch.accountingState, 'non_chargeable');
+    assert.equal((await statusOf(shipped.invoiceId)).status, 'draft');
+    assert.deepEqual(await linesOf(branch.invoiceId), await linesOf(shipped.invoiceId));
+
+    await makeChargeable(handle.db, lab.id, drafted.invoiceId, { actor: 'person:test' });
+    await invoiceViews(handle.db, lab.id);
+    assert.equal((await statusOf(drafted.invoiceId)).status, 'draft');
+    assert.equal((await obligationOf(existing.id)).accountingState, 'unknown');
+    await handle.db.update(billingObligations).set({ practitioner: 'Dr Other' }).where(eq(billingObligations.id, existing.id));
+    await invoiceViews(handle.db, lab.id);
+    assert.equal((await statusOf(drafted.invoiceId)).status, 'non_chargeable', 'a job change lets the rule move it again');
+
+    await makeChargeable(handle.db, lab.id, branch.invoiceId, { actor: 'person:test' });
+    await deleteDraft(handle.db, lab.id, branch.invoiceId, { actor: 'person:test' });
+    await assert.rejects(getInvoice(handle.db, lab.id, branch.invoiceId), { code: 'not_found' });
+    const freed = await obligationOf(later.id);
+    assert.equal(freed.invoiceId, null);
+    assert.notEqual(freed.accountingState, 'non_chargeable');
+    await autoDraftJobs(handle.db, lab.id, { now: NOW });
+    const again = await obligationOf(later.id);
+    assert.equal((await statusOf(again.invoiceId)).status, 'non_chargeable');
     await deleteRule(handle.db, lab.id, rule.id);
   });
 });

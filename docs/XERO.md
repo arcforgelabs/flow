@@ -517,6 +517,7 @@ The ledger records a match that is not exact as ambiguous, and any answer but
 draft. Xero states map to the ledger's: `DRAFT` and `SUBMITTED` to
 `drafted`, `AUTHORISED` to `authorised` (or `part_paid` once money is paid),
 `PAID` to `paid`, `VOIDED` to `voided`, `DELETED` to `deleted`.
+Flow's own `non_chargeable` is not a Xero status: that invoice is never sent.
 `accountingUrl` is a Xero deep link for a person.
 
 A payment is recorded only when its Xero invoice ties to one job by

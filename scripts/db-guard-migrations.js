@@ -62,20 +62,63 @@ export function guardStatement(statement) {
   return null;
 }
 
+// A check grows by dropping its constraint and adding the same name back.
+// PostgreSQL has no other way to add a value. The block is the only drop a
+// migration may contain, and it runs again: IF EXISTS, then add.
+const DROP_CONSTRAINT = /^ALTER TABLE ("[^"]+") DROP CONSTRAINT ("[^"]+")\s*;?\s*$/i;
+const ADD_CONSTRAINT = /^ALTER TABLE ("[^"]+") ADD CONSTRAINT ("[^"]+") CHECK \(([\s\S]*)\)\s*;?\s*$/i;
+
+export function isCheckWiden(statement) {
+  const text = withoutComments(statement).trim();
+  if (!/^DO \$flow_guard\$ BEGIN\n\tALTER TABLE "[^"]+" DROP CONSTRAINT IF EXISTS "[^"]+";\n\tALTER TABLE "[^"]+" ADD CONSTRAINT "[^"]+" CHECK \(/.test(text)) return false;
+  if (!/\nEND \$flow_guard\$;$/.test(text)) return false;
+  return (text.match(/\bDROP\b/g) ?? []).length === 1 && !/\bRENAME\b/i.test(text);
+}
+
+function widenCheck(drop, add) {
+  return `DO $flow_guard$ BEGIN\n\tALTER TABLE ${drop[1]} DROP CONSTRAINT IF EXISTS ${drop[2]};\n\tALTER TABLE ${add[1]} ADD CONSTRAINT ${add[2]} CHECK (${add[3].trim()});\nEND $flow_guard$;`;
+}
+
 export function guardSql(sql) {
   const problems = [];
-  const parts = sql.split(BREAKPOINT).map((statement) => {
+  const raw = sql.split(BREAKPOINT);
+  const drops = new Map();
+  const adds = new Map();
+  raw.forEach((statement, index) => {
+    const text = withoutComments(statement).trim();
+    const drop = DROP_CONSTRAINT.exec(text);
+    const add = ADD_CONSTRAINT.exec(text);
+    if (drop && text.split('\n').length === 1) drops.set(`${drop[1]}\0${drop[2]}`, { index, drop });
+    if (add && text.startsWith('ALTER TABLE')) adds.set(`${add[1]}\0${add[2]}`, { index, add });
+  });
+  const replacement = new Map();
+  const skip = new Set();
+  for (const [key, found] of drops) {
+    const added = adds.get(key);
+    if (!added) continue;
+    replacement.set(found.index, widenCheck(found.drop, added.add));
+    skip.add(found.index);
+    skip.add(added.index);
+  }
+  const parts = [];
+  raw.forEach((statement, index) => {
+    if (skip.has(index)) {
+      if (replacement.has(index)) parts.push(replacement.get(index));
+      return;
+    }
     const code = statement.replace(/--[^\n]*/g, '').replace(/ON DELETE|ON UPDATE/gi, '');
-    if (/\b(DROP|RENAME)\b/i.test(code)) {
+    if (/\b(DROP|RENAME)\b/i.test(code) && !isCheckWiden(statement)) {
       problems.push(`drops or renames: ${withoutComments(statement).split('\n')[0]}`);
-      return statement;
+      parts.push(statement);
+      return;
     }
     const guarded = guardStatement(statement);
     if (guarded === null) {
       problems.push(`cannot run twice: ${withoutComments(statement).split('\n')[0]}`);
-      return statement;
+      parts.push(statement);
+      return;
     }
-    return guarded;
+    parts.push(guarded);
   });
   return { sql: parts.join(BREAKPOINT), problems };
 }
