@@ -738,6 +738,9 @@ async function renderIntegration(main, id) {
     ? h('span', { class: 'fx-status', 'data-tone': 'danger', 'data-int-status': '' }, 'Calls stopped')
     : h('span', { class: 'fx-status', 'data-tone': STATE_TONE[current.state] ?? 'mute', 'data-int-status': '' }, STATE_LABEL[current.state] ?? current.state));
   let shown = found;
+  // Settings: closed on a phone, open on a wider screen, then as the person
+  // leaves it while the page redraws (Connect).
+  let settingsOpen = !window.matchMedia?.('(max-width: 639px)').matches;
   const alerts = alertStrip(ui(), 'integrations', {
     scope: id,
     onLoad: ({ danger }) => {
@@ -867,12 +870,12 @@ async function renderIntegration(main, id) {
           current.id === 'xero' && current.state === 'ready' ? xeroImportSection(body.organisations) : null,
           current.id === 'xero' ? h('section', { class: 'fx-int-section fx-card', style: { padding: '8px 20px 16px' } }, automationSection(ui(), 'xero', 'Contacts')) : null,
           current.id === 'xero' ? h('section', { class: 'fx-int-section fx-card', style: { padding: '8px 20px 16px' } }, sendModeSection(ui())) : null,
-          guide ? h('details', { class: 'fx-int-section fx-int-guide' },
+          guide ? h('details', { class: 'fx-int-section fx-int-fold' },
             h('summary', { class: 'fx-int-section__title' }, 'Set up'),
             h('ol', { class: 'fx-steps' }, guide.steps.map((step) => h('li', {}, step))),
             guide.link ? h('a', { class: 'fx-btn fx-btn--sm', href: guide.link, target: '_blank', rel: 'noopener' }, `${current.name} site ↗`) : null) : null,
-          rows.length ? h('section', { class: 'fx-int-section' },
-            h('h2', { class: 'fx-int-section__title' }, 'Settings'),
+          rows.length ? h('details', { class: 'fx-int-section fx-int-fold', open: settingsOpen, ontoggle: (event) => { settingsOpen = event.currentTarget.open; } },
+            h('summary', { class: 'fx-int-section__title' }, 'Settings'),
             h('div', { class: 'fx-settings' }, rows),
             canChange && on && inputs.size ? h('div', { class: 'fx-row fx-row--end' }, h('button', { class: 'fx-btn', type: 'button', onclick: () => save(undefined) }, 'Save changes')) : null) : null,
         ].filter(Boolean)),

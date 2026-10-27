@@ -392,12 +392,12 @@ a.fx-link:hover, a.fx-link:focus-visible { border-color: var(--t-strong); }
 .fx-int-section { display: grid; gap: 14px; padding-top: 20px; border-top: 1px solid var(--fx-line); }
 .fx-int-section__title { color: var(--t-strong); font: 650 17px/1.3 var(--t-body); }
 .fx-int-section .fx-btn { justify-self: start; }
-/* Set up: closed until a person opens it. */
-.fx-int-guide > summary { display: flex; align-items: center; gap: 8px; min-height: 44px; margin: -10px 0; cursor: pointer; list-style: none; }
-.fx-int-guide > summary::-webkit-details-marker { display: none; }
-.fx-int-guide > summary::after { content: ''; width: 8px; height: 8px; margin-left: 2px; border: solid currentColor; border-width: 0 2px 2px 0; transform: rotate(45deg) translateY(-2px); transition: transform 120ms var(--fx-ease); }
-.fx-int-guide[open] > summary::after { transform: rotate(-135deg) translateY(-2px); }
-.fx-int-guide:not([open]) { gap: 0; }
+/* A folded section (Set up, Settings): a person opens it. */
+.fx-int-fold > summary { display: flex; align-items: center; gap: 8px; min-height: 44px; margin: -10px 0; cursor: pointer; list-style: none; }
+.fx-int-fold > summary::-webkit-details-marker { display: none; }
+.fx-int-fold > summary::after { content: ''; width: 8px; height: 8px; margin-left: 2px; border: solid currentColor; border-width: 0 2px 2px 0; transform: rotate(45deg) translateY(-2px); transition: transform 120ms var(--fx-ease); }
+.fx-int-fold[open] > summary::after { transform: rotate(-135deg) translateY(-2px); }
+.fx-int-fold:not([open]) { gap: 0; }
 .fx-steps { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; counter-reset: step; }
 .fx-steps li { position: relative; padding-left: 38px; min-height: 26px; counter-increment: step; font-size: 14.5px; line-height: 1.55; }
 .fx-steps li::before {
