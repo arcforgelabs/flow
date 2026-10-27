@@ -1,5 +1,6 @@
 import express from 'express';
 import { createAlertsRouter } from './api/alerts.js';
+import { createCapturesRouter } from './api/captures.js';
 import { createCustomFieldsRouter } from './api/custom-fields.js';
 import { createWorkMovesRouter } from './api/work-moves.js';
 import { createConnectorApi } from './api/connector.js';
@@ -59,6 +60,10 @@ export function createApp({
   buttonCooldowns = true,
   log = console,
   tracing = null,
+  // Object storage for capture photos (server/core/storage.js). Null leaves
+  // the capture routes off.
+  storage = null,
+  publicOrigin = null,
 } = {}) {
   const app = express();
   app.disable('x-powered-by');
@@ -147,6 +152,11 @@ export function createApp({
     // items, Seazona products).
     const priceSystems = () => integrations?.with('listPriceItems') ?? [];
     app.use('/api/invoicing', createInvoicingRouter({ db: database.db, personAuth: auth.personAuth, log, liveCheckFor, accounting, work, priceSystems, buttonCooldowns }));
+    if (storage) {
+      app.use('/api/captures', createCapturesRouter({
+        db: database.db, storage, personAuth: auth.personAuth, log, publicOrigin,
+      }));
+    }
     // Custom fields for jobs (server/core/custom-fields.js): kept in Flow
     // only; the work systems' statuses show beside them, read only.
     app.use('/api/custom-fields', createCustomFieldsRouter({ db: database.db, personAuth: auth.personAuth, work, log }));

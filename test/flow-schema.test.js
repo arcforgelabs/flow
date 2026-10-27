@@ -62,7 +62,7 @@ test('Flow\'s tables live in "flow"', { skip: skipWithoutDatabase }, async (t) =
       assert.deepEqual(await inSchema(handle.pool, 'public'), []);
       assert.deepEqual(await functionsIn(handle.pool, 'public'), []);
       const flow = await inSchema(handle.pool, 'flow');
-      for (const table of ['organisations', 'invoices', 'xero_calls', 'seazona_orders']) assert.ok(flow.includes(table), table);
+      for (const table of ['organisations', 'invoices', 'captures', 'xero_calls', 'seazona_orders']) assert.ok(flow.includes(table), table);
       assert.deepEqual(await functionsIn(handle.pool, 'flow'), ['flow_invoice_lines_draft_only', 'flow_invoice_rules', 'flow_refuse_change']);
     } finally {
       await handle.close();

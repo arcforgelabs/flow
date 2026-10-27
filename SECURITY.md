@@ -33,8 +33,9 @@ paste a credential, in full or in part.
   organisation, encrypted, and are write-only in Settings.
 - **Records and files.** Every record is in the installation's PostgreSQL.
   Files reach the core only through the object storage port; PostgreSQL
-  holds each file's key, owner, size and hash, and the hash is checked on
-  read. Download links are signed.
+  holds each file's key, owner, size and hash. When Flow serves a file it
+  checks the hash first. Download links are signed. An S3 link is a presigned
+  URL the store itself honours.
 - **Issued documents are records.** An invoice a customer has been sent is
   never changed in place; a change produces a new version.
 
@@ -55,8 +56,11 @@ paste a credential, in full or in part.
   minute, `/api` 120, and the Clerk proxy 300. A client over the limit gets
   `429` with `Retry-After`.
 - Session cookies are `Secure`, `HttpOnly` and `SameSite`.
-- Flow stores no clinical notes, images or scans, and keeps a patient
-  reference only where an invoice must print one.
+- Flow stores no clinical notes or scans, and keeps a patient reference only
+  where an invoice must print one. A form photo is kept only until someone
+  decides the capture, or for 7 days when nobody does, and then the bytes are
+  deleted. Logs and error reports get the capture id and an error code, never
+  the photo or what was read or typed.
 - Object keys and file names carry a case number at most, never a patient
   name or other patient data.
 - CI runs gitleaks on every push and pull request

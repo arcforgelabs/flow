@@ -225,6 +225,13 @@ Keep these in the installation's secret store, never in a repository.
 | `FLOW_PIPELINE` | configuration | `off` stops the pipeline that links jobs to customers and to accounting invoices (`docs/JOB_INVOICE_LINKS.md`). Unset: on. It writes only to Flow. |
 | `FLOW_IMPORT_EARLIER_SCHEMA` | configuration | The schema that holds the earlier codebase's tables. While the database has no organisation, Flow imports from it at start; while it is set, each start also adds the earlier order to invoice links ("Move from the earlier codebase"). Unset: no import. |
 | `FLOW_IMPORT_ORGANISATION` | configuration | The lab's name for that import. Required with `FLOW_IMPORT_EARLIER_SCHEMA`. |
+| `FLOW_STORAGE` | configuration | `local` (a folder), `s3`, `replit`, or `off`. Unset: `local` on a single machine, `off` on Replit. `local` on a published Replit app stops boot. |
+| `FLOW_STORAGE_DIR` | configuration | The local folder. Default `data/storage`. A signing key is created there when `FLOW_SECRETS_KEY` and `FLOW_STORAGE_SIGNING_KEY` are both unset. |
+| `FLOW_STORAGE_SIGNING_KEY` | secret | Signs photo links for the local folder and Replit. Unset: derived from `FLOW_SECRETS_KEY` or `SESSION_SECRET`. S3 links are signed by the S3 keys instead. |
+| `FLOW_S3_BUCKET`, `FLOW_S3_REGION`, `FLOW_S3_ACCESS_KEY_ID` | configuration | S3-compatible storage. Required with `FLOW_S3_SECRET_ACCESS_KEY` when `FLOW_STORAGE=s3`. |
+| `FLOW_S3_SECRET_ACCESS_KEY` | secret | The S3 secret key. Required when `FLOW_STORAGE=s3`. |
+| `FLOW_S3_ENDPOINT` | configuration | Optional S3 endpoint, for example a MinIO address. Unset: AWS. |
+| `FLOW_S3_FORCE_PATH_STYLE` | configuration | `on` puts the bucket in the path. Unset: virtual-hosted style. |
 
 Boot stops if a setting is malformed or a key is missing. Error messages name
 the variable, never its value.
