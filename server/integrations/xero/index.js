@@ -1,8 +1,6 @@
 import { fileURLToPath } from 'node:url';
 import { sql } from 'drizzle-orm';
-import { listReview } from '../../core/review.js';
 import { guardAlerts } from '../call-guard.js';
-import { CONTACT_DIFFERS } from './contact-sync.js';
 import { deleteXeroInvoice } from './delete-invoice.js';
 import { createCustomer } from './create-contact.js';
 import { checkDrafts, documentFacts, pushInvoice, pushInvoices } from './drafts.js';
@@ -20,7 +18,7 @@ import { readChangesFirst } from './webhooks.js';
 // XERO_MODE says which Xero it acts on. Its tables are created only while it
 // is on (docs/INTEGRATIONS.md).
 
-export const XERO_TABLES = Object.freeze(['xero_connections', 'xero_contacts', 'xero_items', 'xero_sync_runs', 'xero_invoice_pushes', 'xero_payment_cursors', 'xero_invoices', 'xero_credit_notes', 'xero_payments', 'xero_mirror_cursors', 'xero_call_guard', 'xero_calls', 'xero_webhook_events', 'xero_daily_checks', 'xero_invoice_links', 'xero_import_settings', 'xero_contact_sync']);
+export const XERO_TABLES = Object.freeze(['xero_connections', 'xero_contacts', 'xero_items', 'xero_sync_runs', 'xero_invoice_pushes', 'xero_payment_cursors', 'xero_invoices', 'xero_credit_notes', 'xero_payments', 'xero_mirror_cursors', 'xero_call_guard', 'xero_calls', 'xero_webhook_events', 'xero_daily_checks', 'xero_invoice_links', 'xero_import_settings']);
 
 // What an owner enters in Settings, Integrations (server/integrations/setup.js).
 // The refresh token's key comes from Flow's secrets key.
@@ -42,9 +40,9 @@ export const XERO_SETUP = {
     { name: 'XERO_MODE', label: 'Mode', kind: 'choice', choices: [{ value: 'live', label: 'Live: your Xero organisation' }, { value: 'sandbox', label: 'Sandbox: a Xero Demo Company' }] },
     { name: 'XERO_REDIRECT_URI', label: 'Redirect URI', kind: 'url', suggest: 'callback', help: 'Register the same address on the Xero app.' },
     { name: 'XERO_CLIENT_ID', label: 'Client id', help: 'From the Xero app\'s Configuration.' },
-    { name: 'XERO_CLIENT_SECRET', label: 'Client secret', secret: true },
-    { name: 'XERO_TENANT_NAME', label: 'Organisation', help: 'Live mode connects only the organisation with this exact name.' },
-    { name: 'XERO_ALLOW_LIVE_WRITES', label: 'Live drafts', kind: 'onoff', help: 'On: Flow creates draft invoices in live Xero. Off: Flow only reads from Xero.' },
+    { name: 'XERO_CLIENT_SECRET', label: 'Client secret', secret: true, help: 'Stored encrypted. Flow never shows it again.' },
+    { name: 'XERO_TENANT_NAME', label: 'Xero organisation name', help: 'Live mode connects only the organisation with this exact name.' },
+    { name: 'XERO_ALLOW_LIVE_WRITES', label: 'Create draft invoices in live Xero', kind: 'onoff', help: 'Off: Flow only reads from Xero.' },
     { name: 'XERO_CREATE_CONTACTS', label: 'Create missing clients', kind: 'onoff', default: 'on', help: 'On: a pending invoice whose client is not in Xero offers Create. Off: add the client in Xero, then sync.' },
     { name: 'XERO_WEBHOOK_KEY', label: 'Webhook key', secret: true, help: 'From the Xero app\'s Webhooks page. Empty: Flow reads Xero\'s changes every 15 minutes instead.' },
   ],
@@ -115,18 +113,7 @@ export function createXeroAdapter({ runtime: given = null } = {}) {
       async alerts({ organisationId }) {
         const connection = await readConnection(database, organisationId);
         if (!connection || connection.mode !== current().settings.mode) return [];
-        const alerts = guardAlerts('Xero', await current().guardFor(database).status(connection.tenantId));
-        // Contacts both sides changed (Two-way edits, contact-sync.js).
-        const differ = await listReview(database, organisationId, { kind: CONTACT_DIFFERS, limit: 500 });
-        if (differ.length) {
-          alerts.push({
-            id: 'contacts-differ',
-            tone: 'warn',
-            title: `${differ.length === 1 ? '1 contact differs' : `${differ.length} contacts differ`} in Flow and Xero. Open the contact, then make both sides the same.`,
-            members: differ.map((item) => `${item.flowId}:${JSON.stringify(item.evidence?.fields?.map((f) => f.field) ?? [])}`),
-          });
-        }
-        return alerts;
+        return guardAlerts('Xero', await current().guardFor(database).status(connection.tenantId));
       },
       // One issued invoice to a Xero draft (drafts.js). The Flow invoice id
       // and version are the idempotency key.
