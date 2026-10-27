@@ -42,7 +42,7 @@ export function orderStatuses(statuses = [], jobs = []) {
 }
 
 export const INVOICE_STAGES = {
-  drafted: 'Drafted', problem: 'Pending', ready: 'Ready to invoice', invoiced: 'Invoiced', paid: 'Paid',
+  drafted: 'Drafted', problem: 'Pending', ready: 'Ready to invoice', invoiced: 'Invoiced', non_chargeable: 'Non-chargeable', paid: 'Paid',
 };
 
 const PROBLEM_VIEWS = ['pending', 'review_required', 'held'];
@@ -58,6 +58,7 @@ const isRule = (reason) => reason !== 'the job is not marked ready to invoice';
 //                     that stops the draft, or a problem with the draft
 //   Ready to invoice  a person marked the draft ready
 //   Invoiced          issued, sent, or in the accounting system
+//   Non-chargeable    a lab's rule keeps the draft in Flow, never billed
 //   Paid              paid in full
 export function invoiceStage(o) {
   if (!o || o.view === 'in_work') return null;
@@ -66,6 +67,7 @@ export function invoiceStage(o) {
   if (o.view === 'invoiced') return 'invoiced';
   if (o.invoiceView === 'problem' || o.invoiceStatus === 'void') return 'problem';
   if (o.invoiceStatus === 'issued') return 'invoiced';
+  if (o.invoiceView === 'non_chargeable') return 'non_chargeable';
   if (o.invoiceView === 'ready') return 'ready';
   if (o.view === 'ready') return (o.waitingFor ?? []).some(isRule) ? 'problem' : 'drafted';
   if (o.view === 'drafted') return 'drafted';

@@ -144,9 +144,11 @@ for (const screen of SCREENS) {
     if (result.spill > (budget.spill ?? 0)) over.push(`${result.spill} list rows cut off a line: ${found.spill.join(', ')}`);
     if (result.gutter > (budget.gutter ?? 0)) over.push(`content runs into the page's right gutter: ${found.gutter.join(', ')}`);
     if (result.cut > (budget.cut ?? 0)) over.push(`${result.cut} cut texts have no full text: ${found.cut.join(', ')}`);
-    // No budget: a table cut at the right or a split notice never ships.
+    // No budget: a table cut at the right, a split notice or a hidden
+    // selected tab never ships.
     if (phone && found.sideways.length) over.push(`these scroll sideways on a phone, and no card lets them (mobile.json scrollX): ${found.sideways.join(', ')}`);
     if (found.split.length) over.push(`a notice title sits on its own line: ${found.split.join(', ')}`);
+    if (found.hiddenTab.length) over.push(`the selected tab is scrolled out of view: ${found.hiddenTab.join(', ')}`);
     for (const [rule, nodes] of Object.entries(result.axe ?? {})) {
       if (nodes > (budget.axe?.[rule] ?? 0)) over.push(`axe ${rule}: ${nodes}`);
     }

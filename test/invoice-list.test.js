@@ -19,6 +19,7 @@ class El {
   append(...kids) { this.children.push(...kids.flat().filter((k) => k != null)); }
   replaceChildren(...kids) { this.children = []; this.append(...kids); }
   addEventListener(type, fn) { this.listeners[type] = fn; }
+  scrollIntoView() {}
   get classList() { return { toggle: (name, on) => { this.attrs[`class:${name}`] = String(on); } }; }
   get firstChild() { return this.children[0] ?? null; }
   set innerHTML(markup) { this.children = [new El('svg')]; }

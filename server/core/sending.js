@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import { billingObligations, contacts, invoiceLines, invoices } from '../db/schema.js';
 import { FlowError } from './errors.js';
-import { listRules, rulePending, ruleSkip } from './invoice-rules.js';
+import { listRules, ruleNonChargeable, rulePending, ruleSkip } from './invoice-rules.js';
 import { customerBillingByContact, effectiveSettings, readInvoicingSettings } from './invoicing-rules.js';
 import { issueInvoice } from './invoices.js';
 import { CHANGED_REASON, diffJobLines, STATUS_BACK_REASON } from './ledger.js';
@@ -20,7 +20,9 @@ import { deadHoldSince, deadSince, enqueueJob, runNextJob } from './queue.js';
 // rules (invoice-rules.js) add their notes. An enabled skip rule does too:
 // a draft whose job it matches stays Pending, even when the draft was made
 // by hand or before the rule existed. A draft with a problem is
-// Pending (the "problem" view). A draft without one is Ready.
+// Pending (the "problem" view). A draft without one is Ready. A draft whose
+// job a non-chargeable rule matches is neither: it is Non-chargeable, and
+// nothing sends it.
 //
 // Send all ready issues every ready draft (each gets its number) and, when an
 // accounting system is connected, queues it to go there. The send worker
@@ -97,14 +99,14 @@ async function checkDrafts(db, organisationId, drafts, accounting) {
   // The lab's rules (invoice-rules.js). A pending rule puts its note on the
   // draft. A skip rule holds a draft that already exists: void it, or change
   // the rule. Matching stays in invoice-rules.js.
-  const rules = (await listRules(db, organisationId)).filter((r) => r.enabled && (r.action.kind === 'pending' || r.action.kind === 'skip'));
+  const rules = (await listRules(db, organisationId)).filter((r) => r.enabled && ['pending', 'skip', 'non_chargeable'].includes(r.action.kind));
   if (rules.length && jobs.length) {
     const settings = await readInvoicingSettings(db, organisationId);
     const customers = await customerBillingByContact(db, organisationId, jobs.map((j) => j.obligation.contactId));
     for (const { obligation, reference, customerName } of jobs) {
       const customer = { ...effectiveSettings(settings, customers.get(obligation.contactId)), name: customerName ?? null };
       const job = { ...obligation, reference };
-      const found = [...rulePending(rules, job, { customer }), ...ruleSkip(rules, job, { customer })];
+      const found = [...ruleNonChargeable(rules, job, { customer }), ...rulePending(rules, job, { customer }), ...ruleSkip(rules, job, { customer })];
       if (found.length) problems.set(obligation.invoiceId, [...(problems.get(obligation.invoiceId) ?? []), ...found]);
     }
   }
@@ -125,17 +127,28 @@ async function checkDrafts(db, organisationId, drafts, accounting) {
   return problems;
 }
 
+// A draft a non-chargeable rule matches has nothing to fix: it is never sent.
+const nonChargeableOf = (found) => found.filter((p) => p.code === 'non_chargeable');
+
 // The views of the Invoices page. `accounting` is the accounting adapter, or
-// null. Every draft is in one view: Problem (a check failed; the Pending tab)
-// or Ready (its checks pass). An issued invoice is Sending while
-// queued, and a Problem when the accounting system refused it. Answers
-// { toCheck: [ids], ready: [ids], problems: Map(id -> problems), sending: Set(ids) }.
+// null. Every draft is in one view: Non-chargeable (a non-chargeable rule
+// matches its job), Problem (a check failed; the Pending tab) or Ready (its
+// checks pass). An issued invoice is Sending while queued, and a Problem when
+// the accounting system refused it. Answers { toCheck: [ids], ready: [ids],
+// problems: Map(id -> problems), nonChargeable: Map(id -> rules), sending: Set(ids) }.
 export async function invoiceViews(db, organisationId, { accounting = null } = {}) {
   const drafts = await db.select({ id: invoices.id, totalCents: invoices.totalCents, readyAt: invoices.readyAt }).from(invoices)
     .where(and(eq(invoices.organisationId, organisationId), eq(invoices.status, 'draft')))
     .orderBy(asc(invoices.createdAt), asc(invoices.id))
     .limit(CHECK_LIMIT);
   const problems = await checkDrafts(db, organisationId, drafts, accounting);
+  const nonChargeable = new Map();
+  for (const [id, found] of problems) {
+    const rules = nonChargeableOf(found);
+    if (!rules.length) continue;
+    nonChargeable.set(id, rules);
+    problems.delete(id);
+  }
   const sending = new Set();
   const issued = await db.select({ id: invoices.id, sendState: invoices.sendState, sendError: invoices.sendError }).from(invoices)
     .where(and(eq(invoices.organisationId, organisationId), eq(invoices.status, 'issued'), inArray(invoices.sendState, ['queued', 'failed'])))
@@ -146,11 +159,12 @@ export async function invoiceViews(db, organisationId, { accounting = null } = {
   }
   // A draft whose checks pass is ready (Samuel, 2026-10-20): no person
   // needs to mark it. toCheck stays for callers that still read it.
-  const clean = drafts.filter((d) => !problems.has(d.id));
+  const clean = drafts.filter((d) => !problems.has(d.id) && !nonChargeable.has(d.id));
   return {
     toCheck: [],
     ready: clean.map((d) => d.id),
     problems,
+    nonChargeable,
     sending,
   };
 }
@@ -164,6 +178,8 @@ export async function invoiceView(db, organisationId, invoice, { accounting = nu
     return { view: null, problems: [] };
   }
   const found = (await checkDrafts(db, organisationId, [invoice], accounting)).get(invoice.id) ?? [];
+  const rules = nonChargeableOf(found);
+  if (rules.length) return { view: 'non_chargeable', problems: [], nonChargeable: rules };
   return { view: found.length ? 'problem' : 'ready', problems: found };
 }
 
@@ -279,6 +295,8 @@ export async function sendAllReady(db, organisationId, { accounting = null, work
     ready = ready.filter((id) => wanted.has(id));
     held = wanted.size - ready.length;
     if (!ready.length) {
+      const kept = invoiceIds.map((id) => views.nonChargeable.get(id)?.[0]?.message).find(Boolean);
+      if (kept) throw new FlowError('not_ready', `Not sent: ${kept}`);
       const reason = invoiceIds.map((id) => views.problems.get(id)?.[0]?.message).find(Boolean);
       throw new FlowError('not_ready', reason
         ? `Not sent: ${reason.replace(/\.?$/, '.')} The invoice is on Pending.`

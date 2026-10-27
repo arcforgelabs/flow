@@ -440,7 +440,12 @@ a.fx-strong:hover { text-decoration: underline; }
 .fx-toolbar { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--fx-line); }
 .fx-tabs { display: flex; gap: 2px; }
 .fx-tabs button { flex: none; }
-@media (max-width: 639px) { .fx-tabs { max-width: 100%; overflow-x: auto; scrollbar-width: none; } }
+/* Phones and tablets: the tabs scroll in one row and each is 44px tall, so
+   seven tabs never run past the page and a thumb hits each one. */
+@media (max-width: 1023px) {
+  .fx-tabs { max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+  .fx-tabs button { min-height: 44px; }
+}
 .fx-tabs button {
   display: inline-flex; align-items: center; gap: 8px; padding: 10px 14px; margin-bottom: -1px;
   border: 0; border-bottom: 2px solid transparent; background: transparent; cursor: pointer;
@@ -1346,7 +1351,6 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
   /* Touch: every control a thumb uses is 44px (docs/MOBILE_TESTS.md). The
      icons and text keep their size; the box around them grows. */
   #menu-toggle, #search { width: 44px; height: 44px; }
-  .fx-tabs button { min-height: 44px; }
   /* The notice's buttons grow to 44px into its padding, so the notice
      stays one short line. */
   .fx-alerts__close { width: 44px; height: 44px; margin: -12px -8px; }
