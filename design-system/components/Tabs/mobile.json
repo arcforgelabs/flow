@@ -12,6 +12,7 @@
   },
   "touch": 44,
   "pageOverflow": "none",
+  "scrollX": ".fx-tabs",
   "screens": [
     "invoices-ready",
     "invoices-pending",

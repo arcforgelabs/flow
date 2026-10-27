@@ -158,6 +158,24 @@ export function notice(text, tone = 'info', title = null, { short = null } = {})
     short ? h('span', { class: 'fx-notice__short' }, short) : null), 'notice');
 }
 
+// A table that is a list of small cards on a phone (CardRows card). On a
+// tablet and desk it stays a table. `areas` places each cell on the card
+// (CSS grid-template-areas, one string per line) and `columns` sizes the
+// card's columns. A cell names its place with `data-area` and its column
+// name with `data-label` (shown above it on a phone). Rows drawn later are
+// placed too.
+export function cardRows(table, { areas, columns }) {
+  table.classList.add('fx-cardrows');
+  table.style.setProperty('--fx-cardrows-areas', areas.map((line) => `"${line}"`).join(' '));
+  table.style.setProperty('--fx-cardrows-columns', columns);
+  const place = () => {
+    for (const cell of table.querySelectorAll('td[data-area]')) cell.style.gridArea = cell.dataset.area;
+  };
+  place();
+  if (typeof MutationObserver === 'function') new MutationObserver(place).observe(table, { childList: true, subtree: true });
+  return applyPhoneRule(table, 'cardRows');
+}
+
 // A field that fails a check glows red, like a required field, until the
 // person types in it; the next check marks it again if it still fails.
 // `on` false clears it. Answers the field.

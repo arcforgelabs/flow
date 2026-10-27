@@ -68,6 +68,26 @@ export const RULES = {
     "mark": false,
     "card": "Button"
   },
+  "cardRows": {
+    "component": "cardRows",
+    "direction": "card per row",
+    "phone": {
+      "layout": "cards"
+    },
+    "tablet": {
+      "layout": "table"
+    },
+    "desk": {
+      "layout": "table"
+    },
+    "touch": 44,
+    "pageOverflow": "none",
+    "screens": [
+      "invoice",
+      "invoice-issued"
+    ],
+    "card": "CardRows"
+  },
   "columnTable": {
     "component": "columnTable",
     "direction": "two-line row",
@@ -281,6 +301,7 @@ export const RULES = {
     },
     "touch": 44,
     "pageOverflow": "none",
+    "scrollX": ".fx-frame, .fx-board, .fx-board-tabs",
     "screens": [
       "jobs-board",
       "jobs-list",
@@ -308,6 +329,7 @@ export const RULES = {
     },
     "touch": 44,
     "pageOverflow": "none",
+    "scrollX": ".fx-toolbar__tools",
     "screens": [
       "jobs-board",
       "jobs-list",
@@ -366,7 +388,8 @@ export const RULES = {
     "component": "notice",
     "direction": "note",
     "phone": {
-      "layout": "note"
+      "layout": "note",
+      "short": "one line in place of the title and text"
     },
     "tablet": {
       "layout": "note"
@@ -376,7 +399,9 @@ export const RULES = {
     },
     "touch": 44,
     "pageOverflow": "none",
-    "screens": [],
+    "screens": [
+      "invoice-offer"
+    ],
     "card": "Notice"
   },
   "optionPill": {
@@ -565,6 +590,7 @@ export const RULES = {
     },
     "touch": 44,
     "pageOverflow": "none",
+    "scrollX": ".fx-tabs",
     "screens": [
       "invoices-ready",
       "invoices-pending",

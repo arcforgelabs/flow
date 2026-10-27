@@ -205,13 +205,15 @@ body:is([data-state="off"], [data-state="error"], [data-state="no-access"]) .fx-
 
 /* ── Notices, pills, tags, toasts ──────────────────────────────────────── */
 .fx-notice {
-  display: flex; flex-wrap: wrap; gap: 6px; padding: 12px 14px;
+  display: block; padding: 12px 14px;
   border: 1px solid var(--t-accent-brd); border-radius: var(--t-radius);
   background: var(--t-accent-bg); color: var(--t-text); font-size: 14px;
 }
 .fx-notice[data-tone="warn"] { border-color: var(--t-warn-brd); background: var(--t-warn-bg); }
 .fx-notice[data-tone="danger"] { border-color: var(--t-danger-brd); background: var(--t-danger-bg); color: var(--t-danger); }
 .fx-panel > .fx-notice { margin: 12px; }
+/* The title leads the text on the same line ("Problem. No Xero contact…"). */
+.fx-notice > strong { margin-right: 6px; }
 .fx-notice__short { display: none; }
 @media (max-width: 639px) {
   .fx-notice__short { display: inline; }
@@ -546,7 +548,7 @@ a.fx-strong:hover { text-decoration: underline; }
 .fx-lines__qty { width: 76px; }
 .fx-lines__price { width: 112px; }
 .fx-lines__gst { width: 116px; }
-.fx-lines__table--read td { width: auto; padding-top: 12px; padding-bottom: 12px; }
+.fx-lines__table--read td { padding-top: 12px; padding-bottom: 12px; }
 .fx-lines__foot { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: start; gap: 16px; padding: 12px 16px 18px; }
 .fx-totals { display: grid; grid-template-columns: auto minmax(120px, auto); gap: 6px 24px; margin: 0; font-size: 14px; }
 .fx-totals dt { color: var(--t-dim); }
@@ -563,43 +565,28 @@ a.fx-strong:hover { text-decoration: underline; }
   .fx-lines { overflow-x: auto; }
   .fx-lines__table { min-width: 680px; }
 }
-/* On a phone each line is a small card: no sideways scroll. Edit: Item, Qty
-   and Remove; Description; Unit price, Tax and Amount. Read: Description and
-   Amount; Qty, Unit price and Tax. Each field shows its column name. */
+/* CardRows (cardRows in kit.js): on a phone a table is a list of small
+   cards, never a sideways scroll. Each cell sits where the table's areas
+   place it, under its column name. */
 @media (max-width: 639px) {
   .fx-lines { overflow-x: visible; }
-  .fx-lines__table, .fx-lines__table tbody { display: block; min-width: 0; }
-  .fx-lines__table thead { display: none; }
-  .fx-lines__table tr {
-    display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 72px 44px; gap: 10px 8px;
-    grid-template-areas: "item item qty remove" "desc desc desc desc" "price gst amount amount";
-    padding: 14px 16px; border-bottom: 1px solid var(--fx-line-soft);
+  .fx-cardrows, .fx-cardrows tbody { display: block; width: 100%; min-width: 0; }
+  .fx-cardrows thead { display: none; }
+  .fx-cardrows tr {
+    display: grid; grid-template-columns: var(--fx-cardrows-columns); grid-template-areas: var(--fx-cardrows-areas);
+    gap: 10px 8px; padding: 14px 16px; border-bottom: 1px solid var(--fx-line-soft);
   }
-  .fx-lines__table--read tr {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    grid-template-areas: "desc desc amount" "qty price gst";
-  }
-  .fx-lines__table td,
-  .fx-lines__table td:first-child,
-  .fx-lines__table td:last-child { display: grid; align-content: end; gap: 4px; width: auto; min-width: 0; padding: 0; border: 0; }
-  .fx-lines__table td[data-label]::before {
+  .fx-cardrows td,
+  .fx-cardrows td:first-child,
+  .fx-cardrows td:last-child,
+  .fx-lines__table--read td { display: grid; align-content: end; gap: 4px; width: auto; min-width: 0; padding: 0; border: 0; text-align: left; }
+  .fx-cardrows td[data-label]::before {
     content: attr(data-label); color: var(--t-dim);
     font: var(--t-label-weight) var(--t-label-size)/1.3 var(--t-body); letter-spacing: var(--t-label-spacing); text-transform: var(--t-label-case);
   }
-  .fx-lines__table td.fx-num { text-align: left; }
-  .fx-lines__table td.fx-lines__amount { justify-items: end; text-align: right; }
-  .fx-lines__table--read td.fx-lines__amount { align-content: start; }
-  .fx-lines__table--read td.fx-lines__desc { align-content: start; }
-  .fx-lines__item { grid-area: item; }
-  .fx-lines__desc { grid-area: desc; }
-  .fx-lines__qty { grid-area: qty; }
-  .fx-lines__price { grid-area: price; }
-  .fx-lines__gst { grid-area: gst; }
-  .fx-lines__amount { grid-area: amount; min-height: 44px; }
-  .fx-lines__table--read .fx-lines__amount { min-height: 0; }
-  .fx-lines__remove { grid-area: remove; }
-  .fx-lines__table :is(.fx-input, .fx-select) { min-height: 44px; }
-  .fx-lines__remove .fx-btn { width: 44px; min-height: 44px; }
+  .fx-cardrows td[data-end] { justify-items: end; text-align: right; }
+  .fx-cardrows :is(.fx-input, .fx-select, .fx-btn) { min-height: 44px; }
+  .fx-cardrows .fx-btn--icon { width: 44px; }
 }
 
 /* ── Jobs board ─────────────────────────────────────────────────────────── */
@@ -1993,7 +1980,7 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
   .fx-offer > .fx-notice { flex-basis: 100%; }
   .fx-offer > .fx-btn { flex: 1 1 0; }
   /* A short note fits on one row with Link and Create. */
-  .fx-offer > .fx-notice:has(.fx-notice__short) { flex: 1 1 auto; align-self: stretch; align-items: center; }
+  .fx-offer > .fx-notice:has(.fx-notice__short) { display: flex; flex: 1 1 auto; align-self: stretch; align-items: center; }
   .fx-offer:has(.fx-notice__short) > .fx-btn { flex: 0 1 auto; }
   .fx-offer .fx-btn,
   .fx-contacts :is(.fx-btn, .fx-input, .fx-select, .fx-check) { min-height: 44px; }

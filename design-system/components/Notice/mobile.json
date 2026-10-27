@@ -2,7 +2,8 @@
   "component": "notice",
   "direction": "note",
   "phone": {
-    "layout": "note"
+    "layout": "note",
+    "short": "one line in place of the title and text"
   },
   "tablet": {
     "layout": "note"
@@ -12,5 +13,7 @@
   },
   "touch": 44,
   "pageOverflow": "none",
-  "screens": []
+  "screens": [
+    "invoice-offer"
+  ]
 }

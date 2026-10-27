@@ -1,0 +1,19 @@
+{
+  "component": "cardRows",
+  "direction": "card per row",
+  "phone": {
+    "layout": "cards"
+  },
+  "tablet": {
+    "layout": "table"
+  },
+  "desk": {
+    "layout": "table"
+  },
+  "touch": 44,
+  "pageOverflow": "none",
+  "screens": [
+    "invoice",
+    "invoice-issued"
+  ]
+}
