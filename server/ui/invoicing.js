@@ -990,7 +990,7 @@ function draftView(invoice, ui, context, redraw) {
 
   const drawLines = () => {
     tbody.replaceChildren(...lines.map((line, index) => {
-      const amount = h('td', { class: 'fx-num fx-strong' });
+      const amount = h('td', { class: 'fx-num fx-strong fx-lines__amount', 'data-label': 'Amount' });
       const showAmount = () => {
         amount.textContent = line.unitAmountCents == null || !(line.quantity > 0) ? '—' : formatCents(line.quantity * line.unitAmountCents);
       };
@@ -1028,13 +1028,13 @@ function draftView(invoice, ui, context, redraw) {
         onclick: () => { badLines.clear(); lines.splice(index, 1); if (!lines.length) lines.push({ description: '', quantity: 1, unitAmountCents: null, taxCode: 'GST', priceItemId: null }); drawLines(); preview(); },
       }, '×');
       return h('tr', {},
-        h('td', { class: 'fx-lines__item' }, item),
-        h('td', {}, description),
-        h('td', { class: 'fx-lines__qty' }, quantity),
-        h('td', { class: 'fx-lines__price' }, price),
-        h('td', { class: 'fx-lines__gst' }, gst),
+        h('td', { class: 'fx-lines__item', 'data-label': 'Item' }, item),
+        h('td', { class: 'fx-lines__desc', 'data-label': 'Description' }, description),
+        h('td', { class: 'fx-lines__qty', 'data-label': 'Qty' }, quantity),
+        h('td', { class: 'fx-lines__price', 'data-label': 'Unit price' }, price),
+        h('td', { class: 'fx-lines__gst', 'data-label': 'Tax' }, gst),
         amount,
-        h('td', {}, remove));
+        h('td', { class: 'fx-lines__remove' }, remove));
     }));
   };
   drawLines();
@@ -1207,8 +1207,10 @@ function draftView(invoice, ui, context, redraw) {
   // changed. Other problems stay one line.
   const otherProblems = (invoice?.problems ?? []).filter((p) => !(jobChange && p.code === 'job_review'));
   const offer = otherProblems.find((p) => ['xero_contact_missing', 'xero_contact_ambiguous'].includes(p.code) && (p.offerLink || p.offerCreate));
+  // A phone shows each problem's short name ("Client not in Xero") on one line.
+  const shorts = otherProblems.every((p) => p.short) ? [...new Set(otherProblems.map((p) => p.short))].join(', ') : null;
   const problemNotice = otherProblems.length
-    ? notice([...new Set(otherProblems.map((p) => brief(p.message)))].join(' '), 'danger', 'Problem.')
+    ? notice([...new Set(otherProblems.map((p) => brief(p.message)))].join(' '), 'danger', 'Problem.', { short: shorts })
     : null;
   const organisationId = context.organisations[0]?.id;
   // Link or Create the Xero client, then the invoice is checked again.
@@ -1437,11 +1439,11 @@ function issuedView(invoice, ui, context, redraw) {
           h('table', { class: 'fx-lines__table fx-lines__table--read' },
             h('thead', {}, h('tr', {}, h('th', {}, 'Description'), h('th', { class: 'fx-num' }, 'Qty'), h('th', { class: 'fx-num' }, 'Unit price'), h('th', {}, 'Tax'), h('th', { class: 'fx-num' }, 'Amount'))),
             h('tbody', {}, invoice.lines.map((line) => h('tr', {},
-              h('td', {}, line.description),
-              h('td', { class: 'fx-num' }, String(line.quantity)),
-              h('td', { class: 'fx-num' }, formatCents(line.unitAmountCents)),
-              h('td', { class: 'fx-dim' }, line.taxCode === 'GST' ? 'GST' : 'GST free'),
-              h('td', { class: 'fx-num fx-strong' }, formatCents(line.lineAmountCents)))))),
+              h('td', { class: 'fx-lines__desc' }, line.description),
+              h('td', { class: 'fx-num fx-lines__qty', 'data-label': 'Qty' }, String(line.quantity)),
+              h('td', { class: 'fx-num fx-lines__price', 'data-label': 'Unit price' }, formatCents(line.unitAmountCents)),
+              h('td', { class: 'fx-dim fx-lines__gst', 'data-label': 'Tax' }, line.taxCode === 'GST' ? 'GST' : 'GST free'),
+              h('td', { class: 'fx-num fx-strong fx-lines__amount' }, formatCents(line.lineAmountCents)))))),
           h('div', { class: 'fx-lines__foot' }, h('span'), totalsBox(ui, invoice)))),
       h('aside', { class: 'fx-invoice__aside' },
         linkedHost,

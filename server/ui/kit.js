@@ -149,10 +149,13 @@ export function sectionTitle(text, help = null) {
   return h('h2', { class: 'fx-set__title' }, text, help ? helpLink(help) : null);
 }
 
-export function notice(text, tone = 'info', title = null) {
+// With `short`, a phone shows only that one line ("Client not in Xero") in
+// place of the title and text.
+export function notice(text, tone = 'info', title = null, { short = null } = {}) {
   return applyPhoneRule(h('div', { class: 'fx-notice', 'data-tone': tone, role: tone === 'danger' ? 'alert' : 'status' },
-    title ? h('strong', {}, title) : null,
-    h('span', {}, text)), 'notice');
+    title ? h('strong', { class: short ? 'fx-notice__long' : null }, title) : null,
+    h('span', { class: short ? 'fx-notice__long' : null }, text),
+    short ? h('span', { class: 'fx-notice__short' }, short) : null), 'notice');
 }
 
 // A field that fails a check glows red, like a required field, until the
