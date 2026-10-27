@@ -120,7 +120,8 @@ if (jobsOn) createReconcileWorker({ db: database.db, integrations, log }).start(
 if (jobsOn) createSendWorker({ db: database.db, integrations, log }).start();
 
 // Capture photos (server/core/storage.js). A bad storage setting stops boot.
-// On Replit the default is off, never the local folder. The retention pass
+// On Replit, and where the local folder cannot be created, the default is
+// off. The retention pass
 // only deletes Flow's own files, so it still runs where background jobs are
 // off: a second copy deleting the same key does nothing.
 let storage = null;

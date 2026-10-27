@@ -178,7 +178,9 @@ with one implementation per host (`server/core/storage.js`): a local folder
 for a single machine or tests, S3-compatible storage, and Replit Object
 Storage. A published Replit app keeps no files between publishes, so it never
 uses the local folder; on Replit, captures stay off until `FLOW_STORAGE` is
-`replit` or `s3`. An S3 link is a presigned GET. Replit's client has no
+`replit` or `s3`. The server image is read-only, so an unset `FLOW_STORAGE`
+leaves captures off there too. Set `FLOW_STORAGE=local` with a writable
+`FLOW_STORAGE_DIR` when the photo should live on that machine. An S3 link is a presigned GET. Replit's client has no
 signed URL, so that link is a Flow link: Flow checks the signature, reads the
 bytes and checks the checksum before it sends them. Logs and error reports
 get a capture id and an error code, never the photo or the typed fields.

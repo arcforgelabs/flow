@@ -378,13 +378,20 @@ function configuredSigningKey(env, secrets) {
   return null;
 }
 
+const FOLDER_BLOCKED = new Set(['EACCES', 'EPERM', 'EROFS', 'ENOTDIR']);
+
+function rethrowKey(error) {
+  if (FOLDER_BLOCKED.has(error?.code)) throw error;
+  throw new Error('FLOW_STORAGE=local could not read its signing key');
+}
+
 async function readOrCreateKey(root) {
   const file = path.join(path.resolve(root), '.signing-key');
   try {
     const existing = await readFile(file);
     if (existing.length >= 32) return existing.subarray(0, 32);
   } catch (error) {
-    if (error?.code !== 'ENOENT') throw new Error('FLOW_STORAGE=local could not read its signing key');
+    if (error?.code !== 'ENOENT') rethrowKey(error);
   }
   await mkdir(path.dirname(file), { recursive: true });
   const key = randomBytes(32);
@@ -392,7 +399,7 @@ async function readOrCreateKey(root) {
     await writeFile(file, key, { flag: 'wx', mode: 0o600 });
     return key;
   } catch (error) {
-    if (error?.code !== 'EEXIST') throw new Error('FLOW_STORAGE=local could not read its signing key');
+    if (error?.code !== 'EEXIST') rethrowKey(error);
   }
   const created = await readFile(file);
   if (created.length >= 32) return created.subarray(0, 32);
@@ -427,7 +434,8 @@ async function loadReplitClient() {
 
 // Answers { storage, mode, reason }. `storage` is null when captures are off.
 // A bad explicit setting throws, so boot stops. On Replit the default is off,
-// never the local folder: a publish would drop those files.
+// never the local folder: a publish would drop those files. Where the local
+// folder cannot be created, an unset FLOW_STORAGE is off too.
 export async function resolveObjectStorage({ env = process.env, secrets = null, root = null } = {}) {
   const mode = storageMode(env);
   const explicit = Boolean(String(env.FLOW_STORAGE ?? '').trim());
@@ -436,8 +444,17 @@ export async function resolveObjectStorage({ env = process.env, secrets = null, 
   if (mode === 'local') {
     if (env.REPLIT_DEPLOYMENT) throw new Error('FLOW_STORAGE=local cannot be used on a published Replit app: a publish keeps no files');
     const folder = root ?? env.FLOW_STORAGE_DIR ?? path.join('data', 'storage');
-    const signingKey = configuredSigningKey(env, secrets) ?? await readOrCreateKey(folder);
-    return { storage: createLocalObjectStorage({ root: folder, signingKey }), mode, reason: null };
+    try {
+      const signingKey = configuredSigningKey(env, secrets) ?? await readOrCreateKey(folder);
+      return { storage: createLocalObjectStorage({ root: folder, signingKey }), mode, reason: null };
+    } catch (error) {
+      // The server image is read-only. An unset FLOW_STORAGE must not stop boot.
+      if (FOLDER_BLOCKED.has(error?.code)) {
+        if (!explicit) return { storage: null, mode: 'off', reason: 'local_not_writable' };
+        throw new Error('FLOW_STORAGE=local could not create its folder');
+      }
+      throw error;
+    }
   }
   if (mode === 's3') {
     const bucket = String(env.FLOW_S3_BUCKET ?? '').trim();

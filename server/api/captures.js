@@ -67,7 +67,7 @@ export function createCapturesRouter({ db, storage, personAuth, log = console, p
   router.post('/', ...signedIn, express.raw({ type: () => true, limit: MAX_PHOTO_BYTES }), handle(async (req, res) => {
     const organisationId = await organisationOf(req);
     const result = await uploadCapture(db, storage, organisationId, {
-      bytes: Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0),
+      bytes: typeof req.body === 'string' || Array.isArray(req.body) || !Buffer.isBuffer(req.body) ? Buffer.alloc(0) : req.body,
       contentType: req.get('content-type'),
       idempotencyKey: req.get('idempotency-key'),
       source: req.get('x-flow-capture-source') ?? req.query.source,

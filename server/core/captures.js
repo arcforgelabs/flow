@@ -26,10 +26,13 @@ const CHANGES_MAX = 40;
 const invalid = (message) => new FlowError('invalid', message);
 
 export function readPhoto(bytes, contentType) {
+  // A request body can arrive as a string or a list. A photo is a buffer.
+  // The type check comes before any read of the bytes.
+  if (typeof bytes === 'string' || Array.isArray(bytes) || !Buffer.isBuffer(bytes)) throw invalid('photo is required');
   const type = String(contentType ?? '').split(';')[0].trim().toLowerCase();
   const fileType = type === 'image/jpg' ? 'image/jpeg' : type;
   if (!PHOTO_TYPES.has(fileType)) throw new FlowError('unsupported_media', 'photo must be a jpeg, png, webp or heic');
-  if (!Buffer.isBuffer(bytes) || bytes.length === 0) throw invalid('photo is required');
+  if (bytes.length === 0) throw invalid('photo is required');
   if (bytes.length > MAX_PHOTO_BYTES) throw new FlowError('photo_too_large', 'photo is too large');
   if (!looksLikePhoto(fileType, bytes)) throw new FlowError('not_a_photo', 'photo could not be read');
   return { fileType, fileSize: bytes.length, fileSha256: createHash('sha256').update(bytes).digest('hex') };

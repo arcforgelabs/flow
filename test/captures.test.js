@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { after, before, describe, test } from 'node:test';
@@ -39,6 +39,8 @@ test('a photo is checked before it is stored', () => {
   assert.throws(() => readPhoto(Buffer.from('hello'), 'text/plain'), /jpeg, png, webp or heic/);
   assert.throws(() => readPhoto(Buffer.from('not a photo'), 'image/png'), /could not be read/);
   assert.throws(() => readPhoto(Buffer.alloc(MAX_PHOTO_BYTES + 1, 1), 'image/jpeg'), /too large/);
+  assert.throws(() => readPhoto('not-bytes', 'image/png'), /photo is required/);
+  assert.throws(() => readPhoto([PNG], 'image/png'), /photo is required/);
 });
 
 test('the local folder stores a photo and will not leave that folder', async () => {
@@ -164,6 +166,32 @@ test('a published Replit app never uses the local folder', async () => {
   assert.equal(off.storage, null);
   assert.equal(off.mode, 'off');
   await assert.rejects(() => resolveObjectStorage({ env: { FLOW_STORAGE: 's3' } }), /FLOW_S3_BUCKET/);
+  const parent = mkdtempSync(path.join(tmpdir(), 'flow-storage-ro-'));
+  const blocked = path.join(parent, 'not-a-directory');
+  writeFileSync(blocked, 'x');
+  const unwritable = await resolveObjectStorage({ env: {}, root: path.join(blocked, 'storage') });
+  assert.equal(unwritable.storage, null);
+  assert.equal(unwritable.mode, 'off');
+  assert.equal(unwritable.reason, 'local_not_writable');
+  await assert.rejects(
+    () => resolveObjectStorage({ env: { FLOW_STORAGE: 'local' }, root: path.join(blocked, 'storage') }),
+    /could not create its folder/,
+  );
+  const lockedParent = mkdtempSync(path.join(tmpdir(), 'flow-storage-lock-'));
+  const locked = path.join(lockedParent, 'locked');
+  mkdirSync(locked);
+  chmodSync(locked, 0o555);
+  try {
+    const denied = await resolveObjectStorage({ env: {}, root: path.join(locked, 'storage') });
+    assert.equal(denied.storage, null);
+    assert.equal(denied.reason, 'local_not_writable');
+    await assert.rejects(
+      () => resolveObjectStorage({ env: { FLOW_STORAGE: 'local' }, root: path.join(locked, 'storage') }),
+      /could not create its folder/,
+    );
+  } finally {
+    chmodSync(locked, 0o755);
+  }
 });
 
 describe('captures against PostgreSQL', { skip: skipWithoutDatabase }, () => {
