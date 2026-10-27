@@ -61,6 +61,8 @@ export const SCREENS = [
   { id: 'rules', path: '/invoicing-settings', ready: '.fx-main > *' },
   { id: 'automations', path: '/automations', ready: '.fx-main > *' },
   { id: 'integrations', path: '/integrations', ready: '.fx-main > *' },
+  // Settings rows with a menu and a box (Sending).
+  { id: 'integration-xero', path: '/integrations/xero', ready: '.fx-main > *' },
   { id: 'custom-fields', path: '/custom-fields', ready: '.fx-main > *' },
   { id: 'appearance', path: '/appearance', ready: '.fx-main > *' },
 ];
