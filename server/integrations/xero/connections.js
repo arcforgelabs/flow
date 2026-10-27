@@ -10,6 +10,8 @@ import { xeroError } from './client.js';
 // settings and are never stored. Tokens are never logged.
 
 const FORMAT = 'v1';
+// What a Custom Connection's row seals in place of a refresh token.
+export const CUSTOM_CONNECTION = 'custom-connection';
 
 function aad(organisationId) {
   return Buffer.from(`flow:xero:refresh-token:${organisationId}`);

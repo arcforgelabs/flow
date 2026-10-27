@@ -40,6 +40,7 @@ export const XERO_SETUP = {
   },
   fields: [
     { name: 'XERO_MODE', label: 'Mode', kind: 'choice', choices: [{ value: 'live', label: 'Live: your Xero organisation' }, { value: 'sandbox', label: 'Sandbox: a Xero Demo Company' }] },
+    { name: 'XERO_CONNECTION', label: 'Xero app type', kind: 'choice', choices: [{ value: 'app', label: 'Web app' }, { value: 'custom', label: 'Custom connection (Demo Company only)' }], help: 'Custom connection: no Xero sign-in step. Sandbox mode only.' },
     { name: 'XERO_REDIRECT_URI', label: 'Redirect URI', kind: 'url', suggest: 'callback', help: 'Register the same address on the Xero app.' },
     { name: 'XERO_CLIENT_ID', label: 'Client id', help: 'From the Xero app\'s Configuration.' },
     { name: 'XERO_CLIENT_SECRET', label: 'Client secret', secret: true, help: 'Stored encrypted. Flow never shows it again.' },
