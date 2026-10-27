@@ -50,7 +50,7 @@ export async function describeObligations(db, organisationId, listed, { accounti
   const ready = new Set(views?.ready ?? []);
   const toCheck = new Set(views?.toCheck ?? []);
   const invoiceView = (id) => (!id || !views ? null
-    : views.problems.has(id) ? 'problem' : ready.has(id) ? 'ready' : toCheck.has(id) ? 'to_check'
+    : views.problems.has(id) ? 'problem' : views.nonChargeable.has(id) ? 'non_chargeable' : ready.has(id) ? 'ready' : toCheck.has(id) ? 'to_check'
       : views.sending.has(id) ? 'sending' : null);
   // The invoicing rules a job with no invoice waits on, for every view a
   // draft can still come from.

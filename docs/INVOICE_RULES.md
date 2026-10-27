@@ -13,10 +13,12 @@ flowchart LR
   then -- wait --> wait[Waits for a person]
   then -- skip --> skip[Never drafted by rule]
   then -- pending --> flagged[Draft, on Pending with the note]
+  then -- non_chargeable --> kept[Draft, on Non-chargeable, never sent]
   each -- no rule matches --> draft[Draft invoice in Flow]
-  draft --> check{Pending rules and skip rules check the draft}
+  draft --> check{Pending, skip and non-chargeable rules check the draft}
   check -- a pending rule matches --> flagged
   check -- a skip rule matches --> held[Stays Pending: not invoiced]
+  check -- a non-chargeable rule matches --> kept
   check -- none match --> readyTab[Ready]
 ```
 
@@ -26,7 +28,7 @@ flowchart LR
 | --- | --- |
 | When | `job_ready`: the job is ready to invoice and has no invoice |
 | If | 1 to 10 conditions. All must match |
-| Then | `wait`: the job waits for a person. `skip`: rules never draft it, and Send holds a draft that already matches. `pending`: Flow drafts it, and the draft is on the Pending tab with the rule's note |
+| Then | `wait`: the job waits for a person. `skip`: rules never draft it, and Send holds a draft that already matches. `pending`: Flow drafts it, and the draft is on the Pending tab with the rule's note. `non_chargeable`: Flow drafts it, and the draft is on the Non-chargeable tab |
 
 A person can still draft a waiting job from the Jobs board. The job lists
 each rule that stops it, for example `rule "Old job": waits for a person`.
@@ -73,6 +75,23 @@ A client may send its own reference number in place of the patient's name,
 so `Dr Ann Lee - 21764` is a good Reference. "Has a number beside words"
 reads each part between ` - ` and finds a number only next to words, as in
 `Coral Smith (OIQ-9902)`.
+
+## Non-chargeable rules
+
+Non-chargeable work is work the lab does but never bills, for example work
+for its own clinics. The word is Xero's: Xero Projects calls such work
+non-chargeable. Xero has no invoice for it.
+
+A non-chargeable rule never stops a draft. Flow drafts the job with its
+lines and prices, so the lab keeps the value of its work. The draft is on
+the Non-chargeable tab, never on Pending or Ready. Send, Send all ready and
+Approve never send it: `Not sent: Rule "<name>": non-chargeable. Flow keeps
+it and never sends it.` A draft made before the rule moves to the tab by
+itself. Turn the rule off, and its drafts are checked as usual again.
+
+| Name | If | Then |
+| --- | --- | --- |
+| Own clinics | Customer contains `Example Group` | Non-chargeable |
 
 ## Fields
 

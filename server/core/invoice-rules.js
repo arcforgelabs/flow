@@ -12,7 +12,10 @@ import { FlowError, notFound } from './errors.js';
 //   Then  wait: the job waits for a person; skip: rules never draft it;
 //         pending: Flow drafts it, and the draft is Pending with the rule's
 //         note, which says what to fix (for example a Reference with no
-//         real practitioner).
+//         real practitioner); non_chargeable: Flow drafts it and keeps it on
+//         the Non-chargeable tab. The work is done but never billed (Xero's
+//         word for such work), so the draft is never sent. Its value stays
+//         in Flow, for the lab's output.
 //
 // The rules read only Flow's own records, so they work with or without an
 // accounting integration. The earlier fixed settings (old job limit, required
@@ -70,7 +73,7 @@ export const TESTS = Object.freeze({
   share: ['is', 'is_not'],
 });
 
-export const ACTIONS = Object.freeze(['wait', 'skip', 'pending']);
+export const ACTIONS = Object.freeze(['wait', 'skip', 'pending', 'non_chargeable']);
 // Tests that take no value.
 const NO_VALUE = new Set(['is_empty', 'is_not_empty', 'has_number', 'number_in_words', 'one_word']);
 
@@ -187,7 +190,7 @@ export function ruleReasons(rules, job, { customer = {}, now = new Date() } = {}
   const context = { customer, now };
   const reasons = [];
   for (const rule of rules) {
-    if (!rule.enabled || rule.trigger !== 'job_ready' || rule.action.kind === 'pending') continue;
+    if (!rule.enabled || rule.trigger !== 'job_ready' || ['pending', 'non_chargeable'].includes(rule.action.kind)) continue;
     if (!rule.conditions.every((c) => matches(c, job, context))) continue;
     reasons.push(rule.action.kind === 'skip' ? `rule "${rule.name}": not drafted by rule` : `rule "${rule.name}": waits for a person`);
   }
@@ -223,6 +226,17 @@ export function ruleSkip(rules, job, { customer = {}, now = new Date() } = {}) {
       rule: r.id ?? null,
       fields: [...new Set(r.conditions.map((c) => c.field))],
     }));
+}
+
+// The enabled non-chargeable rules that match one draft's job (sending.js):
+// the draft is on the Non-chargeable tab, never on Pending or Ready, and
+// Send never sends it.
+export function ruleNonChargeable(rules, job, { customer = {}, now = new Date() } = {}) {
+  const context = { customer, now };
+  return rules
+    .filter((r) => r.enabled && r.trigger === 'job_ready' && r.action.kind === 'non_chargeable')
+    .filter((r) => r.conditions.every((c) => matches(c, job, context)))
+    .map((r) => ({ code: 'non_chargeable', message: `Rule "${r.name}": non-chargeable. Flow keeps it and never sends it.`, short: r.name.slice(0, 40), rule: r.id ?? null }));
 }
 
 // The starter rules made from the earlier fixed settings.
