@@ -2066,6 +2066,15 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
   .fx-meta { grid-template-columns: minmax(0, 1fr); gap: 2px 0; }
   .fx-meta dd { margin-bottom: 8px; }
 }
+/* .fx-message__card sets display:grid later than the state rule, which would
+   show every message card at once. On the portal, only the card for the
+   current state shows (waiting, off, or the error). */
+.fx-portal .fx-message__card.fx-state-off,
+.fx-portal .fx-message__card.fx-state-error,
+.fx-portal .fx-message__card.fx-state-no-access { display: none; }
+body.fx-portal[data-state="off"] .fx-message__card.fx-state-off,
+body.fx-portal[data-state="error"] .fx-message__card.fx-state-error,
+body.fx-portal[data-state="no-access"] .fx-message__card.fx-state-no-access { display: grid; }
 @media (max-width: 1023px) {
   .fx-portal { --fx-control-h: 44px; }
   .fx-portal :is(.fx-btn, .fx-input, .fx-select, .fx-chip, .fx-cfm__more, .fx-nav a, .fx-table a, .fx-auth a, .fx-crumbs a) { min-height: 44px; }
