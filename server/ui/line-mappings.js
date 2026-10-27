@@ -9,14 +9,12 @@
 const money = (cents) => (cents === null || cents === undefined ? '' : `$${(cents / 100).toFixed(2)}`);
 
 export function lineMappingSection(ui) {
-  const { h, flow, toast, notice, me } = ui;
+  const { h, flow, toast, notice, me, settingRow } = ui;
   const disabled = !['owner', 'admin'].includes(me?.person.role);
   const body = h('div', {}, h('div', { class: 'fx-skeleton' }));
   const section = h('section', { class: 'fx-set' }, h('h2', { class: 'fx-set__title' }, 'Price codes'), body);
 
-  const row = (name, hint, control) => h('div', { class: 'fx-set__row' },
-    h('div', { class: 'fx-set__text' }, h('span', { class: 'fx-set__name' }, name), h('span', { class: 'fx-set__hint' }, hint)),
-    h('div', { class: 'fx-set__control' }, control));
+  const row = (label, hint, control) => settingRow({ label, hint, control });
 
   async function load() {
     let labels;

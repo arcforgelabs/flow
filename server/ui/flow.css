@@ -510,7 +510,7 @@ a.fx-strong:hover { text-decoration: underline; }
 .fx-crumbs { display: flex; gap: 8px; color: var(--t-dim); font-size: 13.5px; }
 .fx-crumbs a { color: var(--t-dim); text-decoration: none; }
 .fx-crumbs a:hover { color: var(--t-strong); text-decoration: underline; }
-.fx-invoice { display: grid; gap: 20px; }
+.fx-invoice { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; }
 .fx-invoice__grid { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 20px; align-items: start; }
 .fx-invoice__main, .fx-invoice__aside { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; min-width: 0; }
 .fx-invoice__aside:empty { display: none; }
@@ -1116,6 +1116,9 @@ th:hover > .fx-th-grip::after { background: var(--t-brd-hi); }
   }
   .fx-record .fx-ph { flex: 1; min-width: 0; min-height: 0; gap: 8px; background: transparent; }
   .fx-record .fx-ph__text { min-width: 0; }
+  /* A short number (FL-0001) shows whole; the status pill is compact beside it. */
+  .fx-record .fx-ph__text .fx-status { flex: none; padding-inline: 8px; font-size: 12px; }
+  .fx-record .fx-ph__text .fx-status::before { display: none; }
   .fx-record__end { display: flex; flex: none; align-items: center; }
   .fx-record__foot:not([hidden]) {
     display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: 5; gap: 8px;
@@ -1236,16 +1239,21 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
 .fx-setting__name { color: var(--t-strong); font: 500 14.5px/1.35 var(--t-body); }
 .fx-setting__hint { margin: 0; color: var(--t-dim); font-size: 13px; line-height: 1.45; }
 .fx-setting[data-tone="danger"] .fx-setting__hint { color: var(--t-danger); }
-.fx-setting__control { display: flex; justify-content: flex-end; min-width: 0; }
+.fx-setting__control { display: flex; align-items: center; justify-content: flex-end; gap: 10px; min-width: 0; }
 .fx-setting__control > .fx-input, .fx-setting__control > .fx-select, .fx-setting__stack { width: 320px; max-width: 100%; }
+.fx-setting__control > .fx-input[type="number"] { width: 96px; }
 .fx-setting__control .fx-swatches { flex-wrap: nowrap; }
 .fx-setting__stack { display: grid; gap: 6px; justify-items: end; }
 .fx-setting__value { font-size: 12.5px; color: var(--t-strong); overflow-wrap: anywhere; text-align: right; }
 .fx-setting--wide { grid-template-columns: minmax(0, 1fr); }
 .fx-setting--wide .fx-setting__control { display: block; }
 @media (max-width: 639px) {
-  .fx-setting { grid-template-columns: minmax(0, 1fr); }
-  .fx-setting__control { justify-content: flex-start; }
+  /* A wide control (a box, a menu, a choice) goes under its name. Switches
+     and buttons stay at the right. */
+  .fx-setting:has(> .fx-setting__control :is(.fx-select, .fx-multi, .fx-input:not([type="number"]), textarea, .fx-seg, .fx-swatches, .fx-setting__stack)),
+  .fx-setting--wide { grid-template-columns: minmax(0, 1fr); }
+  .fx-setting:has(> .fx-setting__control :is(.fx-select, .fx-multi, .fx-input:not([type="number"]), textarea, .fx-seg, .fx-swatches, .fx-setting__stack)) > .fx-setting__control { justify-content: flex-start; }
+  .fx-setting__control > :is(.fx-select, .fx-multi, .fx-input:not([type="number"])) { width: 100%; }
   .fx-setting__stack { justify-items: start; }
   .fx-setting__control .fx-swatches { flex-wrap: wrap; }
 }
@@ -1332,6 +1340,14 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
 
 /* ── Phones ─────────────────────────────────────────────────────────────── */
 @media (max-width: 639px) {
+  /* Touch: every control a thumb uses is 44px (docs/MOBILE_TESTS.md). The
+     icons and text keep their size; the box around them grows. */
+  #menu-toggle, #search { width: 44px; height: 44px; }
+  .fx-tabs button { min-height: 44px; }
+  /* The notice's buttons grow to 44px into its padding, so the notice
+     stays one short line. */
+  .fx-alerts__close { width: 44px; height: 44px; margin: -12px -8px; }
+  .fx-alerts__action { display: inline-flex; align-items: center; min-height: 44px; margin-block: -12px; }
   .fx-main { padding-top: 20px; }
   /* A two-line list needs the rows, not the gaps, so seven fit at 375×667.
      The alert stays one line. The toolbar stays one scrolling row. */
@@ -1385,7 +1401,7 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
   [data-phone-layout="two-line"] .fx-table tbody tr:not(.fx-table__group) {
     display: flex; flex-wrap: wrap; align-items: center; position: relative;
     box-sizing: border-box; height: 56px; min-height: 56px; max-height: 56px;
-    margin: 0; padding: 6px 12px 6px 44px; overflow: hidden;
+    margin: 0; padding: 6px 12px 6px 44px; overflow: hidden; column-gap: 8px;
     border-bottom: 1px solid var(--fx-line-soft);
   }
   [data-phone-layout="two-line"] .fx-table tbody tr:not(.fx-table__group)::after {
@@ -1397,29 +1413,47 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
     display: block; width: auto; margin: 0; padding: 0; border: 0;
     white-space: nowrap; background: none;
   }
-  [data-phone-layout="two-line"] .fx-tick-cell {
+  [data-phone-layout="two-line"] .fx-table td.fx-tick-cell {
     position: absolute; top: 0; left: 0; display: flex; align-items: center; justify-content: center;
     width: 44px; height: 56px; padding: 0;
   }
-  [data-phone-layout="two-line"] .fx-tick-cell .fx-tick { width: 44px; height: 44px; margin: 0; }
+  /* The tick keeps a 44px hit area, but shows an 18px box, as on a desk. */
+  [data-phone-layout="two-line"] .fx-tick-cell .fx-tick {
+    appearance: none; -webkit-appearance: none; display: grid; place-items: center;
+    width: 44px; height: 44px; margin: 0; border: 0; background: none;
+  }
+  [data-phone-layout="two-line"] .fx-tick::before,
+  [data-phone-layout="two-line"] .fx-tick::after { content: ""; grid-area: 1 / 1; box-sizing: border-box; }
+  [data-phone-layout="two-line"] .fx-tick::before {
+    width: 18px; height: 18px; border: 1.5px solid var(--t-brd-hi); border-radius: calc(var(--t-radius) / 2); background: var(--t-paper);
+  }
+  [data-phone-layout="two-line"] .fx-tick:is(:checked, :indeterminate)::before { border-color: var(--t-brand); background: var(--t-brand); }
+  [data-phone-layout="two-line"] .fx-tick:checked::after {
+    width: 10px; height: 6px; margin-top: -2px; border: solid var(--t-on-primary); border-width: 0 0 2px 2px; transform: rotate(-45deg);
+  }
+  [data-phone-layout="two-line"] .fx-tick:indeterminate::after { width: 10px; height: 2px; background: var(--t-on-primary); }
   [data-phone-layout="two-line"] [data-phone-slot="title"] {
     order: 1; flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis;
     color: var(--t-strong); font-weight: 600;
   }
+  /* The title link keeps a 44px hit area but takes 24px of the line, so
+     line 2 still fits in the 56px row. */
   [data-phone-layout="two-line"] [data-phone-slot="title"] :is(a, button) {
-    display: inline-flex; align-items: center; max-width: 100%; min-height: 44px;
+    display: inline-flex; align-items: center; max-width: 100%; min-height: 44px; margin-block: -10px;
   }
   [data-phone-layout="two-line"] [data-phone-slot="end"] {
     order: 2; flex: none; margin-left: 8px; font-variant-numeric: tabular-nums;
   }
   [data-phone-layout="two-line"] [data-phone-slot="meta"] {
     order: 5; flex: 0 1 auto; min-width: 0; max-width: 42%; overflow: hidden; text-overflow: ellipsis;
-    color: var(--t-dim); font-size: 12px; line-height: 16px;
+    color: var(--t-dim); font-size: 12px; line-height: 16px; height: 20px;
   }
+  /* Line 2 is 20px; its cells centre on it. */
+  [data-phone-layout="two-line"] .fx-table td[data-phone-slot="meta"] { display: flex; align-items: center; overflow: visible; }
   [data-phone-layout="two-line"] td.fx-c-stage,
   [data-phone-layout="two-line"] td.fx-c-status { order: 4; color: inherit; }
   [data-phone-layout="two-line"] .fx-stage { padding-block: 0; line-height: 16px; }
-  [data-phone-layout="two-line"] [data-phone-slot="hide"],
+  [data-phone-layout="two-line"] .fx-table td[data-phone-slot="hide"],
   [data-phone-layout="two-line"] td.fx-c-end { display: none; }
   [data-phone-layout="two-line"] tr.fx-table__group {
     display: flex; align-items: center; box-sizing: border-box; height: 32px; min-height: 32px; max-height: 32px;
@@ -1427,7 +1461,7 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
     border-bottom: 1px solid var(--fx-line-soft);
   }
   [data-phone-layout="two-line"] tr.fx-table__group td { height: 32px; padding: 0; background: none; }
-  [data-phone-layout="two-line"] tr.fx-table__group .fx-tick-cell { height: 32px; }
+  [data-phone-layout="two-line"] .fx-table tr.fx-table__group td.fx-tick-cell { height: 32px; }
   [data-phone-layout="two-line"] tr.fx-table__group .fx-tick-cell .fx-tick { width: 44px; height: 44px; }
   /* Tiles: every card is one 56px row, as a list row: the mark, the name,
      the status and ›. The blurb and the button stay on the page it opens. */
@@ -1463,15 +1497,7 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
    control on the right. */
 .fx-set { display: grid; gap: 4px; }
 .fx-set__title { margin: 8px 0 4px; color: var(--t-strong); font: 600 15px/1.3 var(--t-body); }
-.fx-set__row { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 12px 0; }
-.fx-set__row + .fx-set__row { border-top: 1px solid var(--fx-line); }
-.fx-set__text { display: grid; gap: 2px; min-width: 0; }
-.fx-set__name { color: var(--t-text); font: 500 14px/1.35 var(--t-body); }
 .fx-set__hint { color: var(--t-dim); font-size: 13px; line-height: 1.35; }
-.fx-set__control { flex: none; display: flex; justify-content: flex-end; }
-.fx-set__control .fx-input { width: 220px; }
-.fx-set__control .fx-input[type="number"] { width: 96px; }
-.fx-set__control .fx-select { min-width: 220px; }
 .fx-set + .fx-set { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--fx-line); }
 /* Price list (price-list.js): one plain table of Flow's codes. */
 .fx-price { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
@@ -1663,7 +1689,7 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
      menu on line 1, up to three facts on line 2, 56px. */
   .fx-cfm__row {
     display: flex; flex-wrap: wrap; align-items: center; box-sizing: border-box;
-    height: 56px; min-height: 56px; max-height: 56px; padding: 6px 8px 6px 16px; overflow: hidden;
+    height: 56px; min-height: 56px; max-height: 56px; padding: 4px 8px 4px 16px; overflow: hidden; column-gap: 8px;
   }
   .fx-cfm__row::after { content: ""; order: 3; flex-basis: 100%; height: 0; }
   .fx-cfm__row > * { display: none; }
@@ -1673,10 +1699,11 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
     display: block; order: 5; flex: 0 1 auto; min-width: 0; max-width: 40%; overflow: hidden;
     text-overflow: ellipsis; white-space: nowrap; color: var(--t-dim); font-size: 12px; line-height: 16px;
   }
+  /* Line 2 is 20px: the type picker keeps its size, but takes no more. */
+  .fx-cfm__row > .fx-cfm__type { display: flex; align-items: center; height: 20px; overflow: visible; }
 }
 /* Invoice rules (invoice-rules.js): a row's Edit button and switch, and the
    rule dialog's condition lines. */
-.fx-rule__controls { align-items: center; gap: 10px; }
 .fx-rule__footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 8px; }
 .fx-dialog:has(.fx-rule__dialog) { width: min(680px, calc(100vw - 32px)); }
 .fx-rule__dialog .fx-btn--sm { justify-self: start; }
@@ -1690,11 +1717,6 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
 @media (max-width: 639px) {
   .fx-rule__condition { grid-template-columns: minmax(0, 1fr); }
 }
-@media (max-width: 639px) {
-  .fx-set__row { gap: 12px; }
-  .fx-set__control .fx-input { width: 140px; }
-  .fx-set__control .fx-input[type="number"] { width: 72px; }
-  .fx-set__control .fx-select { min-width: 140px; }
 }
 .fx-multi { position: relative; width: 220px; max-width: 100%; }
 .fx-multi__summary { display: flex; align-items: center; list-style: none; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1798,7 +1820,13 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
 .fx-listhead > .fx-toolbar:not(.fx-toolbar--plain) > :not(.fx-tabs) { margin-bottom: 8px; }
 @media (max-width: 820px) { .fx-listhead[data-sticky] { top: 60px; } }
 /* On a phone the head would hide too many rows: it scrolls away. */
-@media (max-width: 639px) { .fx-listhead[data-sticky] { position: static; } }
+@media (max-width: 639px) {
+  /* The head does not stick on a phone, so it needs no top padding. It
+     takes back the gap of the edge marker, and never covers the notice. */
+  .fx-listhead[data-sticky] { position: static; margin-top: 0; padding-top: 0; }
+  .fx-listhead__edge + .fx-listhead[data-sticky] { margin-top: -8px; }
+  .fx-alerts { margin-bottom: 4px; }
+}
 
 /* The bulk action bar (bulk-bar.js): floats at the foot while rows are
    ticked. "N selected ×", then icon actions in groups, then More. It takes

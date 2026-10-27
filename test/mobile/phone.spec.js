@@ -125,6 +125,8 @@ for (const screen of SCREENS) {
       // Touch targets are a phone and tablet rule; a mouse needs less.
       small: size.mobile ? found.small.length : 0,
       cut: found.cut.length,
+      spill: found.spill.length,
+      gutter: found.gutter.length,
       rows: found.rows,
       toolbar: found.toolbar,
     };
@@ -139,6 +141,8 @@ for (const screen of SCREENS) {
     const over = [];
     if (result.overflow > (budget.overflow ?? 0)) over.push(`the page is ${result.overflow}px wider than the screen`);
     if (result.small > (budget.small ?? 0)) over.push(`${result.small} controls are under ${TOUCH}px: ${found.small.join(', ')}`);
+    if (result.spill > (budget.spill ?? 0)) over.push(`${result.spill} list rows cut off a line: ${found.spill.join(', ')}`);
+    if (result.gutter > (budget.gutter ?? 0)) over.push(`content runs into the page's right gutter: ${found.gutter.join(', ')}`);
     if (result.cut > (budget.cut ?? 0)) over.push(`${result.cut} cut texts have no full text: ${found.cut.join(', ')}`);
     // No budget: a table cut at the right or a split notice never ships.
     if (phone && found.sideways.length) over.push(`these scroll sideways on a phone, and no card lets them (mobile.json scrollX): ${found.sideways.join(', ')}`);

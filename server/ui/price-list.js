@@ -34,7 +34,7 @@ const toCents = (text) => {
 };
 
 export async function renderPriceList(main, ui) {
-  const { h, flow, toast, notice, dialog, pageHeader, me } = ui;
+  const { h, flow, toast, notice, dialog, pageHeader, me, settingRow } = ui;
   const disabled = !['owner', 'admin'].includes(me?.person.role);
   const host = h('div', { class: 'fx-price' }, h('div', { class: 'fx-skeleton' }));
   let view = normaliseListView(me?.views?.['price-list'], PRICE_COLUMNS);
@@ -71,9 +71,7 @@ export async function renderPriceList(main, ui) {
     }
   }
 
-  const row = (name, hint, control) => h('div', { class: 'fx-set__row' },
-    h('div', { class: 'fx-set__text' }, h('span', { class: 'fx-set__name' }, name), hint),
-    h('div', { class: 'fx-set__control fx-rule__controls' }, control));
+  const row = (label, hint, control) => settingRow({ label, hint, control });
 
   const findingText = (f) => {
     const name = systemName(f.system);
@@ -165,7 +163,7 @@ export async function renderPriceList(main, ui) {
       else select.value = saved;
       select.disabled = disabled;
     });
-    return row('Line price from', h('span', { class: 'fx-set__hint' }, 'Where an invoice line takes its price.'), select);
+    return row('Line price from', 'Where an invoice line takes its price.', select);
   }
 
   function draw() {
