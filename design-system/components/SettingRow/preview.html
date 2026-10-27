@@ -5,7 +5,7 @@ const { h, settingRow, sectionTitle } = window.FlowDesignSystem;
 const sw = (on) => { const b = h('button', { class: 'fx-switch', type: 'button', role: 'switch', 'aria-checked': String(on), 'aria-label': 'On' }); b.addEventListener('click', () => b.setAttribute('aria-checked', String(b.getAttribute('aria-checked') !== 'true'))); return b; };
 document.getElementById('root').append(
   sectionTitle('Invoicing', { href: '#', label: 'How invoicing works' }),
-  settingRow({ label: 'Draft when ready', hint: 'A job marked ready gets a draft invoice.', control: sw(true) }),
-  settingRow({ label: 'Send mode', hint: 'Who approves an invoice.', control: h('select', { class: 'fx-select' }, h('option', {}, 'Approve in Xero'), h('option', {}, 'Approve in Flow')) }),
+  settingRow({ label: 'Draft when ready', help: 'A job marked ready gets a draft invoice.', control: sw(true) }),
+  settingRow({ label: 'Send mode', help: 'Who approves an invoice.', control: h('select', { class: 'fx-select' }, h('option', {}, 'Approve in Xero'), h('option', {}, 'Approve in Flow')) }),
   settingRow({ label: 'Xero', hint: 'Not connected.', control: h('button', { class: 'fx-btn fx-btn--sm', type: 'button' }, 'Connect'), tone: 'danger' }));
 </script>

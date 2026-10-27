@@ -50,7 +50,7 @@ export const SEAZONA_SETUP = {
     { name: 'SEAZONA_MODE', label: 'Mode', kind: 'choice', choices: [{ value: 'live', label: 'Live: your Seazona account' }, { value: 'sandbox', label: 'Sandbox: a Seazona test account' }] },
     { name: 'SEAZONA_API_BASE_URL', label: 'API address', kind: 'url', help: 'The API root of your account, https://…' },
     { name: 'SEAZONA_API_CLIENT_ID', label: 'Client id' },
-    { name: 'SEAZONA_API_CLIENT_SECRET', label: 'Client secret', secret: true, help: 'Stored encrypted. Flow never shows it again.' },
+    { name: 'SEAZONA_API_CLIENT_SECRET', label: 'Client secret', secret: true },
     { name: 'SEAZONA_ORDER_URL', label: 'Order address', kind: 'url', help: 'Optional. Open any order in Seazona and paste its address here, or write {ref} where the order id goes. Stage moves on the Jobs board and Open in Seazona use it.' },
     { name: 'SEAZONA_KEEP_PATIENT_REFERENCE', label: 'Keep patient names', kind: 'onoff', help: 'On: Flow keeps the patient name of each job for the invoice Reference.' },
   ],

@@ -297,17 +297,31 @@ export async function pickOne({ title, intro = null, label, find = 'Find', load,
   return value ? rows.find((r) => r.value === value)?.row ?? null : null;
 }
 
-// One setting, laid out the same on every settings screen: a short name, one
-// line of smaller text under it, and the control on the right. Longer help
-// lives behind a link, not here. A wide control (a grid of choices) sits on
-// its own line under the name. `tone: 'danger'` marks a row that needs a person.
-export function settingRow({ label, hint, control, wide = false, tone = null }) {
+// One setting, laid out the same on every settings screen: a short name and
+// the control on the right. `hint` is a short status line under the name
+// ("3 to check"), never an explanation. `help` is the explanation: a ? beside
+// the name says it on hover, and a press shows it under the name (a phone has
+// no hover). A wide control (a grid of choices) sits on its own line under the
+// name. `tone: 'danger'` marks a row that needs a person.
+export function settingRow({ label, hint, help = null, control, wide = false, tone = null }) {
   const target = control?.matches?.('input, select, textarea') ? control : control?.querySelector?.('input:not([type=color]), select, textarea');
   const id = target ? (target.id ||= `fx-set-${++settingRow.next}`) : null;
+  const helpLine = help ? h('p', { class: 'fx-setting__hint fx-setting__help', hidden: true }, help) : null;
+  const helpButton = help ? named(h('button', {
+    class: 'fx-help', type: 'button', 'aria-expanded': 'false',
+    onclick: (event) => {
+      const open = helpLine.hidden;
+      helpLine.hidden = !open;
+      event.currentTarget.setAttribute('aria-expanded', String(open));
+    },
+  }, lucide(h, 'circle-help')), `About ${label}`, help) : null;
   return applyPhoneRule(h('div', { class: `fx-setting${wide ? ' fx-setting--wide' : ''}`, 'data-tone': tone },
     h('div', { class: 'fx-setting__text' },
-      id ? h('label', { class: 'fx-setting__name', for: id }, label) : h('span', { class: 'fx-setting__name' }, label),
-      hint ? h('p', { class: 'fx-setting__hint' }, hint) : null),
+      h('span', { class: 'fx-setting__head' },
+        id ? h('label', { class: 'fx-setting__name', for: id }, label) : h('span', { class: 'fx-setting__name' }, label),
+        helpButton),
+      hint ? h('p', { class: 'fx-setting__hint' }, hint) : null,
+      helpLine),
     h('div', { class: 'fx-setting__control' }, control)), 'settingRow');
 }
 settingRow.next = 0;

@@ -63,6 +63,11 @@ export const SCREENS = [
   { id: 'integrations', path: '/integrations', ready: '.fx-main > *' },
   // Settings rows with a menu and a box (Sending).
   { id: 'integration-xero', path: '/integrations/xero', ready: '.fx-main > *' },
+  // A setting's ? pressed: its help shows under the name.
+  { id: 'integration-seazona', path: '/integrations/seazona', ready: '.fx-setting__head .fx-help', prepare: async (page) => {
+    await page.locator('.fx-setting__head .fx-help').first().click();
+  } },
+  { id: 'integration-sentry', path: '/integrations/sentry', ready: '.fx-main > *' },
   { id: 'custom-fields', path: '/custom-fields', ready: '.fx-main > *' },
   { id: 'appearance', path: '/appearance', ready: '.fx-main > *' },
 ];
