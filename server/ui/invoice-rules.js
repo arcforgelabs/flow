@@ -42,15 +42,13 @@ export function ruleSummary(rule, meta) {
 }
 
 export function rulesSection(ui, title = 'Rules') {
-  const { h, flow, toast, notice, dialog, me } = ui;
+  const { h, flow, toast, notice, dialog, me, settingRow } = ui;
   const disabled = !['owner', 'admin'].includes(me?.person.role);
   const section = h('section', { class: 'fx-set' }, h('h2', { class: 'fx-set__title' }, title), h('div', { class: 'fx-skeleton' }));
   let meta;
   let rules = [];
 
-  const row = (name, hint, control) => h('div', { class: 'fx-set__row' },
-    h('div', { class: 'fx-set__text' }, h('span', { class: 'fx-set__name' }, name), h('span', { class: 'fx-set__hint' }, hint)),
-    h('div', { class: 'fx-set__control fx-rule__controls' }, control));
+  const row = (label, hint, control) => settingRow({ label, hint, control });
 
   async function send(path, method, payload) {
     try {

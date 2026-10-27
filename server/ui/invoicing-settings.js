@@ -83,7 +83,7 @@ export function renderInvoicingSettings(main, ui, id) {
 
 // Payment terms and the Reference template.
 function draftsSection(ui) {
-  const { h, flow, toast, notice, me } = ui;
+  const { h, flow, toast, notice, me, settingRow } = ui;
   const disabled = !['owner', 'admin'].includes(me?.person.role);
   const section = h('section', { class: 'fx-set' }, h('h2', { class: 'fx-set__title' }, 'Drafts'), h('div', { class: 'fx-skeleton' }));
   let saved;
@@ -102,9 +102,7 @@ function draftsSection(ui) {
     }
   }
 
-  const row = (name, hint, control) => h('div', { class: 'fx-set__row' },
-    h('div', { class: 'fx-set__text' }, h('span', { class: 'fx-set__name' }, name), h('span', { class: 'fx-set__hint' }, hint)),
-    h('div', { class: 'fx-set__control' }, control));
+  const row = (label, hint, control) => settingRow({ label, hint, control });
 
   // A text or number box saves when it loses focus with a new value.
   const box = (key, label, { type = 'text', read = (v) => v, show = (v) => v ?? '', placeholder } = {}) => {
@@ -141,9 +139,7 @@ export function sendModeSection(ui) {
   const select = h('select', { class: 'fx-select', 'aria-label': 'Send to Xero as', disabled },
     SEND_MODES.map((m) => h('option', { value: m.value }, m.label)));
   const section = h('section', { class: 'fx-set' }, ui.sectionTitle('Sending', { href: DOCS, label: 'How sending works' }),
-    h('div', { class: 'fx-set__row' },
-      h('div', { class: 'fx-set__text' }, h('span', { class: 'fx-set__name' }, 'Send to Xero as'), h('span', { class: 'fx-set__hint' }, 'Draft: approve in Xero. Approved: Xero emails it.')),
-      h('div', { class: 'fx-set__control' }, select)));
+    ui.settingRow({ label: 'Send to Xero as', hint: 'Draft: approve in Xero. Approved: Xero emails it.', control: select }));
   let saved = null;
   (async () => {
     try {

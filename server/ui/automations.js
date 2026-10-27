@@ -9,7 +9,7 @@ const DOCS = 'https://github.com/arcforgelabs/flow/blob/main/docs/AUTOMATIONS.md
 
 // A section of the automations kept at `place`, filled when they load.
 export function automationSection(ui, place, title) {
-  const { h, flow, toast, notice, me } = ui;
+  const { h, flow, toast, notice, me, settingRow } = ui;
   const section = h('section', { class: 'fx-set' }, h('h2', { class: 'fx-set__title' }, title), h('div', { class: 'fx-skeleton' }));
   const disabled = !['owner', 'admin'].includes(me?.person.role);
 
@@ -27,9 +27,7 @@ export function automationSection(ui, place, title) {
     }
   }
 
-  const row = (name, hint, control) => h('div', { class: 'fx-set__row' },
-    h('div', { class: 'fx-set__text' }, h('span', { class: 'fx-set__name' }, name), h('span', { class: 'fx-set__hint' }, hint)),
-    h('div', { class: 'fx-set__control' }, control));
+  const row = (label, hint, control) => settingRow({ label, hint, control });
 
   // A menu of the statuses the work system reported, each with its job count.
   // A status saved earlier stays in the menu even when no job has it now.
