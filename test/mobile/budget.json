@@ -1145,10 +1145,7 @@
   }
  },
  "phone-webkit-harbour-light/job-panel": {
-  "small": 12,
-  "axe": {
-   "color-contrast": 1
-  }
+  "small": 12
  },
  "phone-webkit-harbour-light/jobs-board": {
   "small": 7,
