@@ -3,6 +3,13 @@ import { cardRows } from '/assets/ui/kit.js';
 const DOCS = 'https://github.com/arcforgelabs/flow/blob/main/docs/PORTAL.md';
 const HIDDEN = '';
 
+function dayLabel(iso) {
+  if (!iso) return '';
+  const [year, month, day] = String(iso).slice(0, 10).split('-').map(Number);
+  if (!year || !month || !day) return '';
+  return new Date(Date.UTC(year, month - 1, day)).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+}
+
 function statusSelect(h, statuses, names) {
   return statuses.map((status) => {
     const current = names[status] ?? HIDDEN;
@@ -158,7 +165,7 @@ export async function renderContactPortal(host, ui, contact) {
               h('td', { 'data-area': 'item', 'data-label': 'Item' }, job.item),
               h('td', { 'data-area': 'dentist', 'data-label': 'Dentist' }, job.dentist),
               h('td', { 'data-area': 'status', 'data-label': 'Status' }, job.status ?? ''),
-              h('td', { 'data-area': 'due', 'data-label': 'Due', class: job.late ? 'fx-job__date--late' : '' }, job.due ?? '')))));
+              h('td', { 'data-area': 'due', 'data-label': 'Due', class: job.late ? 'fx-job__date--late' : '' }, dayLabel(job.due))))));
           preview.replaceChildren(notice('Read only.', 'info', 'View as practice'), cardRows(table, {
             areas: ['case status', 'item item', 'dentist due'],
             columns: 'minmax(0, 1fr) minmax(0, 1fr)',
