@@ -1,7 +1,7 @@
 // The design system's bundle: the real server/ui modules, as one script that
 // sets window.FlowDesignSystem (scripts/design-system/build.mjs). A card calls
 // these, so what a card shows is what the app draws.
-import { crumbs, dialog, edgeFade, fieldError, h, helpLink, holdButton, listFrame, listHead, notice, pageHeader, rowMenu, sectionTitle, settingRow, tileCard, tileSection, toast } from '/assets/ui/kit.js';
+import { cardRows, crumbs, dialog, edgeFade, fieldError, h, helpLink, holdButton, listFrame, listHead, notice, pageHeader, rowMenu, sectionTitle, settingRow, tileCard, tileSection, toast } from '/assets/ui/kit.js';
 import { findBox, ICONS, svg, viewBar } from '/assets/ui/view-bar.js';
 import { bulkBar } from '/assets/ui/bulk-bar.js';
 import { listPager, pager } from '/assets/ui/pager.js';
@@ -28,7 +28,7 @@ if (document.readyState === 'loading') document.addEventListener('DOMContentLoad
 else ready();
 
 export {
-  bulkBar, colorPicker, columnTable, crumbs, dialog, edgeFade, fieldError, findBox, h, helpLink, holdButton, ICONS, jobChangeBanner, listFrame, listHead, listPager, lucide, named, pager,
+  bulkBar, cardRows, colorPicker, columnTable, crumbs, dialog, edgeFade, fieldError, findBox, h, helpLink, holdButton, ICONS, jobChangeBanner, listFrame, listHead, listPager, lucide, named, pager,
   notice, onRightButton, OPTION_COLORS, optionPill, pageHeader, rowCells, rowMenu, savedViews, sectionTitle, settingRow, sidecar, svg, tileCard,
   tileSection, toast, ui, viewBar, viewSaver,
 };

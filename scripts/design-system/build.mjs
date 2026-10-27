@@ -234,6 +234,7 @@ function ruleRows(rule) {
     ['Desk', rule.desk?.layout ?? rule.tablet.layout],
     ['Touch', `${rule.touch}px`],
     ['Overflow', rule.pageOverflow],
+    ['Sideways', rule.scrollX ?? 'never on a phone'],
     ...(rule.minRowsAt375 ? [['Rows at 375', String(rule.minRowsAt375)]] : []),
     ['Screens', rule.screens.length ? rule.screens.join(', ') : '—'],
   ];

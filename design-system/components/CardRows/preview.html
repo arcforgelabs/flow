@@ -1,0 +1,15 @@
+<!-- @dsCard group="Lists" height=230 -->
+<div class="fx-card fx-lines" id="root"></div>
+<script>
+const { h, cardRows } = window.FlowDesignSystem;
+const lines = [['Zirconia crown', 1, '$160.00', 'GST', '$160.00'], ['Shade match', 2, '$25.00', 'GST free', '$50.00']];
+document.getElementById('root').append(cardRows(h('table', { class: 'fx-lines__table' },
+  h('thead', {}, h('tr', {}, h('th', {}, 'Description'), h('th', { class: 'fx-num' }, 'Qty'), h('th', { class: 'fx-num' }, 'Unit price'), h('th', {}, 'Tax'), h('th', { class: 'fx-num' }, 'Amount'))),
+  h('tbody', {}, lines.map(([desc, qty, price, tax, amount]) => h('tr', {},
+    h('td', { 'data-area': 'desc' }, desc),
+    h('td', { class: 'fx-num', 'data-area': 'qty', 'data-label': 'Qty' }, String(qty)),
+    h('td', { class: 'fx-num', 'data-area': 'price', 'data-label': 'Unit price' }, price),
+    h('td', { class: 'fx-dim', 'data-area': 'gst', 'data-label': 'Tax' }, tax),
+    h('td', { class: 'fx-num fx-strong', 'data-area': 'amount', 'data-end': '' }, amount))))),
+  { areas: ['desc desc amount', 'qty price gst'], columns: 'repeat(3, minmax(0, 1fr))' }));
+</script>

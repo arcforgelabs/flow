@@ -21,6 +21,10 @@ const TOUCH = 44;
 // screenshot.
 const TODAY = new Date('2026-10-21T09:30:00Z');
 
+// What may scroll sideways on a phone: each card's `scrollX` (Tabs, the
+// toolbar row, the list and board window). Anything else is a cut table.
+const SCROLL_X = Object.values(RULES).map((rule) => rule.scrollX).filter(Boolean).join(', ');
+
 async function open(page, project, screen) {
   const { theme } = project.metadata;
   const tokens = JSON.parse(process.env.MOBILE_TOKENS);
@@ -114,7 +118,7 @@ for (const screen of SCREENS) {
     const { size } = project.metadata;
     await open(page, project, screen);
 
-    const found = await page.evaluate(measure, TOUCH);
+    const found = await page.evaluate(measure, { min: TOUCH, scrollX: SCROLL_X });
     const phone = size.width < 640;
     const result = {
       overflow: found.overflow,
@@ -136,6 +140,9 @@ for (const screen of SCREENS) {
     if (result.overflow > (budget.overflow ?? 0)) over.push(`the page is ${result.overflow}px wider than the screen`);
     if (result.small > (budget.small ?? 0)) over.push(`${result.small} controls are under ${TOUCH}px: ${found.small.join(', ')}`);
     if (result.cut > (budget.cut ?? 0)) over.push(`${result.cut} cut texts have no full text: ${found.cut.join(', ')}`);
+    // No budget: a table cut at the right or a split notice never ships.
+    if (phone && found.sideways.length) over.push(`these scroll sideways on a phone, and no card lets them (mobile.json scrollX): ${found.sideways.join(', ')}`);
+    if (found.split.length) over.push(`a notice title sits on its own line: ${found.split.join(', ')}`);
     for (const [rule, nodes] of Object.entries(result.axe ?? {})) {
       if (nodes > (budget.axe?.[rule] ?? 0)) over.push(`axe ${rule}: ${nodes}`);
     }
@@ -155,7 +162,7 @@ test('toolbar stays in place', async ({ page }, info) => {
   const boxes = {};
   for (const screen of SCREENS.filter((s) => s.list)) {
     await open(page, info.project, screen);
-    boxes[screen.id] = (await page.evaluate(measure, TOUCH)).toolbar;
+    boxes[screen.id] = (await page.evaluate(measure, { min: TOUCH, scrollX: SCROLL_X })).toolbar;
   }
   const first = boxes['invoices-ready'];
   const moved = Object.entries(boxes)

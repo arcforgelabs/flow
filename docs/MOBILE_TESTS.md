@@ -9,7 +9,7 @@ shared component.
 ```text
 test/mobile/server.js ──► fresh PostgreSQL, synthetic lab, jobs, invoices,
                           one owner per project, fake sign-in
-test/mobile/phone.spec.js ─► 17 screens × 5 sizes × 2 engines × 3 themes
+test/mobile/phone.spec.js ─► 19 screens × 5 sizes × 2 engines × 3 themes
         │
         ├─ checks against test/mobile/budget.json
         └─ screenshots against test/mobile/__screenshots__/
@@ -24,6 +24,8 @@ test/mobile/phone.spec.js ─► 17 screens × 5 sizes × 2 engines × 3 themes
 | Cut text | Text cut with "…" has its full text on hover or press (`title`, `aria-label` or a tip) | Every size |
 | Toolbar | The list toolbar sits in the same place on every list page | Every size |
 | Rows | A list shows 7 rows or more on a 375×667 screen | Small phone |
+| Sideways | Nothing scrolls sideways on a phone unless its card names it (`scrollX` in `mobile.json`: tabs, the toolbar row, the list and board window). A table inside a card uses CardRows. No budget | Phone |
+| Split notice | A notice's title sits on the same line as its text. No budget | Every size |
 | Accessibility | axe, WCAG 2.2 A and AA | Phone |
 | Screenshot | The screen matches its saved image (0.2% of pixels may differ) | Meridian light at every size; the other themes at the phone size |
 

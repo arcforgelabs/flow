@@ -37,6 +37,25 @@ export const SCREENS = [
     await page.locator('.fx-rows__row').first().waitFor();
   } },
   { id: 'invoice', path: () => `/invoices/${process.env.MOBILE_INVOICE}`, ready: '.fx-main h1, .fx-main .fx-title' },
+  { id: 'invoice-issued', path: () => `/invoices/${process.env.MOBILE_ISSUED}`, ready: '.fx-lines__table' },
+  // A Pending invoice whose client is not in Xero: the problem note with
+  // Link and Create. The suite has no Xero, so the page reads the problem
+  // from a stand-in answer.
+  { id: 'invoice-offer', path: () => `/invoices/${process.env.MOBILE_INVOICE}`, ready: '.fx-lines__table', prepare: async (page) => {
+    await page.route(`**/api/invoicing/invoices/${process.env.MOBILE_INVOICE}`, async (route) => {
+      if (route.request().method() !== 'GET') return route.continue();
+      const response = await route.fetch();
+      const body = await response.json();
+      body.invoice.problems = [{
+        code: 'xero_contact_missing', short: 'Client not in Xero', offerLink: true, offerCreate: true,
+        message: `No Xero contact is named "${body.invoice.contact?.name}". Link it to its Xero client, or create it in Xero.`,
+      }];
+      return route.fulfill({ response, json: body });
+    });
+    await page.reload();
+    await page.locator('.fx-offer').waitFor();
+    await page.waitForLoadState('networkidle');
+  } },
   { id: 'reconcile', path: '/reconcile', ready: '.fx-main > *', list: true },
   { id: 'price-list', path: '/price-list', ready: '.fx-main > *', list: true },
   { id: 'rules', path: '/invoicing-settings', ready: '.fx-main > *' },

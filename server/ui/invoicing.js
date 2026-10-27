@@ -10,7 +10,7 @@ import { bulkBar } from '/assets/ui/bulk-bar.js';
 import { draftNote, sendModeNote } from '/assets/ui/invoice-notes.js';
 import { caseNumber } from '/assets/ui/job-board.js';
 import { jobChangeReview } from '/assets/ui/job-change.js';
-import { rowMenu } from '/assets/ui/kit.js';
+import { cardRows, rowMenu } from '/assets/ui/kit.js';
 import { isPhone, WIDTHS } from '/assets/ui/mobile.js';
 import { recordBar, watchPhonePrimary } from '/assets/ui/sidecar.js';
 import { columnTable, dateCell, fieldColumn, rowCells, viewSaver } from '/assets/ui/columns.js';
@@ -915,6 +915,12 @@ function linkedCard(ui, invoice, accountingStatus = null) {
 
 // The first sentence of a problem: what is wrong. The red field shows where,
 // so the banner holds no how-to.
+// An invoice line on a phone (CardRows): Item, Qty and Remove; Description;
+// Unit price, Tax and Amount. An issued line: Description and Amount; Qty,
+// Unit price and Tax.
+const LINE_CARD = { areas: ['item item qty remove', 'desc desc desc desc', 'price gst amount amount'], columns: 'minmax(0, 1fr) minmax(0, 1fr) 72px 44px' };
+const LINE_CARD_READ = { areas: ['desc desc amount', 'qty price gst'], columns: 'repeat(3, minmax(0, 1fr))' };
+
 const brief = (text) => String(text ?? '').match(/^.*?[.!?](?=\s|$)/s)?.[0] ?? String(text ?? '');
 
 // A draft, or a new invoice before its first save.
@@ -990,7 +996,7 @@ function draftView(invoice, ui, context, redraw) {
 
   const drawLines = () => {
     tbody.replaceChildren(...lines.map((line, index) => {
-      const amount = h('td', { class: 'fx-num fx-strong fx-lines__amount', 'data-label': 'Amount' });
+      const amount = h('td', { class: 'fx-num fx-strong', 'data-area': 'amount', 'data-label': 'Amount', 'data-end': '' });
       const showAmount = () => {
         amount.textContent = line.unitAmountCents == null || !(line.quantity > 0) ? '—' : formatCents(line.quantity * line.unitAmountCents);
       };
@@ -1028,13 +1034,13 @@ function draftView(invoice, ui, context, redraw) {
         onclick: () => { badLines.clear(); lines.splice(index, 1); if (!lines.length) lines.push({ description: '', quantity: 1, unitAmountCents: null, taxCode: 'GST', priceItemId: null }); drawLines(); preview(); },
       }, '×');
       return h('tr', {},
-        h('td', { class: 'fx-lines__item', 'data-label': 'Item' }, item),
-        h('td', { class: 'fx-lines__desc', 'data-label': 'Description' }, description),
-        h('td', { class: 'fx-lines__qty', 'data-label': 'Qty' }, quantity),
-        h('td', { class: 'fx-lines__price', 'data-label': 'Unit price' }, price),
-        h('td', { class: 'fx-lines__gst', 'data-label': 'Tax' }, gst),
+        h('td', { class: 'fx-lines__item', 'data-area': 'item', 'data-label': 'Item' }, item),
+        h('td', { 'data-area': 'desc', 'data-label': 'Description' }, description),
+        h('td', { class: 'fx-lines__qty', 'data-area': 'qty', 'data-label': 'Qty' }, quantity),
+        h('td', { class: 'fx-lines__price', 'data-area': 'price', 'data-label': 'Unit price' }, price),
+        h('td', { class: 'fx-lines__gst', 'data-area': 'gst', 'data-label': 'Tax' }, gst),
         amount,
-        h('td', { class: 'fx-lines__remove' }, remove));
+        h('td', { 'data-area': 'remove' }, remove));
     }));
   };
   drawLines();
@@ -1263,12 +1269,12 @@ function draftView(invoice, ui, context, redraw) {
           h('label', { class: 'fx-field' }, h('span', { class: 'fx-label' }, 'Due date'), dueDate)),
         h('section', { class: 'fx-card fx-lines' },
           datalist,
-          h('table', { class: 'fx-lines__table' },
+          cardRows(h('table', { class: 'fx-lines__table' },
             h('thead', {}, h('tr', {},
               h('th', {}, 'Item'), h('th', {}, 'Description'), h('th', { class: 'fx-num' }, 'Qty'),
               h('th', { class: 'fx-num' }, 'Unit price'), h('th', {}, 'Tax'), h('th', { class: 'fx-num' }, 'Amount'),
               h('th', {}, h('span', { class: 'fx-sr' }, 'Remove')))),
-            tbody),
+            tbody), LINE_CARD),
           h('div', { class: 'fx-lines__foot' },
             h('button', { class: 'fx-btn fx-btn--ghost fx-btn--sm', type: 'button', onclick: () => { lines.push({ description: '', quantity: 1, unitAmountCents: null, taxCode: 'GST', priceItemId: null }); drawLines(); } }, '+ Add line'),
             totalsHost))),
@@ -1436,14 +1442,14 @@ function issuedView(invoice, ui, context, redraw) {
             h('div', {}, h('dt', { class: 'fx-label' }, 'Reference'), h('dd', {}, invoice.reference ?? '—')),
             h('div', {}, h('dt', { class: 'fx-label' }, 'Date'), h('dd', {}, showDate(invoice.issueDate))),
             h('div', {}, h('dt', { class: 'fx-label' }, 'Due'), h('dd', {}, showDate(invoice.dueDate)))),
-          h('table', { class: 'fx-lines__table fx-lines__table--read' },
+          cardRows(h('table', { class: 'fx-lines__table fx-lines__table--read' },
             h('thead', {}, h('tr', {}, h('th', {}, 'Description'), h('th', { class: 'fx-num' }, 'Qty'), h('th', { class: 'fx-num' }, 'Unit price'), h('th', {}, 'Tax'), h('th', { class: 'fx-num' }, 'Amount'))),
             h('tbody', {}, invoice.lines.map((line) => h('tr', {},
-              h('td', { class: 'fx-lines__desc' }, line.description),
-              h('td', { class: 'fx-num fx-lines__qty', 'data-label': 'Qty' }, String(line.quantity)),
-              h('td', { class: 'fx-num fx-lines__price', 'data-label': 'Unit price' }, formatCents(line.unitAmountCents)),
-              h('td', { class: 'fx-dim fx-lines__gst', 'data-label': 'Tax' }, line.taxCode === 'GST' ? 'GST' : 'GST free'),
-              h('td', { class: 'fx-num fx-strong fx-lines__amount' }, formatCents(line.lineAmountCents)))))),
+              h('td', { 'data-area': 'desc' }, line.description),
+              h('td', { class: 'fx-num', 'data-area': 'qty', 'data-label': 'Qty' }, String(line.quantity)),
+              h('td', { class: 'fx-num', 'data-area': 'price', 'data-label': 'Unit price' }, formatCents(line.unitAmountCents)),
+              h('td', { class: 'fx-dim', 'data-area': 'gst', 'data-label': 'Tax' }, line.taxCode === 'GST' ? 'GST' : 'GST free'),
+              h('td', { class: 'fx-num fx-strong', 'data-area': 'amount', 'data-end': '' }, formatCents(line.lineAmountCents)))))), LINE_CARD_READ),
           h('div', { class: 'fx-lines__foot' }, h('span'), totalsBox(ui, invoice)))),
       h('aside', { class: 'fx-invoice__aside' },
         linkedHost,

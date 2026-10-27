@@ -86,6 +86,7 @@ export async function startFlow({ port = 0 } = {}) {
   // Invoices on several tabs: drafts with lines, drafts with none (Pending),
   // and issued ones (Approved).
   const invoiceIds = [];
+  let issuedId = null;
   for (let i = 0; i < 64; i += 1) {
     const contact = contacts[i % contacts.length];
     const lines = i % 9 === 0 ? [] : [{ priceItemId: items[i % items.length].id }, ...(i % 3 ? [] : [{ priceItemId: items[1].id }])];
@@ -95,7 +96,10 @@ export async function startFlow({ port = 0 } = {}) {
       dueDate: day(30 + (i % 25)),
       lines,
     });
-    if (lines.length && i % 4 === 0) await issueInvoice(db, lab.id, invoice.id, { issuedBy: firstOwner.id, issueDate: day(i % 20) });
+    if (lines.length && i % 4 === 0) {
+      await issueInvoice(db, lab.id, invoice.id, { issuedBy: firstOwner.id, issueDate: day(i % 20) });
+      issuedId ??= invoice.id;
+    }
     invoiceIds.push(invoice.id);
   }
 
@@ -131,6 +135,7 @@ export async function startFlow({ port = 0 } = {}) {
     url: `http://127.0.0.1:${server.address().port}`,
     tokens,
     invoiceId: invoiceIds[1],
+    issuedId,
     async close() {
       await new Promise((resolve) => server.close(resolve));
       await integrations.stop?.();
@@ -145,5 +150,6 @@ export default async function globalSetup() {
   process.env.MOBILE_URL = flow.url;
   process.env.MOBILE_TOKENS = JSON.stringify(flow.tokens);
   process.env.MOBILE_INVOICE = flow.invoiceId;
+  process.env.MOBILE_ISSUED = flow.issuedId;
   return () => flow.close();
 }
