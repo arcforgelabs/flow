@@ -3,6 +3,7 @@ import { after, before, describe, test } from 'node:test';
 import { and, eq, sql } from 'drizzle-orm';
 import { createContact, createOrganisation, createPriceItem } from '../server/core/directory.js';
 import { ledgerView } from '../server/core/ledger.js';
+import { listContacts } from '../server/core/contacts.js';
 import { externalIdFor } from '../server/core/links.js';
 import {
   linkCustomers, normaliseName, rankCandidates, runPipelineOnce, scoreCandidate,
@@ -149,6 +150,28 @@ describe('the pipeline', { skip: skipWithoutDatabase }, () => {
     assert.equal(again.alreadyLinked, 1);
   });
 
+  test('a new customer becomes a Flow contact with its own fields; a doubled name waits for a person', async () => {
+    const off = await linkCustomers(handle.db, organisationId, { system: 'seazona', customers: [{ id: 'n0', name: 'Harbour Dental' }] });
+    assert.deepEqual([off.added, off.unmatched], [0, 1], 'Add new clients off: nothing is made');
+    const customers = [
+      { id: 'n1', name: 'Harbour Dental', contact: { kind: 'supplier', name: 'ignored', email: 'accounts@harbour.example', phone: '0290000000', accountNumber: 'HD-1', practitioners: [{ name: 'Dr Ada' }], address: { city: 'Sydney' } } },
+      { id: 'n2', name: 'Twin Practice' }, { id: 'n3', name: 'Twin Practice Pty Ltd' },
+      { id: 'n4', name: 'Too Long', contact: { email: 'x'.repeat(300) } },
+    ];
+    const result = await linkCustomers(handle.db, organisationId, { system: 'seazona', customers, adopt: true });
+    assert.deepEqual([result.added, result.unmatched], [2, 2]);
+    const [harbour] = await listContacts(handle.db, organisationId, { q: 'Harbour Dental' });
+    assert.deepEqual([harbour.kind, harbour.email, harbour.accountNumber, harbour.address, harbour.practitioners],
+      ['customer', 'accounts@harbour.example', 'HD-1', { city: 'Sydney' }, [{ name: 'Dr Ada' }]]);
+    assert.equal(await externalIdFor(handle.db, organisationId, { system: 'seazona', entity: 'contact', flowId: harbour.id }), 'n1');
+    // A field Flow cannot keep drops the fields, never the contact.
+    const [long] = await listContacts(handle.db, organisationId, { q: 'Too Long' });
+    assert.equal(long.email, null);
+    assert.deepEqual(await listContacts(handle.db, organisationId, { q: 'Twin Practice' }), []);
+    const again = await linkCustomers(handle.db, organisationId, { system: 'seazona', customers, adopt: true });
+    assert.deepEqual([again.added, again.alreadyLinked], [0, 2]);
+  });
+
   test('one run reads the jobs, links what is exact, suggests what is likely and finds what has no invoice', async () => {
     const work = fakeWork([
       { items: [
@@ -165,7 +188,9 @@ describe('the pipeline', { skip: skipWithoutDatabase }, () => {
     ]);
     const summary = await runPipelineOnce(handle.db, integrationsOf([work.adapter, accounting]), { now: NOW });
     assert.equal(summary.work.observed, 7);
-    assert.equal(summary.work.withoutCustomer, 1);
+    // A client no Flow contact is named like becomes one (Add new clients).
+    assert.equal(summary.workCustomers.added, 1);
+    assert.equal(summary.work.withoutCustomer, 0);
     assert.deepEqual(work.calls, [null, '1']);
 
     const states = Object.fromEntries(await Promise.all(['1001', '1002', '1003', '1004', '1005', '1006', '1007']
@@ -180,8 +205,9 @@ describe('the pipeline', { skip: skipWithoutDatabase }, () => {
     assert.equal(states['1005'].accountingState, 'not_found');
     assert.equal(states['1006'].accountingState, 'not_found');
     assert.equal(states['1006'].holdState, 'held');
+    // Its contact is new to Flow and has no Xero contact yet.
     assert.equal(states['1007'].accountingState, 'unknown');
-    assert.equal(states['1007'].contactId, null);
+    assert.equal(await externalIdFor(handle.db, organisationId, { system: 'seazona', entity: 'contact', flowId: states['1007'].contactId }), 'c3');
 
     const suggestions = await handle.db.select().from(linkSuggestions).where(eq(linkSuggestions.state, 'open'));
     const top = (o) => suggestions.filter((s) => s.obligationId === o.id).sort((a, b) => a.rank - b.rank);

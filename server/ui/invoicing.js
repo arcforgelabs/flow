@@ -18,6 +18,7 @@ import { fieldGroup, fieldIdOf, filterCount, filterJobs, INVOICE_COLUMNS, invoic
 import { INVOICE_FILTER_FIELDS, INVOICE_FILTER_STATUSES, invoiceFilterKind, invoiceKindOf, invoiceValue, normaliseInvoicesView } from '/assets/ui/list-views.js';
 import { listPager, pager, PAGE_SIZES } from '/assets/ui/pager.js';
 import { savedViews } from '/assets/ui/saved-views.js';
+import { xeroContactActions } from '/assets/ui/xero-contact.js';
 import { findBox, today, viewBar } from '/assets/ui/view-bar.js';
 
 // The tabs, left to right (server/api/invoicing.js, TABS): Pending (a
@@ -1205,41 +1206,22 @@ function draftView(invoice, ui, context, redraw) {
   // The job changed after the invoice was made: its own banner shows what
   // changed. Other problems stay one line.
   const otherProblems = (invoice?.problems ?? []).filter((p) => !(jobChange && p.code === 'job_review'));
-  const offer = otherProblems.find((p) => p.code === 'xero_contact_missing' && p.offerCreate);
+  const offer = otherProblems.find((p) => ['xero_contact_missing', 'xero_contact_ambiguous'].includes(p.code) && (p.offerLink || p.offerCreate));
   const problemNotice = otherProblems.length
     ? notice([...new Set(otherProblems.map((p) => brief(p.message)))].join(' '), 'danger', 'Problem.')
     : null;
   const organisationId = context.organisations[0]?.id;
-  const createClient = offer && context.canIssue && invoice?.contact?.id && organisationId
-    ? h('button', {
-      class: 'fx-btn fx-btn--primary', type: 'button', title: 'Create this client in Xero',
-      onclick: async (event) => {
-        const button = event.currentTarget;
-        const name = invoice.contact.name;
-        const confirmed = await ui.dialog({
-          title: `Create ${name} in Xero?`,
-          body: h('p', {}, 'Flow adds this client to Xero from the contact.'),
-          confirm: 'Create',
-        });
-        if (!confirmed) return;
-        button.disabled = true;
-        try {
-          await flow('/api/xero/contacts', { method: 'POST', body: JSON.stringify({ organisationId, contactId: invoice.contact.id }) });
-          toast(`${name} is in Xero.`, 'success');
-          const body = await flow(`/api/invoicing/invoices/${invoice.id}`);
-          redraw(body.invoice);
-        } catch (error) {
-          toast(error.message, error.status === 429 ? 'info' : 'danger');
-          if (error.retryAfterMs) ui.holdButton(button, error.retryAfterMs);
-          else button.disabled = false;
-        }
-      },
-    }, 'Create')
-    : null;
+  // Link or Create the Xero client, then the invoice is checked again.
+  const clientActions = offer && context.canIssue && invoice?.contact?.id && organisationId
+    ? xeroContactActions(ui, {
+      organisationId, contact: invoice.contact, offerLink: offer.offerLink, offerCreate: offer.offerCreate,
+      done: async () => redraw((await flow(`/api/invoicing/invoices/${invoice.id}`)).invoice),
+    })
+    : [];
   const problems = [
     // Accepting changes the draft for the business: owners and admins only.
     jobChange ? jobChangeReview(ui, jobChange, { money: formatCents, canAccept: context.canIssue, unsaved: changed, done: redraw }) : null,
-    problemNotice ? (createClient ? h('div', { class: 'fx-offer' }, problemNotice, createClient) : problemNotice) : null,
+    problemNotice ? (clientActions.length ? h('div', { class: 'fx-offer' }, problemNotice, ...clientActions) : problemNotice) : null,
   ];
   // A red field names the banner as its reason (for a screen reader).
   const banner = problemNotice;
@@ -1568,39 +1550,23 @@ function showSent(button) {
 const PICKABLE = new Set(['in_work', 'ready', 'pending']);
 
 async function pickJob(ui) {
-  const { h, flow, toast, go } = ui;
-  let jobs;
-  try {
-    jobs = (await flow('/api/invoicing/jobs?limit=500')).jobs.filter((job) => PICKABLE.has(job.view) && !job.invoiceId);
-  } catch (error) {
-    toast(error.message, 'danger');
-    return;
-  }
-  const search = h('input', { class: 'fx-input', type: 'search', placeholder: 'Find a client or practitioner', 'aria-label': 'Find a job' });
-  const rows = jobs.map((job) => {
-    const label = h('label', { class: 'fx-pick__row' },
-      h('input', { type: 'radio', name: 'job', value: job.id, required: true }),
-      h('span', { class: 'fx-pick__main' },
-        h('span', { class: 'fx-strong' }, job.contactName ?? 'No client yet'),
-        h('span', { class: 'fx-dim' }, [job.practitioner, job.shippedOn ? showDate(job.shippedOn) : null].filter(Boolean).join(' · '))),
-      h('span', { class: 'fx-num fx-strong' }, job.totalCents == null ? '—' : formatCents(job.totalCents)));
-    label.dataset.find = `${job.contactName ?? ''} ${job.practitioner ?? ''}`.toLowerCase();
-    return label;
-  });
-  const list = h('div', { class: 'fx-pick', role: 'radiogroup', 'aria-label': 'Jobs' },
-    rows.length ? rows : h('p', { class: 'fx-dim' }, 'Every job has an invoice already.'));
-  search.addEventListener('input', () => {
-    const q = search.value.trim().toLowerCase();
-    for (const row of rows) row.hidden = Boolean(q) && !row.dataset.find.includes(q);
-  });
-  const picked = await ui.dialog({
+  const { flow, toast, go } = ui;
+  const job = await ui.pickOne({
     title: 'New invoice from a job',
-    body: h('div', { class: 'fx-pick__body' },
-      h('p', { class: 'fx-dim' }, 'Flow fills in the client, Reference and lines from the invoice rules, and links the invoice to the job.'),
-      search, list),
+    intro: 'Flow fills in the client, Reference and lines from the invoice rules, and links the invoice to the job.',
+    label: 'Jobs',
+    find: 'Find a client or practitioner',
+    load: async () => (await flow('/api/invoicing/jobs?limit=500')).jobs.filter((row) => PICKABLE.has(row.view) && !row.invoiceId),
+    item: (row) => ({
+      value: row.id,
+      title: row.contactName ?? 'No client yet',
+      meta: [row.practitioner, row.shippedOn ? showDate(row.shippedOn) : null].filter(Boolean).join(' · '),
+      end: row.totalCents == null ? '—' : formatCents(row.totalCents),
+    }),
+    empty: 'Every job has an invoice already.',
     confirm: 'Make draft',
   });
-  const jobId = picked?.get('job');
+  const jobId = job?.id;
   if (!jobId) return;
   try {
     const { invoice } = await flow(`/api/invoicing/jobs/${jobId}/draft`, { method: 'POST', body: '{}' });

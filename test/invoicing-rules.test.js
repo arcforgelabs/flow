@@ -238,7 +238,7 @@ describe('drafts by rule', { skip: skipWithoutDatabase }, () => {
     copy = { state: { complete: true, fresh: true, changedAt: new Date(NOW.getTime() - 60_000) }, invoices: [] };
     const list = await listAutomations(handle.db, lab.id);
     assert.deepEqual(list.map((a) => [a.key, a.place, a.enabled]), [
-      ['map_lines', 'seazona', true], ['mark_ready_from_work_status', 'seazona', true], ['draft_when_ready', 'invoicing', true],
+      ['map_lines', 'seazona', true], ['add_contacts', 'seazona', true], ['mark_ready_from_work_status', 'seazona', true], ['draft_when_ready', 'invoicing', true],
       ['ready_when_drafted', 'invoicing', true], ['reference_from_rule', 'invoicing', true]]);
     await assert.rejects(saveAutomation(handle.db, lab.id, 'mark_ready_from_work_status', { config: { statuses: [] } }), /statuses/);
     await assert.rejects(saveAutomation(handle.db, lab.id, 'mark_ready_from_work_status', { enabled: 'yes' }), /true or false/);

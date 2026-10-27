@@ -85,7 +85,8 @@ describe('creating the Xero contact for a Flow contact', { skip: skipWithoutData
     const made = await make('Harbour Dental');
     const missing = await problem(made.invoice.id);
     assert.equal(missing.offerCreate, true);
-    assert.match(missing.message, /Create the client in Xero/);
+    assert.match(missing.message, /create it from this contact/);
+    assert.equal(missing.offerLink, true);
     const before = await call(`/api/xero/contacts/match?organisationId=${org()}&contactId=${made.contact.id}`);
     assert.equal(before.body.state, 'missing');
     assert.equal(before.body.offerCreate, true);
@@ -184,7 +185,7 @@ describe('creating the Xero contact for a Flow contact', { skip: skipWithoutData
       const made = await make('Quiet Dental');
       const missing = await problem(made.invoice.id);
       assert.equal(missing.offerCreate, undefined);
-      assert.match(missing.message, /Add it in Xero, then sync/);
+      assert.match(missing.message, /add it in Xero, then sync/);
       const res = await call('/api/xero/contacts', {
         method: 'POST', body: { organisationId: org(), contactId: made.contact.id },
       });
@@ -194,4 +195,62 @@ describe('creating the Xero contact for a Flow contact', { skip: skipWithoutData
       xero.runtime.settings.createContacts = true;
     }
   });
+
+  test('Link ties a Flow contact to a Xero client of another name, with no Xero call', async () => {
+    const made = await make('Harbour Dental Group');
+    await handle.db.execute(sql`insert into xero_contacts (organisation_id, xero_contact_id, name, status, is_customer)
+      values (${org()}, 'x-near', 'Harbour Dental Surgery', 'ACTIVE', true), (${org()}, 'x-old', 'Harbour Old', 'ARCHIVED', true)`);
+    assert.equal((await problem(made.invoice.id)).offerLink, true);
+    const replay = xero.script([]);
+    const link = (xeroContactId, options = {}) => call('/api/xero/contacts/link', {
+      method: 'POST', body: { organisationId: org(), contactId: made.contact.id, xeroContactId }, ...options,
+    });
+    assert.equal((await link('x-none')).status, 404);
+    assert.equal((await link('x-old')).body.code, 'xero_contact_archived');
+    assert.equal((await link('x-near', { token: lab.staffToken })).status, 403);
+    const res = await link('x-near');
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    assert.equal(res.body.outcome, 'linked');
+    assert.equal(replay.calls.length, 0);
+    const row = await handle.db.execute(sql`select matched_by, state from external_links where flow_id = ${made.contact.id} and system = 'xero'`);
+    assert.deepEqual([row.rows[0].matched_by, row.rows[0].state], ['person', 'active']);
+    assert.equal(await problem(made.invoice.id), null);
+    const match = await call(`/api/xero/contacts/match?organisationId=${org()}&contactId=${made.contact.id}`);
+    assert.deepEqual([match.body.state, match.body.offerLink, match.body.name], ['matched', false, 'Harbour Dental Surgery']);
+
+    // A Xero client another Flow contact has is refused.
+    const other = await make('Someone Else');
+    const taken = await call('/api/xero/contacts/link', {
+      method: 'POST', body: { organisationId: org(), contactId: other.contact.id, xeroContactId: 'x-near' },
+    });
+    assert.equal(taken.status, 409);
+
+    // When the linked Xero client is archived, Link moves to a live one.
+    await handle.db.execute(sql`update xero_contacts set status = 'ARCHIVED' where xero_contact_id = 'x-near'`);
+    await handle.db.execute(sql`insert into xero_contacts (organisation_id, xero_contact_id, name, status, is_customer)
+      values (${org()}, 'x-new', 'Harbour Dental Pty Ltd', 'ACTIVE', true)`);
+    assert.equal((await link('x-new')).body.outcome, 'linked');
+    const rows = await handle.db.execute(sql`select external_id, state from external_links where flow_id = ${made.contact.id} and system = 'xero' order by created_at`);
+    assert.deepEqual(rows.rows.map((r) => [r.external_id, r.state]), [['x-near', 'superseded'], ['x-new', 'active']]);
+  });
+
+  test('two Xero clients of one name offer Link on the pending invoice', async () => {
+    const made = await make('Double Dental');
+    await handle.db.execute(sql`insert into xero_contacts (organisation_id, xero_contact_id, name, status, is_customer)
+      values (${org()}, 'x-d1', 'Double Dental', 'ACTIVE', true), (${org()}, 'x-d2', 'Double Dental', 'ACTIVE', true)`);
+    const res = await call(`/api/invoicing/invoices/${made.invoice.id}`);
+    const twice = res.body.invoice.problems.find((item) => item.code === 'xero_contact_ambiguous');
+    assert.equal(twice.offerLink, true);
+    await call('/api/xero/contacts/link', { method: 'POST', body: { organisationId: org(), contactId: made.contact.id, xeroContactId: 'x-d2' } });
+    const after = await call(`/api/invoicing/invoices/${made.invoice.id}`);
+    assert.equal(after.body.invoice.problems.find((item) => item.code === 'xero_contact_ambiguous'), undefined);
+  });
+});
+
+test('Link lists the nearest Xero names first', async () => {
+  const { closeness, nearestFirst } = await import('../server/ui/xero-contact.js');
+  assert.equal(closeness('Harbour Dental Pty Ltd', 'The Harbour Dental Group'), 2);
+  assert.equal(closeness('Smith & Jones', 'Smith and Jones'), 2);
+  assert.deepEqual(nearestFirst('Harbour Dental', [{ name: 'Apex' }, { name: 'Harbour Smiles' }, { name: 'Harbour Dental Surgery' }]).map((c) => c.name),
+    ['Harbour Dental Surgery', 'Harbour Smiles', 'Apex']);
 });

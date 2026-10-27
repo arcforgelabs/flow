@@ -128,7 +128,14 @@ that copy, and links it (`created_by_flow`). If Xero already has one active
 contact of that name, Flow links that one (`exact_name`) and creates
 nothing. An archived-only name, or more than one active name, is refused.
 `GET /api/xero/contacts/match?organisationId=…&contactId=…` answers whether
-Create is offered, from the copy, with no Xero call.
+Link and Create are offered, from the copy, with no Xero call.
+
+When the names differ, or Xero has the name twice, an owner or admin links
+the Flow contact to the right Xero contact (`POST /api/xero/contacts/link`
+with `{ "organisationId", "contactId", "xeroContactId" }`). Flow writes only
+its identity map (`person`); Xero is not called. The Xero contact must be
+active in the copy and not linked to another Flow contact. A link to a Xero
+contact that is now archived ends first.
 
 `POST /api/xero/sync` with `{ "organisationId": "…" }` (owner or admin)
 reads every Xero contact (100 a page) and item (one call) and replaces
@@ -143,7 +150,7 @@ tried again an hour later, then two, four and so on, at most a day apart. The
 first failure is reported with `log.error`; the same failure again is a
 warning.
 
-`GET /api/xero/contacts?organisationId=…&q=…` and
+`GET /api/xero/contacts?organisationId=…&q=…&limit=…` (up to 1,000) and
 `GET /api/xero/items?organisationId=…` (anyone signed in) list the copy.
 
 For invoice preparation, `server/integrations/xero/catalogue.js` offers:
