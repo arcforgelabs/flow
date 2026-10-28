@@ -1402,7 +1402,7 @@
   "small": 16
  },
  "tablet-chromium-harbour-light/invoices-approved": {
-  "small": 41
+  "small": 33
  },
  "tablet-chromium-harbour-light/invoices-filter": {
   "small": 26
@@ -1475,7 +1475,7 @@
   "small": 16
  },
  "tablet-chromium-meridian-dark/invoices-approved": {
-  "small": 41
+  "small": 33
  },
  "tablet-chromium-meridian-dark/invoices-filter": {
   "small": 26
@@ -1548,7 +1548,7 @@
   "small": 16
  },
  "tablet-chromium-meridian-light/invoices-approved": {
-  "small": 41
+  "small": 33
  },
  "tablet-chromium-meridian-light/invoices-filter": {
   "small": 26
@@ -1621,7 +1621,7 @@
   "small": 16
  },
  "tablet-webkit-harbour-light/invoices-approved": {
-  "small": 41
+  "small": 33
  },
  "tablet-webkit-harbour-light/invoices-filter": {
   "small": 26
@@ -1694,7 +1694,7 @@
   "small": 16
  },
  "tablet-webkit-meridian-dark/invoices-approved": {
-  "small": 41
+  "small": 33
  },
  "tablet-webkit-meridian-dark/invoices-filter": {
   "small": 26
@@ -1767,7 +1767,7 @@
   "small": 16
  },
  "tablet-webkit-meridian-light/invoices-approved": {
-  "small": 41
+  "small": 33
  },
  "tablet-webkit-meridian-light/invoices-filter": {
   "small": 26
