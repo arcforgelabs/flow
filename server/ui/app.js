@@ -1337,11 +1337,17 @@ drawModeToggles();
 // ── Start ──────────────────────────────────────────────────────────────────
 
 // Clerk's words where they name the app: the installation is Flow, whatever
-// the Clerk instance is called.
+// the Clerk instance is called. With sign-up on, Clerk shows the combined
+// sign-in-or-up form, which reads the *Combined keys.
 const LOCALIZATION = {
   signIn: {
     // titleCombined is the sign-in-or-sign-up screen (public sign-up on).
-    start: { title: 'Sign in', titleCombined: 'Sign in', subtitle: '' },
+    start: {
+      title: 'Sign in to Flow',
+      subtitle: 'Choose how to sign in.',
+      titleCombined: 'Sign in to Flow',
+      subtitleCombined: 'Choose how to sign in.',
+    },
     password: { subtitle: 'Enter the password for your account.' },
   },
   signUp: { start: { title: 'Ask for access to Flow', subtitle: 'Use your work email. An owner approves new people.' } },
