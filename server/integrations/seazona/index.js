@@ -8,7 +8,7 @@ import { readBillableJobs } from './reconcile.js';
 import { SEAZONA_CALL_GUARD } from './governor.js';
 import { createSeazonaRouter } from './routes.js';
 import {
-  cancelStageMove, expiredStageMoves, handOff, readPersonSettings, requestStageMove, settleStageMoves, waitingStageMoves, writePersonSetting,
+  cancelStageMove, handOff, readPersonSettings, requestStageMove, settleStageMoves, waitingStageMoves, writePersonSetting,
 } from './stage-moves.js';
 import { orderPatient } from './patients.js';
 import { createSeazonaScheduler } from './scheduler.js';
@@ -148,17 +148,6 @@ export function createSeazonaAdapter({ env = null, fetchImpl = null, now = Date.
         if (!runtime?.client.governor) return [];
         const status = await runtime.client.governor.status();
         const alerts = guardAlerts('Seazona', status, { fix: 'Check the API client in the Seazona settings, then save them.' });
-        // Stage moves nobody made in Seazona within a day (stage-moves.js).
-        await settleStageMoves(runtime.db, { now: now() });
-        const expired = await expiredStageMoves(runtime.db, { now: now() });
-        if (expired.length) {
-          alerts.push({
-            id: 'stage-moves-expired',
-            tone: 'warn',
-            title: `${expired.length === 1 ? 'One stage move was' : `${expired.length} stage moves were`} not made in Seazona within a day: ${expired.slice(0, 5).map((m) => `${m.orderId} to ${m.toStatus}`).join(', ')}${expired.length > 5 ? ', …' : ''}. The cards went back to their Seazona stage.`,
-            members: expired.map((m) => `${m.orderId}:${m.settledAt?.toISOString() ?? ''}`),
-          });
-        }
         // Issue #143: what the lanes cannot fix by themselves. A refused API
         // client already has its own alert above, so it stops no lane here.
         if (!runtime.settings.scheduled) return alerts;

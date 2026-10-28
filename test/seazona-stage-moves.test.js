@@ -9,7 +9,7 @@ import { createRegistry } from '../server/integrations/port.js';
 import { seazonaOrders, seazonaStageMoves } from '../server/integrations/seazona/schema.js';
 import { orderLink, resolveSeazonaSettings } from '../server/integrations/seazona/settings.js';
 import {
-  HAND_OFF_MS, cancelStageMove, expiredStageMoves, readPersonSettings, requestStageMove, settleStageMoves, waitingStageMoves, writePersonSetting,
+  HAND_OFF_MS, cancelStageMove, readPersonSettings, requestStageMove, settleStageMoves, waitingStageMoves, writePersonSetting,
 } from '../server/integrations/seazona/stage-moves.js';
 import { fakeClerk, request, TEST_PUBLISHABLE_KEY } from './support/clerk.js';
 import { skipWithoutDatabase } from './support/db.js';
@@ -62,14 +62,13 @@ describe('stage moves against PostgreSQL', { skip: skipWithoutDatabase }, () => 
     assert.equal((await waitingStageMoves(db)).size, 0);
   });
 
-  test('a move nobody makes expires after a day, and shows in the alert for a week', async () => {
+  test('a move nobody makes expires after a day, and the card goes back', async () => {
     await requestStageMove(db, { orderId: 'ORD-2', toStatus: 'Quality Check', now: clock.now() });
     clock.advance(HAND_OFF_MS - 1);
     assert.deepEqual(await settleStageMoves(db, { now: clock.now() }), { done: 0, expired: 0 });
     clock.advance(1);
     assert.deepEqual(await settleStageMoves(db, { now: clock.now() }), { done: 0, expired: 1 });
-    assert.deepEqual((await expiredStageMoves(db, { now: clock.now() })).map((m) => m.orderId), ['ORD-2']);
-    assert.equal((await expiredStageMoves(db, { now: clock.now() + 8 * HAND_OFF_MS })).length, 0);
+    assert.equal((await waitingStageMoves(db)).size, 0);
   });
 
   test('a person can take a waiting move back', async () => {
