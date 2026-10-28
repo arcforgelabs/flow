@@ -59,6 +59,7 @@ export function createApp({
   portalJoinLimit = 5,
   portalJoinWindowMs = 15 * 60 * 1000,
   portalApiLimit = 120,
+  portalMemberLimit = 120,
   defaultFamily = DEFAULT_FAMILY,
   // Buttons that call Xero or Seazona wait between presses (the action
   // guard, server/integrations/call-guard.js). Off only in tests.
@@ -205,6 +206,7 @@ export function createApp({
     joinLimit: portalJoinLimit,
     joinWindowMs: portalJoinWindowMs,
     apiLimit: portalApiLimit,
+    memberLimit: portalMemberLimit,
     signInLimit: signInRateLimitPerMinute,
     log,
   }));

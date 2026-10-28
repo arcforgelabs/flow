@@ -110,7 +110,7 @@ function showJoin() {
   const phone = h('input', { class: 'fx-input', name: 'phone', autocomplete: 'tel' });
   const button = h('button', { class: 'fx-btn fx-btn--primary', type: 'submit' }, 'Join');
   host.replaceChildren(h('form', {
-    class: 'fx-fields',
+    class: 'fx-fields fx-portal-join',
     onsubmit: async (event) => {
       event.preventDefault();
       button.disabled = true;
@@ -362,6 +362,11 @@ async function signedIn() {
 }
 
 async function start() {
+  const page = location.pathname.replace(/\/+$/, '');
+  if (page === '/portal/join') {
+    showJoin();
+    return;
+  }
   let config;
   try {
     config = await fetch('/portal/api/auth/config').then((res) => res.json());
@@ -380,7 +385,6 @@ async function start() {
     setState('error');
     return;
   }
-  const page = location.pathname.replace(/\/+$/, '');
   if (!window.Clerk.session) {
     if (page === '/portal/waiting') return showWaiting();
     if (page === '/portal/join') return showJoin();
