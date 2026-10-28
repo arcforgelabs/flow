@@ -1,20 +1,19 @@
-import { and, eq, gte, inArray, lt, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { FlowError } from '../../core/errors.js';
-import { orderClientName, orderStatusLabel } from './map.js';
+import { orderStatusLabel } from './map.js';
 import { orderLink } from './settings.js';
-import { seazonaClients, seazonaOrders, seazonaPersonSettings, seazonaStageMoves } from './schema.js';
+import { seazonaOrders, seazonaPersonSettings, seazonaStageMoves } from './schema.js';
 
 // Stage moves on the Jobs board (docs/SEAZONA.md, "Stage moves"). Seazona's
 // API cannot change an order's status, so Flow never tries: a move becomes a
 // hand-off. Flow records the move, the person makes it in Seazona, and the
 // next sync that reads the new status settles it. Until then the card shows
 // "Waiting for Seazona" in the new lane. After a day with no change the move
-// expires, the card goes back to Seazona's stage, and a quiet alert says so.
+// expires and the card goes back to Seazona's stage. No alert follows: the
+// person saw what to do in Seazona when they moved the card.
 // Every function here reads and writes Flow's database only.
 
 export const HAND_OFF_MS = 24 * 60 * 60_000;
-// How long an expired move stays in the alert.
-const EXPIRED_ALERT_MS = 7 * 24 * 60 * 60_000;
 const MAX_STATUS = 80;
 
 // Record a person's move of one order to `toStatus`, and answer the hand-off
@@ -75,20 +74,6 @@ export async function settleStageMoves(db, { now = Date.now() } = {}) {
 export async function waitingStageMoves(db) {
   const rows = await db.select().from(seazonaStageMoves).where(eq(seazonaStageMoves.state, 'waiting'));
   return new Map(rows.map((r) => [r.orderId, r]));
-}
-
-// The moves that expired in the last week, for the quiet alert, each with
-// the practice its job is for (`clientName`).
-export async function expiredStageMoves(db, { now = Date.now() } = {}) {
-  const rows = await db.select({ move: seazonaStageMoves, order: seazonaOrders, client: seazonaClients }).from(seazonaStageMoves)
-    .leftJoin(seazonaOrders, eq(seazonaOrders.id, seazonaStageMoves.orderId))
-    .leftJoin(seazonaClients, eq(seazonaClients.id, seazonaOrders.clientId))
-    .where(and(
-      eq(seazonaStageMoves.state, 'expired'),
-      gte(seazonaStageMoves.settledAt, new Date(Number(now) - EXPIRED_ALERT_MS)),
-      lt(seazonaStageMoves.settledAt, new Date(Number(now) + 1)),
-    ));
-  return rows.map(({ move, order, client }) => ({ ...move, clientName: orderClientName(order, client) }));
 }
 
 // What the board shows for a waiting move. `link` opens the order in

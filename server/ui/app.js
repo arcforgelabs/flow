@@ -867,6 +867,7 @@ async function renderIntegration(main, id) {
           current.id === 'xero' && current.state === 'ready' ? h('section', { class: 'fx-int-section' }, xeroConnection(body.organisations, canChange)) : null,
           current.id === 'seazona' ? h('section', { class: 'fx-int-section fx-card', style: { padding: '8px 20px 16px' } }, automationSection(ui(), 'seazona', 'Ready to invoice')) : null,
           on && current.state === 'ready' ? personSettingsSection(current) : null,
+          current.id === 'seazona' && current.state === 'ready' ? seazonaHistorySection() : null,
           current.id === 'xero' && current.state === 'ready' ? xeroImportSection(body.organisations) : null,
           current.id === 'xero' ? h('section', { class: 'fx-int-section fx-card', style: { padding: '8px 20px 16px' } }, automationSection(ui(), 'xero', 'Contacts')) : null,
           current.id === 'xero' ? h('section', { class: 'fx-int-section fx-card', style: { padding: '8px 20px 16px' } }, sendModeSection(ui())) : null,
@@ -975,6 +976,56 @@ function xeroImportSection(organisations) {
       })
       .catch(() => count.replaceChildren('—'));
   }
+  return section;
+}
+
+// Seazona's history read (docs/SEAZONA.md, "The API backfill"): past orders
+// from a start day, a few calls a run inside the rate limit. Start and Stop
+// call no Seazona; the background lane reads. While it runs, the row reads
+// its progress again every 30 seconds, from Flow only.
+function seazonaHistorySection() {
+  const canAct = ['owner', 'admin'].includes(me?.person?.role);
+  const yearAgo = new Date(Date.now() - 365 * 86_400_000).toISOString().slice(0, 10);
+  const from = h('input', { class: 'fx-input', type: 'date', 'aria-label': 'Read from', value: yearAgo, disabled: !canAct });
+  const status = h('span', {}, 'Checking…');
+  const jobs = h('span', { class: 'fx-num' }, '…');
+  const control = h('span', { class: 'fx-row' });
+  const day = (value) => new Date(`${value}T00:00:00Z`).toLocaleDateString('en-AU', { dateStyle: 'medium', timeZone: 'UTC' });
+  const section = h('section', { class: 'fx-set fx-int-section fx-card', style: { padding: '8px 20px 16px' } },
+    h('h2', { class: 'fx-set__title' }, 'History'),
+    settingRow({ label: 'Read from', hint: status, help: 'Reads past Seazona orders into Flow, 10 every 2 minutes. Each job waits on hold and never drafts by itself.', control }),
+    settingRow({ label: 'Jobs read', control: jobs }));
+  const press = async (button, path, body) => {
+    button.disabled = true;
+    try {
+      await flow(path, { method: 'POST', ...(body ? { body: JSON.stringify(body) } : {}) });
+      toast(body ? 'History read started.' : 'History read stopped.', 'success');
+    } catch (error) {
+      toast(error.message, 'danger');
+      if (error.retryAfterMs) holdButton(button, error.retryAfterMs);
+    }
+    load();
+  };
+  const load = async () => {
+    let body;
+    try {
+      body = await flow('/api/seazona/history');
+    } catch (error) {
+      status.replaceChildren(error.message);
+      return;
+    }
+    const run = body.backfill;
+    jobs.replaceChildren(String(body.history?.jobs ?? 0));
+    if (run?.running) {
+      status.replaceChildren(`Reading ${day(run.nextDay ?? run.from)} · ${run.ordersRead} read`);
+      control.replaceChildren(h('button', { class: 'fx-btn fx-btn--sm', type: 'button', disabled: !canAct, onclick: (event) => press(event.currentTarget, '/api/seazona/history/backfill/stop') }, 'Stop'));
+      setTimeout(() => { if (section.isConnected) load(); }, 30_000);
+      return;
+    }
+    status.replaceChildren(run ? `${run.stopped ? 'Stopped' : 'Done'} · ${run.ordersRead} read from ${day(run.from)}` : 'Not started');
+    control.replaceChildren(from, h('button', { class: 'fx-btn fx-btn--sm fx-btn--primary', type: 'button', disabled: !canAct, onclick: (event) => press(event.currentTarget, '/api/seazona/history/backfill', { from: from.value }) }, 'Start'));
+  };
+  load();
   return section;
 }
 

@@ -1,6 +1,6 @@
 import { and, desc, eq, gte, isNull, or, sql } from 'drizzle-orm';
 import { ledgerLinesFor, toLedgerJob, toLedgerWithdrawn } from './ledger.js';
-import { isFinalStatus, orderClientName, orderStatusLabel, parseSeazonaDate } from './map.js';
+import { isFinalStatus, orderStatusLabel, parseSeazonaDate } from './map.js';
 import { seazonaClients, seazonaInvoices, seazonaOrders, seazonaReference } from './schema.js';
 
 // The billing feed behind the port's pullWorkItems: every order that changed
@@ -243,7 +243,7 @@ export async function listWork(db, { now = Date.now(), finishedDays = WORK_FINIS
       caseRef: order.id,
       status,
       clientId: order.clientId,
-      clientName: orderClientName(order, { company, fullName }),
+      clientName: (company || order.company || fullName || '').trim() || null,
       practitioner: order.doctorName,
       department: order.department,
       orderedOn: parseSeazonaDate(order.orderedText),

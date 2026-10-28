@@ -92,7 +92,7 @@ export function integrationAlertsSource(adapters = () => []) {
         page: 'integrations',
         tone: item.tone ?? 'danger',
         title: item.title,
-        action: item.action ?? { label: `Open ${adapter.name}`, href: `/integrations/${adapter.id}` },
+        action: { label: `Open ${adapter.name}`, href: `/integrations/${adapter.id}` },
         roles: MANAGERS,
         members: item.members,
       }));

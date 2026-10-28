@@ -45,6 +45,6 @@ integration alerts ──┘                         ▲
 
 ## An integration's alerts
 
-An integration adds alerts with the optional `alerts({ organisationId })` capability (`server/integrations/port.js`). It reads Flow's own data only and makes no call to the outside system. It answers a list of `{ id, tone, title, members, action }`. `tone` is `danger` or `warn`. `action` is optional (`{ label, href }`); without it the line opens the integration page.
+An integration adds alerts with the optional `alerts({ organisationId })` capability (`server/integrations/port.js`). It reads Flow's own data only and makes no call to the outside system. It answers a list of `{ id, tone, title, members }`. `tone` is `danger` or `warn`.
 
 An integration with a call guard can use `guardAlerts(name, status, { fix })` (`server/integrations/call-guard.js`). It turns the guard's `status()` into alerts for a halt and for stopped resources.

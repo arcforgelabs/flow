@@ -67,12 +67,6 @@ export function orderStatusLabel(row) {
   return row?.deletedInSourceAt ? DELETED_STATUS : text(row?.status);
 }
 
-// The practice an order is for: its client's company, else the order's own
-// company, else the client's name. Never the patient.
-export function orderClientName(order, client = null) {
-  return (client?.company || order?.company || client?.fullName || '').trim() || null;
-}
-
 // Seazona dates come as ISO text or as day/month/year (Australian order),
 // with an optional time. Returns the calendar date (yyyy-mm-dd) or null.
 export function parseSeazonaDate(value) {

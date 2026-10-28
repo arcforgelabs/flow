@@ -6,10 +6,10 @@ import { invitePerson, seedFirstOwner } from '../server/auth/people.js';
 import { createPersonAuth } from '../server/auth/session.js';
 import { createOrganisation } from '../server/core/directory.js';
 import { createRegistry } from '../server/integrations/port.js';
-import { seazonaClients, seazonaOrders, seazonaStageMoves } from '../server/integrations/seazona/schema.js';
+import { seazonaOrders, seazonaStageMoves } from '../server/integrations/seazona/schema.js';
 import { orderLink, resolveSeazonaSettings } from '../server/integrations/seazona/settings.js';
 import {
-  HAND_OFF_MS, cancelStageMove, expiredStageMoves, readPersonSettings, requestStageMove, settleStageMoves, waitingStageMoves, writePersonSetting,
+  HAND_OFF_MS, cancelStageMove, readPersonSettings, requestStageMove, settleStageMoves, waitingStageMoves, writePersonSetting,
 } from '../server/integrations/seazona/stage-moves.js';
 import { fakeClerk, request, TEST_PUBLISHABLE_KEY } from './support/clerk.js';
 import { skipWithoutDatabase } from './support/db.js';
@@ -62,14 +62,13 @@ describe('stage moves against PostgreSQL', { skip: skipWithoutDatabase }, () => 
     assert.equal((await waitingStageMoves(db)).size, 0);
   });
 
-  test('a move nobody makes expires after a day, and shows in the alert for a week', async () => {
+  test('a move nobody makes expires after a day, and the card goes back', async () => {
     await requestStageMove(db, { orderId: 'ORD-2', toStatus: 'Quality Check', now: clock.now() });
     clock.advance(HAND_OFF_MS - 1);
     assert.deepEqual(await settleStageMoves(db, { now: clock.now() }), { done: 0, expired: 0 });
     clock.advance(1);
     assert.deepEqual(await settleStageMoves(db, { now: clock.now() }), { done: 0, expired: 1 });
-    assert.deepEqual((await expiredStageMoves(db, { now: clock.now() })).map((m) => m.orderId), ['ORD-2']);
-    assert.equal((await expiredStageMoves(db, { now: clock.now() + 8 * HAND_OFF_MS })).length, 0);
+    assert.equal((await waitingStageMoves(db)).size, 0);
   });
 
   test('a person can take a waiting move back', async () => {
@@ -94,7 +93,6 @@ describe('the work moves API with the Seazona adapter', { skip: skipWithoutDatab
   let handle;
   let app;
   let staffToken;
-  let adapter;
   let calls = 0;
   const clock = fakeClock('2026-10-20T00:00:00.000Z');
 
@@ -102,14 +100,13 @@ describe('the work moves API with the Seazona adapter', { skip: skipWithoutDatab
     handle = await freshSeazonaDatabase();
     await createOrganisation(handle.db, { name: 'Example Lab' });
     const now = new Date(clock.now());
-    await handle.db.insert(seazonaClients).values({ id: 'C-1', company: 'Example Dental', recordHash: 'c', firstSeenAt: now, lastSyncedAt: now, lastChangedAt: now });
     await handle.db.insert(seazonaOrders).values([
       { id: 'ORD-7', status: 'In Production', lines: [], recordHash: 'a', firstSeenAt: now, lastSyncedAt: now, lastChangedAt: now },
-      { id: 'ORD-8', clientId: 'C-1', status: 'Quality Check', lines: [], recordHash: 'b', firstSeenAt: now, lastSyncedAt: now, lastChangedAt: now },
+      { id: 'ORD-8', status: 'Quality Check', lines: [], recordHash: 'b', firstSeenAt: now, lastSyncedAt: now, lastChangedAt: now },
     ]);
     const { createSeazonaAdapter } = await import('../server/integrations/seazona/index.js');
     // Sandbox mode: the scheduler stays off. Any call to Seazona fails the test.
-    adapter = createSeazonaAdapter({
+    const adapter = createSeazonaAdapter({
       env: { SEAZONA_MODE: 'sandbox', SEAZONA_API_BASE_URL: 'https://seazona.example.test', SEAZONA_API_CLIENT_ID: 'id', SEAZONA_API_CLIENT_SECRET: 'secret' },
       fetchImpl: async () => { calls += 1; throw new Error('no call to Seazona is expected'); },
       now: clock.now,
@@ -156,13 +153,5 @@ describe('the work moves API with the Seazona adapter', { skip: skipWithoutDatab
     assert.equal(changed.status, 200);
     assert.equal(changed.body.settings[0].value, false);
     assert.equal((await call('/my-settings', { method: 'PUT', body: { integration: 'seazona', key: 'askBeforeStageMoves', value: 'off' } })).status, 400);
-  });
-
-  test('an expired move names the job and links to it, not the order id', async () => {
-    await call('/moves', { method: 'POST', body: { sourceSystem: 'seazona', sourceJobRef: 'ORD-8', toStatus: 'In Production' } });
-    clock.advance(HAND_OFF_MS);
-    const [alert] = await adapter.capabilities.alerts();
-    assert.equal(alert.title, 'Nobody moved the Example Dental job to In Production in Seazona. The card went back.');
-    assert.deepEqual(alert.action, { label: 'Open job', href: '/jobs?q=ORD-8' });
   });
 });

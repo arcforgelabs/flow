@@ -351,7 +351,9 @@ each history job (`docs/JOB_INVOICE_LINKS.md`). The earlier app read only
 
 ### The API backfill
 
-An owner or admin starts it: `POST /api/seazona/history/backfill` with
+An owner or admin starts it on Integrations › Seazona, History: pick the
+day in Read from and press Start (Stop ends it). The page calls
+`POST /api/seazona/history/backfill` with
 `{ "from": "2019-01-01" }` (and `through`, by default the day before the
 recent-order lane's window). The `history` lane then:
 
@@ -587,8 +589,8 @@ Seazona. The move becomes a hand-off (`stage-moves.js`):
    and the move settles as `done`. Any new status settles it: Seazona has the
    last word.
 4. After a day with no change, the move is `expired`. The card goes back to
-   Seazona's stage, and a quiet alert on the Integrations page names it for
-   a week.
+   Seazona's stage. No alert follows: the person saw what to do in Seazona
+   when they moved the card.
 5. A person can take a waiting move back (`cancelled`).
 
 Each person chooses whether the board asks before a stage move: "Ask before
