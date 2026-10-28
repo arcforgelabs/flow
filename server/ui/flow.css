@@ -1093,7 +1093,7 @@ th:hover > .fx-th-grip::after { background: var(--t-brd-hi); }
 /* Phones and tablets: Capture and the sheet's controls are thumb sized. */
 @media (max-width: 1023px) {
   .fx-dialog.fx-capture .fx-task__actions .fx-btn { min-height: 44px; }
-  .fx-listhead .fx-toolbar .fx-capture__shoot { height: 44px; }
+  .fx-listhead .fx-toolbar .fx-btn.fx-capture__shoot { height: 44px; }
   .fx-dialog.fx-capture .fx-task__tools .fx-btn--icon { width: 44px; height: 44px; }
 }
 
