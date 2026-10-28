@@ -641,8 +641,9 @@ export async function renderInvoiceList(main, ui) {
     };
     const href = (invoice) => `/invoices/${invoice.id}`;
     const ALL = {
-      number: numbered ? { kind: 'number', phone: 'meta', cell: (i) => link(href(i), i.number ?? 'Draft') } : null,
-      client: { kind: 'client', phone: 'title', cell: (i) => (numbered ? (i.contactName ?? '—') : link(href(i), i.contactName ?? 'No client')) },
+      // The client is the row's link: on a phone it is the title, with a 44px hit area.
+      number: numbered ? { kind: 'number', phone: 'meta', className: 'fx-strong', cell: (i) => i.number ?? 'Draft' } : null,
+      client: { kind: 'client', phone: 'title', cell: (i) => link(href(i), i.contactName ?? 'No client') },
       // A phone row: the client (and number) and total, then the problem,
       // the reference or the status, and the date. A tab without numbers
       // holds one status: its tab says it.
