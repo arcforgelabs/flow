@@ -1090,6 +1090,11 @@ th:hover > .fx-th-grip::after { background: var(--t-brd-hi); }
 .fx-capture__to { color: var(--t-strong); font-weight: 600; overflow-wrap: anywhere; }
 .fx-capture__change[data-unsure="true"] { background: var(--t-warn-bg); }
 .fx-capture__change[data-unsure="true"] .fx-capture__to { color: var(--t-warn); }
+/* Phones and tablets: Capture and the sheet's controls are thumb sized. */
+@media (max-width: 1023px) {
+  .fx-capture__shoot, .fx-dialog.fx-capture .fx-task__actions .fx-btn { min-height: 44px; }
+  .fx-dialog.fx-capture .fx-task__tools .fx-btn--icon { width: 44px; height: 44px; }
+}
 
 /* A record's phone bar and foot. Hidden above a phone, so the desk panel and
    the invoice header stay as they are. */

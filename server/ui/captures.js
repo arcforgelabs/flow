@@ -50,7 +50,7 @@ export async function renderCaptures(main, ui) {
   const picker = h('input', { type: 'file', accept: 'image/*', hidden: true });
   if (isPhone()) picker.setAttribute('capture', 'environment');
   else picker.multiple = true;
-  const shoot = h('button', { class: 'fx-btn fx-btn--primary', type: 'button', onclick: () => picker.click() }, lucide(h, 'camera'), 'Capture');
+  const shoot = h('button', { class: 'fx-btn fx-btn--primary fx-capture__shoot', type: 'button', onclick: () => picker.click() }, lucide(h, 'camera'), 'Capture');
   const head = listHead('Captures', { actions: [shoot, picker] });
   const list = h('ul', { class: 'fx-captures', 'aria-label': 'Captures' });
   const frame = listFrame(main, list);
