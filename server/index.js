@@ -9,7 +9,9 @@ import { migrateDatabase, openDatabase } from './db/index.js';
 import {
   importEarlierAtStart, importEarlierLinksAtStart, importEarlierMappingsAtStart, resolveImportAtStart,
 } from './import/at-start.js';
+import { createCaptureRetentionWorker } from './core/captures.js';
 import { createMonitoredLog } from './core/monitoring.js';
+import { resolveObjectStorage } from './core/storage.js';
 import { createTracing, traceQueries } from './core/tracing.js';
 import { createPipelineWorker } from './core/pipeline.js';
 import { createReconcileWorker } from './core/reconcile.js';
@@ -117,6 +119,23 @@ if (jobsOn) createReconcileWorker({ db: database.db, integrations, log }).start(
 // with Send all ready, to the accounting integration that is on.
 if (jobsOn) createSendWorker({ db: database.db, integrations, log }).start();
 
+// Capture photos (server/core/storage.js). A bad storage setting stops boot.
+// On Replit, and where the local folder cannot be created, the default is
+// off. The retention pass
+// only deletes Flow's own files, so it still runs where background jobs are
+// off: a second copy deleting the same key does nothing.
+let storage = null;
+try {
+  const resolved = await resolveObjectStorage({ env: process.env, secrets });
+  storage = resolved.storage;
+  if (storage) console.log(`[storage] ${resolved.mode}`);
+  else console.log(`[storage] captures off (${resolved.reason})`);
+} catch (error) {
+  console.error(`[storage] ${error.message}`);
+  process.exit(1);
+}
+if (storage) createCaptureRetentionWorker({ db: database.db, storage, log }).start();
+
 let auth = null;
 if (settings.mode === 'clerk') {
   const { keys } = settings;
@@ -158,7 +177,10 @@ const trustProxy = process.env.REPL_ID || process.env.REPLIT_DEPLOYMENT ? 1 : fa
 
 const updates = createUpdateChecker();
 
-createApp({ database, schemaJournals: expectedSchema({ adapters: shippedAdapters }).journals, auth, trustProxy, updates, integrations, secrets, defaultFamily, log, tracing }).listen(port, () => {
+createApp({
+  database, schemaJournals: expectedSchema({ adapters: shippedAdapters }).journals, auth, trustProxy, updates, integrations, secrets, defaultFamily, log, tracing, storage,
+  publicOrigin: process.env.FLOW_PUBLIC_ORIGIN,
+}).listen(port, () => {
   console.log(`[flow] listening on ${port}; design system ${defaultFamily} (FLOW_THEME)`);
 });
 

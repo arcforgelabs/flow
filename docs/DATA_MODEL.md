@@ -49,6 +49,7 @@ erDiagram
   job_fields ||--o{ job_field_values : "holds"
   job_fields ||--o{ job_field_events : "is explained by"
   organisations ||--o| job_field_settings : "colours its field groups by"
+  organisations ||--o{ captures : "stores a form photo as"
 ```
 
 `external_links`, `background_jobs`, `outbox` and `review_items` are the data
@@ -76,6 +77,13 @@ fields for its jobs, each job's values, and who changed them
 `(source_system, source_job_ref)`, so a job needs no obligation to have one.
 `job_field_settings` holds one row per organisation: each type group's
 colour, and when Flow made the Assignee field.
+
+`captures` is one photo of a handwritten lab form. The bytes live in the
+object storage adapter. The row keeps the key, size, type and checksum, the
+empty or typed proposal, and the decision (`applied` or `discarded`). A new
+capture is `ready`: this slice does not call a model and does not change a
+job. The photo is deleted when someone decides, and a capture with no
+decision is deleted after 7 days.
 
 `contacts` is Flow's own customer or supplier (`docs/CONTACTS.md`): name,
 first and last name, email, phone, mobile, account number, tax number, tax
@@ -166,11 +174,24 @@ Flow has two places for data, and only two:
 | Files: photos of lab forms, bill and invoice PDFs, exports | An object storage adapter | Files are large and never change after upload. PostgreSQL keeps the file's key, size, type and checksum; the bytes stay out of it. |
 
 The object storage adapter has one interface (put, get, delete, signed link)
-with one implementation per host: a local folder for a single machine or
-tests, S3-compatible storage, and Replit Object Storage. A published Replit
-app keeps no files between publishes, so it never uses the local folder. The
-first feature that stores a file adds the adapter (#42); until then Flow
-stores no files.
+with one implementation per host (`server/core/storage.js`): a local folder
+for a single machine or tests, S3-compatible storage, and Replit Object
+Storage. A published Replit app keeps no files between publishes, so it never
+uses the local folder; on Replit, captures stay off until `FLOW_STORAGE` is
+`replit` or `s3`. The server image is read-only, so an unset `FLOW_STORAGE`
+leaves captures off there too. Set `FLOW_STORAGE=local` with a writable
+`FLOW_STORAGE_DIR` when the photo should live on that machine. An S3 link is a presigned GET. Replit's client has no
+signed URL, so that link is a Flow link: Flow checks the signature, reads the
+bytes and checks the checksum before it sends them. Logs and error reports
+get a capture id and an error code, never the photo or the typed fields.
+
+| Route | Who | What |
+| --- | --- | --- |
+| `POST /api/captures` | anyone signed in | The photo as the body (`image/jpeg`, `png`, `webp` or `heic`, 12 MB at most) and an `Idempotency-Key` header. `X-Flow-Capture-Source` is `phone`, `desk` or `api` (the default). 201: a capture in state `ready` with an empty proposal. The same key again is 200 and the first photo, even when the body differs |
+| `GET /api/captures/:id` | anyone signed in | The capture and a fresh signed link, or no link once the photo is gone |
+| `POST /api/captures/:id/proposal` | anyone signed in | Type the change (`action` of `update`, `create` or `note`, and `changes`). It does not change a job |
+| `POST /api/captures/:id/decision` | anyone signed in | `{ decision: "applied" or "discarded" }`. Records who decided and deletes the photo. It does not change a job. The same decision again is safe |
+| `GET /api/captures/file?token=` | the signed link | The photo. No session. The checksum is checked first. An S3 link is fetched from S3, not from this route |
 
 Flow uses no other database: no document store, key-value store or cache
 server. A change that seems to need one says why in its pull request, and
@@ -195,6 +216,7 @@ installation low maintenance.
 | One queued or running job per kind and key; a job is finished only by the worker that holds its lease. | A partial unique index on `background_jobs`; `server/core/queue.js` |
 | Every write to another system has an outbox row first, with a unique idempotency key. | `outbox`; `server/core/outbox.js` |
 | One open review item per kind and record; a closed one records who chose what. | A partial unique index and a check on `review_items`; `server/core/review.js` |
+| One capture per idempotency key in an organisation. The photo bytes are deleted on a decision, and a capture with no decision is deleted after 7 days. | `captures`; `server/core/captures.js` |
 
 ## Change the schema
 
