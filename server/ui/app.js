@@ -1016,8 +1016,11 @@ function xeroConnection(organisations, canChange) {
         if (canChange) {
           control = h('button', { class: `fx-btn fx-btn--sm${status.connected && !stopped && !refused ? '' : ' fx-btn--primary'}`, type: 'button', onclick: async () => {
             try {
+              // A Custom Connection connects at once; a Xero app sends the
+              // browser to Xero to approve.
               const { authorizeUrl } = await flow('/api/xero/connect', { method: 'POST', body: JSON.stringify({ organisationId: organisation.id }) });
-              location.assign(authorizeUrl);
+              if (authorizeUrl) location.assign(authorizeUrl);
+              else location.reload();
             } catch (error) {
               toast(error.message, 'danger');
             }

@@ -26,6 +26,7 @@ test/mobile/phone.spec.js ─► 22 screens × 5 sizes × 2 engines × 3 themes
 | Rows | A list shows 7 rows or more on a 375×667 screen | Small phone |
 | Sideways | Nothing scrolls sideways on a phone unless its card names it (`scrollX` in `mobile.json`: tabs, the toolbar row, the list and board window). A table inside a card uses CardRows. No budget | Phone |
 | Split notice | A notice's title sits on the same line as its text. No budget | Every size |
+| Selected tab | The selected tab is in view in its tab bar, also when the page opens on the tab used last. No budget | Every size |
 | Row spill | A phone list row (two-line, Custom fields) keeps every cell inside its 56px row, and shows no cell its column flags `hide` | Phone |
 | Gutter | Content stays inside the page's side padding. A part that runs into both gutters (the sticky list head) is full bleed and fine | Every size |
 | Accessibility | axe, WCAG 2.2 A and AA | Phone |

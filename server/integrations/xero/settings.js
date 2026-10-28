@@ -10,6 +10,14 @@
 //            is not DEMO, so a sandbox can never write to a real ledger.
 //   replay   no network: recorded, synthetic Xero responses
 //            (server/integrations/xero/fixtures). Development and CI.
+//
+// XERO_CONNECTION says how Flow gets its Xero access tokens.
+//   app      (default) a Xero web app: an owner approves in the browser, and
+//            Flow keeps the rotating refresh token.
+//   custom   a Xero Custom Connection (client credentials): no browser step
+//            and no refresh token. Sandbox only: Xero makes Custom
+//            Connections free on the Demo Company, so a demo or a test
+//            session connects with the client id and secret alone.
 
 import { backgroundJobsOn } from '../../core/host.js';
 
@@ -29,6 +37,8 @@ export const XERO_ENDPOINTS = Object.freeze({
 export const XERO_CALLBACK_PATH = '/api/xero/oauth/callback';
 // accounting.payments.read: Flow reads payments back (ledger.js, mirror.js).
 export const DEFAULT_XERO_SCOPE = 'offline_access accounting.contacts accounting.invoices accounting.payments.read accounting.settings.read';
+// A Custom Connection has no refresh token, so it asks for no offline_access.
+export const DEFAULT_CUSTOM_SCOPE = DEFAULT_XERO_SCOPE.replace('offline_access ', '');
 export const DEFAULT_XERO_DAY_LIMIT = 1000;
 export const DEFAULT_DUE_DAYS = 30;
 export const DEFAULT_MIRROR_PAGE_SIZE = 200;
@@ -121,6 +131,12 @@ export function resolveXeroSettings(env = process.env) {
   if (!mode) return null;
   if (!XERO_MODES.includes(mode)) throw new Error('XERO_MODE must be "live", "sandbox", "replay" or unset');
 
+  const connection = (readEnv(env, 'XERO_CONNECTION') || 'app').toLowerCase();
+  if (!['app', 'custom'].includes(connection)) throw new Error('XERO_CONNECTION must be "app", "custom" or unset');
+  if (connection === 'custom' && mode !== 'sandbox') {
+    throw new Error('XERO_CONNECTION=custom works only with XERO_MODE=sandbox (a Xero Demo Company)');
+  }
+
   const clientId = readEnv(env, 'XERO_CLIENT_ID');
   const clientSecret = readEnv(env, 'XERO_CLIENT_SECRET');
   const tokenKey = decodeTokenKey(readEnv(env, 'XERO_TOKEN_KEY'));
@@ -150,11 +166,12 @@ export function resolveXeroSettings(env = process.env) {
 
   return {
     mode,
+    connection,
     clientId: clientId || (mode === 'replay' ? 'replay-client-id' : ''),
     clientSecret: clientSecret || (mode === 'replay' ? 'replay-client-secret' : ''),
     tokenKey,
     redirectUri: resolveRedirectUri(env),
-    scope: readEnv(env, 'XERO_SCOPE') || DEFAULT_XERO_SCOPE,
+    scope: readEnv(env, 'XERO_SCOPE') || (connection === 'custom' ? DEFAULT_CUSTOM_SCOPE : DEFAULT_XERO_SCOPE),
     tenantId,
     tenantName,
     liveWrites: readOnOff(env, 'XERO_ALLOW_LIVE_WRITES'),

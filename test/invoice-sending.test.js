@@ -445,7 +445,7 @@ describe('Send all ready over the API', { skip: skipWithoutDatabase }, () => {
 
     res = await call('/invoices?status=ready');
     assert.equal(res.status, 200);
-    assert.deepEqual(res.body.counts, { pending: 1, ready: 1, draft: 0, approved: 0, sent: 0, void: 0 });
+    assert.deepEqual(res.body.counts, { pending: 1, ready: 1, draft: 0, approved: 0, sent: 0, non_chargeable: 0, void: 0 });
     assert.equal(res.body.sendsTo, 'Accounts');
     assert.deepEqual(res.body.invoices.map((i) => [i.id, i.tab]), [[ready.id, 'ready']]);
     res = await call('/invoices?status=pending');

@@ -18,6 +18,8 @@
 //   column flags hide on a phone.
 // - gutter: content past the page's right padding. The page does not
 //   overflow, but the content touches the screen edge.
+// - hiddenTab: a selected tab scrolled out of its tab bar, so the page does
+//   not say which tab it shows.
 export function measure({ min, scrollX = '' }) {
   const describe = (el) => {
     const label = el.getAttribute('aria-label') || el.getAttribute('title') || el.textContent.trim().replace(/\s+/g, ' ').slice(0, 24);
@@ -73,6 +75,12 @@ export function measure({ min, scrollX = '' }) {
     if (a && b && b.top >= a.bottom - 1) split.push(describe(note));
   }
 
+  const hiddenTab = [];
+  for (const el of document.querySelectorAll('[role="tablist"] [role="tab"][aria-selected="true"]')) {
+    const [tab, bar] = [el.getBoundingClientRect(), el.closest('[role="tablist"]').getBoundingClientRect()];
+    if (tab.width && (tab.left < bar.left - 0.5 || tab.right > bar.right + 0.5)) hiddenTab.push(describe(el));
+  }
+
   const spill = [];
   for (const row of document.querySelectorAll('[data-phone-layout="two-line"] tbody tr:not(.fx-table__group), .fx-cfm__row')) {
     const box = row.getBoundingClientRect();
@@ -108,6 +116,7 @@ export function measure({ min, scrollX = '' }) {
   return {
     sideways: [...new Set(sideways)].sort(),
     split: [...new Set(split)].sort(),
+    hiddenTab,
     spill: [...new Set(spill)].sort(),
     gutter: [...new Set(gutter)].sort().slice(0, 10),
     overflow: Math.max(0, document.documentElement.scrollWidth - window.innerWidth),

@@ -105,3 +105,16 @@ export async function request(app, path, { token, method = 'GET', body, headers 
     server.close();
   }
 }
+
+// A stand-in for Clerk's browser script (served for clerk.example.test):
+// signed in, with a session token the fake Clerk above knows.
+export function clerkBrowserStub({ token, email, name }) {
+  return `window.Clerk = {
+    user: { id: 'u', fullName: '${name}', primaryEmailAddress: { emailAddress: '${email}' } },
+    session: { getToken: async () => '${token}' },
+    load: async () => {}, addListener: () => () => {}, signOut: async () => {},
+    mountUserButton: () => {}, unmountUserButton: () => {},
+    mountUserProfile: () => {}, unmountUserProfile: () => {},
+    mountSignIn: () => {}, unmountSignIn: () => {}, mountSignUp: () => {}, unmountSignUp: () => {},
+  };`;
+}

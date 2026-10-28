@@ -235,3 +235,40 @@ describe('connecting Xero', { skip: skipWithoutDatabase }, () => {
     await assert.rejects(client.getOrganisation(), (error) => error.code === 'xero_reconnect_needed');
   });
 });
+
+describe('a Custom Connection (sandbox)', { skip: skipWithoutDatabase }, () => {
+  let handle;
+
+  before(async () => {
+    handle = await freshDatabase();
+  });
+  after(async () => handle?.close());
+
+  test('connects with no Xero sign-in, and later asks for a new token with the client credentials', async () => {
+    const custom = (n) => tokenAnswer(n, { body: { access_token: `synthetic-access-${n}`, expires_in: 1800, token_type: 'Bearer', scope: 'accounting.contacts' } });
+    const replay = xeroRuntime([custom(1), connectionsAnswer(), organisationAnswer(), custom(2)], {
+      XERO_MODE: 'sandbox', XERO_CONNECTION: 'custom', XERO_CLIENT_ID: 'synthetic-id', XERO_CLIENT_SECRET: 'synthetic-secret',
+    });
+    const booted = await bootFlow(handle, { runtime: replay.runtime, log: replay.log });
+    const lab = await seedLab(handle, booted.clerk);
+
+    const res = await request(booted.app, '/api/xero/connect', { token: lab.ownerToken, method: 'POST', body: { organisationId: lab.organisation.id } });
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    assert.equal(res.body.connected, true);
+    assert.equal(res.body.authorizeUrl, undefined);
+    assert.equal(res.body.connection.tenantId, TENANT);
+
+    // The access token runs out: Flow asks Xero again, with no refresh token.
+    replay.runtime.forget(lab.organisation.id);
+    const { client } = await replay.runtime.clientFor(handle.db, lab.organisation.id);
+    await client.getOrganisation();
+    const grants = replay.fetch.calls.filter((call) => call.path === '/connect/token').map((call) => new URLSearchParams(call.body).get('grant_type'));
+    assert.deepEqual(grants, ['client_credentials', 'client_credentials']);
+    assert.doesNotMatch(replay.fetch.calls[0].body, /offline_access/);
+  });
+
+  test('is refused outside sandbox mode', () => {
+    assert.throws(() => xeroRuntime([], { XERO_MODE: 'live', XERO_CONNECTION: 'custom', XERO_CLIENT_ID: 'i', XERO_CLIENT_SECRET: 's', XERO_TENANT_NAME: 'Example Lab' }),
+      /XERO_CONNECTION=custom works only with XERO_MODE=sandbox/);
+  });
+});

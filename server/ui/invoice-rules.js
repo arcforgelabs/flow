@@ -14,7 +14,7 @@ const TEST_LABELS = {
   is_not_one_of: 'is not one of', contains: 'contains', does_not_contain: 'does not contain',
   starts_with: 'starts with', does_not_start_with: 'does not start with', has_number: 'has a number', number_in_words: 'has a number beside words', one_word: 'is one word',
 };
-const ACTION_LABELS = { wait: 'Wait for a person', skip: 'Never draft', pending: 'Pending, with a note' };
+const ACTION_LABELS = { wait: 'Wait for a person', skip: 'Never draft', pending: 'Pending, with a note', non_chargeable: 'Non-chargeable' };
 const NO_VALUE = ['is_empty', 'is_not_empty', 'has_number', 'number_in_words', 'one_word'];
 const MANY = ['is_one_of', 'is_not_one_of'];
 const TYPED = ['contains', 'does_not_contain', 'starts_with', 'does_not_start_with'];

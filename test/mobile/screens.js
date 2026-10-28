@@ -20,7 +20,12 @@ export const SCREENS = [
   } },
   { id: 'invoices-ready', path: '/invoices', ready: '.fx-tabs', list: true },
   { id: 'invoices-pending', path: '/invoices', ready: '.fx-tabs', prepare: tab('Pending'), list: true },
-  { id: 'invoices-approved', path: '/invoices', ready: '.fx-tabs', prepare: tab('Approved'), list: true },
+  // Back on the list (a reload): the page opens on the tab used last.
+  { id: 'invoices-approved', path: '/invoices', ready: '.fx-tabs', prepare: async (page) => {
+    await tab('Approved')(page);
+    await page.reload();
+    await page.waitForLoadState('networkidle');
+  }, list: true },
   { id: 'invoices-ticked', path: '/invoices', ready: '.fx-tabs', prepare: async (page) => {
     await tab('Pending')(page);
     const ticks = page.locator('tbody .fx-tick');

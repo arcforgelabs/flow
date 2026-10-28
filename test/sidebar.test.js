@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
+import { createApp } from '../server/app.js';
+import { createPersonAuth } from '../server/auth/session.js';
 import { NAV_DEFAULT, NAV_LOCKED, NAV_PAGES } from '../server/ui/nav-pins.js';
+import { fakeClerk, TEST_PUBLISHABLE_KEY } from './support/clerk.js';
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), 'utf8');
 
@@ -98,4 +101,19 @@ test('the sidebar shows pinned pages, then More; People and Appearance are in th
   assert.match(css, /\.fx-nav :is\(a, \.fx-nav__more\)\[aria-current="page"\] \{/);
   assert.match(css, /\.fx-pop__pin\[aria-pressed="false"\] \{ opacity: 0; \}/);
   assert.match(css, /\.fx-pop--side \.fx-pop__item \{ min-height: 44px; \}/);
+});
+
+test('a sidebar page and a record on it open from their own address, so a reload or a link works', async () => {
+  const clerk = fakeClerk();
+  const settings = { mode: 'clerk', keys: { publishableKey: TEST_PUBLISHABLE_KEY, proxyUrl: null }, publicSignUp: false };
+  const personAuth = createPersonAuth({ db: {}, clerk, log: { info() {}, warn() {}, error() {} } });
+  const server = createApp({ auth: { settings, clerk, personAuth }, log: { error() {} } }).listen(0);
+  try {
+    const base = `http://127.0.0.1:${server.address().port}`;
+    for (const path of [...NAV_PAGES.map((page) => `/${page}`), '/contacts/00000000-0000-4000-8000-000000000001', '/price-list/reconcile']) {
+      assert.equal((await fetch(`${base}${path}`)).status, 200, path);
+    }
+  } finally {
+    server.close();
+  }
 });

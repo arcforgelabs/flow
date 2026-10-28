@@ -585,7 +585,7 @@ export const RULES = {
       "layout": "scroll"
     },
     "tablet": {
-      "layout": "tabs"
+      "layout": "scroll"
     },
     "desk": {
       "layout": "tabs"
