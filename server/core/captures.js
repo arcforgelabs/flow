@@ -1,8 +1,9 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { and, eq, isNotNull, isNull, lt, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, isNotNull, isNull, lt, or, sql } from 'drizzle-orm';
 import { CAPTURE_DECISIONS, captures } from '../db/schema.js';
 import { FlowError, notFound } from './errors.js';
-import { matchJobs, proposeChange } from './capture-match.js';
+import { matchJobs, proposeChange, readDate } from './capture-match.js';
+import { listFields, setJobFieldValue } from './custom-fields.js';
 
 // Shown when the module is off or the keys are missing. Type it still works.
 const READER_OFF = 'reader turned off';
@@ -263,6 +264,65 @@ export async function matchCapture(db, storage, organisationId, id, { jobs, fiel
   return { capture: row, link: linkFor(storage, row, baseUrl) };
 }
 
+// The capture tray: every capture still open, and the ones decided in the
+// last day, newest first. No signed link: the result sheet asks for one.
+export async function listCaptures(db, organisationId, { now = new Date(), limit = 100 } = {}) {
+  const since = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  return db.select().from(captures).where(and(
+    eq(captures.organisationId, organisationId),
+    or(isNull(captures.decision), gt(captures.decidedAt, since)),
+  )).orderBy(desc(captures.createdAt)).limit(limit);
+}
+
+// A custom field's value from the text on the form. Undefined: Flow cannot
+// set this field from text (a person field), so it is left as it is.
+function fieldValue(field, text) {
+  const bad = () => invalid(`${field.name}: "${text}" does not fit this field`);
+  switch (field.type) {
+    case 'number': {
+      const number = Number(text.replace(/,/g, ''));
+      if (!Number.isFinite(number)) throw bad();
+      return number;
+    }
+    case 'date': {
+      const date = readDate(text);
+      if (!date) throw bad();
+      return date.toISOString().slice(0, 10);
+    }
+    case 'dropdown': {
+      const option = field.options.find((o) => !o.archived && o.name.toLowerCase() === text.toLowerCase());
+      if (!option) throw bad();
+      return option.id;
+    }
+    case 'checkbox':
+      if (/^(yes|y|true|x|✓|1)$/i.test(text)) return true;
+      if (/^(no|n|false|0)$/i.test(text)) return false;
+      throw bad();
+    case 'person':
+      return undefined;
+    default:
+      return text;
+  }
+}
+
+// Apply writes what Flow owns: the job's custom fields, each with its own
+// event (who, when, from and to). A field the work system owns (due date,
+// shade) stays there; the result sheet links to the job in that system.
+// Every value is checked before the first write, so a bad one writes none.
+async function applyToJob(db, organisationId, proposal, personId) {
+  if (proposal?.action !== 'update' || !proposal.jobId) return;
+  const at = proposal.jobId.indexOf(':');
+  const job = { sourceSystem: proposal.jobId.slice(0, at), sourceJobRef: proposal.jobId.slice(at + 1) };
+  const fields = new Map((await listFields(db, organisationId)).map((field) => [`custom_${field.id}`, field]));
+  const writes = proposal.changes
+    .filter((change) => fields.has(change.field))
+    .map((change) => ({ field: fields.get(change.field), value: fieldValue(fields.get(change.field), change.to) }))
+    .filter((write) => write.value !== undefined);
+  for (const { field, value } of writes) {
+    await setJobFieldValue(db, organisationId, { ...job, fieldId: field.id, value }, { personId });
+  }
+}
+
 async function deletePhoto(db, storage, row) {
   if (row.photoDeletedAt) return row;
   try {
@@ -284,9 +344,10 @@ async function deletePhoto(db, storage, row) {
   return next ?? row;
 }
 
-// Records the person's decision and deletes the photo. It does not change a
-// job: matching and applying a change are later slices. The same decision
-// again deletes the photo if that was still waiting.
+// Records the person's decision and deletes the photo. Apply first writes
+// the job's custom fields (applyToJob). The same decision again writes the
+// same values, which changes nothing, and deletes the photo if that was
+// still waiting.
 export async function decideCapture(db, storage, organisationId, id, decision, { personId, baseUrl } = {}) {
   if (!CAPTURE_DECISIONS.includes(decision)) throw invalid('decision must be applied or discarded');
   const current = await byId(db, organisationId, id);
@@ -296,6 +357,7 @@ export async function decideCapture(db, storage, organisationId, id, decision, {
     return { capture: row, link: null };
   }
   if (current.state !== 'ready') throw new FlowError('conflict', 'this capture is not ready');
+  if (decision === 'applied') await applyToJob(db, organisationId, current.proposal, personId ?? null);
   const [row] = await db.update(captures).set({
     state: 'done',
     decision,

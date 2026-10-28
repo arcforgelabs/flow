@@ -4,7 +4,8 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { after, before, describe, test } from 'node:test';
 import { matchJobs, proposeChange, readDate } from '../server/core/capture-match.js';
-import { matchCapture, typeProposal, uploadCapture } from '../server/core/captures.js';
+import { decideCapture, listCaptures, matchCapture, typeProposal, uploadCapture } from '../server/core/captures.js';
+import { createField, listJobFieldValues } from '../server/core/custom-fields.js';
 import { createOrganisation } from '../server/core/directory.js';
 import { createLocalObjectStorage } from '../server/core/storage.js';
 import { freshDatabase, skipWithoutDatabase } from './support/db.js';
@@ -106,5 +107,30 @@ describe('matching a stored capture', { skip: skipWithoutDatabase }, () => {
       () => matchCapture(handle.db, storage, organisationId, capture.id, { baseUrl: 'http://127.0.0.1', jobs: JOBS, fields: ['not', 'an', 'object'] }),
       /fields must be an object/,
     );
+  });
+
+  test('Apply writes the job\'s custom fields, and a value that does not fit writes none', async () => {
+    const rush = await createField(handle.db, organisationId, { name: 'Rush', type: 'dropdown', options: [{ name: 'Yes' }, { name: 'No' }] });
+    const tray = await createField(handle.db, organisationId, { name: 'Tray', type: 'number' });
+    const job = { action: 'update', jobId: 'seazona:4821' };
+    const bad = await stored('apply-bad');
+    await typeProposal(handle.db, storage, organisationId, bad.id, { ...job, changes: [
+      { field: `custom_${rush.id}`, to: 'yes' }, { field: `custom_${tray.id}`, to: 'twelve' },
+    ] }, { baseUrl: 'http://127.0.0.1' });
+    await assert.rejects(() => decideCapture(handle.db, storage, organisationId, bad.id, 'applied'), /Tray: "twelve" does not fit/);
+    assert.deepEqual(await listJobFieldValues(handle.db, organisationId), []);
+
+    const good = await stored('apply-good');
+    await typeProposal(handle.db, storage, organisationId, good.id, { ...job, changes: [
+      { field: `custom_${rush.id}`, to: 'yes' }, { field: `custom_${tray.id}`, to: '12' }, { field: 'shade', to: 'A2' },
+    ] }, { baseUrl: 'http://127.0.0.1' });
+    const done = await decideCapture(handle.db, storage, organisationId, good.id, 'applied');
+    assert.equal(done.capture.state, 'done');
+    const values = await listJobFieldValues(handle.db, organisationId);
+    assert.deepEqual(values.map((v) => [v.sourceSystem, v.sourceJobRef, v.value]).sort(), [
+      ['seazona', '4821', 12], ['seazona', '4821', rush.options[0].id],
+    ].sort());
+    const tray2 = await listCaptures(handle.db, organisationId);
+    assert.ok(tray2.some((c) => c.id === good.id && c.decision === 'applied'));
   });
 });

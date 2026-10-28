@@ -208,10 +208,11 @@ update and the person picks the job. No job proposes a new one. A job is
 | Route | Who | What |
 | --- | --- | --- |
 | `POST /api/captures` | anyone signed in | The photo as the body (`image/jpeg`, `png`, `webp` or `heic`, 12 MB at most) and an `Idempotency-Key` header. `X-Flow-Capture-Source` is `phone`, `desk` or `api` (the default). 201: the capture. With the reader on it is `reading` until the read finishes; with the reader off it is `problem` ("reader turned off") and a person types it. The same key again is 200 and the first photo, even when the body differs |
+| `GET /api/captures` | anyone signed in | The tray: every open capture and the ones decided in the last day, newest first, with no link |
 | `GET /api/captures/:id` | anyone signed in | The capture and a fresh signed link, or no link once the photo is gone. A read capture with no match is matched first; a typed proposal is kept |
 | `POST /api/captures/:id/match` | anyone signed in | Match again. `{ fields: { case_number, practice, ... } }` matches typed fields instead of the read, also for a `problem` capture, and replaces the proposal |
 | `POST /api/captures/:id/proposal` | anyone signed in | Type the change (`action` of `update`, `create` or `note`, `jobId`, and `changes`). It does not change a job |
-| `POST /api/captures/:id/decision` | anyone signed in | `{ decision: "applied" or "discarded" }`. Records who decided and deletes the photo. It does not change a job. The same decision again is safe |
+| `POST /api/captures/:id/decision` | anyone signed in | `{ decision: "applied" or "discarded" }`. Records who decided and deletes the photo. `applied` first writes the proposal's custom fields (`custom_<field id>`) to its job, each with a field event; a value that does not fit its field writes none. Fields the work system owns are not written. The same decision again is safe |
 | `GET /api/captures/file?token=` | the signed link | The photo. No session. The checksum is checked first. An S3 link is fetched from S3, not from this route |
 
 Flow uses no other database: no document store, key-value store or cache

@@ -18,6 +18,12 @@ export const SCREENS = [
     await page.locator('.fx-job').first().click();
     await page.waitForLoadState('networkidle');
   } },
+  { id: 'captures', path: '/captures', ready: '.fx-captures__row', list: true },
+  { id: 'capture-sheet', path: '/captures', ready: '.fx-captures__row', prepare: async (page) => {
+    await page.locator('.fx-captures__row').first().click();
+    await page.locator('.fx-capture').waitFor();
+    await page.waitForLoadState('networkidle');
+  } },
   { id: 'invoices-ready', path: '/invoices', ready: '.fx-tabs', list: true },
   { id: 'invoices-pending', path: '/invoices', ready: '.fx-tabs', prepare: tab('Pending'), list: true },
   // Back on the list (a reload): the page opens on the tab used last.

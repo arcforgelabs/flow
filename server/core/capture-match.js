@@ -17,8 +17,9 @@ export const SHOWN_SCORE = 20;
 const SHOWN_MAX = 5;
 const DATE_DAYS = 3;
 
-// Fields that name the job. They are not proposed as changes to it.
-const IDENTITY = new Set(['case_number', 'practice']);
+// Fields that find the job (the work is its lines). They are not proposed as
+// changes to a job that exists.
+const IDENTITY = new Set(['case_number', 'practice', 'work']);
 const MISREAD = { O: '0', Q: '0', D: '0', I: '1', L: '1', S: '5', B: '8', Z: '2', G: '6' };
 const NAME_NOISE = new Set(['dr', 'dental', 'dentist', 'dentistry', 'clinic', 'surgery', 'practice', 'centre', 'center', 'pty', 'ltd', 'the', 'and', 'of']);
 

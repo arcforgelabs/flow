@@ -1,6 +1,6 @@
 import express from 'express';
 import {
-  MAX_PHOTO_BYTES, captureView, decideCapture, matchCapture, readCapture, readCapturePhoto, typeProposal, uploadCapture,
+  MAX_PHOTO_BYTES, captureView, decideCapture, listCaptures, matchCapture, readCapture, readCapturePhoto, typeProposal, uploadCapture,
 } from '../core/captures.js';
 import { FlowError } from '../core/errors.js';
 import { resolveOrganisation } from './invoicing.js';
@@ -83,6 +83,11 @@ export function createCapturesRouter({
   }));
 
   router.use(express.json({ limit: '32kb' }));
+
+  router.get('/', ...signedIn, handle(async (req, res) => {
+    const rows = await listCaptures(db, await organisationOf(req));
+    res.json({ ok: true, captures: rows.map((row) => captureView(row)) });
+  }));
 
   router.get('/:id', ...signedIn, handle(async (req, res) => {
     const organisationId = await organisationOf(req);

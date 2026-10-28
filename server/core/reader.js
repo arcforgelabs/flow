@@ -4,6 +4,7 @@ import { callCostMicros } from './ai.js';
 import { captures, jobFields } from '../db/schema.js';
 import { FlowError } from './errors.js';
 import { enqueueJob, runNextJob } from './queue.js';
+import { JOB_FIELDS } from '../ui/capture-fields.js';
 
 // The vision reader. A small model reads every capture. A larger model reads
 // again only when case number, practice or work is below the sure line.
@@ -20,16 +21,6 @@ export const CAPTURE_READ_KIND = 'capture.read';
 const CALLS = 3;
 const VALUE_MAX = 2000;
 
-export const JOB_FIELDS = Object.freeze([
-  Object.freeze({ key: 'case_number', label: 'Case number', needed: true }),
-  Object.freeze({ key: 'practice', label: 'Practice', needed: true }),
-  Object.freeze({ key: 'dentist', label: 'Dentist', needed: false }),
-  Object.freeze({ key: 'work', label: 'Work', needed: true }),
-  Object.freeze({ key: 'teeth', label: 'Teeth', needed: false }),
-  Object.freeze({ key: 'shade', label: 'Shade', needed: false }),
-  Object.freeze({ key: 'due_date', label: 'Due date', needed: false }),
-  Object.freeze({ key: 'notes', label: 'Notes', needed: false }),
-]);
 
 const NEEDED = new Set(JOB_FIELDS.filter((field) => field.needed).map((field) => field.key));
 
