@@ -13,6 +13,7 @@
 // long press opens Move to. With a keyboard, the job's panel has the same moves.
 
 import { bulkBar } from '/assets/ui/bulk-bar.js';
+import { captureButton } from '/assets/ui/captures.js';
 import { columnTable, dateCell, fieldColumn, onRightButton, personCell, rowCells, viewSaver } from '/assets/ui/columns.js';
 import { lucide } from '/assets/ui/custom-fields.js';
 import { formatCents } from '/assets/ui/invoicing.js';
@@ -126,7 +127,9 @@ export async function renderJobs(main, ui) {
   // In the list, ticked rows get the same floating bar as Invoices.
   const bulk = bulkBar(ui, { label: 'Ticked jobs' });
   const frame = listFrame(main, host);
-  main.append(...listHead('Jobs', { views: views.element, controls, end: [find.element, toggle] }).nodes, frame.element, bulk.element);
+  // A form photo from the Jobs page; Capture lists it with its result.
+  const shoot = captureButton(ui, { icon: true, added: () => ui.toast('Sent to Capture.', 'success') });
+  main.append(...listHead('Jobs', { views: views.element, controls, end: [find.element, toggle, ...shoot.nodes] }).nodes, frame.element, bulk.element);
 
   const drawToggle = () => toggle.replaceChildren(...[['board', 'Board'], ['list', 'List']].map(([id, label]) => h('button', {
     type: 'button', role: 'radio', class: 'fx-seg__item', 'aria-checked': String(state.view.layout === id),

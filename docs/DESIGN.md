@@ -250,6 +250,7 @@ before changing it on a phone: the component reads those rules.
 | `dialog({ title, body, confirm, tone })` | `server/ui/kit.js` | Dialog | A confirm step before an action that is hard to undo |
 | `pickOne({ title, intro, label, find, load, item, empty, confirm, remote })` | `server/ui/kit.js` | Pick | Pick one row of a long list in a dialog, with a search box (New invoice from a job, Link a Xero client) |
 | `holdButton(button, ms)` | `server/ui/kit.js` | HoldButton | A button that waits between presses (Xero, Seazona) and shows the time left |
+| `captureButton(ui, { icon, added, done })` | `server/ui/captures.js` | CaptureButton | The camera button that sends a form photo to Capture: the phone's own camera, or files on a desk. `icon: true` in a toolbar (Jobs); `send(files)` for a drop or paste |
 | `settingRow({ label, hint, help, control })`, `sectionTitle`, `.fx-setting` | `server/ui/kit.js` | SettingRow | One setting row: short name, ? help, the control at the right |
 | `tileCard({ href, mark, title, status, blurb, meta, action, row })`, `tileSection(title, cards, { href, more })` | `server/ui/kit.js` | Tiles | Cards that open a page. `row: true` with `tileSection`: one-line cards, three columns, like Claude's Customize categories (Rules). Without `row`: the large card (Integrations). On a phone, both are one 56px row with › |
 | `crumbs([href, label]…, here)` | `server/ui/kit.js` | Crumbs | The trail above a page one level down (Rules › Invoices, Integrations › Xero) |

@@ -3,7 +3,9 @@
 // phone's own camera. Reading runs on the server, so the person can shoot the
 // next form at once. The tray lists the captures; a row opens the result
 // sheet: the photo, the job, only the fields that change (old, then new;
-// amber when the reader was not sure) and Apply at the foot.
+// amber when the reader was not sure) and Apply at the foot. On a desk a
+// photo can also be dropped or pasted on the page, and the sheet takes J, K
+// and Enter.
 import { lucide } from '/assets/ui/custom-fields.js';
 import { JOB_FIELDS, SURE_LINE } from '/assets/ui/capture-fields.js';
 import { isPhone } from '/assets/ui/mobile.js';
@@ -13,6 +15,7 @@ import { recordBar } from '/assets/ui/sidecar.js';
 const LONG_SIDE = 1600;
 const POLL_MS = 3000;
 const POLL_MAX = 40;
+const OFF = 'Capture needs a file store (FLOW_STORAGE).';
 const STATE = { reading: 'Reading', ready: 'Ready', problem: 'Problem', done: 'Done' };
 const TONE = { reading: 'info', ready: 'success', problem: 'warn', done: 'mute' };
 
@@ -45,13 +48,60 @@ async function shrink(file) {
   }
 }
 
-export async function renderCaptures(main, ui) {
-  const { h, flow, toast, notice, listHead, listFrame } = ui;
+async function upload(file) {
+  const body = await shrink(file);
+  const token = await window.Clerk.session?.getToken();
+  const res = await fetch('/api/captures', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': body.type || 'image/jpeg',
+      'Idempotency-Key': crypto.randomUUID(),
+      'X-Flow-Capture-Source': isPhone() ? 'phone' : 'desk',
+    },
+    body,
+  });
+  const answer = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(res.status === 404 ? OFF : answer.error || `HTTP ${res.status}`);
+  return answer.capture;
+}
+
+// The Capture button, on Capture and in the Jobs toolbar: one tap opens the
+// phone's own camera; a desk picks files. `send(files)` uploads each image
+// and calls `added(capture)`, then `done()`.
+export function captureButton(ui, { icon = false, added = () => {}, done = () => {} } = {}) {
+  const { h, toast } = ui;
   const picker = h('input', { type: 'file', accept: 'image/*', hidden: true });
   if (isPhone()) picker.setAttribute('capture', 'environment');
   else picker.multiple = true;
-  const shoot = h('button', { class: 'fx-btn fx-btn--primary fx-capture__shoot', type: 'button', onclick: () => picker.click() }, lucide(h, 'camera'), 'Capture');
-  const head = listHead('Captures', { actions: [shoot, picker] });
+  const button = icon
+    ? h('button', { class: 'fx-btn fx-btn--ghost fx-btn--icon fx-capture__shoot', type: 'button', 'aria-label': 'Capture', title: 'Capture', onclick: () => picker.click() }, lucide(h, 'camera'))
+    : h('button', { class: 'fx-btn fx-btn--primary fx-capture__shoot', type: 'button', onclick: () => picker.click() }, lucide(h, 'camera'), 'Capture');
+  const send = async (files) => {
+    for (const file of [...files].filter((f) => f.type.startsWith('image/'))) {
+      try {
+        added(await upload(file));
+      } catch (error) {
+        toast(error.message, 'danger', { stay: true });
+      }
+    }
+    done();
+  };
+  picker.addEventListener('change', () => {
+    const files = [...picker.files];
+    picker.value = '';
+    send(files);
+  });
+  return { nodes: [button, picker], send };
+}
+
+export async function renderCaptures(main, ui) {
+  const { h, flow, toast, notice, listHead, listFrame } = ui;
+  const shoot = captureButton(ui, {
+    added: (capture) => { rows = [capture, ...rows]; draw(); },
+    done: () => { polls = 0; load(); },
+  });
+  const head = listHead('Captures', { actions: shoot.nodes });
   const list = h('ul', { class: 'fx-captures', 'aria-label': 'Captures' });
   const frame = listFrame(main, list);
   main.append(...head.nodes, frame.element);
@@ -76,48 +126,30 @@ export async function renderCaptures(main, ui) {
       draw();
     } catch (error) {
       const off = error.status === 404;
-      list.replaceChildren(h('li', {}, notice(off ? 'Capture needs a file store (FLOW_STORAGE).' : error.message, off ? 'warn' : 'danger', off ? 'Off.' : null)));
+      list.replaceChildren(h('li', {}, notice(off ? OFF : error.message, off ? 'warn' : 'danger', off ? 'Off.' : null)));
       return;
     }
     clearTimeout(timer);
-    if (rows.some((c) => c.state === 'reading') && polls < POLL_MAX && main.isConnected) {
+    if (rows.some((c) => c.state === 'reading') && polls < POLL_MAX && frame.element.isConnected) {
       polls += 1;
       timer = setTimeout(load, POLL_MS);
     }
   }
 
-  async function upload(file) {
-    const body = await shrink(file);
-    const token = await window.Clerk.session?.getToken();
-    const res = await fetch('/api/captures', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': body.type || 'image/jpeg',
-        'Idempotency-Key': crypto.randomUUID(),
-        'X-Flow-Capture-Source': isPhone() ? 'phone' : 'desk',
-      },
-      body,
-    });
-    const answer = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(answer.error || `HTTP ${res.status}`);
-    return answer.capture;
-  }
-
-  picker.addEventListener('change', async () => {
-    const files = [...picker.files];
-    picker.value = '';
-    for (const file of files) {
-      try {
-        rows = [await upload(file), ...rows.filter(Boolean)];
-        draw();
-      } catch (error) {
-        toast(error.message, 'danger', { stay: true });
-      }
-    }
-    polls = 0;
-    load();
+  // A desk: a photo dropped on the list or pasted on the page is a capture.
+  // `main` stays across pages, so the listeners hang on this page's frame.
+  frame.element.addEventListener('dragover', (event) => { if (event.dataTransfer?.types.includes('Files')) event.preventDefault(); });
+  frame.element.addEventListener('drop', (event) => {
+    if (!event.dataTransfer?.files.length) return;
+    event.preventDefault();
+    shoot.send(event.dataTransfer.files);
   });
+  const paste = (event) => {
+    if (!frame.element.isConnected) { document.removeEventListener('paste', paste); return; }
+    const files = [...(event.clipboardData?.files ?? [])];
+    if (files.length && !document.querySelector('dialog[open]')) shoot.send(files);
+  };
+  document.addEventListener('paste', paste);
 
   // The result sheet: a dialog on a desk, the whole screen on a phone (the
   // job panel's layout: record bar, body, the action fixed at the foot).
@@ -208,7 +240,7 @@ export async function renderCaptures(main, ui) {
     const actions = ready ? [
       h('button', { class: 'fx-btn', type: 'button', onclick: () => decide('discarded') }, 'Discard'),
       match.jobs.length || proposal.action === 'update' ? h('button', { class: 'fx-btn', type: 'button', onclick: pickJob }, 'Other job') : null,
-      h('button', { class: 'fx-btn fx-btn--primary', type: 'button', disabled: proposal.action === 'update' && !proposal.jobId, onclick: () => decide('applied') }, 'Apply'),
+      h('button', { class: 'fx-btn fx-btn--primary', type: 'button', autofocus: true, disabled: proposal.action === 'update' && !proposal.jobId, onclick: () => decide('applied') }, 'Apply'),
     ] : capture.state === 'problem' ? [h('button', { class: 'fx-btn', type: 'button', onclick: () => decide('discarded') }, 'Discard')] : [];
 
     element.append(
@@ -228,6 +260,14 @@ export async function renderCaptures(main, ui) {
         ready && !proposal.changes.length ? h('p', { class: 'fx-dim' }, 'No change.') : null,
         h('div', { class: 'fx-task__actions' }, actions))));
     element.addEventListener('click', (event) => { if (event.target === element) close(); });
+    // Keys: J next, K previous (not while typing). Apply has the focus, so
+    // Enter applies.
+    element.addEventListener('keydown', (event) => {
+      if (event.target.closest('input, textarea, select') || event.metaKey || event.ctrlKey || event.altKey) return;
+      if (event.key !== 'j' && event.key !== 'k') return;
+      event.preventDefault();
+      step(event.key === 'j' ? 1 : -1);
+    });
     element.addEventListener('close', () => element.remove());
     document.body.append(element);
     element.showModal();
