@@ -1,6 +1,7 @@
 {
  "desk-chromium-harbour-light/toolbar": {
   "moved": [
+   "captures",
    "jobs-list",
    "price-list",
    "reconcile"
@@ -8,6 +9,7 @@
  },
  "desk-chromium-meridian-dark/toolbar": {
   "moved": [
+   "captures",
    "jobs-list",
    "price-list",
    "reconcile"
@@ -15,6 +17,7 @@
  },
  "desk-chromium-meridian-light/toolbar": {
   "moved": [
+   "captures",
    "jobs-list",
    "price-list",
    "reconcile"
@@ -22,6 +25,7 @@
  },
  "desk-webkit-harbour-light/toolbar": {
   "moved": [
+   "captures",
    "jobs-list",
    "price-list",
    "reconcile"
@@ -29,6 +33,7 @@
  },
  "desk-webkit-meridian-dark/toolbar": {
   "moved": [
+   "captures",
    "jobs-list",
    "price-list",
    "reconcile"
@@ -36,6 +41,7 @@
  },
  "desk-webkit-meridian-light/toolbar": {
   "moved": [
+   "captures",
    "jobs-list",
    "price-list",
    "reconcile"
@@ -144,6 +150,7 @@
  },
  "phone-chromium-harbour-light/toolbar": {
   "moved": [
+   "captures",
    "jobs-list",
    "price-list",
    "reconcile"
@@ -248,6 +255,7 @@
  },
  "phone-chromium-meridian-dark/toolbar": {
   "moved": [
+   "captures",
    "jobs-list",
    "price-list",
    "reconcile"
@@ -353,6 +361,7 @@
  },
  "phone-chromium-meridian-light/toolbar": {
   "moved": [
+   "captures",
    "jobs-list",
    "price-list",
    "reconcile"
@@ -411,6 +420,7 @@
  },
  "phone-l-chromium-harbour-light/toolbar": {
   "moved": [
+   "captures",
    "jobs-list",
    "price-list",
    "reconcile"
@@ -469,6 +479,7 @@
  },
  "phone-l-chromium-meridian-dark/toolbar": {
   "moved": [
+   "captures",
    "jobs-list",
    "price-list",
    "reconcile"
@@ -527,6 +538,7 @@
  },
  "phone-l-chromium-meridian-light/toolbar": {
   "moved": [
+   "captures",
    "jobs-list",
    "price-list",
    "reconcile"
@@ -585,6 +597,7 @@
  },
  "phone-l-webkit-harbour-light/toolbar": {
   "moved": [
+   "captures",
    "jobs-list",
    "price-list",
    "reconcile"
@@ -643,6 +656,7 @@
  },
  "phone-l-webkit-meridian-dark/toolbar": {
   "moved": [
+   "captures",
    "jobs-list",
    "price-list",
    "reconcile"
@@ -701,6 +715,7 @@
  },
  "phone-l-webkit-meridian-light/toolbar": {
   "moved": [
+   "captures",
    "jobs-list",
    "price-list",
    "reconcile"
@@ -759,6 +774,7 @@
  },
  "phone-s-chromium-harbour-light/toolbar": {
   "moved": [
+   "captures",
    "jobs-list",
    "price-list",
    "reconcile"
@@ -817,6 +833,7 @@
  },
  "phone-s-chromium-meridian-dark/toolbar": {
   "moved": [
+   "captures",
    "jobs-list",
    "price-list",
    "reconcile"
@@ -875,6 +892,7 @@
  },
  "phone-s-chromium-meridian-light/toolbar": {
   "moved": [
+   "captures",
    "jobs-list",
    "price-list",
    "reconcile"
@@ -933,6 +951,7 @@
  },
  "phone-s-webkit-harbour-light/toolbar": {
   "moved": [
+   "captures",
    "jobs-list",
    "price-list",
    "reconcile"
@@ -991,6 +1010,7 @@
  },
  "phone-s-webkit-meridian-dark/toolbar": {
   "moved": [
+   "captures",
    "jobs-list",
    "price-list",
    "reconcile"
@@ -1049,6 +1069,7 @@
  },
  "phone-s-webkit-meridian-light/toolbar": {
   "moved": [
+   "captures",
    "jobs-list",
    "price-list",
    "reconcile"
@@ -1157,6 +1178,7 @@
  },
  "phone-webkit-harbour-light/toolbar": {
   "moved": [
+   "captures",
    "jobs-list",
    "price-list",
    "reconcile"
@@ -1261,6 +1283,7 @@
  },
  "phone-webkit-meridian-dark/toolbar": {
   "moved": [
+   "captures",
    "jobs-list",
    "price-list",
    "reconcile"
@@ -1366,6 +1389,7 @@
  },
  "phone-webkit-meridian-light/toolbar": {
   "moved": [
+   "captures",
    "jobs-list",
    "price-list",
    "reconcile"
@@ -1375,6 +1399,12 @@
   "small": 17
  },
  "tablet-chromium-harbour-light/automations": {
+  "small": 2
+ },
+ "tablet-chromium-harbour-light/capture-sheet": {
+  "small": 2
+ },
+ "tablet-chromium-harbour-light/captures": {
   "small": 2
  },
  "tablet-chromium-harbour-light/custom-fields": {
@@ -1439,6 +1469,7 @@
  },
  "tablet-chromium-harbour-light/toolbar": {
   "moved": [
+   "captures",
    "jobs-list",
    "price-list",
    "reconcile"
@@ -1448,6 +1479,12 @@
   "small": 17
  },
  "tablet-chromium-meridian-dark/automations": {
+  "small": 2
+ },
+ "tablet-chromium-meridian-dark/capture-sheet": {
+  "small": 2
+ },
+ "tablet-chromium-meridian-dark/captures": {
   "small": 2
  },
  "tablet-chromium-meridian-dark/custom-fields": {
@@ -1512,6 +1549,7 @@
  },
  "tablet-chromium-meridian-dark/toolbar": {
   "moved": [
+   "captures",
    "jobs-list",
    "price-list",
    "reconcile"
@@ -1521,6 +1559,12 @@
   "small": 17
  },
  "tablet-chromium-meridian-light/automations": {
+  "small": 2
+ },
+ "tablet-chromium-meridian-light/capture-sheet": {
+  "small": 2
+ },
+ "tablet-chromium-meridian-light/captures": {
   "small": 2
  },
  "tablet-chromium-meridian-light/custom-fields": {
@@ -1585,6 +1629,7 @@
  },
  "tablet-chromium-meridian-light/toolbar": {
   "moved": [
+   "captures",
    "jobs-list",
    "price-list",
    "reconcile"
@@ -1594,6 +1639,12 @@
   "small": 17
  },
  "tablet-webkit-harbour-light/automations": {
+  "small": 2
+ },
+ "tablet-webkit-harbour-light/capture-sheet": {
+  "small": 2
+ },
+ "tablet-webkit-harbour-light/captures": {
   "small": 2
  },
  "tablet-webkit-harbour-light/custom-fields": {
@@ -1658,6 +1709,7 @@
  },
  "tablet-webkit-harbour-light/toolbar": {
   "moved": [
+   "captures",
    "jobs-list",
    "price-list",
    "reconcile"
@@ -1667,6 +1719,12 @@
   "small": 17
  },
  "tablet-webkit-meridian-dark/automations": {
+  "small": 2
+ },
+ "tablet-webkit-meridian-dark/capture-sheet": {
+  "small": 2
+ },
+ "tablet-webkit-meridian-dark/captures": {
   "small": 2
  },
  "tablet-webkit-meridian-dark/custom-fields": {
@@ -1731,6 +1789,7 @@
  },
  "tablet-webkit-meridian-dark/toolbar": {
   "moved": [
+   "captures",
    "jobs-list",
    "price-list",
    "reconcile"
@@ -1740,6 +1799,12 @@
   "small": 17
  },
  "tablet-webkit-meridian-light/automations": {
+  "small": 2
+ },
+ "tablet-webkit-meridian-light/capture-sheet": {
+  "small": 2
+ },
+ "tablet-webkit-meridian-light/captures": {
   "small": 2
  },
  "tablet-webkit-meridian-light/custom-fields": {
@@ -1804,6 +1869,7 @@
  },
  "tablet-webkit-meridian-light/toolbar": {
   "moved": [
+   "captures",
    "jobs-list",
    "price-list",
    "reconcile"

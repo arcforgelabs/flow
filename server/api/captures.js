@@ -1,13 +1,15 @@
 import express from 'express';
 import {
-  MAX_PHOTO_BYTES, captureView, decideCapture, readCapture, readCapturePhoto, typeProposal, uploadCapture,
+  MAX_PHOTO_BYTES, captureView, decideCapture, listCaptures, matchCapture, readCapture, readCapturePhoto, typeProposal, uploadCapture,
 } from '../core/captures.js';
 import { FlowError } from '../core/errors.js';
 import { resolveOrganisation } from './invoicing.js';
 
 // Photo capture (server/core/captures.js). A signed-in person uploads one
 // photo. The reader, when it is on, reads it after the response. When it is
-// off, the capture is a problem a person can type. Logs from this router are
+// off, the capture is a problem a person can type. A read capture is matched
+// to a job on the Jobs board the first time it is opened, and again when a
+// person types the fields. Logs from this router are
 // a capture id and an error code, never the photo or the fields.
 
 const ERROR_STATUS = {
@@ -25,7 +27,10 @@ function respond(res, error) {
   return res.status(ERROR_STATUS[error.code] ?? 400).json({ ok: false, code: error.code, error: error.message });
 }
 
-export function createCapturesRouter({ db, storage, personAuth, log = console, publicOrigin = null, reader = null }) {
+// `jobsFor(organisationId)` answers the Jobs board's jobs for the matcher.
+export function createCapturesRouter({
+  db, storage, personAuth, log = console, publicOrigin = null, reader = null, jobsFor = async () => [],
+}) {
   const router = express.Router();
   const signedIn = [personAuth.requireSession];
 
@@ -79,8 +84,25 @@ export function createCapturesRouter({ db, storage, personAuth, log = console, p
 
   router.use(express.json({ limit: '32kb' }));
 
+  router.get('/', ...signedIn, handle(async (req, res) => {
+    const rows = await listCaptures(db, await organisationOf(req));
+    res.json({ ok: true, captures: rows.map((row) => captureView(row)) });
+  }));
+
   router.get('/:id', ...signedIn, handle(async (req, res) => {
-    const result = await readCapture(db, storage, await organisationOf(req), req.params.id, origin(req));
+    const organisationId = await organisationOf(req);
+    let result = await readCapture(db, storage, organisationId, req.params.id, origin(req));
+    if (result.capture.state === 'ready' && result.capture.read && !result.capture.match) {
+      result = await matchCapture(db, storage, organisationId, req.params.id, { jobs: await jobsFor(organisationId), baseUrl: origin(req) });
+    }
+    res.json({ ok: true, capture: captureView(result.capture, result.link) });
+  }));
+
+  router.post('/:id/match', ...signedIn, handle(async (req, res) => {
+    const organisationId = await organisationOf(req);
+    const result = await matchCapture(db, storage, organisationId, req.params.id, {
+      jobs: await jobsFor(organisationId), fields: req.body?.fields ?? null, baseUrl: origin(req),
+    });
     res.json({ ok: true, capture: captureView(result.capture, result.link) });
   }));
 

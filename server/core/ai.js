@@ -1,4 +1,5 @@
 import { FlowError } from './errors.js';
+import { SURE_LINE } from '../ui/capture-fields.js';
 
 // The AI port. One call reads one image and returns text. The vision reader
 // (server/core/reader.js) is the caller. A client implements readImage; this
@@ -98,7 +99,7 @@ function priceFrom(env, model, prefix) {
 
 function sureLineOf(env) {
   const raw = String(env.FLOW_READER_SURE_LINE ?? '').trim();
-  if (!raw) return 0.8;
+  if (!raw) return SURE_LINE;
   const value = Number(raw);
   if (!Number.isFinite(value) || value < 0 || value > 1) throw new Error('FLOW_READER_SURE_LINE must be a number from 0 to 1');
   return value;
