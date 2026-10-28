@@ -6,8 +6,8 @@
     "desktop": "r27/desktop.jpg",
     "phone": null,
     "steps": [
-      "Open Invoices, Ready. EV-READY is a shipped job the draft rule invoiced.",
-      "Open Automations. Draft when ready and Ready when drafted are on."
+      "Open Invoices, Ready, and find the shipped job the rule drafted.",
+      "Open Automations. Draft when ready is on: that is the rule that invoiced it."
     ]
   },
   {
@@ -17,8 +17,8 @@
     "desktop": "r28/desktop.jpg",
     "phone": "r28/phone.jpg",
     "steps": [
-      "Open Rules, Price codes. Seazona lines find their price item from the price list.",
-      "Open Jobs. The board columns are the work stages, and a shipped job opens with its practice."
+      "Open Rules, Price codes. Seazona lines find their price item from the list.",
+      "Open Jobs. The Shipped column is a work stage, and the job belongs to its practice."
     ]
   },
   {
