@@ -183,11 +183,22 @@ leaves captures off there too. Set `FLOW_STORAGE=local` with a writable
 `FLOW_STORAGE_DIR` when the photo should live on that machine. An S3 link is a presigned GET. Replit's client has no
 signed URL, so that link is a Flow link: Flow checks the signature, reads the
 bytes and checks the checksum before it sends them. Logs and error reports
-get a capture id and an error code, never the photo or the typed fields.
+get a capture id and an error code, never the photo or what was read or typed.
+The reader (`server/core/reader.js`) sends the photo through one AI port
+(`server/core/ai.js`). The only client is Amazon Bedrock in Sydney or
+Melbourne, and only with an `au.` inference profile. The first model reads
+every capture. The larger model reads again only when case number, practice
+or work is below the sure line (0.8 unless `FLOW_READER_SURE_LINE` says
+otherwise). The model ids, region and keys come from the environment. The
+capture stores the fields, the model, the token counts and the cost in
+micros. A call that fails is tried twice more, then the capture is a problem
+a person can type. No credentials and a turned-off reader do the same, with
+the reason "reader turned off". The model does not see the jobs list and
+does not write.
 
 | Route | Who | What |
 | --- | --- | --- |
-| `POST /api/captures` | anyone signed in | The photo as the body (`image/jpeg`, `png`, `webp` or `heic`, 12 MB at most) and an `Idempotency-Key` header. `X-Flow-Capture-Source` is `phone`, `desk` or `api` (the default). 201: a capture in state `ready` with an empty proposal. The same key again is 200 and the first photo, even when the body differs |
+| `POST /api/captures` | anyone signed in | The photo as the body (`image/jpeg`, `png`, `webp` or `heic`, 12 MB at most) and an `Idempotency-Key` header. `X-Flow-Capture-Source` is `phone`, `desk` or `api` (the default). 201: the capture. With the reader on it is `reading` until the read finishes; with the reader off it is `problem` ("reader turned off") and a person types it. The same key again is 200 and the first photo, even when the body differs |
 | `GET /api/captures/:id` | anyone signed in | The capture and a fresh signed link, or no link once the photo is gone |
 | `POST /api/captures/:id/proposal` | anyone signed in | Type the change (`action` of `update`, `create` or `note`, and `changes`). It does not change a job |
 | `POST /api/captures/:id/decision` | anyone signed in | `{ decision: "applied" or "discarded" }`. Records who decided and deletes the photo. It does not change a job. The same decision again is safe |
@@ -216,7 +227,7 @@ installation low maintenance.
 | One queued or running job per kind and key; a job is finished only by the worker that holds its lease. | A partial unique index on `background_jobs`; `server/core/queue.js` |
 | Every write to another system has an outbox row first, with a unique idempotency key. | `outbox`; `server/core/outbox.js` |
 | One open review item per kind and record; a closed one records who chose what. | A partial unique index and a check on `review_items`; `server/core/review.js` |
-| One capture per idempotency key in an organisation. The photo bytes are deleted on a decision, and a capture with no decision is deleted after 7 days. | `captures`; `server/core/captures.js` |
+| One capture per idempotency key in an organisation. The photo bytes are deleted on a decision, and a capture with no decision is deleted after 7 days. A form is read only through the AI port, and only on an `au.` profile in Sydney or Melbourne. | `captures`; `server/core/captures.js`; `server/core/reader.js` |
 
 ## Change the schema
 

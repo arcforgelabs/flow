@@ -3,11 +3,16 @@ import { and, eq, isNotNull, isNull, lt, sql } from 'drizzle-orm';
 import { CAPTURE_DECISIONS, captures } from '../db/schema.js';
 import { FlowError, notFound } from './errors.js';
 
+// Shown when the module is off or the keys are missing. Type it still works.
+const READER_OFF = 'reader turned off';
+
 // A capture is one photo of a handwritten lab form (docs/DATA_MODEL.md,
-// "Storage"). This slice does not call a model and does not change a job.
-// A new capture is `ready` with an empty proposal. A person can type the
-// proposal. Apply or Discard records that decision and deletes the photo.
-// A capture nobody decides is deleted after 7 days, photo included.
+// "Storage"). This does not change a job. The reader, when it is on, fills
+// `read` in the background (server/core/reader.js). When it is off, or the
+// keys are missing, the capture is `problem` ("reader turned off") and a
+// person can type the proposal. Apply or Discard records that decision and
+// deletes the photo. A capture nobody decides is deleted after 7 days,
+// photo included.
 //
 // Nothing here writes the photo, the typed fields or a patient name to a log.
 // Callers log a capture id and an error code only.
@@ -96,6 +101,7 @@ export function captureView(row, link = null) {
     fileSize: row.fileSize,
     fileSha256: row.fileSha256,
     proposal: row.proposal ?? { ...EMPTY_PROPOSAL, changes: [] },
+    read: row.read ?? null,
     problem: row.problem,
     decision: row.decision,
     decidedAt: row.decidedAt,
@@ -133,13 +139,22 @@ async function byIdempotency(db, organisationId, idempotencyKey) {
 // process stops after the bytes are stored and before the row is inserted,
 // the object is orphaned: its key is a random id and it is not a capture.
 export async function uploadCapture(db, storage, organisationId, {
-  bytes, contentType, idempotencyKey, source = 'api', personId, baseUrl,
+  bytes, contentType, idempotencyKey, source = 'api', personId, baseUrl, reader = null,
 }) {
   const photo = readPhoto(bytes, contentType);
   const key = readIdempotencyKey(idempotencyKey);
   const from = readSource(source);
   const existing = await byIdempotency(db, organisationId, key);
-  if (existing) return { capture: existing, created: false, link: linkFor(storage, existing, baseUrl) };
+  if (existing) {
+    // The read is queued after the row is inserted. A repeat of the same
+    // key starts it if that queue step did not finish. It does not read a
+    // capture that already has a result.
+    if (existing.state === 'reading' && reader?.on) {
+      const settled = await reader.schedule(existing);
+      return { capture: settled ?? existing, created: false, link: linkFor(storage, settled ?? existing, baseUrl) };
+    }
+    return { capture: existing, created: false, link: linkFor(storage, existing, baseUrl) };
+  }
 
   const id = randomUUID();
   const fileKey = `captures/${String(organisationId).toLowerCase()}/${id}`;
@@ -150,10 +165,11 @@ export async function uploadCapture(db, storage, organisationId, {
     throw new FlowError('storage_unavailable', 'the photo could not be stored');
   }
   try {
+    const reading = Boolean(reader?.on);
     const [row] = await db.insert(captures).values({
       id,
       organisationId,
-      state: 'ready',
+      state: reading ? 'reading' : 'problem',
       source: from,
       fileKey,
       fileType: photo.fileType,
@@ -161,9 +177,15 @@ export async function uploadCapture(db, storage, organisationId, {
       fileSha256: photo.fileSha256,
       idempotencyKey: key,
       proposal: { ...EMPTY_PROPOSAL, changes: [] },
+      problem: reading ? null : READER_OFF,
       createdBy: personId ?? null,
     }).onConflictDoNothing({ target: [captures.organisationId, captures.idempotencyKey] }).returning();
-    if (row) return { capture: row, created: true, link: linkFor(storage, row, baseUrl) };
+    if (row) {
+      // With background jobs off, schedule reads before it returns, so the
+      // response is the finished capture. With jobs on, the row stays `reading`.
+      const settled = reading ? await reader.schedule(row) : row;
+      return { capture: settled ?? row, created: true, link: linkFor(storage, settled ?? row, baseUrl) };
+    }
   } catch (error) {
     await storage.delete(fileKey).catch(() => {});
     if (error instanceof FlowError) throw error;

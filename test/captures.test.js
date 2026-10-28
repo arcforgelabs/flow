@@ -7,7 +7,7 @@ import { createApp } from '../server/app.js';
 import { invitePerson, seedFirstOwner } from '../server/auth/people.js';
 import { createPersonAuth } from '../server/auth/session.js';
 import {
-  CAPTURE_RETENTION_MS, MAX_PHOTO_BYTES, decideCapture, readPhoto, sweepCaptures, uploadCapture,
+  CAPTURE_RETENTION_MS, MAX_PHOTO_BYTES, decideCapture, readPhoto, sweepCaptures, typeProposal, uploadCapture,
 } from '../server/core/captures.js';
 import { createMonitoredLog } from '../server/core/monitoring.js';
 import {
@@ -253,7 +253,7 @@ describe('captures against PostgreSQL', { skip: skipWithoutDatabase }, () => {
 
   after(async () => handle?.close());
 
-  test('a photo becomes one ready capture, and deciding it deletes the photo', async () => {
+  test('a photo is stored, and with the reader off a person types it before deciding', async () => {
     const signedOut = await upload(PNG, 'form-1', null);
     assert.equal(signedOut.status, 401);
     const bad = await send('/api/captures', {
@@ -264,7 +264,9 @@ describe('captures against PostgreSQL', { skip: skipWithoutDatabase }, () => {
 
     const created = await upload(PNG, 'form-1', staffToken);
     assert.equal(created.status, 201, JSON.stringify(created.body));
-    assert.equal(created.body.capture.state, 'ready');
+    assert.equal(created.body.capture.state, 'problem');
+    assert.equal(created.body.capture.problem, 'reader turned off');
+    assert.equal(created.body.capture.read, null);
     assert.equal(created.body.capture.source, 'api');
     assert.deepEqual(created.body.capture.proposal, { action: null, jobId: null, changes: [] });
     assert.equal(created.body.capture.decision, null);
@@ -330,6 +332,7 @@ describe('captures against PostgreSQL', { skip: skipWithoutDatabase }, () => {
     const held = await uploadCapture(handle.db, storage, organisationId, {
       bytes: PNG, contentType: 'image/png', idempotencyKey: 'form-held', personId: null, baseUrl: 'http://127.0.0.1',
     });
+    await typeProposal(handle.db, storage, organisationId, held.capture.id, { action: null, changes: [] }, { baseUrl: 'http://127.0.0.1' });
     await assert.rejects(
       () => decideCapture(handle.db, leaking, organisationId, held.capture.id, 'discarded'),
       (error) => {

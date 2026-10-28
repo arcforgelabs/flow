@@ -159,8 +159,8 @@ function hmac(key, data) {
   return createHmac('sha256', key).update(data).digest();
 }
 
-function signingKey(secret, dateStamp, region) {
-  return hmac(hmac(hmac(hmac(`AWS4${secret}`, dateStamp), region), 's3'), 'aws4_request');
+function signingKey(secret, dateStamp, region, service) {
+  return hmac(hmac(hmac(hmac(`AWS4${secret}`, dateStamp), region), service), 'aws4_request');
 }
 
 // Canonical request as AWS Signature Version 4 defines it. `headers` is
@@ -172,14 +172,14 @@ function canonicalRequest({ method, path: uri, query = '', headers, payloadHash 
 }
 
 export function authorizationHeader({
-  method, path: uri, query = '', headers, payloadHash, accessKeyId, secretAccessKey, region, now,
+  method, path: uri, query = '', headers, payloadHash, accessKeyId, secretAccessKey, region, service = 's3', now,
 }) {
   const stamp = amzDate(now);
   const date = stamp.slice(0, 8);
-  const scope = `${date}/${region}/s3/aws4_request`;
+  const scope = `${date}/${region}/${service}/aws4_request`;
   const request = canonicalRequest({ method, path: uri, query, headers, payloadHash });
   const stringToSign = `AWS4-HMAC-SHA256\n${stamp}\n${scope}\n${sha256Hex(request)}`;
-  const signature = createHmac('sha256', signingKey(secretAccessKey, date, region)).update(stringToSign).digest('hex');
+  const signature = createHmac('sha256', signingKey(secretAccessKey, date, region, service)).update(stringToSign).digest('hex');
   const signed = Object.keys(headers).sort().join(';');
   return {
     stamp,

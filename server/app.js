@@ -64,6 +64,9 @@ export function createApp({
   // the capture routes off.
   storage = null,
   publicOrigin = null,
+  // The vision reader (server/core/reader.js). Null is off: a capture is a
+  // problem a person can type, and no model is called.
+  reader = null,
 } = {}) {
   const app = express();
   app.disable('x-powered-by');
@@ -154,7 +157,7 @@ export function createApp({
     app.use('/api/invoicing', createInvoicingRouter({ db: database.db, personAuth: auth.personAuth, log, liveCheckFor, accounting, work, priceSystems, buttonCooldowns }));
     if (storage) {
       app.use('/api/captures', createCapturesRouter({
-        db: database.db, storage, personAuth: auth.personAuth, log, publicOrigin,
+        db: database.db, storage, personAuth: auth.personAuth, log, publicOrigin, reader,
       }));
     }
     // Custom fields for jobs (server/core/custom-fields.js): kept in Flow

@@ -9,8 +9,11 @@ import { migrateDatabase, openDatabase } from './db/index.js';
 import {
   importEarlierAtStart, importEarlierLinksAtStart, importEarlierMappingsAtStart, resolveImportAtStart,
 } from './import/at-start.js';
+import { createAiPort, resolveReader } from './core/ai.js';
+import { createBedrockClient } from './core/ai-bedrock.js';
 import { createCaptureRetentionWorker } from './core/captures.js';
 import { createMonitoredLog } from './core/monitoring.js';
+import { createCaptureReader } from './core/reader.js';
 import { resolveObjectStorage } from './core/storage.js';
 import { createTracing, traceQueries } from './core/tracing.js';
 import { createPipelineWorker } from './core/pipeline.js';
@@ -136,6 +139,26 @@ try {
 }
 if (storage) createCaptureRetentionWorker({ db: database.db, storage, log }).start();
 
+// The vision reader (server/core/reader.js). A bad region or a model id that
+// is not an Australia profile stops boot. Off, or on without keys, stores
+// the photo and leaves the capture for a person to type.
+let reader = null;
+try {
+  const resolved = resolveReader({ env: process.env });
+  if (!resolved.on) console.log(`[reader] off (${resolved.reason})`);
+  else if (!storage) console.log('[reader] captures off (no file store)');
+  else {
+    const port = createAiPort(createBedrockClient(resolved));
+    reader = createCaptureReader({ db: database.db, storage, port, settings: resolved, log, jobsOn });
+    if (jobsOn) reader.worker.start();
+    else console.log('[reader] background jobs off: each capture is read in the upload');
+    console.log(`[reader] on (${resolved.region})`);
+  }
+} catch (error) {
+  console.error(`[reader] ${error.message}`);
+  process.exit(1);
+}
+
 let auth = null;
 if (settings.mode === 'clerk') {
   const { keys } = settings;
@@ -180,6 +203,7 @@ const updates = createUpdateChecker();
 createApp({
   database, schemaJournals: expectedSchema({ adapters: shippedAdapters }).journals, auth, trustProxy, updates, integrations, secrets, defaultFamily, log, tracing, storage,
   publicOrigin: process.env.FLOW_PUBLIC_ORIGIN,
+  reader: reader ? { on: true, schedule: reader.schedule } : null,
 }).listen(port, () => {
   console.log(`[flow] listening on ${port}; design system ${defaultFamily} (FLOW_THEME)`);
 });
