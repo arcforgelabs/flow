@@ -12,13 +12,26 @@ run-name: Full release validation of ${{ github.ref_name }}
 #   gitleaks        the secret scan over the commit's whole history
 #   release-branch  on release/YYYY.M.N only: package.json holds YYYY.M.N, and
 #                   each changelog file of that version matches its history
-#   seal            the run passes only when every lane passed
+#   seal            the run passes only when every lane passed; then, as
+#                   OpenClaw does, it asks arcforgelabs/releases to record the
+#                   run (on a release branch, or when dispatch_release_evidence)
 
 on:
   schedule:
     # Every 3 hours while main moves toward a release; one main commit per run.
     - cron: "7 */3 * * *"
   workflow_dispatch:
+    inputs:
+      dispatch_release_evidence:
+        description: Dispatch the validated run to arcforgelabs/releases (a release branch always does)
+        required: false
+        default: false
+        type: boolean
+      evidence_package_spec:
+        description: Optional published package spec to prove in the release evidence report
+        required: false
+        default: ""
+        type: string
 
 permissions:
   contents: read
@@ -145,3 +158,60 @@ jobs:
             exit 1
           fi
           echo "Validated ${GITHUB_SHA}: every lane passed." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Request release evidence update
+        if: ${{ inputs.dispatch_release_evidence || startsWith(github.ref, 'refs/heads/release/') }}
+        env:
+          RELEASES_DISPATCH_TOKEN: ${{ secrets.ARCFORGE_RELEASES_DISPATCH_TOKEN }}
+          TARGET_REF: ${{ github.ref_name }}
+          PACKAGE_SPEC: ${{ inputs.evidence_package_spec }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${RELEASES_DISPATCH_TOKEN// }" ]]; then
+            echo "ARCFORGE_RELEASES_DISPATCH_TOKEN is not configured; skipping automatic release evidence update."
+            exit 0
+          fi
+          # OpenClaw's release id is the ref (release/2026.4.30 -> release-2026.4.30);
+          # the shared ledger prefixes the product.
+          release_id="flow-$(printf '%s' "$TARGET_REF" | tr '/:@ ' '----' | tr -cd 'A-Za-z0-9._-')"
+          notes="Automatically requested by Flow Full Release Validation ${GITHUB_RUN_ID} after every lane passed."
+          payload="$(
+            jq -cn \
+              --arg full_validation_run_id "$GITHUB_RUN_ID" \
+              --arg release_id "$release_id" \
+              --arg source_repo "$GITHUB_REPOSITORY" \
+              --arg release_ref "$GITHUB_SHA" \
+              --arg package_spec "$PACKAGE_SPEC" \
+              --arg notes "$notes" \
+              '{
+                event_type: "arcforge_full_release_validation_completed",
+                client_payload: {
+                  full_validation_run_id: $full_validation_run_id,
+                  release_id: $release_id,
+                  source_repo: $source_repo,
+                  release_ref: $release_ref,
+                  package_spec: $package_spec,
+                  notes: $notes
+                }
+              }'
+          )"
+          if ! curl --fail-with-body \
+            --connect-timeout 10 \
+            --max-time 30 \
+            -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${RELEASES_DISPATCH_TOKEN}" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            https://api.github.com/repos/arcforgelabs/releases/dispatches \
+            -d "$payload"; then
+            echo "::warning::Automatic release evidence dispatch failed; this validation run remains authoritative."
+            {
+              echo "### Release evidence dispatch failed"
+              echo
+              echo "This validation run remains authoritative. Backfill durable evidence from \`arcforgelabs/releases\`:"
+              echo
+              echo "\`\`\`bash"
+              echo "gh workflow run arcforge-release-evidence-from-full-validation.yml --repo arcforgelabs/releases --ref main -f full_validation_run_id=${GITHUB_RUN_ID} -f release_id=${release_id} -f source_repo=${GITHUB_REPOSITORY} -f release_ref=${GITHUB_SHA} -f package_spec=${PACKAGE_SPEC}"
+              echo "\`\`\`"
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
