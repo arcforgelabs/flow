@@ -2,7 +2,7 @@ import { createCallGuard } from '../call-guard.js';
 import { createXeroClient, xeroError } from './client.js';
 import { decryptToken, readConnection, storeRotatedToken } from './connections.js';
 import { createGovernor } from './governor.js';
-import { createStateStore, refreshTokens } from './oauth.js';
+import { clientCredentials, createStateStore, refreshTokens } from './oauth.js';
 import { createReplayFetch, DEFAULT_REPLAY_FIXTURES, loadReplayFixtures } from './replay.js';
 import { resolveXeroSettings, writesAllowed } from './settings.js';
 
@@ -101,10 +101,13 @@ export function createXeroRuntime({ settings, fetch, now = Date.now, log = conso
     return db.transaction(async (tx) => {
       const connection = usable(await readConnection(tx, organisationId, { lock: true }));
       await guard.check(connection.tenantId, { resource: 'token' });
-      const refreshToken = decryptToken(connection.refreshTokenEnc, settings.tokenKey, organisationId);
+      // A Custom Connection has no refresh token: Flow asks with the client
+      // id and secret again, and nothing rotates.
+      const custom = settings.connection === 'custom';
+      const refreshToken = custom ? null : decryptToken(connection.refreshTokenEnc, settings.tokenKey, organisationId);
       let tokens;
       try {
-        tokens = await refreshTokens(settings, transport, refreshToken);
+        tokens = custom ? await clientCredentials(settings, transport) : await refreshTokens(settings, transport, refreshToken);
       } catch (error) {
         // invalid_grant: the connection is gone. invalid_client: the app's
         // client id or secret is wrong. Neither clears without a person.
@@ -116,7 +119,7 @@ export function createXeroRuntime({ settings, fetch, now = Date.now, log = conso
         throw error;
       }
       await guard.record(connection.tenantId, { resource: 'token', statusCode: 200 });
-      await storeRotatedToken(tx, organisationId, { refreshToken: tokens.refresh_token, scope: tokens.scope, key: settings.tokenKey });
+      if (!custom) await storeRotatedToken(tx, organisationId, { refreshToken: tokens.refresh_token, scope: tokens.scope, key: settings.tokenKey });
       remember(organisationId, tokens);
       return tokens.access_token;
     });
