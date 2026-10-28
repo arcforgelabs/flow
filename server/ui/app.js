@@ -348,7 +348,7 @@ function renderSignedOut() {
     return;
   }
   $('sign-in-note').textContent = config.publicSignUp
-    ? 'Sign in, or ask for access with your work email.'
+    ? 'New here? Ask for access with your work email.'
     : 'Sign in with the account you were invited with.';
   // With public sign-up off the widget never creates a Clerk account: no
   // sign-up link, and an OAuth sign-in for an unknown email is not turned
@@ -1242,7 +1242,8 @@ drawModeToggles();
 // the Clerk instance is called.
 const LOCALIZATION = {
   signIn: {
-    start: { title: 'Sign in to Flow', subtitle: 'Choose how to sign in.' },
+    // titleCombined is the sign-in-or-sign-up screen (public sign-up on).
+    start: { title: 'Sign in', titleCombined: 'Sign in', subtitle: '' },
     password: { subtitle: 'Enter the password for your account.' },
   },
   signUp: { start: { title: 'Ask for access to Flow', subtitle: 'Use your work email. An owner approves new people.' } },
