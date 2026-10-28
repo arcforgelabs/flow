@@ -641,16 +641,20 @@ export async function renderInvoiceList(main, ui) {
     };
     const href = (invoice) => `/invoices/${invoice.id}`;
     const ALL = {
-      number: numbered ? { kind: 'number', cell: (i) => link(href(i), i.number ?? 'Draft') } : null,
-      client: { kind: 'client', phone: 'title', cell: (i) => (numbered ? (i.contactName ?? '—') : link(href(i), i.contactName ?? 'No client')) },
+      // The client is the row's link: on a phone it is the title, with a 44px hit area.
+      number: numbered ? { kind: 'number', phone: 'meta', className: 'fx-strong', cell: (i) => i.number ?? 'Draft' } : null,
+      client: { kind: 'client', phone: 'title', cell: (i) => link(href(i), i.contactName ?? 'No client') },
+      // A phone row: the client (and number) and total, then the problem,
+      // the reference or the status, and the date. A tab without numbers
+      // holds one status: its tab says it.
       reference: showProblem
-        ? { label: 'Problem', kind: 'text', cell: problemCell }
-        : { kind: 'text', className: 'fx-dim', cell: (i) => i.reference ?? '—' },
-      date: { label: created ? 'Created' : 'Date', kind: 'date', className: 'fx-dim', cell: (i) => dateCell(h, i.issueDate ?? i.createdAt?.slice(0, 10)) },
+        ? { label: 'Problem', kind: 'text', phone: 'meta', cell: problemCell }
+        : { kind: 'text', className: 'fx-dim', phone: numbered ? 'hide' : 'meta', cell: (i) => i.reference ?? '—' },
+      date: { label: created ? 'Created' : 'Date', kind: 'date', className: 'fx-dim', phone: 'meta', cell: (i) => dateCell(h, i.issueDate ?? i.createdAt?.slice(0, 10)) },
       due: { kind: 'date', className: 'fx-dim', cell: (i) => dateCell(h, i.dueDate) },
       total: { kind: 'total', num: true, className: 'fx-strong', cell: (i) => formatCents(i.totalCents) },
-      status: { kind: 'status', className: 'fx-status-cell', cell: statusCell },
-      linked: linked ? { kind: 'link', cell: linkCell } : null,
+      status: { kind: 'status', className: 'fx-status-cell', ...(numbered ? {} : { phone: 'hide' }), cell: statusCell },
+      linked: linked ? { kind: 'link', phone: 'hide', cell: linkCell } : null,
       // The invoice's job (from the work system): its case, practitioner and
       // the day it shipped.
       case: { kind: 'case', className: 'fx-dim', cell: (i) => (i.job ? caseNumber(i.job) ?? '—' : '—') },

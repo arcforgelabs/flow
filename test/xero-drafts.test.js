@@ -219,6 +219,7 @@ describe('Xero drafts from issued invoices', { skip: skipWithoutDatabase }, () =
     const held = await push([invoice.id]);
     assert.equal(held.body.invoices[0].outcome, 'failed');
     assert.equal(held.body.invoices[0].error.code, 'xero_same_reference_different_amount');
+    assert.equal(held.body.invoices[0].error.short, 'Duplicate?');
     assert.equal(posts(replay).length, 0);
     assert.equal((await pushRow(invoice.id)).length, 0);
 
