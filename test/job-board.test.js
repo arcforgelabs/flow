@@ -33,6 +33,7 @@ test('a job\'s invoice stage follows its obligation; a job in work has none', ()
   assert.equal(stage({ view: 'drafted', invoiceStatus: 'draft', invoiceView: 'to_check' }), 'drafted');
   assert.equal(stage({ view: 'drafted', invoiceStatus: 'draft', invoiceView: 'problem' }), 'problem');
   assert.equal(stage({ view: 'drafted', invoiceStatus: 'draft', invoiceView: 'ready' }), 'ready');
+  assert.equal(stage({ view: 'drafted', invoiceStatus: 'draft', invoiceView: 'non_chargeable' }), 'non_chargeable', 'a lab rule keeps it, never billed');
   assert.equal(stage({ view: 'drafted', invoiceStatus: 'issued', invoiceView: 'sending' }), 'invoiced');
   assert.equal(stage({ view: 'drafted', invoiceStatus: 'issued', invoiceView: 'problem' }), 'problem', 'the accounting system refused it');
   assert.equal(stage({ view: 'drafted', invoiceStatus: 'void' }), 'problem');

@@ -1,7 +1,7 @@
 # Invoice tabs and Send all ready
 
-The Invoices page has six tabs, left to right: Pending, Ready, Draft,
-Approved, Sent and Void. Earlier names: Problem is now Pending, Drafts is
+The Invoices page has seven tabs, left to right: Pending, Ready, Draft,
+Approved, Sent, Non-chargeable and Void. Earlier names: Problem is now Pending, Drafts is
 gone (a clean draft is Ready), and Finalised is split into Draft, Approved
 and Sent. Code: `server/core/sending.js`, `server/api/invoicing.js`
 (`invoiceTabs`) and `server/integrations/xero/reconcile.js` (`stageOf`).
@@ -13,6 +13,7 @@ and Sent. Code: `server/core/sending.js`, `server/api/invoicing.js`
 | Draft | Issued in Flow and a draft in the accounting system, or on its way there. |
 | Approved | Approved in the accounting system, not yet sent to the customer. With no accounting system, every issued invoice is here. |
 | Sent | The accounting system sent it to the customer, or it is part paid or paid. |
+| Non-chargeable | A Flow draft whose job a non-chargeable rule matches (`docs/INVOICE_RULES.md`). The work is done but never billed. Nothing sends or approves it. |
 | Void | Voided or deleted. |
 
 The list starts with Number, Client, Reference, Date, Total, Status and
@@ -78,6 +79,7 @@ Invert ticks and Clear ticks. An icon-only action shows its name on hover.
 | Ready | **Send to Xero** (send-ready for the ticked ids; **Approve** with no accounting system), Copy references, Export CSV, **Delete** (asks first) |
 | Draft | Copy numbers, Export CSV, Download PDFs, **Delete** (a ticked invoice whose accounting copy is a draft; the confirm says `Also deletes the draft in Xero.`; each row reports deleted or refused, with the reason), Void (asks first; Void does not change the accounting system) |
 | Approved, Sent | Copy numbers, Export CSV, Download PDFs, Void (asks first; Flow does not change the accounting system). Delete is hidden: the copy says Approved or Paid. |
+| Non-chargeable | Copy references, Export CSV, **Delete** (asks first) |
 | Void | Copy numbers, Export CSV, Download PDFs |
 
 ## Checks

@@ -13,7 +13,7 @@ them from its own copy.
 
 - [Self-host Flow](SELF_HOSTING.md) on your own server or container host.
 - [Run Flow on Replit](REPLIT.md).
-- [Send invoices](INVOICE_SENDING.md): Pending, Ready, Draft, Approved, Sent and Send all ready.
+- [Send invoices](INVOICE_SENDING.md): Pending, Ready, Draft, Approved, Sent, Non-chargeable and Send all ready.
 - [Contacts](CONTACTS.md): Flow's own customers and suppliers, and creating a missing Xero client.
 
 ## How Flow works

@@ -43,7 +43,7 @@ import {
 //
 //   GET   /context                    the organisations, and whether this person may issue
 //   GET   /invoices?organisationId=&status=&q=&limit=   newest first, with counts by tab;
-//                                     status is a tab: pending, ready, draft, approved, sent or void (TABS)
+//                                     status is a tab: pending, ready, draft, approved, sent, non_chargeable or void (TABS)
 //   POST  /invoices/mark-ready        { invoiceIds }: a person checked these drafts; one with a problem stays
 //   POST  /invoices/mark-not-ready    { invoiceIds }: back to To check
 //   POST  /invoices/send-ready        owner or admin: issue every ready draft and queue it for the
@@ -118,7 +118,7 @@ const DATE = /^\d{4}-\d{2}-\d{2}$/;
 // issued invoice, by its stage in the accounting system (its invoiceStages;
 // Draft while it is on its way); with no accounting system, an issued invoice
 // is Approved. Void: void in Flow or in the accounting system.
-const TABS = ['pending', 'ready', 'draft', 'approved', 'sent', 'void'];
+const TABS = ['pending', 'ready', 'draft', 'approved', 'sent', 'non_chargeable', 'void'];
 // Earlier names a saved link may still use.
 const OLD_TABS = { problem: 'pending', to_check: 'ready', issued: 'approved' };
 const VIEWS = ['in_work', 'ready', 'pending', 'drafted', 'invoiced', 'paid', 'held', 'review_required'];
@@ -332,6 +332,7 @@ async function invoiceTabs(db, organisationId, system) {
   for (const { id } of issued) tabOf.set(id, issuedTab(id, { views, stages, system }));
   for (const { id } of voided) tabOf.set(id, 'void');
   for (const id of views.problems.keys()) tabOf.set(id, 'pending');
+  for (const id of views.nonChargeable.keys()) tabOf.set(id, 'non_chargeable');
   const ids = Object.fromEntries(TABS.map((t) => [t, []]));
   for (const [id, tab] of tabOf) ids[tab].push(id);
   return { tabOf, ids, problems: views.problems, sending: views.sending };
@@ -348,6 +349,7 @@ function issuedTab(id, { views, stages, system }) {
 async function tabOfInvoice(db, organisationId, invoice, view, accounting) {
   if (invoice.status === 'void') return 'void';
   if (view === 'problem') return 'pending';
+  if (view === 'non_chargeable') return 'non_chargeable';
   if (invoice.status === 'draft') return 'ready';
   if (!accounting) return 'approved';
   if (view === 'sending') return 'draft';
@@ -626,7 +628,9 @@ export function createInvoicingRouter({
     // A draft whose job changed after it was made waits for a person to fix
     // the job at its source or adopt the change (ledger.js), as Move to
     // Ready and Send do.
-    const { problems } = await invoiceView(db, organisationId, await getInvoice(db, organisationId, invoiceId));
+    const { problems, nonChargeable } = await invoiceView(db, organisationId, await getInvoice(db, organisationId, invoiceId));
+    // A non-chargeable draft is never billed (invoice-rules.js).
+    if (nonChargeable?.length) throw new FlowError('not_ready', `${nonChargeable[0].message} Nothing was approved.`);
     // A lab's pending rule, or a skip rule the job matches (invoice-rules.js),
     // is a gate too: fix its cause, void the draft, or turn the rule off.
     const held = problems.find((p) => p.code === 'job_review' || p.code === 'rule');

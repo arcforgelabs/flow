@@ -12,8 +12,8 @@ import { IMPORT_STATES, importOverview, linkXeroInvoice, makeFlowInvoice, matchX
 import { queueHistoryImport, resetImport } from './import.js';
 import { MIRROR_RESOURCES, mirrorStatus, mirrorXero } from './mirror.js';
 import { accountingStatus, checkSentInvoices } from './reconcile.js';
-import { decryptToken, deleteConnection, describeConnection, readConnection, saveConnection } from './connections.js';
-import { authorizeUrl, exchangeCode, fetchConnections, revokeToken, selectConnection } from './oauth.js';
+import { CUSTOM_CONNECTION, decryptToken, deleteConnection, describeConnection, readConnection, saveConnection } from './connections.js';
+import { authorizeUrl, clientCredentials, exchangeCode, fetchConnections, revokeToken, selectConnection } from './oauth.js';
 import { writesAllowed } from './settings.js';
 import { readXeroUsage } from './usage.js';
 import { saveEvents, signatureValid } from './webhooks.js';
@@ -23,7 +23,8 @@ import { messagePage as themedMessagePage } from '../../ui/page.js';
 // The Xero adapter's routes, mounted at /api/xero (server/integrations/port.js).
 //
 //   GET  /status?organisationId=   any signed-in person: mode and connection
-//   POST /connect                  owner: returns Xero's approval address
+//   POST /connect                  owner: returns Xero's approval address, or
+//                                  connects a Custom Connection at once
 //   GET  /oauth/callback           Xero sends the owner back here
 //   POST /disconnect               owner: revokes and forgets the connection
 //   POST /sync                     owner or admin: copies Xero contacts and items
@@ -182,8 +183,59 @@ export function createXeroRouter({ db, personAuth, runtime, log = console, butto
     });
   }));
 
+  // Keeps the one Xero organisation these tokens reach, after proving it is
+  // one Flow may use (a Demo Company in sandbox). A refused code-flow grant
+  // is revoked at Xero. Then the history import starts.
+  async function connectWith(tokens, { organisationId, personId }) {
+    const connections = await fetchConnections(settings, runtime.transport, tokens.access_token);
+    let chosen;
+    try {
+      chosen = selectConnection(connections, settings);
+      const probe = createXeroClient({
+        tenantId: chosen.tenantId,
+        accessToken: async () => tokens.access_token,
+        fetch: runtime.transport,
+        governor: runtime.governor,
+        apiBase: settings.endpoints.api,
+        log,
+      });
+      await runtime.assertEnvironment(probe);
+    } catch (error) {
+      // Refused: Xero keeps no grant for an organisation Flow will not use.
+      if (tokens.refresh_token) await revokeToken(settings, runtime.transport, tokens.refresh_token).catch(() => false);
+      throw error;
+    }
+    const previous = await readConnection(db, organisationId);
+    const connection = await saveConnection(db, {
+      organisationId,
+      mode: settings.mode,
+      tenantId: chosen.tenantId,
+      tenantName: chosen.tenantName ?? null,
+      scope: tokens.scope ?? settings.scope,
+      // A Custom Connection has no refresh token; the column holds a sealed
+      // marker that is never read (runtime.js asks Xero again instead).
+      refreshToken: tokens.refresh_token ?? CUSTOM_CONNECTION,
+      connectedBy: personId,
+      key: settings.tokenKey,
+    });
+    runtime.remember(organisationId, tokens);
+    // A new connection is a person acting: calls stopped before resume.
+    await runtime.guardFor(db).resume();
+    // Another Xero organisation starts its history from the beginning.
+    if (previous && previous.tenantId !== connection.tenantId) await resetImport(db, organisationId);
+    await queueHistoryImport(db, organisationId, { reason: 'connected' });
+    log.info?.(`[xero] organisation ${organisationId} connected to Xero tenant ${connection.tenantId} (${settings.mode}, ${settings.connection}) by person ${personId}`);
+    return connection;
+  }
+
+  // A Custom Connection connects here at once; a Xero app answers with the
+  // approval address the browser opens.
   router.post('/connect', ...owner, handle(log, async (req, res) => {
     const organisationId = await requireOrganisation(db, req.body?.organisationId);
+    if (settings.connection === 'custom') {
+      const connection = await connectWith(await clientCredentials(settings, runtime.transport), { organisationId, personId: req.person.id });
+      return res.json({ ok: true, connected: true, connection: describeConnection(connection), mode: settings.mode });
+    }
     if (!settings.redirectUri) {
       throw Object.assign(new FlowError('xero_redirect_uri_missing', 'Set FLOW_PUBLIC_ORIGIN (or XERO_REDIRECT_URI) to this installation\'s address, and register its /api/xero/oauth/callback on the Xero app.'), { status: 503 });
     }
@@ -202,42 +254,7 @@ export function createXeroRouter({ db, personAuth, runtime, log = console, butto
     }
     try {
       const tokens = await exchangeCode(settings, runtime.transport, typeof req.query.code === 'string' ? req.query.code : '');
-      const connections = await fetchConnections(settings, runtime.transport, tokens.access_token);
-      let chosen;
-      try {
-        chosen = selectConnection(connections, settings);
-        const probe = createXeroClient({
-          tenantId: chosen.tenantId,
-          accessToken: async () => tokens.access_token,
-          fetch: runtime.transport,
-          governor: runtime.governor,
-          apiBase: settings.endpoints.api,
-          log,
-        });
-        await runtime.assertEnvironment(probe);
-      } catch (error) {
-        // Refused: Xero keeps no grant for an organisation Flow will not use.
-        await revokeToken(settings, runtime.transport, tokens.refresh_token).catch(() => false);
-        throw error;
-      }
-      const previous = await readConnection(db, entry.organisationId);
-      const connection = await saveConnection(db, {
-        organisationId: entry.organisationId,
-        mode: settings.mode,
-        tenantId: chosen.tenantId,
-        tenantName: chosen.tenantName ?? null,
-        scope: tokens.scope ?? settings.scope,
-        refreshToken: tokens.refresh_token,
-        connectedBy: entry.personId,
-        key: settings.tokenKey,
-      });
-      runtime.remember(entry.organisationId, tokens);
-      // A new connection is a person acting: calls stopped before resume.
-      await runtime.guardFor(db).resume();
-      // Another Xero organisation starts its history from the beginning.
-      if (previous && previous.tenantId !== connection.tenantId) await resetImport(db, entry.organisationId);
-      await queueHistoryImport(db, entry.organisationId, { reason: 'connected' });
-      log.info?.(`[xero] organisation ${entry.organisationId} connected to Xero tenant ${connection.tenantId} (${settings.mode}) by person ${entry.personId}`);
+      const connection = await connectWith(tokens, entry);
       const organisation = connection.tenantName || 'your Xero organisation';
       return res.type('html').send(page(
         'Xero is connected',
@@ -257,7 +274,8 @@ export function createXeroRouter({ db, personAuth, runtime, log = console, butto
     const connection = await readConnection(db, organisationId);
     if (!connection) return res.json({ ok: true, disconnected: false });
     let revoked = false;
-    try {
+    // A Custom Connection has no token to revoke: it ends in Xero's My Apps.
+    if (settings.connection !== 'custom') try {
       revoked = await revokeToken(settings, runtime.transport, decryptToken(connection.refreshTokenEnc, settings.tokenKey, organisationId));
     } catch (error) {
       log.warn?.(`[xero] could not revoke the Xero token for organisation ${organisationId}: ${error.code ?? 'error'}`);

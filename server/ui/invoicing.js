@@ -25,9 +25,10 @@ import { findBox, today, viewBar } from '/assets/ui/view-bar.js';
 // person must look), Ready (checks pass), then the accounting system's
 // stages: Draft (a draft there, or on its way), Approved, Sent (to the
 // customer). With no accounting system, an issued invoice is Approved.
-const TABS = [['pending', 'Pending'], ['ready', 'Ready'], ['draft', 'Draft'], ['approved', 'Approved'], ['sent', 'Sent'], ['void', 'Void']];
+// Non-chargeable: work a lab's rule keeps in Flow and never bills.
+const TABS = [['pending', 'Pending'], ['ready', 'Ready'], ['draft', 'Draft'], ['approved', 'Approved'], ['sent', 'Sent'], ['non_chargeable', 'Non-chargeable'], ['void', 'Void']];
 const TAB_LABEL = Object.fromEntries(TABS);
-const TAB_TONE = { pending: 'danger', ready: 'success', draft: 'info', approved: 'info', sent: 'success', void: 'mute' };
+const TAB_TONE = { pending: 'danger', ready: 'success', draft: 'info', approved: 'info', sent: 'success', non_chargeable: 'mute', void: 'mute' };
 // Tab names an earlier Flow kept in this browser.
 const OLD_TAB = { problem: 'pending', to_check: 'ready', issued: 'approved' };
 const NUMBERED = ['draft', 'approved', 'sent', 'void'];
@@ -359,7 +360,8 @@ export async function renderInvoiceList(main, ui) {
         run: () => voidAll(voidable),
       });
     }
-    // A draft that was never issued is deleted on Pending and Ready. An issued
+    // A draft that was never issued is deleted on Pending, Ready and
+    // Non-chargeable. An issued
     // invoice is deleted only while Flow's copy of Xero says Draft. Approved
     // or paid stays hidden. A mix runs every ticked row and reports each one.
     const fresh = rows.filter((i) => i.status === 'draft' && i.issuedVersion === 0);
@@ -367,7 +369,7 @@ export async function renderInvoiceList(main, ui) {
     const xeroDraft = issuedXero.filter((i) => xeroById.get(i.id)?.state === 'draft');
     const xeroApproved = issuedXero.filter((i) => ['approved', 'part_paid', 'paid'].includes(xeroById.get(i.id)?.state));
     const deletable = [...fresh, ...xeroDraft, ...xeroApproved];
-    const onDraftTabs = ['pending', 'ready'].includes(state.status) && fresh.length;
+    const onDraftTabs = ['pending', 'ready', 'non_chargeable'].includes(state.status) && fresh.length;
     if (context.canIssue && (onDraftTabs || xeroDraft.length)) {
       danger.push({
         icon: 'trash-2', label: 'Delete', iconOnly: true, tone: 'danger', title: 'Delete',
@@ -554,6 +556,9 @@ export async function renderInvoiceList(main, ui) {
       ...(id === 'pending' && counts?.pending ? { 'data-tone': 'danger' } : {}),
       onclick: () => { if (state.status !== id) openTab(id); },
     }, label, h('span', { class: 'fx-tabs__count' }, String(counts?.[id] ?? 0)))));
+    // On a phone the tabs scroll, and a redraw starts them at the left: keep
+    // the selected one in view, so the page says which tab it shows.
+    tabs.children[TABS.findIndex(([id]) => id === state.status)]?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   }
 
   async function draw(answer) {
@@ -587,7 +592,7 @@ export async function renderInvoiceList(main, ui) {
     const open = (href) => { saveNav({ ...readNav(), scrollY: window.scrollY, frameY: frame.body.scrollTop }); go(href); };
     const link = (href, label) => h('a', { class: 'fx-strong', href, onclick: (event) => { event.preventDefault(); event.stopPropagation(); open(href); } }, label);
     const showProblem = state.status === 'pending';
-    const created = ['pending', 'ready'].includes(state.status);
+    const created = ['pending', 'ready', 'non_chargeable'].includes(state.status);
     // An invoice gets its number when it is sent or issued, so only the
     // Numbered tabs show a Number column; the others open on Client.
     const numbered = !created;
@@ -620,7 +625,7 @@ export async function renderInvoiceList(main, ui) {
     const statusCell = (invoice) => {
       const cell = h('span', {}, invoice.sending
         ? h('span', { class: 'fx-status', 'data-tone': 'info' }, 'Sending')
-        : h('span', { class: 'fx-status', 'data-tone': TAB_TONE[invoice.tab] ?? 'mute' }, TAB_LABEL[invoice.tab] ?? ''));
+        : h('span', { class: 'fx-status', 'data-tone': TAB_TONE[invoice.tab] ?? 'mute', title: TAB_LABEL[invoice.tab] ?? null }, TAB_LABEL[invoice.tab] ?? ''));
       if (!linked) statusCells.set(invoice.id, cell);
       return cell;
     };
@@ -1108,7 +1113,10 @@ function draftView(invoice, ui, context, redraw) {
       if (!saved) return;
       const passes = saved.view === 'ready';
       const why = brief(saved.problems?.[0]?.message);
-      if (isNew) {
+      if (saved.view === 'non_chargeable') {
+        toast('Saved. It is Non-chargeable.', 'success');
+        if (isNew) go(`/invoices/${saved.id}`, { replace: true }); else redraw(saved);
+      } else if (isNew) {
         toast(passes ? 'Saved. It is Ready.' : `Saved. It is Pending. ${why}`, passes ? 'success' : 'warn');
         go(`/invoices/${saved.id}`, { replace: true });
       } else if (passes && keepsSave) {
@@ -1135,6 +1143,8 @@ function draftView(invoice, ui, context, redraw) {
   // and keeps it. A Pending draft has no send: fix its problem first.
   const to = invoice?.sendsTo ?? context.sendsTo ?? null;
   const ready = invoice?.view === 'ready';
+  // A lab's rule keeps a non-chargeable draft in Flow: nothing sends or approves it.
+  const nonChargeable = invoice?.view === 'non_chargeable';
   const nextNumber = `${context.organisations[0]?.invoicePrefix ?? ''}${String(context.organisations[0]?.nextInvoiceNumber ?? '').padStart(4, '0')}`;
   const emails = invoice?.sendMode?.mode === 'approve_and_email';
   const sendButton = context.canIssue && to && ready ? h('button', {
@@ -1159,7 +1169,7 @@ function draftView(invoice, ui, context, redraw) {
   }, emails ? `Send to ${to} and email` : `Send to ${to}`) : null;
   // With no accounting system, Approve gives the draft its number and locks
   // it. A changed job blocks it.
-  const issueButton = context.canIssue && !to ? h('button', {
+  const issueButton = context.canIssue && !to && !nonChargeable ? h('button', {
     class: 'fx-btn fx-btn--primary', type: 'button',
     onclick: async () => {
       const saved = await save();
@@ -1242,7 +1252,7 @@ function draftView(invoice, ui, context, redraw) {
 
   const previewBtn = isNew ? null : previewButton(ui, invoice.id, 'Shows the saved invoice.');
   const showAccept = Boolean(jobChange?.canAccept && context.canIssue);
-  const header = ui.pageHeader(isNew ? 'New invoice' : ready ? 'Ready invoice' : 'Pending invoice', {
+  const header = ui.pageHeader(isNew ? 'New invoice' : ready ? 'Ready invoice' : nonChargeable ? 'Non-chargeable invoice' : 'Pending invoice', {
     actions: [fromJob, deleteButton, previewBtn, saveButton, sendButton ?? issueButton].filter(Boolean),
   });
   const primaryOf = () => (showAccept ? null : (sendButton ?? issueButton ?? (saveButton.hidden ? null : saveButton)));
@@ -1260,6 +1270,7 @@ function draftView(invoice, ui, context, redraw) {
     chrome.pager,
     header,
     draftNote(to, invoice) ? ui.notice(draftNote(to, invoice), 'warn') : null,
+    nonChargeable ? ui.notice(brief(invoice.nonChargeable?.[0]?.message ?? 'Non-chargeable.')) : null,
     ...problems,
     h('div', { class: 'fx-invoice__grid' },
       h('div', { class: 'fx-invoice__main' },

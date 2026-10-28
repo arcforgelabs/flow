@@ -1,8 +1,9 @@
 import { randomBytes } from 'node:crypto';
 import { DEFAULT_TIMEOUT_MS, xeroError } from './client.js';
 
-// Xero OAuth 2.0 (authorisation code with offline_access). Bodies that carry
-// tokens never reach a log or an error message.
+// Xero OAuth 2.0: the authorisation code with offline_access, or a Custom
+// Connection's client credentials (settings.js, XERO_CONNECTION). Bodies that
+// carry tokens never reach a log or an error message.
 
 export const STATE_TTL_MS = 10 * 60 * 1000;
 
@@ -58,7 +59,7 @@ async function tokenRequest(settings, fetchImpl, form, what) {
       oauthError: typeof body?.error === 'string' ? body.error.slice(0, 40) : null,
     });
   }
-  if (!body?.access_token || !body?.refresh_token) {
+  if (!body?.access_token || (form.grant_type !== 'client_credentials' && !body?.refresh_token)) {
     throw xeroError('xero_token_failed', `Xero's answer to ${what} had no tokens.`, { status: 502 });
   }
   return body;
@@ -71,6 +72,12 @@ export function exchangeCode(settings, fetchImpl, code) {
 
 export function refreshTokens(settings, fetchImpl, refreshToken) {
   return tokenRequest(settings, fetchImpl, { grant_type: 'refresh_token', refresh_token: refreshToken }, 'the token refresh');
+}
+
+// A Custom Connection's access token. There is no refresh token: Flow asks
+// again when the token runs out.
+export function clientCredentials(settings, fetchImpl) {
+  return tokenRequest(settings, fetchImpl, { grant_type: 'client_credentials', scope: settings.scope }, 'the Custom Connection token');
 }
 
 // Best effort: a disconnect deletes Flow's copy even when Xero is down.

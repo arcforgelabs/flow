@@ -47,7 +47,9 @@ function workSystem() {
   };
 }
 
-export async function startFlow({ port = 0 } = {}) {
+// `env` turns on shipped adapters for a demo (scripts/demo/xero-demo.mjs):
+// with XERO_MODE set, Xero starts with those settings.
+export async function startFlow({ port = 0, env = {} } = {}) {
   const handle = await freshDatabase();
   const db = handle.db;
   const lab = await createOrganisation(db, { name: 'Example Lab', invoicePrefix: 'FL-' });
@@ -118,11 +120,12 @@ export async function startFlow({ port = 0 } = {}) {
   await handle.pool.query(`UPDATE invoices SET created_at = timestamptz '2026-10-20T09:00:00Z' - o.n * interval '1 minute'
     FROM (SELECT id, row_number() OVER (ORDER BY reference) AS n FROM invoices) o WHERE invoices.id = o.id`);
 
-  const integrations = createRegistry({ log: quiet, env: {} });
+  const integrations = createRegistry({ log: quiet, env });
   integrations.register(workSystem());
   integrations.enable('worksystem');
   // The shipped adapters, each off, so Integrations shows its cards.
   for (const adapter of shippedAdapters) integrations.register(adapter);
+  if (env.XERO_MODE) integrations.enable('xero');
   await integrations.start(db);
   const settings = { mode: 'clerk', keys: { publishableKey: TEST_PUBLISHABLE_KEY, proxyUrl: null } };
   const personAuth = createPersonAuth({ db, clerk, ownerGoogleDomains: ['example.test'], log: quiet });
@@ -134,6 +137,7 @@ export async function startFlow({ port = 0 } = {}) {
   return {
     url: `http://127.0.0.1:${server.address().port}`,
     tokens,
+    organisationId: lab.id,
     invoiceId: invoiceIds[1],
     issuedId,
     async close() {

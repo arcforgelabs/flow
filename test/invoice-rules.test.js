@@ -3,17 +3,18 @@ import { after, before, describe, test } from 'node:test';
 import { eq } from 'drizzle-orm';
 import { createContact, createOrganisation, createPriceItem } from '../server/core/directory.js';
 import {
-  createRule, deleteRule, FIELDS, listRules, readRule, rulePending, ruleReasons, ruleSkip, starterRules, TESTS, updateRule,
+  createRule, deleteRule, FIELDS, listRules, readRule, ruleNonChargeable, rulePending, ruleReasons, ruleSkip, starterRules, TESTS, updateRule,
 } from '../server/core/invoice-rules.js';
 import { deleteDraft, getInvoice } from '../server/core/invoices.js';
 import { autoDraftJobs, saveInvoicingSettings } from '../server/core/invoicing-rules.js';
 import { draftInvoiceForObligation, explainObligation, observeJob, setReady } from '../server/core/ledger.js';
-import { invoiceViews, sendAllReady } from '../server/core/sending.js';
+import { invoiceView, invoiceViews, markReady, sendAllReady } from '../server/core/sending.js';
 import { billingObligations, invoices } from '../server/db/schema.js';
 import { freshDatabase, skipWithoutDatabase } from './support/db.js';
 
 // Invoice rules a lab builds: When a job is ready, If every condition
-// matches, Then it waits or is never drafted. The data is synthetic.
+// matches, Then it waits, is never drafted, is Pending or is non-chargeable.
+// The data is synthetic.
 
 const NOW = new Date('2026-10-19T02:00:00.000Z');
 const job = (overrides = {}) => ({
@@ -141,6 +142,18 @@ describe('one rule against one job', () => {
     assert.deepEqual(ruleSkip([{ ...skip, enabled: false }], job(), opts), []);
     assert.deepEqual(ruleSkip([skip], job(), { customer: { name: 'Harbour Smiles' }, now: NOW }), []);
     assert.deepEqual(ruleReasons([skip], job(), opts), ['rule "Own branches": not drafted by rule']);
+  });
+
+  test('a non-chargeable rule lets the job draft, and names the rule on a matching draft', () => {
+    const kept = { ...rule([{ field: 'customer', test: 'contains', value: 'example' }], 'non_chargeable', 'Own branches'), id: 'r-7' };
+    const opts = { customer: { name: 'North - Example Group' }, now: NOW };
+    assert.deepEqual(readRule({ name: 'Own branches', conditions: kept.conditions, action: { kind: 'non_chargeable' } }).action, { kind: 'non_chargeable' });
+    assert.deepEqual(ruleReasons([kept], job(), opts), []);
+    assert.deepEqual(ruleNonChargeable([kept], job(), opts), [{
+      code: 'non_chargeable', message: 'Rule "Own branches": non-chargeable. Flow keeps it and never sends it.', short: 'Own branches', rule: 'r-7',
+    }]);
+    assert.deepEqual(ruleNonChargeable([kept], job(), { customer: { name: 'Harbour Smiles' }, now: NOW }), []);
+    assert.deepEqual(ruleNonChargeable([{ ...kept, enabled: false }], job(), opts), []);
   });
 
   test('the starter rules come from the earlier settings', () => {
@@ -316,6 +329,50 @@ describe('rules a lab keeps', { skip: skipWithoutDatabase }, () => {
     views = await invoiceViews(handle.db, lab.id);
     assert.equal(views.problems.get(invoice.id)?.[0]?.message, note);
     assert.equal(views.ready.includes(invoice.id), false);
+    await deleteRule(handle.db, lab.id, made.id);
+  });
+
+  test('a non-chargeable rule keeps its drafts off Pending and Ready, and nothing sends them', async () => {
+    const branch = await createContact(handle.db, lab.id, { kind: 'customer', name: 'South - Example Group' });
+    const ready = async () => {
+      const row = await observeJob(handle.db, lab.id, {
+        sourceSystem: 'seazona', sourceJobRef: `job-${++counter}`, caseRef: `CASE-${counter}`, contactId: branch.id,
+        sourceStatus: 'Shipped', jobDate: '2026-10-15', lines: [{ itemCode: 'CROWN', description: 'Crown' }], observedAt: NOW,
+      });
+      await setReady(handle.db, lab.id, row.id, { actor: 'person:test' });
+      return row;
+    };
+    const reload = async (row) => (await handle.db.select().from(billingObligations).where(eq(billingObligations.id, row.id)))[0];
+    // A draft made before the rule moves over from Ready.
+    const before = await ready();
+    await autoDraftJobs(handle.db, lab.id, { now: NOW });
+    const old = (await reload(before)).invoiceId;
+    assert.ok((await invoiceViews(handle.db, lab.id)).ready.includes(old));
+    const made = await createRule(handle.db, lab.id, {
+      name: 'Own branches', conditions: [{ field: 'customer', test: 'contains', value: 'example' }], action: { kind: 'non_chargeable' },
+    });
+    // A job after the rule is drafted, with its lines and total.
+    const after = await ready();
+    await autoDraftJobs(handle.db, lab.id, { now: NOW });
+    const fresh = (await reload(after)).invoiceId;
+    assert.ok(fresh, 'a non-chargeable rule drafts the job');
+    assert.equal((await getInvoice(handle.db, lab.id, fresh)).lines.length, 1);
+    const views = await invoiceViews(handle.db, lab.id);
+    const note = 'Rule "Own branches": non-chargeable. Flow keeps it and never sends it.';
+    for (const id of [old, fresh]) {
+      assert.deepEqual(views.nonChargeable.get(id), [{ code: 'non_chargeable', message: note, short: 'Own branches', rule: made.id }]);
+      assert.equal(views.problems.has(id), false);
+      assert.equal(views.ready.includes(id), false);
+    }
+    assert.equal((await invoiceView(handle.db, lab.id, await getInvoice(handle.db, lab.id, fresh))).view, 'non_chargeable');
+    await assert.rejects(sendAllReady(handle.db, lab.id, { personId: null, issueDate: '2026-10-21', invoiceIds: [fresh] }),
+      { code: 'not_ready', message: `Not sent: ${note}` });
+    assert.equal((await markReady(handle.db, lab.id, [fresh], { personId: null })).marked, 0);
+    await sendAllReady(handle.db, lab.id, { personId: null, issueDate: '2026-10-21' });
+    assert.equal((await getInvoice(handle.db, lab.id, fresh)).status, 'draft', 'Send all ready leaves it');
+    // The rule off: the drafts are Ready again.
+    await updateRule(handle.db, lab.id, made.id, { enabled: false });
+    assert.ok((await invoiceViews(handle.db, lab.id)).ready.includes(fresh));
     await deleteRule(handle.db, lab.id, made.id);
   });
 

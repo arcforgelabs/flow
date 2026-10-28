@@ -50,7 +50,7 @@ const ACTIVITY = {
 const BY = { person: 'A person', automation: 'An automation' };
 // Grouped by invoice stage: a job with no invoice stage yet is still in work.
 const STAGE_GROUPS = { in_work: 'In work', ...INVOICE_STAGES };
-const STAGE_RANK = { 'In work': 0, Drafted: 2, Problem: 2, 'Ready to invoice': 4, Invoiced: 5, Paid: 6 };
+const STAGE_RANK = { 'In work': 0, Drafted: 2, Problem: 2, 'Ready to invoice': 4, Invoiced: 5, 'Non-chargeable': 5, Paid: 6 };
 
 const showDate = (iso) => (iso ? new Date(`${iso}T00:00:00`).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' }) : '—');
 const fullDate = (iso) => (iso ? new Date(`${iso}T00:00:00`).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' }) : '—');
