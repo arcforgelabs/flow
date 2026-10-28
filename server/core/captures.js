@@ -3,7 +3,8 @@ import { and, desc, eq, gt, isNotNull, isNull, lt, or, sql } from 'drizzle-orm';
 import { CAPTURE_DECISIONS, captures } from '../db/schema.js';
 import { FlowError, notFound } from './errors.js';
 import { matchJobs, proposeChange, readDate } from './capture-match.js';
-import { listFields, setJobFieldValue } from './custom-fields.js';
+import { listFields, listJobFieldValues, setJobFieldValue } from './custom-fields.js';
+import { JOB_FIELDS } from '../ui/capture-fields.js';
 
 // Shown when the module is off or the keys are missing. Type it still works.
 const READER_OFF = 'reader turned off';
@@ -253,7 +254,7 @@ export async function matchCapture(db, storage, organisationId, id, { jobs, fiel
     state: 'ready',
     problem: null,
     match,
-    ...(replace ? { proposal: proposeChange(read, match, jobs) } : {}),
+    ...(replace ? { proposal: await toCustomFields(db, organisationId, proposeChange(read, match, jobs)) } : {}),
     updatedAt: sql`now()`,
   }).where(and(
     eq(captures.organisationId, organisationId),
@@ -305,14 +306,43 @@ function fieldValue(field, text) {
   }
 }
 
+const jobOf = (jobId) => {
+  const at = jobId.indexOf(':');
+  return { sourceSystem: jobId.slice(0, at), sourceJobRef: jobId.slice(at + 1) };
+};
+
+// A custom field's stored value as the sheet shows it ("from").
+function shownValue(field, value) {
+  if (value == null) return '';
+  if (field.type === 'dropdown') return field.options?.find((option) => option.id === value)?.name ?? '';
+  if (field.type === 'checkbox') return value ? 'Yes' : 'No';
+  return String(value);
+}
+
+// A read field goes to the lab's custom field of the same name ("Shade")
+// when there is one: Flow owns it, so Apply writes it. Any other field stays
+// the work system's; the sheet marks it to change there (maintainer, #357).
+async function toCustomFields(db, organisationId, proposal) {
+  if (proposal.action !== 'update') return proposal;
+  const byName = new Map((await listFields(db, organisationId)).map((field) => [field.name.trim().toLowerCase(), field]));
+  const labels = new Map(JOB_FIELDS.map((field) => [field.key, field.label.toLowerCase()]));
+  const values = proposal.jobId
+    ? new Map((await listJobFieldValues(db, organisationId, { jobs: [jobOf(proposal.jobId)] })).map((row) => [row.fieldId, row.value]))
+    : new Map();
+  const changes = proposal.changes.map((change) => {
+    const field = byName.get(labels.get(change.field));
+    return field ? { ...change, field: `custom_${field.id}`, from: shownValue(field, values.get(field.id)) } : change;
+  }).filter((change) => change.from !== change.to);
+  return { ...proposal, changes };
+}
+
 // Apply writes what Flow owns: the job's custom fields, each with its own
 // event (who, when, from and to). A field the work system owns (due date,
 // shade) stays there; the result sheet links to the job in that system.
 // Every value is checked before the first write, so a bad one writes none.
 async function applyToJob(db, organisationId, proposal, personId) {
   if (proposal?.action !== 'update' || !proposal.jobId) return;
-  const at = proposal.jobId.indexOf(':');
-  const job = { sourceSystem: proposal.jobId.slice(0, at), sourceJobRef: proposal.jobId.slice(at + 1) };
+  const job = jobOf(proposal.jobId);
   const fields = new Map((await listFields(db, organisationId)).map((field) => [`custom_${field.id}`, field]));
   const writes = proposal.changes
     .filter((change) => fields.has(change.field))

@@ -1085,6 +1085,7 @@ th:hover > .fx-th-grip::after { background: var(--t-brd-hi); }
   min-height: 44px; padding: 4px 8px; border-bottom: 1px solid var(--fx-line-soft);
 }
 .fx-capture__field { color: var(--t-dim); }
+.fx-capture__where { display: block; font-size: 12px; color: var(--t-dim); }
 .fx-capture__from { color: var(--t-dim); text-decoration: line-through; overflow-wrap: anywhere; }
 .fx-capture__arrow { color: var(--t-dim); }
 .fx-capture__to { color: var(--t-strong); font-weight: 600; overflow-wrap: anywhere; }

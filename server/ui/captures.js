@@ -180,8 +180,14 @@ export async function renderCaptures(main, ui) {
       ? `${job.caseRef ? `Job ${job.caseRef}` : job.jobId} · ${job.clientName ?? ''}`
       : proposal.action === 'create' ? 'New job' : 'Pick a job';
 
+    // A field the work system owns: Apply leaves it; the person changes it
+    // there (until a two-way sync can send it, #357).
+    const system = proposal.action === 'update' && proposal.jobId ? proposal.jobId.split(':')[0] : null;
+    const systemName = system ? system[0].toUpperCase() + system.slice(1) : null;
+    const elsewhere = (change) => systemName && !change.field.startsWith('custom_');
     const changeRow = (change) => h('div', { class: 'fx-capture__change', 'data-unsure': change.sure != null && change.sure < SURE_LINE ? 'true' : 'false' },
-      h('span', { class: 'fx-capture__field' }, labels.get(change.field) ?? change.field),
+      h('span', { class: 'fx-capture__field' }, labels.get(change.field) ?? change.field,
+        elsewhere(change) ? h('span', { class: 'fx-capture__where', title: `Change this in ${systemName}` }, systemName) : null),
       h('span', { class: 'fx-capture__from' }, change.from || '–'),
       h('span', { class: 'fx-capture__arrow', 'aria-hidden': 'true' }, '→'),
       h('span', { class: 'fx-capture__to' }, change.to));
