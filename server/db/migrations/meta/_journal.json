@@ -166,15 +166,22 @@
     {
       "idx": 23,
       "version": "7",
-      "when": 1793110861784,
-      "tag": "0023_practice_portal",
+      "when": 1793110575758,
+      "tag": "0023_captures",
       "breakpoints": true
     },
     {
       "idx": 24,
       "version": "7",
-      "when": 1793110887545,
-      "tag": "0024_audit_events_append_only",
+      "when": 1793156655988,
+      "tag": "0024_practice_portal",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1793156665813,
+      "tag": "0025_audit_events_append_only",
       "breakpoints": true
     }
   ]

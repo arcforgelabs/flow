@@ -980,3 +980,48 @@ export const portalSessions = pgTable('portal_sessions', {
     foreignColumns: [practiceMembers.organisationId, practiceMembers.id],
   }),
 ]);
+
+// A photo of a handwritten lab form (server/core/captures.js). The bytes live
+// in the object storage adapter; this row keeps the key, size, type and
+// checksum. Slice 1 does not call a model: a new row is `ready` with an empty
+// proposal, and a person may type one. `done` means someone applied or
+// discarded it. The photo bytes are deleted then, and a row with no decision
+// is deleted after 7 days.
+export const CAPTURE_STATES = ['reading', 'ready', 'done', 'problem'];
+export const CAPTURE_SOURCES = ['phone', 'desk', 'api'];
+export const CAPTURE_DECISIONS = ['applied', 'discarded'];
+export const captures = pgTable('captures', {
+  id: id(),
+  organisationId: organisationId().references(() => organisations.id),
+  state: text('state').notNull(),
+  source: text('source').notNull(),
+  fileKey: text('file_key').notNull(),
+  fileType: text('file_type').notNull(),
+  fileSize: integer('file_size').notNull(),
+  fileSha256: text('file_sha256').notNull(),
+  idempotencyKey: text('idempotency_key').notNull(),
+  // Filled when a model reads the photo (a later slice). Null until then.
+  read: jsonb('read'),
+  match: jsonb('match'),
+  proposal: jsonb('proposal').notNull().default(sql`'{"action":null,"jobId":null,"changes":[]}'::jsonb`),
+  problem: text('problem'),
+  decision: text('decision'),
+  decidedBy: uuid('decided_by').references(() => people.id, { onDelete: 'set null' }),
+  decidedAt: timestamp('decided_at', { withTimezone: true }),
+  photoDeletedAt: timestamp('photo_deleted_at', { withTimezone: true }),
+  createdBy: uuid('created_by').references(() => people.id, { onDelete: 'set null' }),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, (t) => [
+  unique('captures_org_id').on(t.organisationId, t.id),
+  unique('captures_org_idempotency').on(t.organisationId, t.idempotencyKey),
+  unique('captures_file_key').on(t.fileKey),
+  index('captures_photo_open').on(t.createdAt).where(sql`photo_deleted_at is null`),
+  check('captures_state_valid', inList('state', CAPTURE_STATES)),
+  check('captures_source_valid', inList('source', CAPTURE_SOURCES)),
+  check('captures_decision_valid', sql`${t.decision} is null or ${t.decision} in ('applied', 'discarded')`),
+  check('captures_done_has_decision', sql`(${t.state} = 'done') = (${t.decision} is not null)`),
+  check('captures_file_size_valid', sql`${t.fileSize} >= 0`),
+  check('captures_sha256_valid', sql`${t.fileSha256} ~ '^[0-9a-f]{64}$'`),
+  check('captures_problem_valid', sql`${t.problem} is null or length(${t.problem}) between 1 and 200`),
+]);

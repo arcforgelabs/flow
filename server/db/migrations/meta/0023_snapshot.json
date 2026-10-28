@@ -1,5 +1,5 @@
 {
-  "id": "b9741d65-6725-4a4f-ac3f-f0db27a66fe9",
+  "id": "abd3177a-40ab-43b8-91f9-ff3dfb5655cf",
   "prevId": "a1705db8-9a16-40c2-9173-556668e0253a",
   "version": "7",
   "dialect": "postgresql",
@@ -83,147 +83,6 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.audit_events": {
-      "name": "audit_events",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "organisation_id": {
-          "name": "organisation_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "actor_kind": {
-          "name": "actor_kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "actor_id": {
-          "name": "actor_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "practice_contact_id": {
-          "name": "practice_contact_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "action": {
-          "name": "action",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "record_type": {
-          "name": "record_type",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "record_id": {
-          "name": "record_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "ip": {
-          "name": "ip",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "audit_events_practice": {
-          "name": "audit_events_practice",
-          "columns": [
-            {
-              "expression": "organisation_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "practice_contact_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "audit_events_organisation_id_organisations_id_fk": {
-          "name": "audit_events_organisation_id_organisations_id_fk",
-          "tableFrom": "audit_events",
-          "tableTo": "organisations",
-          "columnsFrom": [
-            "organisation_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "audit_events_practice_same_org": {
-          "name": "audit_events_practice_same_org",
-          "tableFrom": "audit_events",
-          "tableTo": "contacts",
-          "columnsFrom": [
-            "organisation_id",
-            "practice_contact_id"
-          ],
-          "columnsTo": [
-            "organisation_id",
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "audit_events_action_valid": {
-          "name": "audit_events_action_valid",
-          "value": "\"audit_events\".\"action\" in ('read', 'create', 'change', 'delete', 'download')"
-        },
-        "audit_events_actor_kind_valid": {
-          "name": "audit_events_actor_kind_valid",
-          "value": "\"audit_events\".\"actor_kind\" in ('member', 'person', 'anonymous')"
-        }
-      },
       "isRLSEnabled": false
     },
     "public.automations": {
@@ -788,6 +647,253 @@
         "billing_obligations_paid_not_negative": {
           "name": "billing_obligations_paid_not_negative",
           "value": "\"billing_obligations\".\"paid_cents\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.captures": {
+      "name": "captures",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "organisation_id": {
+          "name": "organisation_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "state": {
+          "name": "state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source": {
+          "name": "source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "file_key": {
+          "name": "file_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "file_type": {
+          "name": "file_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "file_size": {
+          "name": "file_size",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "file_sha256": {
+          "name": "file_sha256",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "idempotency_key": {
+          "name": "idempotency_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "read": {
+          "name": "read",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "match": {
+          "name": "match",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "proposal": {
+          "name": "proposal",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{\"action\":null,\"jobId\":null,\"changes\":[]}'::jsonb"
+        },
+        "problem": {
+          "name": "problem",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "decision": {
+          "name": "decision",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "decided_by": {
+          "name": "decided_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "decided_at": {
+          "name": "decided_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "photo_deleted_at": {
+          "name": "photo_deleted_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "captures_photo_open": {
+          "name": "captures_photo_open",
+          "columns": [
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "photo_deleted_at is null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "captures_organisation_id_organisations_id_fk": {
+          "name": "captures_organisation_id_organisations_id_fk",
+          "tableFrom": "captures",
+          "tableTo": "organisations",
+          "columnsFrom": [
+            "organisation_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "captures_decided_by_people_id_fk": {
+          "name": "captures_decided_by_people_id_fk",
+          "tableFrom": "captures",
+          "tableTo": "people",
+          "columnsFrom": [
+            "decided_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "captures_created_by_people_id_fk": {
+          "name": "captures_created_by_people_id_fk",
+          "tableFrom": "captures",
+          "tableTo": "people",
+          "columnsFrom": [
+            "created_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "captures_org_id": {
+          "name": "captures_org_id",
+          "nullsNotDistinct": false,
+          "columns": [
+            "organisation_id",
+            "id"
+          ]
+        },
+        "captures_org_idempotency": {
+          "name": "captures_org_idempotency",
+          "nullsNotDistinct": false,
+          "columns": [
+            "organisation_id",
+            "idempotency_key"
+          ]
+        },
+        "captures_file_key": {
+          "name": "captures_file_key",
+          "nullsNotDistinct": false,
+          "columns": [
+            "file_key"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "captures_state_valid": {
+          "name": "captures_state_valid",
+          "value": "state in ('reading', 'ready', 'done', 'problem')"
+        },
+        "captures_source_valid": {
+          "name": "captures_source_valid",
+          "value": "source in ('phone', 'desk', 'api')"
+        },
+        "captures_decision_valid": {
+          "name": "captures_decision_valid",
+          "value": "\"captures\".\"decision\" is null or \"captures\".\"decision\" in ('applied', 'discarded')"
+        },
+        "captures_done_has_decision": {
+          "name": "captures_done_has_decision",
+          "value": "(\"captures\".\"state\" = 'done') = (\"captures\".\"decision\" is not null)"
+        },
+        "captures_file_size_valid": {
+          "name": "captures_file_size_valid",
+          "value": "\"captures\".\"file_size\" >= 0"
+        },
+        "captures_sha256_valid": {
+          "name": "captures_sha256_valid",
+          "value": "\"captures\".\"file_sha256\" ~ '^[0-9a-f]{64}$'"
+        },
+        "captures_problem_valid": {
+          "name": "captures_problem_valid",
+          "value": "\"captures\".\"problem\" is null or length(\"captures\".\"problem\") between 1 and 200"
         }
       },
       "isRLSEnabled": false
@@ -2142,20 +2248,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'{practitioner} - {patient}'"
-        },
-        "portal_enabled": {
-          "name": "portal_enabled",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": true
-        },
-        "portal_status_names": {
-          "name": "portal_status_names",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'{}'::jsonb"
         },
         "rules_seeded": {
           "name": "rules_seeded",
@@ -3922,479 +4014,6 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.portal_access_requests": {
-      "name": "portal_access_requests",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "organisation_id": {
-          "name": "organisation_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "email": {
-          "name": "email",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "practice_name": {
-          "name": "practice_name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "phone": {
-          "name": "phone",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'open'"
-        },
-        "contact_id": {
-          "name": "contact_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "decided_by": {
-          "name": "decided_by",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "decided_at": {
-          "name": "decided_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "portal_access_requests_status": {
-          "name": "portal_access_requests_status",
-          "columns": [
-            {
-              "expression": "organisation_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "status",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "portal_access_requests_organisation_id_organisations_id_fk": {
-          "name": "portal_access_requests_organisation_id_organisations_id_fk",
-          "tableFrom": "portal_access_requests",
-          "tableTo": "organisations",
-          "columnsFrom": [
-            "organisation_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "portal_access_requests_decided_by_people_id_fk": {
-          "name": "portal_access_requests_decided_by_people_id_fk",
-          "tableFrom": "portal_access_requests",
-          "tableTo": "people",
-          "columnsFrom": [
-            "decided_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "portal_access_requests_contact_same_org": {
-          "name": "portal_access_requests_contact_same_org",
-          "tableFrom": "portal_access_requests",
-          "tableTo": "contacts",
-          "columnsFrom": [
-            "organisation_id",
-            "contact_id"
-          ],
-          "columnsTo": [
-            "organisation_id",
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "portal_access_requests_email_lower": {
-          "name": "portal_access_requests_email_lower",
-          "value": "\"portal_access_requests\".\"email\" = lower(\"portal_access_requests\".\"email\")"
-        },
-        "portal_access_requests_status_valid": {
-          "name": "portal_access_requests_status_valid",
-          "value": "\"portal_access_requests\".\"status\" in ('open', 'approved', 'declined')"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.portal_sessions": {
-      "name": "portal_sessions",
-      "schema": "",
-      "columns": {
-        "session_id": {
-          "name": "session_id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "organisation_id": {
-          "name": "organisation_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "member_id": {
-          "name": "member_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "last_seen_at": {
-          "name": "last_seen_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "revoked_at": {
-          "name": "revoked_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {
-        "portal_sessions_member": {
-          "name": "portal_sessions_member",
-          "columns": [
-            {
-              "expression": "member_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "portal_sessions_organisation_id_organisations_id_fk": {
-          "name": "portal_sessions_organisation_id_organisations_id_fk",
-          "tableFrom": "portal_sessions",
-          "tableTo": "organisations",
-          "columnsFrom": [
-            "organisation_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "portal_sessions_member_same_org": {
-          "name": "portal_sessions_member_same_org",
-          "tableFrom": "portal_sessions",
-          "tableTo": "practice_members",
-          "columnsFrom": [
-            "organisation_id",
-            "member_id"
-          ],
-          "columnsTo": [
-            "organisation_id",
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.practice_members": {
-      "name": "practice_members",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "organisation_id": {
-          "name": "organisation_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "contact_id": {
-          "name": "contact_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "email": {
-          "name": "email",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "role": {
-          "name": "role",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'invited'"
-        },
-        "clerk_user_id": {
-          "name": "clerk_user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "practitioner_name": {
-          "name": "practitioner_name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "invited_by_person": {
-          "name": "invited_by_person",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "invited_by_member": {
-          "name": "invited_by_member",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "sessions_revoked_at": {
-          "name": "sessions_revoked_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "linked_at": {
-          "name": "linked_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "practice_members_clerk": {
-          "name": "practice_members_clerk",
-          "columns": [
-            {
-              "expression": "organisation_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "contact_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "clerk_user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"practice_members\".\"clerk_user_id\" is not null",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "practice_members_organisation_id_organisations_id_fk": {
-          "name": "practice_members_organisation_id_organisations_id_fk",
-          "tableFrom": "practice_members",
-          "tableTo": "organisations",
-          "columnsFrom": [
-            "organisation_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "practice_members_invited_by_person_people_id_fk": {
-          "name": "practice_members_invited_by_person_people_id_fk",
-          "tableFrom": "practice_members",
-          "tableTo": "people",
-          "columnsFrom": [
-            "invited_by_person"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "practice_members_contact_same_org": {
-          "name": "practice_members_contact_same_org",
-          "tableFrom": "practice_members",
-          "tableTo": "contacts",
-          "columnsFrom": [
-            "organisation_id",
-            "contact_id"
-          ],
-          "columnsTo": [
-            "organisation_id",
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "practice_members_invited_by_member": {
-          "name": "practice_members_invited_by_member",
-          "tableFrom": "practice_members",
-          "tableTo": "practice_members",
-          "columnsFrom": [
-            "invited_by_member"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "practice_members_org_id": {
-          "name": "practice_members_org_id",
-          "nullsNotDistinct": false,
-          "columns": [
-            "organisation_id",
-            "id"
-          ]
-        },
-        "practice_members_practice_email": {
-          "name": "practice_members_practice_email",
-          "nullsNotDistinct": false,
-          "columns": [
-            "organisation_id",
-            "contact_id",
-            "email"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {
-        "practice_members_email_lower": {
-          "name": "practice_members_email_lower",
-          "value": "\"practice_members\".\"email\" = lower(\"practice_members\".\"email\")"
-        },
-        "practice_members_role_valid": {
-          "name": "practice_members_role_valid",
-          "value": "\"practice_members\".\"role\" in ('owner', 'admin', 'dentist', 'staff')"
-        },
-        "practice_members_status_valid": {
-          "name": "practice_members_status_valid",
-          "value": "\"practice_members\".\"status\" in ('invited', 'active', 'removed')"
-        }
-      },
       "isRLSEnabled": false
     },
     "public.price_item_links": {
