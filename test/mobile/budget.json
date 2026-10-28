@@ -89,35 +89,30 @@
  "phone-chromium-harbour-light/invoices-filter": {
   "small": 5,
   "axe": {
-   "aria-prohibited-attr": 42,
    "aria-required-children": 1
   }
  },
  "phone-chromium-harbour-light/invoices-filter-row": {
   "small": 12,
   "axe": {
-   "aria-prohibited-attr": 42,
    "aria-required-children": 1
   }
  },
  "phone-chromium-harbour-light/invoices-pending": {
   "small": 5,
   "axe": {
-   "aria-prohibited-attr": 8,
    "aria-required-children": 1
   }
  },
  "phone-chromium-harbour-light/invoices-ready": {
   "small": 4,
   "axe": {
-   "aria-prohibited-attr": 42,
    "aria-required-children": 1
   }
  },
  "phone-chromium-harbour-light/invoices-ticked": {
   "small": 9,
   "axe": {
-   "aria-prohibited-attr": 8,
    "aria-required-children": 1,
    "button-name": 1
   }
@@ -203,35 +198,30 @@
  "phone-chromium-meridian-dark/invoices-filter": {
   "small": 5,
   "axe": {
-   "aria-prohibited-attr": 42,
    "aria-required-children": 1
   }
  },
  "phone-chromium-meridian-dark/invoices-filter-row": {
   "small": 12,
   "axe": {
-   "aria-prohibited-attr": 42,
    "aria-required-children": 1
   }
  },
  "phone-chromium-meridian-dark/invoices-pending": {
   "small": 5,
   "axe": {
-   "aria-prohibited-attr": 8,
    "aria-required-children": 1
   }
  },
  "phone-chromium-meridian-dark/invoices-ready": {
   "small": 4,
   "axe": {
-   "aria-prohibited-attr": 42,
    "aria-required-children": 1
   }
  },
  "phone-chromium-meridian-dark/invoices-ticked": {
   "small": 9,
   "axe": {
-   "aria-prohibited-attr": 8,
    "aria-required-children": 1,
    "button-name": 1
   }
@@ -313,35 +303,30 @@
  "phone-chromium-meridian-light/invoices-filter": {
   "small": 5,
   "axe": {
-   "aria-prohibited-attr": 42,
    "aria-required-children": 1
   }
  },
  "phone-chromium-meridian-light/invoices-filter-row": {
   "small": 12,
   "axe": {
-   "aria-prohibited-attr": 42,
    "aria-required-children": 1
   }
  },
  "phone-chromium-meridian-light/invoices-pending": {
   "small": 5,
   "axe": {
-   "aria-prohibited-attr": 8,
    "aria-required-children": 1
   }
  },
  "phone-chromium-meridian-light/invoices-ready": {
   "small": 4,
   "axe": {
-   "aria-prohibited-attr": 42,
    "aria-required-children": 1
   }
  },
  "phone-chromium-meridian-light/invoices-ticked": {
   "small": 9,
   "axe": {
-   "aria-prohibited-attr": 8,
    "aria-required-children": 1,
    "button-name": 1
   }
@@ -1132,35 +1117,30 @@
  "phone-webkit-harbour-light/invoices-filter": {
   "small": 5,
   "axe": {
-   "aria-prohibited-attr": 42,
    "aria-required-children": 1
   }
  },
  "phone-webkit-harbour-light/invoices-filter-row": {
   "small": 12,
   "axe": {
-   "aria-prohibited-attr": 42,
    "aria-required-children": 1
   }
  },
  "phone-webkit-harbour-light/invoices-pending": {
   "small": 5,
   "axe": {
-   "aria-prohibited-attr": 8,
    "aria-required-children": 1
   }
  },
  "phone-webkit-harbour-light/invoices-ready": {
   "small": 4,
   "axe": {
-   "aria-prohibited-attr": 42,
    "aria-required-children": 1
   }
  },
  "phone-webkit-harbour-light/invoices-ticked": {
   "small": 9,
   "axe": {
-   "aria-prohibited-attr": 8,
    "aria-required-children": 1,
    "button-name": 1
   }
@@ -1246,35 +1226,30 @@
  "phone-webkit-meridian-dark/invoices-filter": {
   "small": 5,
   "axe": {
-   "aria-prohibited-attr": 42,
    "aria-required-children": 1
   }
  },
  "phone-webkit-meridian-dark/invoices-filter-row": {
   "small": 12,
   "axe": {
-   "aria-prohibited-attr": 42,
    "aria-required-children": 1
   }
  },
  "phone-webkit-meridian-dark/invoices-pending": {
   "small": 5,
   "axe": {
-   "aria-prohibited-attr": 8,
    "aria-required-children": 1
   }
  },
  "phone-webkit-meridian-dark/invoices-ready": {
   "small": 4,
   "axe": {
-   "aria-prohibited-attr": 42,
    "aria-required-children": 1
   }
  },
  "phone-webkit-meridian-dark/invoices-ticked": {
   "small": 9,
   "axe": {
-   "aria-prohibited-attr": 8,
    "aria-required-children": 1,
    "button-name": 1
   }
@@ -1356,35 +1331,30 @@
  "phone-webkit-meridian-light/invoices-filter": {
   "small": 5,
   "axe": {
-   "aria-prohibited-attr": 42,
    "aria-required-children": 1
   }
  },
  "phone-webkit-meridian-light/invoices-filter-row": {
   "small": 12,
   "axe": {
-   "aria-prohibited-attr": 42,
    "aria-required-children": 1
   }
  },
  "phone-webkit-meridian-light/invoices-pending": {
   "small": 5,
   "axe": {
-   "aria-prohibited-attr": 8,
    "aria-required-children": 1
   }
  },
  "phone-webkit-meridian-light/invoices-ready": {
   "small": 4,
   "axe": {
-   "aria-prohibited-attr": 42,
    "aria-required-children": 1
   }
  },
  "phone-webkit-meridian-light/invoices-ticked": {
   "small": 9,
   "axe": {
-   "aria-prohibited-attr": 8,
    "aria-required-children": 1,
    "button-name": 1
   }
@@ -1462,7 +1432,7 @@
   "small": 16
  },
  "tablet-chromium-harbour-light/invoices-approved": {
-  "small": 41
+  "small": 33
  },
  "tablet-chromium-harbour-light/invoices-filter": {
   "small": 26
@@ -1542,7 +1512,7 @@
   "small": 16
  },
  "tablet-chromium-meridian-dark/invoices-approved": {
-  "small": 41
+  "small": 33
  },
  "tablet-chromium-meridian-dark/invoices-filter": {
   "small": 26
@@ -1622,7 +1592,7 @@
   "small": 16
  },
  "tablet-chromium-meridian-light/invoices-approved": {
-  "small": 41
+  "small": 33
  },
  "tablet-chromium-meridian-light/invoices-filter": {
   "small": 26
@@ -1702,7 +1672,7 @@
   "small": 16
  },
  "tablet-webkit-harbour-light/invoices-approved": {
-  "small": 41
+  "small": 33
  },
  "tablet-webkit-harbour-light/invoices-filter": {
   "small": 26
@@ -1782,7 +1752,7 @@
   "small": 16
  },
  "tablet-webkit-meridian-dark/invoices-approved": {
-  "small": 41
+  "small": 33
  },
  "tablet-webkit-meridian-dark/invoices-filter": {
   "small": 26
@@ -1862,7 +1832,7 @@
   "small": 16
  },
  "tablet-webkit-meridian-light/invoices-approved": {
-  "small": 41
+  "small": 33
  },
  "tablet-webkit-meridian-light/invoices-filter": {
   "small": 26

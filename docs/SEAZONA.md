@@ -351,7 +351,9 @@ each history job (`docs/JOB_INVOICE_LINKS.md`). The earlier app read only
 
 ### The API backfill
 
-An owner or admin starts it: `POST /api/seazona/history/backfill` with
+An owner or admin starts it on Integrations › Seazona, History: pick the
+day in Read from and press Start (Stop ends it). The page calls
+`POST /api/seazona/history/backfill` with
 `{ "from": "2019-01-01" }` (and `through`, by default the day before the
 recent-order lane's window). The `history` lane then:
 

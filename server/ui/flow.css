@@ -1491,6 +1491,8 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
   }
   /* Line 2 is 20px; its cells centre on it. */
   [data-phone-layout="two-line"] .fx-table td[data-phone-slot="meta"] { display: flex; align-items: center; overflow: visible; }
+  /* Plain text on line 2 ends in "…" instead of running under the next cell. */
+  [data-phone-layout="two-line"] .fx-table td[data-phone-slot="meta"]:not(:has(*)) { display: block; overflow: hidden; line-height: 20px; }
   [data-phone-layout="two-line"] td.fx-c-stage,
   [data-phone-layout="two-line"] td.fx-c-status { order: 4; color: inherit; }
   [data-phone-layout="two-line"] .fx-stage { padding-block: 0; line-height: 16px; }

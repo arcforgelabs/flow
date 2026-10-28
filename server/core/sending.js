@@ -53,6 +53,10 @@ const SENT = new Set(['created', 'reconciled', 'existing', 'already_in_xero']);
 // it. `extra` adds `fields` (the invoice fields to fix) and `line`.
 const problem = (code, message, short = null, extra = {}) => ({ code, message, ...(short ? { short } : {}), ...extra });
 
+// An issued invoice the accounting system refused. A refusal stored without
+// its few words (before 2026-10-28) shows "Not sent"; its message stays.
+const refusal = (sendError) => (sendError ? { short: 'Not sent', ...sendError } : problem('send_failed', 'Sending failed.', 'Not sent'));
+
 // Flow's own checks of one draft. `lines` are its invoice lines.
 export function draftProblems(invoice, lines) {
   const problems = [];
@@ -155,7 +159,7 @@ export async function invoiceViews(db, organisationId, { accounting = null } = {
     .orderBy(desc(invoices.sendUpdatedAt));
   for (const row of issued) {
     if (row.sendState === 'queued') sending.add(row.id);
-    else problems.set(row.id, [row.sendError ?? problem('send_failed', 'Sending failed.', 'Send failed')]);
+    else problems.set(row.id, [refusal(row.sendError)]);
   }
   // A draft whose checks pass is ready (Samuel, 2026-10-20): no person
   // needs to mark it. toCheck stays for callers that still read it.
@@ -174,7 +178,7 @@ export async function invoiceView(db, organisationId, invoice, { accounting = nu
   if (invoice.status === 'void') return { view: null, problems: [] };
   if (invoice.status === 'issued') {
     if (invoice.sendState === 'queued') return { view: 'sending', problems: [] };
-    if (invoice.sendState === 'failed') return { view: 'problem', problems: [invoice.sendError ?? problem('send_failed', 'Sending failed.', 'Send failed')] };
+    if (invoice.sendState === 'failed') return { view: 'problem', problems: [refusal(invoice.sendError)] };
     return { view: null, problems: [] };
   }
   const found = (await checkDrafts(db, organisationId, [invoice], accounting)).get(invoice.id) ?? [];
@@ -435,7 +439,7 @@ export async function sendQueued(db, organisationId, { accounting, limit = WORKE
         summary.waiting += 1;
       } else {
         const error = result.error ?? { code: `send_${result.outcome}`, message: `Sending ended as ${result.outcome}.` };
-        await settle(db, organisationId, result.invoiceId, { sendState: 'failed', sendError: { code: error.code, message: error.message } });
+        await settle(db, organisationId, result.invoiceId, { sendState: 'failed', sendError: { code: error.code, message: error.message, ...(error.short ? { short: error.short } : {}) } });
         summary.failed += 1;
         summary.refused = [...new Set([...(summary.refused ?? []), error.code])];
         const fact = refusalFact(known.get(result.invoiceId), error);
