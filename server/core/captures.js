@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { and, eq, isNotNull, isNull, lt, sql } from 'drizzle-orm';
 import { CAPTURE_DECISIONS, captures } from '../db/schema.js';
 import { FlowError, notFound } from './errors.js';
+import { matchJobs, proposeChange } from './capture-match.js';
 
 // Shown when the module is off or the keys are missing. Type it still works.
 const READER_OFF = 'reader turned off';
@@ -10,8 +11,9 @@ const READER_OFF = 'reader turned off';
 // "Storage"). This does not change a job. The reader, when it is on, fills
 // `read` in the background (server/core/reader.js). When it is off, or the
 // keys are missing, the capture is `problem` ("reader turned off") and a
-// person can type the proposal. Apply or Discard records that decision and
-// deletes the photo. A capture nobody decides is deleted after 7 days,
+// person can type the proposal. A ready capture is matched to a job on the
+// Jobs board (server/core/capture-match.js), and the match proposes the
+// change. Apply or Discard records that decision and deletes the photo. A capture nobody decides is deleted after 7 days,
 // photo included.
 //
 // Nothing here writes the photo, the typed fields or a patient name to a log.
@@ -24,6 +26,8 @@ export const EMPTY_PROPOSAL = Object.freeze({ action: null, jobId: null, changes
 const PHOTO_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif']);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const ACTIONS = new Set(['update', 'create', 'note']);
+// A job on the Jobs board: its work system and its id there (capture-match.js jobKey).
+const JOB_ID = /^[a-z][a-z0-9_-]{0,39}:[^\u0000-\u001f]{1,200}$/;
 const FIELD_MAX = 60;
 const VALUE_MAX = 2000;
 const CHANGES_MAX = 40;
@@ -78,13 +82,14 @@ export function readProposal(input) {
   const action = input.action ?? null;
   if (action !== null && !ACTIONS.has(action)) throw invalid('action must be update, create or note');
   const jobId = input.jobId ?? null;
-  if (jobId !== null && !UUID.test(String(jobId))) throw invalid('jobId must be a job id');
+  if (jobId !== null && !JOB_ID.test(String(jobId))) throw invalid('jobId must be a job id');
   if (!Array.isArray(input.changes)) throw invalid('changes must be a list');
   if (input.changes.length > CHANGES_MAX) throw invalid('too many changes');
   const changes = input.changes.map((change) => ({
     field: readText(change?.field, FIELD_MAX),
     from: readText(change?.from ?? '', VALUE_MAX),
     to: readText(change?.to ?? '', VALUE_MAX),
+    ...(Number.isFinite(change?.sure) ? { sure: Math.min(1, Math.max(0, change.sure)) } : {}),
   }));
   if (changes.some((change) => !change.field)) throw invalid('a change needs a field');
   if (changes.length > 0 && !action) throw invalid('action is required');
@@ -102,6 +107,7 @@ export function captureView(row, link = null) {
     fileSha256: row.fileSha256,
     proposal: row.proposal ?? { ...EMPTY_PROPOSAL, changes: [] },
     read: row.read ?? null,
+    match: row.match ?? null,
     problem: row.problem,
     decision: row.decision,
     decidedAt: row.decidedAt,
@@ -218,6 +224,42 @@ export async function typeProposal(db, storage, organisationId, id, input, { bas
     sql`${captures.state} in ('ready', 'problem')`,
   )).returning();
   if (!row) throw new FlowError('conflict', 'this capture is not ready');
+  return { capture: row, link: linkFor(storage, row, baseUrl) };
+}
+
+// What a person typed instead of a read: { key: value }, keys as the reader's.
+function readTypedFields(input) {
+  if (input == null || typeof input !== 'object' || Array.isArray(input)) throw invalid('fields must be an object');
+  const entries = Object.entries(input);
+  if (entries.length > CHANGES_MAX) throw invalid('too many fields');
+  return entries.map(([key, value]) => ({ key: readText(key, FIELD_MAX), value: readText(value ?? '', VALUE_MAX), seen: '', sure: 1 }));
+}
+
+const isEmpty = (proposal) => !proposal?.action && !(proposal?.changes?.length);
+
+// Scores the Jobs board against the read (or typed) fields, stores the match
+// and, when nobody has typed a change yet, the proposed change. Typed fields
+// always replace the proposal: the person asked for a new match. `jobs` is
+// the board's jobs (server/core/job-board.js boardJobs).
+export async function matchCapture(db, storage, organisationId, id, { jobs, fields = null, baseUrl, now } = {}) {
+  const current = await byId(db, organisationId, id);
+  if (current.state !== 'ready' && !(fields && current.state === 'problem')) throw new FlowError('conflict', 'this capture is not ready');
+  const read = fields ? readTypedFields(fields) : (current.read?.fields ?? []);
+  const values = Object.fromEntries(read.map((field) => [field.key, field.value]));
+  const match = matchJobs(values, jobs, { now });
+  const replace = Boolean(fields) || isEmpty(current.proposal);
+  const [row] = await db.update(captures).set({
+    state: 'ready',
+    problem: null,
+    match,
+    ...(replace ? { proposal: proposeChange(read, match, jobs) } : {}),
+    updatedAt: sql`now()`,
+  }).where(and(
+    eq(captures.organisationId, organisationId),
+    eq(captures.id, id),
+    eq(captures.state, current.state),
+  )).returning();
+  if (!row) throw new FlowError('conflict', 'this capture changed; open it again');
   return { capture: row, link: linkFor(storage, row, baseUrl) };
 }
 

@@ -7,6 +7,7 @@ import { createConnectorApi } from './api/connector.js';
 import { createInvoicingRouter } from './api/invoicing.js';
 import { createSignInRouter } from './auth/routes.js';
 import { integrationAlertsSource, invoiceProblemsSource, priceDifferencesSource } from './core/alerts.js';
+import { boardJobs } from './core/job-board.js';
 import { reconcileHealth } from './core/reconcile.js';
 import { appliedMigrationCounts } from './db/doctor.js';
 import { deployedBuildStatus } from './deployed-build.js';
@@ -158,6 +159,7 @@ export function createApp({
     if (storage) {
       app.use('/api/captures', createCapturesRouter({
         db: database.db, storage, personAuth: auth.personAuth, log, publicOrigin, reader,
+        jobsFor: async (organisationId) => (await boardJobs(database.db, organisationId, { work: work(), log })).jobs,
       }));
     }
     // Custom fields for jobs (server/core/custom-fields.js): kept in Flow
