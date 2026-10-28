@@ -68,6 +68,23 @@ function xeroDate(value) {
 
 const problem = (code, message, extra = {}) => ({ code, message, ...extra });
 
+// The few words the Invoices list shows for a refusal; the message says how
+// to fix it. Another code shows "Not sent" (sending.js).
+const SHORT = {
+  xero_same_reference_different_amount: 'Duplicate?',
+  xero_earlier_version_in_xero: 'Old version in Xero',
+  xero_earlier_version_unresolved: 'Check old version',
+  xero_tracking_missing: 'Tracking not in Xero',
+  xero_validation_failed: 'Xero refused',
+  xero_reconnect_needed: 'Reconnect Xero',
+  xero_token_failed: 'Reconnect Xero',
+  xero_unreachable: 'Xero offline',
+  xero_writes_off: 'Sending off',
+  xero_push_in_progress: 'Sending now',
+  xero_outcome_unknown: 'Not confirmed',
+};
+const shortFor = (error) => error.short ?? SHORT[error.code];
+
 // A person can always link the Flow contact to a Xero contact of another
 // name (create-contact.js, linkCustomer): no Xero call.
 function missingContact(name, { offerCreate }) {
@@ -292,7 +309,7 @@ export async function previewDrafts(db, runtime, organisationId, invoiceIds) {
     try {
       results.push(await previewOne(db, runtime, organisationId, invoiceId));
     } catch (error) {
-      results.push({ invoiceId, state: 'blocked', problems: [problem(error.code ?? 'xero_preview_failed', error.message)] });
+      results.push({ invoiceId, state: 'blocked', problems: [problem(error.code ?? 'xero_preview_failed', error.message, { short: shortFor(error) })] });
     }
   }
   return { syncedAt, warnings, invoices: results };
@@ -414,7 +431,7 @@ export async function checkDrafts(db, runtime, { organisationId, invoiceIds }) {
 }
 
 function failed(invoiceId, error, outcome = 'failed') {
-  return { invoiceId, outcome, error: { code: error.code ?? 'xero_push_failed', message: error.message, ...(error.details ? { details: error.details } : {}) } };
+  return { invoiceId, outcome, error: { code: error.code ?? 'xero_push_failed', message: error.message, ...(shortFor(error) ? { short: shortFor(error) } : {}), ...(error.details ? { details: error.details } : {}) } };
 }
 
 function summarise(results) {
@@ -489,16 +506,13 @@ async function pushOne(db, runtime, client, organisationId, invoiceId, { pushedB
   const match = await matchContactFor(db, organisationId, { contactId: invoice.contactId, name: document.contact.name });
   if (match.state !== 'matched') {
     const offerCreate = match.state === 'missing' && runtime.settings.createContacts && writesAllowed(runtime.settings);
-    throw xeroError(match.state === 'missing' ? 'xero_contact_missing' : 'xero_contact_ambiguous',
-      match.state === 'missing'
-        ? missingContact(document.contact.name, { offerCreate }).message
-        : twiceContact(document.contact.name).message,
-      { status: 409 });
+    const found = match.state === 'missing' ? missingContact(document.contact.name, { offerCreate }) : twiceContact(document.contact.name);
+    throw xeroError(found.code, found.message, { status: 409, short: found.short });
   }
   const items = await itemsByCode(db, organisationId, document.lines.map((l) => l.itemCode));
   const sendMode = await sendModeFor(db, organisationId, invoice.contactId);
   const { draft, problems } = buildDraft(document, { settings: runtime.settings, contact: match.contact, items, sendMode });
-  if (problems.length) throw xeroError(problems[0].code, problems.map((p) => p.message).join(' '), { status: 409 });
+  if (problems.length) throw xeroError(problems[0].code, problems.map((p) => p.message).join(' '), { status: 409, short: problems[0].short });
 
   // Live duplicate check: invoices in Xero with this reference, made by Flow
   // or by hand. Not needed when Flow's own copy of Xero already answered it
@@ -518,7 +532,7 @@ async function pushOne(db, runtime, client, organisationId, invoiceId, { pushedB
     });
     if (recent) {
       throw xeroError('xero_same_reference_different_amount',
-        `Possible duplicate: Xero ${recent.InvoiceNumber || 'invoice'} (${recent.Status}, ${(cents(recent.Total) / 100).toFixed(2)}) has this contact and reference "${draft.Reference}" at another amount. Nothing was sent. Check it, then send again choosing to send anyway.`,
+        `Xero ${recent.InvoiceNumber || 'invoice'} has the same client and reference at ${(cents(recent.Total) / 100).toFixed(2)}. Nothing was sent. Void the extra one in Xero or in Flow.`,
         { status: 409, details: { xero: shownXero(recent) } });
     }
   }
@@ -570,12 +584,12 @@ async function dispatch(db, client, push, document, { fresh = false } = {}) {
       invoiceId: push.invoiceId,
       version: push.version,
       outcome: 'ambiguous',
-      error: { code: 'xero_outcome_unknown', message: 'Xero did not say whether it made the draft. Send again: Flow repeats the same request within six minutes, and after that looks in Xero first, so no second invoice is made.' },
+      error: { code: 'xero_outcome_unknown', short: SHORT.xero_outcome_unknown, message: 'Xero did not say whether it made the draft. Send again: Flow repeats the same request within six minutes, and after that looks in Xero first, so no second invoice is made.' },
     };
   }
   if (!created?.InvoiceID) {
     await settle(db, push.id, { state: 'ambiguous', errorCode: 'xero_no_invoice_id', errorMessage: 'Xero answered without an invoice id.' });
-    return { invoiceId: push.invoiceId, version: push.version, outcome: 'ambiguous', error: { code: 'xero_outcome_unknown', message: 'Xero answered without an invoice id. Send again to settle it.' } };
+    return { invoiceId: push.invoiceId, version: push.version, outcome: 'ambiguous', error: { code: 'xero_outcome_unknown', short: SHORT.xero_outcome_unknown, message: 'Xero answered without an invoice id. Send again to settle it.' } };
   }
   return verify(db, client, push, draft, document, created, 'created');
 }
@@ -671,11 +685,11 @@ async function resume(db, runtime, client, push, document) {
         && differences(inv, draft, document).filter((d) => d !== 'date').length === 0);
   } catch (error) {
     if (error.code === 'xero_rate_limited' || isCallsStopped(error)) throw error;
-    return { invoiceId: push.invoiceId, version: push.version, outcome: 'ambiguous', error: { code: 'xero_outcome_unknown', message: 'Flow could not look in Xero to settle an earlier attempt. Send again later.' } };
+    return { invoiceId: push.invoiceId, version: push.version, outcome: 'ambiguous', error: { code: 'xero_outcome_unknown', short: SHORT.xero_outcome_unknown, message: 'Flow could not look in Xero to settle an earlier attempt. Send again later.' } };
   }
   if (candidates.length === 1) return verify(db, client, push, draft, document, candidates[0], 'reconciled');
   if (candidates.length > 1) {
-    return { invoiceId: push.invoiceId, version: push.version, outcome: 'ambiguous', error: { code: 'xero_outcome_unknown', message: `Xero holds ${candidates.length} drafts that match this invoice. Delete the extra ones in Xero, then send again.` } };
+    return { invoiceId: push.invoiceId, version: push.version, outcome: 'ambiguous', error: { code: 'xero_outcome_unknown', short: 'Extra Xero drafts', message: `Xero holds ${candidates.length} drafts that match this invoice. Delete the extra ones in Xero, then send again.` } };
   }
   const attempt = push.attempts + 1;
   const key = idempotencyKey(push.organisationId, push.invoiceId, push.version, attempt, push.bodyHash);
