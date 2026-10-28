@@ -1,8 +1,8 @@
 import { and, eq, gte, inArray, lt, sql } from 'drizzle-orm';
 import { FlowError } from '../../core/errors.js';
-import { orderStatusLabel } from './map.js';
+import { orderClientName, orderStatusLabel } from './map.js';
 import { orderLink } from './settings.js';
-import { seazonaOrders, seazonaPersonSettings, seazonaStageMoves } from './schema.js';
+import { seazonaClients, seazonaOrders, seazonaPersonSettings, seazonaStageMoves } from './schema.js';
 
 // Stage moves on the Jobs board (docs/SEAZONA.md, "Stage moves"). Seazona's
 // API cannot change an order's status, so Flow never tries: a move becomes a
@@ -77,13 +77,18 @@ export async function waitingStageMoves(db) {
   return new Map(rows.map((r) => [r.orderId, r]));
 }
 
-// The moves that expired in the last week, for the quiet alert.
+// The moves that expired in the last week, for the quiet alert, each with
+// the practice its job is for (`clientName`).
 export async function expiredStageMoves(db, { now = Date.now() } = {}) {
-  return db.select().from(seazonaStageMoves).where(and(
-    eq(seazonaStageMoves.state, 'expired'),
-    gte(seazonaStageMoves.settledAt, new Date(Number(now) - EXPIRED_ALERT_MS)),
-    lt(seazonaStageMoves.settledAt, new Date(Number(now) + 1)),
-  ));
+  const rows = await db.select({ move: seazonaStageMoves, order: seazonaOrders, client: seazonaClients }).from(seazonaStageMoves)
+    .leftJoin(seazonaOrders, eq(seazonaOrders.id, seazonaStageMoves.orderId))
+    .leftJoin(seazonaClients, eq(seazonaClients.id, seazonaOrders.clientId))
+    .where(and(
+      eq(seazonaStageMoves.state, 'expired'),
+      gte(seazonaStageMoves.settledAt, new Date(Number(now) - EXPIRED_ALERT_MS)),
+      lt(seazonaStageMoves.settledAt, new Date(Number(now) + 1)),
+    ));
+  return rows.map(({ move, order, client }) => ({ ...move, clientName: orderClientName(order, client) }));
 }
 
 // What the board shows for a waiting move. `link` opens the order in

@@ -152,10 +152,16 @@ export function createSeazonaAdapter({ env = null, fetchImpl = null, now = Date.
         await settleStageMoves(runtime.db, { now: now() });
         const expired = await expiredStageMoves(runtime.db, { now: now() });
         if (expired.length) {
+          const [one] = expired;
           alerts.push({
             id: 'stage-moves-expired',
             tone: 'warn',
-            title: `${expired.length === 1 ? 'One stage move was' : `${expired.length} stage moves were`} not made in Seazona within a day: ${expired.slice(0, 5).map((m) => `${m.orderId} to ${m.toStatus}`).join(', ')}${expired.length > 5 ? ', …' : ''}. The cards went back to their Seazona stage.`,
+            title: expired.length === 1
+              ? `Nobody moved ${one.clientName ? `the ${one.clientName} job` : 'a job'} to ${one.toStatus} in Seazona. The card went back.`
+              : `Nobody moved ${expired.length} jobs in Seazona. The cards went back.`,
+            action: expired.length === 1
+              ? { label: 'Open job', href: `/jobs?q=${encodeURIComponent(one.orderId)}` }
+              : { label: 'Open Jobs', href: '/jobs' },
             members: expired.map((m) => `${m.orderId}:${m.settledAt?.toISOString() ?? ''}`),
           });
         }
