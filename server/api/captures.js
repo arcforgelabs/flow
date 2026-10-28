@@ -5,11 +5,10 @@ import {
 import { FlowError } from '../core/errors.js';
 import { resolveOrganisation } from './invoicing.js';
 
-// Photo capture (server/core/captures.js). No model call. A signed-in person
-// uploads one photo; Flow stores it and answers a capture in state `ready`
-// with an empty proposal. The signed link is how the photo is read back.
-// Logs from this router are a capture id and an error code, never the photo
-// or the fields someone typed.
+// Photo capture (server/core/captures.js). A signed-in person uploads one
+// photo. The reader, when it is on, reads it after the response. When it is
+// off, the capture is a problem a person can type. Logs from this router are
+// a capture id and an error code, never the photo or the fields.
 
 const ERROR_STATUS = {
   not_found: 404,
@@ -26,7 +25,7 @@ function respond(res, error) {
   return res.status(ERROR_STATUS[error.code] ?? 400).json({ ok: false, code: error.code, error: error.message });
 }
 
-export function createCapturesRouter({ db, storage, personAuth, log = console, publicOrigin = null }) {
+export function createCapturesRouter({ db, storage, personAuth, log = console, publicOrigin = null, reader = null }) {
   const router = express.Router();
   const signedIn = [personAuth.requireSession];
 
@@ -73,6 +72,7 @@ export function createCapturesRouter({ db, storage, personAuth, log = console, p
       source: req.get('x-flow-capture-source') ?? req.query.source,
       personId: req.person.id,
       baseUrl: origin(req),
+      reader,
     });
     res.status(result.created ? 201 : 200).json({ ok: true, capture: captureView(result.capture, result.link) });
   }));

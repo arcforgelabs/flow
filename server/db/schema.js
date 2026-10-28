@@ -861,10 +861,12 @@ export const jobFieldEvents = pgTable('job_field_events', {
 
 // A photo of a handwritten lab form (server/core/captures.js). The bytes live
 // in the object storage adapter; this row keeps the key, size, type and
-// checksum. Slice 1 does not call a model: a new row is `ready` with an empty
-// proposal, and a person may type one. `done` means someone applied or
-// discarded it. The photo bytes are deleted then, and a row with no decision
-// is deleted after 7 days.
+// checksum. `read` is what the vision reader returned (server/core/reader.js):
+// the fields, the model, the tokens and the cost. A new row is `reading`
+// while that runs, or `problem` when the reader is off. A person may type
+// the proposal either way. `done` means someone applied or discarded it.
+// The photo bytes are deleted then, and a row with no decision is deleted
+// after 7 days.
 export const CAPTURE_STATES = ['reading', 'ready', 'done', 'problem'];
 export const CAPTURE_SOURCES = ['phone', 'desk', 'api'];
 export const CAPTURE_DECISIONS = ['applied', 'discarded'];
@@ -878,7 +880,7 @@ export const captures = pgTable('captures', {
   fileSize: integer('file_size').notNull(),
   fileSha256: text('file_sha256').notNull(),
   idempotencyKey: text('idempotency_key').notNull(),
-  // Filled when a model reads the photo (a later slice). Null until then.
+  // Fields, model, token counts and cost in micros. Null until a read finishes.
   read: jsonb('read'),
   match: jsonb('match'),
   proposal: jsonb('proposal').notNull().default(sql`'{"action":null,"jobId":null,"changes":[]}'::jsonb`),
