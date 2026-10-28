@@ -3,272 +3,144 @@
     "id": "r27",
     "title": "Invoice rules",
     "clip": "r27/clip.webm",
-    "desktop": "r27/desktop.jpg",
-    "phone": null,
-    "steps": [
-      "Open Invoices, Ready, and find the shipped job the rule drafted.",
-      "Open Automations. Draft when ready is on: that is the rule that invoiced it."
-    ]
+    "say": "When a job ships and its checks pass, Draft when ready makes the invoice."
   },
   {
     "id": "r28",
     "title": "Job board stages",
     "clip": "r28/clip.webm",
-    "desktop": "r28/desktop.jpg",
-    "phone": "r28/phone.jpg",
-    "steps": [
-      "Open Rules, Price codes. Seazona lines find their price item from the list.",
-      "Open Jobs. The Shipped column is a work stage, and the job belongs to its practice."
-    ]
+    "say": "Each column on the board is a work stage, from Received through to Shipped."
   },
   {
     "id": "r29",
     "title": "Faster Xero matching",
     "clip": "r29/clip.webm",
-    "desktop": "r29/desktop.jpg",
-    "phone": null,
-    "steps": [
-      "Open Xero, Review. An unpaid Xero invoice (Approved, amount still due) sits beside the Flow invoice with the same client and total.",
-      "Press Link. Flow links them. The match did not wait for a payment."
-    ]
+    "say": "Flow can link an approved Xero invoice before anyone has paid it."
   },
   {
     "id": "r30",
     "title": "Drafts go to Ready",
     "clip": "r30/clip.webm",
-    "desktop": "r30/desktop.jpg",
-    "phone": null,
-    "steps": [
-      "Open Automations. Ready when drafted is on.",
-      "Open Invoices, Ready. EV-READY is a draft the automation made, already on Ready."
-    ]
+    "say": "The draft the automation made is already sitting on Ready."
   },
   {
     "id": "r32",
     "title": "Own price list",
     "clip": "r32/clip.webm",
-    "desktop": "r32/desktop.jpg",
-    "phone": null,
-    "steps": [
-      "Open Price list. Flow's codes are listed with their prices.",
-      "Open Zirconia crown. It is linked to the Xero item and the Seazona product, and the price check shows Xero's price differs."
-    ]
+    "say": "Flow keeps its own price, and shows when the Xero price is different."
   },
   {
     "id": "r33",
     "title": "Fresh data before send",
     "clip": "r33/clip.webm",
-    "desktop": "r33/desktop.jpg",
-    "phone": null,
-    "steps": [
-      "Open the invoice whose job changed after the draft.",
-      "The page shows Accept change and the recheck control.",
-      "Press recheck. Flow reads the job from the work system again and says it is still changed."
-    ]
+    "say": "The job changed after the draft. Accept the change before you send."
   },
   {
     "id": "r34",
     "title": "Custom fields on jobs",
     "clip": "r34/clip.webm",
-    "desktop": "r34/desktop.jpg",
-    "phone": null,
-    "steps": [
-      "Open a job. Shade is A2, a custom field kept in Flow.",
-      "Choose another Seazona stage. Flow says Seazona cannot take the change, and asks you to make it there.",
-      "Press Move card. The card waits for Seazona."
-    ]
+    "say": "This stage change has to happen in Seazona. Flow waits for it."
   },
   {
     "id": "r35",
     "title": "Group, sort and filter",
     "clip": "r35/clip.webm",
-    "desktop": "r35/desktop.jpg",
-    "phone": "r35/phone.jpg",
-    "steps": [
-      "Open Jobs as a list.",
-      "Group by practitioner, sort by due date, and filter to one practice.",
-      "Reload. The same Group, Sort and Filter are still on, saved with this account."
-    ]
+    "say": "Group, sort and filter stay with this account after a reload."
   },
   {
     "id": "r36",
     "title": "Xero badges",
     "clip": "r36/clip.webm",
-    "desktop": "r36/desktop.jpg",
-    "phone": null,
-    "steps": [
-      "Open Invoices, Approved. EV-APPROVED shows an Approved in Xero badge.",
-      "Open Sent. EV-PAID shows a Paid in Xero badge. Issued invoices now sit on these tabs."
-    ]
+    "say": "A sent invoice wears a Paid in Xero badge once Xero has the payment."
   },
   {
     "id": "r37",
     "title": "Email invitations",
     "clip": "r37/clip.webm",
-    "desktop": "r37/desktop.jpg",
-    "phone": "r37/phone.jpg",
-    "steps": [
-      "Open People. The owner is the only person.",
-      "Press Invite, enter a synthetic address, and send.",
-      "The new person is on the list as Invited, and Flow says the invitation was emailed."
-    ]
+    "say": "Invite emails the person, and they show on the list as Invited."
   },
   {
     "id": "r38",
     "title": "Reconcile finds the gaps",
     "clip": "r38/clip.webm",
-    "desktop": "r38/desktop.jpg",
-    "phone": "r38/phone.jpg",
-    "steps": [
-      "Open Reconcile. It lists a done job with no invoice and invoices with no job.",
-      "Open the job. Flow offers the invoice with the same client and total.",
-      "Press Link this invoice. The job and the invoice are linked."
-    ]
+    "say": "Reconcile finds the invoice that matches this job. Link them."
   },
   {
     "id": "r39",
     "title": "Six invoice tabs",
     "clip": "r39/clip.webm",
-    "desktop": "r39/desktop.jpg",
-    "phone": "r39/phone.jpg",
-    "steps": [
-      "Open Invoices and visit Pending, Ready, Draft, Approved, Sent and Void.",
-      "Open the changed invoice. Accept change and the recheck control are on the page, and the job links to its Seazona order."
-    ]
+    "say": "Invoices move through Pending, Ready, Draft, Approved, Sent and Void."
   },
   {
     "id": "r40",
     "title": "Xero payments come back to Flow",
     "clip": "r40/clip.webm",
-    "desktop": "r40/desktop.jpg",
-    "phone": null,
-    "steps": [
-      "Open Invoices, Sent. EV-PAID wears a Paid in Xero badge.",
-      "Open the invoice. The badge is the payment Flow read back from its Xero copy."
-    ]
+    "say": "A payment recorded in Xero comes back onto the Flow invoice."
   },
   {
     "id": "r41",
     "title": "Reconcile list",
     "clip": "r41/clip.webm",
-    "desktop": "r41/desktop.jpg",
-    "phone": "r41/phone.jpg",
-    "steps": [
-      "Open Reconcile. Jobs and invoices are one list, in the same columns as Jobs and Invoices.",
-      "Open Filter and narrow the list. Rows stay in one column, with no overlap."
-    ]
+    "say": "Reconcile puts jobs and invoices in the one list."
   },
   {
     "id": "r42",
     "title": "Pending notes",
     "clip": "r42/clip.webm",
-    "desktop": "r42/desktop.jpg",
-    "phone": null,
-    "steps": [
-      "Open Invoices, Pending, and find EV-NOTE.",
-      "Open it. The page shows the rule note: add the case reference before the invoice can leave Pending."
-    ]
+    "say": "Pending holds the invoice until the case reference is on the job."
   },
   {
     "id": "r43",
     "title": "Rules on cards",
     "clip": "r43/clip.webm",
-    "desktop": "r43/desktop.jpg",
-    "phone": null,
-    "steps": [
-      "Open Rules from the sidebar. Invoices, Drafts and Price codes are cards.",
-      "Open Invoices, then Price codes. Each part has its own page."
-    ]
+    "say": "Rules open as cards. Each card has its own page."
   },
   {
     "id": "r44",
     "title": "Filters and saved views",
     "clip": "r44/clip.webm",
-    "desktop": "r44/desktop.jpg",
-    "phone": null,
-    "steps": [
-      "Open Invoices and Filter.",
-      "Add a filter, then a nested filter, so And / Or shows.",
-      "The same panel is the one Jobs and Reconcile use."
-    ]
+    "say": "Add a nested filter, and And joins the two conditions."
   },
   {
     "id": "r45",
     "title": "Ask for a reply",
     "clip": "r45/clip.webm",
-    "desktop": "r45/desktop.jpg",
-    "phone": null,
-    "steps": [
-      "Press Report a problem.",
-      "Tick Request a response. The form asks for the address a written reply goes to."
-    ]
+    "say": "Tick Request a response when the report needs a written reply."
   },
   {
     "id": "r46",
     "title": "Invoice columns",
     "clip": "r46/clip.webm",
-    "desktop": "r46/desktop.jpg",
-    "phone": "r46/phone.jpg",
-    "steps": [
-      "Open Invoices.",
-      "Show Shipped, Case, Practitioner, Due and Shade.",
-      "The list grows those columns. The choice is kept with the account."
-    ]
+    "say": "Show Shipped, Case and Practitioner as columns on the invoice list."
   },
   {
     "id": "r47",
     "title": "Send to Xero keeps going",
     "clip": "r47/clip.webm",
-    "desktop": "r47/desktop.jpg",
-    "phone": null,
-    "steps": [
-      "On Ready, tick EV-SEND-1, EV-SEND-2 and EV-SEND-WAIT.",
-      "Press Send to Xero and confirm.",
-      "Two go on their way. EV-SEND-WAIT stays, because its job could not be confirmed. The button shows Sending while the press runs."
-    ]
+    "say": "Send to Xero keeps going. This job could not be confirmed, so it stayed Ready."
   },
   {
     "id": "r48",
     "title": "Create a missing Xero client",
     "clip": "r48/clip.webm",
-    "desktop": "r48/desktop.jpg",
-    "phone": null,
-    "steps": [
-      "Open Invoices, Pending, EV-MISSING.",
-      "The page says the client is not in Xero and offers Link and Create."
-    ]
+    "say": "This client is not in Xero yet. Create them from here."
   },
   {
     "id": "r481",
     "title": "Seazona fix",
     "clip": "r481/clip.webm",
-    "desktop": "r481/desktop.jpg",
-    "phone": null,
-    "steps": [
-      "Open Seazona. It is connected.",
-      "The page has no alert that invoices from before Flow's first read were missed. The sweep no longer counts those."
-    ]
+    "say": "Seazona is connected, and the old missed-invoice alert is gone."
   },
   {
     "id": "r49",
     "title": "Xero contacts both ways",
     "clip": "r49/clip.webm",
-    "desktop": "r49/desktop.jpg",
-    "phone": null,
-    "steps": [
-      "Open Contacts. The practices are Flow contacts.",
-      "Open Xero and turn on Two-way edits. A change on either side is set to reach the other."
-    ]
+    "say": "Turn on Two-way edits, and a contact change goes either way."
   },
   {
     "id": "next",
     "title": "Non-chargeable tab",
     "clip": "next/clip.webm",
-    "desktop": "next/desktop.jpg",
-    "phone": "next/phone.jpg",
-    "steps": [
-      "Open Invoices, Non-chargeable.",
-      "EV-FREE is there: the lab keeps the work and never bills it, and it is out of the other invoice counts."
-    ]
+    "say": "Non-chargeable work stays in the lab, and Flow never bills it."
   }
 ]
