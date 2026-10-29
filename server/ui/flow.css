@@ -1683,7 +1683,6 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
 .fx-cfm__create .fx-lucide { width: 14px; height: 14px; }
 .fx-cfm__empty { margin: 0; padding: 20px 16px; color: var(--t-dim); }
 .fx-cfm > .fx-notice { margin: 12px 16px 0; }
-.fx-cfm__foot { display: flex; justify-content: space-between; gap: 12px; padding: 12px 16px; border-top: 1px solid var(--fx-line-soft); color: var(--t-dim); font-size: 13px; }
 .fx-pop__item:disabled { opacity: .5; cursor: default; }
 .fx-pop__item[data-tone="danger"], .fx-pop__item[data-tone="danger"] .fx-pop__tick { color: var(--t-danger); }
 .fx-pop__item .fx-lucide { width: 15px; height: 15px; }
@@ -1760,6 +1759,7 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
   .fx-cfm__head, .fx-cfm__row { padding-left: 16px; }
   .fx-cfm__create { padding-left: 16px; }
   .fx-cfm__search { flex: 1 1 100%; width: auto; }
+  .fx-cfm__bar :is(.fx-cfm__search, .fx-cfm__tool, .fx-btn) { height: auto; min-height: 44px; }
   .fx-cfm__edit { display: none !important; }
   /* Custom fields uses the same phone slots as a column list: name and the
      menu on line 1, up to three facts on line 2, 56px. */
