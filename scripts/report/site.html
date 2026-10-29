@@ -147,6 +147,7 @@ button{font:inherit;color:inherit}
 .prog .maj .ib{background:var(--t-primary);border-color:var(--t-primary);color:var(--t-on-primary)}
 .br-none{color:var(--t-mute);font-size:13px}
 .tag--more{background:transparent;border:1.5px dashed var(--t-accent-brd);clip-path:none;border-radius:var(--t-radius);padding:5px 14px;color:var(--t-accent)}
+.br-d--empty{padding-bottom:4px}.br-d--empty .br-n::after{border-style:dashed;border-color:var(--t-brd-hi);background:var(--t-paper)}.br-d--empty .br-date b,.br-d--empty .br-date span{color:var(--t-mute)}
 .day-all{padding:0;display:flex;flex-wrap:wrap;gap:8px}
 .day-all .br-i{padding:0}
 .day-all .br-i::before{display:none}
@@ -393,25 +394,40 @@ document.getElementById('stats').innerHTML = R.stats.map(function (s) {
   document.getElementById('hero').innerHTML = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Timeline of updates">' + s + '</svg>';
 })();
 
-/* ---------- Branch timeline: newest at the top; nine a day, the rest behind + ---------- */
-var MAX = 9;
+/* ---------- Branch timeline: one node per date, newest at the top; three a date, the rest behind +N; empty dates join into one range node ---------- */
+var MAX = 3, WD = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'], MO = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+function dd(iso) { var t = new Date(iso + 'T00:00:00Z'); return { wd: WD[t.getUTCDay()], d: t.getUTCDate(), m: MO[t.getUTCMonth()] }; }
 // Major and support items first, then the rest, newest first.
 function dayItems(key) {
-  var its = of(function (it) { return key === 'next' ? it.next : !it.next && it.day === key; }).reverse();
+  var its = of(function (it) { return key === 'next' ? it.next : !it.next && it.date === key; }).reverse();
   return its.filter(function (it) { return it.major || it.support; }).concat(its.filter(function (it) { return !it.major && !it.support; }));
 }
-var DAYS = [{ key: 'next', short: 'In', date: 'progress' }, { key: 'now' }].concat(R.days.slice().reverse());
-document.getElementById('all').innerHTML = DAYS.map(function (d) {
-  if (d.key === 'now') return '<div class="br-now"><span>Today</span></div>';
-  var its = dayItems(d.key), rest = its.length - MAX;
-  if (!its.length && d.key !== 'next') return '';
-  if (rest > 0) its = its.slice(0, MAX);
-  return '<div class="br-d' + (d.key === 'next' ? ' br-d--next' : '') + '" id="day-' + d.key + '"><div class="br-n"><span class="br-date"><b>' + esc(d.short) + '</b><span>' + esc(d.date) + '</span></span></div><ul class="br-ul">' +
-    its.map(function (it) {
-      return '<li class="br-i' + (it.major ? ' br-i--key' : '') + '"><button type="button" class="tag" data-open="' + it.id + '">' + svgIcon(it.icon) + esc(it.title) + (it.support ? badge() : '') + '</button></li>';
-    }).join('') + (rest > 0 ? '<li class="br-i"><button type="button" class="tag tag--more" data-day="' + d.key + '" title="Show all ' + (rest + MAX) + '">+' + rest + '</button></li>' : '') +
-    (!its.length ? '<li class="br-i br-none">Nothing in progress</li>' : '') + '</ul></div>';
-}).join('');
+function tagLi(it) { return '<li class="br-i' + (it.major ? ' br-i--key' : '') + '"><button type="button" class="tag" data-open="' + it.id + '">' + svgIcon(it.icon) + esc(it.title) + (it.support ? badge() : '') + '</button></li>'; }
+var DATES = [];
+for (var t = Date.parse(R.period.today); t >= Date.parse(R.period.from); t -= 864e5) DATES.push(new Date(t).toISOString().slice(0, 10));
+var NODES = [], seenDay = {};
+DATES.forEach(function (iso) {
+  var its = dayItems(iso), last = NODES[NODES.length - 1];
+  if (!its.length && last && last.empty) { last.from = iso; return; }
+  NODES.push({ to: iso, from: iso, empty: !its.length, its: its });
+});
+function node(d, label, body) {
+  return '<div class="br-d' + d.cls + '"' + (d.id ? ' id="' + d.id + '"' : '') + '><div class="br-n"><span class="br-date"><b>' + esc(label[0]) + '</b><span>' + esc(label[1]) + '</span></span></div><ul class="br-ul">' + body + '</ul></div>';
+}
+var html = node({ cls: ' br-d--next', id: 'day-next' }, ['In', 'progress'], dayItems('next').map(tagLi).join('') || '<li class="br-i br-none">Nothing in progress</li>') + '<div class="br-now"><span>Today</span></div>';
+NODES.forEach(function (n) {
+  var a = dd(n.from), b = dd(n.to);
+  if (n.empty) {
+    var lbl = n.from === n.to ? [b.wd, b.d + ' ' + b.m] : [a.wd + ' – ' + b.wd, a.d + (a.m === b.m ? '' : ' ' + a.m) + ' – ' + b.d + ' ' + b.m];
+    html += node({ cls: ' br-d--empty' }, lbl, '');
+    return;
+  }
+  var g = n.its[0].day, id = seenDay[g] ? '' : 'day-' + g; seenDay[g] = 1;
+  var shown = n.its.length > MAX + 1 ? n.its.slice(0, MAX) : n.its, rest = n.its.length - shown.length;
+  html += node({ cls: '', id: id }, [b.wd, b.d + ' ' + b.m], shown.map(tagLi).join('') +
+    (rest ? '<li class="br-i"><button type="button" class="tag tag--more" data-day="' + n.to + '" title="Show all ' + n.its.length + '">+' + rest + ' more</button></li>' : ''));
+});
+document.getElementById('all').innerHTML = html;
 
 /* ---------- Week ahead: in-progress work with its stage; no dates ---------- */
 var A = R.ahead;
@@ -517,14 +533,12 @@ function open(id) {
 }
 // The + on a day: the full list of that day, each one opens its own card.
 function openDay(key) {
-  var d = R.days.filter(function (x) { return x.key === key; })[0] || {}, its = dayItems(key);
+  var d = dd(key), its = dayItems(key);
   back = document.activeElement;
   document.getElementById('card-i').innerHTML = svgIcon('list');
-  document.getElementById('card-t').textContent = (d.short || '') + ' ' + (d.date || '');
+  document.getElementById('card-t').textContent = d.wd + ' ' + d.d + ' ' + d.m;
   document.getElementById('card-s').textContent = its.length + ' updates';
-  document.getElementById('card-b').innerHTML = '<ul class="br-ul day-all">' + its.map(function (it) {
-    return '<li class="br-i' + (it.major ? ' br-i--key' : '') + '"><button type="button" class="tag" data-open="' + it.id + '">' + svgIcon(it.icon) + esc(it.title) + (it.support ? badge() : '') + '</button></li>';
-  }).join('') + '</ul>';
+  document.getElementById('card-b').innerHTML = '<ul class="br-ul day-all">' + its.map(tagLi).join('') + '</ul>';
   scrim.hidden = false; document.getElementById('card-x').focus();
 }
 document.addEventListener('click', function (e) { var m = e.target.closest('[data-day]'); if (m) { e.preventDefault(); openDay(m.getAttribute('data-day')); } });

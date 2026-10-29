@@ -118,7 +118,7 @@ export function build(config, data, nowIso) {
       seen.add(h.pr); dayKeys.add(day);
       const impact = userImpact(pr?.body), ev = data.evidence[h.pr], title = config.titles?.[h.pr] || headline(h.title);
       items.push({
-        id: `pr${h.pr}`, title, icon: iconFor(h.title, config.icons), day, next: false,
+        id: `pr${h.pr}`, title, icon: iconFor(h.title, config.icons), day, date: at.date, next: false,
         major: has(pr, L.major), support: has(pr, L.support), why: impact.why, what: impact.what || h.title, more: title === h.title ? [] : [`${h.title}.`],
         status: `Live · ${short(at.date)}`, prs: [h.pr], issues: linkedIssues(pr?.body), evidence: ev || null, releasedAt: rel.published_at
       });
