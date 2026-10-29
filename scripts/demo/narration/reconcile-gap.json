@@ -1,8 +1,7 @@
 {
   "cues": [
-    {"step":1,"text":"No invoice."},
-    {"step":2,"through":3,"text":"Compare the suggested invoice with the job."},
-    {"step":4,"through":6,"text":"Link the matching invoice, then open Ready."},
-    {"step":7,"through":8,"text":"The Linked card confirms the job and invoice are connected."}
+    {"step":1,"through":3,"text":"This job has no invoice linked yet. Flow's found a likely match for us."},
+    {"step":4,"through":6,"text":"We'll link that one, then open the invoice."},
+    {"step":7,"through":8,"text":"And there it is. The job's linked to the invoice."}
   ]
 }

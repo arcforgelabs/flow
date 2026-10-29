@@ -1,8 +1,7 @@
 {
   "cues": [
-    {"step":1,"through":2,"text":"Open Pending and select the invoice."},
-    {"step":3,"through":4,"text":"This client is missing from Xero."},
-    {"step":5,"through":6,"text":"Choose Create, then confirm."},
-    {"step":7,"through":8,"text":"The problem clears. The invoice is ready."}
+    {"step":1,"through":4,"text":"This one's waiting because the client isn't in Xero yet. We can add them from here."},
+    {"step":5,"through":6,"text":"We'll create them here."},
+    {"step":7,"through":8,"text":"There we go. The invoice is ready to send."}
   ]
 }

@@ -67,7 +67,12 @@ GitHub scheduler or artifact upload. No workflow dispatch is performed here.
 ## Spoken narration
 
 `narration/voice.json` records the provider, model, voice, pace and delivery
-instructions. Each clip has a concise script in `narration/<seed>.json`; cues
+instructions. Dotius gives a relaxed, friendly look at a feature we have made:
+connected thoughts, natural contractions and room to look at the result. Keep
+the words factual. Avoid sales language, formal click instructions and clipped
+one-word cues. The current Fable voice is a provisional English male take;
+Dotius's original saved preset has not been recovered. Each clip has a concise
+script in `narration/<seed>.json`; cues
 refer to the recorded step numbers and can span several steps. Keep those
 settings consistent across editions. This uses OpenAI's speech endpoint only,
 not ChatGPT live voice or Realtime. The API key needs text-to-speech Request
@@ -90,7 +95,7 @@ No key value enters the output or logs. Narration is disclosed as AI-generated
 in the manifest; the report publisher must show that disclosure to viewers.
 
 Live speech generation was verified on 29 October 2026 with the managed
-`VOICE_EXPLAINER_TOKEN` binding and the saved Marin profile. The three synthetic
+`VOICE_EXPLAINER_TOKEN` binding and the initial Marin profile. The three synthetic
 scenarios produced narrated MP4, WebM, WAV and timing manifests. The short
 payment and reconciliation cues were shortened to fit the original shot times.
 In a managed runtime with an inherited HTTP proxy, prefix the command with
