@@ -23,9 +23,10 @@ import { createUiAssetsRouter } from './ui/routes.js';
 //
 // `auth` is { settings, clerk, personAuth, clerkProxy } from server/index.js
 // (or a test). Without it sign-in is off and every person route answers 503.
-// `trustProxy` is Express's `trust proxy`: 1 hop on Replit, so rate limits
-// count per client rather than per proxy. The limits are requests per minute
-// per client, sized for a lab of a few people: `rateLimitPerMinute` for /api,
+// `trustProxy` is Express's `trust proxy`: FLOW_TRUST_PROXY_HOPS, with 1 hop
+// on Replit by default, so Clerk and rate limits use the client address.
+// The limits are requests per minute per client, sized for a lab of a few
+// people: `rateLimitPerMinute` for /api,
 // `signInRateLimitPerMinute` for the sign-in page and its config, and
 // `clerkProxyRateLimitPerMinute` for Clerk's Frontend API, which a signed-in
 // browser calls often, and `assetRateLimitPerMinute` for the scripts, styles
