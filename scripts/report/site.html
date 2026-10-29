@@ -159,6 +159,11 @@ button{font:inherit;color:inherit}
 .br-quiet svg{width:15px;height:15px;color:var(--t-mute)}.br-d--empty .br-n::after{border-style:dashed;border-color:var(--t-brd-hi);background:var(--t-paper)}.br-d--empty .br-date b,.br-d--empty .br-date span{color:var(--t-mute)}
 /* Day sheet */
 .scrim.day .card{width:min(860px,100%)}
+/* Day sheet header: one line, the date and the count on the same baseline, close at the right. */
+.scrim.day #card-i{display:none}
+.scrim.day .card-h>div{display:flex;align-items:baseline;gap:14px}
+.scrim.day .card-h h3{font-size:26px;line-height:1}
+.scrim.day .status{margin:0;padding:0;border:0;background:none;color:var(--t-mute);font-size:11px}
 .dsplit{display:flex;gap:3px;height:8px}
 .dseg{flex:1 1 0;min-width:8px}.dseg--new{background:var(--t-success)}.dseg--fix{background:var(--t-danger)}.dseg--other{background:var(--t-brd-hi)}
 .dcols{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:20px}
