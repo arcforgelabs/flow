@@ -5,47 +5,47 @@
     "width": 1280,
     "height": 800
   },
-  "duration": 15.641305231999999,
+  "duration": 15.962252917999999,
   "steps": [
     {
       "do": "click",
       "target": "[role='tab']:has-text('Sent')",
       "expect": "text=Synthetic paid invoice",
-      "start": 0.5000151430000005,
-      "end": 2.9346190530000005
+      "start": 0.50002704,
+      "end": 3.150722201
     },
     {
       "do": "hover",
       "target": "text=Synthetic paid invoice",
       "hold": 1500,
-      "start": 2.9346295690000006,
-      "end": 5.372932119000001
+      "start": 3.1507326170000005,
+      "end": 5.581410469
     },
     {
       "do": "hover",
       "target": "[title*='Paid in Xero']",
       "hold": 1500,
-      "start": 5.372939720000001,
-      "end": 7.824878806000001
+      "start": 5.581419412,
+      "end": 8.075061121000001
     },
     {
       "do": "click",
       "target": "tbody tr:first-child a[href^='/invoices/']",
       "hold": 1500,
-      "start": 7.8248847239999995,
-      "end": 10.239210669
+      "start": 8.075068492,
+      "end": 10.559366804999998
     },
     {
       "do": "wait",
       "ms": 1500,
-      "start": 10.239216737000001,
-      "end": 12.940527927
+      "start": 10.559380184999998,
+      "end": 13.259903347
     },
     {
       "do": "wait",
       "ms": 1500,
-      "start": 12.940615666000001,
-      "end": 15.641298552
+      "start": 13.259915473999998,
+      "end": 15.962245426999997
     }
   ]
 }

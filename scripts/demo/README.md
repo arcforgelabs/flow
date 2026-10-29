@@ -23,7 +23,8 @@ Supported actions: `hover`, `click`, `type` (`text`), `press` (`key`), `scroll`
 (`dy`), `wait` (`ms`). `target` is a strict Playwright selector. `expect` and
 `expectHidden` assert the result. Cursor movement takes 20 timed points, with a
 400ms target pause; typing uses 50ms keystrokes and results hold 1–1.5 seconds.
-The take must last 15–45 seconds. One cursor is drawn on the page.
+The take must last 15–45 seconds. A standard white arrow with a black outline
+is drawn on the page; its tip marks the click position.
 
 A successful take writes `<out>.mp4`, `<out>.webm`, `<out>.json` (step timings)
 and `<out>-frames/NN.png` (screen frames at the end of each step). Existing output

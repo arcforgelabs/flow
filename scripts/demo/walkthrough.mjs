@@ -53,9 +53,18 @@ try {
   });
   await context.addInitScript(() => {
     addEventListener('DOMContentLoaded', () => {
-      const cursor = document.createElement('div');
+      const cursor = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
       cursor.id = 'walkthrough-cursor';
-      cursor.style.cssText = 'position:fixed;left:80px;top:80px;width:14px;height:14px;border:2px solid white;border-radius:50%;background:black;z-index:2147483647;pointer-events:none;box-shadow:0 0 2px black';
+      cursor.setAttribute('viewBox', '0 0 24 32');
+      cursor.setAttribute('aria-hidden', 'true');
+      cursor.style.cssText = 'position:fixed;left:80px;top:80px;width:24px;height:32px;z-index:2147483647;pointer-events:none;overflow:visible';
+      const arrow = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      arrow.setAttribute('d', 'M0 0 L0 23 L6 17 L11 28 L16 26 L11 15 L21 15 Z');
+      arrow.setAttribute('fill', 'white');
+      arrow.setAttribute('stroke', 'black');
+      arrow.setAttribute('stroke-width', '1.5');
+      arrow.setAttribute('stroke-linejoin', 'round');
+      cursor.append(arrow);
       document.documentElement.append(cursor);
       addEventListener('mousemove', e => { cursor.style.left = `${e.clientX}px`; cursor.style.top = `${e.clientY}px`; });
     });

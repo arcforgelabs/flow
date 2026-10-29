@@ -5,14 +5,14 @@
     "width": 1280,
     "height": 800
   },
-  "duration": 18.178351705,
+  "duration": 18.867677916,
   "steps": [
     {
       "do": "hover",
       "target": "text=Bayview Clinic",
       "hold": 1500,
-      "start": 0.5000176860000002,
-      "end": 2.9929027379999997
+      "start": 0.5000209100000002,
+      "end": 3.217007136000001
     },
     {
       "do": "type",
@@ -20,42 +20,42 @@
       "text": "Bayview",
       "expect": "text=Bayview Clinic",
       "expectHidden": "text=Harbour Smiles",
-      "start": 2.9929105390000004,
-      "end": 5.599905981
+      "start": 3.217020926,
+      "end": 6.213508953
     },
     {
       "do": "wait",
       "ms": 1000,
-      "start": 5.599913462000001,
-      "end": 7.800073174000001
+      "start": 6.213518146999999,
+      "end": 8.413874267
     },
     {
       "do": "click",
       "target": "text=Bayview Clinic",
       "expect": "h1:visible",
       "hold": 1500,
-      "start": 7.800081446,
-      "end": 10.305716074
+      "start": 8.413881678000001,
+      "end": 10.960238267000001
     },
     {
       "do": "wait",
       "ms": 1500,
-      "start": 10.305723454999999,
-      "end": 13.005832842
+      "start": 10.960245368,
+      "end": 13.661284941000002
     },
     {
       "do": "click",
       "target": "a[data-nav='contacts']",
       "expect": "input[placeholder='Search']",
       "hold": 1500,
-      "start": 13.005840674,
-      "end": 15.477796526000002
+      "start": 13.661294445,
+      "end": 16.166630418
     },
     {
       "do": "wait",
       "ms": 1500,
-      "start": 15.477803106,
-      "end": 18.178344735
+      "start": 16.166637419000004,
+      "end": 18.867671175999998
     }
   ]
 }

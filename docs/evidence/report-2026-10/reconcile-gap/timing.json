@@ -5,61 +5,61 @@
     "width": 1280,
     "height": 800
   },
-  "duration": 19.843664784999998,
+  "duration": 20.886215601,
   "steps": [
     {
       "do": "hover",
       "target": "tbody tr:first-child",
       "hold": 1500,
-      "start": 0.5000169040000001,
-      "end": 2.9626805959999998
+      "start": 0.5000204199999998,
+      "end": 3.143188143
     },
     {
       "do": "click",
       "target": "tbody tr:first-child",
       "expect": "button:visible:has-text('Link this invoice') >> nth=0",
-      "start": 2.9626875159999995,
-      "end": 5.176119397000001
+      "start": 3.143197357,
+      "end": 5.347206981
     },
     {
       "do": "wait",
       "ms": 1500,
-      "start": 5.176139716,
-      "end": 7.877329099000001
+      "start": 5.347222242999999,
+      "end": 8.047638486
     },
     {
       "do": "click",
       "target": "button:visible:has-text('Link this invoice') >> nth=0",
       "expect": "text=Linked to the draft.",
       "hold": 1500,
-      "start": 7.8773374810000005,
-      "end": 10.355879333
+      "start": 8.047648711,
+      "end": 10.541056105
     },
     {
       "do": "click",
       "target": "a[data-nav='invoices']",
-      "start": 10.355886704000001,
-      "end": 12.469285258
+      "start": 10.541065118999999,
+      "end": 12.677400428
     },
     {
       "do": "click",
       "target": "[role='tab']:has-text('Ready')",
-      "start": 12.469293099,
-      "end": 14.641293004000001
+      "start": 12.677407817999999,
+      "end": 15.219566408000002
     },
     {
       "do": "click",
       "target": "tr:has-text('SYNTHETIC-GAP') a[href^='/invoices/']",
       "hold": 1500,
       "expect": "text=SYNTHETIC-GAP",
-      "start": 14.641300234000001,
-      "end": 17.14326074
+      "start": 15.219572467000003,
+      "end": 18.185936232
     },
     {
       "do": "wait",
       "ms": 1500,
-      "start": 17.143306167,
-      "end": 19.843658546
+      "start": 18.18598271,
+      "end": 20.886208581
     }
   ]
 }
