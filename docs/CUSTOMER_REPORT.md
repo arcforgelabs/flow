@@ -1,4 +1,4 @@
-# Customer report (Week in review)
+# Customer report (What's new)
 
 Each week Flow makes a report for its customers as a pair of files:
 

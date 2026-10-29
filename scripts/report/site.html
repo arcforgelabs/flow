@@ -202,7 +202,7 @@ body[data-mode="full"] .wsys{display:grid;grid-template-columns:minmax(0,1fr) mi
 .wtip{fill:var(--t-accent);opacity:.6}
 .whub{fill:var(--t-paper)}
 .wflow rect{fill:var(--t-primary)}.wflow path{fill:none;stroke:var(--t-on-primary);stroke-width:2.6;stroke-linecap:round}
-.wpanel{display:grid;grid-template-rows:40px auto auto 1fr auto;gap:8px;height:236px;box-sizing:border-box;padding:20px;border:1px solid var(--t-brd);border-radius:var(--t-radius-lg);background:var(--t-paper)}
+.wpanel{position:relative;display:grid;grid-template-rows:40px auto auto 1fr auto;gap:8px;height:236px;box-sizing:border-box;padding:20px;border:1px solid var(--t-brd);border-radius:var(--t-radius-lg);background:var(--t-paper)}
 .wpanel .ib{width:40px;height:40px}.wpanel b{font:400 22px/1.2 var(--t-display);color:var(--t-strong)}
 .wpanel .n{font:600 16px var(--t-body);color:var(--t-accent)}.wpanel p{margin:0;font-size:14px;color:var(--t-dim)}.wpanel .w{font-size:12.5px;color:var(--t-mute)}
 #d-watch .watch{display:none}
@@ -322,6 +322,25 @@ body[data-mode="full"] .h.lbl{margin-top:72px}
 body[data-mode="full"] .sec{padding-top:56px;margin-top:72px}
 body[data-mode="full"] .sec h4{margin:24px 0 12px}
 .vgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px}
+.wpanel.wp--go{cursor:pointer;transition:border-color .15s,background .15s}
+.wpanel.wp--go:hover{border-color:var(--t-accent-brd);background:var(--t-s1)}
+.wgo{position:absolute;top:14px;right:14px;width:28px;height:28px;display:grid;place-items:center;color:var(--t-mute);border:1px solid var(--t-brd);border-radius:var(--t-radius)}
+.wgo svg{width:14px;height:14px}
+.wpanel.wp--go:hover .wgo{color:var(--t-strong);border-color:var(--t-accent-brd)}
+.ewrap{overflow-x:auto}.echart{display:block;width:100%;height:auto}
+.eg{stroke:var(--t-brd);stroke-dasharray:2 4}
+.ed{fill:var(--t-paper);stroke:var(--t-dim);stroke-width:2}.ed--ok{fill:var(--t-accent);stroke:var(--t-brd-hi)}
+.ex{font:600 10px var(--t-body);letter-spacing:.12em;fill:var(--t-mute)}.ex--d{font:400 14px var(--t-display);letter-spacing:0;fill:var(--t-strong)}
+.ekey{display:flex;flex-wrap:wrap;align-items:center;gap:8px 18px;font-size:13px;color:var(--t-dim)}
+.ekey span{display:inline-flex;align-items:center;gap:6px}
+.ekey i.ed{display:inline-block;width:12px;height:12px;border-radius:50%;border:2px solid var(--t-dim);background:var(--t-paper)}
+.ekey i.ed--ok{background:var(--t-accent);border-color:var(--t-brd-hi)}
+.ekey .esrc{margin-left:auto;color:var(--t-mute)}
+.rq{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.rq .drow{width:100%}
+.rq .drow>b{margin-left:auto;font:600 13px var(--t-body);color:var(--t-dim);white-space:nowrap}
+.rbar{flex:0 0 32%;height:6px;background:var(--t-s1);border-radius:3px;overflow:hidden}
+.rbar i{display:block;height:100%;background:var(--t-accent)}
 .vgrid .vuln{all:unset;box-sizing:border-box;cursor:pointer;display:grid;align-content:start;gap:8px;padding:16px;border:1px solid var(--t-brd);border-radius:var(--t-radius-lg);background:var(--t-paper);transition:border-color .15s,background .15s,transform .15s}
 .vgrid .vuln:hover{border-color:var(--t-accent-brd);background:var(--t-s1);transform:translateY(-1px)}
 .vgrid .vuln:focus-visible{outline:2px solid var(--t-ring);outline-offset:2px}
@@ -359,7 +378,7 @@ body[data-mode="full"] .sec h4{margin:24px 0 12px}
 
     <section class="sec" id="d-watch">
       <h2 class="h lbl">Ongoing</h2>
-      <div class="wsys"><div class="wfig" id="wfig"></div><div class="wpanel" id="wpanel" aria-live="polite"></div></div>
+      <div class="wsys"><div class="wfig" id="wfig"></div><div class="wpanel" id="wpanel" role="button" tabindex="0" aria-label="Open the evidence" aria-live="polite"></div></div>
       <div class="watch" id="sched"></div>
     </section>
 
@@ -520,7 +539,9 @@ var WATCH = R.ongoing, TURN = 9000;
     if (i === cur) return; cur = i; frac = 0; t0 = performance.now();
     var w = WATCH[i];
     svg.querySelectorAll('.sl').forEach(function (n) { n.classList.toggle('on', n.getAttribute('data-w') === String(i)); });
-    document.getElementById('wpanel').innerHTML = '<span class="ib">' + svgIcon(w.icon) + '</span><b>' + esc(w.name) + '</b><span class="n">' + esc(w.result) + '</span><p>' + esc(w.does) + '</p><span class="w">' + esc(w.when) + '</span>';
+    var wp = document.getElementById('wpanel');
+    wp.innerHTML = '<span class="ib">' + svgIcon(w.icon) + '</span><b>' + esc(w.name) + '</b><span class="n">' + esc(w.result) + '</span><p>' + esc(w.does) + '</p><span class="w">' + esc(w.when) + '</span>' + (w.proof ? '<span class="wgo" data-tip="Evidence">' + svgIcon('maximize-2') + '</span>' : '');
+    wp.classList.toggle('wp--go', !!w.proof); wp.setAttribute('data-w', i);
   }
   // The rim timer: an arc grows along the active slice's edge; the dot leads it; at the end the next slice takes over.
   function rim(f) {
@@ -542,7 +563,11 @@ var WATCH = R.ongoing, TURN = 9000;
     hold(Math.floor((((Math.atan2(dy, dx) - A0) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI) / STEP) % N);
   });
   svg.addEventListener('pointerleave', resume);
-  svg.addEventListener('click', function (e) { var n = e.target.closest('[data-w]'); if (n) hold(+n.getAttribute('data-w')); });
+  svg.addEventListener('click', function (e) { var n = e.target.closest('[data-w]'); if (n) { hold(+n.getAttribute('data-w')); openWatch(cur); } });
+  svg.addEventListener('keydown', function (e) { var n = e.target.closest('[data-w]'); if (n && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); hold(+n.getAttribute('data-w')); openWatch(cur); } });
+  var wp = document.getElementById('wpanel');
+  wp.addEventListener('click', function () { if (WATCH[cur].proof) openWatch(cur); });
+  wp.addEventListener('keydown', function (e) { if ((e.key === 'Enter' || e.key === ' ') && WATCH[cur].proof) { e.preventDefault(); openWatch(cur); } });
   svg.addEventListener('focusin', function (e) { var n = e.target.closest('[data-w]'); if (n) hold(+n.getAttribute('data-w')); });
   svg.addEventListener('focusout', resume);
   pick(0); rim(0);
@@ -594,6 +619,45 @@ function open(id) {
   b += '<details class="tech"><summary>Details</summary><div class="det">' + d + '</div></details>';
   document.getElementById('card-b').innerHTML = b;
   scrim.hidden = false; document.getElementById('card-x').focus();
+}
+// An Ongoing slice's evidence: the cards behind Security, each error's day, each request's time to fix.
+function openWatch(i) {
+  var w = WATCH[i], pf = w.proof; if (!pf) return;
+  back = document.activeElement;
+  document.getElementById('card-i').innerHTML = svgIcon(w.icon);
+  document.getElementById('card-t').textContent = w.name;
+  document.getElementById('card-s').textContent = w.result;
+  var b = '';
+  if (w.key === 'errors') {
+    var days = [], byDay = {};
+    for (var t = Date.parse(R.period.from); t <= Date.parse(R.period.today); t += 864e5) days.push(new Date(t).toISOString().slice(0, 10));
+    pf.days.forEach(function (e) { (byDay[e.date] = byDay[e.date] || []).push(e); });
+    var most = Math.max(2, Math.max.apply(null, days.map(function (d) { return (byDay[d] || []).length; }))), CW = 52, H = most * 22 + 54, W = days.length * CW;
+    var s = '';
+    days.forEach(function (d, k) {
+      var x = k * CW + CW / 2, x0 = dd(d);
+      s += '<line class="eg" x1="' + x + '" y1="8" x2="' + x + '" y2="' + (H - 40) + '"/>';
+      (byDay[d] || []).forEach(function (e, j) { s += '<circle class="ed' + (e.resolved ? ' ed--ok' : '') + '" cx="' + x + '" cy="' + (H - 52 - j * 22) + '" r="8"><title>' + (e.resolved ? 'Resolved' : 'Open') + '</title></circle>'; });
+      s += '<text class="ex" x="' + x + '" y="' + (H - 20) + '" text-anchor="middle">' + x0.wd.toUpperCase() + '</text><text class="ex ex--d" x="' + x + '" y="' + (H - 5) + '" text-anchor="middle">' + x0.d + '</text>';
+    });
+    b = '<div class="ewrap"><svg class="echart" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + esc(w.does) + ' One dot for each error, on the day it was caught.">' + s + '</svg></div>' +
+      '<div class="ekey"><span><i class="ed ed--ok"></i>Resolved</span><span><i class="ed"></i>Open</span><span class="esrc">Counts from Sentry. Error details stay private.</span></div>';
+  } else if (w.key === 'requests') {
+    var top = Math.max.apply(null, pf.rows.map(function (r) { return r.hours; }).concat([1]));
+    b = '<div class="lbl">Request to fix · ' + esc(pf.average) + ' on average</div><ul class="rq">' + pf.rows.map(function (r) {
+      var it = BY[r.open] || {}, hrs = r.hours < 48 ? r.hours + ' h' : Math.round(r.hours / 24) + ' d';
+      return '<li><button type="button" class="drow" data-open="' + r.open + '">' + svgIcon(it.icon) + '<span>' + esc(it.title) + '</span><span class="rbar"><i data-p="' + Math.round(r.hours / top * 100) + '"></i></span><b>' + hrs + '</b></button></li>';
+    }).join('') + '</ul>';
+  } else {
+    b = '<ul class="rq">' + pf.rows.map(function (id) {
+      var it = BY[id] || {};
+      return '<li><button type="button" class="drow" data-open="' + id + '">' + svgIcon(it.icon) + '<span>' + esc(it.title) + '</span><b>' + esc(String(it.status || '').replace(/^\w+ · /, '')) + '</b></button></li>';
+    }).join('') + '</ul>';
+  }
+  if (w.link) b += '<div class="xl"><a href="' + esc(w.link.href) + '" target="_blank" rel="noopener">' + esc(w.link.label) + svgIcon('external-link') + '</a></div>';
+  document.getElementById('card-b').innerHTML = b;
+  document.querySelectorAll('#card-b .rbar i').forEach(function (e) { e.style.width = e.getAttribute('data-p') + '%'; });
+  scrim.classList.add('day'); scrim.hidden = false; document.getElementById('card-x').focus();
 }
 // The + on a day: a day sheet. A split bar counts new features, bug fixes and the rest;
 // below it one column for each, every row opens its own card.

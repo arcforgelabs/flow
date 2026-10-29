@@ -157,8 +157,15 @@ export function build(config, data, nowIso) {
   const groups = [{ label: "Last week", items: sup(w.from, w.to) }, { label: "This week", items: sup(w.thisWeek, w.today) }];
   const support = groups.filter((g) => g.items.length);
   const counts = { items: [live.length - thisWeek.length, thisWeek.length], security: [security.length - security.filter((c) => c.thisWeek).length, security.filter((c) => c.thisWeek).length], support: groups.map((g) => g.items.length) };
-  const fix = average(merged.filter((p) => has(p, L.support) && inWeek(p, w.from, w.today))
-    .map((p) => Date.parse(p.merged_at) - Date.parse(firstAsked(p, data.opened))));
+  const asked = merged.filter((p) => has(p, L.support) && inWeek(p, w.from, w.today))
+    .map((p) => ({ open: `pr${p.number}`, title: config.titles?.[p.number] || cleanTitle(p.title), ms: Date.parse(p.merged_at) - Date.parse(firstAsked(p, data.opened)) }));
+  const fix = average(asked.map((a) => a.ms));
+  // The evidence behind each Ongoing slice: the cards, each error's day, each request's time to fix.
+  const proof = {
+    security: { rows: security.map((c) => c.open) },
+    errors: data.errors?.list && { days: data.errors.list.map((e) => ({ date: local(e.seen).date, resolved: e.resolved })) },
+    requests: { rows: asked.map((a) => ({ open: a.open, hours: Math.max(1, Math.round(a.ms / 36e5)) })), average: fix }
+  };
   const stats = config.stats.map((s) => {
     const [last, now] = counts[s.count];
     return { icon: s.icon, label: s.label, go: s.go, value: String(last), note: `${s.note ? s.note + ", " : ""}+${now} this week` };
@@ -182,7 +189,8 @@ export function build(config, data, nowIso) {
     links: { repo: data.repoUrl },
     stats, days, items: items.map(({ releasedAt, ...i }) => i), highlights,
     ahead: { progress, planned: { label: config.planned, note: majorNext ? `${majorNext} major` : `${progress.length} in progress` } },
-    ongoing: config.ongoing.map(({ zero, nodata, ...c }) => {
+    ongoing: config.ongoing.map(({ zero, nodata, link, ...c }) => {
+      c = { ...c, proof: proof[c.key] || null, link: link && { label: link.label, href: data.repoUrl + link.path } };
       const err = data.errors || {}, vals = { security: security.length, support: counts.support.reduce((x, y) => x + y, 0), fix, errors: err.caught, errorsFixed: err.resolved };
       if (nodata && /\{errors/.test(c.result) && err.caught == null) return { ...c, result: nodata, does: c.does.replace(/\{\w+\} of \{\w+\} resolved\./, "Catches each error and starts a fix.") };
       const result = fill(c.result, vals);
@@ -207,7 +215,8 @@ async function sentryCounts(from) {
   const res = await fetch(`https://sentry.io/api/0/projects/${org}/${project}/issues/?query=${q}&statsPeriod=14d&limit=100`, { headers: { authorization: `Bearer ${token}` } });
   if (!res.ok) throw new Error(`Sentry ${res.status}: check SENTRY_AUTH_TOKEN (read scope) and SENTRY_ORG/SENTRY_PROJECT.`);
   const issues = await res.json();
-  return { caught: issues.length, resolved: issues.filter((i) => i.status === "resolved").length };
+  // Counts and dates only: no error text leaves Sentry.
+  return { caught: issues.length, resolved: issues.filter((i) => i.status === "resolved").length, list: issues.map((i) => ({ seen: i.firstSeen, resolved: i.status === "resolved" })) };
 }
 
 async function main() {

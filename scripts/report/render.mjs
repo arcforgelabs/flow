@@ -26,7 +26,7 @@ export function icons(names) {
 }
 
 export function site(report, siteUrl) {
-  const names = [...report.items.map((i) => i.icon), ...report.stats.map((s) => s.icon), ...report.ongoing.map((c) => c.icon), "rocket", "circle-play", "list", "coffee", "bug", "sparkles", "shield-check", "external-link"];
+  const names = [...report.items.map((i) => i.icon), ...report.stats.map((s) => s.icon), ...report.ongoing.map((c) => c.icon), "rocket", "circle-play", "list", "coffee", "bug", "sparkles", "shield-check", "external-link", "maximize-2"];
   const data = { ...report, icons: icons(names), links: { ...report.links, site: siteUrl } };
   return readFileSync(join(HERE, "site.html"), "utf8")
     .replace("__TITLE__", esc(report.title))
@@ -100,11 +100,11 @@ export function email(report, { siteUrl, timeline = "timeline.png", inline = tru
 <tr><td ${a("period")}>${esc(report.period.label)}</td></tr>
 <tr><td ${a("pad")}><p ${a("hi")}>Hi ${m("first_name")},</p><h1 ${a("lede")}>${esc(report.lede)}</h1></td></tr>
 <tr><td ${a("pad")}><p ${a("lbl")}>In numbers</p><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>${stats.join("")}</tr></table></td></tr>
-<tr><td ${a("pad")}><p ${a("lbl")}>Timeline</p><a href="${link("d-updates")}"><img src="${esc(timeline)}" width="544" alt="Timeline: ${last} updates last week, ${thisWeek} this week. Open the full review to see each one." ${a("img")}></a></td></tr>
+<tr><td ${a("pad")}><p ${a("lbl")}>Timeline</p><a href="${link("d-updates")}"><img src="${esc(timeline)}" width="544" alt="Timeline: ${last} updates last week, ${thisWeek} this week. Open the page to see each one." ${a("img")}></a></td></tr>
 <tr><td ${a("pad")}><p ${a("lbl")}>Highlights</p><table role="presentation" width="100%" cellpadding="0" cellspacing="0">${hl}</table></td></tr>
 <tr><td ${a("pad")}><p ${a("lbl")}>Week ahead</p><table role="presentation" width="100%" cellpadding="0" cellspacing="0">${prog}</table>
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" ${a("mt")}><tr><td ${a("plan")}>${esc(report.ahead.planned.label)} · ${esc(report.ahead.planned.note)}</td></tr></table></td></tr>
-<tr><td align="center" ${a("btnc")}><a href="${esc(siteUrl)}" ${a("btn")}>Open the full review</a></td></tr>
+<tr><td align="center" ${a("btnc")}><a href="${esc(siteUrl)}" ${a("btn")}>See all updates</a></td></tr>
 <tr><td ${a("foot")}>You get this email as an admin of ${m("account")} on ${esc(report.product)}.<br><a href="${m("preferences_url")}" ${a("flink")}>Email choices</a> · <a href="${m("unsubscribe_url")}" ${a("flink")}>Unsubscribe</a><br>Arc Forge · ${m("sender_address")}</td></tr>
 </table></td></tr></table>
 </body></html>
