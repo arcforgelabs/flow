@@ -199,7 +199,9 @@ body:is([data-state="off"], [data-state="error"], [data-state="no-access"]) .fx-
 .fx-tip {
   position: fixed; top: 0; left: 0; z-index: 1000; max-width: 260px; padding: 4px 8px;
   border: 1px solid var(--fx-line); border-radius: var(--t-radius); background: var(--t-paper); color: var(--t-strong);
-  font: 500 12px/1.3 var(--t-body); pointer-events: none; white-space: nowrap;
+  font: 500 12px/1.3 var(--t-body); pointer-events: none;
+  /* A short name keeps one line; a long help text wraps inside the box. */
+  width: max-content; overflow-wrap: anywhere;
   box-shadow: var(--t-shadow), 0 4px 12px rgba(0, 0, 0, .12);
 }
 
@@ -382,7 +384,7 @@ a.fx-link:hover, a.fx-link:focus-visible { border-color: var(--t-strong); }
 
 /* One integration's page: hero, then the setup beside its facts. */
 .fx-int-page { display: grid; gap: 24px; }
-.fx-int-hero { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.fx-int-hero { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; min-width: 0; }
 .fx-int-hero .fx-title { min-width: 0; font-size: 28px; overflow-wrap: anywhere; }
 .fx-int-hero__actions { position: relative; display: flex; align-items: center; gap: 10px; margin-left: auto; }
 .fx-int-hero__actions .fx-progress { left: auto; right: 0; }
@@ -399,6 +401,9 @@ a.fx-link:hover, a.fx-link:focus-visible { border-color: var(--t-strong); }
 .fx-int-fold > summary::after { content: ''; width: 8px; height: 8px; margin-left: 2px; border: solid currentColor; border-width: 0 2px 2px 0; transform: rotate(-45deg); transition: transform 120ms var(--fx-ease); }
 .fx-int-fold[open] > summary::after { transform: rotate(45deg) translateY(-2px); }
 .fx-int-fold:not([open]) { gap: 0; }
+/* A fold inside a section (Settings, Advanced). */
+.fx-int-fold--sub { display: grid; gap: 14px; }
+.fx-int-fold--sub > summary { color: var(--t-dim); font: 600 14.5px/1.3 var(--t-body); }
 .fx-steps { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; counter-reset: step; }
 .fx-steps li { position: relative; padding-left: 38px; min-height: 26px; counter-increment: step; font-size: 14.5px; line-height: 1.55; }
 .fx-steps li::before {
@@ -1281,6 +1286,9 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
 .fx-setting__head { display: flex; align-items: center; gap: 2px; min-width: 0; }
 .fx-setting__head .fx-help { margin: -4px 0; border: 0; background: none; cursor: pointer; }
 .fx-setting__hint { margin: 0; color: var(--t-dim); font-size: 13px; line-height: 1.45; }
+.fx-history__status { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.fx-history__day { width: 160px; flex: none; }
+.fx-history__bar { width: 100%; height: 8px; accent-color: var(--t-brand); }
 .fx-setting[data-tone="danger"] .fx-setting__hint { color: var(--t-danger); }
 .fx-setting__control { display: flex; align-items: center; justify-content: flex-end; gap: 10px; min-width: 0; }
 .fx-setting__control > .fx-input, .fx-setting__control > .fx-select, .fx-setting__stack { width: 320px; max-width: 100%; }

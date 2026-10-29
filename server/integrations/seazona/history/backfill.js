@@ -1,4 +1,4 @@
-import { and, eq, inArray } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import { FlowError } from '../../../core/errors.js';
 import { mapOrder, parseSeazonaDate, text } from '../map.js';
 import { seazonaHistoryBatchJobs, seazonaLaneState, seazonaOrders } from '../schema.js';
@@ -11,8 +11,9 @@ import { createApiBatch, finishApiBatch, stageApiJobs } from './index.js';
 // detail. It makes at most
 // `historyCallsPerRun` calls a run, through the same rate governor and call
 // guards as the live lanes, and keeps its place in the lane's cursor, so it
-// resumes after a restart. Orders the live copy already holds are not read
-// again. Each order becomes one job in an API batch: reconciled as it is
+// resumes after a restart. Orders the live copy already holds, and orders
+// any earlier backfill read, are not read again, so a read started again over
+// the same days costs only the list calls. Each order becomes one job in an API batch: reconciled as it is
 // read, written to Flow's history when it is new, and kept for a person when
 // it is not. The batch rows are the record of what the API confirmed.
 
@@ -65,7 +66,7 @@ export async function startBackfill(db, { from, through = null, createdBy, setti
     throw Object.assign(new FlowError('conflict', 'A history backfill is already running'), { status: 409 });
   }
   const batch = await createApiBatch(db, { createdBy, from, through: last, at });
-  const cursor = { batchId: batch.id, from, through: last, nextDay: from, page: 1, pending: [], done: false, days: 0, read: 0 };
+  const cursor = { batchId: batch.id, from, through: last, nextDay: from, page: 1, pending: [], done: false, days: 0, read: 0, startedAt: at.toISOString() };
   await db.insert(seazonaLaneState).values({ lane: LANE, status: 'idle', cursor, nextRunAt: at })
     .onConflictDoUpdate({ target: seazonaLaneState.lane, set: { status: 'idle', cursor, nextRunAt: at, failureCount: 0, lastError: null, heldReason: null, updatedAt: at } });
   return describeBackfill(cursor);
@@ -89,19 +90,47 @@ export function describeBackfill(cursor) {
     batchId: cursor.batchId,
     from: cursor.from,
     through: cursor.through,
+    startedAt: cursor.startedAt ?? null,
     nextDay: cursor.done ? null : cursor.nextDay,
+    // The day whose orders it reads now: the last day listed while orders
+    // from it wait, else the next day to list.
+    readingDay: cursor.done ? null : (cursor.pending?.length && cursor.listDay) || cursor.nextDay,
     daysDone: cursor.days ?? 0,
     reachedDay: cursor.reached ?? null,
     ordersRead: cursor.read ?? 0,
     waitingToRead: cursor.pending?.length ?? 0,
     running: !cursor.done,
     stopped: Boolean(cursor.stopped),
+    // Where a stopped read goes on: the day it listed last while orders from
+    // that list were still to read, else the next day.
+    resumeFrom: !cursor.stopped ? null
+      : cursor.pending?.length && cursor.listDay ? cursor.listDay
+        : cursor.nextDay <= cursor.through ? cursor.nextDay : null,
   };
+}
+
+// A read that failed this many runs in a row shows as failed, not waiting.
+const FAILED_AFTER = 3;
+
+// The card's phase. A held or failed lane waits for its retry at nextRunAt;
+// a lane Seazona halted, or one that failed FAILED_AFTER times, has failed.
+function phaseOf(backfill, state) {
+  if (!backfill.running) return backfill.stopped ? 'stopped' : 'done';
+  if (state.status === 'stopped' || (state.status === 'failed' && state.failureCount >= FAILED_AFTER)) return 'failed';
+  return ['held', 'failed'].includes(state.status) ? 'waiting' : 'running';
 }
 
 export async function readBackfill(db) {
   const [state] = await db.select().from(seazonaLaneState).where(eq(seazonaLaneState.lane, LANE));
-  return describeBackfill(state?.cursor);
+  const backfill = describeBackfill(state?.cursor);
+  if (!backfill) return null;
+  const phase = phaseOf(backfill, state);
+  return {
+    ...backfill,
+    phase,
+    cause: ['waiting', 'failed'].includes(phase) ? state.lastError : null,
+    nextRunAt: backfill.running ? state.nextRunAt : null,
+  };
 }
 
 // One run of the `history` lane. `helpers` are the lane module's failure
@@ -119,10 +148,10 @@ export async function runHistoryBackfill(ctx, { isLaneLevel, describeReadFailure
   let deleted = 0;
   let quarantined = 0;
 
-  const inBatch = async (ids) => {
+  const alreadyRead = async (ids) => {
     if (!ids.length) return new Set();
     const rows = await db.select({ key: seazonaHistoryBatchJobs.jobKey }).from(seazonaHistoryBatchJobs)
-      .where(and(eq(seazonaHistoryBatchJobs.batchId, cursor.batchId), inArray(seazonaHistoryBatchJobs.jobKey, ids.map((id) => `case:${id}`))));
+      .where(inArray(seazonaHistoryBatchJobs.jobKey, ids.map((id) => `case:${id}`)));
     return new Set(rows.map((r) => r.key.slice(5)));
   };
 
@@ -134,6 +163,7 @@ export async function runHistoryBackfill(ctx, { isLaneLevel, describeReadFailure
           break;
         }
         calls += 1;
+        cursor.listDay = cursor.nextDay;
         const list = await client.get('orders/', { ordered: orderedParam(cursor.nextDay), page: cursor.page, pageSize });
         if (!Array.isArray(list)) throw new LaneError(`Seazona order list for ${cursor.nextDay} answer was not a list`, { code: 'seazona_list_invalid' });
         // The guide says the list answers orders placed on or after `ordered`,
@@ -149,7 +179,7 @@ export async function runHistoryBackfill(ctx, { isLaneLevel, describeReadFailure
         const live = ids.length
           ? new Set((await db.select({ id: seazonaOrders.id }).from(seazonaOrders).where(inArray(seazonaOrders.id, ids))).map((r) => r.id))
           : new Set();
-        const seen = await inBatch(ids);
+        const seen = await alreadyRead(ids);
         cursor.pending = ids.filter((id) => !live.has(id) && !seen.has(id));
         if (beyond) {
           cursor.nextDay = dayOf(Date.parse(cursor.through) + DAY_MS);
@@ -163,7 +193,7 @@ export async function runHistoryBackfill(ctx, { isLaneLevel, describeReadFailure
         continue;
       }
       const id = cursor.pending.shift();
-      if ((await inBatch([id])).size) continue;
+      if ((await alreadyRead([id])).size) continue;
       calls += 1;
       try {
         const detail = await client.get(`orders/${encodeURIComponent(id)}`);

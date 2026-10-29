@@ -9,7 +9,7 @@ import { createMonitoredLog } from '../server/core/monitoring.js';
 import { adapters } from '../server/integrations/adapters.js';
 import { createRegistry } from '../server/integrations/port.js';
 import { createTracing, requestName, sqlName, traceQueries } from '../server/core/tracing.js';
-import { createSentryAdapter, readSentrySettings, SENTRY_BROWSER, SENTRY_BROWSER_REPLAY, SENTRY_BROWSER_TRACING, sentryRelease } from '../server/integrations/sentry/index.js';
+import { createSentryAdapter, readSentrySettings, SENTRY_BROWSER, SENTRY_BROWSER_REPLAY, SENTRY_BROWSER_TRACING, SENTRY_SETUP, sentryRelease } from '../server/integrations/sentry/index.js';
 import { routePattern, scrubRecordingEvent, scrubSpan, tagNotify } from '../server/ui/monitoring.js';
 import { fakeClerk, request, TEST_PUBLISHABLE_KEY } from './support/clerk.js';
 import { freshDatabase, skipWithoutDatabase } from './support/db.js';
@@ -68,6 +68,15 @@ test('the settings need a Sentry DSN; environment and the report button have def
   assert.deepEqual(readSentrySettings({ SENTRY_DSN: ` ${DSN} `, SENTRY_ENVIRONMENT: 'staging', SENTRY_FEEDBACK: 'off', SENTRY_REPLAY: 'off', SENTRY_TRACES_SAMPLE_RATE: '0' }), { dsn: DSN, environment: 'staging', feedback: false, replay: false, tracesSampleRate: 0, tags: { product: 'flow' } });
   assert.deepEqual(readSentrySettings({ SENTRY_DSN: DSN, SENTRY_CLIENT: ' Example Lab ' }).tags, { product: 'flow', client: 'Example Lab' });
   assert.throws(() => readSentrySettings({ SENTRY_DSN: DSN, SENTRY_CLIENT: 'a\nb' }), /SENTRY_CLIENT must be one short line/);
+});
+
+// The screen shows an empty on/off setting as its default; that must be
+// what Sentry does with it, or the page says Off while it is on.
+test('each empty on/off setting shows what Sentry does with it', () => {
+  const read = readSentrySettings({ SENTRY_DSN: DSN });
+  const fields = Object.fromEntries(SENTRY_SETUP.fields.map((f) => [f.name, f]));
+  assert.equal(fields.SENTRY_FEEDBACK.default === 'on', read.feedback);
+  assert.equal(fields.SENTRY_REPLAY.default === 'on', read.replay);
 });
 
 test('the traces setting is a share from 0 to 1', () => {
