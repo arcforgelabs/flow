@@ -1038,14 +1038,17 @@ function seazonaHistorySection() {
       barRow.querySelector('.fx-setting__hint').replaceChildren(`${day(run.from)} to ${day(run.through)}`);
     }
     if (run?.running) {
-      const reading = `Reading ${day(run.readingDay ?? run.through)} · ${run.ordersRead} read${run.waitingToRead ? ` · ${run.waitingToRead} to read` : ''}`;
+      const what = { waiting: 'Waiting', failed: 'Failed' }[run.phase] ?? `Reading ${day(run.readingDay ?? run.through)}`;
+      const reading = `${what} · ${run.ordersRead} read${run.waitingToRead ? ` · ${run.waitingToRead} to read` : ''}`;
       const next = h('span', { class: 'fx-dim' });
       const count = () => {
         const left = Math.round((Date.parse(run.nextRunAt) - Date.now()) / 1000);
-        next.replaceChildren(left > 0 ? `· next in ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}` : '· reading now');
+        next.replaceChildren(left > 0 ? `· ${run.phase === 'running' ? 'next' : 'retry'} in ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}` : '· reading now');
       };
-      if (run.nextRunAt) { count(); tick = setInterval(count, 1000); }
-      status.replaceChildren(h('span', { class: 'fx-spinner fx-spinner--sm', 'aria-hidden': 'true' }), reading, next);
+      if (run.nextRunAt && run.phase !== 'failed') { count(); tick = setInterval(count, 1000); }
+      status.replaceChildren(
+        run.phase === 'running' ? h('span', { class: 'fx-spinner fx-spinner--sm', 'aria-hidden': 'true' }) : '',
+        reading, next, run.cause ? h('span', { class: 'fx-dim' }, `· ${run.cause}`) : '');
       control.replaceChildren(h('button', { class: 'fx-btn fx-btn--sm', type: 'button', disabled: !canAct, onclick: (event) => press(event.currentTarget, '/api/seazona/history/backfill/stop') }, 'Stop'));
     } else if (run?.resumeFrom) {
       status.replaceChildren(`Stopped at ${day(run.resumeFrom)} · ${run.ordersRead} read`);

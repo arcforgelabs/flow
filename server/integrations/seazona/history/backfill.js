@@ -66,7 +66,7 @@ export async function startBackfill(db, { from, through = null, createdBy, setti
     throw Object.assign(new FlowError('conflict', 'A history backfill is already running'), { status: 409 });
   }
   const batch = await createApiBatch(db, { createdBy, from, through: last, at });
-  const cursor = { batchId: batch.id, from, through: last, nextDay: from, page: 1, pending: [], done: false, days: 0, read: 0 };
+  const cursor = { batchId: batch.id, from, through: last, nextDay: from, page: 1, pending: [], done: false, days: 0, read: 0, startedAt: at.toISOString() };
   await db.insert(seazonaLaneState).values({ lane: LANE, status: 'idle', cursor, nextRunAt: at })
     .onConflictDoUpdate({ target: seazonaLaneState.lane, set: { status: 'idle', cursor, nextRunAt: at, failureCount: 0, lastError: null, heldReason: null, updatedAt: at } });
   return describeBackfill(cursor);
@@ -90,6 +90,7 @@ export function describeBackfill(cursor) {
     batchId: cursor.batchId,
     from: cursor.from,
     through: cursor.through,
+    startedAt: cursor.startedAt ?? null,
     nextDay: cursor.done ? null : cursor.nextDay,
     // The day whose orders it reads now: the last day listed while orders
     // from it wait, else the next day to list.
@@ -108,10 +109,28 @@ export function describeBackfill(cursor) {
   };
 }
 
+// A read that failed this many runs in a row shows as failed, not waiting.
+const FAILED_AFTER = 3;
+
+// The card's phase. A held or failed lane waits for its retry at nextRunAt;
+// a lane Seazona halted, or one that failed FAILED_AFTER times, has failed.
+function phaseOf(backfill, state) {
+  if (!backfill.running) return backfill.stopped ? 'stopped' : 'done';
+  if (state.status === 'stopped' || (state.status === 'failed' && state.failureCount >= FAILED_AFTER)) return 'failed';
+  return ['held', 'failed'].includes(state.status) ? 'waiting' : 'running';
+}
+
 export async function readBackfill(db) {
   const [state] = await db.select().from(seazonaLaneState).where(eq(seazonaLaneState.lane, LANE));
   const backfill = describeBackfill(state?.cursor);
-  return backfill && { ...backfill, nextRunAt: backfill.running ? state.nextRunAt : null };
+  if (!backfill) return null;
+  const phase = phaseOf(backfill, state);
+  return {
+    ...backfill,
+    phase,
+    cause: ['waiting', 'failed'].includes(phase) ? state.lastError : null,
+    nextRunAt: backfill.running ? state.nextRunAt : null,
+  };
 }
 
 // One run of the `history` lane. `helpers` are the lane module's failure
