@@ -11,6 +11,7 @@ import { jobChangeBanner } from '/assets/ui/job-change.js';
 import { named, startTips } from '/assets/ui/tip.js';
 import { savedViews } from '/assets/ui/saved-views.js';
 import { sidecar } from '/assets/ui/sidecar.js';
+import { syncStatus } from '/assets/ui/sync-status.js';
 import { captureButton } from '/assets/ui/captures.js';
 
 // The colours of a custom field's options, read from server/core/custom-fields.js at build.
@@ -29,7 +30,7 @@ if (document.readyState === 'loading') document.addEventListener('DOMContentLoad
 else ready();
 
 export {
-  bulkBar, captureButton, cardRows, colorPicker, columnTable, crumbs, dialog, edgeFade, fieldError, findBox, h, helpLink, holdButton, ICON_CHOICES, iconPicker, ICONS, jobChangeBanner, listFrame, listHead, listPager, lucide, named, pager,
+  syncStatus, bulkBar, captureButton, cardRows, colorPicker, columnTable, crumbs, dialog, edgeFade, fieldError, findBox, h, helpLink, holdButton, ICON_CHOICES, iconPicker, ICONS, jobChangeBanner, listFrame, listHead, listPager, lucide, named, pager,
   notice, onRightButton, OPTION_COLORS, optionPill, pageHeader, rowCells, rowMenu, savedViews, sectionTitle, settingRow, sidecar, svg, tileCard,
   tileSection, toast, ui, viewBar, viewSaver,
 };

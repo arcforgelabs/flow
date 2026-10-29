@@ -355,8 +355,13 @@ An owner or admin starts it on Integrations › Seazona, History: pick the
 day in Read from and press Start (Stop ends it). Resume goes on where a
 stopped read stopped. Orders that any earlier read staged are skipped, so a
 read again over the same days costs only the list calls. The card shows the
-day it reads, the counts, a progress bar and the time to the next run.
-`GET /api/seazona/history` gives the run's `startedAt` and its `phase`:
+shared SyncStatus row: pulse until a real result, total jobs from `history.jobs`,
+the day rail and an approximate time remaining. Waiting shows the retry countdown.
+The page polls every five seconds only while visible and running or waiting.
+Resume starts a new clock without resetting the total. No steps dropdown is
+shown until persisted steps are available.
+`GET /api/seazona/history` gives the run's `startedAt`, persisted `endedAt`
+(after Stop or Done, so elapsed time survives reload), and its `phase`:
 `running`, `waiting` (the guard holds or a run failed; `nextRunAt` is the
 retry), `failed` (Seazona halted calls, or 3 runs failed in a row; `cause`
 says why), `stopped` or `done`. The

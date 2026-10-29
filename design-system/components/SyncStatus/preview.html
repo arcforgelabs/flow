@@ -1,0 +1,7 @@
+<!-- @dsCard group="Feedback" height=240 -->
+<div id="sync-preview"></div>
+<script>
+const row = window.FlowDesignSystem.syncStatus();
+document.getElementById('sync-preview').append(row.element);
+row.draw({ phase: 'running', startedAt: new Date(Date.now() - 120000).toISOString(), count: 412, unit: 'jobs', from: '2026-09-01', through: '2026-09-30', at: '2026-09-14' }, window.FlowDesignSystem.h('button', { class: 'fx-btn', type: 'button', onclick: () => row.draw({ phase: 'stopped', count: 412, unit: 'jobs', at: '2026-09-14' }) }, 'Stop'));
+</script>

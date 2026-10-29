@@ -618,6 +618,23 @@ export const RULES = {
     ],
     "card": "Sidecar"
   },
+  "syncStatus": {
+    "component": "syncStatus",
+    "direction": "Layers",
+    "phone": {
+      "layout": "wrap"
+    },
+    "tablet": {
+      "layout": "row"
+    },
+    "desk": {
+      "layout": "row"
+    },
+    "touch": 44,
+    "pageOverflow": "none",
+    "screens": [],
+    "card": "SyncStatus"
+  },
   "fx-tabs": {
     "component": "fx-tabs",
     "direction": "scrolling tabs",
