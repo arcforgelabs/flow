@@ -11,7 +11,7 @@ Issue: #388.
 
 ## Where the words come from
 
-Only public GitHub records. Nothing reads customer data, Sentry or support
+Only public GitHub records. The public workflow reads no customer data, Sentry or support
 tickets, so no person or AI has to look at private data to write a report.
 
 | Report part | Source |
@@ -53,3 +53,24 @@ node scripts/report/render.mjs --report report.json --out out --site-url https:/
 
 - Hosting the page behind the Arc Forge sign-in: arcforgelabs/console#24.
 - Sending the email with consent and unsubscribe: arcforgelabs/platform#439.
+
+## Private editions and first publication
+
+The public workflow produces a generic product update only. Keep managed-account
+configuration, subscriber details, optional Sentry configuration and generated
+customer editions outside this public repository and its Actions artifacts.
+Use `--config /private/report.yml` and `--out /private/report.json` when collecting
+an account edition, then render to a private directory. Sentry is optional; a
+private runner may provide its read-only configuration. Only counts and first-seen
+dates enter the report, never error text or project names.
+
+Before publishing the first edition, the maintainer must choose the private host
+and allowed audience, configure its access protection, and supply the final page
+URL to `--site-url`. No host or access policy is selected by this generator.
+Keep the email as a draft; the maintainer fills the subscriber merge fields and
+sends it. A private timeline image may require attachment/CID handling by the
+sender because mail clients cannot sign in to the protected website.
+
+Local synthetic collect/render proof does not prove a scheduled GitHub run,
+host deployment, sign-in enforcement or email delivery. Those remain separate
+publication checks.

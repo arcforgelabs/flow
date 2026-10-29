@@ -62,6 +62,7 @@ test('the email is safe to send: no script, inline styles, absolute links and me
   const r = build(config, data, NOW);
   const html = email(r, { siteUrl: 'https://reports.example/flow' });
   assert.doesNotMatch(html, /<script|class="/);
+  assert.match(html, /src="https:\/\/reports\.example\/timeline\.png"/);
   assert.match(html, /Hi \{\{first_name\}\},/);
   assert.match(html, /\{\{unsubscribe_url\}\}/);
   for (const [, href] of html.matchAll(/href="([^"]+)"/g)) assert.match(href, /^(https:\/\/|\{\{)/);
@@ -79,4 +80,26 @@ test('the web page carries the report data and the icons it names', () => {
   assert.ok(!/<\/script/i.test(html.match(/var R = (\{.*\});\n/)[1]), 'no closing tag inside the data');
   assert.equal(json.links.site, 'https://reports.example/flow');
   for (const i of json.items) assert.ok(json.icons[i.icon], `icon ${i.icon}`);
+});
+
+ test('roadmap stages require an exact issue reference', () => {
+  const r = build(config, { ...data, openPulls: [{ number: 60, draft: true, body: 'Related: #500' }] }, NOW);
+  assert.equal(r.ahead.progress[0].stage, 'Plan');
+});
+
+test('the collector CLI writes the requested file and period', async () => {
+  const { mkdtemp, readFile, rm } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { promisify } = await import('node:util');
+  const { execFile } = await import('node:child_process');
+  const out = await mkdtemp(join(tmpdir(), 'flow-report-'));
+  try {
+    await promisify(execFile)(process.execPath, ['--import', './test/fixtures/report/github.mjs', 'scripts/report/collect.mjs', '--now', NOW, '--out', join(out, 'report.json')], {
+      env: { ...process.env, GITHUB_REPOSITORY: 'example/synthetic', GITHUB_TOKEN: 'synthetic', SENTRY_AUTH_TOKEN: '' },
+    });
+    const report = JSON.parse(await readFile(join(out, 'report.json'), 'utf8'));
+    assert.equal(report.period.label, '19 – 28 October 2026');
+    assert.equal(report.items[0].title, 'Synthetic update');
+  } finally { await rm(out, { recursive: true, force: true }); }
 });

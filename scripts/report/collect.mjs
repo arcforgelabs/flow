@@ -9,6 +9,7 @@
 // Needs GITHUB_TOKEN (the workflow token is enough) and GITHUB_REPOSITORY.
 import { readFileSync, writeFileSync, existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import { parseArgs } from "node:util";
 import { parse } from "yaml";
 
 const DAY_KEYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
@@ -130,7 +131,7 @@ export function build(config, data, nowIso) {
   }
   const progress = [];
   for (const issue of data.roadmap) {
-    const pr = data.openPulls.find((p) => linkedIssues(p.body).includes(issue.number) || String(p.body || "").includes(`#${issue.number}`));
+    const pr = data.openPulls.find((p) => linkedIssues(p.body).includes(issue.number));
     const st = stageOf(pr, config.stages), title = config.titles?.[issue.number] || cleanTitle(issue.title);
     const id = `i${issue.number}`;
     items.push({ id, title, icon: iconFor(title, config.icons), kind: kindOf(issue.title), day: null, next: true, major: (issue.labels || []).some((l) => l.name === L.major),
@@ -222,9 +223,9 @@ async function sentryCounts(from) {
 }
 
 async function main() {
-  const args = Object.fromEntries(process.argv.slice(2).join(" ").split(/\s*--/).filter(Boolean).map((a) => a.split(/\s+/)));
-  const config = parse(readFileSync(args.config?.[0] || "scripts/report/report.yml", "utf8"));
-  const now = args.now?.[0] || new Date().toISOString();
+  const { values: args } = parseArgs({ options: { config: { type: "string" }, now: { type: "string" }, out: { type: "string" } } });
+  const config = parse(readFileSync(args.config || "scripts/report/report.yml", "utf8"));
+  const now = args.now || new Date().toISOString();
   const repo = process.env.GITHUB_REPOSITORY, token = process.env.GITHUB_TOKEN;
   if (!repo || !token) throw new Error("Set GITHUB_REPOSITORY and GITHUB_TOKEN.");
   const w = weekOf(now, config.timezone);
@@ -248,7 +249,7 @@ async function main() {
   }
   const errors = await sentryCounts(w.from);
   const report = build(config, { releases, pulls, merged, roadmap, openPulls, opened, errors, evidence: evidenceByPr("."), repoUrl: `https://github.com/${repo}/` }, now);
-  writeFileSync(args.out?.[0] || "report.json", JSON.stringify(report, null, 2) + "\n");
+  writeFileSync(args.out || "report.json", JSON.stringify(report, null, 2) + "\n");
   console.log(`report: ${report.items.length} items, ${report.highlights.length} highlights, period ${report.period.label}`);
 }
 

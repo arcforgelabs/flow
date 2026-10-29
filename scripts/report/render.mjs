@@ -78,7 +78,7 @@ const S = {
 };
 
 // One email, two ways to carry its styles: inline (to send) or classes (to preview).
-export function email(report, { siteUrl, timeline = "timeline.png", inline = true, merge = {} }) {
+export function email(report, { siteUrl, timeline = /^https?:/.test(siteUrl) ? new URL("timeline.png", siteUrl).href : "timeline.png", inline = true, merge = {} }) {
   const a = (k) => (inline ? `style="${S[k]}"` : `class="${k}"`);
   const m = (k) => (k in merge ? esc(merge[k]) : `{{${k}}}`);
   const by = Object.fromEntries(report.items.map((i) => [i.id, i]));
@@ -132,7 +132,7 @@ async function main() {
   for (const i of report.items) if (i.evidence?.src) cpSync(i.evidence.src, join(out, "ev", i.evidence.src.split("/").pop()), { recursive: true });
   writeFileSync(join(out, "site.html"), site(report, siteUrl));
   writeFileSync(join(out, "email.html"), email(report, { siteUrl }));
-  writeFileSync(join(out, "email-preview.html"), email(report, { siteUrl, inline: false, merge: JSON.parse(args.merge || "{}") }));
+  writeFileSync(join(out, "email-preview.html"), email(report, { siteUrl, timeline: "timeline.png", inline: false, merge: JSON.parse(args.merge || "{}") }));
   await timelinePng(resolve(out, "site.html"), join(out, "timeline.png"));
   console.log(`report: wrote ${out}/site.html, email.html, email-preview.html, timeline.png`);
 }
