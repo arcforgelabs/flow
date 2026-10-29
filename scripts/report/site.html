@@ -152,27 +152,26 @@ button{font:inherit;color:inherit}
 .day-all .br-i::before{display:none}
 a.tag{text-decoration:none}
 .tag--sm{font-size:12.5px;padding:4px 10px 4px 18px;background:var(--t-s1)}
-/* Ongoing checks, full mode: the sweep follows the pointer; the nearest check pulses at its own pace */
-body[data-mode="full"] .wsys{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:24px;align-items:center}
-.wfig svg{display:block;width:100%;height:auto;max-width:800px;margin:0 auto}
-.wr{fill:none;stroke:var(--t-brd);stroke-dasharray:3 5}.wr--in{stroke-dasharray:2 6}
-.sweep path{fill:var(--t-accent-bg);opacity:.7}
-.wl{stroke:var(--t-brd-hi);stroke-width:1.5}.wl--wait{stroke-dasharray:4 4;stroke:var(--t-brd)}
-.wdot{fill:var(--t-accent);display:none}.wdot.on{display:inline}
-.sweep{transition:transform .12s ease-out}
-.wn{cursor:pointer;outline:none}
-.wc{fill:var(--t-paper);stroke:var(--t-brd-hi);stroke-width:1.5;transition:stroke-width .15s}
-.wn--wait .wc{stroke-dasharray:4 3}
-.wn:hover .wc,.wn:focus-visible .wc{stroke:var(--t-accent);stroke-width:3}
-.wn.on .wc{fill:var(--t-primary);stroke:var(--t-primary)}
-.wi{fill:none;stroke:var(--t-strong);stroke-width:2;stroke-linecap:round;stroke-linejoin:round}.wn.on .wi{stroke:var(--t-on-primary)}
-.wt1{font:600 13px var(--t-body);fill:var(--t-strong)}.wt2{font:400 12px var(--t-body);fill:var(--t-mute)}
+/* Ongoing, full mode: a pizza, one slice per kind of work. A timer turns the slices; the pointer takes over. */
+body[data-mode="full"] .wsys{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:32px;align-items:center}
+.wfig svg{display:block;width:100%;height:auto;max-width:440px;margin:0 auto;overflow:visible}
+.sl{cursor:pointer;outline:none}
+.sl path.base{fill:var(--t-s1);stroke:var(--t-paper);stroke-width:4;transition:fill .25s}
+.sl:hover path.base,.sl:focus-visible path.base{fill:var(--t-accent-bg)}
+.sl.on path.base{fill:var(--t-accent-bg)}
+.sl .glow{fill:var(--t-accent);opacity:0;transition:opacity .25s}.sl.on .glow{opacity:.18}
+.sl .ic{fill:var(--t-paper);stroke:var(--t-brd-hi);stroke-width:1.5}.sl.on .ic{fill:var(--t-primary);stroke:var(--t-primary)}
+.sl .wi{fill:none;stroke:var(--t-strong);stroke-width:2;stroke-linecap:round;stroke-linejoin:round}.sl.on .wi{stroke:var(--t-on-primary)}
+.sl text{font:600 13px var(--t-body);fill:var(--t-dim)}.sl.on text{fill:var(--t-strong)}
+.wring{fill:none;stroke:var(--t-accent);stroke-width:5;stroke-linecap:round}
+.wtip{fill:var(--t-accent);stroke:var(--t-paper);stroke-width:2}
+.whub{fill:var(--t-paper)}
 .wflow rect{fill:var(--t-primary)}.wflow path{fill:none;stroke:var(--t-on-primary);stroke-width:2.6;stroke-linecap:round}
-.wpanel{display:grid;gap:8px;align-content:start;padding:20px;border:1px solid var(--t-brd);border-radius:var(--t-radius-lg);background:var(--t-paper)}
+.wpanel{display:grid;grid-template-rows:40px auto auto 1fr auto;gap:8px;height:236px;box-sizing:border-box;padding:20px;border:1px solid var(--t-brd);border-radius:var(--t-radius-lg);background:var(--t-paper)}
 .wpanel .ib{width:40px;height:40px}.wpanel b{font:400 22px/1.2 var(--t-display);color:var(--t-strong)}
 .wpanel .n{font:600 16px var(--t-body);color:var(--t-accent)}.wpanel p{margin:0;font-size:14px;color:var(--t-dim)}.wpanel .w{font-size:12.5px;color:var(--t-mute)}
 #d-watch .watch{display:none}
-@media (prefers-reduced-motion:reduce){.wdot,.sweep{display:none}}
+@media (prefers-reduced-motion:reduce){.wring,.wtip{display:none}}
 @media screen and (max-width:639px){.wsys{display:none}#d-watch .watch{display:grid}}
 .watch{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px}
 .wt{display:flex;flex-direction:column;gap:6px;padding:12px 14px;border:1px solid var(--t-brd);border-radius:var(--t-radius)}
@@ -316,7 +315,7 @@ body[data-mode="full"] .sec h4{margin:24px 0 12px}
     <div class="pipe" id="pipe"></div>
 
     <section class="sec" id="d-watch">
-      <h2 class="h lbl">Ongoing checks</h2>
+      <h2 class="h lbl">Ongoing</h2>
       <div class="wsys"><div class="wfig" id="wfig"></div><div class="wpanel" id="wpanel" aria-live="polite"></div></div>
       <div class="watch" id="sched"></div>
     </section>
@@ -327,7 +326,6 @@ body[data-mode="full"] .sec h4{margin:24px 0 12px}
     </section>
     <section class="sec" id="d-security"><h2>Security</h2><div id="security"></div></section>
     <section class="sec" id="d-support"><h2>Support</h2><div id="support"></div></section>
-    <section class="sec" id="d-uptime"><h2>Uptime</h2><div id="uptime"></div></section>
   </article>
 </div>
 
@@ -422,46 +420,55 @@ document.getElementById('pipe').innerHTML = '<div class="stg"><span class="lbl">
   return '<li><button type="button" data-open="' + p.id + '" title="' + esc(p.stage) + ': ' + p.pct + '% of the way to Ready"' + (it.major ? ' class="maj"' : '') + '><span class="ib">' + svgIcon(it.icon) + '</span><b>' + esc(it.title) + '</b><span class="pbar" data-p="' + p.pct + '"><i></i></span><span class="pc">' + p.pct + '%</span><span class="st">' + esc(p.stage) + '</span></button></li>';
 }).join('') + '</ul></div><div class="stg stg--go"><span class="ib">' + svgIcon('rocket') + '</span><b>' + esc(A.planned.label) + '</b><span class="lbl">' + esc(A.planned.note) + '</span></div>';
 
-/* ---------- Ongoing checks: the sweep follows the pointer; the nearest check pulses at its own pace ---------- */
-var WATCH = R.checks, WSPD = { all: 1.6, many: 2.4, day: 4.2, week: 6 };
+/* ---------- Ongoing: pizza slices; a timer fills the active slice's rim, then moves on; the pointer takes over ---------- */
+var WATCH = R.ongoing, TURN = 4500;
 (function watchFig() {
-  var C = 320, M = 255, R2 = 178, s = '<circle class="wr" cx="' + C + '" cy="' + M + '" r="' + R2 + '"/><circle class="wr wr--in" cx="' + C + '" cy="' + M + '" r="' + (R2 / 2) + '"/>';
-  s += '<g class="sweep" id="wsweep"><path d="M' + C + ' ' + M + 'L' + (C - R2 * Math.sin(0.35)) + ' ' + (M - R2 * Math.cos(0.35)) + 'A' + R2 + ' ' + R2 + ' 0 0 1 ' + (C + R2 * Math.sin(0.35)) + ' ' + (M - R2 * Math.cos(0.35)) + 'Z"/></g>';
-  var nodes = '';
+  var C = 220, RO = 200, RI = 52, N = WATCH.length, STEP = 2 * Math.PI / N, A0 = -Math.PI / 2 - STEP / 2;
+  function pt(r, a) { return (C + r * Math.cos(a)).toFixed(1) + ' ' + (C + r * Math.sin(a)).toFixed(1); }
+  function wedge(r1, r2, a, b) { var big = b - a > Math.PI ? 1 : 0; return 'M' + pt(r1, a) + 'L' + pt(r2, a) + 'A' + r2 + ' ' + r2 + ' 0 ' + big + ' 1 ' + pt(r2, b) + 'L' + pt(r1, b) + 'A' + r1 + ' ' + r1 + ' 0 ' + big + ' 0 ' + pt(r1, a) + 'Z'; }
+  var s = '';
   WATCH.forEach(function (w, i) {
-    var a = -Math.PI / 2 + i * 2 * Math.PI / WATCH.length, x = C + R2 * Math.cos(a), y = M + R2 * Math.sin(a), wait = w.speed === 'wait';
-    s += '<line class="wl' + (wait ? ' wl--wait' : '') + '" x1="' + x + '" y1="' + y + '" x2="' + C + '" y2="' + M + '"/>';
-    if (!wait) s += '<circle class="wdot" data-d="' + i + '" r="4"><animateMotion dur="' + WSPD[w.speed] + 's" repeatCount="indefinite" path="M' + x + ' ' + y + 'L' + C + ' ' + M + '"/></circle>';
-    var side = Math.abs(x - C) < 20 ? 0 : x > C ? 1 : -1, lx = side ? x + side * 40 : x, ly = side ? y - 2 : y - 54;
-    var anchor = side > 0 ? 'start' : side < 0 ? 'end' : 'middle';
-    nodes += '<g class="wn' + (wait ? ' wn--wait' : '') + '" data-w="' + i + '" tabindex="0" role="button" aria-label="' + esc(w.name) + '"><title>' + esc(w.name) + '</title><circle class="wc" cx="' + x + '" cy="' + y + '" r="30"/>' +
-      '<g transform="translate(' + (x - 12) + ' ' + (y - 12) + ')"><g class="wi">' + (I[w.icon] || '') + '</g></g>' +
-      '<text class="wt1" x="' + lx + '" y="' + ly + '" text-anchor="' + anchor + '">' + esc(w.name) + '</text><text class="wt2" x="' + lx + '" y="' + (ly + 16) + '" text-anchor="' + anchor + '">' + esc(w.result) + '</text></g>';
+    var a = A0 + i * STEP, b = a + STEP, m = a + STEP / 2, x = C + 122 * Math.cos(m), y = C + 122 * Math.sin(m);
+    s += '<g class="sl" data-w="' + i + '" tabindex="0" role="button" aria-label="' + esc(w.name) + '"><title>' + esc(w.name) + '</title><path class="base" d="' + wedge(RI, RO, a, b) + '"/><path class="glow" d="' + wedge(RI, RO, a, b) + '"/>' +
+      '<circle class="ic" cx="' + x + '" cy="' + (y - 10) + '" r="26"/><g transform="translate(' + (x - 12) + ' ' + (y - 22) + ')"><g class="wi">' + (I[w.icon] || '') + '</g></g>' +
+      '<text x="' + x + '" y="' + (y + 36) + '" text-anchor="middle">' + esc(w.name) + '</text></g>';
   });
-  s += nodes + '<g class="wflow"><rect x="' + (C - 28) + '" y="' + (M - 28) + '" width="56" height="56" rx="14"/><path d="M' + (C - 15) + ' ' + (M - 5) + 'c5-5 10-5 15 0s10 5 15 0M' + (C - 15) + ' ' + (M + 7) + 'c5-5 10-5 15 0s10 5 15 0"/></g>';
-  document.getElementById('wfig').innerHTML = '<svg viewBox="-80 0 800 470" role="img" aria-label="Checks that watch ' + esc(R.product) + '. Point at one to see what it does.">' + s + '</svg>';
-  var svg = document.querySelector('#wfig svg'), sweep = document.getElementById('wsweep'), STEP = 360 / WATCH.length, cur = -1;
-  function aim(deg) { sweep.setAttribute('transform', 'rotate(' + deg + ' ' + C + ' ' + M + ')'); }
+  s += '<path class="wring" id="wring" d=""/><circle class="wtip" id="wtip" r="7" cx="' + C + '" cy="' + (C - RO) + '"/>';
+  s += '<circle class="whub" cx="' + C + '" cy="' + C + '" r="' + (RI - 6) + '"/><g class="wflow"><rect x="' + (C - 28) + '" y="' + (C - 28) + '" width="56" height="56" rx="14"/><path d="M' + (C - 15) + ' ' + (C - 5) + 'c5-5 10-5 15 0s10 5 15 0M' + (C - 15) + ' ' + (C + 7) + 'c5-5 10-5 15 0s10 5 15 0"/></g>';
+  document.getElementById('wfig').innerHTML = '<svg viewBox="0 0 440 440" role="img" aria-label="Ongoing work on ' + esc(R.product) + '. Point at a slice to see it.">' + s + '</svg>';
+  var svg = document.querySelector('#wfig svg'), ring = document.getElementById('wring'), tip = document.getElementById('wtip'), cur = -1, t0 = 0, held = false;
+  var still = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
   function pick(i) {
+    if (i === cur) return; cur = i; t0 = performance.now();
     var w = WATCH[i];
-    if (i === cur) return; cur = i;
-    document.querySelectorAll('.wn').forEach(function (n) { n.classList.toggle('on', n.getAttribute('data-w') === String(i)); });
-    document.querySelectorAll('.wdot').forEach(function (d) { d.classList.toggle('on', d.getAttribute('data-d') === String(i)); });
+    svg.querySelectorAll('.sl').forEach(function (n) { n.classList.toggle('on', n.getAttribute('data-w') === String(i)); });
     document.getElementById('wpanel').innerHTML = '<span class="ib">' + svgIcon(w.icon) + '</span><b>' + esc(w.name) + '</b><span class="n">' + esc(w.result) + '</span><p>' + esc(w.does) + '</p><span class="w">' + esc(w.when) + '</span>';
   }
-  function at(n) { aim(+n.getAttribute('data-w') * STEP); pick(+n.getAttribute('data-w')); }
+  // The rim timer: an arc grows along the active slice's edge; the dot leads it; at the end the next slice takes over.
+  function rim(f) {
+    var a = A0 + cur * STEP, b = a + STEP * Math.max(f, 0.001), r = RO + 9;
+    ring.setAttribute('d', 'M' + pt(r, a) + 'A' + r + ' ' + r + ' 0 0 1 ' + pt(r, b));
+    var p = pt(r, b).split(' '); tip.setAttribute('cx', p[0]); tip.setAttribute('cy', p[1]);
+  }
+  function tick(now) {
+    if (!held) { var f = (now - t0) / TURN; if (f >= 1) pick((cur + 1) % N); else rim(f); }
+    requestAnimationFrame(tick);
+  }
   svg.addEventListener('pointermove', function (e) {
-    var p = new DOMPoint(e.clientX, e.clientY).matrixTransform(svg.getScreenCTM().inverse()), dx = p.x - C, dy = p.y - M;
-    if (dx * dx + dy * dy < 900) return;
-    var deg = (Math.atan2(dx, -dy) * 180 / Math.PI + 360) % 360;
-    aim(deg); pick(Math.round(deg / STEP) % WATCH.length);
+    var p = new DOMPoint(e.clientX, e.clientY).matrixTransform(svg.getScreenCTM().inverse()), dx = p.x - C, dy = p.y - C;
+    if (dx * dx + dy * dy < RI * RI) return;
+    held = true;
+    pick(Math.floor((((Math.atan2(dy, dx) - A0) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI) / STEP) % N); rim(1);
   });
-  document.getElementById('wfig').addEventListener('click', function (e) { var n = e.target.closest('[data-w]'); if (n) at(n); });
-  document.getElementById('wfig').addEventListener('focusin', function (e) { var n = e.target.closest('[data-w]'); if (n) at(n); });
-  pick(0);
+  svg.addEventListener('pointerleave', function () { held = false; t0 = performance.now(); });
+  svg.addEventListener('click', function (e) { var n = e.target.closest('[data-w]'); if (n) { held = true; pick(+n.getAttribute('data-w')); rim(1); } });
+  svg.addEventListener('focusin', function (e) { var n = e.target.closest('[data-w]'); if (n) { held = true; pick(+n.getAttribute('data-w')); rim(1); } });
+  svg.addEventListener('focusout', function () { held = false; t0 = performance.now(); });
+  pick(0); rim(0);
+  if (!still) requestAnimationFrame(tick); else rim(1);
 })();
 document.getElementById('sched').innerHTML = WATCH.map(function (w) {
-  return '<div class="wt' + (w.speed === 'wait' ? ' wt--wait' : '') + '"><div class="top"><span class="ib">' + svgIcon(w.icon) + '</span><b>' + esc(w.name) + '</b></div><span class="n">' + esc(w.result) + '</span><span class="w">' + esc(w.when) + '</span></div>';
+  return '<div class="wt"><div class="top"><span class="ib">' + svgIcon(w.icon) + '</span><b>' + esc(w.name) + '</b></div><span class="n">' + esc(w.result) + '</span><span class="w">' + esc(w.when) + '</span></div>';
 }).join('');
 
 /* ---------- Highlights: two lead cards, the button shows the rest ---------- */
@@ -474,7 +481,7 @@ var HLN = R.highlights.length, hlm = document.getElementById('hlmore');
 function hlLabel(open) { hlm.textContent = open ? 'Show fewer' : 'Show ' + (HLN - 2) + ' more'; hlm.setAttribute('aria-expanded', String(open)); }
 if (HLN > 2) { hlLabel(false); hlm.addEventListener('click', function () { hlLabel(document.getElementById('hl').classList.toggle('all')); }); } else hlm.hidden = true;
 
-/* ---------- Security, support, uptime: slim cards ---------- */
+/* ---------- Security and support: slim cards ---------- */
 function cards(list) {
   return '<div class="vgrid">' + list.map(function (c) {
     var links = (c.links || []).map(function (l) { return '<a href="' + esc(l.href) + '" target="_blank" rel="noopener">' + esc(l.label) + '</a>'; });
@@ -484,7 +491,6 @@ function cards(list) {
 }
 document.getElementById('security').innerHTML = R.security.length ? cards(R.security) : '<p class="br-none">Nothing to report.</p>';
 document.getElementById('support').innerHTML = R.support.map(function (g) { return '<h4 class="lbl">' + esc(g.label) + ' · ' + g.items.length + '</h4>' + cards(g.items); }).join('') || '<p class="br-none">Nothing to report.</p>';
-document.getElementById('uptime').innerHTML = cards([R.uptime]);
 
 /* ---------- Pop-out card: why + video open; words, steps and links in Details ---------- */
 var scrim = document.getElementById('scrim'), back = null;

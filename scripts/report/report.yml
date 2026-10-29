@@ -20,7 +20,6 @@ stats:
   - { id: updates, icon: rocket, label: Updates, go: d-updates, count: items }
   - { id: security, icon: shield-check, label: Security, go: d-security, count: security }
   - { id: support, icon: life-buoy, label: Support, go: d-support, count: support, note: resolved }
-  - { id: uptime, icon: activity, label: Uptime, go: d-uptime, count: none }
 
 # Stage of an in-progress item, from its open pull request. No dates.
 stages:
@@ -31,15 +30,13 @@ stages:
 
 planned: Planned releases
 
-# The ring of checks. {prs} and {releases} are counts for the last week.
-checks:
-  - { icon: life-buoy, name: Error watch, speed: all, when: All the time, result: Watching, does: Catches each error and opens a fix. }
-  - { icon: shield-check, name: Change checks, speed: many, when: Each change, result: "{prs} changes checked", does: Runs the tests and security scans on each change before it goes in. }
-  - { icon: package-search, name: Package watch, speed: week, when: Each Monday, result: Watching, does: Looks for known flaws in the software packages that Flow uses. }
-  - { icon: rocket, name: Release check, speed: day, when: Each release, result: "{releases} releases checked", does: Checks each release before and after it goes live. }
-  - { icon: activity, name: Uptime check, speed: wait, when: Each minute, result: Not set up yet, does: Will call Flow every minute and record each outage. }
-
-uptime: { tag: Not measured, title: No uptime figure yet, text: The first figure shows when the uptime check starts. }
+# Ongoing work, one pizza slice each. {security}, {support} and {fix} come
+# from the period's records ({fix} = average time from request to fix).
+# `zero` replaces the result when its count is 0.
+ongoing:
+  - { icon: shield-check, name: Security, result: "{security} fixes", zero: All clear, does: Checks Flow's software for known flaws., when: Every week }
+  - { icon: life-buoy, name: Error watch, result: Watching, does: Catches each error and starts a fix., when: All the time }
+  - { icon: message-square, name: Requests, result: "{support} resolved", does: "Request to fix: {fix} on average.", when: Every request }
 
 # First keyword match picks the icon (Lucide names). Default: sparkles.
 icons:

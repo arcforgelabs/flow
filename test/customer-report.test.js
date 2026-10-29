@@ -27,10 +27,11 @@ const data = {
     12: { number: 12, labels: label('report: support'), body: impact('One bad job no longer stops the batch.') }
   },
   merged: [
-    { number: 12, title: 'fix: send keeps going', merged_at: '2026-10-27T01:00:00Z', labels: label('report: support'), body: impact('One bad job no longer stops the batch.') }
+    { number: 12, title: 'fix: send keeps going', created_at: '2026-10-26T23:00:00Z', merged_at: '2026-10-27T01:00:00Z', labels: label('report: support'), body: `Closes #40\n\n${impact('One bad job no longer stops the batch.')}` }
   ],
   roadmap: [{ number: 50, title: '[Feature]: RFC: photo capture', labels: label('report: major'), body: '' }],
   openPulls: [{ number: 60, draft: true, body: 'Related: #50' }],
+  opened: { 40: '2026-10-26T21:00:00Z' },
   evidence: {}
 };
 
@@ -46,8 +47,11 @@ test('the report covers last Monday to Sunday and this week, from labelled recor
   assert.deepEqual([photo.title, photo.next, photo.status], ['Photo capture', true, 'In progress · Build, 25% to Ready']);
   assert.deepEqual(r.ahead.planned, { label: 'Planned releases', note: '1 major' });
   assert.deepEqual(r.stats.map((s) => [s.label, s.value, s.note]), [
-    ['Updates', '1', '+1 this week'], ['Security', '0', '+0 this week'], ['Support', '0', 'resolved, +1 this week'], ['Uptime', 'No data', 'Not measured yet']
+    ['Updates', '1', '+1 this week'], ['Security', '0', '+0 this week'], ['Support', '0', 'resolved, +1 this week']
   ]);
+  // Request to fix: issue #40 opened 2026-10-26T21:00Z, its fix merged 2026-10-27T01:00Z.
+  assert.deepEqual(r.ongoing.map((o) => o.result), ['All clear', 'Watching', '1 resolved']);
+  assert.equal(r.ongoing[2].does, 'Request to fix: 4 hours on average.');
   assert.equal(r.highlights[0], 'pr10');
 });
 

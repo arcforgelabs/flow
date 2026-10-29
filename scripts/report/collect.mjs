@@ -79,6 +79,14 @@ const cleanTitle = (t) => {
   const s = t.replace(/^\[\w+\]:\s*/, "").replace(/^(?:feat|fix|improve|refactor|docs|chore|rfc)(\([^)]*\))?!?:\s*/i, "");
   return s.charAt(0).toUpperCase() + s.slice(1);
 };
+// A request starts when its first linked issue opened, or else when its pull request opened.
+const firstAsked = (pr, opened = {}) => linkedIssues(pr.body).map((n) => opened[n]).filter(Boolean).sort()[0] || pr.created_at;
+// "3 hours" or "2 days"; "no requests" when there is nothing to average.
+function average(ms) {
+  if (!ms.length) return "no requests";
+  const h = Math.max(1, Math.round(ms.reduce((a, b) => a + b, 0) / ms.length / 36e5));
+  return h < 48 ? `${h} hour${h === 1 ? "" : "s"}` : `${Math.round(h / 24)} days`;
+}
 const short = (iso) => { const [, m, d] = iso.split("-"); return `${+d} ${MONTHS[+m - 1].slice(0, 3)}`; };
 
 // Evidence clips and stills that name a pull request (docs/evidence/*/index.json).
@@ -136,10 +144,9 @@ export function build(config, data, nowIso) {
   const groups = [{ label: "Last week", items: sup(w.from, w.to) }, { label: "This week", items: sup(w.thisWeek, w.today) }];
   const support = groups.filter((g) => g.items.length);
   const counts = { items: [live.length - thisWeek.length, thisWeek.length], security: [security.length - security.filter((c) => c.thisWeek).length, security.filter((c) => c.thisWeek).length], support: groups.map((g) => g.items.length) };
-  const releases = data.releases.filter((r) => { const d = local(r.published_at).date; return d >= w.from && d <= w.to; }).length;
-  const prs = merged.filter((p) => inWeek(p, w.from, w.to)).length;
+  const fix = average(merged.filter((p) => has(p, L.support) && inWeek(p, w.from, w.today))
+    .map((p) => Date.parse(p.merged_at) - Date.parse(firstAsked(p, data.opened))));
   const stats = config.stats.map((s) => {
-    if (s.count === "none") return { icon: s.icon, label: s.label, go: s.go, value: "No data", note: "Not measured yet", wait: true };
     const [last, now] = counts[s.count];
     return { icon: s.icon, label: s.label, go: s.go, value: String(last), note: `${s.note ? s.note + ", " : ""}+${now} this week` };
   });
@@ -162,8 +169,11 @@ export function build(config, data, nowIso) {
     links: { repo: data.repoUrl },
     stats, days, items: items.map(({ releasedAt, ...i }) => i), highlights,
     ahead: { progress, planned: { label: config.planned, note: majorNext ? `${majorNext} major` : `${progress.length} in progress` } },
-    checks: config.checks.map((c) => ({ ...c, result: fill(c.result, { prs, releases }) })),
-    security, support, uptime: { ...config.uptime }
+    ongoing: config.ongoing.map(({ zero, ...c }) => {
+      const result = fill(c.result, { security: security.length, support: counts.support.reduce((x, y) => x + y, 0), fix });
+      return { ...c, result: zero && /^0\b/.test(result) ? zero : result, does: fill(c.does, { fix }) };
+    }),
+    security, support
   };
 }
 
@@ -194,7 +204,11 @@ async function main() {
     const reviews = await gh(`repos/${repo}/pulls/${p.number}/reviews`, token);
     p.approved = reviews.some((r) => r.state === "APPROVED");
   }
-  const report = build(config, { releases, pulls, merged, roadmap, openPulls, evidence: evidenceByPr("."), repoUrl: `https://github.com/${repo}/` }, now);
+  const opened = {};
+  for (const n of new Set(merged.filter((p) => (p.labels || []).some((l) => l.name === config.labels.support)).flatMap((p) => linkedIssues(p.body)))) {
+    opened[n] = (await gh(`repos/${repo}/issues/${n}`, token).catch(() => null))?.created_at;
+  }
+  const report = build(config, { releases, pulls, merged, roadmap, openPulls, opened, evidence: evidenceByPr("."), repoUrl: `https://github.com/${repo}/` }, now);
   writeFileSync(args.out?.[0] || "report.json", JSON.stringify(report, null, 2) + "\n");
   console.log(`report: ${report.items.length} items, ${report.highlights.length} highlights, period ${report.period.label}`);
 }

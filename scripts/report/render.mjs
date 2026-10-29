@@ -26,7 +26,7 @@ export function icons(names) {
 }
 
 export function site(report, siteUrl) {
-  const names = [...report.items.map((i) => i.icon), ...report.stats.map((s) => s.icon), ...report.checks.map((c) => c.icon), "rocket", "circle-play", "list"];
+  const names = [...report.items.map((i) => i.icon), ...report.stats.map((s) => s.icon), ...report.ongoing.map((c) => c.icon), "rocket", "circle-play", "list"];
   const data = { ...report, icons: icons(names), links: { ...report.links, site: siteUrl } };
   return readFileSync(join(HERE, "site.html"), "utf8")
     .replace("__TITLE__", esc(report.title))
@@ -52,7 +52,7 @@ const S = {
   hi: `margin:0;font-size:15px;color:${C.dim}`,
   lede: `margin:8px 0 0;font:400 28px/1.2 ${DISPLAY};color:${C.strong}`,
   lbl: `margin:0 0 10px;font:600 11px ${BODY};letter-spacing:2px;text-transform:uppercase;color:${C.mute}`,
-  stat: `width:50%;padding:12px 14px;border:1px solid ${C.brd};vertical-align:top`,
+  stat: `width:33%;padding:12px 14px;border:1px solid ${C.brd};vertical-align:top`,
   statl: `display:block;font:600 11px ${BODY};letter-spacing:1.5px;text-transform:uppercase;color:${C.dim};text-decoration:none`,
   statn: `display:block;margin-top:6px;font:400 30px/1 ${DISPLAY};color:${C.strong};text-decoration:none`,
   statw: `display:block;margin-top:6px;font-size:12.5px;color:${C.mute};text-decoration:none`,
@@ -99,7 +99,7 @@ export function email(report, { siteUrl, timeline = "timeline.png", inline = tru
 <tr><td ${a("head")}>${esc(report.product)} <span ${a("kind")}>&nbsp;·&nbsp;Weekly report</span></td></tr>
 <tr><td ${a("period")}>${esc(report.period.label)}</td></tr>
 <tr><td ${a("pad")}><p ${a("hi")}>Hi ${m("first_name")},</p><h1 ${a("lede")}>${esc(report.lede)}</h1></td></tr>
-<tr><td ${a("pad")}><p ${a("lbl")}>Last week in numbers</p><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>${stats.slice(0, 2).join("")}</tr><tr>${stats.slice(2, 4).join("")}</tr></table></td></tr>
+<tr><td ${a("pad")}><p ${a("lbl")}>Last week in numbers</p><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>${stats.join("")}</tr></table></td></tr>
 <tr><td ${a("pad")}><p ${a("lbl")}>Timeline</p><a href="${link("d-updates")}"><img src="${esc(timeline)}" width="544" alt="Timeline: ${last} updates last week, ${thisWeek} this week. Open the full report to see each one." ${a("img")}></a></td></tr>
 <tr><td ${a("pad")}><p ${a("lbl")}>Highlights</p><table role="presentation" width="100%" cellpadding="0" cellspacing="0">${hl}</table></td></tr>
 <tr><td ${a("pad")}><p ${a("lbl")}>Week ahead</p><table role="presentation" width="100%" cellpadding="0" cellspacing="0">${prog}</table>
