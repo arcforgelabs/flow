@@ -22,7 +22,7 @@ const themeDir = join(here, '..', 'theme');
 const logoDir = join(here, 'logos');
 const LOGO_FILES = new Set(['xero.svg', 'seazona.svg', 'sentry.svg']);
 const THEME_FILES = new Set(['themes.js', 'color-contrast.js', 'openclaw-palettes.js', 'font-families.js']);
-export const UI_FILES = new Set(['flow.css', 'appearance.js', 'clerk-appearance.js', 'app.js', 'invoicing.js', 'invoice-notes.js', 'job-change.js', 'sidecar.js', 'invoicing-settings.js', 'automations.js', 'invoice-rules.js', 'line-mappings.js', 'price-list.js', 'price-match.js', 'price-reconcile.js', 'custom-fields.js', 'contacts.js', 'xero-contact.js', 'jobs.js', 'job-board.js', 'reconcile.js', 'xero-import.js', 'xero-usage.js', 'xero-usage-model.js', 'job-view.js', 'list-views.js', 'saved-views.js', 'monitoring.js', 'search.js', 'alerts.js', 'bulk-bar.js', 'view-bar.js', 'tip.js', 'kit.js', 'columns.js', 'mobile.js', 'person.js', 'captures.js', 'capture-fields.js', 'pager.js', 'nav-pins.js', 'flow-mark.svg']);
+export const UI_FILES = new Set(['flow.css', 'appearance.js', 'clerk-appearance.js', 'app.js', 'invoicing.js', 'invoice-notes.js', 'job-change.js', 'sidecar.js', 'invoicing-settings.js', 'automations.js', 'invoice-rules.js', 'line-mappings.js', 'price-list.js', 'price-match.js', 'price-reconcile.js', 'custom-fields.js', 'contacts.js', 'xero-contact.js', 'jobs.js', 'job-board.js', 'reconcile.js', 'xero-import.js', 'xero-usage.js', 'xero-usage-model.js', 'job-view.js', 'list-views.js', 'saved-views.js', 'monitoring.js', 'search.js', 'alerts.js', 'bulk-bar.js', 'view-bar.js', 'tip.js', 'kit.js', 'columns.js', 'mobile.js', 'person.js', 'captures.js', 'capture-settings.js', 'capture-fields.js', 'pager.js', 'nav-pins.js', 'flow-mark.svg']);
 const iconDir = join(dirname(require.resolve('lucide-static/package.json')), 'icons');
 const ICON_FILE = /^[a-z0-9]+(?:-[a-z0-9]+)*\.svg$/;
 const MAX_AGE = '1h';
@@ -48,6 +48,7 @@ export function createUiAssetsRouter({ rateLimitPerMinute = 600 } = {}) {
     if (!allowed.has(req.params.file)) return next();
     sendNamed(res, next, dir, req.params.file);
   };
+  router.get('/assets/vendor/qrcode.mjs', (_req, res, next) => sendNamed(res, next, dirname(require.resolve('qrcode-generator')), 'qrcode.mjs'));
   router.get('/assets/theme/:file', sendFrom(themeDir, THEME_FILES));
   router.get('/assets/ui/:file', sendFrom(here, UI_FILES));
   // Each integration's logo, the maker's own mark (Integrations).

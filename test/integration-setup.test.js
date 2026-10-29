@@ -87,6 +87,9 @@ describe('Settings, Integrations', { skip: skipWithoutDatabase }, () => {
   test('only an owner sees or changes integration settings', async () => {
     assert.equal((await request(app, '/api/integrations', { token: lab.staffToken })).status, 403);
     assert.equal((await put(lab.staffToken, { enabled: true })).status, 403);
+    const view = await request(app, '/api/integrations', { token: lab.ownerToken });
+    assert.deepEqual(view.body.integrations[0].twoWaySync, { enabled: false, supported: false });
+    assert.equal((await put(lab.ownerToken, { values: { TWO_WAY_SYNC: 'on' } })).status, 400);
   });
 
   test('turned on with a setting missing, it reports what is missing and Flow keeps running', async () => {

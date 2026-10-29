@@ -1817,6 +1817,7 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
 /* On a touch screen the switch keeps its look and gets a 44px target: a
    clear border round it that only the finger sees. */
 @media (max-width: 1023px) {
+  .fx-setting__control > .fx-switch { margin-inline: 0; }
   .fx-switch { box-sizing: content-box; border: 11px solid transparent; background-clip: padding-box; margin: -11px; }
   /* A section title's help link: a 44px target that does not grow the title. */
   .fx-set__title .fx-help { min-width: 44px; min-height: 44px; justify-content: center; align-items: center; margin-block: -12px; }
@@ -2109,4 +2110,19 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
   .fx-offer .fx-btn,
   .fx-contacts :is(.fx-btn, .fx-input, .fx-select, .fx-check) { min-height: 44px; }
   .fx-contacts .fx-help { min-width: 44px; min-height: 44px; }
+}
+
+/* Captures share the sidecar for desktop review; smaller screens keep the sheet. */
+.fx-captures__workspace { min-width: 0; }
+.fx-captures__qr { width: 240px; max-width: 100%; height: auto; image-rendering: pixelated; align-self: center; }
+.fx-captures__row[aria-current="true"] { background: var(--t-accent-bg); }
+@media (min-width: 1024px) {
+  .fx-captures__workspace:has(> .fx-sidecar:not([hidden])) { display: grid; grid-template-columns: minmax(240px, 2fr) minmax(0, 3fr); align-items: start; }
+  .fx-captures__workspace > .fx-sidecar { position: sticky; top: 16px; max-height: calc(100vh - 32px); overflow-y: auto; }
+  .fx-captures__workspace .fx-capture { width: 100%; }
+  .fx-captures__workspace .fx-task__main { padding: 16px; }
+  .fx-captures__workspace .fx-task__actions { display: flex; justify-content: flex-end; gap: 8px; }
+}
+@media (max-width: 1023px) {
+  .fx-captures__phone { display: none; }
 }

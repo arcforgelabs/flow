@@ -9,6 +9,7 @@ One setting, laid out the same on every settings screen: a short name and the co
 - `tone: 'danger'` marks a row that needs a person.
 - On a phone a box, a menu or a choice goes under its name, full width. A switch or a button stays at the right.
 - On a phone or tablet the switch, the name's ? and the title's ? have a 44px touch area. The switch looks the same.
+- Switch touch areas stay inside the row at phone and tablet widths.
 - Every settings page uses this row (Integrations, Automations, Rules, Price codes, Price list, Sending). Do not copy it.
 
 Code: `settingRow`, `sectionTitle` in `server/ui/kit.js`; `.fx-setting` in `server/ui/flow.css`.

@@ -19,6 +19,7 @@ export const SCREENS = [
     await page.waitForLoadState('networkidle');
   } },
   { id: 'captures', path: '/captures', ready: '.fx-captures__row', list: true },
+  { id: 'capture-settings', path: '/capture-settings', ready: '.fx-settings [role="switch"]' },
   { id: 'capture-sheet', path: '/captures', ready: '.fx-captures__row', prepare: async (page) => {
     await page.locator('.fx-captures__row').first().click();
     await page.locator('.fx-capture').waitFor();

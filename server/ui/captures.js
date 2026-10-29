@@ -9,7 +9,8 @@
 import { lucide } from '/assets/ui/custom-fields.js';
 import { JOB_FIELDS, SURE_LINE } from '/assets/ui/capture-fields.js';
 import { isPhone } from '/assets/ui/mobile.js';
-import { recordBar } from '/assets/ui/sidecar.js';
+import qrcode from '/assets/vendor/qrcode.mjs';
+import { recordBar, sidecar } from '/assets/ui/sidecar.js';
 
 // The phone sends a smaller copy: about 1,600 px on the long side.
 const LONG_SIDE = 1600;
@@ -101,10 +102,26 @@ export async function renderCaptures(main, ui) {
     added: (capture) => { rows = [capture, ...rows]; draw(); },
     done: () => { polls = 0; load(); },
   });
-  const head = listHead('Captures', { actions: shoot.nodes });
+  const usePhone = h('button', { class: 'fx-btn fx-captures__phone', type: 'button', onclick: () => {
+    // Start from the origin: never carry a query, capture id or signed key.
+    const url = new URL('/captures', location.origin).href;
+    const code = qrcode(0, 'M');
+    code.addData(url);
+    code.make();
+    const image = h('img', { class: 'fx-captures__qr', src: code.createDataURL(6, 24), alt: 'Scan to open Captures on your phone' });
+    ui.dialog({ title: 'Use phone', confirm: 'Done', body: h('div', { class: 'fx-fields' }, image, h('a', { href: url }, url), h('p', { class: 'fx-dim' }, 'Sign in to Flow on your phone.')) });
+  } }, 'Use phone');
+  const settings = ui.me?.person.role === 'owner' ? h('a', { class: 'fx-btn', href: '/capture-settings' }, 'Settings') : null;
+  const head = listHead('Captures', { actions: [...shoot.nodes, usePhone, settings].filter(Boolean) });
   const list = h('ul', { class: 'fx-captures', 'aria-label': 'Captures' });
   const frame = listFrame(main, list);
-  main.append(...head.nodes, frame.element);
+  const panel = sidecar(h, { label: 'Capture result' });
+  const workspace = h('div', { class: 'fx-captures__workspace' }, frame.element, panel.element);
+  main.append(...head.nodes, workspace);
+  let selected = null;
+  let request = 0;
+  let closeSheet = () => {};
+
 
   let rows = [];
   let labels = new Map(JOB_FIELDS.map((f) => [f.key, f.label]));
@@ -115,7 +132,7 @@ export async function renderCaptures(main, ui) {
     const ready = rows.filter((c) => c.state === 'ready').length;
     frame.count(ready ? `${ready} ready` : '');
     list.replaceChildren(...(rows.length ? rows.map((capture) => h('li', {},
-      h('button', { class: 'fx-captures__row', type: 'button', disabled: capture.state === 'reading', onclick: () => openSheet(capture.id) },
+      h('button', { class: 'fx-captures__row', type: 'button', 'aria-current': capture.id === selected ? 'true' : null, disabled: capture.state === 'reading', onclick: () => openSheet(capture.id) },
         h('span', { class: 'fx-captures__title', title: titleOf(capture) }, titleOf(capture)),
         h('span', { class: 'fx-status', 'data-tone': TONE[capture.state] }, STATE[capture.state])))) : [h('li', { class: 'fx-empty' }, 'No captures.')]));
   };
@@ -151,9 +168,10 @@ export async function renderCaptures(main, ui) {
   };
   document.addEventListener('paste', paste);
 
-  // The result sheet: a dialog on a desk, the whole screen on a phone (the
+  // The result sheet: beside the list on a desk, a dialog on smaller screens (the
   // job panel's layout: record bar, body, the action fixed at the foot).
   async function openSheet(id) {
+    const ticket = ++request;
     let capture;
     try {
       ({ capture } = await flow(`/api/captures/${id}`));
@@ -161,8 +179,19 @@ export async function renderCaptures(main, ui) {
       toast(error.message, 'danger');
       return;
     }
-    const element = h('dialog', { class: 'fx-dialog fx-task fx-capture', 'aria-label': 'Capture' });
-    const close = () => element.close();
+    if (ticket !== request || !workspace.isConnected) return;
+    closeSheet();
+    selected = id;
+    draw();
+    const desk = matchMedia('(min-width: 1024px)').matches;
+    const element = h(desk ? 'section' : 'dialog', { class: `${desk ? '' : 'fx-dialog '}fx-task fx-capture`, 'aria-label': 'Capture' });
+    const close = () => {
+      if (desk) panel.close();
+      else { element.close(); element.remove(); }
+      selected = null;
+      draw();
+    };
+    closeSheet = close;
     const at = rows.findIndex((c) => c.id === id);
     // The next capture that has a result; one still reading is skipped.
     const step = (delta) => {
@@ -265,19 +294,34 @@ export async function renderCaptures(main, ui) {
         ready && proposal.changes.length ? h('div', { class: 'fx-capture__changes' }, proposal.changes.map(changeRow)) : null,
         ready && !proposal.changes.length ? h('p', { class: 'fx-dim' }, 'No change.') : null,
         h('div', { class: 'fx-task__actions' }, actions))));
-    element.addEventListener('click', (event) => { if (event.target === element) close(); });
+    element.addEventListener('click', (event) => { if (!desk && event.target === element) close(); });
     // Keys: J next, K previous (not while typing). Apply has the focus, so
     // Enter applies.
     element.addEventListener('keydown', (event) => {
       if (event.target.closest('input, textarea, select') || event.metaKey || event.ctrlKey || event.altKey) return;
+      if (event.key === 'Escape' && desk) { close(); return; }
       if (event.key !== 'j' && event.key !== 'k') return;
       event.preventDefault();
       step(event.key === 'j' ? 1 : -1);
     });
+    element.addEventListener('cancel', (event) => { event.preventDefault(); close(); });
     element.addEventListener('close', () => element.remove());
-    document.body.append(element);
-    element.showModal();
+    if (desk) {
+      panel.show(element);
+      (element.querySelector('[autofocus]') ?? element.querySelector('button'))?.focus({ preventScroll: true });
+    } else {
+      document.body.append(element);
+      element.showModal();
+    }
   }
+
+  const width = matchMedia('(min-width: 1024px)');
+  const resize = () => {
+    if (!workspace.isConnected) { width.removeEventListener('change', resize); return; }
+    const id = selected;
+    if (id) openSheet(id);
+  };
+  width.addEventListener('change', resize);
 
   try {
     const { fields } = await flow('/api/custom-fields');
