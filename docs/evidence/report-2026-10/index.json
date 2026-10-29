@@ -176,5 +176,49 @@
       "Draft, Sent, Non-chargeable and Void are empty in this seed.",
       "No Accept change, recheck, Seazona order link or Xero state change is shown."
     ]
+  },
+  {
+    "id": "r30",
+    "title": "Drafts go to Ready",
+    "clip": "r30/clip.webm",
+    "desktop": "r30/desktop.jpg",
+    "phone": "r30/phone.jpg",
+    "prs": [
+      104,
+      110
+    ],
+    "steps": [
+      "Open Automations. Draft when ready and Ready when drafted are on.",
+      "The capture command runs Flow automations once on a synthetic shipped job.",
+      "Open Invoices, then the new automatic draft. Its page shows Ready invoice."
+    ],
+    "limits": [
+      "The capture command triggers the real automation code outside the browser. The scheduled worker is not tested.",
+      "No work-system order link, accounting send or Xero result is shown."
+    ]
+  },
+  {
+    "id": "r37",
+    "title": "Email invitations (simulated delivery)",
+    "clip": "r37/clip.webm",
+    "desktop": "r37/desktop.jpg",
+    "phone": "r37/phone.jpg",
+    "prs": [
+      184,
+      187,
+      188,
+      189,
+      190,
+      192
+    ],
+    "steps": [
+      "Open People, then Invite.",
+      "Enter demo-invite@example.test with the Staff role and press Send invite.",
+      "People shows Invited. Open the row menu to see Email invite again."
+    ],
+    "limits": [
+      "Fake Clerk returns email success. No email is delivered, and no real provider or inbox is tested.",
+      "Email invite again is shown but not pressed."
+    ]
   }
 ]

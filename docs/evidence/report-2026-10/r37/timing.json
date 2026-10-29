@@ -1,0 +1,34 @@
+{
+  "synthetic": true,
+  "viewport": {
+    "width": 1280,
+    "height": 800
+  },
+  "steps": [
+    {
+      "label": "Open People, then Invite.",
+      "start": 0.0000017609999995329418,
+      "end": 2.9004804330000007
+    },
+    {
+      "label": "Enter a synthetic email address. The default role is Staff.",
+      "start": 2.954722397999998,
+      "end": 6.493779127999998
+    },
+    {
+      "label": "Submit to fake Clerk. No email leaves this harness.",
+      "start": 6.541004451000001,
+      "end": 8.902578849000001
+    },
+    {
+      "label": "The People row shows Invited.",
+      "start": 8.935399279999999,
+      "end": 11.856351149999998
+    },
+    {
+      "label": "Open the row menu. Email invite again is available.",
+      "start": 11.892003751,
+      "end": 14.236641533999999
+    }
+  ]
+}
