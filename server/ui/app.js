@@ -983,21 +983,26 @@ function xeroImportSection(organisations) {
 }
 
 // Seazona's history read (docs/SEAZONA.md, "The API backfill"): past orders
-// from a start day, a few calls a run inside the rate limit. Start and Stop
-// call no Seazona; the background lane reads. While it runs, the row reads
-// its progress again every 30 seconds, from Flow only.
+// from a start day, a few calls a run inside the rate limit. Start, Resume
+// and Stop call no Seazona; the background lane reads, and skips orders Flow
+// read before. While it runs, the card reads its progress again every 5
+// seconds, from Flow only, and counts down to the lane's next run.
 function seazonaHistorySection() {
   const canAct = ['owner', 'admin'].includes(me?.person?.role);
   const yearAgo = new Date(Date.now() - 365 * 86_400_000).toISOString().slice(0, 10);
-  const from = h('input', { class: 'fx-input', type: 'date', 'aria-label': 'Read from', value: yearAgo, disabled: !canAct });
-  const status = h('span', {}, 'Checking…');
-  const jobs = h('span', { class: 'fx-num' }, '…');
+  const from = h('input', { class: 'fx-input fx-history__day', type: 'date', 'aria-label': 'Read from', value: yearAgo, disabled: !canAct });
+  const status = h('span', { class: 'fx-history__status' }, 'Checking…');
   const control = h('span', { class: 'fx-row' });
+  const bar = h('progress', { class: 'fx-history__bar', max: 1, value: 0, 'aria-label': 'Read so far' });
+  const barRow = settingRow({ label: 'Progress', hint: h('span', {}), control: bar, wide: true });
+  barRow.hidden = true;
   const day = (value) => new Date(`${value}T00:00:00Z`).toLocaleDateString('en-AU', { dateStyle: 'medium', timeZone: 'UTC' });
   const section = h('section', { class: 'fx-set fx-int-section fx-card', style: { padding: '8px 20px 16px' } },
     h('h2', { class: 'fx-set__title' }, 'History'),
-    settingRow({ label: 'Read from', hint: status, help: 'Reads past Seazona orders into Flow, 10 every 2 minutes. Each job waits on hold and never drafts by itself.', control }),
-    settingRow({ label: 'Jobs read', control: jobs }));
+    settingRow({ label: 'Read from', hint: status, help: 'Reads past Seazona orders into Flow, 10 every 2 minutes. Orders Flow read before are skipped. Each job waits on hold and never drafts by itself.', control }),
+    barRow);
+  let timer = null;
+  let tick = null;
   const press = async (button, path, body) => {
     button.disabled = true;
     try {
@@ -1009,7 +1014,14 @@ function seazonaHistorySection() {
     }
     load();
   };
+  const start = (label, body, primary = true) => h('button', {
+    class: `fx-btn fx-btn--sm${primary ? ' fx-btn--primary' : ''}`, type: 'button', disabled: !canAct,
+    onclick: (event) => press(event.currentTarget, '/api/seazona/history/backfill', body()),
+  }, label);
   const load = async () => {
+    clearTimeout(timer);
+    clearInterval(tick);
+    if (!section.isConnected && timer !== null) return;
     let body;
     try {
       body = await flow('/api/seazona/history');
@@ -1018,15 +1030,34 @@ function seazonaHistorySection() {
       return;
     }
     const run = body.backfill;
-    jobs.replaceChildren(String(body.history?.jobs ?? 0));
-    if (run?.running) {
-      status.replaceChildren(`Reading ${day(run.nextDay ?? run.from)} · ${run.ordersRead} read`);
-      control.replaceChildren(h('button', { class: 'fx-btn fx-btn--sm', type: 'button', disabled: !canAct, onclick: (event) => press(event.currentTarget, '/api/seazona/history/backfill/stop') }, 'Stop'));
-      setTimeout(() => { if (section.isConnected) load(); }, 30_000);
-      return;
+    barRow.hidden = !run;
+    if (run) {
+      const span = Date.parse(run.through) - Date.parse(run.from) + 86_400_000;
+      const at = run.running ? run.readingDay ?? run.through : run.resumeFrom ?? run.through;
+      bar.value = run.running || run.resumeFrom ? Math.min(1, Math.max(0, (Date.parse(at) - Date.parse(run.from)) / span)) : 1;
+      barRow.querySelector('.fx-setting__hint').replaceChildren(`${day(run.from)} to ${day(run.through)}`);
     }
-    status.replaceChildren(run ? `${run.stopped ? 'Stopped' : 'Done'} · ${run.ordersRead} read from ${day(run.from)}` : 'Not started');
-    control.replaceChildren(from, h('button', { class: 'fx-btn fx-btn--sm fx-btn--primary', type: 'button', disabled: !canAct, onclick: (event) => press(event.currentTarget, '/api/seazona/history/backfill', { from: from.value }) }, 'Start'));
+    if (run?.running) {
+      const what = { waiting: 'Waiting', failed: 'Failed' }[run.phase] ?? `Reading ${day(run.readingDay ?? run.through)}`;
+      const reading = `${what} · ${run.ordersRead} read${run.waitingToRead ? ` · ${run.waitingToRead} to read` : ''}`;
+      const next = h('span', { class: 'fx-dim' });
+      const count = () => {
+        const left = Math.round((Date.parse(run.nextRunAt) - Date.now()) / 1000);
+        next.replaceChildren(left > 0 ? `· ${run.phase === 'running' ? 'next' : 'retry'} in ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}` : '· reading now');
+      };
+      if (run.nextRunAt && run.phase !== 'failed') { count(); tick = setInterval(count, 1000); }
+      status.replaceChildren(
+        run.phase === 'running' ? h('span', { class: 'fx-spinner fx-spinner--sm', 'aria-hidden': 'true' }) : '',
+        reading, next, run.cause ? h('span', { class: 'fx-dim' }, `· ${run.cause}`) : '');
+      control.replaceChildren(h('button', { class: 'fx-btn fx-btn--sm', type: 'button', disabled: !canAct, onclick: (event) => press(event.currentTarget, '/api/seazona/history/backfill/stop') }, 'Stop'));
+    } else if (run?.resumeFrom) {
+      status.replaceChildren(`Stopped at ${day(run.resumeFrom)} · ${run.ordersRead} read`);
+      control.replaceChildren(from, start('Start', () => ({ from: from.value }), false), start('Resume', () => ({ from: run.resumeFrom, through: run.through })));
+    } else {
+      status.replaceChildren(run ? `Done · ${run.ordersRead} read` : 'Not started');
+      control.replaceChildren(from, start('Start', () => ({ from: from.value })));
+    }
+    timer = setTimeout(() => { if (section.isConnected && run?.running) load(); }, 5_000);
   };
   load();
   return section;
