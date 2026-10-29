@@ -1,0 +1,43 @@
+{
+  "title": "Clearer send errors",
+  "seed": "xero-refusal",
+  "start": "/invoices",
+  "steps": [
+    {
+      "do": "click",
+      "target": "[role='tab']:has-text('Ready')"
+    },
+    {
+      "do": "click",
+      "target": "tr:has-text('Synthetic send accepted') input[type='checkbox']"
+    },
+    {
+      "do": "click",
+      "target": "tr:has-text('Synthetic send refused') input[type='checkbox']"
+    },
+    {
+      "do": "click",
+      "target": "button[title='Send to Xero']",
+      "expect": "dialog[open]"
+    },
+    {
+      "do": "click",
+      "target": "dialog[open] button[value='ok']",
+      "hold": 1500
+    },
+    {
+      "do": "wait",
+      "ms": 1500
+    },
+    {
+      "do": "click",
+      "target": "[role='tab']:has-text('Pending')",
+      "hold": 1500
+    },
+    {
+      "do": "hover",
+      "target": "[title*='Synthetic validation refusal']",
+      "hold": 1500
+    }
+  ]
+}

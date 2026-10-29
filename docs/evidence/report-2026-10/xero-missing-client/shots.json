@@ -1,0 +1,45 @@
+{
+  "title": "Create Xero clients",
+  "seed": "xero-missing-client",
+  "start": "/invoices?tab=pending",
+  "steps": [
+    {
+      "do": "click",
+      "target": "[role='tab']:has-text('Pending')"
+    },
+    {
+      "do": "hover",
+      "target": "tbody tr:first-child a[href^='/invoices/']",
+      "hold": 1500
+    },
+    {
+      "do": "click",
+      "target": "tbody tr:first-child a[href^='/invoices/']",
+      "expect": "button:has-text('Create')"
+    },
+    {
+      "do": "wait",
+      "ms": 1500
+    },
+    {
+      "do": "click",
+      "target": "button[title='Create this client in Xero']",
+      "hold": 1500,
+      "expect": "dialog[open]"
+    },
+    {
+      "do": "click",
+      "target": "dialog[open] button[value='ok']",
+      "expectHidden": "button[title='Create this client in Xero']",
+      "hold": 1500
+    },
+    {
+      "do": "wait",
+      "ms": 1500
+    },
+    {
+      "do": "wait",
+      "ms": 1500
+    }
+  ]
+}

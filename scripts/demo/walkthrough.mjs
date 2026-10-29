@@ -21,7 +21,7 @@ for (const suffix of ['.mp4', '.webm', '.json', '-frames']) {
 }
 await mkdir(dirname(out), { recursive: true });
 const temp = await mkdtemp(join(dirname(out), '.take-'));
-let flow, browser, xvfb, recording;
+let flow, browser, xvfb, recording, stopSeed;
 const completed = [];
 const processDone = child => new Promise((resolve, reject) => {
   child.once('error', reject);
@@ -38,9 +38,10 @@ try {
     once(xvfb, 'error').then(([e]) => { throw e; }),
     pause(10000).then(() => { throw new Error('Xvfb did not start'); }),
   ]);
-  flow = await startFlow({ env: {} }); // shipped Xero/Seazona adapters stay off
-  const { default: seed } = await import(`./seeds/${shots.seed}.mjs`);
-  await seed(flow);
+  const { default: seed, env = {} } = await import(`./seeds/${shots.seed}.mjs`);
+  if (Object.entries(env).some(([key,value]) => /MODE$/.test(key) && value !== 'replay')) throw new Error('Recorder adapters must use replay');
+  flow = await startFlow({ env });
+  stopSeed = await seed(flow);
   browser = await chromium.launch({ headless: false, env: { ...process.env, DISPLAY: display }, args: ['--window-size=1280,800', '--window-position=0,0', '--kiosk'] });
   const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
   const [project, token] = Object.entries(flow.tokens)[0];
@@ -123,6 +124,7 @@ try {
 } finally {
   recording?.kill('SIGKILL');
   await browser?.close();
+  if (typeof stopSeed === 'function') await stopSeed();
   await flow?.close();
   xvfb?.kill();
   await rm(temp, { recursive: true, force: true });

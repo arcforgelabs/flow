@@ -1,0 +1,35 @@
+{
+  "title": "Xero payments",
+  "seed": "xero-paid",
+  "start": "/invoices",
+  "steps": [
+    {
+      "do": "click",
+      "target": "[role='tab']:has-text('Sent')",
+      "expect": "text=Synthetic paid invoice"
+    },
+    {
+      "do": "hover",
+      "target": "text=Synthetic paid invoice",
+      "hold": 1500
+    },
+    {
+      "do": "hover",
+      "target": "[title*='Paid in Xero']",
+      "hold": 1500
+    },
+    {
+      "do": "click",
+      "target": "tbody tr:first-child a[href^='/invoices/']",
+      "hold": 1500
+    },
+    {
+      "do": "wait",
+      "ms": 1500
+    },
+    {
+      "do": "wait",
+      "ms": 1500
+    }
+  ]
+}

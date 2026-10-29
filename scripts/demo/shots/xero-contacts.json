@@ -1,0 +1,40 @@
+{
+  "title": "Xero contacts sync",
+  "seed": "xero-contacts",
+  "start": "/integrations",
+  "steps": [
+    {
+      "do": "click",
+      "target": "a[href='/integrations/xero']",
+      "expect": "text=Add Xero clients"
+    },
+    {
+      "do": "hover",
+      "target": "text=Add Xero clients",
+      "hold": 1500
+    },
+    {
+      "do": "click",
+      "target": "[role='switch'][aria-label='Two-way edits']"
+    },
+    {
+      "do": "wait",
+      "ms": 1500
+    },
+    {
+      "do": "click",
+      "target": "a[data-nav='contacts']",
+      "expect": "text=Bayview Clinic"
+    },
+    {
+      "do": "click",
+      "target": "text=Bayview Clinic",
+      "hold": 1500
+    },
+    {
+      "do": "scroll",
+      "dy": 1000,
+      "hold": 1500
+    }
+  ]
+}

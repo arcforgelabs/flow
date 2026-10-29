@@ -148,6 +148,7 @@ export async function startFlow({ port = 0, env = {} } = {}) {
   // The shipped adapters, each off, so Integrations shows its cards.
   for (const adapter of shippedAdapters) integrations.register(adapter);
   if (env.XERO_MODE) integrations.enable('xero');
+  if (env.SEAZONA_MODE) integrations.enable('seazona');
   await integrations.start(db);
   const settings = { mode: 'clerk', keys: { publishableKey: TEST_PUBLISHABLE_KEY, proxyUrl: null } };
   const personAuth = createPersonAuth({ db, clerk, ownerGoogleDomains: ['example.test'], log: quiet });

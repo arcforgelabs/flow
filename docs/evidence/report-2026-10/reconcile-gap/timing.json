@@ -1,0 +1,65 @@
+{
+  "title": "Jobs with no invoice",
+  "synthetic": true,
+  "viewport": {
+    "width": 1280,
+    "height": 800
+  },
+  "duration": 19.843664784999998,
+  "steps": [
+    {
+      "do": "hover",
+      "target": "tbody tr:first-child",
+      "hold": 1500,
+      "start": 0.5000169040000001,
+      "end": 2.9626805959999998
+    },
+    {
+      "do": "click",
+      "target": "tbody tr:first-child",
+      "expect": "button:visible:has-text('Link this invoice') >> nth=0",
+      "start": 2.9626875159999995,
+      "end": 5.176119397000001
+    },
+    {
+      "do": "wait",
+      "ms": 1500,
+      "start": 5.176139716,
+      "end": 7.877329099000001
+    },
+    {
+      "do": "click",
+      "target": "button:visible:has-text('Link this invoice') >> nth=0",
+      "expect": "text=Linked to the draft.",
+      "hold": 1500,
+      "start": 7.8773374810000005,
+      "end": 10.355879333
+    },
+    {
+      "do": "click",
+      "target": "a[data-nav='invoices']",
+      "start": 10.355886704000001,
+      "end": 12.469285258
+    },
+    {
+      "do": "click",
+      "target": "[role='tab']:has-text('Ready')",
+      "start": 12.469293099,
+      "end": 14.641293004000001
+    },
+    {
+      "do": "click",
+      "target": "tr:has-text('SYNTHETIC-GAP') a[href^='/invoices/']",
+      "hold": 1500,
+      "expect": "text=SYNTHETIC-GAP",
+      "start": 14.641300234000001,
+      "end": 17.14326074
+    },
+    {
+      "do": "wait",
+      "ms": 1500,
+      "start": 17.143306167,
+      "end": 19.843658546
+    }
+  ]
+}

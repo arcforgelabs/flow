@@ -34,3 +34,31 @@ step frame and play the video before using it in an edition.
 in #413–#418 still need their own synthetic seeds and shot lists. Keep generated
 account editions outside the public repository. The generic sample is not proof
 of any Xero or Seazona integration scenario.
+
+## Integration scenarios
+
+Shot lists are in `scripts/demo/shots/`. Seeds select replay mode before Flow
+starts; they never use a live adapter. `xero-refusal` also starts the real send
+worker against its replay adapter and stops it when the take finishes.
+
+Validated clips and step frames are in `docs/evidence/report-2026-10/`:
+
+- `xero-paid`: real synthetic payment sync, Sent list and Linked card (#414).
+- `reconcile-gap`: job, best invoice match, link and invoice's Linked card (#415).
+- `xero-missing-client`: pending client problem, Create confirmation, Ready result (#416).
+
+The existing evidence index is updated for these three clips, preserving other
+pull-request mappings. Reconcile that index with PR #423 when integrating.
+
+Remaining UI limitations (no app changes in recorder scope): #413 asks for Xero
+icons on the Contacts list, which this version does not render; the locally
+recorded alternative shows the matched contact's Xero panel. #417 asks for a
+sweep-status control that this version's Seazona page does not expose. The seed
+validates the first-read horizon with a recent invoice copied and an older one
+excluded, then a sweep with zero misses. #418 stores the refusal code/message
+correctly but Pending shows a short label and hover message; the issued record
+omits the send failure. Its local take is partial and is not a report highlight.
+
+Local workflow checks can validate the schedule/release/dispatch configuration
+and run collect/render with synthetic API replies. They do not prove the hosted
+GitHub scheduler or artifact upload. No workflow dispatch is performed here.

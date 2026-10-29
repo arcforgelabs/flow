@@ -1,0 +1,371 @@
+{
+  "description": "A synthetic Xero Demo Company for XERO_MODE=replay. Every name, number and id here is made up.",
+  "interactions": [
+    {
+      "repeat": true,
+      "request": {
+        "method": "GET",
+        "url": "https://api.xero.com/api.xro/2.0/Contacts",
+        "query": {
+          "where": "Name==\"Harbour Smiles\""
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {},
+        "body": {
+          "Contacts": []
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "url": "https://identity.xero.com/connect/token"
+      },
+      "response": {
+        "status": 200,
+        "headers": {},
+        "body": {
+          "access_token": "synthetic-access-1",
+          "refresh_token": "synthetic-refresh-1",
+          "expires_in": 1800,
+          "token_type": "Bearer",
+          "scope": "offline_access accounting.contacts accounting.invoices accounting.settings.read"
+        }
+      },
+      "repeat": true
+    },
+    {
+      "repeat": true,
+      "request": {
+        "method": "GET",
+        "url": "https://api.xero.com/api.xro/2.0/Organisation"
+      },
+      "response": {
+        "headers": {
+          "x-daylimit-remaining": "990",
+          "x-minlimit-remaining": "59",
+          "x-appminlimit-remaining": "9999"
+        },
+        "body": {
+          "Organisations": [
+            {
+              "OrganisationID": "00000000-0000-4000-8000-0000000000a1",
+              "Name": "Example Lab (Demo)",
+              "Class": "DEMO",
+              "CountryCode": "AU",
+              "BaseCurrency": "AUD"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "repeat": true,
+      "request": {
+        "method": "GET",
+        "url": "https://api.xero.com/api.xro/2.0/Contacts"
+      },
+      "response": {
+        "body": {
+          "Contacts": [
+            {
+              "ContactID": "synthetic-contact-0",
+              "Name": "Bayview Clinic",
+              "ContactStatus": "ACTIVE",
+              "IsCustomer": true
+            },
+            {
+              "ContactID": "synthetic-contact-1",
+              "Name": "Coast Dental Co",
+              "ContactStatus": "ACTIVE",
+              "IsCustomer": true
+            }
+          ]
+        }
+      }
+    },
+    {
+      "repeat": true,
+      "request": {
+        "method": "GET",
+        "url": "https://api.xero.com/api.xro/2.0/Items"
+      },
+      "response": {
+        "body": {
+          "Items": [
+            {
+              "ItemID": "synthetic-item-0",
+              "Code": "CR-ZR",
+              "Name": "Synthetic item",
+              "IsSold": true,
+              "SalesDetails": {
+                "AccountCode": "200",
+                "TaxType": "OUTPUT"
+              }
+            },
+            {
+              "ItemID": "synthetic-item-1",
+              "Code": "SH-MT",
+              "Name": "Synthetic item",
+              "IsSold": true,
+              "SalesDetails": {
+                "AccountCode": "200",
+                "TaxType": "OUTPUT"
+              }
+            },
+            {
+              "ItemID": "synthetic-item-2",
+              "Code": "BR-3U",
+              "Name": "Synthetic item",
+              "IsSold": true,
+              "SalesDetails": {
+                "AccountCode": "200",
+                "TaxType": "OUTPUT"
+              }
+            },
+            {
+              "ItemID": "synthetic-item-3",
+              "Code": "VN-EM",
+              "Name": "Synthetic item",
+              "IsSold": true,
+              "SalesDetails": {
+                "AccountCode": "200",
+                "TaxType": "OUTPUT"
+              }
+            },
+            {
+              "ItemID": "synthetic-item-4",
+              "Code": "SP-NG",
+              "Name": "Synthetic item",
+              "IsSold": true,
+              "SalesDetails": {
+                "AccountCode": "200",
+                "TaxType": "OUTPUT"
+              }
+            },
+            {
+              "ItemID": "synthetic-item-5",
+              "Code": "IM-PL",
+              "Name": "Synthetic item",
+              "IsSold": true,
+              "SalesDetails": {
+                "AccountCode": "200",
+                "TaxType": "OUTPUT"
+              }
+            },
+            {
+              "ItemID": "synthetic-item-6",
+              "Code": "RP-DN",
+              "Name": "Synthetic item",
+              "IsSold": true,
+              "SalesDetails": {
+                "AccountCode": "200",
+                "TaxType": "OUTPUT"
+              }
+            },
+            {
+              "ItemID": "synthetic-item-7",
+              "Code": "SYNTHETIC-PAID",
+              "Name": "Synthetic item",
+              "IsSold": true,
+              "SalesDetails": {
+                "AccountCode": "200",
+                "TaxType": "OUTPUT"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "repeat": true,
+      "request": {
+        "method": "GET",
+        "url": "https://api.xero.com/api.xro/2.0/TrackingCategories"
+      },
+      "response": {
+        "body": {
+          "TrackingCategories": [
+            {
+              "TrackingCategoryID": "00000000-0000-4000-8000-0000000000f1",
+              "Name": "Department",
+              "Status": "ACTIVE",
+              "Options": [
+                {
+                  "TrackingOptionID": "00000000-0000-4000-8000-0000000000f2",
+                  "Name": "Laboratory",
+                  "Status": "ACTIVE"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "repeat": true,
+      "request": {
+        "method": "POST",
+        "url": "https://api.xero.com/api.xro/2.0/Contacts"
+      },
+      "response": {
+        "status": 200,
+        "headers": {},
+        "body": {
+          "Contacts": [
+            {
+              "ContactID": "synthetic-created",
+              "Name": "Harbour Smiles",
+              "ContactStatus": "ACTIVE",
+              "IsCustomer": true
+            }
+          ]
+        }
+      }
+    },
+    {
+      "repeat": true,
+      "request": {
+        "method": "GET",
+        "url": "https://api.xero.com/api.xro/2.0/Invoices",
+        "query": {
+          "page": "2"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {},
+        "body": {
+          "Invoices": []
+        }
+      }
+    },
+    {
+      "repeat": true,
+      "request": {
+        "method": "GET",
+        "url": "https://api.xero.com/api.xro/2.0/Invoices"
+      },
+      "response": {
+        "status": 200,
+        "headers": {},
+        "body": {
+          "Invoices": [
+            {
+              "InvoiceID": "synthetic-paid",
+              "InvoiceNumber": "INV-SYNTHETIC",
+              "Type": "ACCREC",
+              "Status": "PAID",
+              "Contact": {
+                "ContactID": "synthetic-contact-0",
+                "Name": "Bayview Clinic"
+              },
+              "DateString": "2026-10-29T00:00:00",
+              "SubTotal": 250,
+              "TotalTax": 25,
+              "Total": 275,
+              "AmountPaid": 275,
+              "AmountDue": 0,
+              "LineItems": [
+                {
+                  "ItemCode": "SYNTHETIC-PAID",
+                  "Description": "Synthetic crown",
+                  "Quantity": 1,
+                  "UnitAmount": 250,
+                  "LineAmount": 250
+                }
+              ],
+              "UpdatedDateUTC": "/Date(1793232000000+0000)/"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "repeat": true,
+      "request": {
+        "method": "GET",
+        "url": "https://api.xero.com/api.xro/2.0/Invoices/synthetic-paid"
+      },
+      "response": {
+        "status": 200,
+        "headers": {},
+        "body": {
+          "Invoices": [
+            {
+              "InvoiceID": "synthetic-paid",
+              "InvoiceNumber": "INV-SYNTHETIC",
+              "Type": "ACCREC",
+              "Status": "PAID",
+              "Contact": {
+                "ContactID": "synthetic-contact-0",
+                "Name": "Bayview Clinic"
+              },
+              "DateString": "2026-10-29T00:00:00",
+              "SubTotal": 250,
+              "TotalTax": 25,
+              "Total": 275,
+              "AmountPaid": 275,
+              "AmountDue": 0,
+              "LineItems": [
+                {
+                  "ItemCode": "SYNTHETIC-PAID",
+                  "Description": "Synthetic crown",
+                  "Quantity": 1,
+                  "UnitAmount": 250,
+                  "LineAmount": 250
+                }
+              ],
+              "UpdatedDateUTC": "/Date(1793232000000+0000)/"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "repeat": true,
+      "request": {
+        "method": "GET",
+        "url": "https://api.xero.com/api.xro/2.0/Payments",
+        "query": {
+          "page": "2"
+        }
+      },
+      "response": {
+        "status": 200,
+        "headers": {},
+        "body": {
+          "Payments": []
+        }
+      }
+    },
+    {
+      "repeat": true,
+      "request": {
+        "method": "GET",
+        "url": "https://api.xero.com/api.xro/2.0/Payments"
+      },
+      "response": {
+        "status": 200,
+        "headers": {},
+        "body": {
+          "Payments": [
+            {
+              "PaymentID": "synthetic-payment",
+              "Date": "/Date(1793232000000+0000)/",
+              "Amount": 275,
+              "Status": "AUTHORISED",
+              "PaymentType": "ACCRECPAYMENT",
+              "Invoice": {
+                "InvoiceID": "synthetic-paid"
+              },
+              "UpdatedDateUTC": "/Date(1793232000000+0000)/"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}
