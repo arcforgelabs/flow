@@ -37,7 +37,7 @@ const data = {
 
 test('the report covers last Monday to Sunday and this week, from labelled records only', () => {
   const r = build(config, data, NOW);
-  assert.equal(r.period.label, 'Mon 19 – Sun 25 October 2026');
+  assert.equal(r.period.label, '19 – 28 October 2026');
   assert.deepEqual(r.items.map((i) => i.id), ['pr10', 'pr12', 'i50']);
   const [contacts, send, photo] = r.items;
   assert.equal(contacts.title, 'Xero contacts both ways');

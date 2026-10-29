@@ -3,7 +3,8 @@
 # Every value below comes from public GitHub records: releases, pull requests,
 # labels and issues. Nothing here reads customer data, Sentry or support tickets.
 product: Flow
-title: Flow weekly report
+title: Flow week in review
+kind: Week in review           # the name beside the product; the period can run a few days past the week
 timezone: Australia/Sydney
 
 # Pull request labels that steer the report.

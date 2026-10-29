@@ -332,7 +332,7 @@ body[data-mode="full"] .sec h4{margin:24px 0 12px}
 <div class="doc">
   <article class="sheet">
     <header class="head">
-      <div class="brand"><svg viewBox="0 0 32 32" role="img" aria-label="Flow"><rect class="fm-b" width="32" height="32" rx="8"/><path class="fm-w" d="M7 13.5c3-3 6-3 9 0s6 3 9 0M7 20.5c3-3 6-3 9 0s6 3 9 0" fill="none" stroke-width="2.4" stroke-linecap="round"/></svg><span id="product"></span><span class="kind">Weekly report</span></div>
+      <div class="brand"><svg viewBox="0 0 32 32" role="img" aria-label="Flow"><rect class="fm-b" width="32" height="32" rx="8"/><path class="fm-w" d="M7 13.5c3-3 6-3 9 0s6 3 9 0M7 20.5c3-3 6-3 9 0s6 3 9 0" fill="none" stroke-width="2.4" stroke-linecap="round"/></svg><span id="product"></span><span class="kind" id="kind"></span></div>
       <div class="period" id="period"></div>
     </header>
 
@@ -396,6 +396,7 @@ function badge() { return '<svg class="sup" viewBox="0 0 24 24" aria-label="Supp
 
 document.title = R.title;
 document.getElementById('product').textContent = R.product;
+document.getElementById('kind').textContent = R.kind;
 document.getElementById('period').textContent = R.period.label;
 document.getElementById('lede').textContent = R.lede;
 

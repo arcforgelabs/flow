@@ -161,10 +161,10 @@ export function build(config, data, nowIso) {
   const majorNext = items.filter((i) => i.next && i.major).length;
   const lead = live.find((i) => i.id === highlights[0]);
   const fmt = (iso) => { const [y, m, d] = iso.split("-"); return { y, m: MONTHS[+m - 1], d: +d }; };
-  const a = fmt(w.from), b = fmt(w.to);
+  const a = fmt(w.from), t = fmt(w.today);
   return {
-    product: config.product, title: config.title,
-    period: { label: `Mon ${a.d}${a.m === b.m ? "" : " " + a.m} – Sun ${b.d} ${b.m} ${b.y}`, from: w.from, to: w.to, today: w.today },
+    product: config.product, title: config.title, kind: config.kind,
+    period: { label: `${a.d}${a.m === t.m ? "" : " " + a.m} – ${t.d} ${t.m} ${t.y}`, from: w.from, to: w.to, today: w.today },
     lede: lead ? `${lead.title}.` : `${config.product} kept running.`,
     links: { repo: data.repoUrl },
     stats, days, items: items.map(({ releasedAt, ...i }) => i), highlights,
