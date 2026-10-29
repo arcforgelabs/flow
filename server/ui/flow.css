@@ -1729,6 +1729,7 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
   .fx-cfm__head, .fx-cfm__row { padding-left: 16px; }
   .fx-cfm__create { padding-left: 16px; }
   .fx-cfm__search { flex: 1 1 100%; width: auto; }
+  .fx-cfm__bar :is(.fx-cfm__search, .fx-cfm__tool, .fx-btn) { height: auto; min-height: 44px; }
   .fx-cfm__edit { display: none !important; }
   /* Custom fields uses the same phone slots as a column list: name and the
      menu on line 1, up to three facts on line 2, 56px. */
