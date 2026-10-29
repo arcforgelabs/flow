@@ -1,0 +1,87 @@
+# Customer report template: written by hand once, filled by the
+# customer-report workflow each week (docs/CUSTOMER_REPORT.md).
+# Every value below comes from public GitHub records: releases, pull requests,
+# labels and issues. Nothing here reads customer data, Sentry or support tickets.
+product: Flow
+title: Flow weekly report
+timezone: Australia/Sydney
+
+# Pull request labels that steer the report.
+labels:
+  major: "report: major"       # a big change to the customer's daily work
+  support: "report: support"   # came from a support request
+  hide: "report: hide"         # internal: leave it out
+  security: "impact:security"
+  roadmap: "roadmap"           # open issues with this label show as In progress
+
+highlights: 6                  # Major first, then support, then newest
+
+stats:
+  - { id: updates, icon: rocket, label: Updates, go: d-updates, count: items }
+  - { id: security, icon: shield-check, label: Security, go: d-security, count: security }
+  - { id: support, icon: life-buoy, label: Support, go: d-support, count: support, note: resolved }
+  - { id: uptime, icon: activity, label: Uptime, go: d-uptime, count: none }
+
+# Stage of an in-progress item, from its open pull request. No dates.
+stages:
+  none: [Plan, 0]
+  draft: [Build, 25]
+  ready: [Review, 50]
+  approved: [Test, 75]
+
+planned: Planned releases
+
+# The ring of checks. {prs} and {releases} are counts for the last week.
+checks:
+  - { icon: life-buoy, name: Error watch, speed: all, when: All the time, result: Watching, does: Catches each error and opens a fix. }
+  - { icon: shield-check, name: Change checks, speed: many, when: Each change, result: "{prs} changes checked", does: Runs the tests and security scans on each change before it goes in. }
+  - { icon: package-search, name: Package watch, speed: week, when: Each Monday, result: Watching, does: Looks for known flaws in the software packages that Flow uses. }
+  - { icon: rocket, name: Release check, speed: day, when: Each release, result: "{releases} releases checked", does: Checks each release before and after it goes live. }
+  - { icon: activity, name: Uptime check, speed: wait, when: Each minute, result: Not set up yet, does: Will call Flow every minute and record each outage. }
+
+uptime: { tag: Not measured, title: No uptime figure yet, text: The first figure shows when the uptime check starts. }
+
+# First keyword match picks the icon (Lucide names). Default: sparkles.
+icons:
+  portal: hospital
+  clinic: hospital
+  photo: camera
+  capture: camera
+  permission: lock
+  role: lock
+  xero: arrow-left-right
+  invoice: receipt
+  payment: circle-dollar-sign
+  paid: circle-dollar-sign
+  seazona: refresh-cw
+  sync: refresh-cw
+  history: history
+  filter: funnel
+  view: funnel
+  rule: list-checks
+  automation: list-checks
+  price: tag
+  tab: folders
+  job: kanban
+  board: kanban
+  stage: kanban
+  client: user-plus
+  contact: user-plus
+  email: mail
+  invite: mail
+  note: notebook-pen
+  reconcile: scale
+  send: send
+  fast: zap
+  security: shield-check
+  release: rocket
+  template: file-code
+  sidebar: panel-left
+  phone: smartphone
+  column: columns-3
+  list: list
+  problem: triangle-alert
+  report: message-square-warning
+  delete: trash-2
+  page: layout-panel-top
+  setting: settings
