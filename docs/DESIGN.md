@@ -248,6 +248,7 @@ before changing it on a phone: the component reads those rules.
 | `fieldError(field, on)`, `.fx-input[aria-invalid="true"]` | `server/ui/kit.js`, `server/ui/flow.css` | FieldError | A field that fails a check glows red, like a required field, until the person types in it |
 | `toast(text, tone, { stay })` | `server/ui/kit.js` | Toast | A short result after an action. `stay: true` keeps it until the person closes it (a failed Send, a deleted invoice) |
 | `dialog({ title, body, confirm, tone })` | `server/ui/kit.js` | Dialog | A confirm step before an action that is hard to undo |
+| `iconPicker({ value, fallback, label, onpick })`, `ICON_CHOICES` | `server/ui/kit.js` | IconPicker | Pick an icon: a button, and a panel with a search box over a grid of Lucide icons, each named on hover. A sheet on a phone (the icon of a rule) |
 | `pickOne({ title, intro, label, find, load, item, empty, confirm, remote })` | `server/ui/kit.js` | Pick | Pick one row of a long list in a dialog, with a search box (New invoice from a job, Link a Xero client) |
 | `holdButton(button, ms)` | `server/ui/kit.js` | HoldButton | A button that waits between presses (Xero, Seazona) and shows the time left |
 | `captureButton(ui, { icon, added, done })` | `server/ui/captures.js` | CaptureButton | The camera button that sends a form photo to Capture: the phone's own camera, or files on a desk. `icon: true` in a toolbar (Jobs); `send(files)` for a drop or paste |

@@ -288,6 +288,23 @@ export const RULES = {
     "mark": false,
     "card": "Icon"
   },
+  "iconPicker": {
+    "component": "iconPicker",
+    "direction": "sheet",
+    "phone": {
+      "layout": "sheet"
+    },
+    "tablet": {
+      "layout": "popover"
+    },
+    "desk": {
+      "layout": "popover"
+    },
+    "touch": 44,
+    "pageOverflow": "none",
+    "screens": [],
+    "card": "IconPicker"
+  },
   "jobChangeBanner": {
     "component": "jobChangeBanner",
     "direction": "banner",

@@ -1606,6 +1606,40 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
 .fx-cf__choice[aria-checked="true"] { background: var(--fx-hover); color: var(--t-strong); }
 .fx-cf__choice > :first-child { justify-self: start; }
 .fx-cf__choice .fx-lucide { width: 15px; height: 15px; color: var(--t-accent); }
+/* Icon picker (kit.js iconPicker): the button shows the icon; the panel is a
+   search box over a grid of icons. A phone gets a sheet at the foot. */
+.fx-icons { display: inline-flex; }
+.fx-icons__button {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 8px 0 10px;
+  border: 1px solid var(--t-control); border-radius: var(--t-radius); background: var(--t-paper); color: var(--t-strong); cursor: pointer;
+}
+.fx-icons__button > .fx-lucide { width: 18px; height: 18px; }
+.fx-icons__button > .fx-lucide + .fx-lucide { width: 14px; height: 14px; color: var(--t-dim); }
+.fx-icons__button:hover { background: var(--fx-hover); }
+.fx-icons__button:focus-visible { box-shadow: var(--fx-focus); outline: none; }
+.fx-pop.fx-icons__panel { width: 316px; max-width: calc(100vw - 16px); padding: 8px; overflow: hidden; }
+.fx-icons__panel:popover-open { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: 8px; }
+.fx-icons__panel .fx-input { min-height: 32px; font-size: 13px; }
+.fx-icons__grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(36px, 1fr)); gap: 2px; max-height: 248px; overflow-y: auto; }
+.fx-icons__grid > p { grid-column: 1 / -1; margin: 8px 4px; }
+.fx-icons__cell {
+  display: inline-grid; place-items: center; aspect-ratio: 1; min-width: 36px; border: 0; border-radius: var(--t-radius);
+  background: none; color: var(--t-text); cursor: pointer;
+}
+.fx-icons__cell .fx-lucide { width: 18px; height: 18px; }
+.fx-icons__cell:hover, .fx-icons__cell:focus-visible { background: var(--fx-hover); color: var(--t-strong); outline: none; }
+.fx-icons__cell[aria-pressed="true"] { background: var(--t-accent-bg); color: var(--t-accent); box-shadow: inset 0 0 0 1px var(--t-accent-brd, var(--t-accent)); }
+.fx-icons__foot { display: flex; justify-content: flex-end; }
+.fx-icons__foot > [hidden] { display: none; }
+.fx-pop.fx-icons__panel[data-phone-layout="sheet"] {
+  inset: auto 0 0 0; width: 100%; max-width: 100%; max-height: min(70vh, 100%); padding: 12px 12px max(12px, env(safe-area-inset-bottom));
+  border-radius: var(--t-radius-lg) var(--t-radius-lg) 0 0;
+}
+.fx-icons__panel[data-phone-layout="sheet"] .fx-input { min-height: 44px; font-size: 16px; }
+.fx-icons__panel[data-phone-layout="sheet"] .fx-icons__grid { grid-template-columns: repeat(auto-fill, minmax(44px, 1fr)); max-height: none; }
+.fx-icons__panel[data-phone-layout="sheet"] .fx-icons__cell { min-width: 44px; }
+.fx-icons__panel[data-phone-layout="sheet"] .fx-icons__cell .fx-lucide { width: 22px; height: 22px; }
+.fx-icons__panel[data-phone-layout="sheet"] .fx-icons__foot .fx-btn { min-height: 44px; }
 /* Custom fields manager (custom-fields.js), like ClickUp's Custom Field
    Manager: a toolbar, then one table of type groups that fold. */
 .fx-lucide { display: inline-block; flex: none; width: 16px; height: 16px; background: currentColor; -webkit-mask: var(--icon) center / contain no-repeat; mask: var(--icon) center / contain no-repeat; }
@@ -1761,6 +1795,7 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
 .fx-rule__footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 8px; }
 .fx-dialog:has(.fx-rule__dialog) { width: min(680px, calc(100vw - 32px)); }
 .fx-rule__dialog .fx-btn--sm { justify-self: start; }
+.fx-rule__name { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 12px; }
 .fx-rule__conditions { display: grid; gap: 8px; }
 .fx-rule__condition { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1.4fr) auto; gap: 8px; align-items: start; }
 .fx-rule__condition + .fx-rule__condition { padding-top: 8px; border-top: 1px solid var(--fx-line); }
