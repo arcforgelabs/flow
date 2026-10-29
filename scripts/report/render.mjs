@@ -26,7 +26,7 @@ export function icons(names) {
 }
 
 export function site(report, siteUrl) {
-  const names = [...report.items.map((i) => i.icon), ...report.stats.map((s) => s.icon), ...report.ongoing.map((c) => c.icon), "rocket", "circle-play", "list", "coffee", "bug", "sparkles", "shield-check", "external-link", "maximize-2", "check", "git-pull-request", "user-check"];
+  const names = [...report.items.map((i) => i.icon), ...report.stats.map((s) => s.icon), ...report.ongoing.map((c) => c.icon), "rocket", "circle-play", "list", "coffee", "bug", "sparkles", "shield-check", "external-link", "maximize-2", "check", "git-pull-request", "user-check", "flask-conical", "hammer", "sparkle", "wrench", "moon", "sun", "tent"];
   const data = { ...report, icons: icons(names), links: { ...report.links, site: siteUrl } };
   return readFileSync(join(HERE, "site.html"), "utf8")
     .replace("__TITLE__", esc(report.title))

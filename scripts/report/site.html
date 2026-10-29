@@ -499,6 +499,9 @@ function tagLi(it) { return '<li class="br-i' + (it.major ? ' br-i--key' : '') +
 var DATES = [];
 for (var t = Date.parse(R.period.today); t >= Date.parse(R.period.from); t -= 864e5) DATES.push(new Date(t).toISOString().slice(0, 10));
 var NODES = [], seenDay = {};
+// Notes for dates with no release; each empty node takes the next one, so no two read the same.
+var QUIET = [['coffee', 'Kettle on, no releases.'], ['flask-conical', 'Testing the next one.'], ['hammer', 'Heads down, building.'], ['sparkle', 'Polishing, not shipping.'], ['wrench', 'Tuning under the hood.']],
+  QWK = [['moon', 'Weekend. Gone quiet.'], ['sun', 'Weekend. Out in the sun.'], ['tent', 'Weekend. Off the grid.']], quiet = 0;
 DATES.forEach(function (iso) {
   var its = dayItems(iso), last = NODES[NODES.length - 1];
   if (!its.length && last && last.empty) { last.from = iso; return; }
@@ -513,7 +516,8 @@ NODES.forEach(function (n) {
   if (n.empty) {
     var lbl = n.from === n.to ? [b.wd, b.d + ' ' + b.m] : [a.wd + ' – ' + b.wd, a.d + (a.m === b.m ? '' : ' ' + a.m) + ' – ' + b.d + ' ' + b.m];
     var wk = [a.wd, b.wd].every(function (x) { return x === 'Sat' || x === 'Sun'; });
-    html += node({ cls: ' br-d--empty' }, lbl, '<li class="br-quiet">' + svgIcon('coffee') + '<span>' + (wk ? 'Weekend. No releases.' : 'Quiet ' + (n.from === n.to ? 'day' : 'days') + '. Kettle on, no releases.') + '</span></li>');
+    var q = (wk ? QWK : QUIET)[quiet++ % (wk ? QWK : QUIET).length];
+    html += node({ cls: ' br-d--empty' }, lbl, '<li class="br-quiet">' + svgIcon(q[0]) + '<span>' + q[1] + '</span></li>');
     return;
   }
   var g = n.its[0].day, id = seenDay[g] ? '' : 'day-' + g; seenDay[g] = 1;
