@@ -169,9 +169,11 @@ export function build(config, data, nowIso) {
     links: { repo: data.repoUrl },
     stats, days, items: items.map(({ releasedAt, ...i }) => i), highlights,
     ahead: { progress, planned: { label: config.planned, note: majorNext ? `${majorNext} major` : `${progress.length} in progress` } },
-    ongoing: config.ongoing.map(({ zero, ...c }) => {
-      const result = fill(c.result, { security: security.length, support: counts.support.reduce((x, y) => x + y, 0), fix });
-      return { ...c, result: zero && /^0\b/.test(result) ? zero : result, does: fill(c.does, { fix }) };
+    ongoing: config.ongoing.map(({ zero, nodata, ...c }) => {
+      const err = data.errors || {}, vals = { security: security.length, support: counts.support.reduce((x, y) => x + y, 0), fix, errors: err.caught, errorsFixed: err.resolved };
+      if (nodata && /\{errors/.test(c.result) && err.caught == null) return { ...c, result: nodata, does: c.does.replace(/\{\w+\} of \{\w+\} resolved\./, "Catches each error and starts a fix.") };
+      const result = fill(c.result, vals);
+      return { ...c, result: zero && /^0\b/.test(result) ? zero : result, does: fill(c.does, vals) };
     }),
     security, support
   };
@@ -181,6 +183,18 @@ async function gh(path, token) {
   const res = await fetch(`https://api.github.com/${path}`, { headers: { authorization: `Bearer ${token}`, accept: "application/vnd.github+json" } });
   if (!res.ok) throw new Error(`GitHub ${path}: ${res.status} ${await res.text()}`);
   return res.json();
+}
+
+// New error groups since the period start, and how many are resolved: counts only, never error text.
+// Skipped (Error watch shows "Watching") when SENTRY_AUTH_TOKEN, SENTRY_ORG or SENTRY_PROJECT is unset.
+async function sentryCounts(from) {
+  const { SENTRY_AUTH_TOKEN: token, SENTRY_ORG: org, SENTRY_PROJECT: project } = process.env;
+  if (!token || !org || !project) return null;
+  const q = encodeURIComponent(`firstSeen:>${from}T00:00:00 issue.category:error`);
+  const res = await fetch(`https://sentry.io/api/0/projects/${org}/${project}/issues/?query=${q}&statsPeriod=14d&limit=100`, { headers: { authorization: `Bearer ${token}` } });
+  if (!res.ok) throw new Error(`Sentry ${res.status}: check SENTRY_AUTH_TOKEN (read scope) and SENTRY_ORG/SENTRY_PROJECT.`);
+  const issues = await res.json();
+  return { caught: issues.length, resolved: issues.filter((i) => i.status === "resolved").length };
 }
 
 async function main() {
@@ -208,7 +222,8 @@ async function main() {
   for (const n of new Set(merged.filter((p) => (p.labels || []).some((l) => l.name === config.labels.support)).flatMap((p) => linkedIssues(p.body)))) {
     opened[n] = (await gh(`repos/${repo}/issues/${n}`, token).catch(() => null))?.created_at;
   }
-  const report = build(config, { releases, pulls, merged, roadmap, openPulls, opened, evidence: evidenceByPr("."), repoUrl: `https://github.com/${repo}/` }, now);
+  const errors = await sentryCounts(w.from);
+  const report = build(config, { releases, pulls, merged, roadmap, openPulls, opened, errors, evidence: evidenceByPr("."), repoUrl: `https://github.com/${repo}/` }, now);
   writeFileSync(args.out?.[0] || "report.json", JSON.stringify(report, null, 2) + "\n");
   console.log(`report: ${report.items.length} items, ${report.highlights.length} highlights, period ${report.period.label}`);
 }

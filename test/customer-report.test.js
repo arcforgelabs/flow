@@ -52,6 +52,8 @@ test('the report covers last Monday to Sunday and this week, from labelled recor
   ]);
   // Request to fix: issue #40 opened 2026-10-26T21:00Z, its fix merged 2026-10-27T01:00Z.
   assert.deepEqual(r.ongoing.map((o) => o.result), ['All clear', 'Watching', '1 resolved']);
+  const e = build(config, { ...data, errors: { caught: 3, resolved: 2 } }, NOW).ongoing[1];
+  assert.deepEqual([e.result, e.does], ['3 caught', '2 of 3 resolved.']);
   assert.equal(r.ongoing[2].does, 'Request to fix: 4 hours on average.');
   assert.equal(r.highlights[0], 'pr10');
 });

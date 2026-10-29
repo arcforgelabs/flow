@@ -33,10 +33,12 @@ planned: Planned releases
 
 # Ongoing work, one pizza slice each. {security}, {support} and {fix} come
 # from the period's records ({fix} = average time from request to fix).
-# `zero` replaces the result when its count is 0.
+# `zero` replaces the result when its count is 0; `nodata` when its source is not set up.
+# {errors} and {errorsFixed} are new error groups in the period and how many are resolved
+# (Sentry, counts only; needs SENTRY_AUTH_TOKEN in the workflow).
 ongoing:
   - { icon: shield-check, name: Security, result: "{security} updates", zero: All clear, does: Checks Flow's software for known flaws., when: Every week }
-  - { icon: life-buoy, name: Error watch, result: Watching, does: Catches each error and starts a fix., when: All the time }
+  - { icon: life-buoy, name: Error watch, result: "{errors} caught", zero: None caught, nodata: Watching, does: "{errorsFixed} of {errors} resolved.", when: All the time }
   - { icon: message-square, name: Requests, result: "{support} resolved", does: "Request to fix: {fix} on average.", when: Every request }
 
 # First keyword match picks the icon (Lucide names). Default: sparkles.

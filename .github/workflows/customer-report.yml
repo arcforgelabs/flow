@@ -58,6 +58,10 @@ jobs:
       - name: Collect
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          # Optional: error counts for Error watch (read-only token; counts only).
+          SENTRY_AUTH_TOKEN: ${{ secrets.CUSTOMER_REPORT_SENTRY_TOKEN }}
+          SENTRY_ORG: ${{ vars.SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ vars.SENTRY_PROJECT }}
         run: node scripts/report/collect.mjs --out report.json
 
       - name: Render
