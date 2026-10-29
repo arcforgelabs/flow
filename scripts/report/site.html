@@ -40,7 +40,10 @@ button{font:inherit;color:inherit}
 .brand svg{width:32px;height:32px;flex:none}
 .fm-b{fill:var(--t-primary)}.fm-w{stroke:var(--t-on-primary)}
 .brand .kind{margin-left:4px;padding-left:12px;border-left:1px solid var(--t-brd-hi);font:600 11px var(--t-body);letter-spacing:.16em;text-transform:uppercase;color:var(--t-mute)}
-.period{font:600 15px var(--t-body);color:var(--t-strong)}
+.period{display:flex;flex-direction:column;align-items:flex-end;gap:5px}
+.period .pd{font:400 26px/1 var(--t-display);letter-spacing:-.01em;color:var(--t-strong)}
+.period .pm{font:600 11px var(--t-body);letter-spacing:.16em;text-transform:uppercase;color:var(--t-mute)}
+@media (max-width:639px){.period{align-items:flex-start}}
 .lede{margin:20px 0 0;font:400 24px/1.3 var(--t-display);color:var(--t-strong)}
 .h{margin:26px 0 10px}
 
@@ -319,11 +322,15 @@ body[data-mode="full"] .h.lbl{margin-top:72px}
 body[data-mode="full"] .sec{padding-top:56px;margin-top:72px}
 body[data-mode="full"] .sec h4{margin:24px 0 12px}
 .vgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px}
-.vgrid .vuln{display:grid;align-content:start;gap:6px;padding:16px;border:1px solid var(--t-brd);border-radius:var(--t-radius-lg);background:var(--t-paper)}
+.vgrid .vuln{all:unset;box-sizing:border-box;cursor:pointer;display:grid;align-content:start;gap:8px;padding:16px;border:1px solid var(--t-brd);border-radius:var(--t-radius-lg);background:var(--t-paper);transition:border-color .15s,background .15s,transform .15s}
+.vgrid .vuln:hover{border-color:var(--t-accent-brd);background:var(--t-s1);transform:translateY(-1px)}
+.vgrid .vuln:focus-visible{outline:2px solid var(--t-ring);outline-offset:2px}
 .vgrid .vuln b{font:600 15.5px/1.3 var(--t-body);color:var(--t-strong)}
-.vgrid .vuln p{margin:0;font-size:13.5px}
-.vgrid .vl{margin-top:4px}
-.vgrid .vh{justify-content:space-between}
+.vgrid .vh{display:flex;align-items:center;justify-content:space-between}
+.vgrid .vh .when{margin-left:0}
+.xl{display:flex;flex-wrap:wrap;gap:8px 16px;font-size:14px}
+.xl a{display:inline-flex;align-items:center;gap:6px;color:var(--t-strong)}
+.xl svg{width:14px;height:14px;color:var(--t-mute)}
 }
 @media screen and (max-width:639px){body[data-mode="full"] .sheet{padding:24px 18px 40px}body[data-mode="full"] .lede{margin:48px 0 40px}body[data-mode="full"] .h.lbl{margin-top:48px}body[data-mode="full"] .sec{padding-top:36px;margin-top:48px}}
 </style>
@@ -397,7 +404,15 @@ function badge() { return '<svg class="sup" viewBox="0 0 24 24" aria-label="Supp
 document.title = R.title;
 document.getElementById('product').textContent = R.product;
 document.getElementById('kind').textContent = R.kind;
-document.getElementById('period').textContent = R.period.label;
+// The dates as a stamp: the days in the display face, the month and year small below.
+(function () {
+  function p(iso, o) { return new Date(iso + 'T00:00:00Z').toLocaleDateString('en-AU', Object.assign({ timeZone: 'UTC' }, o)); }
+  var a = R.period.from, b = R.period.today, one = a.slice(0, 7) === b.slice(0, 7);
+  var days = one ? p(a, { day: 'numeric' }) + ' – ' + p(b, { day: 'numeric' }) : p(a, { day: 'numeric', month: 'short' }) + ' – ' + p(b, { day: 'numeric', month: 'short' });
+  var el = document.getElementById('period');
+  el.innerHTML = '<span class="pd">' + esc(days) + '</span><span class="pm">' + esc(one ? p(b, { month: 'long', year: 'numeric' }) : p(b, { year: 'numeric' })) + '</span>';
+  el.setAttribute('aria-label', R.period.label);
+})();
 document.getElementById('lede').textContent = R.lede;
 
 /* ---------- Stats ---------- */
@@ -550,9 +565,9 @@ if (HLN > 2) { hlLabel(false); hlm.addEventListener('click', function () { hlLab
 /* ---------- Security and support: slim cards ---------- */
 function cards(list) {
   return '<div class="vgrid">' + list.map(function (c) {
-    var links = (c.links || []).map(function (l) { return '<a href="' + esc(l.href) + '" target="_blank" rel="noopener">' + esc(l.label) + '</a>'; });
-    if (c.open) links.push('<a href="#" data-open="' + c.open + '">See the fix</a>');
-    return '<div class="vuln"><div class="vh"><span class="risk' + (c.tone ? ' risk--' + c.tone : '') + '">' + esc(c.tag) + '</span>' + (c.date ? '<span class="when">' + esc(c.date) + '</span>' : '') + '</div><b>' + esc(c.title) + '</b>' + (c.text ? '<p>' + esc(c.text) + '</p>' : '') + (links.length ? '<div class="vl">' + links.join('') + '</div>' : '') + '</div>';
+    var it = BY[c.open] || {};
+    var mk = c.mark === 'security' ? '<span class="kd" data-tip="Security" role="img" aria-label="Security">' + svgIcon('shield-check') + '</span>' : kind(it);
+    return '<button type="button" class="vuln" data-open="' + c.open + '"><span class="vh">' + mk + '<span class="when">' + esc(c.date) + '</span></span><b>' + esc(c.title) + '</b></button>';
   }).join('') + '</div>';
 }
 document.getElementById('security').innerHTML = R.security.length ? cards(R.security) : '<p class="br-none">Nothing to report.</p>';
@@ -566,8 +581,9 @@ function open(id) {
   back = document.activeElement;
   document.getElementById('card-i').innerHTML = svgIcon(it.icon);
   document.getElementById('card-t').textContent = it.title;
-  document.getElementById('card-s').textContent = (it.kind ? (it.kind === 'fix' ? 'Bug fix · ' : 'New feature · ') : '') + it.status;
+  document.getElementById('card-s').textContent = (it.icon === 'shield-check' && !it.date ? 'Security · ' : it.kind ? (it.kind === 'fix' ? 'Bug fix · ' : 'New feature · ') : '') + it.status;
   var e = it.evidence, b = it.why ? '<p class="cwhy">' + esc(it.why) + '</p>' : '';
+  if (it.links && it.links.length) b += '<div class="xl">' + it.links.map(function (l) { return '<a href="' + esc(l.href) + '" target="_blank" rel="noopener">' + esc(l.label) + svgIcon('external-link') + '</a>'; }).join('') + '</div>';
   if (e && e.clip) b += '<figure class="media"><video controls playsinline preload="none" poster="' + esc(e.still) + '" src="' + esc(e.clip) + '" aria-label="' + esc(it.title) + ' walkthrough, with sample data"></video><figcaption>Sample data</figcaption></figure>';
   var d = '<p>' + esc(it.what) + '</p>';
   if (it.more && it.more.length) d += '<ul>' + it.more.map(function (m) { return '<li>' + esc(m) + '</li>'; }).join('') + '</ul>';

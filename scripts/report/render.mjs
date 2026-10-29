@@ -26,7 +26,7 @@ export function icons(names) {
 }
 
 export function site(report, siteUrl) {
-  const names = [...report.items.map((i) => i.icon), ...report.stats.map((s) => s.icon), ...report.ongoing.map((c) => c.icon), "rocket", "circle-play", "list", "coffee", "bug", "sparkles"];
+  const names = [...report.items.map((i) => i.icon), ...report.stats.map((s) => s.icon), ...report.ongoing.map((c) => c.icon), "rocket", "circle-play", "list", "coffee", "bug", "sparkles", "shield-check", "external-link"];
   const data = { ...report, icons: icons(names), links: { ...report.links, site: siteUrl } };
   return readFileSync(join(HERE, "site.html"), "utf8")
     .replace("__TITLE__", esc(report.title))
@@ -47,7 +47,7 @@ const S = {
   card: `width:100%;max-width:600px;background:${C.paper};border:1px solid ${C.brd}`,
   head: `padding:24px 28px 0;font:400 24px/1 ${DISPLAY};color:${C.strong}`,
   kind: `font:600 11px ${BODY};letter-spacing:2px;text-transform:uppercase;color:${C.mute}`,
-  period: `padding:6px 28px 0;font:600 14px ${BODY};color:${C.strong}`,
+  period: `padding:8px 28px 0;font:400 19px/1.2 ${DISPLAY};color:${C.strong}`,
   pad: "padding:20px 28px 0",
   hi: `margin:0;font-size:15px;color:${C.dim}`,
   lede: `margin:8px 0 0;font:400 28px/1.2 ${DISPLAY};color:${C.strong}`,

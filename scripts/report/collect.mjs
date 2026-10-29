@@ -139,8 +139,21 @@ export function build(config, data, nowIso) {
   const live = items.filter((i) => !i.next), thisWeek = live.filter((i) => i.day === "wtd");
   const merged = data.merged.filter((p) => !has(p, L.hide));
   const inWeek = (p, a, b) => { const d = local(p.merged_at).date; return d >= a && d <= b; };
-  const security = merged.filter((p) => has(p, L.security)).map((p) => ({ tag: "Fixed", tone: "ok", date: short(local(p.merged_at).date), title: config.titles?.[p.number] || cleanTitle(p.title), links: [{ label: "Change", href: `${data.repoUrl}pull/${p.number}` }], thisWeek: local(p.merged_at).date >= w.thisWeek }));
-  const sup = (a, b) => merged.filter((p) => has(p, L.support) && inWeek(p, a, b)).map((p) => ({ tag: "Fixed", tone: "ok", title: config.titles?.[p.number] || cleanTitle(p.title), open: seen.has(p.number) ? `pr${p.number}` : undefined }));
+  // Security and support cards open their own pop-up. A pull request that is not on the timeline gets
+  // an item with no date (so the timeline skips it); report.yml `notes:` gives its short text and read-up link.
+  const card = (p, mark) => {
+    const id = `pr${p.number}`, at = local(p.merged_at).date, title = config.titles?.[p.number] || cleanTitle(p.title);
+    if (!seen.has(p.number)) {
+      seen.add(p.number);
+      const note = config.notes?.[p.number] || {}, impact = userImpact(p.body);
+      items.push({ id, title, icon: mark === "security" ? "shield-check" : iconFor(p.title, config.icons), kind: kindOf(p.title), day: null, date: null, next: false,
+        major: has(p, L.major), support: has(p, L.support), why: note.text || impact.why, what: impact.what || title, more: [], status: `Done · ${short(at)}`,
+        prs: [p.number], issues: linkedIssues(p.body), evidence: null, links: note.link ? [note.link] : [] });
+    }
+    return { open: id, title, date: short(at), mark, thisWeek: at >= w.thisWeek };
+  };
+  const security = merged.filter((p) => has(p, L.security)).map((p) => card(p, "security"));
+  const sup = (a, b) => merged.filter((p) => has(p, L.support) && inWeek(p, a, b)).map((p) => card(p));
   const groups = [{ label: "Last week", items: sup(w.from, w.to) }, { label: "This week", items: sup(w.thisWeek, w.today) }];
   const support = groups.filter((g) => g.items.length);
   const counts = { items: [live.length - thisWeek.length, thisWeek.length], security: [security.length - security.filter((c) => c.thisWeek).length, security.filter((c) => c.thisWeek).length], support: groups.map((g) => g.items.length) };
