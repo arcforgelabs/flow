@@ -98,6 +98,7 @@ export function describeSetup({ adapter, row, env, secrets, entry, unreadable = 
     return { ...base, value, source: fromHost ? 'host' : value != null ? 'flow' : null };
   });
   return {
+    ...(adapter.capabilities?.listWork ? { twoWaySync: { enabled: false, supported: false } } : {}),
     id: adapter.id,
     name: adapter.name,
     enabled: entry?.enabled ?? false,

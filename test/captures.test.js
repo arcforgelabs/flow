@@ -3,6 +3,7 @@ import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { after, before, describe, test } from 'node:test';
+import { captureMonthCost } from '../server/core/capture-settings.js';
 import { createApp } from '../server/app.js';
 import { invitePerson, seedFirstOwner } from '../server/auth/people.js';
 import { createPersonAuth } from '../server/auth/session.js';
@@ -362,5 +363,40 @@ describe('captures against PostgreSQL', { skip: skipWithoutDatabase }, () => {
     const { rows: [kept] } = await handle.pool.query('select photo_deleted_at from captures where id = $1', [held.capture.id]);
     assert.ok(kept.photo_deleted_at);
     assert.equal(await storage.get(old.capture.fileKey), null);
+  });
+  test('owners control the reader and see retained monthly costs only', async () => {
+    assert.equal((await send(`/api/capture-settings?organisationId=${organisationId}`, { token: null })).status, 401);
+    assert.equal((await send(`/api/capture-settings?organisationId=${organisationId}`, { token: staffToken })).status, 403);
+    const put = (enabled, token = ownerToken) => send(`/api/capture-settings?organisationId=${organisationId}`, {
+      method: 'PUT', token, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ enabled }),
+    });
+    assert.equal((await put(false, staffToken)).status, 403);
+    assert.equal((await put('on')).status, 400);
+    const off = await put(false);
+    assert.equal(off.status, 200);
+    assert.equal(off.body.settings.enabled, false);
+    assert.equal(off.body.settings.readerReady, false);
+    assert.equal(off.body.settings.storageReady, true);
+    assert.equal((await put(true)).body.settings.enabled, true);
+    const events = await handle.pool.query("select kind from integration_setting_events where adapter_id = 'capture'");
+    assert.deepEqual(events.rows.map((row) => row.kind), ['setting_changed', 'setting_changed']);
+
+    const other = await createOrganisation(handle.db, { name: 'Cost Test Lab' });
+    const make = async (key, org, date, cost) => {
+      const { capture } = await uploadCapture(handle.db, storage, org, { bytes: PNG, contentType: 'image/png', idempotencyKey: key, baseUrl: 'http://127.0.0.1' });
+      await handle.pool.query('update captures set created_at = $2, read = $3 where id = $1', [capture.id, date, JSON.stringify({ costMicros: cost })]);
+      return capture.id;
+    };
+    await make('cost-before', organisationId, '2026-09-30T23:59:59Z', 999);
+    await make('cost-first', organisationId, '2026-10-01T00:00:00Z', 100);
+    await make('cost-expiring', organisationId, '2026-10-10T00:00:00Z', 200);
+    await make('cost-last', organisationId, '2026-10-31T23:59:59Z', 300);
+    await make('cost-unknown', organisationId, '2026-10-31T23:59:59Z', null);
+    await make('cost-after', organisationId, '2026-11-01T00:00:00Z', 999);
+    await make('cost-other', other.id, '2026-10-10T00:00:00Z', 999);
+    const now = new Date('2026-10-20T00:00:00Z');
+    assert.deepEqual(await captureMonthCost(handle.db, organisationId, now), { costMicros: 600, unpriced: 1, currency: 'USD', month: '2026-10' });
+    await sweepCaptures(handle.db, storage, { now });
+    assert.equal((await captureMonthCost(handle.db, organisationId, now)).costMicros, 300);
   });
 });

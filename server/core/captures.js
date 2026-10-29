@@ -4,6 +4,7 @@ import { CAPTURE_DECISIONS, captures } from '../db/schema.js';
 import { FlowError, notFound } from './errors.js';
 import { matchJobs, proposeChange, readDate } from './capture-match.js';
 import { listFields, listJobFieldValues, setJobFieldValue } from './custom-fields.js';
+import { captureReaderEnabled } from './capture-settings.js';
 import { JOB_FIELDS } from '../ui/capture-fields.js';
 
 // Shown when the module is off or the keys are missing. Type it still works.
@@ -150,6 +151,7 @@ export async function uploadCapture(db, storage, organisationId, {
   bytes, contentType, idempotencyKey, source = 'api', personId, baseUrl, reader = null,
 }) {
   const photo = readPhoto(bytes, contentType);
+  if (reader?.on && !(await captureReaderEnabled(db))) reader = null;
   const key = readIdempotencyKey(idempotencyKey);
   const from = readSource(source);
   const existing = await byIdempotency(db, organisationId, key);

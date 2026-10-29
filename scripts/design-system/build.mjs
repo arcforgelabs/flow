@@ -193,6 +193,7 @@ ${THEME_FAMILIES.flatMap((f) => MODES.map((m) => tile(f, m))).join('\n')}
 const aliasPlugin = {
   name: 'flow-assets',
   setup(b) {
+    b.onResolve({ filter: /^\/assets\/vendor\/qrcode\.mjs$/ }, () => ({ path: require.resolve('qrcode-generator') }));
     b.onResolve({ filter: /^\/assets\/(ui|theme)\// }, (args) => {
       const [, dir, rest] = /^\/assets\/(ui|theme)\/(.+)$/.exec(args.path);
       return { path: join(ROOT, dir === 'ui' ? 'server/ui' : 'server/theme', rest) };

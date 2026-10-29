@@ -411,3 +411,30 @@ imports at its own start:
    `prior_links`. It adds only links Flow does not hold, copies ids only (no
    notes, no names), and logs `[import] links`. A failure here is logged and
    the start goes on. Unset both settings when the links are in.
+
+### Capture settings
+
+An owner opens **Capture → Settings** to turn the reader on or off. Changes
+require a verified owner sign-in and are recorded in `integration_setting_events`.
+The installation-wide switch lives in `integration_settings` as `capture.config.CAPTURE_READER`.
+With no saved choice, existing host-enabled reading continues. Off stops new
+and queued reads; a call already running can finish. Manual entry still works.
+Host storage and `FLOW_READER*` configuration remain necessary; Settings reports
+whether the running process has storage and a reader, without exposing keys.
+It does not prove that an external service is reachable.
+
+**This month** sums `captures.read->>'costMicros'` for the selected organisation's
+captures created in the current UTC month, in USD. Unpriced reads are reported
+separately. Undecided captures expire after seven days, including their cost:
+this accepted limitation means the displayed total can decrease and is not a
+billing ledger. Applied/discarded captures retain their recorded costs.
+
+Work system integrations show **Two-way sync** off and unavailable. No supported
+job-update API is wired; Seazona has no order-update call. Capture Apply still
+writes only Flow custom fields and their field events.
+
+On a desktop, **Use phone** encodes only the installation origin plus `/captures`.
+The QR is generated locally with pinned, MIT-licensed `qrcode-generator`; no
+external QR service sees the address. No session, capture id or signed key is
+included. The phone needs its own sign-in. Desktop review uses the shared sidecar
+beside the capture list; smaller screens retain the result dialog.

@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { and, asc, eq, isNull, sql } from 'drizzle-orm';
+import { captureReaderEnabled } from './capture-settings.js';
 import { callCostMicros } from './ai.js';
 import { captures, jobFields } from '../db/schema.js';
 import { FlowError } from './errors.js';
@@ -192,6 +193,9 @@ export async function readStoredCapture(db, storage, port, settings, { organisat
     eq(captures.id, captureId),
   ));
   if (!row || row.state !== 'reading') return row ?? null;
+  // Check queued reads at the point of effect too. A call already in flight
+  // can finish; turning off never sends another queued photo.
+  if (!(await captureReaderEnabled(db))) return mark(db, row, { state: 'problem', problem: 'reader turned off' });
 
   let stored;
   try {

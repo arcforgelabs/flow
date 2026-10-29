@@ -1,3 +1,5 @@
+import { saveSettings } from '../server/integrations/setup.js';
+import { CAPTURE_SETTINGS } from '../server/core/capture-settings.js';
 import assert from 'node:assert/strict';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -281,6 +283,24 @@ describe('the reader against PostgreSQL', { skip: skipWithoutDatabase }, () => {
     });
     assert.equal(direct.capture.state, 'ready');
     assert.equal(direct.capture.read.calls.length, 1);
+  });
+
+  test('turning off stops queued reads and new uploads; turning on resumes reading', async () => {
+    seen = [];
+    queue = [answered(SURE, { outputTokens: 40 })];
+    const queued = await upload('switch-queued');
+    await saveSettings(handle.db, { adapter: CAPTURE_SETTINGS, actor: null, values: { CAPTURE_READER: 'off' } });
+    await run();
+    const { rows: [row] } = await handle.pool.query('select state, problem from captures where id = $1', [queued.body.capture.id]);
+    assert.equal(row.problem, 'reader turned off');
+    const off = await upload('switch-off');
+    assert.equal(off.body.capture.state, 'problem');
+    assert.equal(seen.length, 0);
+    await saveSettings(handle.db, { adapter: CAPTURE_SETTINGS, actor: null, values: { CAPTURE_READER: 'on' } });
+    const on = await upload('switch-on');
+    assert.equal(on.body.capture.state, 'reading');
+    await run();
+    assert.equal(seen.length, 1);
   });
 
   test('three failed calls become a problem a person can type, and a heic photo is not sent', async () => {

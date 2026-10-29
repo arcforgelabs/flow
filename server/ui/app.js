@@ -13,6 +13,7 @@ import { renderInvoice, renderInvoiceList } from '/assets/ui/invoicing.js';
 import { renderCaptures } from '/assets/ui/captures.js';
 import { renderContacts } from '/assets/ui/contacts.js';
 import { automationSection, renderAutomations } from '/assets/ui/automations.js';
+import { renderCaptureSettings } from '/assets/ui/capture-settings.js';
 import { renderInvoicingSettings, sendModeSection } from '/assets/ui/invoicing-settings.js';
 import { renderPriceList } from '/assets/ui/price-list.js';
 import { renderPriceReconcile } from '/assets/ui/price-reconcile.js';
@@ -166,6 +167,7 @@ const VIEWS = {
   // Not in the sidebar: "Manage account" in the account menu opens the same
   // Clerk profile. The page stays for links and Search.
   // Opened from the Xero integration page: Xero invoices against Flow's own.
+  'capture-settings': { label: 'Capture settings', icon: 'camera', sidebar: false, ownerOnly: true, render: (main) => renderCaptureSettings(main, ui()) },
   'xero-import': { label: 'Xero import', icon: 'plug', sidebar: false, render: (main) => renderXeroImport(main, ui()) },
   account: { label: 'Account', icon: 'person', sidebar: false, render: renderAccount },
   appearance: { label: 'Appearance', icon: 'palette', place: 'account', render: renderAppearance },
@@ -760,6 +762,11 @@ async function renderIntegration(main, id) {
     const inputs = new Map();
     const rows = [];
     const advanced = [];
+    if (current.twoWaySync) rows.push(settingRow({
+      label: 'Two-way sync',
+      help: 'Off until this integration supports job updates. Change work system fields in that system; Apply writes Flow custom fields only.',
+      control: h('button', { type: 'button', class: 'fx-switch', role: 'switch', 'aria-label': 'Two-way sync', 'aria-checked': 'false', disabled: true }),
+    }));
     for (const field of current.fields) {
       if (field.source === 'host') {
         // The host sets it: a value to read, not a box to type in.
