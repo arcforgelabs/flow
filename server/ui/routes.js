@@ -12,6 +12,7 @@ import { themeStylesheet } from '../theme/themes.js';
 //   /assets/ui/<file>        Flow's components (flow.css) and page scripts
 //   /assets/fonts/<pkg>/…    the families' faces (server/theme/font-families.js)
 //   /assets/icons/<name>.svg one Lucide icon (lucide-static, ISC), for any page
+//   /assets/icons/tags.json  each Lucide icon's words, for the icon picker
 // Only the files named here are served. They change only with a release, so
 // browsers may keep them for an hour.
 
@@ -58,6 +59,8 @@ export function createUiAssetsRouter({ rateLimitPerMinute = 600 } = {}) {
     if (!ICON_FILE.test(req.params.file)) return next();
     sendNamed(res, next, iconDir, req.params.file);
   });
+  // Each icon's words, for the icon picker's search (kit.js iconPicker).
+  router.get('/assets/icons/tags.json', (_req, res, next) => sendNamed(res, next, dirname(iconDir), 'tags.json'));
 
   for (const name of FONT_PACKAGES) {
     const dir = dirname(require.resolve(`@fontsource-variable/${name}/LICENSE`));

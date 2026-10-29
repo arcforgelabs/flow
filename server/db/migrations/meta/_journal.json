@@ -169,6 +169,13 @@
       "when": 1793110575758,
       "tag": "0023_captures",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1793233782043,
+      "tag": "0024_rule_icon",
+      "breakpoints": true
     }
   ]
 }

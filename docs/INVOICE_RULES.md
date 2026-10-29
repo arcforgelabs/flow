@@ -28,6 +28,7 @@ flowchart LR
 | --- | --- |
 | When | `job_ready`: the job is ready to invoice and has no invoice |
 | If | 1 to 10 conditions. All must match |
+| Icon | Optional. Any Lucide icon name, picked in New rule or Edit rule. The card on Rules shows it. With none, the card shows the mark of Then: `flag` pending, `clock` wait, `ban` skip |
 | Then | `wait`: the job waits for a person. `skip`: rules never draft it, and Send holds a draft that already matches. `pending`: Flow drafts it, and the draft is on the Pending tab with the rule's note. `non_chargeable`: Flow drafts it, and the draft is on the Non-chargeable tab |
 
 A person can still draft a waiting job from the Jobs board. The job lists
@@ -128,12 +129,12 @@ deleted starter rule does not come back.
 | --- | --- | --- |
 | `GET /api/invoicing/rules` | everyone | The rules, in order |
 | `GET /api/invoicing/rule-fields` | everyone | Fields, tests and menus |
-| `POST /api/invoicing/rules` | owner, admin | A new rule `{ name, enabled, conditions, action }`. A pending rule's action is `{ kind: 'pending', note }` |
+| `POST /api/invoicing/rules` | owner, admin | A new rule `{ name, icon, enabled, conditions, action }`. A pending rule's action is `{ kind: 'pending', note }` |
 | `PUT /api/invoicing/rules/:id` | owner, admin | Change some of a rule; the result must be a whole valid rule |
 | `DELETE /api/invoicing/rules/:id` | owner, admin | Delete a rule |
 
 An organisation has 100 rules at most. The table is `invoice_rules`
-(migration `0011_invoice_rules.sql`, add only).
+(migration `0011_invoice_rules.sql`, add only; `icon` from `0024_rule_icon.sql`).
 
 ## Next
 
