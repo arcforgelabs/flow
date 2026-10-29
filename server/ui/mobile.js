@@ -68,6 +68,24 @@ export const RULES = {
     "mark": false,
     "card": "Button"
   },
+  "captureButton": {
+    "component": "captureButton",
+    "direction": "button",
+    "phone": {
+      "layout": "camera"
+    },
+    "tablet": {
+      "layout": "camera"
+    },
+    "desk": {
+      "layout": "files"
+    },
+    "touch": 44,
+    "pageOverflow": "none",
+    "screens": [],
+    "mark": false,
+    "card": "CaptureButton"
+  },
   "cardRows": {
     "component": "cardRows",
     "direction": "card per row",
