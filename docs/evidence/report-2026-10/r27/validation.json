@@ -1,0 +1,69 @@
+{
+  "sourceCommit": "df87ccda9c4a8558406547abdc45dde3134de45e",
+  "synthetic": true,
+  "checkedAt": "2026-10-29T14:39:38.801Z",
+  "command": "node docs/evidence/report-2026-10/r35/verify.mjs r27 r39",
+  "workers": 1,
+  "wallSeconds": 10.39,
+  "checkedFiles": 6,
+  "files": {
+    "r27/clip.webm": {
+      "bytes": 548769,
+      "sha256": "c1388fb1d8bc7b076d0b9a0ac2e67a9b7dd2efe5731211908a1921ddfa2d65f9",
+      "codec_name": "vp9",
+      "width": 1280,
+      "height": 800,
+      "duration": 20.866,
+      "fullDecode": true,
+      "chromiumPlayback": {
+        "ended": true,
+        "width": 1280,
+        "height": 800,
+        "frames": 626
+      }
+    },
+    "r27/desktop.jpg": {
+      "bytes": 50672,
+      "sha256": "a9a7bf1fc2307dc28aa1521247b6998e4ded4d011ebf41d2e9ff51d8b02c997c",
+      "codec_name": "mjpeg",
+      "width": 1280,
+      "height": 800
+    },
+    "r27/phone.jpg": {
+      "bytes": 30792,
+      "sha256": "08ba968988fc0cef8dec4ddf9030ca6e9d3e99aa34b1ae2fc7091fe50ea243bf",
+      "codec_name": "mjpeg",
+      "width": 390,
+      "height": 844
+    },
+    "r39/clip.webm": {
+      "bytes": 504142,
+      "sha256": "85e64737e6cdeb28d74c65260c681d8c80a199b5625ea5d897421011415f29a4",
+      "codec_name": "vp9",
+      "width": 1280,
+      "height": 800,
+      "duration": 18.233,
+      "fullDecode": true,
+      "chromiumPlayback": {
+        "ended": true,
+        "width": 1280,
+        "height": 800,
+        "frames": 547
+      }
+    },
+    "r39/desktop.jpg": {
+      "bytes": 76768,
+      "sha256": "49c87f3d1f0cfadd671c26fb65eadd80bbf1a156574818c8bd486dac8abcd1dd",
+      "codec_name": "mjpeg",
+      "width": 1280,
+      "height": 800
+    },
+    "r39/phone.jpg": {
+      "bytes": 38184,
+      "sha256": "1b602fa6724e1ef1a5981eb49738df7f8b46bda7a624dd9a60466ef9dfa35715",
+      "codec_name": "mjpeg",
+      "width": 390,
+      "height": 844
+    }
+  }
+}

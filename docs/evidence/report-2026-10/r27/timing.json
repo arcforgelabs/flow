@@ -1,0 +1,82 @@
+{
+  "title": "Invoice rules: save an age check",
+  "synthetic": true,
+  "viewport": {
+    "width": 1280,
+    "height": 800
+  },
+  "duration": 20.835264407000004,
+  "steps": [
+    {
+      "do": "click",
+      "target": "button[aria-label=\"Edit Old job\"]",
+      "expect": "dialog:has(input[aria-label=\"Value\"][value=\"90\"])",
+      "start": 0.5000108999999998,
+      "end": 2.6650391769999997
+    },
+    {
+      "do": "click",
+      "target": "dialog button:text-is(\"Cancel\")",
+      "expectHidden": "dialog",
+      "start": 2.665045787,
+      "end": 4.819610301
+    },
+    {
+      "do": "click",
+      "target": "button[aria-label=\"Edit Old job\"]",
+      "expect": "input[aria-label=\"Value\"]",
+      "start": 4.819615721,
+      "end": 6.927224848999999
+    },
+    {
+      "do": "click",
+      "target": "input[aria-label=\"Value\"]",
+      "start": 6.927235709,
+      "end": 8.991257211
+    },
+    {
+      "do": "press",
+      "key": "Control+a",
+      "start": 8.991262371000001,
+      "end": 10.194251283000002
+    },
+    {
+      "do": "press",
+      "key": "Backspace",
+      "start": 10.194265473,
+      "end": 11.397701464999999
+    },
+    {
+      "do": "type",
+      "target": "input[aria-label=\"Value\"]",
+      "text": "60",
+      "start": 11.397730296000002,
+      "end": 13.596309422
+    },
+    {
+      "do": "click",
+      "target": "dialog button:text-is(\"Save\")",
+      "expect": "text=Job age (days) is more than 60",
+      "expectHidden": "dialog",
+      "hold": 1500,
+      "start": 13.596314802,
+      "end": 16.024317947
+    },
+    {
+      "do": "click",
+      "target": "button[aria-label=\"Edit Old job\"]",
+      "expect": "dialog:has(input[aria-label=\"Value\"][value=\"60\"])",
+      "hold": 1500,
+      "start": 16.024321367,
+      "end": 18.444483100000003
+    },
+    {
+      "do": "hover",
+      "target": "select[aria-label=\"Then\"]",
+      "expect": "select[aria-label=\"Then\"]:has(option:checked:text-is(\"Wait for a person\"))",
+      "hold": 1500,
+      "start": 18.444486800000004,
+      "end": 20.835261417
+    }
+  ]
+}

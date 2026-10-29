@@ -131,5 +131,50 @@
       "Set Rush, choose shade B1, and set Scan received.",
       "Close and open the job again. All three custom field values remain in Flow."
     ]
+  },
+  {
+    "id": "r27",
+    "title": "Invoice rules: save an age check",
+    "clip": "r27/clip.webm",
+    "desktop": "r27/desktop.jpg",
+    "phone": "r27/phone.jpg",
+    "prs": [
+      77,
+      83,
+      89,
+      91
+    ],
+    "steps": [
+      "Open the Old job rule, then cancel.",
+      "Change its age check from more than 90 days to more than 60 days and save.",
+      "Open the rule again. It keeps 60 days and Wait for a person."
+    ],
+    "limits": [
+      "Shows a saved rule edit, not ready-stage changes or an automation run."
+    ]
+  },
+  {
+    "id": "r39",
+    "title": "Invoice tabs (now seven)",
+    "clip": "r39/clip.webm",
+    "desktop": "r39/desktop.jpg",
+    "phone": "r39/phone.jpg",
+    "prs": [
+      200,
+      201,
+      203,
+      204,
+      205,
+      206
+    ],
+    "steps": [
+      "Start on Ready, then open Pending to see the No lines problem.",
+      "Open Draft, Approved, Sent, Non-chargeable and Void.",
+      "Return to Ready. The current product adds Non-chargeable to the six original tabs."
+    ],
+    "limits": [
+      "Draft, Sent, Non-chargeable and Void are empty in this seed.",
+      "No Accept change, recheck, Seazona order link or Xero state change is shown."
+    ]
   }
 ]

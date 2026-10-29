@@ -1,0 +1,70 @@
+{
+  "title": "Invoice tabs: current seven-tab layout",
+  "synthetic": true,
+  "viewport": {
+    "width": 1280,
+    "height": 800
+  },
+  "duration": 18.171648941,
+  "steps": [
+    {
+      "do": "hover",
+      "target": "[role=tablist]",
+      "expect": "[role=tab][aria-selected=true]:has-text(\"Ready\")",
+      "hold": 1500,
+      "start": 0.5000093600000001,
+      "end": 2.881026578
+    },
+    {
+      "do": "click",
+      "target": "[role=tab]:has-text(\"Pending\")",
+      "expect": "td:has-text(\"No lines\") >> nth=0",
+      "start": 2.881036048,
+      "end": 4.981788552
+    },
+    {
+      "do": "click",
+      "target": "[role=tab]:has-text(\"Draft\")",
+      "expect": "text=\"No draft invoices.\"",
+      "start": 4.981793812,
+      "end": 7.072670378000001
+    },
+    {
+      "do": "click",
+      "target": "[role=tab]:has-text(\"Approved\")",
+      "expect": "td.fx-status-cell:has-text(\"Approved\") >> nth=0",
+      "hold": 1500,
+      "start": 7.072674858,
+      "end": 9.470026088000001
+    },
+    {
+      "do": "click",
+      "target": "[role=tab]:has-text(\"Sent\")",
+      "expect": "text=\"No sent invoices.\"",
+      "start": 9.470029968,
+      "end": 11.566200946
+    },
+    {
+      "do": "click",
+      "target": "[role=tab]:has-text(\"Non-chargeable\")",
+      "expect": "text=\"No non-chargeable invoices.\"",
+      "start": 11.566205486000001,
+      "end": 13.665905716
+    },
+    {
+      "do": "click",
+      "target": "[role=tab]:has-text(\"Void\")",
+      "expect": "text=\"No void invoices.\"",
+      "start": 13.665910526,
+      "end": 15.766361292
+    },
+    {
+      "do": "click",
+      "target": "[role=tab]:has-text(\"Ready\")",
+      "expect": "td.fx-status-cell:has-text(\"Ready\") >> nth=0",
+      "hold": 1500,
+      "start": 15.766364492,
+      "end": 18.171645491000003
+    }
+  ]
+}

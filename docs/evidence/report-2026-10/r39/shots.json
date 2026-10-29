@@ -1,0 +1,50 @@
+{
+  "title": "Invoice tabs: current seven-tab layout",
+  "seed": "basic",
+  "start": "/invoices",
+  "steps": [
+    {
+      "do": "hover",
+      "target": "[role=tablist]",
+      "expect": "[role=tab][aria-selected=true]:has-text(\"Ready\")",
+      "hold": 1500
+    },
+    {
+      "do": "click",
+      "target": "[role=tab]:has-text(\"Pending\")",
+      "expect": "td:has-text(\"No lines\") >> nth=0"
+    },
+    {
+      "do": "click",
+      "target": "[role=tab]:has-text(\"Draft\")",
+      "expect": "text=\"No draft invoices.\""
+    },
+    {
+      "do": "click",
+      "target": "[role=tab]:has-text(\"Approved\")",
+      "expect": "td.fx-status-cell:has-text(\"Approved\") >> nth=0",
+      "hold": 1500
+    },
+    {
+      "do": "click",
+      "target": "[role=tab]:has-text(\"Sent\")",
+      "expect": "text=\"No sent invoices.\""
+    },
+    {
+      "do": "click",
+      "target": "[role=tab]:has-text(\"Non-chargeable\")",
+      "expect": "text=\"No non-chargeable invoices.\""
+    },
+    {
+      "do": "click",
+      "target": "[role=tab]:has-text(\"Void\")",
+      "expect": "text=\"No void invoices.\""
+    },
+    {
+      "do": "click",
+      "target": "[role=tab]:has-text(\"Ready\")",
+      "expect": "td.fx-status-cell:has-text(\"Ready\") >> nth=0",
+      "hold": 1500
+    }
+  ]
+}
