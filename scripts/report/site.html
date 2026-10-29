@@ -109,12 +109,12 @@ button{font:inherit;color:inherit}
 #all .tag{width:310px;max-width:100%}
 #all .tag .mk,.day-all .tag .mk{margin-left:auto}
 .mk{display:inline-flex;align-items:center;gap:6px;padding-left:8px}
-/* Bug fix and new feature marks use Flow's status tokens (--t-danger, --t-success): the theme engine keeps them readable. */
-.kd{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:50%;border:1px solid}
-.kd svg{width:12px!important;height:12px!important;color:currentColor!important}
-.kd--fix{color:var(--t-danger);background:var(--t-danger-bg);border-color:var(--t-danger-brd)}
-.kd--new{color:var(--t-success);background:var(--t-success-bg);border-color:var(--t-success-brd)}
-.br-i--key .kd{background:var(--t-paper)}
+/* Bug fix and new feature marks: the shape only, in the tag's own colour; the word shows on hover. */
+.kd{display:inline-grid;place-items:center;width:16px;height:16px}
+/* One hover tip for every mark (the tag's clip-path would cut a pseudo-element tip). */
+.tip{position:fixed;z-index:60;padding:5px 10px;border-radius:6px;background:var(--t-paper);color:var(--t-strong);border:1px solid var(--t-brd-hi);box-shadow:0 4px 14px rgba(0,0,0,.25);font:600 12.5px var(--t-body);pointer-events:none;transform:translate(-50%,calc(-100% - 8px));white-space:nowrap}
+.tip[hidden]{display:none}
+.kd svg{width:15px!important;height:15px!important;color:currentColor!important}
 .br-d--next .br-date span{font-size:15px}
 .br-now{position:relative;margin:4px 0 12px;padding-left:calc(var(--sx) - 30px)}
 .br-now span{position:relative;display:inline-block;padding:3px 10px;background:var(--t-primary);color:var(--t-on-primary);font:700 10.5px var(--t-body);letter-spacing:.16em;text-transform:uppercase;border-radius:var(--t-radius)}
@@ -377,8 +377,16 @@ function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').repla
 function of(f) { return ITEMS.filter(f); }
 var BADGE = '<path class="sh" d="M12 1.5l8.5 3.2v6.1c0 5.3-3.6 9.6-8.5 11.7-4.9-2.1-8.5-6.4-8.5-11.7V4.7z"/><circle class="pp" cx="12" cy="9.2" r="2.6"/><path class="pp" d="M7.4 17.2c.8-2.6 2.6-3.9 4.6-3.9s3.8 1.3 4.6 3.9"/>';
 // Bug fix or new feature: a small mark beside the support mark; its name shows on hover.
-function kind(it) { return it.kind ? '<span class="kd kd--' + it.kind + '" title="' + (it.kind === 'fix' ? 'Bug fix' : 'New feature') + '" role="img" aria-label="' + (it.kind === 'fix' ? 'Bug fix' : 'New feature') + '">' + svgIcon(it.kind === 'fix' ? 'bug' : 'sparkles') + '</span>' : ''; }
-function badge() { return '<svg class="sup" viewBox="0 0 24 24" aria-label="Support" role="img">' + BADGE + '</svg>'; }
+function kind(it) { return it.kind ? '<span class="kd" data-tip="' + (it.kind === 'fix' ? 'Fix' : 'New') + '" role="img" aria-label="' + (it.kind === 'fix' ? 'Fix' : 'New') + '">' + svgIcon(it.kind === 'fix' ? 'bug' : 'sparkles') + '</span>' : ''; }
+var TIP = document.createElement('div'); TIP.className = 'tip'; TIP.hidden = true; document.body.appendChild(TIP);
+document.addEventListener('pointerover', function (e) {
+  var t = e.target.closest && e.target.closest('[data-tip]');
+  if (!t) { TIP.hidden = true; return; }
+  var r = t.getBoundingClientRect(); TIP.textContent = t.getAttribute('data-tip');
+  TIP.style.left = (r.left + r.width / 2) + 'px'; TIP.style.top = r.top + 'px'; TIP.hidden = false;
+});
+document.addEventListener('scroll', function () { TIP.hidden = true; }, true);
+function badge() { return '<svg class="sup" viewBox="0 0 24 24" aria-label="Support" role="img" data-tip="Support">' + BADGE + '</svg>'; }
 
 document.title = R.title;
 document.getElementById('product').textContent = R.product;
