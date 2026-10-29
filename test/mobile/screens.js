@@ -68,7 +68,7 @@ export const SCREENS = [
     await page.waitForLoadState('networkidle');
   } },
   { id: 'reconcile', path: '/reconcile', ready: '.fx-main > *', list: true },
-  { id: 'price-list', path: '/price-list', ready: '.fx-main > *', list: true },
+  { id: 'price-list', path: '/price-list', ready: '.fx-frame tbody tr', list: true },
   { id: 'rules', path: '/invoicing-settings', ready: '.fx-main > *' },
   { id: 'automations', path: '/automations', ready: '.fx-main > *' },
   { id: 'integrations', path: '/integrations', ready: '.fx-main > *' },

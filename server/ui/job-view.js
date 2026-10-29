@@ -273,7 +273,10 @@ function inDateValue(day, want, today, late) {
 // person looking (for "Me" in a person filter); `today` is yyyy-mm-dd.
 export function matchesFilter(filter, value, { today, me = null, late = null, kind = null } = {}) {
   const want = filter.value;
-  const empty = value == null || value === '' || value === false;
+  // A field can hold many choices (the Price list's Linked): Is keeps a row
+  // with any of the wanted ones, Is not a row with none.
+  const empty = value == null || value === '' || value === false || (Array.isArray(value) && !value.length);
+  const holds = (w) => (Array.isArray(value) ? value.includes(w) : value === w);
   const day = typeof value === 'string' && ISO_DAY.test(value.slice(0, 10)) ? value.slice(0, 10) : null;
   if (kind === 'date' && ['is', 'not'].includes(filter.op)) {
     const inside = inDateValue(day, want, today, late);
@@ -284,8 +287,8 @@ export function matchesFilter(filter, value, { today, me = null, late = null, ki
     case 'unset': return empty;
     case 'yes': return value === true;
     case 'no': return value !== true;
-    case 'is': return Array.isArray(want) ? want.map((w) => (w === 'me' ? me : w)).includes(value) : !empty && text(value) === text(want).trim();
-    case 'not': return !want.map((w) => (w === 'me' ? me : w)).includes(value);
+    case 'is': return Array.isArray(want) ? want.map((w) => (w === 'me' ? me : w)).some(holds) : !empty && text(value) === text(want).trim();
+    case 'not': return !want.map((w) => (w === 'me' ? me : w)).some(holds);
     case 'has': return text(value).includes(text(want).trim());
     case 'hasnt': return !text(value).includes(text(want).trim());
     case 'eq': return typeof value === 'number' && value === want;

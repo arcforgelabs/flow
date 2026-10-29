@@ -30,7 +30,7 @@ import { createSeazonaClient } from '../server/integrations/seazona/client.js';
 import { runSeazonaSync } from '../server/integrations/seazona/lanes.js';
 import { createReplayFetch } from '../server/integrations/seazona/replay.js';
 import { resolveSeazonaSettings } from '../server/integrations/seazona/settings.js';
-import { orderToHistoryJob, readBackfill, startBackfill } from '../server/integrations/seazona/history/backfill.js';
+import { orderToHistoryJob, readBackfill, startBackfill, stopBackfill } from '../server/integrations/seazona/history/backfill.js';
 
 // Synthetic data only (CONTRIBUTING.md): no real lab, practice, dentist or patient.
 
@@ -248,7 +248,7 @@ describe('Seazona history backfill from the API', { skip: skipWithoutDatabase },
   });
   after(async () => handle?.close());
   beforeEach(async () => {
-    await db.execute(sql`truncate seazona_orders, seazona_clients, seazona_lane_state, seazona_record_read_failures,
+    await db.execute(sql`truncate seazona_orders, seazona_clients, seazona_lane_state, seazona_record_read_failures, seazona_api_governor, seazona_api_requests,
       seazona_history_batches, seazona_history_rows, seazona_history_batch_jobs, seazona_history_jobs restart identity`);
     clock = fakeClock('2026-10-20T00:00:00.000Z');
     const at = new Date(clock.now());
@@ -263,8 +263,8 @@ describe('Seazona history backfill from the API', { skip: skipWithoutDatabase },
     { path: 'orders/H-2', status: 404 },
     { path: 'orders/H-3', body: order('H-3', 'S-3') },
   ];
-  const run = async (calls) => {
-    const fetchImpl = createReplayFetch({ responses });
+  const run = async (calls, answers = responses) => {
+    const fetchImpl = createReplayFetch({ responses: answers });
     const client = createSeazonaClient({ settings, db, fetchImpl, now: clock.now, sleepFn: clock.sleep, random: () => 0 });
     const result = await runSeazonaSync(db, client, { settings, now: clock.now, only: ['history'] });
     calls.push(...fetchImpl.calls.map((c) => c.path));
@@ -296,6 +296,44 @@ describe('Seazona history backfill from the API', { skip: skipWithoutDatabase },
     const [summary] = await listBatches(db);
     assert.equal(summary.profile, 'api_orders');
     assert.equal(summary.status, 'reconciled');
+  });
+
+  test('a read that keeps failing shows waiting with its retry, then failed with the cause', async () => {
+    const started = await startBackfill(db, { from: '2020-01-02', through: '2020-01-03', createdBy: 'person:test', settings, now: clock.now });
+    assert.equal(started.startedAt, '2026-10-20T00:00:00.000Z');
+    const down = [{ path: 'orders/', status: 503 }];
+    const phases = [];
+    for (let i = 0; i < 3; i += 1) {
+      await run([], down);
+      const read = await readBackfill(db);
+      phases.push(read.phase);
+      assert.ok(read.cause, 'a plain cause');
+      assert.ok(read.phase === 'failed' || read.nextRunAt > new Date(clock.now()), 'waiting has a retry time');
+      clock.advance(3_600_000);
+    }
+    assert.deepEqual(phases, ['waiting', 'waiting', 'failed']);
+    assert.equal((await readBackfill(db)).startedAt, '2026-10-20T00:00:00.000Z', 'the start time survives a reload');
+  });
+
+  test('a stopped read resumes where it stopped, and a read again over the same days reads no order twice', async () => {
+    await startBackfill(db, { from: '2020-01-02', through: '2020-01-03', createdBy: 'person:test', settings, now: clock.now });
+    await run([]);
+    const stopped = await stopBackfill(db, { now: clock.now });
+    assert.equal(stopped.resumeFrom, '2020-01-03', 'H-3 was listed and not read yet');
+
+    await startBackfill(db, { from: stopped.resumeFrom, through: '2020-01-03', createdBy: 'person:test', settings, now: clock.now });
+    const resumed = [];
+    const done = await run(resumed);
+    assert.deepEqual(resumed, ['orders/', 'orders/H-3']);
+    assert.equal(done.backfill.running, false);
+    assert.equal(done.backfill.resumeFrom, null);
+
+    await startBackfill(db, { from: '2020-01-02', through: '2020-01-03', createdBy: 'person:test', settings, now: clock.now });
+    const again = [];
+    await run(again);
+    await run(again);
+    assert.deepEqual(again, ['orders/', 'orders/H-2', 'orders/'], 'only the lists, and the order Seazona did not have');
+    assert.deepEqual((await db.select().from(seazonaHistoryJobs)).map((h) => h.jobKey).sort(), ['case:H-1', 'case:H-3']);
   });
 
   test('pages through a list that answers orders on or after the day, and stops after the last day', async () => {

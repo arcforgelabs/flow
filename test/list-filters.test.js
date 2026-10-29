@@ -87,3 +87,22 @@ test('Invoices filters by its own columns, its job and a custom field', () => {
   assert.deepEqual(kept([{ field: `field:${field}`, op: 'yes' }]), ['a']);
   assert.deepEqual(kept([{ field: `field:${person}`, op: 'is', value: ['me'] }]), ['a']);
 });
+
+// The Price list: Filter, Group and Sort read the same rules on its own
+// fields. A code can link to two systems; Linked "Is Xero" keeps it.
+test('the Price list filters on Linked, and keeps its Group and Sort', async () => {
+  const { normalisePriceView, PRICE_FIELDS, priceValue } = await import('/assets/ui/list-views.js');
+  const { filterJobs } = await import('/assets/ui/job-view.js');
+  const items = [
+    { code: 'AA', links: [{ system: 'xero' }, { system: 'seazona' }] },
+    { code: 'BB', links: [{ system: 'seazona' }] },
+    { code: 'CC', links: [] },
+  ];
+  const kept = (op) => filterJobs(items, normalisePriceView({ groups: [{ filters: [{ field: 'linked', op, value: ['xero'] }] }] }),
+    { valueOf: priceValue, kindOf: (f) => PRICE_FIELDS[f]?.kind ?? null, late: null, today: '2026-10-29' }).map((i) => i.code);
+  assert.deepEqual(kept('is'), ['AA']);
+  assert.deepEqual(kept('not'), ['BB', 'CC']);
+  const view = normalisePriceView({ group: 'tax', groupDir: 'desc', sorts: [{ by: 'price', dir: 'desc' }, { by: 'nope' }] });
+  assert.deepEqual([view.group, view.groupDir, view.sorts], ['tax', 'desc', [{ by: 'price', dir: 'desc' }]]);
+  assert.equal(normalisePriceView({ group: 'price' }).group, 'none');
+});

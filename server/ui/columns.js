@@ -17,14 +17,19 @@
 //   widths()         the saved widths
 //   change(patch)    saves { columns } or { widths }
 //   hidden()         [{ id, label }] the + menu lists (no hidden: no +)
-//   extra(column, item)  menu nodes before Move (Sort, Edit custom field)
+//   extra(column, item)  menu nodes before Move (Edit custom field)
+//   sorting          the heads sort the list (Jobs, Price list), as
+//                    ClickUp's: { sortOf(columnId) (the sort key, or null),
+//                    sorts(), change({ sorts }), dirWords(by) }
 // table({ columns, rows, lead, className }), per draw, answers the table:
 //   columns  the shown columns, in order: { id, label, kind, cell(row),
-//            num?, className?, sort?(): node, icon?, fixed? }. An icon
+//            num?, className?, icon?, fixed? }. An icon
 //            shows in place of the label (the label is its name). A fixed
 //            column keeps its place: no drag, no Move, no Hide.
 //   rows     the <tbody> nodes (rowCells builds a row's cells)
 //   lead     <th> nodes before the columns (the tick column)
+//
+// groupHead(h, config) is a grouped list's head row (below).
 //
 // Cells every list shares: dateCell (a short date), personCell (a person's
 // initials) and fieldColumn (one of the lab's custom fields as a column, on
@@ -33,6 +38,7 @@ import { lucide } from '/assets/ui/custom-fields.js';
 import { endWidth, LEAD_WIDTH, MAX_WIDTH, minWidth, moveColumn, TAIL_WIDTH, tableWidth, widthOf } from '/assets/ui/job-view.js';
 import { applyPhoneRule, assignPhoneSlots, phoneSlot } from './mobile.js';
 import { initialsOf } from '/assets/ui/person.js';
+import { ICONS, svg } from '/assets/ui/view-bar.js';
 
 const fullDate = (iso) => new Date(`${iso}T00:00:00`).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' });
 // A list date, short: Today, Tomorrow or Yesterday, else day/month (and
@@ -132,14 +138,73 @@ export function onRightButton(event, open) {
   else open();
 }
 
+// A group's head row in a grouped list (Jobs, Price list): a fold button
+// with the group's `badge` (its name and count), then `extra` (a sum). A
+// click on the row folds the group or opens it. `lead` is the cells before
+// the columns (a tick); `span` is how many cells the head covers after them.
+const CHEVRON = '<svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="m6 3.5 4.5 4.5L6 12.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+export function groupHead(h, { label, badge, open, onFold, lead = [], span, extra = null }) {
+  const chevron = h('span', {});
+  chevron.innerHTML = CHEVRON;
+  const toggle = h('button', {
+    type: 'button', class: 'fx-table__fold', 'aria-expanded': String(open), 'aria-label': `${label}. ${open ? 'Fold' : 'Open'} the group`,
+    onclick: (event) => { event.stopPropagation(); onFold(); },
+  }, chevron.firstChild, badge);
+  return h('tr', { class: `fx-table__group${open ? '' : ' fx-table__group--folded'}`, onclick: onFold },
+    lead, h('td', { colspan: String(span) }, h('span', { class: 'fx-table__group-row' }, toggle, extra)));
+}
+
 export function columnTable(h, config) {
   const menu = columnPopover(h);
   const ids = () => config.order?.() ?? [];
   const widths = () => config.widths?.() ?? {};
 
+  // A column head's sort button: it shows on hover, or always while it
+  // sorts. A click sorts one way, again the other way, and a third time
+  // takes the sort off. A right-click on a sorting head opens a small menu:
+  // change the direction, or clear the sort.
+  const sorting = config.sorting ?? null;
+  function sortButton(column) {
+    const by = sorting?.sortOf(column.id);
+    if (!by) return null;
+    const sorts = sorting.sorts();
+    const change = (next) => sorting.change({ sorts: next });
+    const at = sorts.findIndex((s) => s.by === by);
+    const on = at >= 0 ? sorts[at] : null;
+    const [up, down] = sorting.dirWords(by);
+    const next = () => {
+      if (!on) change([{ by, dir: 'asc' }]);
+      else if (on.dir === 'asc') change(sorts.map((s, n) => (n === at ? { ...s, dir: 'desc' } : s)));
+      else change(sorts.filter((_, n) => n !== at));
+    };
+    const flip = () => change(sorts.map((s, n) => (n === at ? { ...s, dir: s.dir === 'asc' ? 'desc' : 'asc' } : s)));
+    const words = on ? `Sorted ${on.dir === 'asc' ? up : down}. Click to ${on.dir === 'asc' ? `sort ${down}` : 'clear the sort'}` : `Sort by ${column.label}`;
+    return h('button', {
+      type: 'button', class: `fx-th-sort${on ? ' fx-th-sort--on' : ''}`, 'aria-label': words, title: words,
+      onclick: (event) => { event.stopPropagation(); next(); },
+      oncontextmenu: (event) => {
+        if (!on) return;
+        event.preventDefault();
+        event.stopPropagation();
+        onRightButton(event, () => menu.show([
+          h('button', { type: 'button', class: 'fx-pop__item', role: 'menuitemcheckbox', 'aria-checked': 'true', title: 'Change the direction', onclick: () => { menu.close(); flip(); } },
+            h('span', { class: 'fx-pop__tick' }, lucide(h, on.dir === 'asc' ? 'arrow-up' : 'arrow-down')), h('span', {}, `Sort by ${column.label}`), h('span', { class: 'fx-pop__end' }, svg(ICONS.tick))),
+          menu.item('ban', 'Clear sort', () => change(sorts.filter((_, n) => n !== at))),
+        ], event));
+      },
+    }, lucide(h, on ? (on.dir === 'asc' ? 'arrow-up' : 'arrow-down') : 'chevrons-up-down'),
+    on && sorts.length > 1 ? h('span', { class: 'fx-th-sort__n' }, String(at + 1)) : null);
+  }
+
   function openMenu(column, event) {
     const parts = [];
     if (column) {
+      const by = sorting?.sortOf(column.id);
+      if (by) {
+        const [up, down] = sorting.dirWords(by);
+        parts.push(menu.item('arrow-up-narrow-wide', `Sort: ${up}`, () => sorting.change({ sorts: [{ by, dir: 'asc' }] })),
+          menu.item('arrow-down-wide-narrow', `Sort: ${down}`, () => sorting.change({ sorts: [{ by, dir: 'desc' }] })), menu.sep());
+      }
       parts.push(...(config.extra?.(column, menu.item) ?? []));
       if (!column.fixed) {
         const order = ids();
@@ -212,7 +277,7 @@ export function columnTable(h, config) {
         class: [c.num ? 'fx-num' : null, c.fixed ? null : 'fx-th--drag'].filter(Boolean).join(' ') || null,
         'data-col': c.id,
         oncontextmenu: (event) => { event.preventDefault(); onRightButton(event, () => openMenu(c, event)); },
-      }, h('span', { class: 'fx-th-cell' }, button, c.sort?.() ?? null), grip);
+      }, h('span', { class: 'fx-th-cell' }, button, sortButton(c)), grip);
       resizer(grip, c, n);
       if (!c.fixed) dragger(button, th, c);
       return th;

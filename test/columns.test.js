@@ -58,7 +58,7 @@ test('the Jobs view keeps column widths; Invoices and Reconcile keep columns and
   });
   assert.ok(Object.keys(RECONCILE_COLUMNS).includes('possible'));
   // The Price list keeps its columns and widths the same way.
-  assert.deepEqual(normaliseViews({ 'price-list': { columns: ['name', 'code', 'nope'], widths: { name: 320 } } })['price-list'], { columns: ['name', 'code'], widths: { name: 320 } });
+  assert.deepEqual(normaliseViews({ 'price-list': { columns: ['name', 'code', 'nope'], widths: { name: 320 } } })['price-list'], { columns: ['name', 'code'], widths: { name: 320 }, group: 'none', groupDir: 'asc', sorts: [], match: 'all', groups: [] });
   assert.deepEqual(normaliseListView(null, PRICE_COLUMNS).columns, ['code', 'name', 'price', 'tax']);
 });
 

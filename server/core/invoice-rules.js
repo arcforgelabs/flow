@@ -1,3 +1,6 @@
+import { existsSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { dirname, join } from 'node:path';
 import { and, asc, eq, sql } from 'drizzle-orm';
 import { invoiceRules, invoicingSettings } from '../db/schema.js';
 import { FlowError, notFound } from './errors.js';
@@ -26,6 +29,10 @@ const MAX_CONDITIONS = 10;
 const invalid = (message) => new FlowError('invalid', message);
 
 const MAX_NOTE = 200;
+// A rule's own icon: any Lucide name (the icon picker, server/ui/kit.js).
+// Null shows the mark of what the rule does.
+const ICON_DIR = join(dirname(createRequire(import.meta.url).resolve('lucide-static/package.json')), 'icons');
+const ICON_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const day = (date) => new Date(`${String(date).slice(0, 10)}T00:00:00Z`);
 const norm = (value) => String(value ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
 // A line's key: its price item code, else the label line mapping gave it (a
@@ -107,10 +114,14 @@ function readCondition(raw, index) {
 
 export function readRule(raw) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw invalid('the rule must be an object');
-  const unknown = Object.keys(raw).filter((k) => !['name', 'enabled', 'conditions', 'action'].includes(k));
+  const unknown = Object.keys(raw).filter((k) => !['name', 'icon', 'enabled', 'conditions', 'action'].includes(k));
   if (unknown.length) throw invalid(`unknown field: ${unknown[0]}`);
   const name = typeof raw.name === 'string' ? raw.name.trim() : '';
   if (!name || name.length > 120) throw invalid('the rule needs a name of 120 characters at most');
+  const icon = raw.icon ?? null;
+  if (icon !== null && (typeof icon !== 'string' || icon.length > 64 || !ICON_NAME.test(icon) || !existsSync(join(ICON_DIR, `${icon}.svg`)))) {
+    throw invalid('the icon must be a Lucide icon name');
+  }
   const enabled = raw.enabled ?? true;
   if (typeof enabled !== 'boolean') throw invalid('enabled must be true or false');
   if (!Array.isArray(raw.conditions) || !raw.conditions.length || raw.conditions.length > MAX_CONDITIONS) {
@@ -127,7 +138,7 @@ export function readRule(raw) {
     const early = conditions.find((c) => FIELDS[c.field].draftOnly);
     if (early) throw invalid(`${FIELDS[early.field].label} is on the draft only: use Then "Pending, with a note"`);
   }
-  return { name, enabled, conditions, action };
+  return { name, icon, enabled, conditions, action };
 }
 
 function matches(condition, job, context) {
@@ -270,7 +281,7 @@ async function seed(db, organisationId) {
 }
 
 const shape = (r) => ({
-  id: r.id, name: r.name, position: r.position, enabled: r.enabled, trigger: r.trigger,
+  id: r.id, name: r.name, icon: r.icon, position: r.position, enabled: r.enabled, trigger: r.trigger,
   conditions: r.conditions, action: r.action, starter: Boolean(r.starterKey), updatedAt: r.updatedAt,
 });
 
@@ -299,12 +310,12 @@ async function loadRule(db, organisationId, ruleId) {
   return row;
 }
 
-// Changes a rule. `changes` holds any of name, enabled, conditions, action;
+// Changes a rule. `changes` holds any of name, icon, enabled, conditions, action;
 // the result must be a whole valid rule.
 export async function updateRule(db, organisationId, ruleId, changes, { personId = null } = {}) {
   const row = await loadRule(db, organisationId, ruleId);
   if (!changes || typeof changes !== 'object' || Array.isArray(changes)) throw invalid('the change must be an object');
-  const rule = readRule({ name: row.name, enabled: row.enabled, conditions: row.conditions, action: row.action, ...changes });
+  const rule = readRule({ name: row.name, icon: row.icon, enabled: row.enabled, conditions: row.conditions, action: row.action, ...changes });
   const [saved] = await db.update(invoiceRules).set({ ...rule, updatedBy: personId, updatedAt: sql`now()` })
     .where(eq(invoiceRules.id, row.id)).returning();
   return shape(saved);

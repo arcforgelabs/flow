@@ -694,6 +694,8 @@ export const invoiceRules = pgTable('invoice_rules', {
   id: id(),
   organisationId: organisationId().references(() => organisations.id),
   name: text('name').notNull(),
+  // A Lucide icon name for the rule's card; null shows the action's mark.
+  icon: text('icon'),
   position: integer('position').notNull(),
   enabled: boolean('enabled').notNull().default(true),
   trigger: text('trigger').notNull().default('job_ready'),
@@ -707,6 +709,7 @@ export const invoiceRules = pgTable('invoice_rules', {
   uniqueIndex('invoice_rules_starter_key').on(t.organisationId, t.starterKey),
   check('invoice_rules_trigger_valid', sql`${t.trigger} in ('job_ready')`),
   check('invoice_rules_name_valid', sql`length(${t.name}) between 1 and 120`),
+  check('invoice_rules_icon_valid', sql`${t.icon} is null or (length(${t.icon}) between 1 and 64 and ${t.icon} !~ '[^a-z0-9-]')`),
 ]);
 
 // Automations (server/core/automations.js): Flow's routines, each on or off,

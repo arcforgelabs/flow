@@ -74,7 +74,7 @@ import {
 //   PUT   /settings                   owner or admin: change some of them
 //   GET   /rules                      the lab's invoice rules, in order (server/core/invoice-rules.js)
 //   GET   /rule-fields                what a rule can name, and the menus of values
-//   POST  /rules                      owner or admin: a new rule { name, enabled, conditions, action }
+//   POST  /rules                      owner or admin: a new rule { name, icon, enabled, conditions, action }
 //   PUT   /rules/:id                  owner or admin: change some of a rule
 //   DELETE /rules/:id                 owner or admin
 //   GET   /line-mappings              the lab's line mappings and the mapping steps (server/core/line-mapping.js)

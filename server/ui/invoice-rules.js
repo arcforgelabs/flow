@@ -18,6 +18,9 @@ const ACTION_LABELS = { wait: 'Wait for a person', skip: 'Never draft', pending:
 const NO_VALUE = ['is_empty', 'is_not_empty', 'has_number', 'number_in_words', 'one_word'];
 const MANY = ['is_one_of', 'is_not_one_of'];
 const TYPED = ['contains', 'does_not_contain', 'starts_with', 'does_not_start_with'];
+// A rule's icon: its own (rule.icon), else the mark of what it does.
+const KIND_MARKS = { pending: 'flag', wait: 'clock', skip: 'ban' };
+export const ruleMark = (rule) => rule.icon ?? KIND_MARKS[rule.action.kind] ?? 'list-checks';
 
 // A rule as one short line: "Job age (days) is more than 90 · Wait for a person".
 export function ruleSummary(rule, meta) {
@@ -42,7 +45,7 @@ export function ruleSummary(rule, meta) {
 }
 
 export function rulesSection(ui, title = 'Rules') {
-  const { h, flow, toast, notice, dialog, me, settingRow } = ui;
+  const { h, flow, toast, notice, dialog, me, settingRow, iconPicker } = ui;
   const disabled = !['owner', 'admin'].includes(me?.person.role);
   const section = h('section', { class: 'fx-set' }, h('h2', { class: 'fx-set__title' }, title), h('div', { class: 'fx-skeleton' }));
   let meta;
@@ -153,6 +156,10 @@ export function rulesSection(ui, title = 'Rules') {
     const action = h('select', { class: 'fx-select', 'aria-label': 'Then' },
       Object.entries(ACTION_LABELS).map(([value, label]) => h('option', { value }, label)));
     action.value = draft?.action.kind ?? 'wait';
+    // With no icon of its own, the rule shows the mark of its Then.
+    const kindMark = () => ruleMark({ action: { kind: action.value } });
+    const icon = iconPicker({ value: draft?.icon ?? null, fallback: kindMark(), label: 'Icon' });
+    action.addEventListener('change', () => icon.fallback(kindMark()));
     // A pending rule's note: what a person must fix. It shows on the draft.
     const note = h('input', {
       class: 'fx-input', maxlength: '200', value: draft?.action.note ?? '', 'aria-label': 'Note',
@@ -191,7 +198,7 @@ export function rulesSection(ui, title = 'Rules') {
     const data = await dialog({
       title: rule ? 'Edit rule' : 'New rule',
       body: h('div', { class: 'fx-fields fx-rule__dialog' },
-        label('Name', name),
+        h('div', { class: 'fx-rule__name' }, label('Icon', icon.element), label('Name', name)),
         label('When', h('span', { class: 'fx-dim' }, 'A job is ready to invoice. A pending rule also checks its draft and the Reference.')),
         label('If all of these match', list, more),
         label('Then', action),
@@ -207,6 +214,7 @@ export function rulesSection(ui, title = 'Rules') {
     if (!data) return null;
     const payload = {
       name: name.value,
+      icon: icon.value(),
       conditions: editors.map((e) => e.read()),
       action: action.value === 'pending' ? { kind: 'pending', note: note.value } : { kind: action.value },
     };

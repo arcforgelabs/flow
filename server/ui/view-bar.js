@@ -1,6 +1,6 @@
 // The view bar over a list: chips that open a small panel (Group, Sort,
 // Filter, Columns), as on ClickUp. Every list page builds its chips here, so
-// they look and work the same: Jobs (jobs.js) and Reconcile (reconcile.js).
+// they look and work the same: Jobs, Invoices, Reconcile and the Price list.
 //
 // viewBar(h) answers the parts:
 //   menu(icon, build, { rows, clearLabel })  a chip, its × and its panel.
@@ -9,6 +9,7 @@
 //   option(text, checked, onclick, role, icon)  a row in a panel, with a tick.
 //   title, choose, bin, addButton, rowsFoot, clearAll  the parts of a rows
 //     panel: a title, rows of selects with a bin, a foot with Add and Clear.
+//   groupMenu(config), sortMenu(config)  the Group and Sort chips (below).
 //   filterMenu(config)  the Filter chip, as ClickUp's: groups of rows of
 //     field, operator and value, And / Or in a group and between groups,
 //     "Add nested filter", "Add filter" and "Clear all" (job-view.js has
@@ -159,6 +160,64 @@ export function viewBar(h) {
     const left = Math.max(8, Math.min(at.left, innerWidth - width - 8));
     pop.style.top = `${Math.round(at.bottom + gap)}px`;
     pop.style.left = `${Math.round(left)}px`;
+  }
+
+  // ── Group by ──
+  // One row: what to group by, the group order, and a bin that takes the
+  // groups away when `clearable()` (Jobs' board always has lanes). The page
+  // names the chip with set(), as only it knows its group's name.
+  //   options()  [{ value, label } | { group, options }]
+  //   view()     { group, groupDir }; group 'none' is no groups
+  function groupMenu({ options, view, change, clearable = () => true }) {
+    return menu(ICONS.group, (redraw) => {
+      const { group, groupDir } = view();
+      const none = group === 'none';
+      return [
+        title('Group by'),
+        h('div', { class: 'fx-rows' }, h('div', { class: 'fx-rows__row fx-rows__row--group' },
+          choose('Group by', none ? '' : group, [...(none ? [{ value: '', label: 'Choose…', disabled: true }] : []), ...options()], (value) => { change({ group: value }); redraw(); }),
+          choose('Group order', groupDir, [{ value: 'asc', label: 'Ascending' }, { value: 'desc', label: 'Descending' }], (value) => { change({ groupDir: value }); redraw(); }, { disabled: none }),
+          clearable() && !none ? bin('Remove the grouping', () => { change({ group: 'none' }); redraw(); }) : h('span', { class: 'fx-rows__gap' }))),
+      ];
+    }, { rows: true, clearLabel: 'Remove the grouping' });
+  }
+
+  // ── Sort ──
+  // Rows of sorts, each applied in turn; a list's column heads sort too.
+  //   options()   [{ value, label } | { group, options }]
+  //   view()      { sorts: [{ by, dir }] }
+  //   dirWords(by)  the two directions' words, as ['A to Z', 'Z to A']
+  //   nameOf(by)  the chip's name for a sort
+  function sortMenu({ options, view, change, dirWords, nameOf, empty = 'No sort.' }) {
+    const setSorts = (sorts) => change({ sorts });
+    const control = menu(ICONS.sort, (redraw) => {
+      const { sorts } = view();
+      const unused = options().flatMap((o) => o.options ?? [o]).filter((o) => !sorts.some((s) => s.by === o.value));
+      return [
+        title('Sort'),
+        sorts.length ? h('div', { class: 'fx-rows' }, sorts.map((s, i) => {
+          const [up, down] = dirWords(s.by);
+          const others = sorts.filter((_, n) => n !== i).map((x) => x.by);
+          const shown = options().map((o) => (o.group ? { ...o, options: o.options.filter((x) => !others.includes(x.value)) } : o)).filter((o) => o.group || !others.includes(o.value));
+          return h('div', { class: 'fx-rows__row fx-rows__row--sort' },
+            h('span', { class: 'fx-rows__lead' }, i ? 'then' : 'Sort by'),
+            choose('Sort by', s.by, shown, (by) => { setSorts(sorts.map((x, n) => (n === i ? { by, dir: x.dir } : x))); redraw(); }),
+            choose('Order', s.dir, [{ value: 'asc', label: up }, { value: 'desc', label: down }], (dir) => { setSorts(sorts.map((x, n) => (n === i ? { ...x, dir } : x))); redraw(); }),
+            bin('Remove this sort', () => { setSorts(sorts.filter((_, n) => n !== i)); redraw(); }));
+        })) : h('p', { class: 'fx-rows__empty' }, empty),
+        rowsFoot(
+          sorts.length < 5 && unused.length ? addButton('Add sort', () => { setSorts([...sorts, { by: unused[0].value, dir: 'asc' }]); redraw(); }) : h('span'),
+          sorts.length ? clearAll(() => { setSorts([]); redraw(); }) : null),
+      ];
+    }, { rows: true, clearLabel: 'Clear the sort' });
+    // The chip names the sort that is on.
+    const draw = () => {
+      const { sorts } = view();
+      const [first] = sorts;
+      control.set(sorts.length > 1 ? `Sort · ${sorts.length}` : first ? `Sort: ${nameOf(first.by)} ${first.dir === 'desc' ? '↓' : '↑'}` : 'Sort', sorts.length > 0,
+        sorts.length ? () => setSorts([]) : null);
+    };
+    return { ...control, draw };
   }
 
   // ── Filters ──
@@ -329,7 +388,7 @@ export function viewBar(h) {
     return { ...control, draw };
   }
 
-  return { menu, option, title, choose, bin, addButton, rowsFoot, clearAll, filterMenu };
+  return { menu, option, title, choose, bin, addButton, rowsFoot, clearAll, groupMenu, sortMenu, filterMenu };
 }
 
 // A list's own search: a round search icon in the view bar that opens into a

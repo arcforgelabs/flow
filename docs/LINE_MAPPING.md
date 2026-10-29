@@ -32,7 +32,7 @@ in the list.
 The label is compared without sizes, arch ("upper", "lower 4") and "per set".
 A line keeps the work system's amount and tax flag. The routine's setting
 `linePrice` changes that: `work` (the default) keeps the work system's amount,
-`list` takes the price list's price. Settings, Price list, "Line price from"
+`list` takes the price list's price. Price list settings, "Invoice line price"
 sets it. A line that no step
 answers keeps no price item, so the ledger holds the job ("a line does not
 map to a price item").

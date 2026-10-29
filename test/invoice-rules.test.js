@@ -27,7 +27,7 @@ const reasons = (conditions, o = job(), customer = {}) => ruleReasons([rule(cond
 describe('one rule against one job', () => {
   test('a rule must name a known field, a test that field takes, and a value of its kind', () => {
     assert.deepEqual(readRule({ name: ' Old ', conditions: [{ field: 'job_age_days', test: 'more_than', value: 30 }], action: { kind: 'wait' } }),
-      { name: 'Old', enabled: true, conditions: [{ field: 'job_age_days', test: 'more_than', value: 30 }], action: { kind: 'wait' } });
+      { name: 'Old', icon: null, enabled: true, conditions: [{ field: 'job_age_days', test: 'more_than', value: 30 }], action: { kind: 'wait' } });
     const bad = (raw, pattern) => assert.throws(() => readRule({ name: 'x', action: { kind: 'wait' }, ...raw }), pattern);
     bad({ conditions: [] }, /1 to 10 conditions/);
     bad({ conditions: [{ field: 'colour', test: 'is', value: 'red' }] }, /unknown field colour/);
@@ -39,6 +39,7 @@ describe('one rule against one job', () => {
     bad({ name: '', conditions: [{ field: 'practitioner', test: 'is_empty' }] }, /needs a name/);
     bad({ action: { kind: 'email' }, conditions: [{ field: 'practitioner', test: 'is_empty' }] }, /action must be one of/);
     bad({ owner: 'x', conditions: [{ field: 'practitioner', test: 'is_empty' }] }, /unknown field: owner/);
+    bad({ icon: 'not-an-icon', conditions: [{ field: 'practitioner', test: 'is_empty' }] }, /Lucide icon/);
   });
 
   test('every condition must match; each field reads the job, its customer or its lines', () => {
@@ -204,8 +205,13 @@ describe('rules a lab keeps', { skip: skipWithoutDatabase }, () => {
     });
     assert.equal(made.position, 4);
     assert.equal(made.starter, false);
+    assert.equal(made.icon, null);
+    // A lab picks the rule's icon, and later changes it; other changes keep it.
+    assert.equal((await updateRule(handle.db, lab.id, made.id, { icon: 'truck' })).icon, 'truck');
     const renamed = await updateRule(handle.db, lab.id, made.id, { name: 'No crown' });
     assert.equal(renamed.name, 'No crown');
+    assert.equal(renamed.icon, 'truck');
+    assert.equal((await listRules(handle.db, lab.id)).find((r) => r.id === made.id).icon, 'truck');
     assert.deepEqual(renamed.conditions, made.conditions);
     await assert.rejects(updateRule(handle.db, lab.id, made.id, { conditions: [] }), /1 to 10 conditions/);
     await assert.rejects(updateRule(handle.db, other.id, made.id, { name: 'Mine' }), { code: 'not_found' });
