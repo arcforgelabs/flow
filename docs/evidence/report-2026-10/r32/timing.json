@@ -1,0 +1,83 @@
+{
+  "title": "Own price list",
+  "synthetic": true,
+  "viewport": {
+    "width": 1280,
+    "height": 800
+  },
+  "duration": 21.443808695,
+  "steps": [
+    {
+      "do": "click",
+      "target": "td:text-is(\"CR-ZR\")",
+      "expect": "dialog:has-text(\"Edit CR-ZR\")",
+      "hold": 1500,
+      "start": 0.5000104109999998,
+      "end": 2.9344904749999996
+    },
+    {
+      "do": "click",
+      "target": "dialog button:text-is(\"Cancel\")",
+      "expectHidden": "dialog",
+      "start": 2.934504285,
+      "end": 5.062036497999999
+    },
+    {
+      "do": "click",
+      "target": "td:text-is(\"CR-ZR\")",
+      "expect": "input[aria-label=\"Price\"]",
+      "start": 5.062044508,
+      "end": 7.1466526219999995
+    },
+    {
+      "do": "click",
+      "target": "input[aria-label=\"Price\"]",
+      "start": 7.146657412000001,
+      "end": 9.257361692
+    },
+    {
+      "do": "press",
+      "key": "Control+a",
+      "start": 9.257372212,
+      "end": 10.459532907
+    },
+    {
+      "do": "press",
+      "key": "Backspace",
+      "start": 10.459539097,
+      "end": 11.662198349
+    },
+    {
+      "do": "type",
+      "target": "input[aria-label=\"Price\"]",
+      "text": "175.00",
+      "start": 11.662202169,
+      "end": 14.104762594999999
+    },
+    {
+      "do": "click",
+      "target": "dialog button:text-is(\"Save\")",
+      "expect": "tr:has(td:text-is(\"CR-ZR\")):has-text(\"$175.00\")",
+      "expectHidden": "dialog",
+      "hold": 1500,
+      "start": 14.104768675,
+      "end": 16.610060605
+    },
+    {
+      "do": "click",
+      "target": "td:text-is(\"CR-ZR\")",
+      "expect": "input[aria-label=\"Price\"]",
+      "hold": 1500,
+      "start": 16.610064215,
+      "end": 19.008661176
+    },
+    {
+      "do": "click",
+      "target": "dialog button:text-is(\"Cancel\")",
+      "expect": "tr:has(td:text-is(\"CR-ZR\")):has-text(\"$175.00\")",
+      "hold": 1500,
+      "start": 19.008664416,
+      "end": 21.443805085
+    }
+  ]
+}

@@ -91,5 +91,45 @@
       "Press Link this invoice. Reconcile moves to the next gap.",
       "Open the SYNTHETIC-GAP invoice on Ready. Its Linked card shows the job."
     ]
+  },
+  {
+    "id": "r32",
+    "title": "Own price list",
+    "clip": "r32/clip.webm",
+    "desktop": "r32/desktop.jpg",
+    "phone": "r32/phone.jpg",
+    "prs": [
+      109,
+      112,
+      114,
+      121,
+      133,
+      138
+    ],
+    "steps": [
+      "Open the CR-ZR price code, then cancel.",
+      "Change its price before tax from $160.00 to $175.00 and save.",
+      "Open the code again to see the saved price, then return to the list."
+    ]
+  },
+  {
+    "id": "r34",
+    "title": "Custom fields on jobs",
+    "clip": "r34/clip.webm",
+    "desktop": "r34/desktop.jpg",
+    "phone": "r34/phone.jpg",
+    "prs": [
+      161,
+      162,
+      164,
+      167,
+      168,
+      169
+    ],
+    "steps": [
+      "Open case 48200 on the Jobs board.",
+      "Set Rush, choose shade B1, and set Scan received.",
+      "Close and open the job again. All three custom field values remain in Flow."
+    ]
   }
 ]

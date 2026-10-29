@@ -1,0 +1,81 @@
+{
+  "title": "Custom fields on jobs",
+  "synthetic": true,
+  "viewport": {
+    "width": 1280,
+    "height": 800
+  },
+  "duration": 20.846385978999997,
+  "steps": [
+    {
+      "do": "click",
+      "target": ".fx-job >> nth=0",
+      "expect": "dialog.fx-task",
+      "start": 0.500010961,
+      "end": 2.6880231769999994
+    },
+    {
+      "do": "click",
+      "target": "input[aria-label=\"Rush\"]",
+      "expect": "input[aria-label=\"Rush\"]:checked",
+      "start": 2.6880288370000005,
+      "end": 4.814221055
+    },
+    {
+      "do": "click",
+      "target": "select[aria-label=\"Shade\"]",
+      "start": 4.814224485,
+      "end": 6.904560003999999
+    },
+    {
+      "do": "press",
+      "key": "End",
+      "start": 6.904567423999999,
+      "end": 8.107018926999999
+    },
+    {
+      "do": "press",
+      "key": "Enter",
+      "expect": "select[aria-label=\"Shade\"]:has(option:checked:text-is(\"B1\"))",
+      "start": 8.107026077,
+      "end": 9.342416299
+    },
+    {
+      "do": "click",
+      "target": "input[aria-label=\"Scan received\"]",
+      "expect": "input[aria-label=\"Scan received\"]:checked",
+      "start": 9.342421069,
+      "end": 11.476475602999999
+    },
+    {
+      "do": "click",
+      "target": ".fx-task__tools button[aria-label=\"Close\"]",
+      "expectHidden": "dialog.fx-task",
+      "start": 11.476479982999999,
+      "end": 13.610412475999999
+    },
+    {
+      "do": "click",
+      "target": ".fx-job >> nth=0",
+      "expect": "input[aria-label=\"Rush\"]:checked",
+      "start": 13.610420806,
+      "end": 15.722431518999999
+    },
+    {
+      "do": "hover",
+      "target": "section[aria-label=\"Custom fields\"]",
+      "expect": "select[aria-label=\"Shade\"]:has(option:checked:text-is(\"B1\"))",
+      "hold": 1500,
+      "start": 15.722434319,
+      "end": 18.143362144999998
+    },
+    {
+      "do": "wait",
+      "ms": 1200,
+      "expect": "input[aria-label=\"Scan received\"]:checked",
+      "hold": 1500,
+      "start": 18.143366115,
+      "end": 20.846381639
+    }
+  ]
+}
