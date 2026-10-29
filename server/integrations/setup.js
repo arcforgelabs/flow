@@ -82,6 +82,7 @@ export function describeSetup({ adapter, row, env, secrets, entry, unreadable = 
       choices: field.choices ?? null,
       suggest: field.suggest ?? null,
       default: field.default ?? null,
+      advanced: Boolean(field.advanced),
       source: fromHost ? 'host' : null,
     };
     if (field.secret) {
