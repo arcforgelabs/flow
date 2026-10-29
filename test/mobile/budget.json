@@ -1025,6 +1025,9 @@
  "tablet-chromium-harbour-light/automations": {
   "small": 2
  },
+ "tablet-chromium-harbour-light/capture-settings": {
+  "small": 2
+ },
  "tablet-chromium-harbour-light/capture-sheet": {
   "small": 2
  },
@@ -1103,6 +1106,9 @@
   "small": 17
  },
  "tablet-chromium-meridian-dark/automations": {
+  "small": 2
+ },
+ "tablet-chromium-meridian-dark/capture-settings": {
   "small": 2
  },
  "tablet-chromium-meridian-dark/capture-sheet": {
@@ -1185,6 +1191,9 @@
  "tablet-chromium-meridian-light/automations": {
   "small": 2
  },
+ "tablet-chromium-meridian-light/capture-settings": {
+  "small": 2
+ },
  "tablet-chromium-meridian-light/capture-sheet": {
   "small": 2
  },
@@ -1263,6 +1272,9 @@
   "small": 17
  },
  "tablet-webkit-harbour-light/automations": {
+  "small": 2
+ },
+ "tablet-webkit-harbour-light/capture-settings": {
   "small": 2
  },
  "tablet-webkit-harbour-light/capture-sheet": {
@@ -1345,6 +1357,9 @@
  "tablet-webkit-meridian-dark/automations": {
   "small": 2
  },
+ "tablet-webkit-meridian-dark/capture-settings": {
+  "small": 2
+ },
  "tablet-webkit-meridian-dark/capture-sheet": {
   "small": 2
  },
@@ -1423,6 +1438,9 @@
   "small": 17
  },
  "tablet-webkit-meridian-light/automations": {
+  "small": 2
+ },
+ "tablet-webkit-meridian-light/capture-settings": {
   "small": 2
  },
  "tablet-webkit-meridian-light/capture-sheet": {
