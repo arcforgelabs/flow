@@ -140,6 +140,9 @@ flowchart LR
   names and who changed them, never a value.
 - The host's own environment wins: a setting set there shows as "Set by the
   host" and cannot be changed in Flow.
+- A field with `advanced: true`, and every setting the host sets, shows in
+  the Advanced fold under Settings. The fold is open while the integration
+  is off, so Connect shows every setting.
 - An integration turned on in Flow that cannot start (a setting is missing)
   shows the reason and Flow keeps running. One turned on by the host stops
   boot, as before.

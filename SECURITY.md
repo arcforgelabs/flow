@@ -59,8 +59,9 @@ paste a credential, in full or in part.
 - Flow stores no clinical notes or scans, and keeps a patient reference only
   where an invoice must print one. A form photo is kept only until someone
   decides the capture, or for 7 days when nobody does, and then the bytes are
-  deleted. Logs and error reports get the capture id and an error code, never
-  the photo or what was read or typed.
+  deleted. The reader sends that photo only to Amazon Bedrock in Sydney or
+  Melbourne, using an `au.` inference profile. Logs and error reports get the
+  capture id and an error code, never the photo or what was read or typed.
 - Object keys and file names carry a case number at most, never a patient
   name or other patient data.
 - CI runs gitleaks on every push and pull request

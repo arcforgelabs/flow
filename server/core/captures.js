@@ -1,13 +1,22 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { and, eq, isNotNull, isNull, lt, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, isNotNull, isNull, lt, or, sql } from 'drizzle-orm';
 import { CAPTURE_DECISIONS, captures } from '../db/schema.js';
 import { FlowError, notFound } from './errors.js';
+import { matchJobs, proposeChange, readDate } from './capture-match.js';
+import { listFields, listJobFieldValues, setJobFieldValue } from './custom-fields.js';
+import { JOB_FIELDS } from '../ui/capture-fields.js';
+
+// Shown when the module is off or the keys are missing. Type it still works.
+const READER_OFF = 'reader turned off';
 
 // A capture is one photo of a handwritten lab form (docs/DATA_MODEL.md,
-// "Storage"). This slice does not call a model and does not change a job.
-// A new capture is `ready` with an empty proposal. A person can type the
-// proposal. Apply or Discard records that decision and deletes the photo.
-// A capture nobody decides is deleted after 7 days, photo included.
+// "Storage"). This does not change a job. The reader, when it is on, fills
+// `read` in the background (server/core/reader.js). When it is off, or the
+// keys are missing, the capture is `problem` ("reader turned off") and a
+// person can type the proposal. A ready capture is matched to a job on the
+// Jobs board (server/core/capture-match.js), and the match proposes the
+// change. Apply or Discard records that decision and deletes the photo. A capture nobody decides is deleted after 7 days,
+// photo included.
 //
 // Nothing here writes the photo, the typed fields or a patient name to a log.
 // Callers log a capture id and an error code only.
@@ -19,6 +28,8 @@ export const EMPTY_PROPOSAL = Object.freeze({ action: null, jobId: null, changes
 const PHOTO_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif']);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const ACTIONS = new Set(['update', 'create', 'note']);
+// A job on the Jobs board: its work system and its id there (capture-match.js jobKey).
+const JOB_ID = /^[a-z][a-z0-9_-]{0,39}:[^\u0000-\u001f]{1,200}$/;
 const FIELD_MAX = 60;
 const VALUE_MAX = 2000;
 const CHANGES_MAX = 40;
@@ -73,13 +84,14 @@ export function readProposal(input) {
   const action = input.action ?? null;
   if (action !== null && !ACTIONS.has(action)) throw invalid('action must be update, create or note');
   const jobId = input.jobId ?? null;
-  if (jobId !== null && !UUID.test(String(jobId))) throw invalid('jobId must be a job id');
+  if (jobId !== null && !JOB_ID.test(String(jobId))) throw invalid('jobId must be a job id');
   if (!Array.isArray(input.changes)) throw invalid('changes must be a list');
   if (input.changes.length > CHANGES_MAX) throw invalid('too many changes');
   const changes = input.changes.map((change) => ({
     field: readText(change?.field, FIELD_MAX),
     from: readText(change?.from ?? '', VALUE_MAX),
     to: readText(change?.to ?? '', VALUE_MAX),
+    ...(Number.isFinite(change?.sure) ? { sure: Math.min(1, Math.max(0, change.sure)) } : {}),
   }));
   if (changes.some((change) => !change.field)) throw invalid('a change needs a field');
   if (changes.length > 0 && !action) throw invalid('action is required');
@@ -96,6 +108,8 @@ export function captureView(row, link = null) {
     fileSize: row.fileSize,
     fileSha256: row.fileSha256,
     proposal: row.proposal ?? { ...EMPTY_PROPOSAL, changes: [] },
+    read: row.read ?? null,
+    match: row.match ?? null,
     problem: row.problem,
     decision: row.decision,
     decidedAt: row.decidedAt,
@@ -133,13 +147,22 @@ async function byIdempotency(db, organisationId, idempotencyKey) {
 // process stops after the bytes are stored and before the row is inserted,
 // the object is orphaned: its key is a random id and it is not a capture.
 export async function uploadCapture(db, storage, organisationId, {
-  bytes, contentType, idempotencyKey, source = 'api', personId, baseUrl,
+  bytes, contentType, idempotencyKey, source = 'api', personId, baseUrl, reader = null,
 }) {
   const photo = readPhoto(bytes, contentType);
   const key = readIdempotencyKey(idempotencyKey);
   const from = readSource(source);
   const existing = await byIdempotency(db, organisationId, key);
-  if (existing) return { capture: existing, created: false, link: linkFor(storage, existing, baseUrl) };
+  if (existing) {
+    // The read is queued after the row is inserted. A repeat of the same
+    // key starts it if that queue step did not finish. It does not read a
+    // capture that already has a result.
+    if (existing.state === 'reading' && reader?.on) {
+      const settled = await reader.schedule(existing);
+      return { capture: settled ?? existing, created: false, link: linkFor(storage, settled ?? existing, baseUrl) };
+    }
+    return { capture: existing, created: false, link: linkFor(storage, existing, baseUrl) };
+  }
 
   const id = randomUUID();
   const fileKey = `captures/${String(organisationId).toLowerCase()}/${id}`;
@@ -150,10 +173,11 @@ export async function uploadCapture(db, storage, organisationId, {
     throw new FlowError('storage_unavailable', 'the photo could not be stored');
   }
   try {
+    const reading = Boolean(reader?.on);
     const [row] = await db.insert(captures).values({
       id,
       organisationId,
-      state: 'ready',
+      state: reading ? 'reading' : 'problem',
       source: from,
       fileKey,
       fileType: photo.fileType,
@@ -161,9 +185,15 @@ export async function uploadCapture(db, storage, organisationId, {
       fileSha256: photo.fileSha256,
       idempotencyKey: key,
       proposal: { ...EMPTY_PROPOSAL, changes: [] },
+      problem: reading ? null : READER_OFF,
       createdBy: personId ?? null,
     }).onConflictDoNothing({ target: [captures.organisationId, captures.idempotencyKey] }).returning();
-    if (row) return { capture: row, created: true, link: linkFor(storage, row, baseUrl) };
+    if (row) {
+      // With background jobs off, schedule reads before it returns, so the
+      // response is the finished capture. With jobs on, the row stays `reading`.
+      const settled = reading ? await reader.schedule(row) : row;
+      return { capture: settled ?? row, created: true, link: linkFor(storage, settled ?? row, baseUrl) };
+    }
   } catch (error) {
     await storage.delete(fileKey).catch(() => {});
     if (error instanceof FlowError) throw error;
@@ -199,6 +229,130 @@ export async function typeProposal(db, storage, organisationId, id, input, { bas
   return { capture: row, link: linkFor(storage, row, baseUrl) };
 }
 
+// What a person typed instead of a read: { key: value }, keys as the reader's.
+function readTypedFields(input) {
+  if (input == null || typeof input !== 'object' || Array.isArray(input)) throw invalid('fields must be an object');
+  const entries = Object.entries(input);
+  if (entries.length > CHANGES_MAX) throw invalid('too many fields');
+  return entries.map(([key, value]) => ({ key: readText(key, FIELD_MAX), value: readText(value ?? '', VALUE_MAX), seen: '', sure: 1 }));
+}
+
+const isEmpty = (proposal) => !proposal?.action && !(proposal?.changes?.length);
+
+// Scores the Jobs board against the read (or typed) fields, stores the match
+// and, when nobody has typed a change yet, the proposed change. Typed fields
+// always replace the proposal: the person asked for a new match. `jobs` is
+// the board's jobs (server/core/job-board.js boardJobs).
+export async function matchCapture(db, storage, organisationId, id, { jobs, fields = null, baseUrl, now } = {}) {
+  const current = await byId(db, organisationId, id);
+  if (current.state !== 'ready' && !(fields && current.state === 'problem')) throw new FlowError('conflict', 'this capture is not ready');
+  const read = fields ? readTypedFields(fields) : (current.read?.fields ?? []);
+  const values = Object.fromEntries(read.map((field) => [field.key, field.value]));
+  const match = matchJobs(values, jobs, { now });
+  const replace = Boolean(fields) || isEmpty(current.proposal);
+  const [row] = await db.update(captures).set({
+    state: 'ready',
+    problem: null,
+    match,
+    ...(replace ? { proposal: await toCustomFields(db, organisationId, proposeChange(read, match, jobs)) } : {}),
+    updatedAt: sql`now()`,
+  }).where(and(
+    eq(captures.organisationId, organisationId),
+    eq(captures.id, id),
+    eq(captures.state, current.state),
+  )).returning();
+  if (!row) throw new FlowError('conflict', 'this capture changed; open it again');
+  return { capture: row, link: linkFor(storage, row, baseUrl) };
+}
+
+// The capture tray: every capture still open, and the ones decided in the
+// last day, newest first. No signed link: the result sheet asks for one.
+export async function listCaptures(db, organisationId, { now = new Date(), limit = 100 } = {}) {
+  const since = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  return db.select().from(captures).where(and(
+    eq(captures.organisationId, organisationId),
+    or(isNull(captures.decision), gt(captures.decidedAt, since)),
+  )).orderBy(desc(captures.createdAt)).limit(limit);
+}
+
+// A custom field's value from the text on the form. Undefined: Flow cannot
+// set this field from text (a person field), so it is left as it is.
+function fieldValue(field, text) {
+  const bad = () => invalid(`${field.name}: "${text}" does not fit this field`);
+  switch (field.type) {
+    case 'number': {
+      const number = Number(text.replace(/,/g, ''));
+      if (!Number.isFinite(number)) throw bad();
+      return number;
+    }
+    case 'date': {
+      const date = readDate(text);
+      if (!date) throw bad();
+      return date.toISOString().slice(0, 10);
+    }
+    case 'dropdown': {
+      const option = field.options.find((o) => !o.archived && o.name.toLowerCase() === text.toLowerCase());
+      if (!option) throw bad();
+      return option.id;
+    }
+    case 'checkbox':
+      if (/^(yes|y|true|x|✓|1)$/i.test(text)) return true;
+      if (/^(no|n|false|0)$/i.test(text)) return false;
+      throw bad();
+    case 'person':
+      return undefined;
+    default:
+      return text;
+  }
+}
+
+const jobOf = (jobId) => {
+  const at = jobId.indexOf(':');
+  return { sourceSystem: jobId.slice(0, at), sourceJobRef: jobId.slice(at + 1) };
+};
+
+// A custom field's stored value as the sheet shows it ("from").
+function shownValue(field, value) {
+  if (value == null) return '';
+  if (field.type === 'dropdown') return field.options?.find((option) => option.id === value)?.name ?? '';
+  if (field.type === 'checkbox') return value ? 'Yes' : 'No';
+  return String(value);
+}
+
+// A read field goes to the lab's custom field of the same name ("Shade")
+// when there is one: Flow owns it, so Apply writes it. Any other field stays
+// the work system's; the sheet marks it to change there (maintainer, #357).
+async function toCustomFields(db, organisationId, proposal) {
+  if (proposal.action !== 'update') return proposal;
+  const byName = new Map((await listFields(db, organisationId)).map((field) => [field.name.trim().toLowerCase(), field]));
+  const labels = new Map(JOB_FIELDS.map((field) => [field.key, field.label.toLowerCase()]));
+  const values = proposal.jobId
+    ? new Map((await listJobFieldValues(db, organisationId, { jobs: [jobOf(proposal.jobId)] })).map((row) => [row.fieldId, row.value]))
+    : new Map();
+  const changes = proposal.changes.map((change) => {
+    const field = byName.get(labels.get(change.field));
+    return field ? { ...change, field: `custom_${field.id}`, from: shownValue(field, values.get(field.id)) } : change;
+  }).filter((change) => change.from !== change.to);
+  return { ...proposal, changes };
+}
+
+// Apply writes what Flow owns: the job's custom fields, each with its own
+// event (who, when, from and to). A field the work system owns (due date,
+// shade) stays there; the result sheet links to the job in that system.
+// Every value is checked before the first write, so a bad one writes none.
+async function applyToJob(db, organisationId, proposal, personId) {
+  if (proposal?.action !== 'update' || !proposal.jobId) return;
+  const job = jobOf(proposal.jobId);
+  const fields = new Map((await listFields(db, organisationId)).map((field) => [`custom_${field.id}`, field]));
+  const writes = proposal.changes
+    .filter((change) => fields.has(change.field))
+    .map((change) => ({ field: fields.get(change.field), value: fieldValue(fields.get(change.field), change.to) }))
+    .filter((write) => write.value !== undefined);
+  for (const { field, value } of writes) {
+    await setJobFieldValue(db, organisationId, { ...job, fieldId: field.id, value }, { personId });
+  }
+}
+
 async function deletePhoto(db, storage, row) {
   if (row.photoDeletedAt) return row;
   try {
@@ -220,9 +374,10 @@ async function deletePhoto(db, storage, row) {
   return next ?? row;
 }
 
-// Records the person's decision and deletes the photo. It does not change a
-// job: matching and applying a change are later slices. The same decision
-// again deletes the photo if that was still waiting.
+// Records the person's decision and deletes the photo. Apply first writes
+// the job's custom fields (applyToJob). The same decision again writes the
+// same values, which changes nothing, and deletes the photo if that was
+// still waiting.
 export async function decideCapture(db, storage, organisationId, id, decision, { personId, baseUrl } = {}) {
   if (!CAPTURE_DECISIONS.includes(decision)) throw invalid('decision must be applied or discarded');
   const current = await byId(db, organisationId, id);
@@ -232,6 +387,7 @@ export async function decideCapture(db, storage, organisationId, id, decision, {
     return { capture: row, link: null };
   }
   if (current.state !== 'ready') throw new FlowError('conflict', 'this capture is not ready');
+  if (decision === 'applied') await applyToJob(db, organisationId, current.proposal, personId ?? null);
   const [row] = await db.update(captures).set({
     state: 'done',
     decision,

@@ -195,14 +195,36 @@ leaves captures off there too. Set `FLOW_STORAGE=local` with a writable
 `FLOW_STORAGE_DIR` when the photo should live on that machine. An S3 link is a presigned GET. Replit's client has no
 signed URL, so that link is a Flow link: Flow checks the signature, reads the
 bytes and checks the checksum before it sends them. Logs and error reports
-get a capture id and an error code, never the photo or the typed fields.
+get a capture id and an error code, never the photo or what was read or typed.
+The reader (`server/core/reader.js`) sends the photo through one AI port
+(`server/core/ai.js`). The only client is Amazon Bedrock in Sydney or
+Melbourne, and only with an `au.` inference profile. The first model reads
+every capture. The larger model reads again only when case number, practice
+or work is below the sure line (0.8 unless `FLOW_READER_SURE_LINE` says
+otherwise). The model ids, region and keys come from the environment. The
+capture stores the fields, the model, the token counts and the cost in
+micros. A call that fails is tried twice more, then the capture is a problem
+a person can type. No credentials and a turned-off reader do the same, with
+the reason "reader turned off". The model does not see the jobs list and
+does not write.
+
+The matcher (`server/core/capture-match.js`) is Flow code. It scores each job
+on the Jobs board against the read or typed fields: case number 60 (50 for a
+common misread such as O for 0), practice 12, dentist 8, due date within 3
+days 10, work or teeth in the job's lines 10. It keeps up to 5 jobs at 20
+points or more. One job at 60 or more, 20 ahead of the next, is `sure`, and
+the proposal updates it with each field that differs. Close jobs propose an
+update and the person picks the job. No job proposes a new one. A job is
+`<work system>:<its id there>`, for example `seazona:4821`.
 
 | Route | Who | What |
 | --- | --- | --- |
-| `POST /api/captures` | anyone signed in | The photo as the body (`image/jpeg`, `png`, `webp` or `heic`, 12 MB at most) and an `Idempotency-Key` header. `X-Flow-Capture-Source` is `phone`, `desk` or `api` (the default). 201: a capture in state `ready` with an empty proposal. The same key again is 200 and the first photo, even when the body differs |
-| `GET /api/captures/:id` | anyone signed in | The capture and a fresh signed link, or no link once the photo is gone |
-| `POST /api/captures/:id/proposal` | anyone signed in | Type the change (`action` of `update`, `create` or `note`, and `changes`). It does not change a job |
-| `POST /api/captures/:id/decision` | anyone signed in | `{ decision: "applied" or "discarded" }`. Records who decided and deletes the photo. It does not change a job. The same decision again is safe |
+| `POST /api/captures` | anyone signed in | The photo as the body (`image/jpeg`, `png`, `webp` or `heic`, 12 MB at most) and an `Idempotency-Key` header. `X-Flow-Capture-Source` is `phone`, `desk` or `api` (the default). 201: the capture. With the reader on it is `reading` until the read finishes; with the reader off it is `problem` ("reader turned off") and a person types it. The same key again is 200 and the first photo, even when the body differs |
+| `GET /api/captures` | anyone signed in | The tray: every open capture and the ones decided in the last day, newest first, with no link |
+| `GET /api/captures/:id` | anyone signed in | The capture and a fresh signed link, or no link once the photo is gone. A read capture with no match is matched first; a typed proposal is kept |
+| `POST /api/captures/:id/match` | anyone signed in | Match again. `{ fields: { case_number, practice, ... } }` matches typed fields instead of the read, also for a `problem` capture, and replaces the proposal |
+| `POST /api/captures/:id/proposal` | anyone signed in | Type the change (`action` of `update`, `create` or `note`, `jobId`, and `changes`). It does not change a job |
+| `POST /api/captures/:id/decision` | anyone signed in | `{ decision: "applied" or "discarded" }`. Records who decided and deletes the photo. `applied` first writes the proposal's custom fields (`custom_<field id>`) to its job, each with a field event; a value that does not fit its field writes none. A read field becomes the custom field of the same name ("Shade") when the lab has one. Fields the work system owns are not written; the sheet marks them to change in that system, until a two-way sync setting can send them (#357). The same decision again is safe |
 | `GET /api/captures/file?token=` | the signed link | The photo. No session. The checksum is checked first. An S3 link is fetched from S3, not from this route |
 
 Flow uses no other database: no document store, key-value store or cache
@@ -229,8 +251,8 @@ installation low maintenance.
 | Every write to another system has an outbox row first, with a unique idempotency key. | `outbox`; `server/core/outbox.js` |
 | One open review item per kind and record; a closed one records who chose what. | A partial unique index and a check on `review_items`; `server/core/review.js` |
 | A practice member's email is stored lower-case and is unique per practice. One practice keeps an owner. | Constraints on `practice_members`; `server/portal/members.js` |
-| `audit_events` rows cannot be updated or deleted. | Trigger in `0025_audit_events_append_only.sql` |
-| One capture per idempotency key in an organisation. The photo bytes are deleted on a decision, and a capture with no decision is deleted after 7 days. | `captures`; `server/core/captures.js` |
+| `audit_events` rows cannot be updated or deleted. | Trigger in `0026_audit_events_append_only.sql` |
+| One capture per idempotency key in an organisation. The photo bytes are deleted on a decision, and a capture with no decision is deleted after 7 days. A form is read only through the AI port, and only on an `au.` profile in Sydney or Melbourne. | `captures`; `server/core/captures.js`; `server/core/reader.js` |
 
 ## Change the schema
 

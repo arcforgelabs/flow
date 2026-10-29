@@ -12,6 +12,7 @@ import { themeStylesheet } from '../theme/themes.js';
 //   /assets/ui/<file>        Flow's components (flow.css) and page scripts
 //   /assets/fonts/<pkg>/…    the families' faces (server/theme/font-families.js)
 //   /assets/icons/<name>.svg one Lucide icon (lucide-static, ISC), for any page
+//   /assets/icons/tags.json  each Lucide icon's words, for the icon picker
 // Only the files named here are served. They change only with a release, so
 // browsers may keep them for an hour.
 
@@ -21,7 +22,7 @@ const themeDir = join(here, '..', 'theme');
 const logoDir = join(here, 'logos');
 const LOGO_FILES = new Set(['xero.svg', 'seazona.svg', 'sentry.svg']);
 const THEME_FILES = new Set(['themes.js', 'color-contrast.js', 'openclaw-palettes.js', 'font-families.js']);
-export const UI_FILES = new Set(['flow.css', 'appearance.js', 'clerk-appearance.js', 'app.js', 'invoicing.js', 'invoice-notes.js', 'job-change.js', 'sidecar.js', 'invoicing-settings.js', 'automations.js', 'invoice-rules.js', 'line-mappings.js', 'price-list.js', 'price-match.js', 'price-reconcile.js', 'custom-fields.js', 'contacts.js', 'xero-contact.js', 'jobs.js', 'job-board.js', 'reconcile.js', 'xero-import.js', 'xero-usage.js', 'xero-usage-model.js', 'job-view.js', 'list-views.js', 'saved-views.js', 'monitoring.js', 'search.js', 'alerts.js', 'bulk-bar.js', 'view-bar.js', 'tip.js', 'kit.js', 'columns.js', 'mobile.js', 'person.js', 'pager.js', 'nav-pins.js', 'flow-mark.svg', 'portal.js', 'portal-settings.js', 'portal-lab.js']);
+export const UI_FILES = new Set(['flow.css', 'appearance.js', 'clerk-appearance.js', 'app.js', 'invoicing.js', 'invoice-notes.js', 'job-change.js', 'sidecar.js', 'invoicing-settings.js', 'automations.js', 'invoice-rules.js', 'line-mappings.js', 'price-list.js', 'price-match.js', 'price-reconcile.js', 'custom-fields.js', 'contacts.js', 'xero-contact.js', 'jobs.js', 'job-board.js', 'reconcile.js', 'xero-import.js', 'xero-usage.js', 'xero-usage-model.js', 'job-view.js', 'list-views.js', 'saved-views.js', 'monitoring.js', 'search.js', 'alerts.js', 'bulk-bar.js', 'view-bar.js', 'tip.js', 'kit.js', 'columns.js', 'mobile.js', 'person.js', 'captures.js', 'capture-fields.js', 'pager.js', 'nav-pins.js', 'flow-mark.svg', 'portal.js', 'portal-settings.js', 'portal-lab.js']);
 const iconDir = join(dirname(require.resolve('lucide-static/package.json')), 'icons');
 const ICON_FILE = /^[a-z0-9]+(?:-[a-z0-9]+)*\.svg$/;
 const MAX_AGE = '1h';
@@ -58,6 +59,8 @@ export function createUiAssetsRouter({ rateLimitPerMinute = 600 } = {}) {
     if (!ICON_FILE.test(req.params.file)) return next();
     sendNamed(res, next, iconDir, req.params.file);
   });
+  // Each icon's words, for the icon picker's search (kit.js iconPicker).
+  router.get('/assets/icons/tags.json', (_req, res, next) => sendNamed(res, next, dirname(iconDir), 'tags.json'));
 
   for (const name of FONT_PACKAGES) {
     const dir = dirname(require.resolve(`@fontsource-variable/${name}/LICENSE`));

@@ -116,6 +116,8 @@ export function savedViews(ui, { page, current, apply }) {
         }, isDefault ? lucide(h, 'house', 'Your default') : null, h('span', { class: 'fx-views__name' }, v.name), on && changed ? h('span', { class: 'fx-views__dot', 'aria-label': 'Changed', title: 'Changed' }) : null),
         more, menu);
     });
+    // A tab list needs tabs: with no saved view yet it is a plain group.
+    element.setAttribute('role', tabs.length ? 'tablist' : 'group');
     element.replaceChildren(...[
       ...tabs,
       saved.list.length < MAX_SAVED_VIEWS ? h('button', { type: 'button', class: 'fx-views__add', title: 'Save as a view', onclick: addView }, lucide(h, 'plus'), 'View') : null,

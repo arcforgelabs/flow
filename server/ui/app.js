@@ -10,6 +10,7 @@ import { getAppearance, onAppearanceChange, setAppearance, loadFonts } from '/as
 import { flowClerkAppearance } from '/assets/ui/clerk-appearance.js';
 import { ACCENT_PRESETS, normalizeAccent, THEME_FAMILIES, tokensFor } from '/assets/theme/themes.js';
 import { renderInvoice, renderInvoiceList } from '/assets/ui/invoicing.js';
+import { renderCaptures } from '/assets/ui/captures.js';
 import { renderContacts } from '/assets/ui/contacts.js';
 import { automationSection, renderAutomations } from '/assets/ui/automations.js';
 import { renderInvoicingSettings, sendModeSection } from '/assets/ui/invoicing-settings.js';
@@ -26,7 +27,7 @@ import { isSearchKey, openSearch } from '/assets/ui/search.js';
 import { alertStrip } from '/assets/ui/alerts.js';
 import { initialsOf, personLabel } from '/assets/ui/person.js';
 import { startTips } from '/assets/ui/tip.js';
-import { crumbs, dialog, edgeFade, fieldError, h, holdButton, linksOpenWith, listFrame, listHead, notice, pageHeader, pickOne, rowMenu, sectionTitle, settingRow, tileCard, tileSection, toast } from '/assets/ui/kit.js';
+import { crumbs, dialog, edgeFade, fieldError, h, holdButton, iconPicker, linksOpenWith, listFrame, listHead, notice, pageHeader, pickOne, rowMenu, sectionTitle, settingRow, tileCard, tileSection, toast } from '/assets/ui/kit.js';
 import { NAV_DEFAULT, NAV_LOCKED } from '/assets/ui/nav-pins.js';
 
 const $ = (id) => document.getElementById(id);
@@ -153,6 +154,7 @@ let me = null;
 // cannot be unpinned (nav-pins.js).
 const VIEWS = {
   jobs: { label: 'Jobs', icon: 'jobs', render: (main) => renderJobs(main, ui()) },
+  captures: { label: 'Capture', icon: 'camera', render: (main) => renderCaptures(main, ui()) },
   invoices: { label: 'Invoices', icon: 'invoices', render: (main, id) => (id ? renderInvoice(main, ui(), id) : renderInvoiceList(main, ui())) },
   contacts: { label: 'Contacts', icon: 'contacts', render: (main, id) => renderContacts(main, ui(), id) },
   reconcile: { label: 'Reconcile', icon: 'reconcile', render: (main, id) => renderReconcile(main, ui(), id) },
@@ -176,6 +178,7 @@ const ICON_PATHS = {
   jobs: '<rect x="3" y="4" width="5" height="16" rx="1"/><rect x="10" y="4" width="5" height="11" rx="1"/><rect x="17" y="4" width="4" height="14" rx="1"/>',
   invoices: '<path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 13h7M9 17h5"/>',
   contacts: '<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M6 16c.4-1.6 1.5-2.4 3-2.4s2.6.8 3 2.4M14 9h5M14 13h4"/>',
+  camera: '<path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>',
   bolt: '<path d="M13 3L5 13h6l-1 8 8-10h-6z"/>',
   rules: '<path d="M3 6l2 2 4-4M3 16l2 2 4-4M13 6h8M13 12h8M13 18h8"/>',
   reconcile: '<path d="M4 8h13M13 4l4 4-4 4M20 16H7M11 12l-4 4 4 4"/>',
@@ -334,7 +337,7 @@ function navigate(event) {
 // The shared pieces a view module (invoicing.js) builds with. Its `go`
 // takes a path, or a link's click event.
 const ui = () => ({
-  h, flow, toast, notice, fieldError, pageHeader, listHead, listFrame, edgeFade, sectionTitle, settingRow, dialog, pickOne, me, holdButton, tileCard, tileSection, crumbs,
+  h, flow, toast, notice, fieldError, pageHeader, listHead, listFrame, edgeFade, sectionTitle, settingRow, dialog, pickOne, iconPicker, me, holdButton, tileCard, tileSection, crumbs,
   go: (target, options) => (typeof target === 'string' ? go(target, options) : navigate(target)),
 });
 
@@ -350,7 +353,7 @@ function renderSignedOut() {
     return;
   }
   $('sign-in-note').textContent = config.publicSignUp
-    ? 'Sign in, or ask for access with your work email.'
+    ? 'New here? Ask for access with your work email.'
     : 'Sign in with the account you were invited with.';
   // With public sign-up off the widget never creates a Clerk account: no
   // sign-up link, and an OAuth sign-in for an unknown email is not turned
@@ -743,6 +746,9 @@ async function renderIntegration(main, id) {
   // Settings: closed on a phone, open on a wider screen, then as the person
   // leaves it while the page redraws (Connect).
   let settingsOpen = !window.matchMedia?.('(max-width: 639px)').matches;
+  // Advanced: the technical settings and the host's values. Open while the
+  // integration is off, so Connect shows every setting it needs.
+  let advancedOpen = null;
   const alerts = alertStrip(ui(), 'integrations', {
     scope: id,
     onLoad: ({ danger }) => {
@@ -755,10 +761,11 @@ async function renderIntegration(main, id) {
     shown = current;
     const inputs = new Map();
     const rows = [];
+    const advanced = [];
     for (const field of current.fields) {
       if (field.source === 'host') {
         // The host sets it: a value to read, not a box to type in.
-        rows.push(settingRow({
+        advanced.push(settingRow({
           label: field.label,
           help: 'Set by whoever hosts Flow.',
           control: field.secret ? h('span', { class: 'fx-dim' }, 'Set') : h('code', { class: 'fx-setting__value' }, field.value),
@@ -780,7 +787,7 @@ async function renderIntegration(main, id) {
       }
       inputs.set(field.name, { field, input });
       const suggestion = field.suggest === 'callback' ? `${location.origin}/api/${current.id}/oauth/callback` : null;
-      rows.push(settingRow({
+      (field.advanced ? advanced : rows).push(settingRow({
         label: field.label,
         hint: field.unreadable ? 'Stored with another key. Enter it again.' : null,
         help: field.help,
@@ -869,6 +876,7 @@ async function renderIntegration(main, id) {
           current.id === 'xero' && current.state === 'ready' ? h('section', { class: 'fx-int-section' }, xeroConnection(body.organisations, canChange)) : null,
           current.id === 'seazona' ? h('section', { class: 'fx-int-section fx-card', style: { padding: '8px 20px 16px' } }, automationSection(ui(), 'seazona', 'Ready to invoice')) : null,
           on && current.state === 'ready' ? personSettingsSection(current) : null,
+          current.id === 'seazona' && current.state === 'ready' ? seazonaHistorySection() : null,
           current.id === 'xero' && current.state === 'ready' ? xeroImportSection(body.organisations) : null,
           current.id === 'xero' ? h('section', { class: 'fx-int-section fx-card', style: { padding: '8px 20px 16px' } }, automationSection(ui(), 'xero', 'Contacts')) : null,
           current.id === 'xero' ? h('section', { class: 'fx-int-section fx-card', style: { padding: '8px 20px 16px' } }, sendModeSection(ui())) : null,
@@ -876,9 +884,12 @@ async function renderIntegration(main, id) {
             h('summary', { class: 'fx-int-section__title' }, 'Set up'),
             h('ol', { class: 'fx-steps' }, guide.steps.map((step) => h('li', {}, step))),
             guide.link ? h('a', { class: 'fx-btn fx-btn--sm', href: guide.link, target: '_blank', rel: 'noopener' }, `${current.name} site ↗`) : null) : null,
-          rows.length ? h('details', { class: 'fx-int-section fx-int-fold', open: settingsOpen, ontoggle: (event) => { settingsOpen = event.currentTarget.open; } },
+          rows.length || advanced.length ? h('details', { class: 'fx-int-section fx-int-fold', open: settingsOpen, ontoggle: (event) => { settingsOpen = event.currentTarget.open; } },
             h('summary', { class: 'fx-int-section__title' }, 'Settings'),
-            h('div', { class: 'fx-settings' }, rows),
+            rows.length ? h('div', { class: 'fx-settings' }, rows) : null,
+            advanced.length ? h('details', { class: 'fx-int-fold fx-int-fold--sub', open: advancedOpen ?? !on, ontoggle: (event) => { advancedOpen = event.currentTarget.open === !on ? null : event.currentTarget.open; } },
+              h('summary', {}, 'Advanced'),
+              h('div', { class: 'fx-settings' }, advanced)) : null,
             canChange && on && inputs.size ? h('div', { class: 'fx-row fx-row--end' }, h('button', { class: 'fx-btn', type: 'button', onclick: () => save(undefined) }, 'Save changes')) : null) : null,
         ].filter(Boolean)),
         h('aside', { class: 'fx-int-page__meta' },
@@ -977,6 +988,87 @@ function xeroImportSection(organisations) {
       })
       .catch(() => count.replaceChildren('—'));
   }
+  return section;
+}
+
+// Seazona's history read (docs/SEAZONA.md, "The API backfill"): past orders
+// from a start day, a few calls a run inside the rate limit. Start, Resume
+// and Stop call no Seazona; the background lane reads, and skips orders Flow
+// read before. While it runs, the card reads its progress again every 5
+// seconds, from Flow only, and counts down to the lane's next run.
+function seazonaHistorySection() {
+  const canAct = ['owner', 'admin'].includes(me?.person?.role);
+  const yearAgo = new Date(Date.now() - 365 * 86_400_000).toISOString().slice(0, 10);
+  const from = h('input', { class: 'fx-input fx-history__day', type: 'date', 'aria-label': 'Read from', value: yearAgo, disabled: !canAct });
+  const status = h('span', { class: 'fx-history__status' }, 'Checking…');
+  const control = h('span', { class: 'fx-row' });
+  const bar = h('progress', { class: 'fx-history__bar', max: 1, value: 0, 'aria-label': 'Read so far' });
+  const barRow = settingRow({ label: 'Progress', hint: h('span', {}), control: bar, wide: true });
+  barRow.hidden = true;
+  const day = (value) => new Date(`${value}T00:00:00Z`).toLocaleDateString('en-AU', { dateStyle: 'medium', timeZone: 'UTC' });
+  const section = h('section', { class: 'fx-set fx-int-section fx-card', style: { padding: '8px 20px 16px' } },
+    h('h2', { class: 'fx-set__title' }, 'History'),
+    settingRow({ label: 'Read from', hint: status, help: 'Reads past Seazona orders into Flow, 10 every 2 minutes. Orders Flow read before are skipped. Each job waits on hold and never drafts by itself.', control }),
+    barRow);
+  let timer = null;
+  let tick = null;
+  const press = async (button, path, body) => {
+    button.disabled = true;
+    try {
+      await flow(path, { method: 'POST', ...(body ? { body: JSON.stringify(body) } : {}) });
+      toast(body ? 'History read started.' : 'History read stopped.', 'success');
+    } catch (error) {
+      toast(error.message, 'danger');
+      if (error.retryAfterMs) holdButton(button, error.retryAfterMs);
+    }
+    load();
+  };
+  const start = (label, body, primary = true) => h('button', {
+    class: `fx-btn fx-btn--sm${primary ? ' fx-btn--primary' : ''}`, type: 'button', disabled: !canAct,
+    onclick: (event) => press(event.currentTarget, '/api/seazona/history/backfill', body()),
+  }, label);
+  const load = async () => {
+    clearTimeout(timer);
+    clearInterval(tick);
+    if (!section.isConnected && timer !== null) return;
+    let body;
+    try {
+      body = await flow('/api/seazona/history');
+    } catch (error) {
+      status.replaceChildren(error.message);
+      return;
+    }
+    const run = body.backfill;
+    barRow.hidden = !run;
+    if (run) {
+      const span = Date.parse(run.through) - Date.parse(run.from) + 86_400_000;
+      const at = run.running ? run.readingDay ?? run.through : run.resumeFrom ?? run.through;
+      bar.value = run.running || run.resumeFrom ? Math.min(1, Math.max(0, (Date.parse(at) - Date.parse(run.from)) / span)) : 1;
+      barRow.querySelector('.fx-setting__hint').replaceChildren(`${day(run.from)} to ${day(run.through)}`);
+    }
+    if (run?.running) {
+      const what = { waiting: 'Waiting', failed: 'Failed' }[run.phase] ?? `Reading ${day(run.readingDay ?? run.through)}`;
+      const reading = `${what} · ${run.ordersRead} read${run.waitingToRead ? ` · ${run.waitingToRead} to read` : ''}`;
+      const next = h('span', { class: 'fx-dim' });
+      const count = () => {
+        const left = Math.round((Date.parse(run.nextRunAt) - Date.now()) / 1000);
+        next.replaceChildren(left > 0 ? `· ${run.phase === 'running' ? 'next' : 'retry'} in ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}` : '· reading now');
+      };
+      if (run.nextRunAt && run.phase !== 'failed') { count(); tick = setInterval(count, 1000); }
+      status.replaceChildren(
+        run.phase === 'running' ? h('span', { class: 'fx-spinner fx-spinner--sm', 'aria-hidden': 'true' }) : '',
+        reading, next, run.cause ? h('span', { class: 'fx-dim' }, `· ${run.cause}`) : '');
+      control.replaceChildren(h('button', { class: 'fx-btn fx-btn--sm', type: 'button', disabled: !canAct, onclick: (event) => press(event.currentTarget, '/api/seazona/history/backfill/stop') }, 'Stop'));
+    } else if (run?.resumeFrom) {
+      status.replaceChildren(`Stopped at ${day(run.resumeFrom)} · ${run.ordersRead} read`);
+      control.replaceChildren(from, start('Start', () => ({ from: from.value }), false), start('Resume', () => ({ from: run.resumeFrom, through: run.through })));
+    } else {
+      status.replaceChildren(run ? `Done · ${run.ordersRead} read` : 'Not started');
+      control.replaceChildren(from, start('Start', () => ({ from: from.value })));
+    }
+    timer = setTimeout(() => { if (section.isConnected && run?.running) load(); }, 5_000);
+  };
+  load();
   return section;
 }
 
@@ -1244,7 +1336,8 @@ drawModeToggles();
 // the Clerk instance is called.
 const LOCALIZATION = {
   signIn: {
-    start: { title: 'Sign in to Flow', subtitle: 'Choose how to sign in.' },
+    // titleCombined is the sign-in-or-sign-up screen (public sign-up on).
+    start: { title: 'Sign in', titleCombined: 'Sign in', subtitle: '' },
     password: { subtitle: 'Enter the password for your account.' },
   },
   signUp: { start: { title: 'Ask for access to Flow', subtitle: 'Use your work email. An owner approves new people.' } },

@@ -44,12 +44,12 @@ export const SENTRY_SETUP = {
     ],
   },
   fields: [
-    { name: 'SENTRY_DSN', label: 'DSN', kind: 'url', help: 'From the Sentry project\'s Client Keys. Browsers see it, so it is not a secret.' },
-    { name: 'SENTRY_ENVIRONMENT', label: 'Environment', help: 'How Sentry labels this installation, for example production. Empty: production, or workspace in a Replit workspace.' },
-    { name: 'SENTRY_CLIENT', label: 'Client', help: 'The name your support desk files this installation\'s reports under. Sent as the client tag. Empty: no client tag.' },
-    { name: 'SENTRY_FEEDBACK', label: 'Report button', kind: 'onoff', help: 'On: everyone signed in can send a report, with a screenshot, to this Sentry project.' },
-    { name: 'SENTRY_REPLAY', label: 'Replay', kind: 'onoff', help: 'On: each report and each browser error keeps up to the last minute of the page, as a replay with every word hidden.' },
-    { name: 'SENTRY_TRACES_SAMPLE_RATE', label: 'Traces', help: 'The share of clicks, page loads and requests timed, from 0 (off) to 1 (all). Empty: 0.2.' },
+    { name: 'SENTRY_DSN', label: 'DSN', kind: 'url', advanced: true, help: 'From the Sentry project\'s Client Keys. Browsers see it, so it is not a secret.' },
+    { name: 'SENTRY_ENVIRONMENT', label: 'Environment', advanced: true, help: 'How Sentry labels this installation, for example production. Empty: production, or workspace in a Replit workspace.' },
+    { name: 'SENTRY_CLIENT', label: 'Client', advanced: true, help: 'The name your support desk files this installation\'s reports under. Sent as the client tag. Empty: no client tag.' },
+    { name: 'SENTRY_FEEDBACK', label: 'Report button', kind: 'onoff', default: 'on', help: 'On: everyone signed in can send a report, with a screenshot, to this Sentry project.' },
+    { name: 'SENTRY_REPLAY', label: 'Replay', kind: 'onoff', default: 'on', help: 'On: each report and each browser error keeps up to the last minute of the page, as a replay with every word hidden.' },
+    { name: 'SENTRY_TRACES_SAMPLE_RATE', label: 'Traces', advanced: true, help: 'The share of clicks, page loads and requests timed, from 0 (off) to 1 (all). Empty: 0.2.' },
   ],
 };
 

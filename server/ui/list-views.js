@@ -1,10 +1,11 @@
-// A person's saved views of a list page (Jobs, Invoices, Reconcile), as
+// A person's saved views of a list page (Jobs, Invoices, Reconcile, Price
+// list), as
 // ClickUp's view tabs: each has a name and the page's view (Group, Sort,
 // Filter, Columns), and one can be the person's default, which opens when
 // they go to the page. No DOM: the server checks a saved list with the same
 // rules the page uses (server/auth/people.js).
 import { caseNumber } from './job-board.js';
-import { cleanFilterView, fieldIdOf, filterJobs, KIND_OF_TYPE, normaliseJobsView } from './job-view.js';
+import { cleanFilterView, fieldIdOf, filterJobs, KIND_OF_TYPE, normaliseJobsView, normaliseListView, PRICE_COLUMNS } from './job-view.js';
 
 // The Invoices filter's fields (invoicing.js): the list's own columns, then
 // the job columns the Columns menu offers (Case, Practitioner, Shipped).
@@ -111,6 +112,48 @@ export const RECONCILE_FILTER_FIELDS = {
   match: { label: 'Match', kind: 'check', icon: 'link' },
 };
 
+// The Price list's fields (price-list.js): Filter, Group and Sort read
+// them. `group` marks the fields a person can group by.
+export const PRICE_FIELDS = {
+  code: { label: 'Code', kind: 'text', icon: 'hash' },
+  name: { label: 'Name', kind: 'text', icon: 'text' },
+  price: { label: 'Price', kind: 'number', icon: 'dollar-sign' },
+  tax: { label: 'Tax', kind: 'choice', icon: 'percent', group: true },
+  linked: { label: 'Linked', kind: 'choice', icon: 'link', group: true },
+  differs: { label: 'Differs', kind: 'check', icon: 'triangle-alert', group: true },
+};
+
+// A code's value for a Price list field, as Filter, Group and Sort compare
+// it. Linked is the systems the code links to (a list: a code can link to
+// Xero and Seazona both).
+export function priceValue(item, field) {
+  switch (field) {
+    case 'code': return item.code ?? null;
+    case 'name': return item.name ?? null;
+    case 'price': return item.unitAmountCents == null ? null : item.unitAmountCents / 100;
+    case 'tax': return item.taxCode ?? null;
+    case 'linked': return [...new Set((item.links ?? []).map((l) => l.system))];
+    case 'differs': return (item.findings?.length ?? 0) > 0;
+    default: return null;
+  }
+}
+
+// The Price list view: its columns (as before), Group, Sort and Filter.
+const PRICE_DIRS = ['asc', 'desc'];
+export function normalisePriceView(input) {
+  const value = input && typeof input === 'object' && !Array.isArray(input) ? input : {};
+  const seen = new Set();
+  return {
+    ...normaliseListView(value, PRICE_COLUMNS),
+    group: PRICE_FIELDS[value.group]?.group ? value.group : 'none',
+    groupDir: PRICE_DIRS.includes(value.groupDir) ? value.groupDir : 'asc',
+    sorts: (Array.isArray(value.sorts) ? value.sorts : [])
+      .filter((s) => s && Object.hasOwn(PRICE_FIELDS, s.by) && !seen.has(s.by) && seen.add(s.by))
+      .map((s) => ({ by: s.by, dir: PRICE_DIRS.includes(s.dir) ? s.dir : 'asc' })).slice(0, 5),
+    ...cleanFilterView(value, kindIn(PRICE_FIELDS, false)),
+  };
+}
+
 const CUSTOM_FIELD = /^field:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const kindIn = (fields, custom) => (field) => (Object.hasOwn(fields, field) ? fields[field].kind : custom && CUSTOM_FIELD.test(field) ? '*' : null);
 
@@ -120,12 +163,13 @@ export const normaliseReconcileView = (value) => cleanFilterView(value, kindIn(R
 
 // The pages with saved views. Each is named in a switch, never looked up
 // by the name a request sends, so a name such as "constructor" is refused.
-export const SAVED_VIEW_PAGES = Object.freeze(['jobs', 'invoices', 'reconcile']);
+export const SAVED_VIEW_PAGES = Object.freeze(['jobs', 'invoices', 'reconcile', 'price-list']);
 export function pageViewCheck(page) {
   switch (page) {
     case 'jobs': return normaliseJobsView;
     case 'invoices': return normaliseInvoicesView;
     case 'reconcile': return normaliseReconcileView;
+    case 'price-list': return normalisePriceView;
     default: return null;
   }
 }

@@ -68,6 +68,24 @@ export const RULES = {
     "mark": false,
     "card": "Button"
   },
+  "captureButton": {
+    "component": "captureButton",
+    "direction": "button",
+    "phone": {
+      "layout": "camera"
+    },
+    "tablet": {
+      "layout": "camera"
+    },
+    "desk": {
+      "layout": "files"
+    },
+    "touch": 44,
+    "pageOverflow": "none",
+    "screens": [],
+    "mark": false,
+    "card": "CaptureButton"
+  },
   "cardRows": {
     "component": "cardRows",
     "direction": "card per row",
@@ -203,7 +221,8 @@ export const RULES = {
       "invoices-approved",
       "invoices-ticked",
       "invoices-filter",
-      "reconcile"
+      "reconcile",
+      "price-list"
     ],
     "card": "Filter"
   },
@@ -230,7 +249,8 @@ export const RULES = {
       "invoices-approved",
       "invoices-ticked",
       "invoices-filter",
-      "reconcile"
+      "reconcile",
+      "price-list"
     ],
     "card": "FindBox"
   },
@@ -269,6 +289,23 @@ export const RULES = {
     "screens": [],
     "mark": false,
     "card": "Icon"
+  },
+  "iconPicker": {
+    "component": "iconPicker",
+    "direction": "sheet",
+    "phone": {
+      "layout": "sheet"
+    },
+    "tablet": {
+      "layout": "popover"
+    },
+    "desk": {
+      "layout": "popover"
+    },
+    "touch": 44,
+    "pageOverflow": "none",
+    "screens": [],
+    "card": "IconPicker"
   },
   "jobChangeBanner": {
     "component": "jobChangeBanner",
@@ -311,7 +348,8 @@ export const RULES = {
       "invoices-approved",
       "invoices-ticked",
       "invoices-filter",
-      "reconcile"
+      "reconcile",
+      "price-list"
     ],
     "card": "ListFrame"
   },
@@ -339,7 +377,8 @@ export const RULES = {
       "invoices-approved",
       "invoices-ticked",
       "invoices-filter",
-      "reconcile"
+      "reconcile",
+      "price-list"
     ],
     "card": "ListHead"
   },
@@ -534,7 +573,8 @@ export const RULES = {
       "invoices-approved",
       "invoices-ticked",
       "invoices-filter",
-      "reconcile"
+      "reconcile",
+      "price-list"
     ],
     "card": "SavedViews"
   },

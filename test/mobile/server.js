@@ -1,7 +1,12 @@
 import { createApp } from '../../server/app.js';
 import { invitePerson, seedFirstOwner, setPersonAppearance } from '../../server/auth/people.js';
 import { createPersonAuth } from '../../server/auth/session.js';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { matchCapture, uploadCapture } from '../../server/core/captures.js';
 import { createField } from '../../server/core/custom-fields.js';
+import { createLocalObjectStorage } from '../../server/core/storage.js';
 import { createContact, createOrganisation, createPriceItem } from '../../server/core/directory.js';
 import { createDraftInvoice, issueInvoice } from '../../server/core/invoices.js';
 import { observeJob } from '../../server/core/ledger.js';
@@ -60,8 +65,9 @@ export async function startFlow({ port = 0, env = {} } = {}) {
   for (const name of CLINICS) contacts.push(await createContact(db, lab.id, { kind: 'customer', name }));
   const items = [];
   for (const [code, name, unitAmountCents] of PRODUCTS) items.push(await createPriceItem(db, lab.id, { code, name, unitAmountCents }));
+  const fields = {};
   for (const name of ['Shade', 'Rush', 'Scan received']) {
-    await createField(db, lab.id, name === 'Shade'
+    fields[name] = await createField(db, lab.id, name === 'Shade'
       ? { name, type: 'dropdown', options: [{ name: 'A1', color: 'blue' }, { name: 'A2', color: 'green' }, { name: 'B1', color: 'purple' }] }
       : { name, type: 'checkbox' });
   }
@@ -162,6 +168,20 @@ export async function startFlow({ port = 0, env = {} } = {}) {
       linkedAt: new Date('2026-10-20T09:00:01Z'),
     },
   ]);
+  // Captures for the tray and the result sheet: one read and matched, one
+  // the reader could not read. The photo is a drawn 1x1 PNG, not a form.
+  const storage = createLocalObjectStorage({ root: mkdtempSync(path.join(tmpdir(), 'flow-mobile-')), signingKey: Buffer.alloc(32, 5) });
+  const photo = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
+  const capture = async (key) => (await uploadCapture(db, storage, lab.id, { bytes: photo, contentType: 'image/png', idempotencyKey: key, baseUrl: 'http://127.0.0.1' })).capture;
+  const read = await capture('mobile-read');
+  await capture('mobile-problem');
+  const seen = (key, value, sure = 0.95) => ({ key, value, seen: value, sure });
+  await handle.pool.query(`UPDATE captures SET state = 'ready', problem = null, read = $2 WHERE id = $1`, [read.id, JSON.stringify({ fields: [
+    seen('case_number', '48200'), seen('practice', CLINICS[0]), seen('work', PRODUCTS[0][1]),
+    seen(`custom_${fields.Shade.id}`, 'A2'), seen('due_date', day(12), 0.6),
+  ] })]);
+  const { items: workJobs } = await workSystem().capabilities.listWork();
+  await matchCapture(db, storage, lab.id, read.id, { jobs: workJobs, baseUrl: 'http://127.0.0.1', now: new Date('2026-10-20T09:00:00Z') });
 
   // Every row as made on one fixed day, so a "made on" date never changes a
   // screenshot. Append-only records refuse the change and keep their own.
@@ -179,6 +199,7 @@ export async function startFlow({ port = 0, env = {} } = {}) {
     FROM (SELECT id, row_number() OVER (ORDER BY reference) AS n FROM invoices) o WHERE invoices.id = o.id`);
   await handle.pool.query(`UPDATE practice_members SET created_at = timestamptz '2026-10-20T09:00:00Z' + o.n * interval '1 second'
     FROM (SELECT id, row_number() OVER (ORDER BY email) AS n FROM practice_members) o WHERE practice_members.id = o.id`);
+  await handle.pool.query(`UPDATE captures SET created_at = timestamptz '2026-10-20T09:00:00Z' - (CASE idempotency_key WHEN 'mobile-read' THEN 0 ELSE 1 END) * interval '1 minute'`);
 
   const integrations = createRegistry({ log: quiet, env });
   integrations.register(workSystem());
@@ -189,7 +210,7 @@ export async function startFlow({ port = 0, env = {} } = {}) {
   await integrations.start(db);
   const settings = { mode: 'clerk', keys: { publishableKey: TEST_PUBLISHABLE_KEY, proxyUrl: null } };
   const personAuth = createPersonAuth({ db, clerk, ownerGoogleDomains: ['example.test'], log: quiet });
-  const app = createApp({ database: handle, auth: { settings, clerk, personAuth }, integrations, log: quiet,
+  const app = createApp({ database: handle, auth: { settings, clerk, personAuth }, integrations, log: quiet, storage,
     // Every project loads every page from one address at once.
     rateLimitPerMinute: 100_000, signInRateLimitPerMinute: 100_000, assetRateLimitPerMinute: 100_000,
     portalApiLimit: 100_000, portalJoinLimit: 100_000, portalMemberLimit: 100_000,

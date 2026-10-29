@@ -12,12 +12,15 @@ API: `server/api/invoicing.js`.
 
 ## The screens
 
-- **Price list** shows Flow's own codes only: code, name, price and tax, with
-  Active and Archived tabs and a search. It looks the same with no
+- **Price list** shows Flow's own codes only: code, name, price and tax. It
+  is laid out like Jobs and Invoices: the shared list head (Active and
+  Archived tabs, Group, Sort, Filter, saved views, the search icon, then
+  Reconcile, Settings and + New) over the list window. Group by Tax, Linked
+  or Differs; sort and filter on every field. It looks the same with no
   integration on. A row opens the code's dialog.
-- **Reconcile** shows only while an integration with a price list is on. Its
-  button on the Price list counts the records that need a person: each
-  record with no code, and each code that differs from a linked record.
+- **Reconcile** shows only while an integration with a price list is on: an
+  icon in the head. Its hover name counts the records that need a person:
+  each record with no code, and each code that differs from a linked record.
 - Reconcile has the two views of Xero › Import › Review:
   - **One at a time**: the record beside its likely Flow code, one fact per
     row, ✓ or ≠ between them. The invoice pager steps through them. Link,
@@ -72,10 +75,11 @@ new difference does. When the prices agree again, Flow closes the alert.
 
 ## The line price
 
-"Line price from" (the line mapping routine's `linePrice`) chooses the price
-on each mapped invoice line:
+"Invoice line price" in Price list settings (the head's settings icon; the
+line mapping routine's `linePrice`) chooses the price on each mapped invoice
+line:
 
-- **Work system amount** (default): the amount Seazona gave, as the earlier
+- **Job price** (default): the amount Seazona gave, as the earlier
   app did.
 - **Price list**: the price item's price.
 

@@ -81,7 +81,7 @@ function fakeAccounting() {
           invoices: invoiceIds.map((invoiceId) => {
             const outcome = fake.outcomes.get(invoiceId) ?? 'created';
             if (outcome === 'failed') {
-              const error = fake.errors.get(invoiceId) ?? { code: 'xero_contact_missing', message: 'No Xero contact is named "Example Practice".' };
+              const error = fake.errors.get(invoiceId) ?? { code: 'xero_contact_missing', message: 'No Xero contact is named "Example Practice".', short: 'Client not in Xero' };
               return { invoiceId, outcome, error };
             }
             if (outcome === 'not_tried') return { invoiceId, outcome, error: { code: 'xero_rate_limited', message: 'Wait.' } };
@@ -388,7 +388,7 @@ describe('ready, problem and send', { skip: skipWithoutDatabase }, () => {
     assert.equal(failed.sendError.code, 'xero_contact_missing');
     assert.equal(failed.sendError.message, 'No Xero contact is named "Example Practice".');
     views = await invoiceViews(handle.db, lab.id, { accounting: fake.adapter });
-    assert.deepEqual(views.problems.get(two.id).map((p) => p.code), ['xero_contact_missing']);
+    assert.deepEqual(views.problems.get(two.id).map((p) => [p.code, p.short]), [['xero_contact_missing', 'Client not in Xero']]);
 
     fake.outcomes.delete(two.id);
     fake.outcomes.delete(three.id);
@@ -524,7 +524,8 @@ describe('the send worker reports a refusal', { skip: skipWithoutDatabase }, () 
     assert.equal(failed.sendState, 'failed');
     assert.equal(failed.sendError.message, reason);
     const views = await invoiceViews(handle.db, lab.id, { accounting: fake.adapter });
-    assert.equal(views.problems.get(two.id)[0].message, reason);
+    // A refusal without its few words (stored before they existed) shows "Not sent".
+    assert.deepEqual([views.problems.get(two.id)[0].short, views.problems.get(two.id)[0].message], ['Not sent', reason]);
     assert.equal((await handle.db.select().from(invoices).where(eq(invoices.id, one.id)))[0].sendState, 'sent');
 
     fake.outcomes.delete(two.id);

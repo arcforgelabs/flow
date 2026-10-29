@@ -199,7 +199,9 @@ body:is([data-state="off"], [data-state="error"], [data-state="no-access"]) .fx-
 .fx-tip {
   position: fixed; top: 0; left: 0; z-index: 1000; max-width: 260px; padding: 4px 8px;
   border: 1px solid var(--fx-line); border-radius: var(--t-radius); background: var(--t-paper); color: var(--t-strong);
-  font: 500 12px/1.3 var(--t-body); pointer-events: none; white-space: nowrap;
+  font: 500 12px/1.3 var(--t-body); pointer-events: none;
+  /* A short name keeps one line; a long help text wraps inside the box. */
+  width: max-content; overflow-wrap: anywhere;
   box-shadow: var(--t-shadow), 0 4px 12px rgba(0, 0, 0, .12);
 }
 
@@ -382,7 +384,7 @@ a.fx-link:hover, a.fx-link:focus-visible { border-color: var(--t-strong); }
 
 /* One integration's page: hero, then the setup beside its facts. */
 .fx-int-page { display: grid; gap: 24px; }
-.fx-int-hero { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.fx-int-hero { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; min-width: 0; }
 .fx-int-hero .fx-title { min-width: 0; font-size: 28px; overflow-wrap: anywhere; }
 .fx-int-hero__actions { position: relative; display: flex; align-items: center; gap: 10px; margin-left: auto; }
 .fx-int-hero__actions .fx-progress { left: auto; right: 0; }
@@ -399,6 +401,9 @@ a.fx-link:hover, a.fx-link:focus-visible { border-color: var(--t-strong); }
 .fx-int-fold > summary::after { content: ''; width: 8px; height: 8px; margin-left: 2px; border: solid currentColor; border-width: 0 2px 2px 0; transform: rotate(-45deg); transition: transform 120ms var(--fx-ease); }
 .fx-int-fold[open] > summary::after { transform: rotate(45deg) translateY(-2px); }
 .fx-int-fold:not([open]) { gap: 0; }
+/* A fold inside a section (Settings, Advanced). */
+.fx-int-fold--sub { display: grid; gap: 14px; }
+.fx-int-fold--sub > summary { color: var(--t-dim); font: 600 14.5px/1.3 var(--t-body); }
 .fx-steps { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; counter-reset: step; }
 .fx-steps li { position: relative; padding-left: 38px; min-height: 26px; counter-increment: step; font-size: 14.5px; line-height: 1.55; }
 .fx-steps li::before {
@@ -561,7 +566,10 @@ a.fx-strong:hover { text-decoration: underline; }
 .fx-totals dd { margin: 0; text-align: right; font-family: var(--t-data, var(--t-body)); font-variant-numeric: tabular-nums; color: var(--t-strong); }
 .fx-totals__grand { padding-top: 8px; border-top: 1px solid var(--fx-line); font-size: 17px; font-weight: 700; color: var(--t-strong) !important; }
 .fx-doc__meta { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin: 0; padding: 20px; border-bottom: 1px solid var(--fx-line-soft); }
-.fx-doc__meta dd { display: grid; margin: 4px 0 0; color: var(--t-strong); font-weight: 600; }
+.fx-doc__meta dd { display: grid; margin: 4px 0 0; color: var(--t-strong); font-weight: 600; overflow-wrap: anywhere; }
+/* A long value stays in its column: text wraps, an email cuts with "…" (full value on hover). */
+.fx-doc__meta > div, .fx-doc__meta dd > * { min-width: 0; }
+.fx-doc__meta dd > .fx-dim { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width: 1320px) {
   .fx-invoice__grid { grid-template-columns: minmax(0, 1fr); }
   .fx-invoice__aside { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
@@ -747,7 +755,7 @@ a.fx-strong:hover { text-decoration: underline; }
 .fx-table__group-row .fx-board__sum { margin-left: 0; }
 /* The Jobs list's group head folds its rows (jobs.js, list): a click on the
    head or its chevron. */
-.fx-table--jobs .fx-table__group { cursor: pointer; }
+.fx-table__group { cursor: pointer; }
 .fx-table--jobs .fx-table__group td.fx-tick-cell { padding-right: 0; }
 .fx-table__fold { display: inline-flex; align-items: center; gap: 8px; min-width: 0; padding: 2px 4px 2px 0; border: 0; background: none; color: var(--t-dim); font: inherit; cursor: pointer; }
 .fx-table__fold > svg { flex: none; transition: transform .15s; }
@@ -1064,6 +1072,39 @@ th:hover > .fx-th-grip::after { background: var(--t-brd-hi); }
 .fx-task__activity li::after { content: ""; position: absolute; left: 5.5px; top: 16px; bottom: 0; width: 1px; background: var(--fx-line); }
 .fx-task__activity li:last-child::after { display: none; }
 .fx-task__activity time { display: block; margin-top: 1px; color: var(--t-mute); font-size: 11.5px; }
+/* Capture (server/ui/captures.js): the tray rows and the result sheet. The
+   sheet reuses the job panel (.fx-task), so a phone gets the same full page. */
+.fx-captures { margin: 0; padding: 0; list-style: none; }
+.fx-captures__row {
+  display: flex; align-items: center; gap: 12px; width: 100%; min-height: 56px; padding: 8px 16px;
+  border: 0; border-bottom: 1px solid var(--fx-line-soft); background: transparent; color: var(--t-text);
+  font: inherit; text-align: left; cursor: pointer;
+}
+.fx-captures__row:hover:not(:disabled) { background: var(--t-accent-bg); }
+.fx-captures__row:focus-visible { box-shadow: var(--fx-focus); }
+.fx-captures__row:disabled { cursor: default; }
+.fx-captures__title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--t-strong); }
+.fx-dialog.fx-capture { width: min(720px, calc(100vw - 32px)); }
+.fx-capture .fx-task__grid { grid-template-columns: minmax(0, 1fr); }
+.fx-capture__photo { display: block; width: 100%; max-height: 32vh; object-fit: contain; border-radius: var(--t-radius); background: var(--t-bg); }
+.fx-capture__changes { display: grid; margin-top: 12px; }
+.fx-capture__change {
+  display: grid; grid-template-columns: minmax(80px, 1fr) minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 8px;
+  min-height: 44px; padding: 4px 8px; border-bottom: 1px solid var(--fx-line-soft);
+}
+.fx-capture__field { color: var(--t-dim); }
+.fx-capture__where { display: block; font-size: 12px; color: var(--t-dim); }
+.fx-capture__from { color: var(--t-dim); text-decoration: line-through; overflow-wrap: anywhere; }
+.fx-capture__arrow { color: var(--t-dim); }
+.fx-capture__to { color: var(--t-strong); font-weight: 600; overflow-wrap: anywhere; }
+.fx-capture__change[data-unsure="true"] { background: var(--t-warn-bg); }
+.fx-capture__change[data-unsure="true"] .fx-capture__to { color: var(--t-warn); }
+/* Phones and tablets: Capture and the sheet's controls are thumb sized. */
+@media (max-width: 1023px) {
+  .fx-dialog.fx-capture .fx-task__actions .fx-btn { min-height: 44px; }
+  .fx-dialog.fx-capture .fx-task__tools .fx-btn--icon { width: 44px; height: 44px; }
+}
+
 /* A record's phone bar and foot. Hidden above a phone, so the desk panel and
    the invoice header stay as they are. */
 .fx-record, .fx-record__foot { display: none; }
@@ -1246,6 +1287,9 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
 .fx-setting__head { display: flex; align-items: center; gap: 2px; min-width: 0; }
 .fx-setting__head .fx-help { margin: -4px 0; border: 0; background: none; cursor: pointer; }
 .fx-setting__hint { margin: 0; color: var(--t-dim); font-size: 13px; line-height: 1.45; }
+.fx-history__status { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.fx-history__day { width: 160px; flex: none; }
+.fx-history__bar { width: 100%; height: 8px; accent-color: var(--t-brand); }
 .fx-setting[data-tone="danger"] .fx-setting__hint { color: var(--t-danger); }
 .fx-setting__control { display: flex; align-items: center; justify-content: flex-end; gap: 10px; min-width: 0; }
 .fx-setting__control > .fx-input, .fx-setting__control > .fx-select, .fx-setting__stack { width: 320px; max-width: 100%; }
@@ -1457,6 +1501,8 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
   }
   /* Line 2 is 20px; its cells centre on it. */
   [data-phone-layout="two-line"] .fx-table td[data-phone-slot="meta"] { display: flex; align-items: center; overflow: visible; }
+  /* Plain text on line 2 ends in "…" instead of running under the next cell. */
+  [data-phone-layout="two-line"] .fx-table td[data-phone-slot="meta"]:not(:has(*)) { display: block; overflow: hidden; line-height: 20px; }
   [data-phone-layout="two-line"] td.fx-c-stage,
   [data-phone-layout="two-line"] td.fx-c-status { order: 4; color: inherit; }
   [data-phone-layout="two-line"] .fx-stage { padding-block: 0; line-height: 16px; }
@@ -1506,20 +1552,9 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
 .fx-set__title { margin: 8px 0 4px; color: var(--t-strong); font: 600 15px/1.3 var(--t-body); }
 .fx-set__hint { color: var(--t-dim); font-size: 13px; line-height: 1.35; }
 .fx-set + .fx-set { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--fx-line); }
-/* Price list (price-list.js): one plain table of Flow's codes. */
-.fx-price { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
-.fx-price__head { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 8px 16px; }
-.fx-price__head .fx-search { margin: 0 0 6px; width: 260px; }
-@media (max-width: 639px) {
-  .fx-price__head .fx-search { width: 100%; }
-  .fx-price__settings .fx-select { min-height: 44px; }
-}
-.fx-price__table th { position: sticky; top: 0; z-index: 1; }
-.fx-price__table td { padding-top: 9px; padding-bottom: 9px; }
+/* Price list (price-list.js): the codes' table, in the list window. */
 .fx-price__table td.fx-num, .fx-price__table th.fx-num { text-align: right; white-space: nowrap; }
 .fx-price__code { width: 1%; white-space: nowrap; font-family: var(--t-data); font-size: 13px; font-weight: 600; color: var(--t-strong); }
-.fx-price__settings { margin-top: 12px; }
-.fx-ph__actions .fx-tabs__count[data-tone="warn"], .fx-btn .fx-tabs__count[data-tone="warn"] { margin-left: 8px; background: var(--t-warn-bg); color: var(--t-warn); }
 /* Price list › Reconcile (price-reconcile.js): Xero › Import's two views. */
 .fx-prc .fx-pager { margin-bottom: 4px; }
 .fx-prc__finder { display: flex; flex-direction: column; gap: 4px; }
@@ -1559,6 +1594,40 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
 .fx-cf__choice[aria-checked="true"] { background: var(--fx-hover); color: var(--t-strong); }
 .fx-cf__choice > :first-child { justify-self: start; }
 .fx-cf__choice .fx-lucide { width: 15px; height: 15px; color: var(--t-accent); }
+/* Icon picker (kit.js iconPicker): the button shows the icon; the panel is a
+   search box over a grid of icons. A phone gets a sheet at the foot. */
+.fx-icons { display: inline-flex; }
+.fx-icons__button {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 8px 0 10px;
+  border: 1px solid var(--t-control); border-radius: var(--t-radius); background: var(--t-paper); color: var(--t-strong); cursor: pointer;
+}
+.fx-icons__button > .fx-lucide { width: 18px; height: 18px; }
+.fx-icons__button > .fx-lucide + .fx-lucide { width: 14px; height: 14px; color: var(--t-dim); }
+.fx-icons__button:hover { background: var(--fx-hover); }
+.fx-icons__button:focus-visible { box-shadow: var(--fx-focus); outline: none; }
+.fx-pop.fx-icons__panel { width: 316px; max-width: calc(100vw - 16px); padding: 8px; overflow: hidden; }
+.fx-icons__panel:popover-open { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: 8px; }
+.fx-icons__panel .fx-input { min-height: 32px; font-size: 13px; }
+.fx-icons__grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(36px, 1fr)); gap: 2px; max-height: 248px; overflow-y: auto; }
+.fx-icons__grid > p { grid-column: 1 / -1; margin: 8px 4px; }
+.fx-icons__cell {
+  display: inline-grid; place-items: center; aspect-ratio: 1; min-width: 36px; border: 0; border-radius: var(--t-radius);
+  background: none; color: var(--t-text); cursor: pointer;
+}
+.fx-icons__cell .fx-lucide { width: 18px; height: 18px; }
+.fx-icons__cell:hover, .fx-icons__cell:focus-visible { background: var(--fx-hover); color: var(--t-strong); outline: none; }
+.fx-icons__cell[aria-pressed="true"] { background: var(--t-accent-bg); color: var(--t-accent); box-shadow: inset 0 0 0 1px var(--t-accent-brd, var(--t-accent)); }
+.fx-icons__foot { display: flex; justify-content: flex-end; }
+.fx-icons__foot > [hidden] { display: none; }
+.fx-pop.fx-icons__panel[data-phone-layout="sheet"] {
+  inset: auto 0 0 0; width: 100%; max-width: 100%; max-height: min(70vh, 100%); padding: 12px 12px max(12px, env(safe-area-inset-bottom));
+  border-radius: var(--t-radius-lg) var(--t-radius-lg) 0 0;
+}
+.fx-icons__panel[data-phone-layout="sheet"] .fx-input { min-height: 44px; font-size: 16px; }
+.fx-icons__panel[data-phone-layout="sheet"] .fx-icons__grid { grid-template-columns: repeat(auto-fill, minmax(44px, 1fr)); max-height: none; }
+.fx-icons__panel[data-phone-layout="sheet"] .fx-icons__cell { min-width: 44px; }
+.fx-icons__panel[data-phone-layout="sheet"] .fx-icons__cell .fx-lucide { width: 22px; height: 22px; }
+.fx-icons__panel[data-phone-layout="sheet"] .fx-icons__foot .fx-btn { min-height: 44px; }
 /* Custom fields manager (custom-fields.js), like ClickUp's Custom Field
    Manager: a toolbar, then one table of type groups that fold. */
 .fx-lucide { display: inline-block; flex: none; width: 16px; height: 16px; background: currentColor; -webkit-mask: var(--icon) center / contain no-repeat; mask: var(--icon) center / contain no-repeat; }
@@ -1614,7 +1683,6 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
 .fx-cfm__create .fx-lucide { width: 14px; height: 14px; }
 .fx-cfm__empty { margin: 0; padding: 20px 16px; color: var(--t-dim); }
 .fx-cfm > .fx-notice { margin: 12px 16px 0; }
-.fx-cfm__foot { display: flex; justify-content: space-between; gap: 12px; padding: 12px 16px; border-top: 1px solid var(--fx-line-soft); color: var(--t-dim); font-size: 13px; }
 .fx-pop__item:disabled { opacity: .5; cursor: default; }
 .fx-pop__item[data-tone="danger"], .fx-pop__item[data-tone="danger"] .fx-pop__tick { color: var(--t-danger); }
 .fx-pop__item .fx-lucide { width: 15px; height: 15px; }
@@ -1691,6 +1759,7 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
   .fx-cfm__head, .fx-cfm__row { padding-left: 16px; }
   .fx-cfm__create { padding-left: 16px; }
   .fx-cfm__search { flex: 1 1 100%; width: auto; }
+  .fx-cfm__bar :is(.fx-cfm__search, .fx-cfm__tool, .fx-btn) { height: auto; min-height: 44px; }
   .fx-cfm__edit { display: none !important; }
   /* Custom fields uses the same phone slots as a column list: name and the
      menu on line 1, up to three facts on line 2, 56px. */
@@ -1714,6 +1783,7 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
 .fx-rule__footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 8px; }
 .fx-dialog:has(.fx-rule__dialog) { width: min(680px, calc(100vw - 32px)); }
 .fx-rule__dialog .fx-btn--sm { justify-self: start; }
+.fx-rule__name { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 12px; }
 .fx-rule__conditions { display: grid; gap: 8px; }
 .fx-rule__condition { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1.4fr) auto; gap: 8px; align-items: start; }
 .fx-rule__condition + .fx-rule__condition { padding-top: 8px; border-top: 1px solid var(--fx-line); }
@@ -1830,10 +1900,13 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
 .fx-listhead > .fx-toolbar > .fx-tabs button { padding-block: 9px; }
 /* Every control in the toolbar is one height (--fx-control-h). Under a
    tab line, the controls keep 8px clear of the line; only the tabs sit on it. */
+/* A finger needs 44px: on a phone or tablet every list's toolbar controls
+   are that tall (the ListHead card's touch rule). */
+@media (max-width: 1023px) { .fx-listhead { --fx-control-h: 44px; } }
 .fx-listhead .fx-toolbar :is(.fx-btn, .fx-chip, .fx-views__add, .fx-views__tab) { min-height: var(--fx-control-h); }
 .fx-listhead .fx-toolbar .fx-btn:not(.fx-btn--sm) { padding-block: 0; font-size: 14px; }
 .fx-listhead .fx-toolbar :is(.fx-btn, .fx-chip) { height: var(--fx-control-h); }
-.fx-listhead .fx-toolbar .fx-find__button { width: var(--fx-control-h); height: var(--fx-control-h); }
+.fx-listhead .fx-toolbar :is(.fx-find__button, .fx-btn--icon) { width: var(--fx-control-h); height: var(--fx-control-h); }
 .fx-listhead .fx-toolbar .fx-find__input { height: var(--fx-control-h); }
 .fx-listhead .fx-toolbar .fx-seg { padding: 2px; }
 .fx-listhead .fx-toolbar .fx-seg__item { min-height: calc(var(--fx-control-h) - 4px); }
@@ -1846,6 +1919,9 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
   .fx-listhead[data-sticky] { position: static; margin-top: 0; padding-top: 0; }
   .fx-listhead__edge + .fx-listhead[data-sticky] { margin-top: -8px; }
   .fx-alerts { margin-bottom: 4px; }
+  /* The tools have their own row under the tabs: no gap under them, so the
+     44px controls still leave seven rows on a small phone. */
+  .fx-listhead > .fx-toolbar:not(.fx-toolbar--plain) > :not(.fx-tabs) { margin-bottom: 0; }
 }
 
 /* The bulk action bar (bulk-bar.js): floats at the foot while rows are

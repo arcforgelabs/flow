@@ -1,0 +1,6 @@
+<!-- @dsCard group="Actions" height=90 -->
+<div class="fds-row" id="root"></div>
+<script>
+const { captureButton, ui } = window.FlowDesignSystem;
+document.getElementById('root').append(...captureButton(ui()).nodes, ...captureButton(ui(), { icon: true }).nodes);
+</script>

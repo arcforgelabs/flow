@@ -1,0 +1,17 @@
+{
+  "component": "captureButton",
+  "direction": "button",
+  "phone": {
+    "layout": "camera"
+  },
+  "tablet": {
+    "layout": "camera"
+  },
+  "desk": {
+    "layout": "files"
+  },
+  "touch": 44,
+  "pageOverflow": "none",
+  "screens": [],
+  "mark": false
+}
