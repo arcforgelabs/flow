@@ -94,7 +94,7 @@ function countedClient(client, budget) {
       if (budget.left <= 0) throw new SweepBudgetSpent();
       budget.left -= 1;
       budget.spent += 1;
-      return client.get(path, query);
+      return client.get(path, query, { priority: -1 });
     },
   };
 }

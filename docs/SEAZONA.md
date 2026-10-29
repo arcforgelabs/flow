@@ -93,6 +93,7 @@ Seazona publishes a limit of 60 requests a minute for each API client. Flow
 stays at 30, and counts every process that shares the database as one client,
 because Seazona does (`server/integrations/seazona/governor.js`):
 
+- Waiting requests are ordered by priority, then arrival, in `seazona_api_waiters`.
 - A request waits until fewer than 30 requests went out in the last minute,
   and at least 2 seconds have passed since the last one.
 - A 429 answer with `Retry-After` holds every process for that long (at most
@@ -394,6 +395,46 @@ what is left. `POST /api/seazona/history/backfill/stop` ends it early.
 `GET /api/seazona/history` shows `backfill`: the next day, days done, the
 latest order day reached, orders read and orders still to read.
 
+### Read on open (issue #386, first slice)
+
+Open **Integrations › Seazona › History › Jobs** (`/jobs?history=include`)
+and open a held history job, or open its linked Flow invoice. Flow shows the saved copy at once. If its last successful
+Seazona check is older than two hours, or has no recorded successful check,
+Flow reads that one order through `readWorkItem` with `purpose: inspect`.
+The ordinary Jobs board still leaves held history out.
+
+The shared SyncStatus row shows Checking, then Updated with the successful
+check's completion time. An unchanged response advances `last_checked_at`
+without moving `last_changed_at`. A failed or blocked read keeps the saved
+copy and the last successful time, and explains that the check is unavailable.
+An order that answers 404 keeps its lines, is marked Deleted in Seazona and
+stays held. Flow never changes an issued invoice or releases a history hold
+as part of this read.
+
+Concurrent opens share a persisted claim. A failed attempt waits one minute
+before another open retries; a dead worker's claim expires after fifteen
+minutes by default, or longer when configured waits and retries need it. The inspection updates history, not the live billing feed. The
+ledger applies its confirmed snapshot without running matching or drafting.
+A later pipeline pass still leaves the job held and makes no draft.
+
+Waiting admissions use the shared PostgreSQL governor queue. A person's
+read takes the next free slot before queued background work. An already
+admitted request continues. Sweep requests have the lowest priority. Every
+call and retry still uses the same spacing, cooldown and call guard, and
+each person can make at most five inspection calls per rolling minute across
+workers. The request telemetry stores a hash of the person's Flow id for
+this cap. Waiting admissions expire if their process stops.
+
+New API imports record their successful check separately from their content
+time. An uploaded file does not establish API freshness. Existing history
+rows have no new successful-check time until they are read.
+
+This slice leaves `orders_recent`, `orders_active` and `invoices` on their
+existing schedules. The invoice-change signal, history-day fallback sweep
+and list signatures, cold/fresh/hot lifecycle, pinning and persisted activity
+remain later work in #386. The sweep's existing 10-call run and 100-call day
+budgets stay as they are. This change does not start a backfill.
+
 ### CSV upload
 
 The code is in `server/integrations/seazona/history/`; the routes are under
@@ -623,6 +664,7 @@ installation-wide.
 | --- | --- |
 | `seazona_api_governor` | For each API client: when the next request may go, any 429 cooldown, the circuit, and a halt that waits for a person |
 | `seazona_api_requests` | One row per request sent: the rate limit counts these, and they are the telemetry |
+| `seazona_api_waiters` | Expiring waiting admissions, ordered by priority and arrival across workers |
 | `seazona_orders` | Orders: status, lines, totals, the deleted-in-Seazona mark |
 | `seazona_invoices` | Seazona invoices, by invoice number, with lines and totals |
 | `seazona_clients` | Practices: account, contact, address, dentists |
@@ -633,7 +675,7 @@ installation-wide.
 | `seazona_history_batches` | Each uploaded CSV export: its columns, status and counts |
 | `seazona_history_rows` | Each row of an upload as Flow read it, and its problems |
 | `seazona_history_batch_jobs` | Each job of an upload: what reconciliation found and what a person decided |
-| `seazona_history_jobs` | Flow's own record of past work from applied uploads |
+| `seazona_history_jobs` | Flow's past work from imports, with separate content and successful-check times, inspection claims and deletion marks |
 | `seazona_sweep_findings` | What the sweep found that the lanes missed, per record and kind, and the `missing` marks (issue #126) |
 | `seazona_stage_moves` | The latest stage move per order that a person must make in Seazona, and how it settled |
 | `seazona_person_settings` | Each person's own Seazona choices, such as "Ask before stage moves" |

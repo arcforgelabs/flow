@@ -43,14 +43,14 @@ export function syncStatus() {
   };
   const draw = (state, button = null) => {
     current = state;
-    const { phase = 'not-started', count, unit = 'jobs', from, through, at, cause } = state;
+    const { phase = 'not-started', count, unit = 'jobs', from, through, at, cause, checkedAt } = state;
     element.dataset.phase = phase;
     const running = phase === 'running';
     dots.hidden = !running || count > 0;
     word.setAttribute('aria-hidden', String(running && !count));
     status.setAttribute('aria-label', running && !count ? 'Reading' : '');
-    word.textContent = running ? (count > 0 ? `Reading${at ? ` ${date(at)}` : ''}` : 'Reading') : ({ waiting: 'Waiting', stopped: 'Stopped', failed: 'Failed', done: 'Done', loading: 'Checking…' }[phase] ?? 'Not started');
-    result.textContent = `${count != null && (count > 0 || !running) ? ` · ${count.toLocaleString('en-AU')} ${unit}` : ''}${cause ? ` · ${cause}` : ''}${phase === 'stopped' && at ? ` · ${date(at)}` : ''}`;
+    word.textContent = running ? (count > 0 ? `Reading${at ? ` ${date(at)}` : ''}` : 'Reading') : ({ waiting: 'Waiting', stopped: 'Stopped', failed: 'Failed', done: 'Done', loading: 'Checking…', updated: 'Updated', unavailable: 'Unavailable' }[phase] ?? 'Not started');
+    result.textContent = `${checkedAt ? `${phase === 'unavailable' ? ' · Last updated' : ''} ${new Date(checkedAt).toLocaleString('en-AU', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}` : ''}${count != null && (count > 0 || !running) ? ` · ${count.toLocaleString('en-AU')} ${unit}` : ''}${cause ? ` · ${cause}` : ''}${phase === 'stopped' && at ? ` · ${date(at)}` : ''}`;
     if (action.firstChild !== button) action.replaceChildren(...(button ? [button] : []));
     const total = Date.parse(through) - Date.parse(from) + DAY;
     track.hidden = !(count > 0 && total > 0);
@@ -64,4 +64,29 @@ export function syncStatus() {
     }, 1000);
   };
   return { element, draw, dispose: () => clearInterval(timer) };
+}
+
+// The saved job is already visible. Only a held history job asks for a read.
+export function historyStatus(ui, job, { refresh = null, done = () => {} } = {}) {
+  if (!job?.historyHeld && !(job?.holdState === 'held' && job?.holdReason === 'history_import')) return null;
+  const status = syncStatus();
+  const draw = result => status.draw({ phase: ['read', 'fresh'].includes(result.state) ? 'updated'
+    : result.state === 'waiting' ? 'loading' : 'unavailable',
+    checkedAt: result.checkedAt, cause: [result.reason, result.deleted ? 'Deleted in Seazona' : null].filter(Boolean).join(' · ') });
+  if (refresh) { draw(refresh); return status.element; }
+  status.draw({ phase: 'loading' });
+  const read = async () => {
+    if (!status.element.isConnected) return;
+    try {
+      const { refresh: result } = await ui.flow(`/api/invoicing/jobs/${job.id}/open`, { method: 'POST', body: '{}' });
+      if (!status.element.isConnected) return;
+      draw(result);
+      if (result.state === 'waiting') setTimeout(read, 1000);
+      else if (['read', 'fresh'].includes(result.state)) await done(result);
+    } catch {
+      if (status.element.isConnected) status.draw({ phase: 'unavailable', cause: 'Could not check. Try opening the job again.' });
+    }
+  };
+  queueMicrotask(read);
+  return status.element;
 }

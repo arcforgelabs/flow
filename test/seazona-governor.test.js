@@ -51,6 +51,46 @@ describe('Seazona rate governor', { skip: skipWithoutDatabase }, () => {
     assert.ok(times[3] - times[0] > 60_000, `fourth admitted after ${times[3] - times[0]} ms`);
   });
 
+  test('a person takes the next slot before a queued sweep across client instances', async () => {
+    const sleepers = [];
+    let onSleep;
+    const sleepFn = () => new Promise(resolve => { sleepers.push(resolve); onSleep?.(); });
+    const sleeping = () => new Promise(resolve => { onSleep = () => { onSleep = null; resolve(); }; });
+    const sent = [];
+    const settings = resolveSeazonaSettings({ SEAZONA_MODE: 'replay', SEAZONA_REPLAY_FILE: 'unused.json' });
+    const client = () => createSeazonaClient({ settings, governor: governor({ sleepFn }), now: clock.now,
+      fetchImpl: async url => { sent.push(new URL(url).pathname); onSleep?.(); return new Response('{}'); } });
+    const background = client();
+    const person = client();
+    await background.get('orders/executing');
+    let nextSleep = sleeping();
+    const sweep = background.get('orders/sweep', {}, { priority: -1 });
+    await nextSleep;
+    nextSleep = sleeping();
+    const open = person.get('orders/person', {}, { priority: 1, personKey: 'person-a' });
+    await nextSleep;
+    // Let the background worker wake first. The shared queue must still give
+    // the person the slot; local Promise order cannot provide that guarantee.
+    clock.advance(2000);
+    nextSleep = sleeping();
+    sleepers.shift()();
+    await nextSleep;
+    assert.deepEqual(sent, ['/v1/orders/executing'], 'the waiting sweep cannot take the person’s slot');
+    sleepers.shift()();
+    await open;
+    clock.advance(2000);
+    sleepers.shift()();
+    await sweep;
+    assert.deepEqual(sent, ['/v1/orders/executing', '/v1/orders/person', '/v1/orders/sweep']);
+    assert.equal((await governor().status()).lastMinute, 3);
+    // A crashed worker's expired queue row must not block the next process.
+    await db.execute(sql`insert into seazona_api_waiters (client_key, priority, expires_at)
+      values ('client-a', 1, ${new Date(clock.now() - 1)})`);
+    clock.advance(2000);
+    await governor().reserve();
+    assert.equal((await db.execute(sql`select count(*)::int as n from seazona_api_waiters`)).rows[0].n, 0);
+  });
+
   test('a limit above 30 a minute is lowered to 30', () => {
     assert.equal(governor({ requestsPerMinute: 60 }).limitPerMinute, 30);
   });

@@ -57,6 +57,13 @@
       "when": 1792472936253,
       "tag": "0007_stage_moves",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1793256993426,
+      "tag": "0008_history_read_on_open",
+      "breakpoints": true
     }
   ]
 }

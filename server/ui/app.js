@@ -1002,7 +1002,8 @@ function seazonaHistorySection() {
   const sync = syncStatus();
   const fromRow = settingRow({ label: 'Read from', help: 'Reads past Seazona orders into Flow. Orders Flow read before are skipped. Each job waits on hold and never drafts by itself.', control: from });
   const section = h('section', { class: 'fx-set fx-int-section fx-card fx-history' },
-    h('h2', { class: 'fx-set__title' }, 'History'), fromRow, sync.element);
+    h('div', { class: 'fx-int-bar' }, h('h2', { class: 'fx-set__title' }, 'History'),
+      h('a', { class: 'fx-btn fx-btn--ghost fx-btn--sm', href: '/jobs?history=include', onclick: navigate }, 'Jobs')), fromRow, sync.element);
   let timer;
   let pending = false;
   let run = null;

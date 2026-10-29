@@ -20,7 +20,7 @@ import {
   saveCustomerBilling, saveInvoicingSettings, sendModeFor, sendModeSummary,
 } from '../core/invoicing-rules.js';
 import { boardJobs, describeObligations } from '../core/job-board.js';
-import { readBeforeAct } from '../core/read-before-act.js';
+import { readBeforeAct, readOnOpen } from '../core/read-before-act.js';
 import { invoiceMatchDetail, jobMatchDetail, listReconcile } from '../core/job-match.js';
 import { jobReference } from '../core/references.js';
 import {
@@ -270,7 +270,7 @@ export async function resolveOrganisation(db, raw) {
 }
 
 const jobOf = (o) => (o ? {
-  id: o.id, sourceSystem: o.sourceSystem, sourceJobRef: o.sourceJobRef, sourceInvoiceRef: o.sourceInvoiceRef, caseRef: o.caseRef, practitioner: o.practitioner, shippedOn: o.shippedOn,
+  id: o.id, ...(isHistoryHeld(o) ? { historyHeld: true } : {}), sourceSystem: o.sourceSystem, sourceJobRef: o.sourceJobRef, sourceInvoiceRef: o.sourceInvoiceRef, caseRef: o.caseRef, practitioner: o.practitioner, shippedOn: o.shippedOn,
 } : null);
 
 // A job with its work system's name and its link in that system's web app
@@ -732,9 +732,22 @@ export function createInvoicingRouter({
   router.get('/board', ...signedIn, handle(log, async (req, res) => {
     const organisationId = await organisationOf(req);
     const { jobs, statuses } = await boardJobs(db, organisationId, {
-      work: work(), accounting: accounting(), live: Boolean(liveCheckFor(organisationId)), log,
+      work: work(), accounting: accounting(), live: Boolean(liveCheckFor(organisationId)), log, history: req.query.history === 'include',
     });
     res.json({ ok: true, jobs, statuses, accountingName: accounting()?.name ?? null });
+  }));
+
+  // The saved copy is already on screen. Only held history can read on open.
+  router.post('/jobs/:id/open', ...signedIn, handle(log, async (req, res) => {
+    const organisationId = await organisationOf(req);
+    const id = pathId(req.params.id, 'job');
+    const [obligation] = await db.select().from(billingObligations).where(and(
+      eq(billingObligations.organisationId, organisationId), eq(billingObligations.id, id),
+    ));
+    if (!obligation) throw new FlowError('not_found', 'job not found');
+    const source = work().find(a => a.id === obligation.sourceSystem) ?? null;
+    const refresh = await readOnOpen(db, organisationId, obligation, { work: source, personId: req.person.id });
+    res.json({ ok: true, refresh });
   }));
 
   router.post('/jobs/:id/draft', ...manager, act('draftJob', (req) => req.params.id), handle(log, async (req, res) => {

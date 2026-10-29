@@ -2,6 +2,7 @@ import { and, eq } from 'drizzle-orm';
 import { billingObligations } from '../db/schema.js';
 import { FlowError } from './errors.js';
 import { observeJob, observeWithdrawn } from './ledger.js';
+import { HISTORY_ACTOR, isHistoryHeld } from './history.js';
 import { matchJobs, workJobMaker } from './pipeline.js';
 
 // Read before act (issue #141). Flow drafts and sends from its own copy of
@@ -65,6 +66,28 @@ export async function readBeforeAct(db, organisationId, obligations, { work, now
     }
   }
   return outcomes;
+}
+
+// Open a held history job. Apply even a cached success: a previous worker
+// can have stored the source copy then stopped before updating the ledger.
+export async function readOnOpen(db, organisationId, obligation, { work, personId }) {
+  if (!isHistoryHeld(obligation)) return { state: 'skipped' };
+  if (typeof work?.capabilities?.readWorkItem !== 'function') {
+    return { state: 'unavailable', reason: 'The work system is disconnected. Check Integrations.' };
+  }
+  const answer = await work.capabilities.readWorkItem({ sourceJobRef: obligation.sourceJobRef, purpose: 'inspect', personId });
+  if (['read', 'fresh'].includes(answer?.state) && answer.item) {
+    const toJob = await workJobMaker(db, organisationId, work);
+    const job = toJob(answer.item);
+    await db.transaction(async tx => {
+      const [current] = await tx.select().from(billingObligations).where(and(
+        eq(billingObligations.organisationId, organisationId), eq(billingObligations.id, obligation.id),
+      )).for('update');
+      if (isHistoryHeld(current)) await observeJob(tx, organisationId, { ...job, contactId: job.contactId ?? current.contactId, actor: HISTORY_ACTOR });
+    });
+  }
+  return { state: answer?.state ?? 'unavailable', checkedAt: answer?.checkedAt ?? null,
+    deleted: answer?.deleted ?? false, reason: answer?.reason };
 }
 
 // True when the job's report is old and its work system can read it now.

@@ -35,6 +35,7 @@ export const seazonaApiRequests = pgTable('seazona_api_requests', {
   id: bigserial('id', { mode: 'number' }).primaryKey(),
   clientKey: text('client_key').notNull(),
   workflow: text('workflow').notNull(),
+  personKey: text('person_key'),
   admittedAt: at('admitted_at').notNull(),
   resource: text('resource'),
   requestPath: text('request_path'),
@@ -45,6 +46,14 @@ export const seazonaApiRequests = pgTable('seazona_api_requests', {
 }, (t) => [
   index('seazona_api_requests_window').on(t.clientKey, t.admittedAt),
 ]);
+
+// Only waiting admissions live here. Expiry releases a crashed process's place.
+export const seazonaApiWaiters = pgTable('seazona_api_waiters', {
+  id: bigserial('id', { mode: 'number' }).primaryKey(),
+  clientKey: text('client_key').notNull(),
+  priority: integer('priority').notNull().default(0),
+  expiresAt: at('expires_at').notNull(),
+}, (t) => [index('seazona_api_waiters_queue').on(t.clientKey, t.priority, t.id)]);
 
 // The mirror. Each row is what Seazona said at the last successful read,
 // reduced to what billing needs: no clinical notes, no files, and no patient
@@ -269,6 +278,10 @@ export const seazonaHistoryJobs = pgTable('seazona_history_jobs', {
   batchId: bigint('batch_id', { mode: 'number' }).notNull(),
   firstBatchId: bigint('first_batch_id', { mode: 'number' }).notNull(),
   firstImportedAt: at('first_imported_at').notNull(),
+  lastCheckedAt: at('last_checked_at'),
+  lastAttemptAt: at('last_attempt_at'),
+  lastReadError: text('last_read_error'),
+  deletedInSourceAt: at('deleted_in_source_at'),
   lastChangedAt: at('last_changed_at').notNull(),
 }, (t) => [
   index('seazona_history_jobs_invoice').on(t.invoiceNumber),

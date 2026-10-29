@@ -12,6 +12,7 @@
 // shows what to do there and the card waits in its new lane. On a phone a
 // long press opens Move to. With a keyboard, the job's panel has the same moves.
 
+import { historyStatus } from '/assets/ui/sync-status.js';
 import { bulkBar } from '/assets/ui/bulk-bar.js';
 import { captureButton } from '/assets/ui/captures.js';
 import { columnTable, dateCell, fieldColumn, groupHead, personCell, rowCells, viewSaver } from '/assets/ui/columns.js';
@@ -326,7 +327,7 @@ export async function renderJobs(main, ui) {
     try {
       // Custom fields are extra: the board still shows without them.
       const [body, context, fields, values] = await Promise.all([
-        flow('/api/invoicing/board'), flow('/api/invoicing/context'),
+        flow(`/api/invoicing/board${new URLSearchParams(location.search).get('history') === 'include' ? '?history=include' : ''}`), flow('/api/invoicing/context'),
         flow('/api/custom-fields').catch(() => null), flow('/api/custom-fields/values').catch(() => null),
       ]);
       state.jobs = body.jobs;
@@ -1117,7 +1118,7 @@ export async function renderJobs(main, ui) {
   // (or scrolls to the invoice choice). The job's custom fields can be
   // changed here (in Flow only), and its stage moved (a hand-off to the
   // work system).
-  function openJob(job, { atFix = false } = {}) {
+  function openJob(job, { atFix = false, refresh = null } = {}) {
     const o = job.obligation;
     const stage = invoiceStage(o);
     const found = problemsOf(job);
@@ -1293,6 +1294,12 @@ export async function renderJobs(main, ui) {
             h('button', { class: 'fx-btn fx-btn--ghost fx-btn--icon', type: 'button', 'aria-label': 'Close', title: 'Close', onclick: close }, '✕'))),
         h('h2', { class: 'fx-task__title' }, clientOf(job)),
         h('div', { class: 'fx-task__stage' }, stagePill(status), fixChips),
+        historyStatus(ui, o, { refresh, done: async result => {
+          await load();
+          if (!element.isConnected) return;
+          const updated = state.jobs.find(j => j.sourceSystem === job.sourceSystem && j.sourceJobRef === job.sourceJobRef);
+          if (updated) { close(); openJob(updated, { atFix, refresh: result }); }
+        } }),
         h('dl', { class: 'fx-task__fields' },
           field('Practitioner', job.practitioner),
           field(job.dueOn ? 'Due' : 'Ordered', job.dueOn ? fullDate(job.dueOn) : job.orderedOn ? fullDate(job.orderedOn) : null, late ? { class: 'fx-task__late' } : {}),

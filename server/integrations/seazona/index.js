@@ -184,7 +184,8 @@ export function createSeazonaAdapter({ env = null, fetchImpl = null, now = Date.
       // Read before act (issue #141): reads one order from Seazona now, and
       // answers it as the feed would (act.js). The only capability here that
       // calls Seazona on a person's or an automation's behalf.
-      async readWorkItem({ sourceJobRef }) {
+      async readWorkItem({ sourceJobRef, purpose, personId }) {
+        if (purpose === 'inspect') return actReader.inspect(current(), sourceJobRef, personId);
         return actReader.read(current(), sourceJobRef);
       },
 

@@ -77,12 +77,20 @@ const ledgerLines = (lines) => (lines ?? []).map((l) => ({
   code: l.itemCode ?? null, description: l.description, amountCents: l.lineAmountCents ?? null, mapped: Boolean(l.priceItemId),
 }));
 
+function ledgerBoardJob(o) {
+  return {
+    sourceSystem: o.sourceSystem, sourceJobRef: o.sourceJobRef, caseRef: o.caseRef, status: o.sourceStatus?.trim() || null,
+    clientName: o.contactName, workClientName: null, practitioner: o.practitioner, patient: null, department: null,
+    orderedOn: null, dueOn: null, jobDate: o.jobDate, shippedOn: o.shippedOn,
+    totalCents: o.totalCents, lines: ledgerLines(o.lines), obligation: o,
+  };
+}
+
 // Answers { jobs, statuses }. `work` is the adapters that offer listWork;
 // `live` says an accounting system checks the ledger (ledgerView).
-export async function boardJobs(db, organisationId, { work = [], accounting = null, live = false, log = console } = {}) {
-  // Held history jobs are past work, so the board leaves them out
-  // (core/history.js); the history import lists them by accounting state.
-  const listed = (await listObligations(db, organisationId, { accounting: live })).filter((entry) => !isHistoryHeld(entry.obligation));
+export async function boardJobs(db, organisationId, { work = [], accounting = null, live = false, log = console, history = false } = {}) {
+  // Held history jobs stay off the board unless a person includes history.
+  const listed = (await listObligations(db, organisationId, { accounting: live })).filter((entry) => history || !isHistoryHeld(entry.obligation));
   const obligations = await describeObligations(db, organisationId, listed, { accounting });
   const byJob = new Map(obligations.map((o) => [keyOf(o.sourceSystem, o.sourceJobRef), o]));
 
@@ -100,12 +108,7 @@ export async function boardJobs(db, organisationId, { work = [], accounting = nu
     const jobs = obligations.map((o) => {
       const status = o.sourceStatus?.trim() || null;
       if (status && !statuses.has(status)) statuses.set(status, { label: status, final: false, firstSeenAt: null });
-      return {
-        sourceSystem: o.sourceSystem, sourceJobRef: o.sourceJobRef, caseRef: o.caseRef, status,
-        clientName: o.contactName, workClientName: null, practitioner: o.practitioner, patient: null, department: null,
-        orderedOn: null, dueOn: null, jobDate: o.jobDate, shippedOn: o.shippedOn,
-        totalCents: o.totalCents, lines: ledgerLines(o.lines), obligation: o,
-      };
+      return ledgerBoardJob(o);
     });
     return { jobs: await withIssues(jobs, work, log), statuses: [...statuses.values()] };
   }
@@ -144,6 +147,10 @@ export async function boardJobs(db, organisationId, { work = [], accounting = nu
         obligation: o,
       });
     }
+  }
+  if (history) {
+    const shown = new Set(jobs.map(j => keyOf(j.sourceSystem, j.sourceJobRef)));
+    for (const o of obligations) if (isHistoryHeld(o) && !shown.has(keyOf(o.sourceSystem, o.sourceJobRef))) jobs.push(ledgerBoardJob(o));
   }
   return { jobs: await withIssues(jobs, work, log), statuses };
 }

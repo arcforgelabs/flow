@@ -352,7 +352,7 @@ export async function decideJobs(db, batchId, decisions, { by, now = Date.now })
 
 // Writes batch jobs into Flow's history. Answers { applied, updated }: new
 // jobs, and jobs an earlier batch wrote.
-async function writeHistoryJobs(tx, batchId, jobs, at) {
+async function writeHistoryJobs(tx, batchId, jobs, at, { checkedAt = null } = {}) {
   let applied = 0;
   let updated = 0;
   for (const part of chunks(jobs)) {
@@ -377,12 +377,13 @@ async function writeHistoryJobs(tx, batchId, jobs, at) {
       batchId,
       firstBatchId: batchId,
       firstImportedAt: at,
+      lastCheckedAt: checkedAt, lastAttemptAt: null, lastReadError: null, deletedInSourceAt: null,
       lastChangedAt: at,
     }));
     const rows = await tx.insert(seazonaHistoryJobs).values(values).onConflictDoUpdate({
       target: seazonaHistoryJobs.jobKey,
       set: Object.fromEntries(['invoiceNumber', 'caseRef', 'clientId', 'company', 'doctorName', 'status', 'jobDate', 'dueDate', 'shippedDate', 'lines',
-        'subtotalCents', 'totalCents', 'patientReference', 'mirrorOrderId', 'mirrorInvoiceNumber', 'recordHash', 'batchId', 'lastChangedAt']
+        'subtotalCents', 'totalCents', 'patientReference', 'mirrorOrderId', 'mirrorInvoiceNumber', 'recordHash', 'batchId', 'lastChangedAt', 'lastCheckedAt', 'lastAttemptAt', 'lastReadError', 'deletedInSourceAt']
         .map((field) => [field, sql.raw(`excluded."${seazonaHistoryJobs[field].name}"`)])),
     }).returning({ firstBatchId: seazonaHistoryJobs.firstBatchId });
     for (const row of rows) {
@@ -439,7 +440,7 @@ export async function stageApiJobs(db, batchId, jobs, { at }) {
       if (writes({ ...job, ...result })) ready.push({ ...job, ...result });
       else if (result.outcome !== 'same') waiting += 1;
     }
-    const { applied, updated } = await writeHistoryJobs(tx, batchId, ready, at);
+    const { applied, updated } = await writeHistoryJobs(tx, batchId, ready, at, { checkedAt: at });
     await tx.update(seazonaHistoryBatches).set({ counts: await countBatch(tx, batchId) }).where(eq(seazonaHistoryBatches.id, batchId));
     return { staged: staged.length, applied: applied + updated, waiting };
   });
@@ -499,36 +500,7 @@ export async function readHistoryWork(db, { cursor = null, limit = 200 } = {}) {
     .where(after ? sql`(${seazonaHistoryJobs.lastChangedAt}, ${seazonaHistoryJobs.jobKey}) > (${after.at}::timestamptz, ${after.key})` : undefined)
     .orderBy(seazonaHistoryJobs.lastChangedAt, seazonaHistoryJobs.jobKey)
     .limit(pageSize);
-  const items = rows.map(({ job }) => {
-    const sourceJobRef = job.mirrorOrderId ?? job.caseRef ?? `history:${job.jobKey}`;
-    return {
-      source: 'seazona',
-      historical: true,
-      jobKey: job.jobKey,
-      sourceId: sourceJobRef,
-      clientId: job.clientId,
-      company: job.company,
-      ledgerJob: {
-        sourceSystem: 'seazona',
-        sourceJobRef,
-        sourceInvoiceRef: job.invoiceNumber ?? job.mirrorInvoiceNumber ?? null,
-        caseRef: job.caseRef ?? job.mirrorOrderId ?? null,
-        practitioner: job.doctorName,
-        shippedOn: job.shippedDate,
-        jobDate: job.jobDate ?? job.dueDate ?? job.shippedDate,
-        sourceStatus: job.status,
-        lines: (job.lines ?? []).map((l) => ({
-          itemCode: l.code ?? null,
-          description: l.description,
-          quantity: 1,
-          unitAmountCents: l.amountCents ?? undefined,
-          taxCode: typeof l.taxable === 'boolean' ? (l.taxable ? 'GST' : 'GST_FREE') : undefined,
-        })),
-        observedAt: job.lastChangedAt.toISOString(),
-        actor: 'seazona:history_import',
-      },
-    };
-  });
+  const items = rows.map(({ job }) => historyWorkItem(job));
   const last = rows.at(-1);
   return {
     items,
@@ -536,6 +508,38 @@ export async function readHistoryWork(db, { cursor = null, limit = 200 } = {}) {
     more: rows.length === pageSize,
   };
 }
+
+export function historyWorkItem(job) {
+  const sourceJobRef = job.mirrorOrderId ?? job.caseRef ?? `history:${job.jobKey}`;
+  return {
+    source: 'seazona',
+    historical: true,
+    jobKey: job.jobKey,
+    sourceId: sourceJobRef,
+    clientId: job.clientId,
+    company: job.company,
+    ledgerJob: {
+      sourceSystem: 'seazona',
+      sourceJobRef,
+      sourceInvoiceRef: job.invoiceNumber ?? job.mirrorInvoiceNumber ?? null,
+      caseRef: job.caseRef ?? job.mirrorOrderId ?? null,
+      practitioner: job.doctorName,
+      shippedOn: job.shippedDate,
+      jobDate: job.jobDate ?? job.dueDate ?? job.shippedDate,
+      sourceStatus: job.deletedInSourceAt ? 'Deleted in Seazona' : job.status,
+      lines: (job.lines ?? []).map((l) => ({
+        itemCode: l.code ?? null,
+        description: l.description,
+        quantity: 1,
+        unitAmountCents: l.amountCents ?? undefined,
+        taxCode: typeof l.taxable === 'boolean' ? (l.taxable ? 'GST' : 'GST_FREE') : undefined,
+      })),
+      observedAt: (job.lastCheckedAt ?? job.lastChangedAt).toISOString(),
+      actor: 'seazona:history_import',
+    },
+  };
+}
+
 
 // One short phrase for each finding, for the issue on a job card.
 const ISSUE_PHRASE = {

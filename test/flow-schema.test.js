@@ -40,7 +40,7 @@ function coreBeforeMove() {
 
 // An adapter's migrations as an installation before the move has them: the
 // ones written later (`from` on) create their tables in "flow" after it.
-const ADAPTER_AFTER_MOVE = { xero: 13 };
+const ADAPTER_AFTER_MOVE = { xero: 13, seazona: 8 };
 function adapterBeforeMove(adapter) {
   const from = ADAPTER_AFTER_MOVE[adapter.id];
   if (from === undefined) return adapter;
@@ -50,7 +50,7 @@ function adapterBeforeMove(adapter) {
   const journal = JSON.parse(readFileSync(journalFile, 'utf8'));
   journal.entries = journal.entries.filter((entry) => entry.idx < from);
   writeFileSync(journalFile, JSON.stringify(journal));
-  const tables = adapter.schema.tables.filter((table) => !['xero_contact_sync'].includes(table));
+  const tables = adapter.schema.tables.filter((table) => !['xero_contact_sync', 'seazona_api_waiters'].includes(table));
   return { ...adapter, schema: { ...adapter.schema, migrationsFolder: folder, tables } };
 }
 

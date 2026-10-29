@@ -108,7 +108,7 @@ function parseUtc(value) {
 // whole lane stops and waits.
 function isLaneLevel(error) {
   return error?.statusCode === 429 || error?.statusCode === 401 || error?.statusCode === 403
-    || error?.kind === 'governor_timeout' || error?.kind === 'calls_stopped';
+    || error?.kind === 'governor_timeout' || error?.kind === 'calls_stopped' || error?.code === 'seazona_person_read_limit';
 }
 
 // Answers how a lane that threw should wait: { status, heldReason, delayMs }.
@@ -162,13 +162,14 @@ function judgeReads(what, attempted, failures, extra = {}) {
 
 // Reads one order's detail and applies issue #12. Returns
 // { outcome: 'read' | 'deleted' | 'failed', failure? }.
-export async function readOrder(ctx, id, { listItem = null, known = null } = {}) {
+export async function readOrder(ctx, id, { listItem = null, known = null, history = false, requestOptions = {} } = {}) {
   const { db, client, sync, at } = ctx;
   const mapOptions = { keepPatientReference: sync.keepPatientReference };
   try {
-    const detail = await client.get(`orders/${encodeURIComponent(id)}`);
+    const detail = await client.get(`orders/${encodeURIComponent(id)}`, {}, requestOptions);
     if (!detail || typeof detail !== 'object' || Array.isArray(detail)) throw emptyResponse(`order ${id}`);
     const record = { ...mapOrder(listItem || {}, detail, mapOptions), id };
+    if (history) return { outcome: 'read', record };
     const listSignatures = listItem ? new Map([[id, orderListSignature(listItem)]]) : new Map();
     const summary = await upsertRecords(db, 'orders', [record], { at, listSignatures });
     await clearOrderFailure(db, id);
@@ -176,6 +177,7 @@ export async function readOrder(ctx, id, { listItem = null, known = null } = {})
   } catch (error) {
     if (isLaneLevel(error)) throw error;
     if (error?.statusCode === 404) {
+      if (history) return { outcome: 'deleted' };
       const fallback = listItem ? { ...mapOrder(listItem, null, mapOptions), id } : null;
       await markOrderDeleted(db, id, { at, fallback });
       await clearOrderFailure(db, id);

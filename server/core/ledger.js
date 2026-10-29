@@ -6,6 +6,7 @@ import {
 import { FlowError, notFound } from './errors.js';
 import { createDraftInvoice, getInvoice, updateDraftInvoice } from './invoices.js';
 import { invoiceTotals, lineTotals } from './money.js';
+import { isHistoryHeld } from './history.js';
 import { openReview, resolveReviewFor } from './review.js';
 
 // The billing obligation ledger. One billable job in a work system is one
@@ -181,7 +182,7 @@ export async function observeJob(db, organisationId, job) {
     }
     const fields = { ...facts, sourceSeenAt: seenAt };
     let compare = null;
-    if (existing.invoiceId && changed.some((key) => ['lineFingerprint', 'totalCents', 'contactId'].includes(key))) {
+    if (!isHistoryHeld(existing) && existing.invoiceId && changed.some((key) => ['lineFingerprint', 'totalCents', 'contactId'].includes(key))) {
       compare = await compareWithDraft(tx, organisationId, existing, facts);
       if (compare.outcome !== 'none') {
         fields.holdState = 'review';
@@ -460,6 +461,11 @@ export async function observeWithdrawn(db, organisationId, entry) {
       ))
       .for('update');
     if (!obligation) return { obligation: null, action: 'none' };
+    if (isHistoryHeld(obligation)) {
+      if (seenAt < obligation.sourceSeenAt) return { obligation, action: 'none' };
+      const row = await update(tx, obligation, { sourceStatus: deleted ? 'Deleted in Seazona' : sourceStatus, sourceSeenAt: seenAt });
+      return { obligation: row, action: 'status' };
+    }
     if (deleted) {
       if (obligation.holdState === 'review') return { obligation, action: 'none' };
       const holdReason = reason ?? 'the job was deleted in the work system';

@@ -5,6 +5,7 @@
 // are a preview with the same rule (GST 10% per line, rounded half away from
 // zero, server/core/money.js). Data comes from /api/invoicing
 // (server/api/invoicing.js). app.js passes in its shared pieces as `ui`.
+import { historyStatus } from '/assets/ui/sync-status.js';
 import { alertStrip } from '/assets/ui/alerts.js';
 import { bulkBar } from '/assets/ui/bulk-bar.js';
 import { draftNote, sendModeNote } from '/assets/ui/invoice-notes.js';
@@ -890,9 +891,15 @@ function linkedCard(ui, invoice, accountingStatus = null) {
   const job = invoice?.job ?? null;
   const systems = invoice?.linksTo ?? [];
   if (!job && !systems.length) return null;
-  const facts = job && (job.practitioner || job.shippedOn) ? h('dl', { class: 'fx-facts' },
-    job.practitioner ? [h('dt', {}, 'Practitioner'), h('dd', {}, job.practitioner)] : null,
-    job.shippedOn ? [h('dt', {}, 'Shipped'), h('dd', {}, showDate(job.shippedOn))] : null) : null;
+  const jobFacts = value => [
+    value?.practitioner ? [h('dt', {}, 'Practitioner'), h('dd', {}, value.practitioner)] : null,
+    value?.shippedOn ? [h('dt', {}, 'Shipped'), h('dd', {}, showDate(value.shippedOn))] : null,
+  ];
+  const facts = job && (job.practitioner || job.shippedOn || job.historyHeld) ? h('dl', { class: 'fx-facts' }, ...jobFacts(job)) : null;
+  const refresh = historyStatus(ui, job, { done: async () => {
+    const { invoice: checked } = await ui.flow(`/api/invoicing/invoices/${invoice.id}`);
+    if (facts?.isConnected) facts.replaceChildren(...jobFacts(checked.job).flat().filter(Boolean));
+  } });
   const row = (system, { tone = null, ref = null, state = null, url = null, none = null }) => h('div', { class: 'fx-linked__row' },
     linkIcon(ui, system, { tone, title: none ?? `${system.name}${ref ? ` ${ref}` : ''}` }),
     h('span', { class: 'fx-strong' }, system.name),
@@ -919,7 +926,7 @@ function linkedCard(ui, invoice, accountingStatus = null) {
     h('h3', { class: 'fx-label' }, 'Linked'),
     !workRows && job ? h('p', { class: 'fx-dim' }, `Job from ${job.systemName ?? job.sourceSystem}`) : null,
     h('div', { class: 'fx-linked' }, rows),
-    facts);
+    refresh, facts);
 }
 
 // The first sentence of a problem: what is wrong. The red field shows where,

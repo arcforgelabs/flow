@@ -7,6 +7,7 @@ export const seazonaSchema = Object.freeze({
   tables: Object.freeze([
     'seazona_api_governor',
     'seazona_api_requests',
+    'seazona_api_waiters',
     'seazona_orders',
     'seazona_invoices',
     'seazona_clients',

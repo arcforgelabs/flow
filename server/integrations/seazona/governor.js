@@ -1,6 +1,6 @@
 import { and, count, desc, eq, gte, lt, sql } from 'drizzle-orm';
 import { CallsStopped, countsAsFailure, createCallGuard, normaliseRequestPath } from '../call-guard.js';
-import { seazonaApiGovernor, seazonaApiRequests } from './schema.js';
+import { seazonaApiGovernor, seazonaApiRequests, seazonaApiWaiters } from './schema.js';
 import { MAX_REQUESTS_PER_MINUTE } from './settings.js';
 
 export { countsAsFailure, normaliseRequestPath };
@@ -119,7 +119,7 @@ export function createSeazonaGovernor({
     now,
   });
 
-  async function tryAdmit(workflow, isRetry) {
+  async function tryAdmit(workflow, isRetry, waiterId, personKey) {
     return db.transaction(async (tx) => {
       await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`);
       const nowMs = Number(now());
@@ -128,7 +128,20 @@ export function createSeazonaGovernor({
       const [state] = await tx.select().from(seazonaApiGovernor).where(eq(seazonaApiGovernor.clientKey, key));
       const stopped = await guard.stoppedNow(tx, key);
       if (stopped) return { admitted: false, stopped };
+      await tx.delete(seazonaApiWaiters).where(lt(seazonaApiWaiters.expiresAt, nowAt));
+      const [first] = await tx.select().from(seazonaApiWaiters)
+        .where(eq(seazonaApiWaiters.clientKey, key))
+        .orderBy(desc(seazonaApiWaiters.priority), seazonaApiWaiters.id).limit(1);
+      if (first?.id !== waiterId) return { admitted: false, waitMs: Math.min(minIntervalMs, 250) };
       const windowStart = new Date(nowMs - WINDOW_MS);
+      // The same lock protects both the shared budget and each person's cap.
+      if (personKey) {
+        const [{ n }] = await tx.select({ n: count() }).from(seazonaApiRequests).where(and(
+          eq(seazonaApiRequests.clientKey, key), eq(seazonaApiRequests.personKey, personKey),
+          gte(seazonaApiRequests.admittedAt, windowStart),
+        ));
+        if (Number(n) >= 5) return { admitted: false, limited: true };
+      }
       const [{ admitted, oldestMs }] = await tx
         .select({ admitted: count(), oldestMs: sql`(extract(epoch from min(${seazonaApiRequests.admittedAt})) * 1000)::float8` })
         .from(seazonaApiRequests)
@@ -143,27 +156,37 @@ export function createSeazonaGovernor({
       const [row] = await tx.insert(seazonaApiRequests).values({
         clientKey: key,
         workflow: normaliseWorkflow(workflow),
+        personKey,
         admittedAt: nowAt,
         isRetry: Boolean(isRetry),
       }).returning({ id: seazonaApiRequests.id });
       await tx.update(seazonaApiGovernor)
         .set({ nextEligibleAt: new Date(nowMs + minIntervalMs), updatedAt: nowAt })
         .where(eq(seazonaApiGovernor.clientKey, key));
+      await tx.delete(seazonaApiWaiters).where(eq(seazonaApiWaiters.id, waiterId));
       return { admitted: true, requestId: row.id };
     });
   }
 
   // Waits for a slot and records the admission. Returns { requestId }.
-  async function reserve({ workflow = 'seazona', isRetry = false } = {}) {
+  async function reserve({ workflow = 'seazona', isRetry = false, priority = 0, personKey = null } = {}) {
+    const [waiter] = await db.insert(seazonaApiWaiters).values({
+      clientKey: key, priority, expiresAt: new Date(Number(now()) + maxWaitMs + 1000),
+    }).returning();
     let waitedMs = 0;
-    for (;;) {
-      const decision = await tryAdmit(workflow, isRetry);
-      if (decision.admitted) return { requestId: decision.requestId, waitedMs };
-      if (decision.stopped) throw new SeazonaCallsStopped(decision.stopped.reason, decision.stopped.retryAfterMs);
-      const delay = Math.max(1, Math.min(decision.waitMs, maxWaitMs));
-      if (waitedMs + delay > maxWaitMs) throw new SeazonaGovernorTimeout(waitedMs, delay);
-      waitedMs += delay;
-      await sleepFn(delay);
+    try {
+      for (;;) {
+        const decision = await tryAdmit(workflow, isRetry, waiter.id, personKey);
+        if (decision.admitted) return { requestId: decision.requestId, waitedMs };
+        if (decision.stopped) throw new SeazonaCallsStopped(decision.stopped.reason, decision.stopped.retryAfterMs);
+        if (decision.limited) throw Object.assign(new Error('Five order reads per person per minute. Try again in a minute.'), { code: 'seazona_person_read_limit' });
+        const delay = Math.max(1, Math.min(decision.waitMs, maxWaitMs));
+        if (waitedMs + delay > maxWaitMs) throw new SeazonaGovernorTimeout(waitedMs, delay);
+        waitedMs += delay;
+        await sleepFn(delay);
+      }
+    } finally {
+      await db.delete(seazonaApiWaiters).where(eq(seazonaApiWaiters.id, waiter.id));
     }
   }
 

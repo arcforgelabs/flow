@@ -11,7 +11,7 @@ import { isMissingTable, migrateAdapterSchema } from './schema.js';
 
 export const CAPABILITIES = Object.freeze([
   'pullWorkItems', // billable work since a cursor (Seazona: completed cases)
-  'readWorkItem', // { state: read | withdrawn | unavailable }: one job read from the work system now, as pullWorkItems gives it (read before act, server/core/read-before-act.js)
+  'readWorkItem', // { state: read | withdrawn | unavailable }: one job read now. purpose: inspect + personId reads held history without billing-feed effects; also answers fresh | waiting, checkedAt and deleted (server/core/read-before-act.js)
   'pullHistoryJobs', // past work from a history import, as ledger jobs marked historical (Seazona: its API backfill)
   'pushInvoice', // send an issued invoice; the Flow record id is the idempotency key
   'pushInvoices', // send several issued invoices in one pass (Send all ready, server/core/sending.js)

@@ -112,8 +112,8 @@ export function createSeazonaClient({
     : null;
   const stats = { requests: 0, retries: 0, rateLimited: 0 };
 
-  // One request at a time from this process; the governor spaces them out
-  // across processes.
+  // Ungoverned replay stays serial. With a governor, every waiting request
+  // reaches the shared queue so a person can pass queued background work.
   let tail = Promise.resolve();
   function serialise(work) {
     const run = tail.catch(() => {}).then(work);
@@ -121,9 +121,9 @@ export function createSeazonaClient({
     return run;
   }
 
-  async function attempt(url, isRetry) {
+  async function attempt(url, isRetry, options) {
     const path = normaliseRequestPath(url.pathname);
-    const admission = gate ? await gate.reserve({ workflow, isRetry }) : null;
+    const admission = gate ? await gate.reserve({ workflow, isRetry, ...options }) : null;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), rate.timeoutMs);
     const startedAt = Number(now());
@@ -157,11 +157,12 @@ export function createSeazonaClient({
 
   // GET a resource path relative to the API root. Returns the parsed JSON, or
   // null for an empty body; the caller decides whether empty is a failure.
-  async function get(path, query = {}) {
+  async function get(path, query = {}, options = {}) {
     const url = buildUrl(baseUrl, path, query);
     const label = `GET ${url.pathname}`;
     for (let tryNumber = 0; ; tryNumber += 1) {
-      const result = await serialise(() => attempt(url, tryNumber > 0));
+      const run = () => attempt(url, tryNumber > 0, options);
+      const result = await (gate ? run() : serialise(run));
       if (result.failure) {
         throw new SeazonaApiError(`Seazona ${label} failed (${result.failure})`, { kind: result.failure, path: url.pathname });
       }
