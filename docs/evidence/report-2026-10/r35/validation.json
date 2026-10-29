@@ -1,0 +1,98 @@
+{
+  "sourceCommit": "a21b14acc9123f4e12b391df362b8b9f7c3f8909",
+  "synthetic": true,
+  "checkedAt": "2026-10-29T14:08:34.342Z",
+  "command": "node docs/evidence/report-2026-10/r35/verify.mjs",
+  "workers": 1,
+  "wallSeconds": 16.34,
+  "checkedFiles": 9,
+  "files": {
+    "r28/clip.webm": {
+      "bytes": 715754,
+      "sha256": "f31326bd1279c0e8c59e66fdaffecf11865d58d9274217947660b2cbfb07de7b",
+      "codec_name": "vp9",
+      "width": 1280,
+      "height": 800,
+      "duration": 17.333,
+      "fullDecode": true,
+      "chromiumPlayback": {
+        "ended": true,
+        "width": 1280,
+        "height": 800,
+        "frames": 520
+      }
+    },
+    "r28/desktop.jpg": {
+      "bytes": 95529,
+      "sha256": "e3c6ea2a866cefecfd00279ee8f7ab15645908c49559b81fe166b2bbedb0e0bc",
+      "codec_name": "mjpeg",
+      "width": 1280,
+      "height": 800
+    },
+    "r28/phone.jpg": {
+      "bytes": 29738,
+      "sha256": "b46c71b3eee7a983e27ebec29a8cccd4e1763b89bc7623d7d8a25e066d890c3a",
+      "codec_name": "mjpeg",
+      "width": 390,
+      "height": 844
+    },
+    "r35/clip.webm": {
+      "bytes": 719960,
+      "sha256": "3a518f557ef339fe893cf8322617a1d3cc60744929ae2485f61ebc02907c81cd",
+      "codec_name": "vp9",
+      "width": 1280,
+      "height": 800,
+      "duration": 24.666,
+      "fullDecode": true,
+      "chromiumPlayback": {
+        "ended": true,
+        "width": 1280,
+        "height": 800,
+        "frames": 740
+      }
+    },
+    "r35/desktop.jpg": {
+      "bytes": 55237,
+      "sha256": "39dbf1802899e7a773c2ad25cf68dcb5051cc0b48dbf7fa9153c97233fd703a1",
+      "codec_name": "mjpeg",
+      "width": 1280,
+      "height": 800
+    },
+    "r35/phone.jpg": {
+      "bytes": 18305,
+      "sha256": "9ef3e9fcf19feea7f2dccbcb884bf4ec263c43bec62ffc51952fdf397ac23136",
+      "codec_name": "mjpeg",
+      "width": 390,
+      "height": 844
+    },
+    "r38/clip.webm": {
+      "bytes": 581124,
+      "sha256": "1e4888a6fefd339420872f8841cdf71bca9e4ab0c005fefb9892dfb9b9cc45b7",
+      "codec_name": "vp9",
+      "width": 1280,
+      "height": 800,
+      "duration": 19.733,
+      "fullDecode": true,
+      "chromiumPlayback": {
+        "ended": true,
+        "width": 1280,
+        "height": 800,
+        "frames": 592
+      }
+    },
+    "r38/desktop.jpg": {
+      "bytes": 71614,
+      "sha256": "91a8e9e4ef01b7c75b75278a02ae81060cd0d019ca1a9b4ccc8cecff6237ae27",
+      "codec_name": "mjpeg",
+      "width": 1280,
+      "height": 800
+    },
+    "r38/phone.jpg": {
+      "bytes": 36924,
+      "sha256": "1d7e25d8f1a7a3523c448c7fed3826e5b6cd81a4f0fe9068a69c1826fbf827f8",
+      "codec_name": "mjpeg",
+      "width": 390,
+      "height": 844
+    }
+  }
+}

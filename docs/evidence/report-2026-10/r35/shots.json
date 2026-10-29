@@ -1,0 +1,67 @@
+{
+  "title": "Group, sort and filter",
+  "seed": "basic",
+  "start": "/jobs",
+  "steps": [
+    {
+      "do": "click",
+      "target": "button.fx-chip:has-text('Group:')",
+      "expect": "select[aria-label='Group by']"
+    },
+    {
+      "do": "click",
+      "target": "select[aria-label='Group by']"
+    },
+    {
+      "do": "press",
+      "key": "c"
+    },
+    {
+      "do": "press",
+      "key": "Enter",
+      "expect": "button.fx-chip:has-text('Group: Client')"
+    },
+    {
+      "do": "press",
+      "key": "Escape"
+    },
+    {
+      "do": "click",
+      "target": "button.fx-chip:has-text('Sort')"
+    },
+    {
+      "do": "click",
+      "target": "button:has-text('Add sort')",
+      "expect": "select[aria-label='Sort by']"
+    },
+    {
+      "do": "press",
+      "key": "Escape"
+    },
+    {
+      "do": "click",
+      "target": "button.fx-chip:has-text('Filter')"
+    },
+    {
+      "do": "click",
+      "target": "button:has-text('Add filter')"
+    },
+    {
+      "do": "click",
+      "target": "button:has-text('Select option')"
+    },
+    {
+      "do": "click",
+      "target": "[role='menuitemcheckbox']:has-text('Shipped')"
+    },
+    {
+      "do": "press",
+      "key": "Escape"
+    },
+    {
+      "do": "press",
+      "key": "Escape",
+      "expect": "text=7 jobs"
+    }
+  ]
+}

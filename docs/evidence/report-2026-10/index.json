@@ -40,5 +40,56 @@
       "Create the missing Xero client and confirm.",
       "The problem clears and the invoice is Ready."
     ]
+  },
+  {
+    "id": "r28",
+    "title": "Job board stages",
+    "clip": "r28/clip.webm",
+    "desktop": "r28/desktop.jpg",
+    "phone": "r28/phone.jpg",
+    "prs": [
+      93,
+      94,
+      97
+    ],
+    "steps": [
+      "Open Jobs on the board, grouped by Status.",
+      "Open a job to see its client, work stage and mapped price code.",
+      "Close the job, switch to List, then return to Board."
+    ]
+  },
+  {
+    "id": "r35",
+    "title": "Group, sort and filter",
+    "clip": "r35/clip.webm",
+    "desktop": "r35/desktop.jpg",
+    "phone": "r35/phone.jpg",
+    "prs": [
+      165,
+      172,
+      173,
+      175
+    ],
+    "steps": [
+      "Group jobs by Client.",
+      "Add a sort by Due, oldest first.",
+      "Filter Status to Shipped. Seven of 42 jobs remain."
+    ]
+  },
+  {
+    "id": "r38",
+    "title": "Reconcile finds the gaps",
+    "clip": "r38/clip.webm",
+    "desktop": "r38/desktop.jpg",
+    "phone": "r38/phone.jpg",
+    "prs": [
+      191,
+      198
+    ],
+    "steps": [
+      "Open the job with no invoice and inspect the best matching draft.",
+      "Press Link this invoice. Reconcile moves to the next gap.",
+      "Open the SYNTHETIC-GAP invoice on Ready. Its Linked card shows the job."
+    ]
   }
 ]

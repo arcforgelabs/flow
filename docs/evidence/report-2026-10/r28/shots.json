@@ -1,0 +1,46 @@
+{
+  "title": "Job board stages",
+  "seed": "basic",
+  "start": "/jobs",
+  "steps": [
+    {
+      "do": "hover",
+      "target": ".fx-board__col >> nth=0",
+      "expect": ".fx-board",
+      "hold": 1500
+    },
+    {
+      "do": "click",
+      "target": ".fx-job >> nth=0",
+      "expect": "dialog.fx-task",
+      "hold": 1500
+    },
+    {
+      "do": "wait",
+      "ms": 1500,
+      "hold": 1500
+    },
+    {
+      "do": "press",
+      "key": "Escape",
+      "expectHidden": "dialog.fx-task"
+    },
+    {
+      "do": "click",
+      "target": "[role='radio']:has-text('List')",
+      "expect": ".fx-table",
+      "hold": 1500
+    },
+    {
+      "do": "click",
+      "target": "[role='radio']:has-text('Board')",
+      "expect": ".fx-board",
+      "hold": 1500
+    },
+    {
+      "do": "wait",
+      "ms": 1500,
+      "hold": 1500
+    }
+  ]
+}
