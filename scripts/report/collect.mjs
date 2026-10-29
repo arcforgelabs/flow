@@ -139,10 +139,8 @@ export function build(config, data, nowIso) {
   const live = items.filter((i) => !i.next), thisWeek = live.filter((i) => i.day === "wtd");
   const merged = data.merged.filter((p) => !has(p, L.hide));
   const inWeek = (p, a, b) => { const d = local(p.merged_at).date; return d >= a && d <= b; };
-  const security = merged.filter((p) => has(p, L.security)).map((p) => ({ tag: "Fixed", tone: "ok", date: short(local(p.merged_at).date), title: cleanTitle(p.title),
-    text: userImpact(p.body).why, links: [{ label: "Change", href: `${data.repoUrl}pull/${p.number}` }], thisWeek: local(p.merged_at).date >= w.thisWeek }));
-  const sup = (a, b) => merged.filter((p) => has(p, L.support) && inWeek(p, a, b)).map((p) => ({ tag: "Fixed", tone: "ok", title: cleanTitle(p.title),
-    text: userImpact(p.body).why, open: seen.has(p.number) ? `pr${p.number}` : undefined }));
+  const security = merged.filter((p) => has(p, L.security)).map((p) => ({ tag: "Fixed", tone: "ok", date: short(local(p.merged_at).date), title: config.titles?.[p.number] || cleanTitle(p.title), links: [{ label: "Change", href: `${data.repoUrl}pull/${p.number}` }], thisWeek: local(p.merged_at).date >= w.thisWeek }));
+  const sup = (a, b) => merged.filter((p) => has(p, L.support) && inWeek(p, a, b)).map((p) => ({ tag: "Fixed", tone: "ok", title: config.titles?.[p.number] || cleanTitle(p.title), open: seen.has(p.number) ? `pr${p.number}` : undefined }));
   const groups = [{ label: "Last week", items: sup(w.from, w.to) }, { label: "This week", items: sup(w.thisWeek, w.today) }];
   const support = groups.filter((g) => g.items.length);
   const counts = { items: [live.length - thisWeek.length, thisWeek.length], security: [security.length - security.filter((c) => c.thisWeek).length, security.filter((c) => c.thisWeek).length], support: groups.map((g) => g.items.length) };

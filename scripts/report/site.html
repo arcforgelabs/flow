@@ -157,6 +157,22 @@ button{font:inherit;color:inherit}
 .br-d--empty{padding:10px 0 22px}.br-d--empty .br-ul{margin-top:-28px}.br-d--empty .br-date b,.br-d--empty .br-date span{white-space:nowrap}.br-d--empty .br-date span{font-size:15px}
 .br-quiet{display:inline-flex;align-items:center;gap:8px;min-height:28px;margin:0 0 0 34px;font:italic 400 13.5px var(--t-body);color:var(--t-mute)}
 .br-quiet svg{width:15px;height:15px;color:var(--t-mute)}.br-d--empty .br-n::after{border-style:dashed;border-color:var(--t-brd-hi);background:var(--t-paper)}.br-d--empty .br-date b,.br-d--empty .br-date span{color:var(--t-mute)}
+/* Day sheet */
+.scrim.day .card{width:min(860px,100%)}
+.dsplit{display:flex;gap:3px;height:8px}
+.dseg{flex:1 1 0;min-width:8px}.dseg--new{background:var(--t-success)}.dseg--fix{background:var(--t-danger)}.dseg--other{background:var(--t-brd-hi)}
+.dcols{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:20px}
+.dcol h4{display:flex;align-items:baseline;gap:8px;margin:0 0 6px;padding-bottom:8px;border-bottom:2px solid var(--t-brd-hi);font:600 12px var(--t-body);letter-spacing:.14em;text-transform:uppercase;color:var(--t-mute)}
+.dcol h4 b{font:400 28px/1 var(--t-display);letter-spacing:0;color:var(--t-strong)}
+.dcol--new h4{border-color:var(--t-success)}.dcol--fix h4{border-color:var(--t-danger)}
+.card-b .dcol ul{list-style:none;margin:0;padding:0}
+.drow{all:unset;box-sizing:border-box;cursor:pointer;display:flex;align-items:center;gap:10px;width:100%;padding:8px 6px;border-bottom:1px solid var(--t-brd);font:600 14px/1.3 var(--t-body);color:var(--t-strong)}
+.drow svg{width:16px;height:16px;flex:none;color:var(--t-mute)}
+.drow span{flex:1}
+.drow:hover,.drow:focus-visible{background:var(--t-accent-bg)}
+.drow:hover svg{color:var(--t-accent)}
+.drow--key{box-shadow:inset 3px 0 0 var(--t-accent);padding-left:12px}
+.drow .sup{width:16px;height:16px}
 .day-all{padding:0;display:flex;flex-wrap:wrap;gap:8px}
 .day-all .br-i{padding:0}
 .day-all .br-i::before{display:none}
@@ -289,6 +305,10 @@ body[data-mode="full"] .sheet{padding:48px 64px 64px}
 body[data-mode="full"] .head{padding-bottom:0;border-bottom:0}
 body[data-mode="full"] .lede{margin:88px 0 72px;max-width:18ch;font:400 clamp(34px,5.4vw,64px)/1.06 var(--t-display);letter-spacing:-.02em}
 body[data-mode="full"] .h.lbl,body[data-mode="full"] .sec h2{margin:0 0 24px;font:400 clamp(26px,3.2vw,38px)/1.15 var(--t-display);letter-spacing:-.01em;text-transform:none;color:var(--t-strong)}
+/* Section titles: the word in the accent colour, then one line to the edge. */
+body[data-mode="full"] .h.lbl,body[data-mode="full"] .sec h2{display:flex;align-items:center;gap:20px;color:var(--t-accent)}
+body[data-mode="full"] .h.lbl::after,body[data-mode="full"] .sec h2::after{content:"";flex:1;height:1px;background:var(--t-accent-brd)}
+body[data-mode="full"] .sec{border-top:0}
 body[data-mode="full"] .h.lbl{margin-top:72px}
 body[data-mode="full"] .sec{padding-top:56px;margin-top:72px}
 body[data-mode="full"] .sec h4{margin:24px 0 12px}
@@ -517,7 +537,7 @@ function cards(list) {
   return '<div class="vgrid">' + list.map(function (c) {
     var links = (c.links || []).map(function (l) { return '<a href="' + esc(l.href) + '" target="_blank" rel="noopener">' + esc(l.label) + '</a>'; });
     if (c.open) links.push('<a href="#" data-open="' + c.open + '">See the fix</a>');
-    return '<div class="vuln"><div class="vh"><span class="risk' + (c.tone ? ' risk--' + c.tone : '') + '">' + esc(c.tag) + '</span>' + (c.date ? '<span class="when">' + esc(c.date) + '</span>' : '') + '</div><b>' + esc(c.title) + '</b><p>' + esc(c.text) + '</p>' + (links.length ? '<div class="vl">' + links.join('') + '</div>' : '') + '</div>';
+    return '<div class="vuln"><div class="vh"><span class="risk' + (c.tone ? ' risk--' + c.tone : '') + '">' + esc(c.tag) + '</span>' + (c.date ? '<span class="when">' + esc(c.date) + '</span>' : '') + '</div><b>' + esc(c.title) + '</b>' + (c.text ? '<p>' + esc(c.text) + '</p>' : '') + (links.length ? '<div class="vl">' + links.join('') + '</div>' : '') + '</div>';
   }).join('') + '</div>';
 }
 document.getElementById('security').innerHTML = R.security.length ? cards(R.security) : '<p class="br-none">Nothing to report.</p>';
@@ -527,6 +547,7 @@ document.getElementById('support').innerHTML = R.support.map(function (g) { retu
 var scrim = document.getElementById('scrim'), back = null;
 function open(id) {
   var it = BY[id]; if (!it) return;
+  scrim.classList.remove('day');
   back = document.activeElement;
   document.getElementById('card-i').innerHTML = svgIcon(it.icon);
   document.getElementById('card-t').textContent = it.title;
@@ -543,18 +564,28 @@ function open(id) {
   document.getElementById('card-b').innerHTML = b;
   scrim.hidden = false; document.getElementById('card-x').focus();
 }
-// The + on a day: the full list of that day, each one opens its own card.
+// The + on a day: a day sheet. A split bar counts new features, bug fixes and the rest;
+// below it one column for each, every row opens its own card.
 function openDay(key) {
-  var d = dd(key), its = dayItems(key);
+  var d = dd(key), its = dayItems(key), cols = [['new', 'New'], ['fix', 'Fixed'], ['', 'Other']];
   back = document.activeElement;
   document.getElementById('card-i').innerHTML = svgIcon('list');
   document.getElementById('card-t').textContent = d.wd + ' ' + d.d + ' ' + d.m;
   document.getElementById('card-s').textContent = its.length + ' updates';
-  document.getElementById('card-b').innerHTML = '<ul class="br-ul day-all">' + its.map(tagLi).join('') + '</ul>';
-  scrim.hidden = false; document.getElementById('card-x').focus();
+  var groups = cols.map(function (c) { return { k: c[0], label: c[1], its: its.filter(function (it) { return (it.kind || '') === c[0]; }) }; }).filter(function (g) { return g.its.length; });
+  var bar = '<div class="dsplit" role="img" aria-label="' + groups.map(function (g) { return g.its.length + ' ' + g.label; }).join(', ') + '">' +
+    groups.map(function (g) { return '<span class="dseg dseg--' + (g.k || 'other') + '" data-n="' + g.its.length + '"></span>'; }).join('') + '</div>';
+  document.getElementById('card-b').innerHTML = bar + '<div class="dcols">' + groups.map(function (g) {
+    return '<section class="dcol dcol--' + (g.k || 'other') + '"><h4><b>' + g.its.length + '</b>' + esc(g.label) + '</h4><ul>' + g.its.map(function (it) {
+      return '<li><button type="button" class="drow' + (it.major ? ' drow--key' : '') + '" data-open="' + it.id + '">' + svgIcon(it.icon) + '<span>' + esc(it.title) + '</span>' + (it.support ? badge() : '') + '</button></li>';
+    }).join('') + '</ul></section>';
+  }).join('') + '</div>';
+  // Segment widths from the counts (set as properties: the page policy blocks style attributes).
+  document.querySelectorAll('#card-b .dseg').forEach(function (e) { e.style.flexGrow = e.getAttribute('data-n'); });
+  scrim.classList.add('day'); scrim.hidden = false; document.getElementById('card-x').focus();
 }
 document.addEventListener('click', function (e) { var m = e.target.closest('[data-day]'); if (m) { e.preventDefault(); openDay(m.getAttribute('data-day')); } });
-function close() { scrim.hidden = true; if (back && back.focus) back.focus(); }
+function close() { scrim.classList.remove('day'); scrim.hidden = true; if (back && back.focus) back.focus(); }
 document.getElementById('card-x').addEventListener('click', close);
 scrim.addEventListener('click', function (e) { if (e.target === scrim) close(); });
 document.addEventListener('keydown', function (e) {
