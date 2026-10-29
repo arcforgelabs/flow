@@ -1,0 +1,99 @@
+{
+  "title": "Group, sort and filter",
+  "synthetic": true,
+  "viewport": {
+    "width": 1280,
+    "height": 800
+  },
+  "duration": 24.6649424,
+  "steps": [
+    {
+      "do": "click",
+      "target": "button.fx-chip:has-text('Group:')",
+      "expect": "select[aria-label='Group by']",
+      "start": 0.500009031,
+      "end": 2.6759510389999996
+    },
+    {
+      "do": "click",
+      "target": "select[aria-label='Group by']",
+      "start": 2.6759570089999998,
+      "end": 4.762089446
+    },
+    {
+      "do": "press",
+      "key": "c",
+      "start": 4.7620937759999995,
+      "end": 5.965909581
+    },
+    {
+      "do": "press",
+      "key": "Enter",
+      "expect": "button.fx-chip:has-text('Group: Client')",
+      "start": 5.965914981,
+      "end": 7.190214051000001
+    },
+    {
+      "do": "press",
+      "key": "Escape",
+      "start": 7.190223511,
+      "end": 8.392977387000002
+    },
+    {
+      "do": "click",
+      "target": "button.fx-chip:has-text('Sort')",
+      "start": 8.392981097,
+      "end": 10.507084215
+    },
+    {
+      "do": "click",
+      "target": "button:has-text('Add sort')",
+      "expect": "select[aria-label='Sort by']",
+      "start": 10.507089015,
+      "end": 12.637605467
+    },
+    {
+      "do": "press",
+      "key": "Escape",
+      "start": 12.637609268,
+      "end": 13.839177725999999
+    },
+    {
+      "do": "click",
+      "target": "button.fx-chip:has-text('Filter')",
+      "start": 13.839181056,
+      "end": 15.961586517999999
+    },
+    {
+      "do": "click",
+      "target": "button:has-text('Add filter')",
+      "start": 15.961589038,
+      "end": 18.097081056000004
+    },
+    {
+      "do": "click",
+      "target": "button:has-text('Select option')",
+      "start": 18.097084885999998,
+      "end": 20.165701115000005
+    },
+    {
+      "do": "click",
+      "target": "[role='menuitemcheckbox']:has-text('Shipped')",
+      "start": 20.165703405,
+      "end": 22.255940915
+    },
+    {
+      "do": "press",
+      "key": "Escape",
+      "start": 22.255942945,
+      "end": 23.457038206999997
+    },
+    {
+      "do": "press",
+      "key": "Escape",
+      "expect": "text=7 jobs",
+      "start": 23.457041437,
+      "end": 24.664937509
+    }
+  ]
+}

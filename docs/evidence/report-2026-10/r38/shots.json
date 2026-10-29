@@ -1,0 +1,46 @@
+{
+  "title": "Reconcile finds the gaps",
+  "seed": "reconcile-gap",
+  "start": "/reconcile",
+  "steps": [
+    {
+      "do": "hover",
+      "target": "tbody tr:first-child",
+      "hold": 1500
+    },
+    {
+      "do": "click",
+      "target": "tbody tr:first-child",
+      "expect": "button:visible:has-text('Link this invoice') >> nth=0",
+      "hold": 1500
+    },
+    {
+      "do": "wait",
+      "ms": 1500
+    },
+    {
+      "do": "click",
+      "target": "button:visible:has-text('Link this invoice') >> nth=0",
+      "expect": "text=Linked to the draft.",
+      "hold": 1500
+    },
+    {
+      "do": "click",
+      "target": "a[data-nav='invoices']"
+    },
+    {
+      "do": "click",
+      "target": "[role='tab']:has-text('Ready')"
+    },
+    {
+      "do": "click",
+      "target": "tr:has-text('SYNTHETIC-GAP') a[href^='/invoices/']",
+      "expect": "text=SYNTHETIC-GAP",
+      "hold": 1500
+    },
+    {
+      "do": "wait",
+      "ms": 1500
+    }
+  ]
+}

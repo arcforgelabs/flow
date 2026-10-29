@@ -1,0 +1,19 @@
+{
+  "synthetic": true,
+  "savedResponseStatus": 200,
+  "freshPage": {
+    "group": "Client",
+    "sort": "Due ascending",
+    "filter": "Status is Shipped",
+    "jobs": 7
+  },
+  "sameAccountOnPhone": {
+    "jobs": 7
+  },
+  "otherAccount": {
+    "group": "Status",
+    "sort": null,
+    "filter": null,
+    "jobs": 42
+  }
+}

@@ -1,0 +1,66 @@
+{
+  "title": "Reconcile finds the gaps",
+  "synthetic": true,
+  "viewport": {
+    "width": 1280,
+    "height": 800
+  },
+  "duration": 19.67412857,
+  "steps": [
+    {
+      "do": "hover",
+      "target": "tbody tr:first-child",
+      "hold": 1500,
+      "start": 0.5000104300000002,
+      "end": 2.8987029090000003
+    },
+    {
+      "do": "click",
+      "target": "tbody tr:first-child",
+      "expect": "button:visible:has-text('Link this invoice') >> nth=0",
+      "hold": 1500,
+      "start": 2.898710479,
+      "end": 5.287952313
+    },
+    {
+      "do": "wait",
+      "ms": 1500,
+      "start": 5.287958503,
+      "end": 7.988058006000001
+    },
+    {
+      "do": "click",
+      "target": "button:visible:has-text('Link this invoice') >> nth=0",
+      "expect": "text=Linked to the draft.",
+      "hold": 1500,
+      "start": 7.988065186,
+      "end": 10.398760840000001
+    },
+    {
+      "do": "click",
+      "target": "a[data-nav='invoices']",
+      "start": 10.39876472,
+      "end": 12.488519977
+    },
+    {
+      "do": "click",
+      "target": "[role='tab']:has-text('Ready')",
+      "start": 12.488527597000001,
+      "end": 14.544410237
+    },
+    {
+      "do": "click",
+      "target": "tr:has-text('SYNTHETIC-GAP') a[href^='/invoices/']",
+      "expect": "text=SYNTHETIC-GAP",
+      "hold": 1500,
+      "start": 14.544413987,
+      "end": 16.973548227
+    },
+    {
+      "do": "wait",
+      "ms": 1500,
+      "start": 16.973577788000004,
+      "end": 19.67412515
+    }
+  ]
+}

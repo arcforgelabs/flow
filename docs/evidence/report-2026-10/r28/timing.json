@@ -1,0 +1,64 @@
+{
+  "title": "Job board stages",
+  "synthetic": true,
+  "viewport": {
+    "width": 1280,
+    "height": 800
+  },
+  "duration": 17.345280407,
+  "steps": [
+    {
+      "do": "hover",
+      "target": ".fx-board__col >> nth=0",
+      "expect": ".fx-board",
+      "hold": 1500,
+      "start": 0.5000114609999996,
+      "end": 2.9122615389999997
+    },
+    {
+      "do": "click",
+      "target": ".fx-job >> nth=0",
+      "expect": "dialog.fx-task",
+      "hold": 1500,
+      "start": 2.9122681099999994,
+      "end": 5.313153749
+    },
+    {
+      "do": "wait",
+      "ms": 1500,
+      "hold": 1500,
+      "start": 5.313157649000001,
+      "end": 8.313896461
+    },
+    {
+      "do": "press",
+      "key": "Escape",
+      "expectHidden": "dialog.fx-task",
+      "start": 8.313901151,
+      "end": 9.523612874000001
+    },
+    {
+      "do": "click",
+      "target": "[role='radio']:has-text('List')",
+      "expect": ".fx-table",
+      "hold": 1500,
+      "start": 9.523618663999999,
+      "end": 11.963940527
+    },
+    {
+      "do": "click",
+      "target": "[role='radio']:has-text('Board')",
+      "expect": ".fx-board",
+      "hold": 1500,
+      "start": 11.963950107,
+      "end": 14.344908605
+    },
+    {
+      "do": "wait",
+      "ms": 1500,
+      "hold": 1500,
+      "start": 14.344912975,
+      "end": 17.345271827
+    }
+  ]
+}
