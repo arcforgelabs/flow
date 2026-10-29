@@ -147,7 +147,9 @@ button{font:inherit;color:inherit}
 .prog .maj .ib{background:var(--t-primary);border-color:var(--t-primary);color:var(--t-on-primary)}
 .br-none{color:var(--t-mute);font-size:13px}
 .tag--more{background:transparent;border:1.5px dashed var(--t-accent-brd);clip-path:none;border-radius:var(--t-radius);padding:5px 14px;color:var(--t-accent)}
-.br-d--empty{padding-bottom:4px}.br-d--empty .br-n::after{border-style:dashed;border-color:var(--t-brd-hi);background:var(--t-paper)}.br-d--empty .br-date b,.br-d--empty .br-date span{color:var(--t-mute)}
+.br-d--empty{padding:10px 0 22px}.br-d--empty .br-ul{margin-top:-28px}.br-d--empty .br-date b,.br-d--empty .br-date span{white-space:nowrap}.br-d--empty .br-date span{font-size:15px}
+.br-quiet{display:inline-flex;align-items:center;gap:8px;min-height:28px;margin:0 0 0 34px;font:italic 400 13.5px var(--t-body);color:var(--t-mute)}
+.br-quiet svg{width:15px;height:15px;color:var(--t-mute)}.br-d--empty .br-n::after{border-style:dashed;border-color:var(--t-brd-hi);background:var(--t-paper)}.br-d--empty .br-date b,.br-d--empty .br-date span{color:var(--t-mute)}
 .day-all{padding:0;display:flex;flex-wrap:wrap;gap:8px}
 .day-all .br-i{padding:0}
 .day-all .br-i::before{display:none}
@@ -419,7 +421,8 @@ NODES.forEach(function (n) {
   var a = dd(n.from), b = dd(n.to);
   if (n.empty) {
     var lbl = n.from === n.to ? [b.wd, b.d + ' ' + b.m] : [a.wd + ' – ' + b.wd, a.d + (a.m === b.m ? '' : ' ' + a.m) + ' – ' + b.d + ' ' + b.m];
-    html += node({ cls: ' br-d--empty' }, lbl, '');
+    var wk = [a.wd, b.wd].every(function (x) { return x === 'Sat' || x === 'Sun'; });
+    html += node({ cls: ' br-d--empty' }, lbl, '<li class="br-quiet">' + svgIcon('coffee') + '<span>' + (wk ? 'Weekend. No releases.' : 'Quiet ' + (n.from === n.to ? 'day' : 'days') + '. Kettle on, no releases.') + '</span></li>');
     return;
   }
   var g = n.its[0].day, id = seenDay[g] ? '' : 'day-' + g; seenDay[g] = 1;
