@@ -1,0 +1,59 @@
+{
+  "synthetic": true,
+  "sourceCommit": "9af250d7959cfdb96c5e7e636bcfa5e2a35b70c8",
+  "checks": [
+    {
+      "id": "r30",
+      "invoice": {
+        "status": "draft",
+        "ready_at": "2026-10-29T14:54:54.802Z",
+        "ready_by": null,
+        "issued_version": 0
+      },
+      "events": [
+        {
+          "kind": "observed",
+          "actor": "synthetic-recorder"
+        },
+        {
+          "kind": "ready",
+          "actor": "automation:mark_ready_from_work_status"
+        },
+        {
+          "kind": "drafted",
+          "actor": "automation:draft_when_ready"
+        }
+      ],
+      "result": "automatic draft is Ready; no person marked it Ready"
+    },
+    {
+      "id": "r37",
+      "status": 201,
+      "email": "demo-invite@example.test",
+      "role": "staff",
+      "invited": true,
+      "simulatedProviderResult": {
+        "emailed": true
+      },
+      "result": "Flow accepted the invitation through fake Clerk; delivery was not tested"
+    }
+  ],
+  "automations": {
+    "mark_ready_from_work_status": {
+      "marked": 1
+    },
+    "draft_when_ready": {
+      "drafted": 1,
+      "waiting": 0,
+      "off": 0,
+      "refused": 0,
+      "readFirst": 0
+    },
+    "ready_when_drafted": {
+      "marked": 1
+    },
+    "reference_from_rule": {
+      "updated": 0
+    }
+  }
+}

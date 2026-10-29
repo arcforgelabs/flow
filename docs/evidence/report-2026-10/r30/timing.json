@@ -1,0 +1,34 @@
+{
+  "synthetic": true,
+  "viewport": {
+    "width": 1280,
+    "height": 800
+  },
+  "steps": [
+    {
+      "label": "Open Automations: Draft when ready and Ready when drafted are on.",
+      "start": 0.000031120999999984634,
+      "end": 2.933480788
+    },
+    {
+      "label": "Inspect Ready when drafted. The capture command now runs the real automations once.",
+      "start": 2.9603032330000008,
+      "end": 5.279647777
+    },
+    {
+      "label": "Open Invoices. The new draft appears on Ready.",
+      "start": 5.303155362,
+      "end": 7.636940574000001
+    },
+    {
+      "label": "Open the automatic draft: Ready invoice.",
+      "start": 7.672160684,
+      "end": 9.949821759999999
+    },
+    {
+      "label": "Inspect the filled client and price line.",
+      "start": 9.993001735,
+      "end": 12.921327701000001
+    }
+  ]
+}
