@@ -6,6 +6,17 @@
 
 const read = (env, name) => String(env?.[name] ?? '').trim();
 
+// Express counts trusted proxy hops from the app, not from the client.
+export function resolveTrustProxy(env = process.env) {
+  const value = read(env, 'FLOW_TRUST_PROXY_HOPS');
+  if (!value) return read(env, 'REPL_ID') || read(env, 'REPLIT_DEPLOYMENT') ? 1 : false;
+  const hops = Number(value);
+  if (!/^\d+$/.test(value) || !Number.isSafeInteger(hops)) {
+    throw new Error('FLOW_TRUST_PROXY_HOPS must be a non-negative safe integer');
+  }
+  return hops;
+}
+
 // Replit sets REPL_ID in the workspace and REPLIT_DEPLOYMENT on the published
 // app only.
 export function isReplitWorkspace(env = process.env) {
