@@ -6,12 +6,13 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Playfair+Display:wght@400;500&display=swap">
 <style>
 /* Flow Meridian tokens (server/theme/themes.js), the live app's default family. */
+/* --t-badge stays dark in both modes: the Major tag sits on light app screenshots. */
 :root{
   --t-bg:#f6f3ef;--t-s1:#efe9e0;--t-paper:#ffffff;--t-brd:#e0dbd1;--t-brd-hi:#b8a685;
   --t-text:#1d3444;--t-strong:#13242f;--t-dim:#4d6575;--t-mute:#526a7a;
   --t-accent:#1d3444;--t-accent-bg:#faefdd;--t-accent-brd:#d4b07a;--t-primary:#1d3444;--t-on-primary:#f8dfb9;--t-ring:#b08850;
   --t-body:'Plus Jakarta Sans',system-ui,-apple-system,'Segoe UI',sans-serif;--t-display:'Playfair Display',Georgia,serif;
-  --t-danger:#b42318;--t-danger-bg:rgba(180,35,24,.07);--t-danger-brd:rgba(180,35,24,.40);--t-success:#22663f;--t-success-bg:rgba(34,102,63,.08);--t-success-brd:rgba(34,102,63,.40);--t-radius-lg:2px;--t-radius:0px;--t-support:#6d4aa8;--t-on-support:#ffffff;--t-shadow:0 1px 2px rgba(29,52,68,.06);
+  --t-danger:#b42318;--t-danger-bg:rgba(180,35,24,.07);--t-danger-brd:rgba(180,35,24,.40);--t-success:#22663f;--t-success-bg:rgba(34,102,63,.08);--t-success-brd:rgba(34,102,63,.40);--t-badge:#1d3444;--t-badge-ink:#f8dfb9;--t-radius-lg:2px;--t-radius:0px;--t-support:#6d4aa8;--t-on-support:#ffffff;--t-shadow:0 1px 2px rgba(29,52,68,.06);
   color-scheme:light;
 }
 @media screen and (prefers-color-scheme:dark){:root:not([data-theme="light"]){--t-danger:#f2877b;--t-danger-bg:rgba(242,135,123,.12);--t-danger-brd:rgba(242,135,123,.45);--t-success:#86d3a1;--t-success-bg:rgba(134,211,161,.12);--t-success-brd:rgba(134,211,161,.45);--t-support:#b79cf0;--t-on-support:#1f1336;
@@ -242,7 +243,7 @@ body[data-mode="full"] .hl .th{display:block;position:relative;grid-column:1/-1;
 body[data-mode="full"] .hl .th img{display:block;width:100%;height:100%;object-fit:cover;object-position:top left}
 body[data-mode="full"] .hl .play{position:absolute;left:50%;top:50%;width:52px;height:52px;margin:-26px 0 0 -26px;display:grid;place-items:center;border-radius:50%;background:var(--t-primary);color:var(--t-on-primary);opacity:.9;transition:transform .15s ease}
 body[data-mode="full"] .hl .play svg{width:22px;height:22px}
-body[data-mode="full"] .hl .key .th::after{content:"Major";position:absolute;left:12px;top:12px;padding:3px 10px;font:600 11px/1.4 var(--t-body);letter-spacing:.12em;text-transform:uppercase;background:var(--t-primary);color:var(--t-on-primary);border-radius:var(--t-radius)}
+body[data-mode="full"] .hl .key .th::after{content:"Major";position:absolute;left:12px;top:12px;padding:3px 10px;font:600 11px/1.4 var(--t-body);letter-spacing:.12em;text-transform:uppercase;background:var(--t-badge);color:var(--t-badge-ink);border:1px solid var(--t-badge-ink);box-shadow:0 2px 8px rgba(0,0,0,.35);border-radius:var(--t-radius)}
 body[data-mode="full"] .hl button:hover .play{transform:scale(1.12)}
 body[data-mode="full"] .hl .ib{margin-left:16px;width:40px;height:40px}
 body[data-mode="full"] .hl b{font:400 19px/1.25 var(--t-display);padding-right:16px}
