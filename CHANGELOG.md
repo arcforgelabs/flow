@@ -7,6 +7,7 @@ Release notes: https://github.com/arcforgelabs/flow/releases
 Each release has its complete changelog below. Audited contribution records are retained separately when available.
 
 - [Unreleased](CHANGELOG/Unreleased.md) · [Raw](https://github.com/arcforgelabs/flow/raw/refs/heads/main/CHANGELOG/Unreleased.md)
+- [2026.10.53](CHANGELOG/2026.10.53.md) · [Raw](https://github.com/arcforgelabs/flow/raw/refs/heads/main/CHANGELOG/2026.10.53.md)
 - [2026.10.52](CHANGELOG/2026.10.52.md) · [Raw](https://github.com/arcforgelabs/flow/raw/refs/heads/main/CHANGELOG/2026.10.52.md)
 - [2026.10.51](CHANGELOG/2026.10.51.md) · [Raw](https://github.com/arcforgelabs/flow/raw/refs/heads/main/CHANGELOG/2026.10.51.md)
 - [2026.10.50](CHANGELOG/2026.10.50.md) · [Raw](https://github.com/arcforgelabs/flow/raw/refs/heads/main/CHANGELOG/2026.10.50.md)
