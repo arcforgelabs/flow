@@ -163,8 +163,8 @@ body[data-mode="full"] .wsys{display:grid;grid-template-columns:minmax(0,1fr) mi
 .sl .ic{fill:var(--t-paper);stroke:var(--t-brd-hi);stroke-width:1.5}.sl.on .ic{fill:var(--t-primary);stroke:var(--t-primary)}
 .sl .wi{fill:none;stroke:var(--t-strong);stroke-width:2;stroke-linecap:round;stroke-linejoin:round}.sl.on .wi{stroke:var(--t-on-primary)}
 .sl text{font:600 13px var(--t-body);fill:var(--t-dim)}.sl.on text{fill:var(--t-strong)}
-.wring{fill:none;stroke:var(--t-accent);stroke-width:5;stroke-linecap:round}
-.wtip{fill:var(--t-accent);stroke:var(--t-paper);stroke-width:2}
+.wring{fill:none;stroke:var(--t-accent);stroke-width:2;stroke-linecap:round;opacity:.45}
+.wtip{fill:var(--t-accent);opacity:.6}
 .whub{fill:var(--t-paper)}
 .wflow rect{fill:var(--t-primary)}.wflow path{fill:none;stroke:var(--t-on-primary);stroke-width:2.6;stroke-linecap:round}
 .wpanel{display:grid;grid-template-rows:40px auto auto 1fr auto;gap:8px;height:236px;box-sizing:border-box;padding:20px;border:1px solid var(--t-brd);border-radius:var(--t-radius-lg);background:var(--t-paper)}
@@ -421,7 +421,7 @@ document.getElementById('pipe').innerHTML = '<div class="stg"><span class="lbl">
 }).join('') + '</ul></div><div class="stg stg--go"><span class="ib">' + svgIcon('rocket') + '</span><b>' + esc(A.planned.label) + '</b><span class="lbl">' + esc(A.planned.note) + '</span></div>';
 
 /* ---------- Ongoing: pizza slices; a timer fills the active slice's rim, then moves on; the pointer takes over ---------- */
-var WATCH = R.ongoing, TURN = 4500;
+var WATCH = R.ongoing, TURN = 9000;
 (function watchFig() {
   var C = 220, RO = 200, RI = 52, N = WATCH.length, STEP = 2 * Math.PI / N, A0 = -Math.PI / 2 - STEP / 2;
   function pt(r, a) { return (C + r * Math.cos(a)).toFixed(1) + ' ' + (C + r * Math.sin(a)).toFixed(1); }
@@ -433,7 +433,7 @@ var WATCH = R.ongoing, TURN = 4500;
       '<circle class="ic" cx="' + x + '" cy="' + (y - 10) + '" r="26"/><g transform="translate(' + (x - 12) + ' ' + (y - 22) + ')"><g class="wi">' + (I[w.icon] || '') + '</g></g>' +
       '<text x="' + x + '" y="' + (y + 36) + '" text-anchor="middle">' + esc(w.name) + '</text></g>';
   });
-  s += '<path class="wring" id="wring" d=""/><circle class="wtip" id="wtip" r="7" cx="' + C + '" cy="' + (C - RO) + '"/>';
+  s += '<path class="wring" id="wring" d=""/><circle class="wtip" id="wtip" r="3.5" cx="' + C + '" cy="' + (C - RO) + '"/>';
   s += '<circle class="whub" cx="' + C + '" cy="' + C + '" r="' + (RI - 6) + '"/><g class="wflow"><rect x="' + (C - 28) + '" y="' + (C - 28) + '" width="56" height="56" rx="14"/><path d="M' + (C - 15) + ' ' + (C - 5) + 'c5-5 10-5 15 0s10 5 15 0M' + (C - 15) + ' ' + (C + 7) + 'c5-5 10-5 15 0s10 5 15 0"/></g>';
   document.getElementById('wfig').innerHTML = '<svg viewBox="0 0 440 440" role="img" aria-label="Ongoing work on ' + esc(R.product) + '. Point at a slice to see it.">' + s + '</svg>';
   var svg = document.querySelector('#wfig svg'), ring = document.getElementById('wring'), tip = document.getElementById('wtip'), cur = -1, t0 = 0, held = false;
@@ -446,7 +446,7 @@ var WATCH = R.ongoing, TURN = 4500;
   }
   // The rim timer: an arc grows along the active slice's edge; the dot leads it; at the end the next slice takes over.
   function rim(f) {
-    var a = A0 + cur * STEP, b = a + STEP * Math.max(f, 0.001), r = RO + 9;
+    var a = A0 + cur * STEP, b = a + STEP * Math.max(f, 0.001), r = RO + 6;
     ring.setAttribute('d', 'M' + pt(r, a) + 'A' + r + ' ' + r + ' 0 0 1 ' + pt(r, b));
     var p = pt(r, b).split(' '); tip.setAttribute('cx', p[0]); tip.setAttribute('cy', p[1]);
   }
