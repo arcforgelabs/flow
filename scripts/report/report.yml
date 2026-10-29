@@ -34,7 +34,7 @@ planned: Planned releases
 # from the period's records ({fix} = average time from request to fix).
 # `zero` replaces the result when its count is 0.
 ongoing:
-  - { icon: shield-check, name: Security, result: "{security} fixes", zero: All clear, does: Checks Flow's software for known flaws., when: Every week }
+  - { icon: shield-check, name: Security, result: "{security} updates", zero: All clear, does: Checks Flow's software for known flaws., when: Every week }
   - { icon: life-buoy, name: Error watch, result: Watching, does: Catches each error and starts a fix., when: All the time }
   - { icon: message-square, name: Requests, result: "{support} resolved", does: "Request to fix: {fix} on average.", when: Every request }
 
@@ -87,6 +87,8 @@ icons:
 # from public pull request titles. A title here wins over the release note
 # line. Write new ones in the release Highlights, so this list stays short.
 titles:
+  328: Node security update
+  336: Package supply checks
   365: Photo capture store
   373: Read form photos
   382: Seazona history read
