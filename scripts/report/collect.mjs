@@ -147,7 +147,7 @@ export function build(config, data, nowIso) {
       seen.add(p.number);
       const note = config.notes?.[p.number] || {}, impact = userImpact(p.body);
       items.push({ id, title, icon: mark === "security" ? "shield-check" : iconFor(p.title, config.icons), kind: kindOf(p.title), day: null, date: null, next: false,
-        major: has(p, L.major), support: has(p, L.support), why: note.text || impact.why, what: impact.what || title, more: [], status: `Done · ${short(at)}`,
+        major: has(p, L.major), support: has(p, L.support), why: impact.why, what: impact.what || title, more: [], points: note.points || [], action: note.action || "", status: `Done · ${short(at)}`,
         prs: [p.number], issues: linkedIssues(p.body), evidence: null, links: note.link ? [note.link] : [] });
     }
     return { open: id, title, date: short(at), mark, thisWeek: at >= w.thisWeek };

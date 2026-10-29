@@ -89,15 +89,18 @@ icons:
 # Short customer titles, at most four words, written by hand (or by an agent)
 # from public pull request titles. A title here wins over the release note
 # line. Write new ones in the release Highlights, so this list stays short.
-# Short text for a security or support pop-up, by pull request number, and an
-# optional read-up link off the site. Without a note, the pull request's
-# "User Impact" text is used.
+# A pop-up at a glance, by pull request number: up to four short points (a few
+# words each), what the reader must do, and an optional read-up link off the
+# site. Without a note, the pop-up shows the pull request's first "User Impact"
+# sentence.
 notes:
   328:
-    text: Flow now runs on Node.js 24.22.1. This version closes the flaws in the Node.js security release of 21 October. You do not need to do anything.
-    link: { label: Node.js security release, href: "https://nodejs.org/en/blog/vulnerability/october-2026-security-releases" }
+    points: [Node.js 24.22.1, 21 Oct security fixes in, Every build uses it]
+    action: Nothing to do
+    link: { label: Node.js release, href: "https://nodejs.org/en/blog/vulnerability/october-2026-security-releases" }
   336:
-    text: Each new software package in Flow must now come from the public registry, with a valid signature and a licence. A package with a known serious flaw is stopped. You do not need to do anything.
+    points: [Public registry only, Signed packages only, Licence required, Serious flaws blocked]
+    action: Nothing to do
 
 titles:
   328: Node security update

@@ -261,7 +261,28 @@ body[data-mode="full"] .hl b{font:400 19px/1.25 var(--t-display);padding-right:1
 .card-h h3{margin:0;font:400 22px/1.2 var(--t-display);color:var(--t-strong)}
 .card-h .x{all:unset;cursor:pointer;margin-left:auto;width:32px;height:32px;flex:none;display:grid;place-items:center;color:var(--t-dim);border:1px solid var(--t-brd)}
 .card-b{padding:16px 20px 20px;display:grid;gap:14px}
-.status{display:inline-block;margin-top:4px;padding:2px 8px;font:600 10.5px var(--t-body);letter-spacing:.14em;text-transform:uppercase;border:1px solid var(--t-accent-brd);background:var(--t-accent-bg);color:var(--t-accent)}
+.status{display:inline-flex;align-items:center;gap:6px;margin-top:4px;font:500 13px var(--t-body);color:var(--t-dim)}
+.status .kd{color:var(--t-dim)}.status .sup{width:16px;height:16px}
+.card-b .pts{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px}
+.pts li{display:flex;align-items:center;gap:10px;padding:12px 14px;border:1px solid var(--t-brd);border-radius:var(--t-radius);background:var(--t-bg);font:600 14px/1.3 var(--t-body);color:var(--t-strong)}
+.pts svg{width:18px;height:18px;flex:none;color:var(--t-accent)}
+.cline{font:500 15.5px/1.5 var(--t-body);color:var(--t-strong)}
+.you{display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:var(--t-radius);background:var(--t-accent-bg);border:1px solid var(--t-accent-brd);font:600 14px var(--t-body);color:var(--t-strong)}
+.you svg{width:18px;height:18px;color:var(--t-accent)}
+.lnk{display:flex;flex-wrap:wrap;gap:8px}
+.scrim.wide .card{width:min(1080px,100%)}
+.feat{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:20px;align-items:start}
+.feat .media{border-radius:var(--t-radius);overflow:hidden}
+.side{display:grid;gap:14px;align-content:start}
+.side .pts{grid-template-columns:1fr}
+.card-b .stp{padding:0}
+.stp{list-style:none;margin:-6px 0 0;padding:0;display:grid;gap:10px;counter-reset:s}
+.stp li{display:grid;grid-template-columns:26px 1fr;gap:10px;align-items:start;font-size:14px;line-height:1.45;color:var(--t-text)}
+.stp b{display:grid;place-items:center;width:26px;height:26px;border-radius:50%;background:var(--t-badge);color:var(--t-badge-ink);font:700 12px var(--t-body)}
+@media (max-width:1023px){.feat{grid-template-columns:1fr}}
+.lnk a{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border:1px solid var(--t-brd);border-radius:var(--t-radius);font:600 13px var(--t-body);color:var(--t-strong);text-decoration:none}
+.lnk a:hover{border-color:var(--t-accent-brd);background:var(--t-s1)}
+.lnk svg{width:14px;height:14px;color:var(--t-mute)}
 .card-b p{margin:0}
 .proof{padding:12px 14px;border:1px solid var(--t-accent-brd);background:var(--t-accent-bg);border-radius:var(--t-radius)}
 .steps{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:8px}
@@ -270,7 +291,6 @@ body[data-mode="full"] .hl b{font:400 19px/1.25 var(--t-display);padding-right:1
 .step b{font-size:13px;color:var(--t-strong)}.step span{font-size:12px;color:var(--t-dim)}
 .arr{color:var(--t-mute);font-size:18px}
 .proof .media{margin-top:10px}
-.cwhy{font:400 22px/1.3 var(--t-display);color:var(--t-strong)}
 .card-b ul{margin:0;padding-left:18px}
 .media{margin:0;border:1px solid var(--t-brd);background:var(--t-bg)}
 .media img{display:block;width:100%;height:auto}
@@ -278,14 +298,6 @@ body[data-mode="full"] .hl b{font:400 19px/1.25 var(--t-display);padding-right:1
 .video{display:grid;place-items:center;gap:4px;min-height:130px;border:1px dashed var(--t-brd-hi);color:var(--t-mute);font-size:13px;text-align:center;padding:16px}
 .video svg{width:32px;height:32px}
 .media video{display:block;width:100%;height:auto;background:var(--t-bg)}
-.try{margin:0;padding-left:20px;font-size:14px}
-.det{display:grid;gap:10px;margin-top:10px}
-.det .ev{margin:0}
-.try li+li{margin-top:4px}
-.ev{display:grid;gap:6px;margin-top:6px}
-.tech{border:0;padding:0;margin:0}.tech summary{font:600 11px var(--t-body);letter-spacing:.14em;text-transform:uppercase;color:var(--t-mute)}
-.ev a{font-size:14px}
-.ev a span{margin-left:8px;font-size:12px;color:var(--t-mute)}
 
 /* Full mode */
 body[data-mode="summary"] .full{display:none}
@@ -606,18 +618,22 @@ function open(id) {
   back = document.activeElement;
   document.getElementById('card-i').innerHTML = svgIcon(it.icon);
   document.getElementById('card-t').textContent = it.title;
-  document.getElementById('card-s').textContent = (it.icon === 'shield-check' && !it.date ? 'Security · ' : it.kind ? (it.kind === 'fix' ? 'Bug fix · ' : 'New feature · ') : '') + it.status;
-  var e = it.evidence, b = it.why ? '<p class="cwhy">' + esc(it.why) + '</p>' : '';
-  if (it.links && it.links.length) b += '<div class="xl">' + it.links.map(function (l) { return '<a href="' + esc(l.href) + '" target="_blank" rel="noopener">' + esc(l.label) + svgIcon('external-link') + '</a>'; }).join('') + '</div>';
-  if (e && e.clip) b += '<figure class="media"><video controls playsinline preload="none" poster="' + esc(e.still) + '" src="' + esc(e.clip) + '" aria-label="' + esc(it.title) + ' walkthrough, with sample data"></video><figcaption>Sample data</figcaption></figure>';
-  var d = '<p>' + esc(it.what) + '</p>';
-  if (it.more && it.more.length) d += '<ul>' + it.more.map(function (m) { return '<li>' + esc(m) + '</li>'; }).join('') + '</ul>';
-  if (e && e.steps && e.steps.length) d += '<div class="lbl">Try it</div><ol class="try">' + e.steps.map(function (st) { return '<li>' + esc(st) + '</li>'; }).join('') + '</ol>';
-  var ev = (it.prs || []).map(function (n) { return '<a href="' + GH + 'pull/' + n + '" target="_blank" rel="noopener">Change ' + n + '<span>code, tests and checks (GitHub)</span></a>'; })
-    .concat((it.issues || []).map(function (n) { return '<a href="' + GH + 'issues/' + n + '" target="_blank" rel="noopener">Plan ' + n + '<span>the agreed plan (GitHub)</span></a>'; }));
-  if (ev.length) d += '<div class="ev">' + ev.join('') + '</div>';
-  b += '<details class="tech"><summary>Details</summary><div class="det">' + d + '</div></details>';
-  document.getElementById('card-b').innerHTML = b;
+  // One line under the title: the kind mark, then the state and the date.
+  var mk = it.icon === 'shield-check' && !it.date ? '<span class="kd" data-tip="Security" role="img" aria-label="Security">' + svgIcon('shield-check') + '</span>' : kind(it);
+  document.getElementById('card-s').innerHTML = mk + '<span>' + esc(it.status) + '</span>' + (it.support ? badge() : '');
+  // At a glance: short points (or one short line), the steps to try it, what the reader must do, then links.
+  // With a clip, the clip leads on the left and these sit in a side panel on the right.
+  var e = it.evidence, side = '';
+  if (it.points && it.points.length) side += '<ul class="pts">' + it.points.map(function (t) { return '<li>' + svgIcon('check') + '<span>' + esc(t) + '</span></li>'; }).join('') + '</ul>';
+  else if (it.why) side += '<p class="cline">' + esc(it.why) + '</p>';
+  if (e && e.steps && e.steps.length) side += '<div class="lbl">Try it</div><ol class="stp">' + e.steps.map(function (st, k) { return '<li><b>' + (k + 1) + '</b><span>' + esc(st) + '</span></li>'; }).join('') + '</ol>';
+  if (it.action) side += '<div class="you">' + svgIcon('user-check') + '<span>' + esc(it.action) + '</span></div>';
+  var ln = (it.links || []).map(function (l) { return '<a href="' + esc(l.href) + '" target="_blank" rel="noopener">' + esc(l.label) + svgIcon('external-link') + '</a>'; })
+    .concat((it.prs || []).map(function (n) { return '<a href="' + GH + 'pull/' + n + '" target="_blank" rel="noopener" data-tip="Code, tests and checks">' + svgIcon('git-pull-request') + 'Change</a>'; }));
+  if (ln.length) side += '<div class="lnk">' + ln.join('') + '</div>';
+  var clip = e && e.clip;
+  document.getElementById('card-b').innerHTML = clip ? '<div class="feat"><figure class="media"><video controls playsinline preload="none" poster="' + esc(e.still) + '" src="' + esc(e.clip) + '" aria-label="' + esc(it.title) + ' walkthrough, with sample data"></video></figure><div class="side">' + side + '</div></div>' : side;
+  scrim.classList.toggle('wide', !!clip);
   scrim.hidden = false; document.getElementById('card-x').focus();
 }
 // An Ongoing slice's evidence: the cards behind Security, each error's day, each request's time to fix.
@@ -657,7 +673,7 @@ function openWatch(i) {
   if (w.link) b += '<div class="xl"><a href="' + esc(w.link.href) + '" target="_blank" rel="noopener">' + esc(w.link.label) + svgIcon('external-link') + '</a></div>';
   document.getElementById('card-b').innerHTML = b;
   document.querySelectorAll('#card-b .rbar i').forEach(function (e) { e.style.width = e.getAttribute('data-p') + '%'; });
-  scrim.classList.add('day'); scrim.hidden = false; document.getElementById('card-x').focus();
+  scrim.classList.remove('wide'); scrim.classList.add('day'); scrim.hidden = false; document.getElementById('card-x').focus();
 }
 // The + on a day: a day sheet. A split bar counts new features, bug fixes and the rest;
 // below it one column for each, every row opens its own card.
@@ -677,10 +693,10 @@ function openDay(key) {
   }).join('') + '</div>';
   // Segment widths from the counts (set as properties: the page policy blocks style attributes).
   document.querySelectorAll('#card-b .dseg').forEach(function (e) { e.style.flexGrow = e.getAttribute('data-n'); });
-  scrim.classList.add('day'); scrim.hidden = false; document.getElementById('card-x').focus();
+  scrim.classList.remove('wide'); scrim.classList.add('day'); scrim.hidden = false; document.getElementById('card-x').focus();
 }
 document.addEventListener('click', function (e) { var m = e.target.closest('[data-day]'); if (m) { e.preventDefault(); openDay(m.getAttribute('data-day')); } });
-function close() { scrim.classList.remove('day'); scrim.hidden = true; if (back && back.focus) back.focus(); }
+function close() { scrim.classList.remove('day', 'wide'); scrim.hidden = true; if (back && back.focus) back.focus(); }
 document.getElementById('card-x').addEventListener('click', close);
 scrim.addEventListener('click', function (e) { if (e.target === scrim) close(); });
 document.addEventListener('keydown', function (e) {
