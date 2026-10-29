@@ -411,10 +411,10 @@ body[data-mode="full"] .sec h4{margin:24px 0 12px}
   </div>
 </div>
 
-<script type="application/json" id="report">__REPORT__</script>
 <script>
 (function () {
-var R = JSON.parse(document.getElementById('report').textContent);
+// The report, written in by render.mjs as a script value (every "<" escaped).
+var R = __REPORT__;
 var ITEMS = R.items, I = R.icons, GH = R.links.repo;
 var BY = {}; ITEMS.forEach(function (it) { BY[it.id] = it; });
 function svgIcon(name) { return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + (I[name] || '') + '</svg>'; }

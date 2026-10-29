@@ -75,7 +75,8 @@ test('the email is safe to send: no script, inline styles, absolute links and me
 test('the web page carries the report data and the icons it names', () => {
   const r = build(config, data, NOW);
   const html = site(r, 'https://reports.example/flow');
-  const json = JSON.parse(html.match(/<script type="application\/json" id="report">([\s\S]*?)<\/script>/)[1]);
+  const json = JSON.parse(html.match(/var R = (\{.*\});\n/)[1]);
+  assert.ok(!/<\/script/i.test(html.match(/var R = (\{.*\});\n/)[1]), 'no closing tag inside the data');
   assert.equal(json.links.site, 'https://reports.example/flow');
   for (const i of json.items) assert.ok(json.icons[i.icon], `icon ${i.icon}`);
 });

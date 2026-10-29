@@ -20,7 +20,10 @@ export function icons(names) {
   const out = {};
   for (const n of new Set(names)) {
     const f = join(ICONS, `${n}.svg`);
-    if (existsSync(f)) out[n] = readFileSync(f, "utf8").replace(/<!--[\s\S]*?-->/g, "").replace(/<!--|-->/g, "").replace(/^[\s\S]*?<svg[^>]*>|<\/svg>\s*$/g, "").replace(/\s+/g, " ").trim();
+    if (!existsSync(f)) continue;
+    // The shapes inside <svg>…</svg>; the licence comment sits before <svg> and is left out.
+    const t = readFileSync(f, "utf8"), a = t.indexOf(">", t.indexOf("<svg")) + 1;
+    out[n] = t.slice(a, t.lastIndexOf("</svg>")).replace(/\s+/g, " ").trim();
   }
   return out;
 }
