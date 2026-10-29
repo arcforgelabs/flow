@@ -1,0 +1,74 @@
+{
+  "synthetic": true,
+  "sourceCommit": "df87ccda9c4a8558406547abdc45dde3134de45e",
+  "command": "node docs/evidence/report-2026-10/r27/stills.mjs",
+  "workers": 1,
+  "wallSeconds": 7.73,
+  "ruleSaveStatus": 200,
+  "checks": [
+    {
+      "size": "desktop",
+      "ruleName": "Old job",
+      "savedDays": 60,
+      "action": "wait",
+      "freshLoad": true
+    },
+    {
+      "size": "desktop",
+      "tabOrder": [
+        "Pending",
+        "Ready",
+        "Draft",
+        "Approved",
+        "Sent",
+        "Non-chargeable",
+        "Void"
+      ],
+      "counts": {
+        "pending": 8,
+        "ready": 42,
+        "draft": 0,
+        "approved": 14,
+        "sent": 0,
+        "non_chargeable": 0,
+        "void": 0
+      },
+      "allTabsChecked": true,
+      "pageWithinViewport": true
+    },
+    {
+      "size": "phone",
+      "ruleName": "Old job",
+      "savedDays": 60,
+      "action": "wait",
+      "freshLoad": true
+    },
+    {
+      "size": "phone",
+      "tabOrder": [
+        "Pending",
+        "Ready",
+        "Draft",
+        "Approved",
+        "Sent",
+        "Non-chargeable",
+        "Void"
+      ],
+      "counts": {
+        "pending": 8,
+        "ready": 42,
+        "draft": 0,
+        "approved": 14,
+        "sent": 0,
+        "non_chargeable": 0,
+        "void": 0
+      },
+      "allTabsChecked": true,
+      "pageWithinViewport": true
+    }
+  ],
+  "integrations": {
+    "xero": "disabled",
+    "seazona": "disabled"
+  }
+}

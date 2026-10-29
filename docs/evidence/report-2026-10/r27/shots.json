@@ -1,0 +1,58 @@
+{
+  "title": "Invoice rules: save an age check",
+  "seed": "basic",
+  "start": "/invoicing-settings/invoices",
+  "steps": [
+    {
+      "do": "click",
+      "target": "button[aria-label=\"Edit Old job\"]",
+      "expect": "dialog:has(input[aria-label=\"Value\"][value=\"90\"])"
+    },
+    {
+      "do": "click",
+      "target": "dialog button:text-is(\"Cancel\")",
+      "expectHidden": "dialog"
+    },
+    {
+      "do": "click",
+      "target": "button[aria-label=\"Edit Old job\"]",
+      "expect": "input[aria-label=\"Value\"]"
+    },
+    {
+      "do": "click",
+      "target": "input[aria-label=\"Value\"]"
+    },
+    {
+      "do": "press",
+      "key": "Control+a"
+    },
+    {
+      "do": "press",
+      "key": "Backspace"
+    },
+    {
+      "do": "type",
+      "target": "input[aria-label=\"Value\"]",
+      "text": "60"
+    },
+    {
+      "do": "click",
+      "target": "dialog button:text-is(\"Save\")",
+      "expect": "text=Job age (days) is more than 60",
+      "expectHidden": "dialog",
+      "hold": 1500
+    },
+    {
+      "do": "click",
+      "target": "button[aria-label=\"Edit Old job\"]",
+      "expect": "dialog:has(input[aria-label=\"Value\"][value=\"60\"])",
+      "hold": 1500
+    },
+    {
+      "do": "hover",
+      "target": "select[aria-label=\"Then\"]",
+      "expect": "select[aria-label=\"Then\"]:has(option:checked:text-is(\"Wait for a person\"))",
+      "hold": 1500
+    }
+  ]
+}
