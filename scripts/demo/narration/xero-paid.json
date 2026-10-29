@@ -1,6 +1,6 @@
 {
   "cues": [
-    {"step":1,"through":3,"text":"Payments from Xero now show up here. This one's paid."},
-    {"step":4,"through":6,"text":"If we open the invoice, we can see its payment in the Linked card."}
+    {"step":1,"through":3,"text":"You can check what's paid without leaving Flow. This one's paid."},
+    {"step":4,"through":6,"text":"Open the invoice, and you've got the payment and its link back to Xero."}
   ]
 }

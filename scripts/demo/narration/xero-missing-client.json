@@ -1,7 +1,7 @@
 {
   "cues": [
-    {"step":1,"through":4,"text":"This one's waiting because the client isn't in Xero yet. We can add them from here."},
-    {"step":5,"through":6,"text":"We'll create them here."},
-    {"step":7,"through":8,"text":"There we go. The invoice is ready to send."}
+    {"step":1,"through":4,"text":"We can add a missing Xero client without leaving the invoice."},
+    {"step":5,"through":6,"text":"That's the right client, so we'll confirm."},
+    {"step":7,"through":8,"text":"The invoice is ready now. We haven't sent it."}
   ]
 }

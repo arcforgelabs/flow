@@ -78,6 +78,13 @@ settings consistent across editions. This uses OpenAI's speech endpoint only,
 not ChatGPT live voice or Realtime. The API key needs text-to-speech Request
 permission and must be injected as `VOICE_EXPLAINER_TOKEN` by the environment.
 
+Give each feature a short reason to care, a clear story through the working
+path, and an honest action or result to end on. Do not introduce Dotius or use
+a fixed sign-off. Mention a limitation only when it helps the viewer. Name
+upcoming work only when it is verified; never invent a roadmap promise. Closing
+words must match what the clip proves: creating a Xero client, for example,
+makes this invoice ready but does not send it.
+
 ```sh
 node scripts/demo/narrate.mjs \
   docs/evidence/report-2026-10/xero-paid/timing.json \
