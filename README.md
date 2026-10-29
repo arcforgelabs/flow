@@ -45,6 +45,7 @@ run a lab.
 | `docs/INVOICE_SENDING.md` | The invoice tabs (Pending, Ready, Draft, Approved, Sent, Void), a changed job, and Send all ready to the accounting system |
 | `docs/CONTACTS.md` | Contacts: Flow's own customers and suppliers, and creating a missing Xero client from one |
 | `docs/RECONCILE.md` | The daily reconcile: counts and totals per day across the work system's copy, the ledger and the accounting copy |
+| `docs/CUSTOMER_REPORT.md` | The weekly customer report: the template, the labels that steer it, and the workflow that makes the email and the web page from public records |
 | `docs/ALERTS.md` | Quiet alerts: the slim line on a page when something there needs a person, and how a person dismisses it |
 | `docs/AUTOMATIONS.md` | Automations: Flow routines that mark jobs ready to invoice and draft them, each on or off |
 | `docs/LINE_MAPPING.md` | Line mapping: how each work system line finds its price item, and Price codes in Settings |

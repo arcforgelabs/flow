@@ -1,0 +1,76 @@
+name: Customer Report
+run-name: Customer report for ${{ github.event_name == 'release' && github.event.release.tag_name || 'the week' }}
+
+# The weekly customer report (docs/CUSTOMER_REPORT.md). It fills the hand-written
+# template scripts/report/report.yml from public GitHub records only (releases,
+# pull requests and their labels, roadmap issues) and writes the pair:
+# site.html (the full web page) and email.html (the email summary, with merge
+# fields for each subscriber). The files are a workflow artifact. Hosting the
+# page (arcforgelabs/console#24) and sending the email
+# (arcforgelabs/platform#439) are separate steps.
+
+on:
+  release:
+    types: [published]
+  schedule:
+    - cron: "0 22 * * 0" # Monday 08:00 or 09:00 Sydney
+  workflow_dispatch:
+    inputs:
+      site_url:
+        description: Web address of the full page, for the email's links
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: customer-report
+  cancel-in-progress: true
+
+jobs:
+  report:
+    name: report
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24.22.1
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Collect
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          # Public generic report only. Account telemetry belongs in a private runner.
+        run: node scripts/report/collect.mjs --out report.json
+
+      - name: Render
+        env:
+          SITE_URL: ${{ inputs.site_url || vars.CUSTOMER_REPORT_SITE_URL || 'site.html' }}
+        run: node scripts/report/render.mjs --report report.json --out out --site-url "$SITE_URL"
+
+      - name: Upload
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: customer-report
+          path: |
+            report.json
+            out/
+          retention-days: 30

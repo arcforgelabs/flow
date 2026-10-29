@@ -8,6 +8,12 @@
     "steps": [
       "Open Invoices, Ready, and find the shipped job the rule drafted.",
       "Open Automations. Draft when ready is on: that is the rule that invoiced it."
+    ],
+    "prs": [
+      77,
+      83,
+      89,
+      91
     ]
   },
   {
@@ -19,6 +25,11 @@
     "steps": [
       "Open Rules, Price codes. Seazona lines find their price item from the list.",
       "Open Jobs. The Shipped column is a work stage, and the job belongs to its practice."
+    ],
+    "prs": [
+      93,
+      94,
+      97
     ]
   },
   {
@@ -30,6 +41,9 @@
     "steps": [
       "Open Xero, Review. An unpaid Xero invoice (Approved, amount still due) sits beside the Flow invoice with the same client and total.",
       "Press Link. Flow links them. The match did not wait for a payment."
+    ],
+    "prs": [
+      99
     ]
   },
   {
@@ -41,6 +55,10 @@
     "steps": [
       "Open Automations. Ready when drafted is on.",
       "Open Invoices, Ready. EV-READY is a draft the automation made, already on Ready."
+    ],
+    "prs": [
+      104,
+      110
     ]
   },
   {
@@ -52,6 +70,14 @@
     "steps": [
       "Open Price list. Flow's codes are listed with their prices.",
       "Open Zirconia crown. It is linked to the Xero item and the Seazona product, and the price check shows Xero's price differs."
+    ],
+    "prs": [
+      109,
+      112,
+      114,
+      121,
+      133,
+      138
     ]
   },
   {
@@ -64,6 +90,14 @@
       "Open the invoice whose job changed after the draft.",
       "The page shows Accept change and the recheck control.",
       "Press recheck. Flow reads the job from the work system again and says it is still changed."
+    ],
+    "prs": [
+      148,
+      149,
+      151,
+      152,
+      154,
+      157
     ]
   },
   {
@@ -76,6 +110,14 @@
       "Open a job. Shade is A2, a custom field kept in Flow.",
       "Choose another Seazona stage. Flow says Seazona cannot take the change, and asks you to make it there.",
       "Press Move card. The card waits for Seazona."
+    ],
+    "prs": [
+      161,
+      162,
+      164,
+      167,
+      168,
+      169
     ]
   },
   {
@@ -88,6 +130,12 @@
       "Open Jobs as a list.",
       "Group by practitioner, sort by due date, and filter to one practice.",
       "Reload. The same Group, Sort and Filter are still on, saved with this account."
+    ],
+    "prs": [
+      165,
+      172,
+      173,
+      175
     ]
   },
   {
@@ -99,6 +147,14 @@
     "steps": [
       "Open Invoices, Approved. EV-APPROVED shows an Approved in Xero badge.",
       "Open Sent. EV-PAID shows a Paid in Xero badge. Issued invoices now sit on these tabs."
+    ],
+    "prs": [
+      163,
+      176,
+      178,
+      179,
+      180,
+      181
     ]
   },
   {
@@ -111,6 +167,14 @@
       "Open People. The owner is the only person.",
       "Press Invite, enter a synthetic address, and send.",
       "The new person is on the list as Invited, and Flow says the invitation was emailed."
+    ],
+    "prs": [
+      184,
+      187,
+      188,
+      189,
+      190,
+      192
     ]
   },
   {
@@ -123,6 +187,10 @@
       "Open Reconcile. It lists a done job with no invoice and invoices with no job.",
       "Open the job. Flow offers the invoice with the same client and total.",
       "Press Link this invoice. The job and the invoice are linked."
+    ],
+    "prs": [
+      191,
+      198
     ]
   },
   {
@@ -134,6 +202,14 @@
     "steps": [
       "Open Invoices and visit Pending, Ready, Draft, Approved, Sent and Void.",
       "Open the changed invoice. Accept change and the recheck control are on the page, and the job links to its Seazona order."
+    ],
+    "prs": [
+      200,
+      201,
+      203,
+      204,
+      205,
+      206
     ]
   },
   {
@@ -145,6 +221,10 @@
     "steps": [
       "Open Invoices, Sent. EV-PAID wears a Paid in Xero badge.",
       "Open the invoice. The badge is the payment Flow read back from its Xero copy."
+    ],
+    "prs": [
+      207,
+      212
     ]
   },
   {
@@ -156,6 +236,11 @@
     "steps": [
       "Open Reconcile. Jobs and invoices are one list, in the same columns as Jobs and Invoices.",
       "Open Filter and narrow the list. Rows stay in one column, with no overlap."
+    ],
+    "prs": [
+      213,
+      214,
+      217
     ]
   },
   {
@@ -167,6 +252,9 @@
     "steps": [
       "Open Invoices, Pending, and find EV-NOTE.",
       "Open it. The page shows the rule note: add the case reference before the invoice can leave Pending."
+    ],
+    "prs": [
+      216
     ]
   },
   {
@@ -178,6 +266,14 @@
     "steps": [
       "Open Rules from the sidebar. Invoices, Drafts and Price codes are cards.",
       "Open Invoices, then Price codes. Each part has its own page."
+    ],
+    "prs": [
+      218,
+      219,
+      226,
+      227,
+      228,
+      229
     ]
   },
   {
@@ -190,6 +286,14 @@
       "Open Invoices and Filter.",
       "Add a filter, then a nested filter, so And / Or shows.",
       "The same panel is the one Jobs and Reconcile use."
+    ],
+    "prs": [
+      232,
+      233,
+      236,
+      237,
+      238,
+      239
     ]
   },
   {
@@ -201,6 +305,14 @@
     "steps": [
       "Press Report a problem.",
       "Tick Request a response. The form asks for the address a written reply goes to."
+    ],
+    "prs": [
+      252,
+      253,
+      257,
+      260,
+      261,
+      264
     ]
   },
   {
@@ -213,6 +325,14 @@
       "Open Invoices.",
       "Show Shipped, Case, Practitioner, Due and Shade.",
       "The list grows those columns. The choice is kept with the account."
+    ],
+    "prs": [
+      273,
+      276,
+      277,
+      296,
+      300,
+      303
     ]
   },
   {
@@ -225,6 +345,14 @@
       "On Ready, tick EV-SEND-1, EV-SEND-2 and EV-SEND-WAIT.",
       "Press Send to Xero and confirm.",
       "Two go on their way. EV-SEND-WAIT stays, because its job could not be confirmed. The button shows Sending while the press runs."
+    ],
+    "prs": [
+      304,
+      309,
+      313,
+      314,
+      316,
+      320
     ]
   },
   {
@@ -236,6 +364,14 @@
     "steps": [
       "Open Invoices, Pending, EV-MISSING.",
       "The page says the client is not in Xero and offers Link and Create."
+    ],
+    "prs": [
+      321,
+      323,
+      324,
+      326,
+      331,
+      332
     ]
   },
   {
@@ -247,6 +383,9 @@
     "steps": [
       "Open Seazona. It is connected.",
       "The page has no alert that invoices from before Flow's first read were missed. The sweep no longer counts those."
+    ],
+    "prs": [
+      339
     ]
   },
   {
@@ -258,6 +397,14 @@
     "steps": [
       "Open Contacts. The practices are Flow contacts.",
       "Open Xero and turn on Two-way edits. A change on either side is set to reach the other."
+    ],
+    "prs": [
+      340,
+      341,
+      343,
+      346,
+      347,
+      348
     ]
   },
   {
@@ -269,6 +416,9 @@
     "steps": [
       "Open Invoices, Non-chargeable.",
       "EV-FREE is there: the lab keeps the work and never bills it, and it is out of the other invoice counts."
+    ],
+    "prs": [
+      356
     ]
   }
 ]
