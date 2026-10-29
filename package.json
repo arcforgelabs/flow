@@ -42,7 +42,7 @@
     "test:mobile:budget": "node test/mobile/budget.mjs"
   },
   "dependencies": {
-    "@clerk/backend": "3.25.0",
+    "@clerk/backend": "3.26.2",
     "@fontsource-variable/atkinson-hyperlegible-next": "5.3.0",
     "@fontsource-variable/dm-sans": "5.3.0",
     "@fontsource-variable/geist": "5.3.0",
@@ -54,19 +54,19 @@
     "@fontsource-variable/playfair-display": "5.3.0",
     "@fontsource-variable/plus-jakarta-sans": "5.3.0",
     "@fontsource-variable/space-grotesk": "5.3.0",
-    "@sentry/node": "11.8.0",
+    "@sentry/node": "11.9.0",
     "drizzle-orm": "0.45.4",
     "express": "5.3.0",
     "express-rate-limit": "8.7.1",
-    "lucide-static": "1.59.0",
+    "lucide-static": "1.61.0",
     "pdfkit": "0.20.2",
     "pg": "8.23.1"
   },
   "devDependencies": {
-    "@axe-core/playwright": "4.13.0",
-    "@playwright/test": "1.56.1",
+    "@axe-core/playwright": "4.14.0",
+    "@playwright/test": "1.64.1",
     "drizzle-kit": "0.31.11",
-    "esbuild": "0.25.12"
+    "esbuild": "0.28.2"
   },
   "overrides": {
     "@esbuild-kit/core-utils": {
