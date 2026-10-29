@@ -1,0 +1,17 @@
+{
+  "$comment": "Flow overrides on top of arcforgelabs/.github barnacle/config.json. Rules merge by label. A maintainer applies the label after reading the review; Barnacle never applies it.",
+  "rules": [
+    {
+      "label": "r: not-in-vision",
+      "close": true,
+      "stateReason": "not_planned",
+      "message": "Closing this because it doesn't fit Flow's vision: https://github.com/arcforgelabs/flow/blob/main/VISION.md (see \"Standing decisions\" and \"Out of scope\"). This includes work started before the vision changed.\n\nIf you think it does fit, or the vision should change, comment with the line you think it serves and we'll take another look."
+    },
+    {
+      "label": "r: customer-data",
+      "close": true,
+      "stateReason": "not_planned",
+      "message": "Closing this because it contains, or asks for, one lab's customer data, credentials or private configuration. Flow's public repository never holds those. If something sensitive was posted, tell a maintainer privately through the Security tab so it can be removed.\n\nIf the underlying problem is about how Flow works, open a new issue that describes it with synthetic data."
+    }
+  ]
+}
