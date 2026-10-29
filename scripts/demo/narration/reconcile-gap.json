@@ -1,7 +1,7 @@
 {
   "cues": [
-    {"step":1,"through":3,"text":"Flow checks for an existing invoice for this job."},
-    {"step":4,"through":6,"text":"The client and total match. We'll link this invoice."},
-    {"step":7,"through":8,"text":"The invoice now links back to the job."}
+    {"step":1,"through":3,"text":"This job has no linked invoice. Flow compares the client, lines and total with invoices that already exist."},
+    {"step":4,"through":6,"text":"The client and total match this draft. We link it, then open Ready."},
+    {"step":7,"through":8,"text":"The Linked card now connects the invoice to the job."}
   ]
 }

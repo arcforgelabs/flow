@@ -1,0 +1,194 @@
+{
+  "reportSource": "f8e8431548b9f5730e495434bba6d2680e61e9bd",
+  "input": "Preserved synthetic payments reference MP4",
+  "conversion": "ffmpeg -i <reference.mp4> -c:v copy -c:a aac -ar 48000 -movflags +faststart <candidate48k.mp4>",
+  "conclusion": "96 kHz hypothesis not supported in the tested clients. Cached Chromium lacks AAC support; Chrome plays both. User failure remains NOT_ENOUGH_INFO.",
+  "files": {
+    "narrated.mp4": {
+      "streams": [
+        {
+          "codec_name": "h264",
+          "codec_type": "video",
+          "width": 1280,
+          "height": 800
+        },
+        {
+          "codec_name": "aac",
+          "codec_type": "audio",
+          "sample_rate": "96000",
+          "channels": 1
+        }
+      ],
+      "videoStreamHash": "SHA256=8054ef68107a5d407e249022fdbf30a0ca3e14b4dbe5248841205d4cc7eba246"
+    },
+    "narrated-48k.mp4": {
+      "streams": [
+        {
+          "codec_name": "h264",
+          "codec_type": "video",
+          "width": 1280,
+          "height": 800
+        },
+        {
+          "codec_name": "aac",
+          "codec_type": "audio",
+          "sample_rate": "48000",
+          "channels": 1
+        }
+      ],
+      "videoStreamHash": "SHA256=8054ef68107a5d407e249022fdbf30a0ca3e14b4dbe5248841205d4cc7eba246"
+    }
+  },
+  "checks": [
+    {
+      "browser": "cached Chromium 141",
+      "version": "141.0.7390.37",
+      "file": "narrated.mp4",
+      "error": "NotSupportedError: Failed to load because no supported source was found.",
+      "capabilities": [
+        [
+          "video/mp4; codecs=\"avc1.42E020,mp4a.40.2\"",
+          ""
+        ],
+        [
+          "audio/mp4; codecs=\"mp4a.40.2\"",
+          ""
+        ],
+        [
+          "video/webm; codecs=\"vp9,opus\"",
+          "probably"
+        ]
+      ],
+      "currentTime": 0,
+      "readyState": 0,
+      "mediaError": {
+        "code": 4,
+        "message": "DEMUXER_ERROR_NO_SUPPORTED_STREAMS: FFmpegDemuxer: no supported streams"
+      },
+      "audioBytes": 0
+    },
+    {
+      "browser": "cached Chromium 141",
+      "version": "141.0.7390.37",
+      "file": "narrated-48k.mp4",
+      "error": "NotSupportedError: Failed to load because no supported source was found.",
+      "capabilities": [
+        [
+          "video/mp4; codecs=\"avc1.42E020,mp4a.40.2\"",
+          ""
+        ],
+        [
+          "audio/mp4; codecs=\"mp4a.40.2\"",
+          ""
+        ],
+        [
+          "video/webm; codecs=\"vp9,opus\"",
+          "probably"
+        ]
+      ],
+      "currentTime": 0,
+      "readyState": 0,
+      "mediaError": {
+        "code": 4,
+        "message": "DEMUXER_ERROR_NO_SUPPORTED_STREAMS: FFmpegDemuxer: no supported streams"
+      },
+      "audioBytes": 0
+    },
+    {
+      "browser": "cached Chromium 141",
+      "version": "141.0.7390.37",
+      "file": "clip.webm",
+      "error": null,
+      "capabilities": [
+        [
+          "video/mp4; codecs=\"avc1.42E020,mp4a.40.2\"",
+          ""
+        ],
+        [
+          "audio/mp4; codecs=\"mp4a.40.2\"",
+          ""
+        ],
+        [
+          "video/webm; codecs=\"vp9,opus\"",
+          "probably"
+        ]
+      ],
+      "currentTime": 1.201675,
+      "readyState": 4,
+      "mediaError": null,
+      "audioBytes": 0
+    },
+    {
+      "browser": "system Google Chrome",
+      "version": "156.0.8078.73",
+      "file": "narrated.mp4",
+      "error": null,
+      "capabilities": [
+        [
+          "video/mp4; codecs=\"avc1.42E020,mp4a.40.2\"",
+          "probably"
+        ],
+        [
+          "audio/mp4; codecs=\"mp4a.40.2\"",
+          "probably"
+        ],
+        [
+          "video/webm; codecs=\"vp9,opus\"",
+          "probably"
+        ]
+      ],
+      "currentTime": 1.149836,
+      "readyState": 4,
+      "mediaError": null,
+      "audioBytes": 9016
+    },
+    {
+      "browser": "system Google Chrome",
+      "version": "156.0.8078.73",
+      "file": "narrated-48k.mp4",
+      "error": null,
+      "capabilities": [
+        [
+          "video/mp4; codecs=\"avc1.42E020,mp4a.40.2\"",
+          "probably"
+        ],
+        [
+          "audio/mp4; codecs=\"mp4a.40.2\"",
+          "probably"
+        ],
+        [
+          "video/webm; codecs=\"vp9,opus\"",
+          "probably"
+        ]
+      ],
+      "currentTime": 1.117559,
+      "readyState": 4,
+      "mediaError": null,
+      "audioBytes": 9100
+    },
+    {
+      "browser": "system Google Chrome",
+      "version": "156.0.8078.73",
+      "file": "clip.webm",
+      "error": null,
+      "capabilities": [
+        [
+          "video/mp4; codecs=\"avc1.42E020,mp4a.40.2\"",
+          "probably"
+        ],
+        [
+          "audio/mp4; codecs=\"mp4a.40.2\"",
+          "probably"
+        ],
+        [
+          "video/webm; codecs=\"vp9,opus\"",
+          "probably"
+        ]
+      ],
+      "currentTime": 1.1991,
+      "readyState": 4,
+      "mediaError": null,
+      "audioBytes": 0
+    }
+  ]
+}

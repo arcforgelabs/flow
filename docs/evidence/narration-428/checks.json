@@ -1,0 +1,47 @@
+{
+  "baseCommit": "a21b14acc9123f4e12b391df362b8b9f7c3f8909",
+  "runtime": {
+    "node": "24.5.0",
+    "database": "isolated local PostgreSQL 16",
+    "data": "synthetic only"
+  },
+  "fullSuite": {
+    "command": "FLOW_TEST_DATABASE_URL=<isolated local PostgreSQL> npm test",
+    "tests": 937,
+    "passed": 937,
+    "failed": 0,
+    "skipped": 0,
+    "durationMilliseconds": 171430.884441,
+    "testConcurrency": 1
+  },
+  "regression": {
+    "command": "FLOW_TEST_DATABASE_URL=<isolated local PostgreSQL> node --test test/walkthrough.test.js",
+    "before": "failed at the requested reading-time assertion",
+    "after": "passed",
+    "afterDurationMilliseconds": 27832.111408
+  },
+  "initialFullSuite": {
+    "tests": 937,
+    "passed": 936,
+    "failed": 1,
+    "cause": "Preserved narration-review README absent from documentation navigation; repaired in this slice."
+  },
+  "delivery": {
+    "command": "node docs/evidence/narration-428/report-delivery.mjs <temporary-report-root> <temporary-output> <repository-root>",
+    "passed": 6,
+    "total": 6,
+    "client": "Google Chrome 156.0.8078.73 on Linux",
+    "physicalPhoneTested": false,
+    "failingUserClient": "NOT_ENOUGH_INFO"
+  },
+  "secrets": {
+    "command": "gitleaks git --staged --redact --no-banner",
+    "result": "no leaks"
+  },
+  "notRun": [
+    "new speech generation: managed VOICE_EXPLAINER_TOKEN absent",
+    "whole-take listening and speech-fit check",
+    "actual user attachment client",
+    "hosted access, email, deployment or release"
+  ]
+}

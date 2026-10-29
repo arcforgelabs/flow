@@ -1,7 +1,7 @@
 {
   "cues": [
-    {"step":1,"through":4,"text":"We can add a missing Xero client without leaving the invoice."},
-    {"step":5,"through":6,"text":"Confirming creates the client in Xero."},
-    {"step":7,"through":8,"text":"The invoice is ready now. We haven't sent it."}
+    {"step":1,"through":4,"text":"This invoice needs a Xero client. The Create button lets us add the client without leaving the invoice."},
+    {"step":5,"through":6,"text":"Check the details in the confirmation, then create the client in Xero."},
+    {"step":7,"through":8,"text":"The invoice is now ready to send. Creating the client has not sent the invoice."}
   ]
 }

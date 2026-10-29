@@ -15,13 +15,14 @@
     },
     {
       "do": "wait",
-      "ms": 1500
+      "ms": 1500,
+      "hold": 3000
     },
     {
       "do": "click",
       "target": "button:visible:has-text('Link this invoice') >> nth=0",
       "expect": "text=Linked to the draft.",
-      "hold": 1500
+      "hold": 2500
     },
     {
       "do": "click",
@@ -39,7 +40,8 @@
     },
     {
       "do": "wait",
-      "ms": 1500
+      "ms": 1500,
+      "hold": 3000
     }
   ]
 }

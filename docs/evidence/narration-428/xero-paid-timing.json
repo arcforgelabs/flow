@@ -1,0 +1,52 @@
+{
+  "title": "Xero payments",
+  "synthetic": true,
+  "viewport": {
+    "width": 1280,
+    "height": 800
+  },
+  "duration": 19.788531008000003,
+  "steps": [
+    {
+      "do": "click",
+      "target": "[role='tab']:has-text('Sent')",
+      "expect": "text=Synthetic paid invoice",
+      "start": 0.5000073999999995,
+      "end": 2.8136464660000002
+    },
+    {
+      "do": "hover",
+      "target": "text=Synthetic paid invoice",
+      "hold": 1500,
+      "start": 2.8136528070000004,
+      "end": 5.215150272000001
+    },
+    {
+      "do": "hover",
+      "target": "[title*='Paid in Xero']",
+      "hold": 3000,
+      "start": 5.215155342,
+      "end": 9.181476586999999
+    },
+    {
+      "do": "click",
+      "target": "tbody tr:first-child a[href^='/invoices/']",
+      "hold": 1500,
+      "start": 9.181489027,
+      "end": 11.588260695999999
+    },
+    {
+      "do": "wait",
+      "ms": 1500,
+      "hold": 4000,
+      "start": 11.588265505999999,
+      "end": 17.088432587
+    },
+    {
+      "do": "wait",
+      "ms": 1500,
+      "start": 17.088436687,
+      "end": 19.788526748
+    }
+  ]
+}
