@@ -1,0 +1,8 @@
+<!-- @dsCard group="Forms" height=380 -->
+<div class="fds-row" id="root" style="gap:12px;align-items:center"></div>
+<script>
+const { h, iconPicker, toast } = window.FlowDesignSystem;
+const picker = iconPicker({ value: null, fallback: 'flag', label: 'Icon', onpick: (name) => toast(name ? `Icon: ${name}.` : 'Default icon.', 'success') });
+document.getElementById('root').append(picker.element, h('span', { class: 'fx-dim' }, 'Practitioner not known'));
+picker.element.querySelector('button').click();
+</script>

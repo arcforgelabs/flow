@@ -1453,7 +1453,7 @@ function issuedView(invoice, ui, context, redraw) {
       h('div', { class: 'fx-invoice__main' },
         h('section', { class: 'fx-card fx-doc' },
           h('dl', { class: 'fx-doc__meta' },
-            h('div', {}, h('dt', { class: 'fx-label' }, 'Bill to'), h('dd', {}, invoice.contact?.name ?? '—', invoice.contact?.email ? h('span', { class: 'fx-dim' }, invoice.contact.email) : null)),
+            h('div', {}, h('dt', { class: 'fx-label' }, 'Bill to'), h('dd', {}, invoice.contact?.name ?? '—', invoice.contact?.email ? h('span', { class: 'fx-dim', title: invoice.contact.email }, invoice.contact.email) : null)),
             h('div', {}, h('dt', { class: 'fx-label' }, 'Reference'), h('dd', {}, invoice.reference ?? '—')),
             h('div', {}, h('dt', { class: 'fx-label' }, 'Date'), h('dd', {}, showDate(invoice.issueDate))),
             h('div', {}, h('dt', { class: 'fx-label' }, 'Due'), h('dd', {}, showDate(invoice.dueDate)))),

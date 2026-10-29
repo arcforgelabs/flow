@@ -14,7 +14,7 @@
 
 import { bulkBar } from '/assets/ui/bulk-bar.js';
 import { captureButton } from '/assets/ui/captures.js';
-import { columnTable, dateCell, fieldColumn, onRightButton, personCell, rowCells, viewSaver } from '/assets/ui/columns.js';
+import { columnTable, dateCell, fieldColumn, groupHead, personCell, rowCells, viewSaver } from '/assets/ui/columns.js';
 import { lucide } from '/assets/ui/custom-fields.js';
 import { formatCents } from '/assets/ui/invoicing.js';
 import { jobChangeReview } from '/assets/ui/job-change.js';
@@ -93,7 +93,6 @@ function saveSide(tab) {
 
 const WARN_ICON = '<svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5 15 14H1z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M8 6v3.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="8" cy="11.6" r=".9" fill="currentColor"/></svg>';
 const PERSON_ICON = '<svg width="13" height="13" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="5.5" r="3" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M2.5 14c.6-2.8 2.8-4.3 5.5-4.3s4.9 1.5 5.5 4.3" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>';
-const CHEVRON_ICON = '<svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="m6 3.5 4.5 4.5L6 12.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 const CALENDAR_ICON = '<svg width="13" height="13" viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="3" width="12" height="11" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M2 6.5h12M5.5 1.5v3M10.5 1.5v3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>';
 
 export async function renderJobs(main, ui) {
@@ -173,7 +172,7 @@ export async function renderJobs(main, ui) {
   }
 
   // The chips (view-bar.js), shared with every list page.
-  const { menu, option, title, choose, bin, addButton, rowsFoot, clearAll, filterMenu: buildFilterMenu } = viewBar(h);
+  const { menu, option, groupMenu: buildGroupMenu, sortMenu: buildSortMenu, filterMenu: buildFilterMenu } = viewBar(h);
   const DATE_WORDS = ['Oldest first', 'Newest first'];
   const NUMBER_WORDS = ['Low to high', 'High to low'];
   const DIR_WORDS = { total: NUMBER_WORDS, due: DATE_WORDS, ordered: DATE_WORDS, shipped: DATE_WORDS };
@@ -181,54 +180,31 @@ export async function renderJobs(main, ui) {
   const dirWords = (by) => DIR_WORDS[by] ?? TYPE_WORDS[fieldById(fieldIdOf(by))?.type] ?? ['A to Z', 'Z to A'];
   const fieldById = (id) => state.fields.find((f) => f.id === id) ?? null;
 
-  // ── Group by ──
-  // One row: what to group by, the group order, and a bin that takes the
-  // groups away (the list only: the board always has lanes).
+  // ── Group by, Sort ── (view-bar.js). The board always has lanes, so only
+  // the list can take the groups away. In the list, a column's head sorts
+  // too.
   const groupOptions = () => [
     ...Object.entries(GROUPS).filter(([id]) => id !== 'none').map(([value, label]) => ({ value, label })),
     { group: 'Custom fields', options: groupable().map((f) => ({ value: fieldGroup(f.id), label: f.name })) },
   ];
-  const groupMenu = menu(ICONS.group, (redraw) => {
-    const list = state.view.layout === 'list';
-    const group = state.view.group === 'none' && !list ? 'status' : state.view.group;
-    const none = group === 'none';
-    return [
-      title('Group by'),
-      h('div', { class: 'fx-rows' }, h('div', { class: 'fx-rows__row fx-rows__row--group' },
-        choose('Group by', none ? '' : group, [...(none ? [{ value: '', label: 'Choose…', disabled: true }] : []), ...groupOptions()], (value) => { change({ group: value }); redraw(); }),
-        choose('Group order', state.view.groupDir, [{ value: 'asc', label: 'Ascending' }, { value: 'desc', label: 'Descending' }], (value) => { change({ groupDir: value }); redraw(); }, { disabled: none }),
-        list && !none ? bin('Remove the grouping', () => { change({ group: 'none' }); redraw(); }) : h('span', { class: 'fx-rows__gap' }))),
-    ];
-  }, { rows: true, clearLabel: 'Remove the grouping' });
-
-  // ── Sort ──
-  // Rows of sorts, each applied in turn. In the list, a column's head sorts
-  // too.
-  const sortOptions = () => [
-    ...Object.entries(SORTS).map(([value, label]) => ({ value, label })),
-    { group: 'Custom fields', options: state.fields.map((f) => ({ value: fieldGroup(f.id), label: f.name })) },
-  ];
-  const setSorts = (sorts) => change({ sorts });
-  const sortMenu = menu(ICONS.sort, (redraw) => {
-    const { sorts } = state.view;
-    const unused = sortOptions().flatMap((o) => o.options ?? [o]).filter((o) => !sorts.some((s) => s.by === o.value));
-    return [
-      title('Sort'),
-      sorts.length ? h('div', { class: 'fx-rows' }, sorts.map((s, i) => {
-        const [up, down] = dirWords(s.by);
-        const others = sorts.filter((_, n) => n !== i).map((x) => x.by);
-        const options = sortOptions().map((o) => (o.group ? { ...o, options: o.options.filter((x) => !others.includes(x.value)) } : o)).filter((o) => o.group || !others.includes(o.value));
-        return h('div', { class: 'fx-rows__row fx-rows__row--sort' },
-          h('span', { class: 'fx-rows__lead' }, i ? 'then' : 'Sort by'),
-          choose('Sort by', s.by, options, (by) => { setSorts(sorts.map((x, n) => (n === i ? { by, dir: x.dir } : x))); redraw(); }),
-          choose('Order', s.dir, [{ value: 'asc', label: up }, { value: 'desc', label: down }], (dir) => { setSorts(sorts.map((x, n) => (n === i ? { ...x, dir } : x))); redraw(); }),
-          bin('Remove this sort', () => { setSorts(sorts.filter((_, n) => n !== i)); redraw(); }));
-      })) : h('p', { class: 'fx-rows__empty' }, 'No sort. Jobs show in the lab system’s order.'),
-      rowsFoot(
-        sorts.length < 5 && unused.length ? addButton('Add sort', () => { setSorts([...sorts, { by: unused[0].value, dir: 'asc' }]); redraw(); }) : h('span'),
-        sorts.length ? clearAll(() => { setSorts([]); redraw(); }) : null),
-    ];
-  }, { rows: true, clearLabel: 'Clear the sort' });
+  const isList = () => state.view.layout === 'list';
+  const groupMenu = buildGroupMenu({
+    options: groupOptions,
+    view: () => ({ group: state.view.group === 'none' && !isList() ? 'status' : state.view.group, groupDir: state.view.groupDir }),
+    change,
+    clearable: isList,
+  });
+  const sortMenu = buildSortMenu({
+    options: () => [
+      ...Object.entries(SORTS).map(([value, label]) => ({ value, label })),
+      { group: 'Custom fields', options: state.fields.map((f) => ({ value: fieldGroup(f.id), label: f.name })) },
+    ],
+    view: () => state.view,
+    change,
+    dirWords,
+    nameOf: (by) => SORTS[by] ?? fieldById(fieldIdOf(by))?.name ?? 'Custom field',
+    empty: 'No sort. Jobs show in the lab system’s order.',
+  });
 
   // ── Filters ──
   // The shared filter panel (view-bar.js), as ClickUp's: groups of rows of
@@ -304,8 +280,6 @@ export async function renderJobs(main, ui) {
   });
   controls.append(...groupMenu.node, ...sortMenu.node, ...filterMenu.node, ...columnsMenu.node);
 
-  // A sort's name: a built-in key or a custom field.
-  const sortName = (by) => SORTS[by] ?? fieldById(fieldIdOf(by))?.name ?? 'Custom field';
   function drawControls() {
     const { group, sorts, layout } = state.view;
     const list = layout === 'list';
@@ -317,9 +291,7 @@ export async function renderJobs(main, ui) {
     groupMenu.set(label, shown !== DEFAULT_VIEW.group, grouped ? () => change({ group: list ? 'none' : 'status' }) : null);
     // In the list, the column heads sort; the Sort chip shows there only
     // while a sort is on, so it can be seen and cleared.
-    const [first] = sorts;
-    sortMenu.set(sorts.length > 1 ? `Sort · ${sorts.length}` : first ? `Sort: ${sortName(first.by)} ${first.dir === 'desc' ? '↓' : '↑'}` : 'Sort', sorts.length > 0,
-      sorts.length ? () => change({ sorts: [] }) : null);
+    sortMenu.draw();
     sortMenu.wrap.hidden = list && !sorts.length;
     filterMenu.draw();
     columnsMenu.set('Columns', false);
@@ -812,44 +784,6 @@ export async function renderJobs(main, ui) {
     if (field.type === 'checkbox') return value === true ? 1 : 0;
     return typeof value === 'string' ? value.toLowerCase() : value;
   }
-  // A column head's sort button, as ClickUp's: it shows on hover, or
-  // always while it sorts. A click sorts one way, again the other way, and
-  // a third time takes the sort off. A right-click on a sorting head opens
-  // a small menu: change the direction, or clear the sort.
-  function sortButton(columnId, label) {
-    const by = sortOf(columnId);
-    if (!by) return null;
-    const { sorts } = state.view;
-    const at = sorts.findIndex((s) => s.by === by);
-    const on = at >= 0 ? sorts[at] : null;
-    const [up, down] = dirWords(by);
-    const next = () => {
-      if (!on) change({ sorts: [{ by, dir: 'asc' }] });
-      else if (on.dir === 'asc') change({ sorts: sorts.map((s, n) => (n === at ? { ...s, dir: 'desc' } : s)) });
-      else change({ sorts: sorts.filter((_, n) => n !== at) });
-    };
-    const words = on ? `Sorted ${on.dir === 'asc' ? up : down}. Click to ${on.dir === 'asc' ? `sort ${down}` : 'clear the sort'}` : `Sort by ${label}`;
-    return h('button', {
-      type: 'button', class: `fx-th-sort${on ? ' fx-th-sort--on' : ''}`, 'aria-label': words, title: words,
-      onclick: (event) => { event.stopPropagation(); next(); },
-      oncontextmenu: (event) => {
-        if (!on) return;
-        event.preventDefault();
-        event.stopPropagation();
-        onRightButton(event, () => sortMenuAt(event, by, label, on, at));
-      },
-    }, lucide(h, on ? (on.dir === 'asc' ? 'arrow-up' : 'arrow-down') : 'chevrons-up-down'),
-    on && sorts.length > 1 ? h('span', { class: 'fx-th-sort__n' }, String(at + 1)) : null);
-  }
-  function sortMenuAt(event, by, label, on, at) {
-    const { sorts } = state.view;
-    const flip = () => change({ sorts: sorts.map((s, n) => (n === at ? { ...s, dir: s.dir === 'asc' ? 'desc' : 'asc' } : s)) });
-    heads.menu.show([
-      h('button', { type: 'button', class: 'fx-pop__item', role: 'menuitemcheckbox', 'aria-checked': 'true', title: 'Change the direction', onclick: () => { heads.menu.close(); flip(); } },
-        h('span', { class: 'fx-pop__tick' }, lucide(h, on.dir === 'asc' ? 'arrow-up' : 'arrow-down')), h('span', {}, `Sort by ${label}`), h('span', { class: 'fx-pop__end' }, svg(ICONS.tick))),
-      heads.menu.item('ban', 'Clear sort', () => change({ sorts: sorts.filter((_, n) => n !== at) })),
-    ], event);
-  }
   // The list's heads (columns.js): drag an edge to resize, drag a head to
   // move it; a click or right-click opens its menu: sort by it, move it,
   // edit its custom field, hide it. Client always shows, first. + lists the
@@ -865,19 +799,9 @@ export async function renderJobs(main, ui) {
         ...customColumns().filter((f) => !shown.has(fieldGroup(f.id))).map((f) => ({ id: fieldGroup(f.id), label: f.name })),
       ];
     },
-    extra: (column, item) => {
-      const parts = [];
-      const sort = sortOf(column.id);
-      if (sort) {
-        const [up, down] = dirWords(sort);
-        parts.push(item('arrow-up-narrow-wide', `Sort: ${up}`, () => change({ sorts: [{ by: sort, dir: 'asc' }] })),
-          item('arrow-down-wide-narrow', `Sort: ${down}`, () => change({ sorts: [{ by: sort, dir: 'desc' }] })), h('div', { class: 'fx-pop__sep' }));
-      }
-      if (column.id.startsWith('field:') && ['owner', 'admin'].includes(ui.me?.person?.role)) {
-        parts.push(item('settings', 'Edit custom field', () => ui.go('/custom-fields')));
-      }
-      return parts;
-    },
+    sorting: { sortOf, sorts: () => state.view.sorts, change, dirWords },
+    extra: (column, item) => (column.id.startsWith('field:') && ['owner', 'admin'].includes(ui.me?.person?.role)
+      ? [item('settings', 'Edit custom field', () => ui.go('/custom-fields'))] : []),
   });
 
   // The list's columns, in the order the person chose them. One column holds
@@ -899,14 +823,14 @@ export async function renderJobs(main, ui) {
     const allowed = new Set(builtInColumns());
     // Client is always the first column: it has no drag, Move or Hide.
     const client = {
-      id: 'client', label: 'Client', kind: 'client', fixed: true, sort: () => sortButton('client', 'Client'),
+      id: 'client', label: 'Client', kind: 'client', fixed: true,
       cell: (job) => h('span', { class: 'fx-job__cell' }, h('span', { class: 'fx-strong' }, clientOf(job)), problemMark(job)),
     };
     return [client, ...state.view.columns.map((id) => {
       if (BUILT_IN[id]) return allowed.has(id) ? { id, label: id === 'assignee' ? assigneeField().name : COLUMNS[id], ...BUILT_IN[id] } : null;
       const field = customColumns().find((f) => fieldGroup(f.id) === id);
       return field ? fieldColumn(h, field, { id, valueOf: (job) => valueOf(job, field.id)?.value ?? null, people: state.people }) : null;
-    }).filter(Boolean).map((c) => ({ ...c, sort: () => sortButton(c.id, c.label) }))];
+    }).filter(Boolean)];
   }
 
   // A person custom field's value as a badge (initials), the name on hover.
@@ -956,17 +880,13 @@ export async function renderJobs(main, ui) {
       saveFolded(state.folded);
       draw();
     };
-    const head = ({ label, jobs, rank, color }) => {
-      const open = !folded.has(label);
-      const toggle = h('button', {
-        type: 'button', class: 'fx-table__fold', 'aria-expanded': String(open), 'aria-label': `${label}, ${jobs.length} ${jobs.length === 1 ? 'job' : 'jobs'}. ${open ? 'Fold' : 'Open'} the group`,
-        onclick: (event) => { event.stopPropagation(); fold(label); },
-      }, svg(CHEVRON_ICON),
-      color ? h('span', { class: 'fx-cf__opt fx-board__lane', 'data-color': color }, label, h('span', { class: 'fx-stage__count' }, String(jobs.length))) : stagePill(label, jobs.length, rank));
-      return h('tr', { class: `fx-table__group${open ? '' : ' fx-table__group--folded'}`, onclick: () => fold(label) },
-        tickCell(setBox(jobs, `Tick every job in ${label}`)),
-        h('td', { colspan: String(columns.length + 1) }, h('span', { class: 'fx-table__group-row' }, toggle, h('span', { class: 'fx-board__sum' }, formatCents(totalOf(jobs))))));
-    };
+    const head = ({ label, jobs, rank, color }) => groupHead(h, {
+      label: `${label}, ${jobs.length} ${jobs.length === 1 ? 'job' : 'jobs'}`,
+      badge: color ? h('span', { class: 'fx-cf__opt fx-board__lane', 'data-color': color }, label, h('span', { class: 'fx-stage__count' }, String(jobs.length))) : stagePill(label, jobs.length, rank),
+      open: !folded.has(label), onFold: () => fold(label),
+      lead: tickCell(setBox(jobs, `Tick every job in ${label}`)), span: columns.length + 1,
+      extra: h('span', { class: 'fx-board__sum' }, formatCents(totalOf(jobs))),
+    });
     return h('div', { class: 'fx-panel' }, heads.table({
       className: 'fx-table--jobs',
       columns,

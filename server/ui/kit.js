@@ -1,6 +1,6 @@
 // The shared pieces every Flow page builds with: elements (h), the page
 // header, notes, toasts, dialogs, setting rows, the ⋯ row menu, the button
-// that waits between presses, cards that open a page, and the crumbs trail. app.js hands them to each view module in ui(),
+// that waits between presses, cards that open a page, the icon picker, and the crumbs trail. app.js hands them to each view module in ui(),
 // and the design system's cards (scripts/design-system/) render these same
 // functions, so a card is the real thing. Reuse one or give it an option;
 // never copy it into a page (AGENTS.md, "UI: reuse first").
@@ -497,6 +497,91 @@ export function tileSection(title, cards, { href, more = 'Show all' } = {}) {
       h('h2', {}, title),
       href ? h('a', { class: 'fx-tiles__more', href, onclick: inPlace }, more, lucide(h, 'chevron-right')) : null),
     h('div', { class: 'fx-tiles__grid' }, cards)), 'tileSection');
+}
+
+// The icons an icon picker shows before a search. A search finds any Lucide
+// icon by its name or its words (lucide-static's tags.json).
+export const ICON_CHOICES = Object.freeze([
+  'flag', 'clock', 'ban', 'list-checks', 'circle-alert', 'triangle-alert', 'octagon-alert', 'shield-alert', 'bell', 'bell-ring',
+  'info', 'circle-help', 'circle-check', 'circle-x', 'check', 'x', 'eye', 'eye-off', 'lock', 'unlock',
+  'star', 'heart', 'bookmark', 'tag', 'tags', 'hash', 'percent', 'dollar-sign', 'banknote', 'receipt',
+  'receipt-text', 'wallet', 'credit-card', 'coins', 'calculator', 'piggy-bank', 'hand-coins', 'file-text', 'file-check', 'file-x',
+  'file-warning', 'files', 'folder', 'clipboard-list', 'clipboard-check', 'notebook-pen', 'pencil', 'pen-line', 'stamp', 'send',
+  'mail', 'inbox', 'archive', 'calendar', 'calendar-clock', 'calendar-x', 'calendar-check', 'hourglass', 'timer', 'alarm-clock',
+  'history', 'repeat', 'refresh-cw', 'user', 'user-round', 'users', 'user-check', 'user-x', 'contact', 'building',
+  'building-2', 'hospital', 'house', 'map-pin', 'truck', 'package', 'box', 'boxes', 'shopping-cart', 'store',
+  'briefcase', 'wrench', 'hammer', 'cog', 'sliders-horizontal', 'filter', 'search', 'scan-search', 'scale', 'gavel',
+  'shield', 'shield-check', 'badge-check', 'award', 'thumbs-up', 'thumbs-down', 'smile', 'frown', 'zap', 'sparkles',
+  'flame', 'snowflake', 'sun', 'moon', 'droplet', 'leaf', 'stethoscope', 'syringe', 'pill', 'microscope',
+  'test-tube', 'flask-conical', 'activity', 'heart-pulse', 'bone', 'hand', 'camera', 'image', 'printer', 'phone',
+  'message-square', 'link', 'unlink', 'globe', 'pause', 'play', 'circle-stop', 'octagon-x', 'rocket', 'target',
+  'lightbulb', 'puzzle', 'layers', 'list', 'split', 'merge', 'git-branch', 'text-cursor-input', 'type', 'skull',
+]);
+const ICON_FOUND = 96;
+let iconWords = null;
+let pickerNext = 0;
+
+// An icon picker (IconPicker card): a button that shows the icon now chosen,
+// and a panel with a search box and a grid of icons, each named on hover. On
+// a desk the panel opens under the button; on a phone it is a sheet at the
+// foot. `value` null shows `fallback`, and "Default" goes back to it.
+// `onpick(name)` gets each choice (null for Default).
+export function iconPicker({ value = null, fallback = 'circle', label = 'Icon', onpick = () => {} }) {
+  let current = value;
+  let shown = fallback;
+  const id = `fx-icons-${++pickerNext}`;
+  const button = h('button', {
+    class: 'fx-icons__button', type: 'button', 'aria-haspopup': 'dialog', popovertarget: id,
+  });
+  const find = h('input', { class: 'fx-input', type: 'search', placeholder: 'Find', 'aria-label': 'Find an icon' });
+  const grid = h('div', { class: 'fx-icons__grid', role: 'group', 'aria-label': label });
+  const reset = h('button', { class: 'fx-btn fx-btn--ghost fx-btn--sm', type: 'button' }, 'Default');
+  const panel = applyPhoneRule(h('div', { class: 'fx-pop fx-icons__panel', id, popover: 'auto', role: 'dialog', 'aria-label': label },
+    find, grid, h('div', { class: 'fx-icons__foot' }, reset)), 'iconPicker');
+  const draw = () => {
+    named(button, `${label}: ${current ?? shown}`);
+    button.replaceChildren(lucide(h, current ?? shown), lucide(h, 'chevron-down'));
+  };
+  const choose = (name) => {
+    panel.hidePopover();
+    current = name;
+    draw();
+    onpick(name);
+  };
+  const cell = (name) => named(h('button', {
+    class: 'fx-icons__cell', type: 'button', 'aria-pressed': String(name === (current ?? shown)), onclick: () => choose(name),
+  }, lucide(h, name)), name);
+  const fill = () => {
+    const q = find.value.trim().toLowerCase();
+    const words = iconWords ?? Object.fromEntries(ICON_CHOICES.map((n) => [n, []]));
+    const names = q ? Object.keys(words).filter((n) => n.includes(q) || words[n].some((w) => w.includes(q))).slice(0, ICON_FOUND) : ICON_CHOICES;
+    grid.replaceChildren(...(names.length ? names.map(cell) : [h('p', { class: 'fx-dim' }, 'No icon.')]));
+  };
+  find.addEventListener('input', fill);
+  reset.addEventListener('click', () => choose(null));
+  panel.addEventListener('toggle', async (event) => {
+    button.setAttribute('aria-expanded', String(event.newState === 'open'));
+    if (event.newState !== 'open') return;
+    find.value = '';
+    reset.hidden = current === null;
+    fill();
+    if (panel.dataset.phoneLayout !== 'sheet') {
+      const at = button.getBoundingClientRect();
+      panel.style.top = `${Math.round(Math.max(8, Math.min(at.bottom + 6, innerHeight - panel.offsetHeight - 8)))}px`;
+      panel.style.left = `${Math.round(Math.max(8, Math.min(at.left, innerWidth - panel.offsetWidth - 8)))}px`;
+      find.focus();
+    }
+    // The words of every Lucide icon, once. Without them (the design system's
+    // page), a search reads the names here.
+    iconWords ??= await fetch('/assets/icons/tags.json').then((r) => (r.ok ? r.json() : null)).catch(() => null);
+    if (iconWords && find.value) fill();
+  });
+  draw();
+  return {
+    element: h('span', { class: 'fx-icons' }, button, panel),
+    value: () => current,
+    fallback: (name) => { shown = name; draw(); },
+  };
 }
 
 // A dialog that fills the screen has no pixel outside it, so an accessibility

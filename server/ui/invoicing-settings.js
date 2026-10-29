@@ -10,7 +10,7 @@
 // or admin changes them. The full rules are in docs/INVOICING_RULES.md.
 // app.js passes in its shared pieces as `ui`.
 
-import { rulesSection } from '/assets/ui/invoice-rules.js';
+import { ruleMark, rulesSection } from '/assets/ui/invoice-rules.js';
 import { lineMappingSection } from '/assets/ui/line-mappings.js';
 
 const DOCS = 'https://github.com/arcforgelabs/flow/blob/main/docs/INVOICING_RULES.md';
@@ -27,12 +27,6 @@ const PARTS = [
   { key: 'price-codes', title: 'Price codes', mount: (ui) => lineMappingSection(ui) },
 ];
 
-// What a rule does, as its card's mark: Pending, Waits, Never drafted.
-const KIND = {
-  pending: { mark: 'flag' },
-  wait: { mark: 'clock' },
-  skip: { mark: 'ban' },
-};
 const SHOWN = 6;
 
 export function renderInvoicingSettings(main, ui, id) {
@@ -60,7 +54,7 @@ export function renderInvoicingSettings(main, ui, id) {
       return;
     }
     const ruleCard = (rule) => tileCard({
-      row: true, href: page('invoices'), mark: (KIND[rule.action.kind] ?? { mark: 'list-checks' }).mark, title: rule.name,
+      row: true, href: page('invoices'), mark: ruleMark(rule), title: rule.name,
       meta: rule.enabled ? 'On' : 'Off',
     });
     const waiting = labels.filter((l) => l.unmapped > 0).length;
