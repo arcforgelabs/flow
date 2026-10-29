@@ -1,7 +1,7 @@
 {
   "cues": [
-    {"step":1,"through":3,"text":"Before making another invoice, we can check for a match."},
-    {"step":4,"through":6,"text":"This one's right, so we'll link it and open the invoice."},
-    {"step":7,"through":8,"text":"The job and invoice are linked. No duplicate to make."}
+    {"step":1,"through":3,"text":"Flow checks for an existing invoice for this job."},
+    {"step":4,"through":6,"text":"The client and total match. We'll link this invoice."},
+    {"step":7,"through":8,"text":"The invoice now links back to the job."}
   ]
 }
