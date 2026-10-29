@@ -20,7 +20,7 @@ export function icons(names) {
   const out = {};
   for (const n of new Set(names)) {
     const f = join(ICONS, `${n}.svg`);
-    if (existsSync(f)) out[n] = readFileSync(f, "utf8").replace(/<!--[\s\S]*?-->/g, "").replace(/^[\s\S]*?<svg[^>]*>|<\/svg>\s*$/g, "").replace(/\s+/g, " ").trim();
+    if (existsSync(f)) out[n] = readFileSync(f, "utf8").replace(/<!--[\s\S]*?-->/g, "").replace(/<!--|-->/g, "").replace(/^[\s\S]*?<svg[^>]*>|<\/svg>\s*$/g, "").replace(/\s+/g, " ").trim();
   }
   return out;
 }

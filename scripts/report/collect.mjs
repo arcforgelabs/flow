@@ -43,7 +43,7 @@ export function parseHighlights(body) {
 // The "User Impact" section of a pull request body as plain text: no HTML
 // comments, list marks, bold or code marks. Its first sentence is the why line.
 export function userImpact(body) {
-  const part = String(body || "").replace(/<!--[\s\S]*?-->/g, "").split(/^## User Impact\s*$/m)[1];
+  const part = String(body || "").replace(/<!--[\s\S]*?-->/g, "").replace(/<!--|-->/g, "").split(/^## User Impact\s*$/m)[1];
   if (!part) return { why: "", what: "" };
   const text = part.split(/^## /m)[0].replace(/^\s*[-*]\s+/gm, "").replace(/\*\*|`/g, "").replace(/\s+/g, " ").trim();
   const first = text.match(/^.+?[.!?](\s|$)/)?.[0].trim() || text;

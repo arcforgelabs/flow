@@ -477,7 +477,7 @@ document.getElementById('stats').innerHTML = R.stats.map(function (s) {
       var x = x0 + (i % PER) * (IS + G), y = AX - 14 - (Math.floor(i / PER) + 1) * (IS + G) + G;
       var tone = it.next ? (it.major ? 'nk' : 'next') : it.major ? 'key' : '';
       var nm = esc(it.title) + [it.kind === 'fix' && 'Bug fix', it.kind === 'new' && 'New feature', it.major && 'Major', it.next && 'In progress', it.support && 'Support'].filter(Boolean).map(function (t) { return ' · ' + t; }).join('');
-      s += '<g class="pillhit" tabindex="0" role="button" aria-label="' + nm + '" data-open="' + it.id + '"><title>' + nm + '</title>' +
+      s += '<g class="pillhit" tabindex="0" role="button" aria-label="' + nm + '" data-open="' + esc(it.id) + '"><title>' + nm + '</title>' +
         '<rect class="pill' + (tone ? ' pill--' + tone : '') + '" x="' + x + '" y="' + y + '" width="' + IS + '" height="' + IS + '"/>' +
         '<g transform="translate(' + (x + 8) + ' ' + (y + 8) + ') scale(.75)"><g class="pi' + (tone === 'key' || tone === 'nk' ? ' pi--key' : '') + '">' + (I[it.icon] || '') + '</g></g>' +
         (it.support ? '<svg class="sup" x="' + (x + IS - 10) + '" y="' + (y - 8) + '" width="16" height="16" viewBox="0 0 24 24">' + BADGE + '</svg>' : '') + '</g>';
@@ -495,7 +495,7 @@ function dayItems(key) {
   var its = of(function (it) { return key === 'next' ? it.next : !it.next && it.date === key; }).reverse();
   return its.filter(function (it) { return it.major || it.support; }).concat(its.filter(function (it) { return !it.major && !it.support; }));
 }
-function tagLi(it) { return '<li class="br-i' + (it.major ? ' br-i--key' : '') + '"><button type="button" class="tag" data-open="' + it.id + '">' + svgIcon(it.icon) + esc(it.title) + '<span class="mk">' + kind(it) + (it.support ? badge() : '') + '</span></button></li>'; }
+function tagLi(it) { return '<li class="br-i' + (it.major ? ' br-i--key' : '') + '"><button type="button" class="tag" data-open="' + esc(it.id) + '">' + svgIcon(it.icon) + esc(it.title) + '<span class="mk">' + kind(it) + (it.support ? badge() : '') + '</span></button></li>'; }
 var DATES = [];
 for (var t = Date.parse(R.period.today); t >= Date.parse(R.period.from); t -= 864e5) DATES.push(new Date(t).toISOString().slice(0, 10));
 var NODES = [], seenDay = {};
@@ -523,7 +523,7 @@ NODES.forEach(function (n) {
   var g = n.its[0].day, id = seenDay[g] ? '' : 'day-' + g; seenDay[g] = 1;
   var shown = n.its.length > MAX + 1 ? n.its.slice(0, MAX) : n.its, rest = n.its.length - shown.length;
   html += node({ cls: '', id: id }, [b.wd, b.d + ' ' + b.m], shown.map(tagLi).join('') +
-    (rest ? '<li class="br-i"><button type="button" class="tag tag--more" data-day="' + n.to + '" title="Show all ' + n.its.length + '">+' + rest + ' more</button></li>' : ''));
+    (rest ? '<li class="br-i"><button type="button" class="tag tag--more" data-day="' + esc(n.to) + '" title="Show all ' + n.its.length + '">+' + rest + ' more</button></li>' : ''));
 });
 document.getElementById('all').innerHTML = html;
 
@@ -531,7 +531,7 @@ document.getElementById('all').innerHTML = html;
 var A = R.ahead;
 document.getElementById('pipe').innerHTML = '<div class="stg"><span class="lbl">In progress</span><ul class="prog">' + A.progress.map(function (p) {
   var it = BY[p.id] || {};
-  return '<li><button type="button" data-open="' + p.id + '" title="' + esc(p.stage) + ': ' + p.pct + '% of the way to Ready"' + (it.major ? ' class="maj"' : '') + '><span class="ib">' + svgIcon(it.icon) + '</span><b>' + esc(it.title) + '</b><span class="pbar" data-p="' + p.pct + '"><i></i></span><span class="pc">' + p.pct + '%</span><span class="st">' + esc(p.stage) + '</span></button></li>';
+  return '<li><button type="button" data-open="' + esc(p.id) + '" title="' + esc(p.stage) + ': ' + p.pct + '% of the way to Ready"' + (it.major ? ' class="maj"' : '') + '><span class="ib">' + svgIcon(it.icon) + '</span><b>' + esc(it.title) + '</b><span class="pbar" data-p="' + p.pct + '"><i></i></span><span class="pc">' + p.pct + '%</span><span class="st">' + esc(p.stage) + '</span></button></li>';
 }).join('') + '</ul></div><div class="stg stg--go"><span class="ib">' + svgIcon('rocket') + '</span><b>' + esc(A.planned.label) + '</b><span class="lbl">' + esc(A.planned.note) + '</span></div>';
 
 /* ---------- Ongoing: pizza slices; a timer fills the active slice's rim, then moves on; the pointer takes over ---------- */
@@ -598,7 +598,7 @@ document.getElementById('sched').innerHTML = WATCH.map(function (w) {
 document.getElementById('hl').innerHTML = R.highlights.map(function (id) {
   var it = BY[id], e = it.evidence;
   var th = e && e.still ? '<span class="th"><img src="' + esc(e.still) + '" alt="" loading="lazy"><span class="play">' + svgIcon('circle-play') + '</span></span>' : '';
-  return '<button type="button" class="' + (it.major ? 'key' : '') + '" data-open="' + id + '">' + th + '<span class="ib">' + svgIcon(it.icon) + (it.support ? badge() : '') + '</span><b>' + esc(it.title) + '</b></button>';
+  return '<button type="button" class="' + (it.major ? 'key' : '') + '" data-open="' + esc(id) + '">' + th + '<span class="ib">' + svgIcon(it.icon) + (it.support ? badge() : '') + '</span><b>' + esc(it.title) + '</b></button>';
 }).join('');
 var HLN = R.highlights.length, hlm = document.getElementById('hlmore');
 function hlLabel(open) { hlm.textContent = open ? 'Show fewer' : 'Show ' + (HLN - 2) + ' more'; hlm.setAttribute('aria-expanded', String(open)); }
@@ -609,7 +609,7 @@ function cards(list) {
   return '<div class="vgrid">' + list.map(function (c) {
     var it = BY[c.open] || {};
     var mk = c.mark === 'security' ? '<span class="kd" data-tip="Security" role="img" aria-label="Security">' + svgIcon('shield-check') + '</span>' : kind(it);
-    return '<button type="button" class="vuln" data-open="' + c.open + '"><span class="vh">' + mk + '<span class="when">' + esc(c.date) + '</span></span><b>' + esc(c.title) + '</b></button>';
+    return '<button type="button" class="vuln" data-open="' + esc(c.open) + '"><span class="vh">' + mk + '<span class="when">' + esc(c.date) + '</span></span><b>' + esc(c.title) + '</b></button>';
   }).join('') + '</div>';
 }
 document.getElementById('security').innerHTML = R.security.length ? cards(R.security) : '<p class="br-none">Nothing to report.</p>';
@@ -667,12 +667,12 @@ function openWatch(i) {
     var top = Math.max.apply(null, pf.rows.map(function (r) { return r.hours; }).concat([1]));
     b = '<div class="lbl">Request to fix · ' + esc(pf.average) + ' on average</div><ul class="rq">' + pf.rows.map(function (r) {
       var it = BY[r.open] || {}, hrs = r.hours < 48 ? r.hours + ' h' : Math.round(r.hours / 24) + ' d';
-      return '<li><button type="button" class="drow" data-open="' + r.open + '">' + svgIcon(it.icon) + '<span>' + esc(it.title) + '</span><span class="rbar"><i data-p="' + Math.round(r.hours / top * 100) + '"></i></span><b>' + hrs + '</b></button></li>';
+      return '<li><button type="button" class="drow" data-open="' + esc(r.open) + '">' + svgIcon(it.icon) + '<span>' + esc(it.title) + '</span><span class="rbar"><i data-p="' + Math.round(r.hours / top * 100) + '"></i></span><b>' + hrs + '</b></button></li>';
     }).join('') + '</ul>';
   } else {
     b = '<ul class="rq">' + pf.rows.map(function (id) {
       var it = BY[id] || {};
-      return '<li><button type="button" class="drow" data-open="' + id + '">' + svgIcon(it.icon) + '<span>' + esc(it.title) + '</span><b>' + esc(String(it.status || '').replace(/^\w+ · /, '')) + '</b></button></li>';
+      return '<li><button type="button" class="drow" data-open="' + esc(id) + '">' + svgIcon(it.icon) + '<span>' + esc(it.title) + '</span><b>' + esc(String(it.status || '').replace(/^\w+ · /, '')) + '</b></button></li>';
     }).join('') + '</ul>';
   }
   if (w.link) b += '<div class="xl"><a href="' + esc(w.link.href) + '" target="_blank" rel="noopener">' + esc(w.link.label) + svgIcon('external-link') + '</a></div>';
@@ -693,7 +693,7 @@ function openDay(key) {
     groups.map(function (g) { return '<span class="dseg dseg--' + (g.k || 'other') + '" data-n="' + g.its.length + '"></span>'; }).join('') + '</div>';
   document.getElementById('card-b').innerHTML = bar + '<div class="dcols">' + groups.map(function (g) {
     return '<section class="dcol dcol--' + (g.k || 'other') + '"><h4><b>' + g.its.length + '</b>' + esc(g.label) + '</h4><ul>' + g.its.map(function (it) {
-      return '<li><button type="button" class="drow' + (it.major ? ' drow--key' : '') + '" data-open="' + it.id + '">' + svgIcon(it.icon) + '<span>' + esc(it.title) + '</span>' + (it.support ? badge() : '') + '</button></li>';
+      return '<li><button type="button" class="drow' + (it.major ? ' drow--key' : '') + '" data-open="' + esc(it.id) + '">' + svgIcon(it.icon) + '<span>' + esc(it.title) + '</span>' + (it.support ? badge() : '') + '</button></li>';
     }).join('') + '</ul></section>';
   }).join('') + '</div>';
   // Segment widths from the counts (set as properties: the page policy blocks style attributes).
