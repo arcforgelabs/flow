@@ -852,10 +852,7 @@
   }
  },
  "phone-webkit-harbour-light/job-panel": {
-  "small": 7,
-  "axe": {
-   "color-contrast": 1
-  }
+  "small": 7
  },
  "phone-webkit-harbour-light/jobs-board": {
   "small": 2
