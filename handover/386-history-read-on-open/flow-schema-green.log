@@ -1,0 +1,16 @@
+(node:33297) DeprecationWarning: Calling client.query() when the client is already executing a query is deprecated and will be removed in pg@9.0. Use async/await or an external async flow control mechanism instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+▶ Flow's tables live in "flow"
+  ✔ a new database keeps no Flow table or function in "public" (410.094748ms)
+  ✔ an installation from before moves its tables, rows and triggers to "flow" (615.89962ms)
+  ✔ the move closes idle sessions opened before it, as a pooler keeps them (520.012752ms)
+  ✔ any new session finds the tables by name: the database searches "flow" first (390.860037ms)
+✔ Flow's tables live in "flow" (1938.781346ms)
+ℹ tests 5
+ℹ suites 0
+ℹ pass 5
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 3415.887662

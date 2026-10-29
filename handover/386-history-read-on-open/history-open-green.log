@@ -1,0 +1,18 @@
+(node:33164) DeprecationWarning: Calling client.query() when the client is already executing a query is deprecated and will be removed in pg@9.0. Use async/await or an external async flow control mechanism instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+▶ held history read on open
+  ✔ stale open reads once, keeps new lines held, and cannot draft through the pipeline (253.854673ms)
+  ✔ two workers coalesce concurrent opens without exhausting the connection pool (121.763933ms)
+  ✔ failed and stopped reads retain the saved copy and last successful time; 404 is explicit and held (190.731758ms)
+  ✔ signed-out and wrong-organisation opens cannot call Seazona; each person has five calls per minute (522.763157ms)
+  ✔ a history/live overlap stays one held job and an issued invoice never changes (126.001909ms)
+  ✔ desktop and phone show the saved copy during a real read, then Updated and new lines (2325.100009ms)
+✔ held history read on open (3972.782923ms)
+ℹ tests 6
+ℹ suites 1
+ℹ pass 6
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 5477.685025

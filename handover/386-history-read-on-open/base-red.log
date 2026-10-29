@@ -1,0 +1,64 @@
+(node:2407) DeprecationWarning: Calling client.query() when the client is already executing a query is deprecated and will be removed in pg@9.0. Use async/await or an external async flow control mechanism instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+▶ held history read on open
+  ✖ stale open reads once, keeps new lines held, and cannot draft through the pipeline (84.686696ms)
+✖ held history read on open (421.188434ms)
+(node:2433) DeprecationWarning: Calling client.query() when the client is already executing a query is deprecated and will be removed in pg@9.0. Use async/await or an external async flow control mechanism instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+▶ Seazona rate governor
+  ✖ a person takes the next slot before a queued sweep across client instances (62.711525ms)
+✖ Seazona rate governor (382.197964ms)
+ℹ tests 2
+ℹ suites 2
+ℹ pass 0
+ℹ fail 2
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 32641.097732
+
+✖ failing tests:
+
+test at test/history-open.test.js:78:3
+✖ stale open reads once, keeps new lines held, and cannot draft through the pipeline (84.686696ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+
+  404 !== 200
+
+      at TestContext.<anonymous> (file:///workspace/flow-386-base/test/history-open.test.js:82:12)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1869:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 404,
+    expected: 200,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at test/seazona-governor.test.js:54:3
+✖ a person takes the next slot before a queued sweep across client instances (62.711525ms)
+  AssertionError [ERR_ASSERTION]: the waiting sweep cannot take the person’s slot
+  + actual - expected
+
+    [
+      '/v1/orders/executing',
+  +   '/v1/orders/sweep'
+    ]
+
+      at TestContext.<anonymous> (file:///workspace/flow-386-base/test/seazona-governor.test.js:78:12)
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Promise.all (index 2)
+      at async Suite.run (node:internal/test_runner/test:1869:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: [ '/v1/orders/executing', '/v1/orders/sweep' ],
+    expected: [ '/v1/orders/executing' ],
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }

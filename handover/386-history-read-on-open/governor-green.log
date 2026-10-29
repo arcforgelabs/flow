@@ -1,0 +1,25 @@
+(node:33251) DeprecationWarning: Calling client.query() when the client is already executing a query is deprecated and will be removed in pg@9.0. Use async/await or an external async flow control mechanism instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+▶ Seazona rate governor
+  ✔ requests are spaced out to stay inside the limit (86.266283ms)
+  ✔ no more than the limit is admitted in any minute, across two processes (60.800882ms)
+  ✔ a person takes the next slot before a queued sweep across client instances (96.62381ms)
+  ✔ a limit above 30 a minute is lowered to 30 (3.96482ms)
+  ✔ a 429 cooldown holds the next request (32.540259ms)
+  ✔ a request that cannot get a slot in time gives up with a named error (23.792056ms)
+  ✔ telemetry names each failing path and keeps no host or query (64.678462ms)
+  ✔ /health splits faults from 404s and groups failed calls by path shape, with no record ids (issue #144) (74.052565ms)
+  ✔ telemetry older than the retention is removed (31.545293ms)
+  ✔ a 401 makes one call, then no call until a person resumes (50.670808ms)
+  ✔ repeated failures open the circuit; a failed probe doubles the pause; a good probe closes it (128.166839ms)
+  ✔ the day's failed-call budget stops calls until the next UTC day (67.023816ms)
+  ✔ a 404 on one record is not a failure the circuit counts (137.02655ms)
+✔ Seazona rate governor (1212.651934ms)
+ℹ tests 13
+ℹ suites 1
+ℹ pass 13
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1856.078514
