@@ -1,0 +1,11 @@
+{
+  "provider": "openai",
+  "model": "gpt-4o-mini-tts-2025-12-15",
+  "voice": "fable",
+  "persona": "Dotius",
+  "voiceSelection": "Provisional English male take; Dotius's original saved preset was not available.",
+  "speed": 1,
+  "instructions": "Speak as Dotius, giving a friend a relaxed look at a feature we have made. Use warm, conversational English with an English accent, an easy rhythm and small natural pauses between thoughts. Let contractions flow naturally. Keep it short, factual and clear; define an unfamiliar term only when needed. Stay matter-of-fact and quietly interested in what is on screen. Avoid an announcer voice, sales enthusiasm, slogans, motivational catchphrases, formal instruction, exaggerated emphasis and a clipped word-by-word cadence. Do not imitate another person or character. Read only the supplied words, with no introduction, extra claims, music or sound effects. Pronounce Xero as zero.",
+  "tokenVariable": "VOICE_EXPLAINER_TOKEN",
+  "disclosure": "AI-generated narration"
+}

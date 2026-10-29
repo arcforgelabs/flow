@@ -1,0 +1,12 @@
+{
+  "tests": 936,
+  "pass": 936,
+  "fail": 0,
+  "cancelled": 0,
+  "skipped": 0,
+  "todo": 0,
+  "duration_ms": 135704.56355,
+  "sourceCommit": "cb0fd7f27c755d4b058ed1502b3673a473db07db",
+  "command": "PLAYWRIGHT_BROWSERS_PATH=/workspace/.browsers FLOW_TEST_DATABASE_URL=postgres://flow@127.0.0.1:55432/flow_test npm test",
+  "scope": "Existing recorder source. This preservation change adds review media and documentation only. No new speech generation, live integrations, delivery fix or model evaluation was performed."
+}

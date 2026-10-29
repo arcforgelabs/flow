@@ -1,0 +1,50 @@
+[
+  {
+    "clip": "xero-paid",
+    "format": "mp4",
+    "videoPacketsCopiedWithoutReencoding": true,
+    "sourceTimingUnchanged": true,
+    "cuesFit": true,
+    "minimumCueMarginSeconds": 2.4371769349999983
+  },
+  {
+    "clip": "xero-paid",
+    "format": "webm",
+    "videoPacketsCopiedWithoutReencoding": true,
+    "sourceTimingUnchanged": true,
+    "cuesFit": true,
+    "minimumCueMarginSeconds": 2.4371769349999983
+  },
+  {
+    "clip": "reconcile-gap",
+    "format": "mp4",
+    "videoPacketsCopiedWithoutReencoding": true,
+    "sourceTimingUnchanged": true,
+    "cuesFit": true,
+    "minimumCueMarginSeconds": 2.6666361139999992
+  },
+  {
+    "clip": "reconcile-gap",
+    "format": "webm",
+    "videoPacketsCopiedWithoutReencoding": true,
+    "sourceTimingUnchanged": true,
+    "cuesFit": true,
+    "minimumCueMarginSeconds": 2.6666361139999992
+  },
+  {
+    "clip": "xero-missing-client",
+    "format": "mp4",
+    "videoPacketsCopiedWithoutReencoding": true,
+    "sourceTimingUnchanged": true,
+    "cuesFit": true,
+    "minimumCueMarginSeconds": 0.5057539660000003
+  },
+  {
+    "clip": "xero-missing-client",
+    "format": "webm",
+    "videoPacketsCopiedWithoutReencoding": true,
+    "sourceTimingUnchanged": true,
+    "cuesFit": true,
+    "minimumCueMarginSeconds": 0.5057539660000003
+  }
+]

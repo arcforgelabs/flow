@@ -1,0 +1,17 @@
+[
+  {
+    "clip": "xero-paid",
+    "transcript": "You can check what's paid without leaving flow. This one's paid. Open the invoice and you've got the payment and it's link back to zero.",
+    "method": "Local Whisper base.en; no audio transmitted for review."
+  },
+  {
+    "clip": "reconcile-gap",
+    "transcript": "Flow checks for an existing invoice for this job. The client and total match. We'll link this invoice. The invoice now links back to the job.",
+    "method": "Local Whisper base.en; no audio transmitted for review."
+  },
+  {
+    "clip": "xero-missing-client",
+    "transcript": "We can add a missing zero client, without leaving the invoice. Confirming creates the client in zero. The invoice is ready now. We haven't sent it.",
+    "method": "Local Whisper base.en; no audio transmitted for review."
+  }
+]

@@ -1,0 +1,269 @@
+{
+  "status": "Review reference only: user rejected current voice quality and pacing. Not accepted final narration.",
+  "issue": "https://github.com/arcforgelabs/flow/issues/428",
+  "implementationCommit": "cb0fd7f27c755d4b058ed1502b3673a473db07db",
+  "branch": "codex/walkthrough-recorder",
+  "reportOwner": "https://github.com/arcforgelabs/flow/pull/423",
+  "reportCommit": "f8e8431548b9f5730e495434bba6d2680e61e9bd",
+  "model": "gpt-4o-mini-tts-2025-12-15",
+  "voice": "fable",
+  "voiceMatch": "Provisional; exact Dotius preset unconfirmed.",
+  "delivery": "Local decode and Chromium passed. User-facing playback/download failed. Native attachments redelivered by coordinator at 09:07 UTC on 29 October 2026; phone playback unconfirmed.",
+  "files": [
+    {
+      "path": "media/xero-paid/xero-paid.mp4",
+      "bytes": 379644,
+      "sha256": "398ae6d12a2e9953d55cafe2ab50a999e9c8daa4d392b37e25c011dc5bd80a2b"
+    },
+    {
+      "path": "media/xero-paid/xero-paid.webm",
+      "bytes": 369062,
+      "sha256": "d03072381d77770f0db7cfe4a0527334777af54b236d4f63e6d7a4ff6239ef0b"
+    },
+    {
+      "path": "media/xero-paid/xero-paid.wav",
+      "bytes": 6129606,
+      "sha256": "5cbd2392b53ce7f04daf16afb09370cb4dfeec47ea89533f9ee0ef37feda1af4"
+    },
+    {
+      "path": "media/xero-paid/xero-paid.vtt",
+      "bytes": 210,
+      "sha256": "d70eb4ec9e1c418e9ebbfe8a8207d3618da45862d55fc71e70b3dbead578889a"
+    },
+    {
+      "path": "media/xero-paid/xero-paid.script.json",
+      "bytes": 230,
+      "sha256": "c06cecc2112a1450f79fa6975f36f3b022386abbb3c8f02e4fe6d1ce6e8c5e95"
+    },
+    {
+      "path": "media/xero-paid/xero-paid.narration.json",
+      "bytes": 1826,
+      "sha256": "d482c2cb9c9211f19af5e0eadfc179250dae77c70e9b67654ccc0da5add5927e"
+    },
+    {
+      "path": "media/xero-paid/timing.json",
+      "bytes": 1065,
+      "sha256": "468df41fbab4728b234825448dcc384b8e1f5f84c26c1b1b9d59a3dcc01f011f"
+    },
+    {
+      "path": "media/reconcile-gap/reconcile-gap.mp4",
+      "bytes": 739273,
+      "sha256": "cf2cbd76d520b20fa663d19d82d004238c9f9b07fc46a1e254fd8e704dbea76a"
+    },
+    {
+      "path": "media/reconcile-gap/reconcile-gap.webm",
+      "bytes": 651858,
+      "sha256": "a28971e522baf84b8d66c7e313d2cea4338912ff3a093bf64ba6eb0531cf3982"
+    },
+    {
+      "path": "media/reconcile-gap/reconcile-gap.wav",
+      "bytes": 8020408,
+      "sha256": "60bd993b22aaa4520fd67a7989c8c7221e350ea89446c07549bd283b1d612542"
+    },
+    {
+      "path": "media/reconcile-gap/reconcile-gap.vtt",
+      "bytes": 248,
+      "sha256": "e8486b64acd9a81f8c467709184cbf25351a9e5c1f875b4ff35a3124a20d0210"
+    },
+    {
+      "path": "media/reconcile-gap/reconcile-gap.script.json",
+      "bytes": 272,
+      "sha256": "1c9a94efd4f26b6c1389b423dbd45649837b45b5919a50f8def548191e64af7a"
+    },
+    {
+      "path": "media/reconcile-gap/reconcile-gap.narration.json",
+      "bytes": 2085,
+      "sha256": "e3fa4a9ecb32b94b6162409d544d1d92529530f62ebb69bd82bc43085937617d"
+    },
+    {
+      "path": "media/reconcile-gap/timing.json",
+      "bytes": 1467,
+      "sha256": "bf4f53473e1099c263375bfa7ff1c56688e41ffc47bbde19ebe25e1f1f4df8df"
+    },
+    {
+      "path": "media/xero-missing-client/xero-missing-client.mp4",
+      "bytes": 874395,
+      "sha256": "a4776a99d245ccfc927131cffdbfb20d61a0cbc8d918a21c2378b8bef55de0d6"
+    },
+    {
+      "path": "media/xero-missing-client/xero-missing-client.webm",
+      "bytes": 697394,
+      "sha256": "31df71844e47397a29c9dad6b2e74de75f199ae59faaa43b3c74b0fbcef7c5cd"
+    },
+    {
+      "path": "media/xero-missing-client/xero-missing-client.wav",
+      "bytes": 8188766,
+      "sha256": "44b2222dc901f3ca0a6cd6b7269cf0604098db64b58b3737f9ecccfcab1c196c"
+    },
+    {
+      "path": "media/xero-missing-client/xero-missing-client.vtt",
+      "bytes": 253,
+      "sha256": "e91020ee6798fdc6ebb29f13f326d55a26895d4bda2b4175a287c03013154cf0"
+    },
+    {
+      "path": "media/xero-missing-client/xero-missing-client.script.json",
+      "bytes": 277,
+      "sha256": "8ad61da6f517cfaccdeb08bb9bf7e07d6b5b662767d90bc78dc49e6f3237b09b"
+    },
+    {
+      "path": "media/xero-missing-client/xero-missing-client.narration.json",
+      "bytes": 2105,
+      "sha256": "cfed458e4506f6aa649d1c9aaf77a4566cd752b84868ab0058cdea100382d8f1"
+    },
+    {
+      "path": "media/xero-missing-client/timing.json",
+      "bytes": 1473,
+      "sha256": "5de97654aa072f50807c553cd0d7f7c8318fc4d2d50d5bb24024bdf140a6119f"
+    },
+    {
+      "path": "evidence/voice.json",
+      "bytes": 1017,
+      "sha256": "0153454fa7084e15752ccbe653aa1649b6aa7b0f1b947e4a69f95a171541dec3"
+    },
+    {
+      "path": "evidence/verification.json",
+      "bytes": 1293,
+      "sha256": "81b3dcf55f552af7118a4758054a65a90f5284a3a5220fad0ac121307300455b"
+    },
+    {
+      "path": "evidence/playback.json",
+      "bytes": 1094,
+      "sha256": "89c86e2e3c15b8163b1e711eb99bca2c33af73bee5c7ab6bcb1112aeffa9fc00"
+    },
+    {
+      "path": "evidence/local-speech-review.json",
+      "bytes": 824,
+      "sha256": "4781a28eef0d6e7e1e27a17778fcf66113a6d399fe8aab856b00879a3d4b8ad2"
+    },
+    {
+      "path": "scripts/demo/README.md",
+      "bytes": 6463,
+      "sha256": "e0e5ea0e47a7b413cbf41eb6f2b675c974886c82cc90f935a32781ec7d6d3409"
+    },
+    {
+      "path": "scripts/demo/narrate.mjs",
+      "bytes": 5077,
+      "sha256": "a558e4cc07145fbc31190bb3b5faf9f88a3cf285bfaa03dba612c697853526bd"
+    },
+    {
+      "path": "scripts/demo/narration/reconcile-gap.json",
+      "bytes": 272,
+      "sha256": "1c9a94efd4f26b6c1389b423dbd45649837b45b5919a50f8def548191e64af7a"
+    },
+    {
+      "path": "scripts/demo/narration/voice.json",
+      "bytes": 1017,
+      "sha256": "0153454fa7084e15752ccbe653aa1649b6aa7b0f1b947e4a69f95a171541dec3"
+    },
+    {
+      "path": "scripts/demo/narration/xero-missing-client.json",
+      "bytes": 277,
+      "sha256": "8ad61da6f517cfaccdeb08bb9bf7e07d6b5b662767d90bc78dc49e6f3237b09b"
+    },
+    {
+      "path": "scripts/demo/narration/xero-paid.json",
+      "bytes": 230,
+      "sha256": "c06cecc2112a1450f79fa6975f36f3b022386abbb3c8f02e4fe6d1ce6e8c5e95"
+    },
+    {
+      "path": "scripts/demo/sample-shots.json",
+      "bytes": 585,
+      "sha256": "3a0a47cf75aeb436f585a66385fb280742ec63fc7796cdea8b19b4ea1b2f77d8"
+    },
+    {
+      "path": "scripts/demo/seeds/basic.mjs",
+      "bytes": 117,
+      "sha256": "fabf3bdac77f26674e025891a9a75b8ed646d41c5b955c58857ca207fa32aaa6"
+    },
+    {
+      "path": "scripts/demo/seeds/reconcile-gap.mjs",
+      "bytes": 1331,
+      "sha256": "c8f3ca313887d891deb630125a4367c7742c6ad435b42e4518ad307f6df84654"
+    },
+    {
+      "path": "scripts/demo/seeds/seazona-sweep.mjs",
+      "bytes": 3521,
+      "sha256": "6c38e6d67dd227f6829b81dd31c9cfd02a788470a4e6a249f54d394e4f79e7eb"
+    },
+    {
+      "path": "scripts/demo/seeds/xero-common.mjs",
+      "bytes": 1467,
+      "sha256": "6d5e861aea4bc3aae9f1f52358a6c1b649e49b88d0ab1a116777504bfc5e27d6"
+    },
+    {
+      "path": "scripts/demo/seeds/xero-contacts.mjs",
+      "bytes": 212,
+      "sha256": "5396c98f80df7c4e8b3b49f911df675d2576182f67708b06ba7ea7dcfe5a6c10"
+    },
+    {
+      "path": "scripts/demo/seeds/xero-fixtures.json",
+      "bytes": 9692,
+      "sha256": "3930412cd2300bd3a141f30e7e0132a315492edaf24f7334409244cab44172d3"
+    },
+    {
+      "path": "scripts/demo/seeds/xero-missing-client.mjs",
+      "bytes": 659,
+      "sha256": "1c0647a1fb5d354109d1fa51ec9c812b3be1544f4953b729539a04cea111652a"
+    },
+    {
+      "path": "scripts/demo/seeds/xero-paid.mjs",
+      "bytes": 2006,
+      "sha256": "3ad5fa119819e9222327d029cf6dc8a54ed0e6ba4df5bb4db472d08232e97962"
+    },
+    {
+      "path": "scripts/demo/seeds/xero-refusal-fixtures.json",
+      "bytes": 8746,
+      "sha256": "7b26e2845ee49491e7312807b8afed4e90b71b0ca183d6271a40cff1727d72e7"
+    },
+    {
+      "path": "scripts/demo/seeds/xero-refusal.mjs",
+      "bytes": 1834,
+      "sha256": "4e87bea5bb246ebbf4540641587ba65b90e5a07b5a63510c04043f8d100cacb4"
+    },
+    {
+      "path": "scripts/demo/shots/reconcile-gap.json",
+      "bytes": 936,
+      "sha256": "a731b381619fc38e96abd469f547a6143efe9af88da025419bf432852d9c316e"
+    },
+    {
+      "path": "scripts/demo/shots/xero-contacts.json",
+      "bytes": 748,
+      "sha256": "b853b392fd182a3628eaf5b2181e4f7a8c6ee6c74c5801b4dfefa703b4960403"
+    },
+    {
+      "path": "scripts/demo/shots/xero-missing-client.json",
+      "bytes": 932,
+      "sha256": "5a30180cd2d6939a0f6343c63ccaf4e7c7438a4e0b046417f6b9d101284f9804"
+    },
+    {
+      "path": "scripts/demo/shots/xero-paid.json",
+      "bytes": 635,
+      "sha256": "98162b10f7e9964390f4b2768885bb5af59a4b9291c84cf51ea8aeaf5ed5242b"
+    },
+    {
+      "path": "scripts/demo/shots/xero-refusal.json",
+      "bytes": 898,
+      "sha256": "7488efd12aec15a391a2b1551c801c11f930ff65da57c7a3a85d2c34ac6c5ede"
+    },
+    {
+      "path": "scripts/demo/walkthrough.mjs",
+      "bytes": 8355,
+      "sha256": "7f50fc07e50bac8b5b9bd7c1a2228dc1d6452ae785b864fd4800f6e6dc5cb8b7"
+    },
+    {
+      "path": "scripts/demo/xero-demo.mjs",
+      "bytes": 4840,
+      "sha256": "69655a97ca04824fe147f2c62262381128112ff386599d99663cbacddfa3845b"
+    },
+    {
+      "path": "README.md",
+      "bytes": 6940,
+      "sha256": "2d01574a6b8379fd9e70a8179577c2f8714b1b91ac75d804d118dd37789954b0"
+    },
+    {
+      "path": "tests.json",
+      "bytes": 523,
+      "sha256": "0bbf0d6514d0555770698d6e3148550b8f62eba93e34e8c3c08fdf8870342f16"
+    }
+  ]
+}

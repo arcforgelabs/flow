@@ -1,0 +1,56 @@
+[
+  {
+    "file": "xero-paid.mp4",
+    "ended": true,
+    "duration": 15.966667,
+    "width": 1280,
+    "height": 800,
+    "decodedFrames": 479,
+    "decodedAudioBytes": 94580
+  },
+  {
+    "file": "xero-paid.webm",
+    "ended": true,
+    "duration": 15.97,
+    "width": 1280,
+    "height": 800,
+    "decodedFrames": 479,
+    "decodedAudioBytes": 93981
+  },
+  {
+    "file": "reconcile-gap.mp4",
+    "ended": true,
+    "duration": 20.9,
+    "width": 1280,
+    "height": 800,
+    "decodedFrames": 626,
+    "decodedAudioBytes": 108790
+  },
+  {
+    "file": "reconcile-gap.webm",
+    "ended": true,
+    "duration": 20.9,
+    "width": 1280,
+    "height": 800,
+    "decodedFrames": 626,
+    "decodedAudioBytes": 115274
+  },
+  {
+    "file": "xero-missing-client.mp4",
+    "ended": true,
+    "duration": 21.333333,
+    "width": 1280,
+    "height": 800,
+    "decodedFrames": 640,
+    "decodedAudioBytes": 132764
+  },
+  {
+    "file": "xero-missing-client.webm",
+    "ended": true,
+    "duration": 21.333,
+    "width": 1280,
+    "height": 800,
+    "decodedFrames": 640,
+    "decodedAudioBytes": 132818
+  }
+]
