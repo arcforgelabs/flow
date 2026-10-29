@@ -744,6 +744,9 @@ async function renderIntegration(main, id) {
   // Settings: closed on a phone, open on a wider screen, then as the person
   // leaves it while the page redraws (Connect).
   let settingsOpen = !window.matchMedia?.('(max-width: 639px)').matches;
+  // Advanced: the technical settings and the host's values. Open while the
+  // integration is off, so Connect shows every setting it needs.
+  let advancedOpen = null;
   const alerts = alertStrip(ui(), 'integrations', {
     scope: id,
     onLoad: ({ danger }) => {
@@ -756,10 +759,11 @@ async function renderIntegration(main, id) {
     shown = current;
     const inputs = new Map();
     const rows = [];
+    const advanced = [];
     for (const field of current.fields) {
       if (field.source === 'host') {
         // The host sets it: a value to read, not a box to type in.
-        rows.push(settingRow({
+        advanced.push(settingRow({
           label: field.label,
           help: 'Set by whoever hosts Flow.',
           control: field.secret ? h('span', { class: 'fx-dim' }, 'Set') : h('code', { class: 'fx-setting__value' }, field.value),
@@ -781,7 +785,7 @@ async function renderIntegration(main, id) {
       }
       inputs.set(field.name, { field, input });
       const suggestion = field.suggest === 'callback' ? `${location.origin}/api/${current.id}/oauth/callback` : null;
-      rows.push(settingRow({
+      (field.advanced ? advanced : rows).push(settingRow({
         label: field.label,
         hint: field.unreadable ? 'Stored with another key. Enter it again.' : null,
         help: field.help,
@@ -878,9 +882,12 @@ async function renderIntegration(main, id) {
             h('summary', { class: 'fx-int-section__title' }, 'Set up'),
             h('ol', { class: 'fx-steps' }, guide.steps.map((step) => h('li', {}, step))),
             guide.link ? h('a', { class: 'fx-btn fx-btn--sm', href: guide.link, target: '_blank', rel: 'noopener' }, `${current.name} site ↗`) : null) : null,
-          rows.length ? h('details', { class: 'fx-int-section fx-int-fold', open: settingsOpen, ontoggle: (event) => { settingsOpen = event.currentTarget.open; } },
+          rows.length || advanced.length ? h('details', { class: 'fx-int-section fx-int-fold', open: settingsOpen, ontoggle: (event) => { settingsOpen = event.currentTarget.open; } },
             h('summary', { class: 'fx-int-section__title' }, 'Settings'),
-            h('div', { class: 'fx-settings' }, rows),
+            rows.length ? h('div', { class: 'fx-settings' }, rows) : null,
+            advanced.length ? h('details', { class: 'fx-int-fold fx-int-fold--sub', open: advancedOpen ?? !on, ontoggle: (event) => { advancedOpen = event.currentTarget.open === !on ? null : event.currentTarget.open; } },
+              h('summary', {}, 'Advanced'),
+              h('div', { class: 'fx-settings' }, advanced)) : null,
             canChange && on && inputs.size ? h('div', { class: 'fx-row fx-row--end' }, h('button', { class: 'fx-btn', type: 'button', onclick: () => save(undefined) }, 'Save changes')) : null) : null,
         ].filter(Boolean)),
         h('aside', { class: 'fx-int-page__meta' },
