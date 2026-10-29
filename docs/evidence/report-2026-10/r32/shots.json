@@ -1,0 +1,59 @@
+{
+  "title": "Own price list",
+  "seed": "basic",
+  "start": "/price-list",
+  "steps": [
+    {
+      "do": "click",
+      "target": "td:text-is(\"CR-ZR\")",
+      "expect": "dialog:has-text(\"Edit CR-ZR\")",
+      "hold": 1500
+    },
+    {
+      "do": "click",
+      "target": "dialog button:text-is(\"Cancel\")",
+      "expectHidden": "dialog"
+    },
+    {
+      "do": "click",
+      "target": "td:text-is(\"CR-ZR\")",
+      "expect": "input[aria-label=\"Price\"]"
+    },
+    {
+      "do": "click",
+      "target": "input[aria-label=\"Price\"]"
+    },
+    {
+      "do": "press",
+      "key": "Control+a"
+    },
+    {
+      "do": "press",
+      "key": "Backspace"
+    },
+    {
+      "do": "type",
+      "target": "input[aria-label=\"Price\"]",
+      "text": "175.00"
+    },
+    {
+      "do": "click",
+      "target": "dialog button:text-is(\"Save\")",
+      "expect": "tr:has(td:text-is(\"CR-ZR\")):has-text(\"$175.00\")",
+      "expectHidden": "dialog",
+      "hold": 1500
+    },
+    {
+      "do": "click",
+      "target": "td:text-is(\"CR-ZR\")",
+      "expect": "input[aria-label=\"Price\"]",
+      "hold": 1500
+    },
+    {
+      "do": "click",
+      "target": "dialog button:text-is(\"Cancel\")",
+      "expect": "tr:has(td:text-is(\"CR-ZR\")):has-text(\"$175.00\")",
+      "hold": 1500
+    }
+  ]
+}

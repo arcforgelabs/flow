@@ -1,0 +1,21 @@
+{
+  "synthetic": true,
+  "priceSaveStatus": 200,
+  "customFieldSaveStatuses": [
+    200,
+    200,
+    200
+  ],
+  "freshDesktopAndPhone": {
+    "priceCode": "CR-ZR",
+    "priceBeforeTax": "175.00",
+    "caseNumber": "48200",
+    "shade": "B1",
+    "rush": true,
+    "scanReceived": true
+  },
+  "integrations": {
+    "xero": "disabled",
+    "seazona": "disabled"
+  }
+}

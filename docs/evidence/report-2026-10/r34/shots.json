@@ -1,0 +1,57 @@
+{
+  "title": "Custom fields on jobs",
+  "seed": "basic",
+  "start": "/jobs",
+  "steps": [
+    {
+      "do": "click",
+      "target": ".fx-job >> nth=0",
+      "expect": "dialog.fx-task"
+    },
+    {
+      "do": "click",
+      "target": "input[aria-label=\"Rush\"]",
+      "expect": "input[aria-label=\"Rush\"]:checked"
+    },
+    {
+      "do": "click",
+      "target": "select[aria-label=\"Shade\"]"
+    },
+    {
+      "do": "press",
+      "key": "End"
+    },
+    {
+      "do": "press",
+      "key": "Enter",
+      "expect": "select[aria-label=\"Shade\"]:has(option:checked:text-is(\"B1\"))"
+    },
+    {
+      "do": "click",
+      "target": "input[aria-label=\"Scan received\"]",
+      "expect": "input[aria-label=\"Scan received\"]:checked"
+    },
+    {
+      "do": "click",
+      "target": ".fx-task__tools button[aria-label=\"Close\"]",
+      "expectHidden": "dialog.fx-task"
+    },
+    {
+      "do": "click",
+      "target": ".fx-job >> nth=0",
+      "expect": "input[aria-label=\"Rush\"]:checked"
+    },
+    {
+      "do": "hover",
+      "target": "section[aria-label=\"Custom fields\"]",
+      "expect": "select[aria-label=\"Shade\"]:has(option:checked:text-is(\"B1\"))",
+      "hold": 1500
+    },
+    {
+      "do": "wait",
+      "ms": 1200,
+      "expect": "input[aria-label=\"Scan received\"]:checked",
+      "hold": 1500
+    }
+  ]
+}

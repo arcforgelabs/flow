@@ -1,4 +1,4 @@
-// Check the three synthetic evidence rows. Run from the repo root.
+// Check synthetic evidence rows. Optional arguments select rows for a later take.
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
@@ -9,7 +9,11 @@ import { chromium } from '@playwright/test';
 
 const root = new URL('../', import.meta.url);
 const started = performance.now();
-const ids = ['r28', 'r35', 'r38'];
+const selected = process.argv.slice(2);
+const ids = selected.length ? selected : ['r28', 'r35', 'r38'];
+assert.ok(ids.every(id => /^r[0-9]+$/.test(id)));
+const resultPath = selected.length ? `${ids[0]}/validation.json` : 'r35/validation.json';
+const sourceCommit = process.env.EVIDENCE_SOURCE_COMMIT ?? 'a21b14acc9123f4e12b391df362b8b9f7c3f8909';
 const index = JSON.parse(await readFile(new URL('index.json', root), 'utf8'));
 assert.equal(new Set(index.map(row => row.id)).size, index.length);
 const files = {};
@@ -72,10 +76,10 @@ try {
   await browser?.close();
   await new Promise(resolve => server.close(resolve));
 }
-await writeFile(new URL('r35/validation.json', root), JSON.stringify({
-  sourceCommit: 'a21b14acc9123f4e12b391df362b8b9f7c3f8909', synthetic: true,
-  checkedAt: new Date().toISOString(), command: 'node docs/evidence/report-2026-10/r35/verify.mjs',
+await writeFile(new URL(resultPath, root), JSON.stringify({
+  sourceCommit, synthetic: true,
+  checkedAt: new Date().toISOString(), command: `node docs/evidence/report-2026-10/r35/verify.mjs${selected.length ? ' ' + selected.join(' ') : ''}`,
   workers: 1, wallSeconds: Number(((performance.now() - started) / 1000).toFixed(2)),
   checkedFiles: Object.keys(files).length, files,
 }, null, 2) + '\n');
-console.log('PASS: 3 indexed clips, 6 screenshots, full decoding and Chromium playback.');
+console.log(`PASS: ${ids.length} indexed clips, ${ids.length * 2} screenshots, full decoding and Chromium playback.`);
