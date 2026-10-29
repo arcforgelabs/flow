@@ -95,6 +95,21 @@ describe('matching a stored capture', { skip: skipWithoutDatabase }, () => {
     assert.equal(again.capture.proposal.jobId, 'seazona:5100');
   });
 
+  test('a read field goes to the custom field of the same name, and Apply writes it', async () => {
+    const shade = await createField(handle.db, organisationId, { name: 'Shade', type: 'text' });
+    const capture = await stored('match-shade');
+    await handle.pool.query(`update captures set state = 'ready', problem = null, read = $2 where id = $1`, [
+      capture.id, JSON.stringify({ fields: [field('case_number', '5100'), field('shade', 'B1'), field('due_date', '2026-12-16')] }),
+    ]);
+    const matched = await matchCapture(handle.db, storage, organisationId, capture.id, { baseUrl: 'http://127.0.0.1', jobs: JOBS, now: NOW });
+    assert.deepEqual(matched.capture.proposal.changes.map((c) => [c.field, c.from, c.to]), [
+      [`custom_${shade.id}`, '', 'B1'], ['due_date', '2026-12-15', '2026-12-16'],
+    ]);
+    await decideCapture(handle.db, storage, organisationId, capture.id, 'applied');
+    const values = await listJobFieldValues(handle.db, organisationId, { jobs: [{ sourceSystem: 'seazona', sourceJobRef: '5100' }] });
+    assert.deepEqual(values.map((v) => [v.fieldId, v.value]), [[shade.id, 'B1']]);
+  });
+
   test('typed fields match a capture the reader could not read', async () => {
     const capture = await stored('match-typed');
     assert.equal(capture.state, 'problem');
@@ -118,7 +133,8 @@ describe('matching a stored capture', { skip: skipWithoutDatabase }, () => {
       { field: `custom_${rush.id}`, to: 'yes' }, { field: `custom_${tray.id}`, to: 'twelve' },
     ] }, { baseUrl: 'http://127.0.0.1' });
     await assert.rejects(() => decideCapture(handle.db, storage, organisationId, bad.id, 'applied'), /Tray: "twelve" does not fit/);
-    assert.deepEqual(await listJobFieldValues(handle.db, organisationId), []);
+    const job4821 = { jobs: [{ sourceSystem: 'seazona', sourceJobRef: '4821' }] };
+    assert.deepEqual(await listJobFieldValues(handle.db, organisationId, job4821), []);
 
     const good = await stored('apply-good');
     await typeProposal(handle.db, storage, organisationId, good.id, { ...job, changes: [
@@ -126,7 +142,7 @@ describe('matching a stored capture', { skip: skipWithoutDatabase }, () => {
     ] }, { baseUrl: 'http://127.0.0.1' });
     const done = await decideCapture(handle.db, storage, organisationId, good.id, 'applied');
     assert.equal(done.capture.state, 'done');
-    const values = await listJobFieldValues(handle.db, organisationId);
+    const values = await listJobFieldValues(handle.db, organisationId, job4821);
     assert.deepEqual(values.map((v) => [v.sourceSystem, v.sourceJobRef, v.value]).sort(), [
       ['seazona', '4821', 12], ['seazona', '4821', rush.options[0].id],
     ].sort());
