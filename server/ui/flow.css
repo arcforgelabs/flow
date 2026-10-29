@@ -561,7 +561,10 @@ a.fx-strong:hover { text-decoration: underline; }
 .fx-totals dd { margin: 0; text-align: right; font-family: var(--t-data, var(--t-body)); font-variant-numeric: tabular-nums; color: var(--t-strong); }
 .fx-totals__grand { padding-top: 8px; border-top: 1px solid var(--fx-line); font-size: 17px; font-weight: 700; color: var(--t-strong) !important; }
 .fx-doc__meta { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin: 0; padding: 20px; border-bottom: 1px solid var(--fx-line-soft); }
-.fx-doc__meta dd { display: grid; margin: 4px 0 0; color: var(--t-strong); font-weight: 600; }
+.fx-doc__meta dd { display: grid; margin: 4px 0 0; color: var(--t-strong); font-weight: 600; overflow-wrap: anywhere; }
+/* A long value stays in its column: text wraps, an email cuts with "…" (full value on hover). */
+.fx-doc__meta > div, .fx-doc__meta dd > * { min-width: 0; }
+.fx-doc__meta dd > .fx-dim { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width: 1320px) {
   .fx-invoice__grid { grid-template-columns: minmax(0, 1fr); }
   .fx-invoice__aside { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
