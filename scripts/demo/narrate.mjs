@@ -48,7 +48,7 @@ try {
     await writeFile(path, audio);
     const { stdout } = await exec('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'json', path]);
     const duration = Number(JSON.parse(stdout).format.duration);
-    if (!Number.isFinite(duration) || duration <= 0 || cue.start + duration > cue.limit - 0.1) throw new Error(`Cue ${i + 1} does not fit its step range. Shorten its script or lengthen the shot hold; speech is never clipped or sped up.`);
+    if (!Number.isFinite(duration) || duration <= 0 || cue.start + duration > cue.limit - 0.1) throw new Error(`Cue ${i + 1} lasts ${duration.toFixed(2)} seconds; its step range allows ${(cue.limit - cue.start - 0.1).toFixed(2)}. Shorten its script or lengthen the shot hold; speech is never clipped or sped up.`);
     cue.end = cue.start + duration;
     cue.audioSha256 = createHash('sha256').update(audio).digest('hex');
     inputs.push('-i', path);

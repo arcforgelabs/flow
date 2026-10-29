@@ -89,8 +89,12 @@ hashes. Existing outputs are refused. Temporary audio is discarded on failure.
 No key value enters the output or logs. Narration is disclosed as AI-generated
 in the manifest; the report publisher must show that disclosure to viewers.
 
-Live generation remains unverified until this running environment receives its
-vault secret. A local test-tone transport probe validates muxing and rejection
-of overlong cues; it is not spoken audio and is not report-ready narration.
+Live speech generation was verified on 29 October 2026 with the managed
+`VOICE_EXPLAINER_TOKEN` binding and the saved Marin profile. The three synthetic
+scenarios produced narrated MP4, WebM, WAV and timing manifests. The short
+payment and reconciliation cues were shortened to fit the original shot times.
+In a managed runtime with an inherited HTTP proxy, prefix the command with
+`NODE_USE_ENV_PROXY=1` so Node uses that supported request path. Keep the
+injected credentials, proxy and certificate trust settings unchanged.
 
 Reference: https://developers.openai.com/api/docs/guides/text-to-speech

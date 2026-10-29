@@ -1,6 +1,6 @@
 {
   "cues": [
-    {"step":1,"text":"This completed job needs an invoice."},
+    {"step":1,"text":"No invoice."},
     {"step":2,"through":3,"text":"Compare the suggested invoice with the job."},
     {"step":4,"through":6,"text":"Link the matching invoice, then open Ready."},
     {"step":7,"through":8,"text":"The Linked card confirms the job and invoice are connected."}

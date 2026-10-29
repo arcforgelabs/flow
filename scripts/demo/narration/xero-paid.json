@@ -1,7 +1,7 @@
 {
   "cues": [
     {"step":1,"through":2,"text":"Open Sent to find the paid invoice."},
-    {"step":3,"text":"The Xero link confirms payment."},
+    {"step":3,"text":"Paid."},
     {"step":4,"through":6,"text":"Open the invoice to see the payment and its linked record."}
   ]
 }
