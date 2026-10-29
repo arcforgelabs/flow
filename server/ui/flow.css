@@ -1287,9 +1287,32 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
 .fx-setting__head { display: flex; align-items: center; gap: 2px; min-width: 0; }
 .fx-setting__head .fx-help { margin: -4px 0; border: 0; background: none; cursor: pointer; }
 .fx-setting__hint { margin: 0; color: var(--t-dim); font-size: 13px; line-height: 1.45; }
-.fx-history__status { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .fx-history__day { width: 160px; flex: none; }
-.fx-history__bar { width: 100%; height: 8px; accent-color: var(--t-brand); }
+/* SyncStatus: Layers, shared by integration history readers. */
+.fx-history { padding: 8px 20px 16px; }
+.fx-sync { min-width: 0; padding-block: 8px; }
+.fx-sync__line { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.fx-sync__status { min-width: 0; overflow-wrap: anywhere; color: var(--t-text); font-size: 13px; }
+.fx-sync__word { position: relative; display: inline-block; overflow: hidden; vertical-align: bottom; }
+.fx-sync[data-phase="running"] .fx-sync__word::after { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, var(--t-paper), transparent); opacity: .5; transform: translateX(-100%); animation: fx-sync-sweep 2.6s linear infinite; }
+.fx-sync[data-phase="failed"] .fx-sync__word { color: var(--t-danger); }
+.fx-sync[data-phase="done"] .fx-sync__word { color: var(--t-success); }
+.fx-sync__clock { font: 12px var(--t-data); color: var(--t-dim); }
+.fx-sync__action { margin-left: auto; }
+.fx-sync__action .fx-btn { min-width: 44px; min-height: 44px; }
+.fx-sync__dots { display: inline-flex; gap: 3px; margin-right: 8px; vertical-align: middle; }
+.fx-sync__dots[hidden], .fx-sync__track[hidden] { display: none; }
+.fx-sync__dots i { width: 4px; height: 4px; border-radius: var(--t-radius); background: var(--t-accent); animation: fx-sync-breathe 1.8s ease-in-out infinite; }
+.fx-sync__dots i:nth-child(2) { animation-delay: .2s; }
+.fx-sync__dots i:nth-child(3) { animation-delay: .4s; }
+.fx-sync__track { display: grid; gap: 4px; margin-top: 8px; }
+.fx-sync__rail { width: 100%; height: 4px; accent-color: var(--t-brand); }
+.fx-sync__range { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; color: var(--t-dim); font-size: 12px; }
+@media (max-width: 639px) {
+  .fx-sync__line { gap: 4px 8px; }
+  .fx-sync__status { flex: 1 1 60%; }
+  .fx-sync__clock { order: 1; flex-basis: 100%; }
+}
 .fx-setting[data-tone="danger"] .fx-setting__hint { color: var(--t-danger); }
 .fx-setting__control { display: flex; align-items: center; justify-content: flex-end; gap: 10px; min-width: 0; }
 .fx-setting__control > .fx-input, .fx-setting__control > .fx-select, .fx-setting__stack { width: 320px; max-width: 100%; }
@@ -1539,9 +1562,12 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
 }
 
 @keyframes fx-rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes fx-sync-breathe { 50% { opacity: .35; transform: scale(.75); } }
+@keyframes fx-sync-sweep { to { transform: translateX(100%); } }
 @keyframes fx-spin { to { transform: rotate(360deg); } }
 @keyframes fx-shimmer { to { background-position: -200% 0; } }
 @media (prefers-reduced-motion: reduce) {
+  .fx-sync__word::after { display: none; }
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
 

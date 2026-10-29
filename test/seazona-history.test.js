@@ -319,6 +319,8 @@ describe('Seazona history backfill from the API', { skip: skipWithoutDatabase },
     await startBackfill(db, { from: '2020-01-02', through: '2020-01-03', createdBy: 'person:test', settings, now: clock.now });
     await run([]);
     const stopped = await stopBackfill(db, { now: clock.now });
+    assert.equal(stopped.endedAt, new Date(clock.now()).toISOString());
+    assert.equal((await readBackfill(db)).endedAt, stopped.endedAt, 'stopped clock survives reload');
     assert.equal(stopped.resumeFrom, '2020-01-03', 'H-3 was listed and not read yet');
 
     await startBackfill(db, { from: stopped.resumeFrom, through: '2020-01-03', createdBy: 'person:test', settings, now: clock.now });
@@ -327,6 +329,8 @@ describe('Seazona history backfill from the API', { skip: skipWithoutDatabase },
     assert.deepEqual(resumed, ['orders/', 'orders/H-3']);
     assert.equal(done.backfill.running, false);
     assert.equal(done.backfill.resumeFrom, null);
+    assert.ok(done.backfill.endedAt);
+    assert.equal((await readBackfill(db)).endedAt, done.backfill.endedAt, 'finished clock survives reload');
 
     await startBackfill(db, { from: '2020-01-02', through: '2020-01-03', createdBy: 'person:test', settings, now: clock.now });
     const again = [];

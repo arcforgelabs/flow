@@ -265,6 +265,7 @@ before changing it on a phone: the component reads those rules.
 | `ICONS`, `svg`, `today` | `server/ui/view-bar.js` | | The toolbar icons, an SVG string as a node, the local day |
 | `personLabel`, `initialsOf`, `clipLabel` | `server/ui/person.js` | | A person's name everywhere (pickers, filters, lanes, badges, People): full name, else the whole email; a badge's letters; a native menu's label cut with "…" |
 | `filterJobs`, `cleanFilterView`, `sortJobs`, `groupJobs`, `OPERATORS`, `DATE_VALUES` | `server/ui/job-view.js` | | The rules behind Filter, Sort and Group (no DOM). Every list's filter uses them with its own fields |
+| `syncStatus()` | `server/ui/sync-status.js` | SyncStatus | Shared Layers sync row: server clock, total count, day rail and ETA. Caller supplies one action and owns polling. |
 | `bulkBar(ui, { label })` | `server/ui/bulk-bar.js` | BulkBar | The bar at the foot while rows are ticked: icon and one word per action, More |
 | `listPager(h, { label, sizes, change })`, `pageNumbers`, `pageRange` | `server/ui/pager.js` | ListPager | The pages of a long list in its foot bar: rows per page, "1–100 of 1,204", numbered pages. The server cuts the page and counts every match. Invoices |
 | `pager(h, { label, back })` → `{ element, draw({ count, prev, next, … }) }` | `server/ui/pager.js` | Pager | "← Back", "n of N", previous and next over one record. Invoices, Reconcile, Price list › Reconcile |
