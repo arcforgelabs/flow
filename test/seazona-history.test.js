@@ -30,7 +30,7 @@ import { createSeazonaClient } from '../server/integrations/seazona/client.js';
 import { runSeazonaSync } from '../server/integrations/seazona/lanes.js';
 import { createReplayFetch } from '../server/integrations/seazona/replay.js';
 import { resolveSeazonaSettings } from '../server/integrations/seazona/settings.js';
-import { orderToHistoryJob, readBackfill, startBackfill } from '../server/integrations/seazona/history/backfill.js';
+import { orderToHistoryJob, readBackfill, startBackfill, stopBackfill } from '../server/integrations/seazona/history/backfill.js';
 
 // Synthetic data only (CONTRIBUTING.md): no real lab, practice, dentist or patient.
 
@@ -296,6 +296,27 @@ describe('Seazona history backfill from the API', { skip: skipWithoutDatabase },
     const [summary] = await listBatches(db);
     assert.equal(summary.profile, 'api_orders');
     assert.equal(summary.status, 'reconciled');
+  });
+
+  test('a stopped read resumes where it stopped, and a read again over the same days reads no order twice', async () => {
+    await startBackfill(db, { from: '2020-01-02', through: '2020-01-03', createdBy: 'person:test', settings, now: clock.now });
+    await run([]);
+    const stopped = await stopBackfill(db, { now: clock.now });
+    assert.equal(stopped.resumeFrom, '2020-01-03', 'H-3 was listed and not read yet');
+
+    await startBackfill(db, { from: stopped.resumeFrom, through: '2020-01-03', createdBy: 'person:test', settings, now: clock.now });
+    const resumed = [];
+    const done = await run(resumed);
+    assert.deepEqual(resumed, ['orders/', 'orders/H-3']);
+    assert.equal(done.backfill.running, false);
+    assert.equal(done.backfill.resumeFrom, null);
+
+    await startBackfill(db, { from: '2020-01-02', through: '2020-01-03', createdBy: 'person:test', settings, now: clock.now });
+    const again = [];
+    await run(again);
+    await run(again);
+    assert.deepEqual(again, ['orders/', 'orders/H-2', 'orders/'], 'only the lists, and the order Seazona did not have');
+    assert.deepEqual((await db.select().from(seazonaHistoryJobs)).map((h) => h.jobKey).sort(), ['case:H-1', 'case:H-3']);
   });
 
   test('pages through a list that answers orders on or after the day, and stops after the last day', async () => {

@@ -1280,6 +1280,9 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
 .fx-setting__head { display: flex; align-items: center; gap: 2px; min-width: 0; }
 .fx-setting__head .fx-help { margin: -4px 0; border: 0; background: none; cursor: pointer; }
 .fx-setting__hint { margin: 0; color: var(--t-dim); font-size: 13px; line-height: 1.45; }
+.fx-history__status { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.fx-history__day { width: 160px; flex: none; }
+.fx-history__bar { width: 100%; height: 8px; accent-color: var(--t-brand); }
 .fx-setting[data-tone="danger"] .fx-setting__hint { color: var(--t-danger); }
 .fx-setting__control { display: flex; align-items: center; justify-content: flex-end; gap: 10px; min-width: 0; }
 .fx-setting__control > .fx-input, .fx-setting__control > .fx-select, .fx-setting__stack { width: 320px; max-width: 100%; }
