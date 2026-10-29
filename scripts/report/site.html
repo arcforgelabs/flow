@@ -436,10 +436,10 @@ var WATCH = R.ongoing, TURN = 9000;
   s += '<path class="wring" id="wring" d=""/><circle class="wtip" id="wtip" r="3.5" cx="' + C + '" cy="' + (C - RO) + '"/>';
   s += '<circle class="whub" cx="' + C + '" cy="' + C + '" r="' + (RI - 6) + '"/><g class="wflow"><rect x="' + (C - 28) + '" y="' + (C - 28) + '" width="56" height="56" rx="14"/><path d="M' + (C - 15) + ' ' + (C - 5) + 'c5-5 10-5 15 0s10 5 15 0M' + (C - 15) + ' ' + (C + 7) + 'c5-5 10-5 15 0s10 5 15 0"/></g>';
   document.getElementById('wfig').innerHTML = '<svg viewBox="0 0 440 440" role="img" aria-label="Ongoing work on ' + esc(R.product) + '. Point at a slice to see it.">' + s + '</svg>';
-  var svg = document.querySelector('#wfig svg'), ring = document.getElementById('wring'), tip = document.getElementById('wtip'), cur = -1, t0 = 0, held = false;
+  var svg = document.querySelector('#wfig svg'), ring = document.getElementById('wring'), tip = document.getElementById('wtip'), cur = -1, t0 = 0, frac = 0, held = false;
   var still = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
   function pick(i) {
-    if (i === cur) return; cur = i; t0 = performance.now();
+    if (i === cur) return; cur = i; frac = 0; t0 = performance.now();
     var w = WATCH[i];
     svg.querySelectorAll('.sl').forEach(function (n) { n.classList.toggle('on', n.getAttribute('data-w') === String(i)); });
     document.getElementById('wpanel').innerHTML = '<span class="ib">' + svgIcon(w.icon) + '</span><b>' + esc(w.name) + '</b><span class="n">' + esc(w.result) + '</span><p>' + esc(w.does) + '</p><span class="w">' + esc(w.when) + '</span>';
@@ -451,19 +451,22 @@ var WATCH = R.ongoing, TURN = 9000;
     var p = pt(r, b).split(' '); tip.setAttribute('cx', p[0]); tip.setAttribute('cy', p[1]);
   }
   function tick(now) {
-    if (!held) { var f = (now - t0) / TURN; if (f >= 1) pick((cur + 1) % N); else rim(f); }
+    if (!held) { frac = (now - t0) / TURN; if (frac >= 1) { pick((cur + 1) % N); rim(0); } else rim(frac); }
     requestAnimationFrame(tick);
   }
+  // Hover pauses the timer: the active slice keeps its progress; another slice starts at its beginning.
+  function hold(i) { held = true; if (i !== cur) { pick(i); rim(0); } }
+  function resume() { held = false; t0 = performance.now() - frac * TURN; }
   svg.addEventListener('pointermove', function (e) {
     var p = new DOMPoint(e.clientX, e.clientY).matrixTransform(svg.getScreenCTM().inverse()), dx = p.x - C, dy = p.y - C;
     if (dx * dx + dy * dy < RI * RI) return;
     held = true;
-    pick(Math.floor((((Math.atan2(dy, dx) - A0) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI) / STEP) % N); rim(1);
+    hold(Math.floor((((Math.atan2(dy, dx) - A0) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI) / STEP) % N);
   });
-  svg.addEventListener('pointerleave', function () { held = false; t0 = performance.now(); });
-  svg.addEventListener('click', function (e) { var n = e.target.closest('[data-w]'); if (n) { held = true; pick(+n.getAttribute('data-w')); rim(1); } });
-  svg.addEventListener('focusin', function (e) { var n = e.target.closest('[data-w]'); if (n) { held = true; pick(+n.getAttribute('data-w')); rim(1); } });
-  svg.addEventListener('focusout', function () { held = false; t0 = performance.now(); });
+  svg.addEventListener('pointerleave', resume);
+  svg.addEventListener('click', function (e) { var n = e.target.closest('[data-w]'); if (n) hold(+n.getAttribute('data-w')); });
+  svg.addEventListener('focusin', function (e) { var n = e.target.closest('[data-w]'); if (n) hold(+n.getAttribute('data-w')); });
+  svg.addEventListener('focusout', resume);
   pick(0); rim(0);
   if (!still) requestAnimationFrame(tick); else rim(1);
 })();
