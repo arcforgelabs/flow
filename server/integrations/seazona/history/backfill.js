@@ -78,7 +78,7 @@ export async function stopBackfill(db, { now = Date.now } = {}) {
   const [state] = await db.select().from(seazonaLaneState).where(eq(seazonaLaneState.lane, LANE));
   const cursor = state?.cursor;
   if (!cursor?.batchId || cursor.done) throw Object.assign(new FlowError('conflict', 'No history backfill is running'), { status: 409 });
-  const stopped = { ...cursor, done: true, stopped: true };
+  const stopped = { ...cursor, done: true, stopped: true, endedAt: at.toISOString() };
   await db.update(seazonaLaneState).set({ cursor: stopped, updatedAt: at }).where(eq(seazonaLaneState.lane, LANE));
   await finishApiBatch(db, cursor.batchId, { at });
   return describeBackfill(stopped);
@@ -91,6 +91,7 @@ export function describeBackfill(cursor) {
     from: cursor.from,
     through: cursor.through,
     startedAt: cursor.startedAt ?? null,
+    endedAt: cursor.endedAt ?? null,
     nextDay: cursor.done ? null : cursor.nextDay,
     // The day whose orders it reads now: the last day listed while orders
     // from it wait, else the next day to list.
@@ -160,6 +161,7 @@ export async function runHistoryBackfill(ctx, { isLaneLevel, describeReadFailure
       if (!cursor.pending.length) {
         if (cursor.nextDay > cursor.through) {
           cursor.done = true;
+          cursor.endedAt = new Date(at).toISOString();
           break;
         }
         calls += 1;

@@ -21,6 +21,7 @@ import { renderPortalSettings } from '/assets/ui/portal-settings.js';
 import { renderJobs } from '/assets/ui/jobs.js';
 import { renderReconcile } from '/assets/ui/reconcile.js';
 import { renderXeroImport } from '/assets/ui/xero-import.js';
+import { syncStatus } from '/assets/ui/sync-status.js';
 import { xeroUsage } from '/assets/ui/xero-usage.js';
 import { startMonitoring } from '/assets/ui/monitoring.js';
 import { isSearchKey, openSearch } from '/assets/ui/search.js';
@@ -1000,74 +1001,79 @@ function seazonaHistorySection() {
   const canAct = ['owner', 'admin'].includes(me?.person?.role);
   const yearAgo = new Date(Date.now() - 365 * 86_400_000).toISOString().slice(0, 10);
   const from = h('input', { class: 'fx-input fx-history__day', type: 'date', 'aria-label': 'Read from', value: yearAgo, disabled: !canAct });
-  const status = h('span', { class: 'fx-history__status' }, 'Checking…');
-  const control = h('span', { class: 'fx-row' });
-  const bar = h('progress', { class: 'fx-history__bar', max: 1, value: 0, 'aria-label': 'Read so far' });
-  const barRow = settingRow({ label: 'Progress', hint: h('span', {}), control: bar, wide: true });
-  barRow.hidden = true;
-  const day = (value) => new Date(`${value}T00:00:00Z`).toLocaleDateString('en-AU', { dateStyle: 'medium', timeZone: 'UTC' });
-  const section = h('section', { class: 'fx-set fx-int-section fx-card', style: { padding: '8px 20px 16px' } },
-    h('h2', { class: 'fx-set__title' }, 'History'),
-    settingRow({ label: 'Read from', hint: status, help: 'Reads past Seazona orders into Flow, 10 every 2 minutes. Orders Flow read before are skipped. Each job waits on hold and never drafts by itself.', control }),
-    barRow);
-  let timer = null;
-  let tick = null;
-  const press = async (button, path, body) => {
-    button.disabled = true;
-    try {
-      await flow(path, { method: 'POST', ...(body ? { body: JSON.stringify(body) } : {}) });
-      toast(body ? 'History read started.' : 'History read stopped.', 'success');
-    } catch (error) {
-      toast(error.message, 'danger');
-      if (error.retryAfterMs) holdButton(button, error.retryAfterMs);
-    }
-    load();
+  const sync = syncStatus();
+  const fromRow = settingRow({ label: 'Read from', help: 'Reads past Seazona orders into Flow. Orders Flow read before are skipped. Each job waits on hold and never drafts by itself.', control: from });
+  const section = h('section', { class: 'fx-set fx-int-section fx-card fx-history' },
+    h('h2', { class: 'fx-set__title' }, 'History'), fromRow, sync.element);
+  let timer;
+  let pending = false;
+  let run = null;
+  let mounted = false;
+  let disposed = false;
+  let loaded = false;
+  const active = () => ['running', 'waiting'].includes(run?.phase);
+  const schedule = () => {
+    clearTimeout(timer);
+    if (!disposed && !document.hidden && active()) timer = setTimeout(load, 5000);
   };
-  const start = (label, body, primary = true) => h('button', {
-    class: `fx-btn fx-btn--sm${primary ? ' fx-btn--primary' : ''}`, type: 'button', disabled: !canAct,
-    onclick: (event) => press(event.currentTarget, '/api/seazona/history/backfill', body()),
-  }, label);
+  const press = async (button, label) => {
+    button.disabled = true;
+    clearTimeout(timer);
+    try {
+      let resume = run?.resumeFrom;
+      if (label === 'Stop' || label === 'Retry') {
+        const stopped = await flow('/api/seazona/history/backfill/stop', { method: 'POST' });
+        resume = stopped.backfill?.resumeFrom;
+      }
+      if (label !== 'Stop') await flow('/api/seazona/history/backfill', {
+        method: 'POST', body: JSON.stringify(label === 'Resume' || label === 'Retry'
+          ? { from: resume ?? run.from, through: run.through } : { from: from.value }),
+      });
+      toast(label === 'Stop' ? 'History read stopped.' : 'History read started.', 'success');
+    } catch (error) { toast(error.message, 'danger'); }
+    loaded = false;
+    await load();
+  };
+  let actionLabel;
+  const actionButton = h('button', { class: 'fx-btn fx-btn--sm', type: 'button', onclick: event => press(event.currentTarget, actionLabel) });
   const load = async () => {
     clearTimeout(timer);
-    clearInterval(tick);
-    if (!section.isConnected && timer !== null) return;
-    let body;
+    if (disposed || pending || document.hidden) return;
+    pending = true;
     try {
-      body = await flow('/api/seazona/history');
+      const body = await flow('/api/seazona/history');
+      if (disposed) return;
+      loaded = true;
+      run = body.backfill;
+      fromRow.hidden = Boolean(run && run.phase !== 'done');
+      const label = !run ? 'Start' : ({ running: 'Stop', waiting: 'Stop', stopped: run.resumeFrom ? 'Resume' : 'Again', failed: 'Retry', done: 'Again' }[run.phase]);
+      actionLabel = label;
+      actionButton.textContent = label;
+      actionButton.disabled = !canAct;
+      sync.draw({
+        phase: run?.phase ?? 'not-started', startedAt: run?.startedAt, endedAt: run?.endedAt,
+        count: body.history.jobs, unit: 'jobs', from: run?.from, through: run?.through,
+        at: run?.readingDay ?? run?.resumeFrom ?? run?.through,
+        cause: run?.cause, nextRunAt: run?.nextRunAt,
+      }, actionButton);
     } catch (error) {
-      status.replaceChildren(error.message);
-      return;
-    }
-    const run = body.backfill;
-    barRow.hidden = !run;
-    if (run) {
-      const span = Date.parse(run.through) - Date.parse(run.from) + 86_400_000;
-      const at = run.running ? run.readingDay ?? run.through : run.resumeFrom ?? run.through;
-      bar.value = run.running || run.resumeFrom ? Math.min(1, Math.max(0, (Date.parse(at) - Date.parse(run.from)) / span)) : 1;
-      barRow.querySelector('.fx-setting__hint').replaceChildren(`${day(run.from)} to ${day(run.through)}`);
-    }
-    if (run?.running) {
-      const what = { waiting: 'Waiting', failed: 'Failed' }[run.phase] ?? `Reading ${day(run.readingDay ?? run.through)}`;
-      const reading = `${what} · ${run.ordersRead} read${run.waitingToRead ? ` · ${run.waitingToRead} to read` : ''}`;
-      const next = h('span', { class: 'fx-dim' });
-      const count = () => {
-        const left = Math.round((Date.parse(run.nextRunAt) - Date.now()) / 1000);
-        next.replaceChildren(left > 0 ? `· ${run.phase === 'running' ? 'next' : 'retry'} in ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}` : '· reading now');
-      };
-      if (run.nextRunAt && run.phase !== 'failed') { count(); tick = setInterval(count, 1000); }
-      status.replaceChildren(
-        run.phase === 'running' ? h('span', { class: 'fx-spinner fx-spinner--sm', 'aria-hidden': 'true' }) : '',
-        reading, next, run.cause ? h('span', { class: 'fx-dim' }, `· ${run.cause}`) : '');
-      control.replaceChildren(h('button', { class: 'fx-btn fx-btn--sm', type: 'button', disabled: !canAct, onclick: (event) => press(event.currentTarget, '/api/seazona/history/backfill/stop') }, 'Stop'));
-    } else if (run?.resumeFrom) {
-      status.replaceChildren(`Stopped at ${day(run.resumeFrom)} · ${run.ordersRead} read`);
-      control.replaceChildren(from, start('Start', () => ({ from: from.value }), false), start('Resume', () => ({ from: run.resumeFrom, through: run.through })));
-    } else {
-      status.replaceChildren(run ? `Done · ${run.ordersRead} read` : 'Not started');
-      control.replaceChildren(from, start('Start', () => ({ from: from.value })));
-    }
-    timer = setTimeout(() => { if (section.isConnected && run?.running) load(); }, 5_000);
+      sync.draw({ phase: 'failed', cause: 'Could not check progress. Try again.' }, h('button', { class: 'fx-btn fx-btn--sm', type: 'button', onclick: load }, 'Retry'));
+    } finally { pending = false; schedule(); }
   };
+  const visible = () => { clearTimeout(timer); if (!document.hidden && (!loaded || active())) load(); };
+  document.addEventListener('visibilitychange', visible);
+  const observer = new MutationObserver(() => {
+    if (section.isConnected) mounted = true;
+    else if (mounted) {
+      disposed = true;
+      clearTimeout(timer);
+      sync.dispose();
+      document.removeEventListener('visibilitychange', visible);
+      observer.disconnect();
+    }
+  });
+  observer.observe(document.body, { childList: true, subtree: true });
+  sync.draw({ phase: 'loading' });
   load();
   return section;
 }
