@@ -146,6 +146,10 @@ button{font:inherit;color:inherit}
 .prog button:hover b,.prog button:focus-visible b{text-decoration:underline}
 .prog .maj .ib{background:var(--t-primary);border-color:var(--t-primary);color:var(--t-on-primary)}
 .br-none{color:var(--t-mute);font-size:13px}
+.tag--more{background:transparent;border:1.5px dashed var(--t-accent-brd);clip-path:none;border-radius:var(--t-radius);padding:5px 14px;color:var(--t-accent)}
+.day-all{padding:0;display:flex;flex-wrap:wrap;gap:8px}
+.day-all .br-i{padding:0}
+.day-all .br-i::before{display:none}
 a.tag{text-decoration:none}
 .tag--sm{font-size:12.5px;padding:4px 10px 4px 18px;background:var(--t-s1)}
 /* Ongoing checks, full mode: the sweep follows the pointer; the nearest check pulses at its own pace */
@@ -391,16 +395,24 @@ document.getElementById('stats').innerHTML = R.stats.map(function (s) {
   document.getElementById('hero').innerHTML = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Timeline of updates">' + s + '</svg>';
 })();
 
-/* ---------- Branch timeline: newest at the top ---------- */
+/* ---------- Branch timeline: newest at the top; nine a day, the rest behind + ---------- */
+var MAX = 9;
+// Major and support items first, then the rest, newest first.
+function dayItems(key) {
+  var its = of(function (it) { return key === 'next' ? it.next : !it.next && it.day === key; }).reverse();
+  return its.filter(function (it) { return it.major || it.support; }).concat(its.filter(function (it) { return !it.major && !it.support; }));
+}
 var DAYS = [{ key: 'next', short: 'In', date: 'progress' }, { key: 'now' }].concat(R.days.slice().reverse());
 document.getElementById('all').innerHTML = DAYS.map(function (d) {
   if (d.key === 'now') return '<div class="br-now"><span>Today</span></div>';
-  var its = of(function (it) { return d.key === 'next' ? it.next : !it.next && it.day === d.key; }).reverse();
+  var its = dayItems(d.key), rest = its.length - MAX;
   if (!its.length && d.key !== 'next') return '';
+  if (rest > 0) its = its.slice(0, MAX);
   return '<div class="br-d' + (d.key === 'next' ? ' br-d--next' : '') + '" id="day-' + d.key + '"><div class="br-n"><span class="br-date"><b>' + esc(d.short) + '</b><span>' + esc(d.date) + '</span></span></div><ul class="br-ul">' +
     its.map(function (it) {
       return '<li class="br-i' + (it.major ? ' br-i--key' : '') + '"><button type="button" class="tag" data-open="' + it.id + '">' + svgIcon(it.icon) + esc(it.title) + (it.support ? badge() : '') + '</button></li>';
-    }).join('') + (!its.length ? '<li class="br-i br-none">Nothing in progress</li>' : '') + '</ul></div>';
+    }).join('') + (rest > 0 ? '<li class="br-i"><button type="button" class="tag tag--more" data-day="' + d.key + '" title="Show all ' + (rest + MAX) + '">+' + rest + '</button></li>' : '') +
+    (!its.length ? '<li class="br-i br-none">Nothing in progress</li>' : '') + '</ul></div>';
 }).join('');
 
 /* ---------- Week ahead: in-progress work with its stage; no dates ---------- */
@@ -494,6 +506,19 @@ function open(id) {
   document.getElementById('card-b').innerHTML = b;
   scrim.hidden = false; document.getElementById('card-x').focus();
 }
+// The + on a day: the full list of that day, each one opens its own card.
+function openDay(key) {
+  var d = R.days.filter(function (x) { return x.key === key; })[0] || {}, its = dayItems(key);
+  back = document.activeElement;
+  document.getElementById('card-i').innerHTML = svgIcon('list');
+  document.getElementById('card-t').textContent = (d.short || '') + ' ' + (d.date || '');
+  document.getElementById('card-s').textContent = its.length + ' updates';
+  document.getElementById('card-b').innerHTML = '<ul class="br-ul day-all">' + its.map(function (it) {
+    return '<li class="br-i' + (it.major ? ' br-i--key' : '') + '"><button type="button" class="tag" data-open="' + it.id + '">' + svgIcon(it.icon) + esc(it.title) + (it.support ? badge() : '') + '</button></li>';
+  }).join('') + '</ul>';
+  scrim.hidden = false; document.getElementById('card-x').focus();
+}
+document.addEventListener('click', function (e) { var m = e.target.closest('[data-day]'); if (m) { e.preventDefault(); openDay(m.getAttribute('data-day')); } });
 function close() { scrim.hidden = true; if (back && back.focus) back.focus(); }
 document.getElementById('card-x').addEventListener('click', close);
 scrim.addEventListener('click', function (e) { if (e.target === scrim) close(); });
