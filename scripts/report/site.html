@@ -8,6 +8,7 @@
 /* Flow Meridian tokens (server/theme/themes.js), the live app's default family. */
 /* --t-badge stays dark in both modes: the Major tag sits on light app screenshots. */
 :root{
+  --t-scrim:rgba(19,36,47,.65);
   --t-bg:#f6f3ef;--t-s1:#efe9e0;--t-paper:#ffffff;--t-brd:#e0dbd1;--t-brd-hi:#b8a685;
   --t-text:#1d3444;--t-strong:#13242f;--t-dim:#4d6575;--t-mute:#526a7a;
   --t-accent:#1d3444;--t-accent-bg:#faefdd;--t-accent-brd:#d4b07a;--t-primary:#1d3444;--t-on-primary:#f8dfb9;--t-ring:#b08850;
@@ -19,12 +20,12 @@
   --t-bg:#14252f;--t-s1:#1d3444;--t-paper:#192d3a;--t-brd:#2c4555;--t-brd-hi:#56707f;
   --t-text:#ece5d8;--t-strong:#fbf4e8;--t-dim:#b9c3c9;--t-mute:#a3b2bb;
   --t-accent:#f8dfb9;--t-accent-bg:rgba(248,223,185,.12);--t-accent-brd:rgba(248,223,185,.45);--t-primary:#f8dfb9;--t-on-primary:#1d3444;--t-ring:#f8dfb9;
-  --t-shadow:0 1px 2px rgba(0,0,0,.3);color-scheme:dark}}
+  --t-shadow:0 1px 2px rgba(0,0,0,.3);--t-scrim:rgba(4,10,15,.85);color-scheme:dark}}
 @media screen{:root[data-theme="dark"]{--t-danger:#f2877b;--t-danger-bg:rgba(242,135,123,.12);--t-danger-brd:rgba(242,135,123,.45);--t-success:#86d3a1;--t-success-bg:rgba(134,211,161,.12);--t-success-brd:rgba(134,211,161,.45);--t-support:#b79cf0;--t-on-support:#1f1336;
   --t-bg:#14252f;--t-s1:#1d3444;--t-paper:#192d3a;--t-brd:#2c4555;--t-brd-hi:#56707f;
   --t-text:#ece5d8;--t-strong:#fbf4e8;--t-dim:#b9c3c9;--t-mute:#a3b2bb;
   --t-accent:#f8dfb9;--t-accent-bg:rgba(248,223,185,.12);--t-accent-brd:rgba(248,223,185,.45);--t-primary:#f8dfb9;--t-on-primary:#1d3444;--t-ring:#f8dfb9;
-  --t-shadow:0 1px 2px rgba(0,0,0,.3);color-scheme:dark}}
+  --t-shadow:0 1px 2px rgba(0,0,0,.3);--t-scrim:rgba(4,10,15,.85);color-scheme:dark}}
 
 *,*::before,*::after{box-sizing:border-box}
 body{margin:0;background:var(--t-bg);color:var(--t-text);font:15px/1.55 var(--t-body)}
@@ -254,7 +255,7 @@ body[data-mode="full"] .hl b{font:400 19px/1.25 var(--t-display);padding-right:1
 @media screen and (max-width:639px){body[data-mode="full"] .hl{grid-template-columns:1fr}}
 
 /* Pop-out card */
-.scrim{position:fixed;inset:0;z-index:40;background:rgba(19,36,47,.45);display:grid;place-items:center;padding:16px}
+.scrim{position:fixed;inset:0;z-index:40;background:var(--t-scrim);-webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px);display:grid;place-items:center;padding:16px}
 .scrim[hidden]{display:none}
 .card{border-radius:var(--t-radius-lg);width:min(720px,100%);max-height:calc(100vh - 32px);overflow:auto;background:var(--t-paper);border:1px solid var(--t-brd-hi);box-shadow:0 12px 40px rgba(0,0,0,.25)}
 .card-h{position:sticky;top:0;z-index:1;display:flex;gap:14px;align-items:center;padding:16px 20px;background:var(--t-paper);border-bottom:1px solid var(--t-brd)}
