@@ -1,0 +1,61 @@
+{
+  "title": "Find a synthetic contact",
+  "synthetic": true,
+  "viewport": {
+    "width": 1280,
+    "height": 800
+  },
+  "duration": 18.178351705,
+  "steps": [
+    {
+      "do": "hover",
+      "target": "text=Bayview Clinic",
+      "hold": 1500,
+      "start": 0.5000176860000002,
+      "end": 2.9929027379999997
+    },
+    {
+      "do": "type",
+      "target": "input[placeholder='Search']",
+      "text": "Bayview",
+      "expect": "text=Bayview Clinic",
+      "expectHidden": "text=Harbour Smiles",
+      "start": 2.9929105390000004,
+      "end": 5.599905981
+    },
+    {
+      "do": "wait",
+      "ms": 1000,
+      "start": 5.599913462000001,
+      "end": 7.800073174000001
+    },
+    {
+      "do": "click",
+      "target": "text=Bayview Clinic",
+      "expect": "h1:visible",
+      "hold": 1500,
+      "start": 7.800081446,
+      "end": 10.305716074
+    },
+    {
+      "do": "wait",
+      "ms": 1500,
+      "start": 10.305723454999999,
+      "end": 13.005832842
+    },
+    {
+      "do": "click",
+      "target": "a[data-nav='contacts']",
+      "expect": "input[placeholder='Search']",
+      "hold": 1500,
+      "start": 13.005840674,
+      "end": 15.477796526000002
+    },
+    {
+      "do": "wait",
+      "ms": 1500,
+      "start": 15.477803106,
+      "end": 18.178344735
+    }
+  ]
+}

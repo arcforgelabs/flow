@@ -1,0 +1,14 @@
+{
+  "title": "Find a synthetic contact",
+  "seed": "basic",
+  "start": "/contacts",
+  "steps": [
+    {"do":"hover","target":"text=Bayview Clinic","hold":1500},
+    {"do":"type","target":"input[placeholder='Search']","text":"Bayview","expect":"text=Bayview Clinic","expectHidden":"text=Harbour Smiles"},
+    {"do":"wait","ms":1000},
+    {"do":"click","target":"text=Bayview Clinic","expect":"h1:visible","hold":1500},
+    {"do":"wait","ms":1500},
+    {"do":"click","target":"a[data-nav='contacts']","expect":"input[placeholder='Search']","hold":1500},
+    {"do":"wait","ms":1500}
+  ]
+}
