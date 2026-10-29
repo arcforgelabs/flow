@@ -85,3 +85,85 @@ icons:
   delete: trash-2
   page: layout-panel-top
   setting: settings
+
+# Short customer titles, at most four words, written by hand (or by an agent)
+# from public pull request titles. A title here wins over the release note
+# line. Write new ones in the release Highlights, so this list stays short.
+titles:
+  365: Photo capture store
+  373: Read form photos
+  382: Seazona history read
+  356: Non-chargeable tab
+  346: Xero contacts sync
+  340: Seazona contacts sync
+  347: Simpler integration pages
+  348: Clearer fold arrows
+  339: Fewer false misses
+  331: Clearer send errors
+  333: Create Xero clients
+  332: Delete no longer freezes
+  326: Slim phone cards
+  316: Skip rules hold drafts
+  313: Bulk send keeps going
+  309: Send shows progress
+  314: Filter stays visible
+  304: Pin pages
+  320: Problem replays
+  276: Shipped date column
+  273: Clearer integration cards
+  277: Views in toolbar
+  296: Even toolbar
+  252: Daily work first
+  253: All invoices reachable
+  257: Ask for a reply
+  260: Fixed lane width
+  261: Full-width rows
+  264: Shared price table
+  233: Better filters
+  238: Drag columns
+  239: Saved views
+  237: Full-width pages
+  250: Save checks invoices
+  232: Problem chips
+  236: Cleaner Rules page
+  244: Reference numbers
+  229: Rules page
+  230: Short problem lines
+  218: Title-only headers
+  216: Pending with a note
+  213: One Reconcile list
+  217: Bulk send to Xero
+  207: Xero payments
+  212: Report form filled in
+  200: Pending tab
+  204: Coloured custom fields
+  205: Plain price list
+  201: Group, sort, filter
+  203: Xero wait timer
+  191: Jobs with no invoice
+  198: Job ticks
+  192: Email invitations
+  190: Bulk action bar
+  184: Linked card
+  188: One-row board
+  189: Clearer job fixes
+  178: Finalised tab
+  180: Linked column
+  176: Field manager
+  173: Group jobs
+  175: Drag job cards
+  172: Job change view
+  165: Release branches
+  170: Custom fields
+  164: Invoice from a job
+  168: Opens on Ready
+  161: Full-page board
+  162: Simpler Number column
+  151: Three-way job check
+  149: Daily reconcile
+  152: Old order check
+  148: PDF preview
+  158: Next invoice after Send
+  268: Practice portal
+  357: Photo capture
+  307: Permissions

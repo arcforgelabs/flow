@@ -59,7 +59,6 @@ const S = {
   img: `display:block;width:100%;max-width:544px;height:auto;border:1px solid ${C.brd}`,
   row: `padding:10px 0;border-bottom:1px solid ${C.brd}`,
   hlt: `font-weight:700;font-size:15px;color:${C.strong};text-decoration:none`,
-  why: `margin:4px 0 0;font-size:13.5px;color:${C.dim}`,
   major: `display:inline-block;margin-left:6px;padding:1px 6px;font:700 10px ${BODY};letter-spacing:1.5px;color:${C.onPrimary};background:${C.primary}`,
   sup: `display:inline-block;margin-left:6px;padding:1px 6px;font:700 10px ${BODY};letter-spacing:1.5px;color:#ffffff;background:${C.support}`,
   pname: `font-weight:600;font-size:14px;color:${C.strong};text-decoration:none`,
@@ -83,7 +82,7 @@ export function email(report, { siteUrl, timeline = "timeline.png", inline = tru
   const link = (hash) => esc(`${siteUrl}#${hash}`);
   const thisWeek = report.items.filter((i) => i.day === "wtd").length, last = report.items.filter((i) => !i.next).length - thisWeek;
   const stats = report.stats.map((s) => `<td ${a("stat")}><a href="${link(s.go)}" ${a("statl")}>${esc(s.label)}</a><a href="${link(s.go)}" ${a("statn")}>${esc(s.value)}</a><a href="${link(s.go)}" ${a("statw")}>${esc(s.note)}</a></td>`);
-  const hl = report.highlights.map((id) => by[id]).map((i) => `<tr><td ${a("row")}><a href="${link(i.id)}" ${a("hlt")}>${esc(i.title)}</a>${i.major ? `<span ${a("major")}>MAJOR</span>` : ""}${i.support ? `<span ${a("sup")}>SUPPORT</span>` : ""}${i.why ? `<p ${a("why")}>${esc(i.why)}</p>` : ""}</td></tr>`).join("");
+  const hl = report.highlights.map((id) => by[id]).map((i) => `<tr><td ${a("row")}><a href="${link(i.id)}" ${a("hlt")}>${esc(i.title)}</a>${i.major ? `<span ${a("major")}>MAJOR</span>` : ""}${i.support ? `<span ${a("sup")}>SUPPORT</span>` : ""}</td></tr>`).join("");
   const prog = report.ahead.progress.map((p) => {
     const i = by[p.id], w = Math.max(0, Math.min(100, p.pct));
     const bar = `<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>${w ? `<td width="${w}%" ${a("fill")}>&nbsp;</td>` : ""}${w < 100 ? `<td ${a("bar")}>&nbsp;</td>` : ""}</tr></table>`;

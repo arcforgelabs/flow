@@ -108,10 +108,10 @@ export function build(config, data, nowIso) {
       const pr = data.pulls[h.pr];
       if (seen.has(h.pr) || has(pr, L.hide)) continue;
       seen.add(h.pr); dayKeys.add(day);
-      const impact = userImpact(pr?.body), ev = data.evidence[h.pr];
+      const impact = userImpact(pr?.body), ev = data.evidence[h.pr], title = config.titles?.[h.pr] || headline(h.title);
       items.push({
-        id: `pr${h.pr}`, title: headline(h.title), icon: iconFor(h.title, config.icons), day, next: false,
-        major: has(pr, L.major), support: has(pr, L.support), why: impact.why, what: impact.what || h.title, more: headline(h.title) === h.title ? [] : [`${h.title}.`],
+        id: `pr${h.pr}`, title, icon: iconFor(h.title, config.icons), day, next: false,
+        major: has(pr, L.major), support: has(pr, L.support), why: impact.why, what: impact.what || h.title, more: title === h.title ? [] : [`${h.title}.`],
         status: `Live · ${short(at.date)}`, prs: [h.pr], issues: linkedIssues(pr?.body), evidence: ev || null, releasedAt: rel.published_at
       });
     }
@@ -119,7 +119,7 @@ export function build(config, data, nowIso) {
   const progress = [];
   for (const issue of data.roadmap) {
     const pr = data.openPulls.find((p) => linkedIssues(p.body).includes(issue.number) || String(p.body || "").includes(`#${issue.number}`));
-    const st = stageOf(pr, config.stages), title = cleanTitle(issue.title);
+    const st = stageOf(pr, config.stages), title = config.titles?.[issue.number] || cleanTitle(issue.title);
     const id = `i${issue.number}`;
     items.push({ id, title, icon: iconFor(title, config.icons), day: null, next: true, major: (issue.labels || []).some((l) => l.name === L.major),
       support: false, why: "", what: userImpact(issue.body).what || title, more: [], status: `In progress · ${st.stage}, ${st.pct}% to Ready`,
