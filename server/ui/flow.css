@@ -1653,7 +1653,6 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
 .fx-cfm__create .fx-lucide { width: 14px; height: 14px; }
 .fx-cfm__empty { margin: 0; padding: 20px 16px; color: var(--t-dim); }
 .fx-cfm > .fx-notice { margin: 12px 16px 0; }
-.fx-cfm__foot { display: flex; justify-content: space-between; gap: 12px; padding: 12px 16px; border-top: 1px solid var(--fx-line-soft); color: var(--t-dim); font-size: 13px; }
 .fx-pop__item:disabled { opacity: .5; cursor: default; }
 .fx-pop__item[data-tone="danger"], .fx-pop__item[data-tone="danger"] .fx-pop__tick { color: var(--t-danger); }
 .fx-pop__item .fx-lucide { width: 15px; height: 15px; }

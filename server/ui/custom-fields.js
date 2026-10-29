@@ -111,7 +111,7 @@ export async function renderCustomFields(main, ui) {
   const { h, flow, toast, notice, dialog, pageHeader, me } = ui;
   const disabled = !['owner', 'admin'].includes(me?.person.role);
   const host = h('div', { class: 'fx-card fx-cfm__card' }, h('div', { class: 'fx-skeleton' }));
-  const addButton = h('button', { class: 'fx-btn fx-btn--primary fx-btn--sm', type: 'button', disabled }, 'Create custom field');
+  const addButton = h('button', { class: 'fx-btn fx-btn--primary fx-btn--sm', type: 'button', disabled, title: 'New custom field' }, lucide(h, 'plus'), 'New');
   main.append(pageHeader('Custom fields', { help: { href: DOCS, label: 'How custom fields work' } }), host);
 
   let data = null;
@@ -309,7 +309,7 @@ export async function renderCustomFields(main, ui) {
   ]);
   const filterButton = h('button', { class: 'fx-chip fx-cfm__tool fx-cfm__tool--dashed', type: 'button' });
   const filterMenu = popMenu(filterButton, (close) => [
-    item(view.archived ? 'check' : null, 'Show archived custom fields', () => { view.archived = !view.archived; close(); draw(); }, { role: 'menuitemcheckbox', checked: view.archived }),
+    item(view.archived ? 'check' : null, 'Archived', () => { view.archived = !view.archived; close(); draw(); }, { role: 'menuitemcheckbox', checked: view.archived }),
   ]);
   const toolbar = h('div', { class: 'fx-cfm__bar' }, search, typeButton, typeMenu, filterButton, filterMenu, h('span', { class: 'fx-cfm__gap' }), addButton);
   const table = h('div', { class: 'fx-cfm', role: 'table', 'aria-label': 'Custom fields' });
@@ -505,15 +505,9 @@ export async function renderCustomFields(main, ui) {
       parts.push(...group('archived', { text: 'Archived', icon: 'archive', color: 'gray' }, fields));
     }
     if (!count && (view.q || view.types.size)) parts.push(h('p', { class: 'fx-cfm__empty' }, 'No custom field matches.'));
-    if (!data.fields.length && !view.q && !view.types.size) {
-      parts.push(h('p', { class: 'fx-cfm__empty' }, 'No custom fields yet. Create one, for example Priority or Technician, to group the Jobs board by it.'));
-    }
+    else if (!count) parts.push(h('p', { class: 'fx-cfm__empty' }, 'No custom fields'));
     table.replaceChildren(...parts);
-    // The count is what the table shows, the work systems' fields too.
-    foot.replaceChildren(h('span', {}, `${count} ${count === 1 ? 'custom field' : 'custom fields'}`));
   }
-  const foot = h('div', { class: 'fx-cfm__foot' });
-  host.append(foot);
 
   async function load() {
     try {

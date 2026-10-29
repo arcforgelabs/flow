@@ -16,7 +16,7 @@ grouped by a dropdown, person or checkbox field and moved by drag
 Settings, Custom fields is laid out like ClickUp's Custom Field Manager:
 
 - **Toolbar:** search (names and option names), Field type (show some
-  types only), Filter (Show archived fields), and Create field.
+  types only), Filter (Archived), and New.
 - **Table:** one group per type, in name order. A group's header shows the
   type's icon, name and count, and folds the group open and closed. An
   owner or admin clicks the group's pill to give the group a colour. Folded
