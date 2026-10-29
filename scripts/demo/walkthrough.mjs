@@ -15,6 +15,7 @@ const shots = JSON.parse(await readFile(input, 'utf8'));
 if (!/^[a-z0-9-]+$/.test(shots.seed) || !shots.start?.startsWith('/') || shots.start.startsWith('//')) throw new Error('Use a named synthetic seed and a local start path.');
 const actions = new Set(['hover', 'click', 'type', 'press', 'scroll', 'wait']);
 if (!Array.isArray(shots.steps) || !shots.steps.length || shots.steps.some(s => !actions.has(s.do))) throw new Error('Unknown or empty shot list.');
+if (shots.steps.some(s => s.hold !== undefined && (!Number.isFinite(s.hold) || s.hold < 1000 || s.hold > 10000))) throw new Error('Shot holds must be 1000–10000 milliseconds.');
 const out = resolve(output);
 for (const suffix of ['.mp4', '.webm', '.json', '-frames']) {
   if (await access(out + suffix).then(() => true, () => false)) throw new Error('Output exists; choose a new take name.');
@@ -112,7 +113,8 @@ try {
     if (step.do === 'wait') await pause(Math.min(1500, Math.max(0, step.ms ?? 1000)));
     if (step.expect) await page.locator(step.expect).waitFor({ state: 'visible' });
     if (step.expectHidden) await page.locator(step.expectHidden).waitFor({ state: 'hidden' });
-    await pause(Math.min(1500, Math.max(1000, step.hold ?? 1200)));
+    // Keep the requested reading time. Narration must fit the screen, not a hidden cap.
+    await pause(step.hold ?? 1200);
     if (context.pages().length !== 1) throw new Error('A take must use one tab');
     completed.push({ ...step, start, end: (performance.now() - started) / 1000 + 0.5 });
   }

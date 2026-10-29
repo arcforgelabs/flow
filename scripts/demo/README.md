@@ -22,7 +22,9 @@ and fake Clerk are blocked. Each seed must use synthetic stand-ins only.
 Supported actions: `hover`, `click`, `type` (`text`), `press` (`key`), `scroll`
 (`dy`), `wait` (`ms`). `target` is a strict Playwright selector. `expect` and
 `expectHidden` assert the result. Cursor movement takes 20 timed points, with a
-400ms target pause; typing uses 50ms keystrokes and results hold 1–1.5 seconds.
+400ms target pause; typing uses 50ms keystrokes. Results hold for 1200ms by
+default. Set `hold` to 1000–10000ms for time to read or hear a result. Invalid
+holds fail before recording; a longer hold is never silently shortened.
 The take must last 15–45 seconds. A standard white arrow with a black outline
 is drawn on the page; its tip marks the click position.
 
@@ -70,8 +72,10 @@ GitHub scheduler or artifact upload. No workflow dispatch is performed here.
 instructions. Dotius gives a relaxed, friendly look at a feature we have made:
 connected thoughts, natural contractions and room to look at the result. Keep
 the words factual. Avoid sales language, formal click instructions and clipped
-one-word cues. The current Fable voice is a provisional English male take;
-Dotius's original saved preset has not been recovered. Each clip has a concise
+one-word cues. Cedar is an unheard candidate from OpenAI's quality
+recommendations. Dotius's original saved preset has not been recovered. Read
+[the model research and review steps](narration/README.md) before a live run.
+Each clip has a concise
 script in `narration/<seed>.json`; cues
 refer to the recorded step numbers and can span several steps. Keep those
 settings consistent across editions. This uses OpenAI's speech endpoint only,
@@ -89,15 +93,18 @@ makes this invoice ready but does not send it.
 
 ```sh
 node scripts/demo/narrate.mjs \
-  docs/evidence/report-2026-10/xero-paid/timing.json \
+  /private/takes/xero-paid.json \
   scripts/demo/narration/xero-paid.json \
   /private/narrated/xero-paid
 ```
 
+Record fresh takes with the current shot lists before using the revised
+scripts. The preserved timings and voice files remain historical references.
 The command generates a WAV for each cue, checks that it fits its recorded
 step range, and uses ffmpeg to combine audio with the existing MP4 and WebM
 video streams. It never cuts off or speeds up speech. If a cue is too long,
-shorten its script or record a longer hold. Outputs include MP4, WebM, WAV and
+record a longer hold first. Keep complete sentences together in one cue.
+Leave time after the last word to see the result. Outputs include MP4, WebM, WAV and
 a `.narration.json` manifest with the exact voice profile, cue times and audio
 hashes. Existing outputs are refused. Temporary audio is discarded on failure.
 No key value enters the output or logs. Narration is disclosed as AI-generated

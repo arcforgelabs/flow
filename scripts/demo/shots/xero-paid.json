@@ -16,7 +16,7 @@
     {
       "do": "hover",
       "target": "[title*='Paid in Xero']",
-      "hold": 1500
+      "hold": 3000
     },
     {
       "do": "click",
@@ -25,7 +25,8 @@
     },
     {
       "do": "wait",
-      "ms": 1500
+      "ms": 1500,
+      "hold": 4000
     },
     {
       "do": "wait",

@@ -1,0 +1,77 @@
+[
+  {
+    "example": "xero-paid",
+    "beforeSeconds": 15.962252917999999,
+    "afterSeconds": 19.788531008000003,
+    "synthetic": true,
+    "newSpeechGenerated": false,
+    "cues": [
+      {
+        "step": 1,
+        "through": 3,
+        "words": 15,
+        "windowSeconds": 8.681469187
+      },
+      {
+        "step": 4,
+        "through": 6,
+        "words": 21,
+        "windowSeconds": 10.607037721
+      }
+    ]
+  },
+  {
+    "example": "reconcile-gap",
+    "beforeSeconds": 20.886215601,
+    "afterSeconds": 24.004880248000003,
+    "synthetic": true,
+    "newSpeechGenerated": false,
+    "cues": [
+      {
+        "step": 1,
+        "through": 3,
+        "words": 18,
+        "windowSeconds": 8.994530169999999
+      },
+      {
+        "step": 4,
+        "through": 6,
+        "words": 13,
+        "windowSeconds": 7.600268635999999
+      },
+      {
+        "step": 7,
+        "through": 8,
+        "words": 10,
+        "windowSeconds": 6.910046141999999
+      }
+    ]
+  },
+  {
+    "example": "xero-missing-client",
+    "beforeSeconds": 21.324644656999997,
+    "afterSeconds": 24.496155753,
+    "synthetic": true,
+    "newSpeechGenerated": false,
+    "cues": [
+      {
+        "step": 1,
+        "through": 4,
+        "words": 18,
+        "windowSeconds": 9.336527197
+      },
+      {
+        "step": 5,
+        "through": 6,
+        "words": 12,
+        "windowSeconds": 7.460034437999999
+      },
+      {
+        "step": 7,
+        "through": 8,
+        "words": 15,
+        "windowSeconds": 7.199569996000001
+      }
+    ]
+  }
+]

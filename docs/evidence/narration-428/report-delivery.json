@@ -1,0 +1,177 @@
+{
+  "reportSource": "f8e8431548b9f5730e495434bba6d2680e61e9bd",
+  "client": "156.0.8078.73",
+  "surface": "Unchanged pinned report renderer and template, localhost Express static, synthetic report input and preserved synthetic narrated MP4 assets.",
+  "userDevice": "NOT_ENOUGH_INFO",
+  "userAttachmentClient": "NOT_ENOUGH_INFO",
+  "checks": [
+    {
+      "name": "xero-paid",
+      "label": "desktop",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "isMobile": false,
+      "media": {
+        "duration": 15.966667,
+        "currentTime": 15.966667,
+        "ended": true,
+        "error": null,
+        "width": 1280,
+        "height": 800,
+        "frames": 479,
+        "audioBytes": 94580
+      },
+      "errors": [],
+      "download": {
+        "control": "Native Chrome media menu > Download",
+        "failure": null,
+        "bytes": 379644,
+        "sha256": "398ae6d12a2e9953d55cafe2ab50a999e9c8daa4d392b37e25c011dc5bd80a2b",
+        "sourceSha256": "398ae6d12a2e9953d55cafe2ab50a999e9c8daa4d392b37e25c011dc5bd80a2b",
+        "identical": true
+      }
+    },
+    {
+      "name": "reconcile-gap",
+      "label": "desktop",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "isMobile": false,
+      "media": {
+        "duration": 20.9,
+        "currentTime": 20.9,
+        "ended": true,
+        "error": null,
+        "width": 1280,
+        "height": 800,
+        "frames": 626,
+        "audioBytes": 108790
+      },
+      "errors": [],
+      "download": {
+        "control": "Native Chrome media menu > Download",
+        "failure": null,
+        "bytes": 739273,
+        "sha256": "cf2cbd76d520b20fa663d19d82d004238c9f9b07fc46a1e254fd8e704dbea76a",
+        "sourceSha256": "cf2cbd76d520b20fa663d19d82d004238c9f9b07fc46a1e254fd8e704dbea76a",
+        "identical": true
+      }
+    },
+    {
+      "name": "xero-missing-client",
+      "label": "desktop",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "isMobile": false,
+      "media": {
+        "duration": 21.333333,
+        "currentTime": 21.333333,
+        "ended": true,
+        "error": null,
+        "width": 1280,
+        "height": 800,
+        "frames": 640,
+        "audioBytes": 132764
+      },
+      "errors": [],
+      "download": {
+        "control": "Native Chrome media menu > Download",
+        "failure": null,
+        "bytes": 874395,
+        "sha256": "a4776a99d245ccfc927131cffdbfb20d61a0cbc8d918a21c2378b8bef55de0d6",
+        "sourceSha256": "a4776a99d245ccfc927131cffdbfb20d61a0cbc8d918a21c2378b8bef55de0d6",
+        "identical": true
+      }
+    },
+    {
+      "name": "xero-paid",
+      "label": "phone-emulation",
+      "viewport": {
+        "width": 390,
+        "height": 800
+      },
+      "isMobile": true,
+      "media": {
+        "duration": 15.966667,
+        "currentTime": 15.966667,
+        "ended": true,
+        "error": null,
+        "width": 1280,
+        "height": 800,
+        "frames": 479,
+        "audioBytes": 94580
+      },
+      "errors": [],
+      "download": {
+        "control": "Native Chrome media menu > Download",
+        "failure": null,
+        "bytes": 379644,
+        "sha256": "398ae6d12a2e9953d55cafe2ab50a999e9c8daa4d392b37e25c011dc5bd80a2b",
+        "sourceSha256": "398ae6d12a2e9953d55cafe2ab50a999e9c8daa4d392b37e25c011dc5bd80a2b",
+        "identical": true
+      }
+    },
+    {
+      "name": "reconcile-gap",
+      "label": "phone-emulation",
+      "viewport": {
+        "width": 390,
+        "height": 800
+      },
+      "isMobile": true,
+      "media": {
+        "duration": 20.9,
+        "currentTime": 20.9,
+        "ended": true,
+        "error": null,
+        "width": 1280,
+        "height": 800,
+        "frames": 626,
+        "audioBytes": 108790
+      },
+      "errors": [],
+      "download": {
+        "control": "Native Chrome media menu > Download",
+        "failure": null,
+        "bytes": 739273,
+        "sha256": "cf2cbd76d520b20fa663d19d82d004238c9f9b07fc46a1e254fd8e704dbea76a",
+        "sourceSha256": "cf2cbd76d520b20fa663d19d82d004238c9f9b07fc46a1e254fd8e704dbea76a",
+        "identical": true
+      }
+    },
+    {
+      "name": "xero-missing-client",
+      "label": "phone-emulation",
+      "viewport": {
+        "width": 390,
+        "height": 800
+      },
+      "isMobile": true,
+      "media": {
+        "duration": 21.333333,
+        "currentTime": 21.333333,
+        "ended": true,
+        "error": null,
+        "width": 1280,
+        "height": 800,
+        "frames": 640,
+        "audioBytes": 132764
+      },
+      "errors": [],
+      "download": {
+        "control": "Native Chrome media menu > Download",
+        "failure": null,
+        "bytes": 874395,
+        "sha256": "a4776a99d245ccfc927131cffdbfb20d61a0cbc8d918a21c2378b8bef55de0d6",
+        "sourceSha256": "a4776a99d245ccfc927131cffdbfb20d61a0cbc8d918a21c2378b8bef55de0d6",
+        "identical": true
+      }
+    }
+  ]
+}

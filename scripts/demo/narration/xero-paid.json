@@ -1,6 +1,6 @@
 {
   "cues": [
-    {"step":1,"through":3,"text":"You can check what's paid without leaving Flow. This one's paid."},
-    {"step":4,"through":6,"text":"Open the invoice, and you've got the payment and its link back to Xero."}
+    {"step":1,"through":3,"text":"Flow shows which invoices Xero has marked as paid. Here, the Xero icon confirms payment."},
+    {"step":4,"through":6,"text":"Open the invoice to check its paid status. The Linked card shows the Xero invoice and a link to open it."}
   ]
 }

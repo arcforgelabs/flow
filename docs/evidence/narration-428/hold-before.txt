@@ -1,0 +1,24 @@
+✖ the recorder holds the payment result for the requested reading time (21312.020327ms)
+ℹ tests 1
+ℹ suites 0
+ℹ pass 0
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 21605.366247
+
+✖ failing tests:
+
+test at test/walkthrough.test.js:10:1
+✖ the recorder holds the payment result for the requested reading time (21312.020327ms)
+  AssertionError [ERR_ASSERTION]: the paid result must stay visible for at least 4.5 seconds
+      at TestContext.<anonymous> (file:///tmp/flow-wt-narration/test/walkthrough.test.js:23:12)
+      at async Test.run (node:internal/test_runner/test:1088:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:332:3) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '=='
+  }

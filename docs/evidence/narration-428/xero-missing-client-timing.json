@@ -1,0 +1,66 @@
+{
+  "title": "Create Xero clients",
+  "synthetic": true,
+  "viewport": {
+    "width": 1280,
+    "height": 800
+  },
+  "duration": 24.496155753,
+  "steps": [
+    {
+      "do": "click",
+      "target": "[role='tab']:has-text('Pending')",
+      "start": 0.5000094610000005,
+      "end": 2.648210073
+    },
+    {
+      "do": "hover",
+      "target": "tbody tr:first-child a[href^='/invoices/']",
+      "hold": 1500,
+      "start": 2.648218803,
+      "end": 5.012105869
+    },
+    {
+      "do": "click",
+      "target": "tbody tr:first-child a[href^='/invoices/']",
+      "expect": "button:has-text('Create')",
+      "start": 5.012111529000001,
+      "end": 7.135758459
+    },
+    {
+      "do": "wait",
+      "ms": 1500,
+      "start": 7.135763129,
+      "end": 9.836536658000002
+    },
+    {
+      "do": "click",
+      "target": "button[title='Create this client in Xero']",
+      "hold": 3000,
+      "expect": "dialog[open]",
+      "start": 9.836540848,
+      "end": 13.790893037999998
+    },
+    {
+      "do": "click",
+      "target": "dialog[open] button[value='ok']",
+      "expectHidden": "button[title='Create this client in Xero']",
+      "hold": 2500,
+      "start": 13.790898738,
+      "end": 17.296575286
+    },
+    {
+      "do": "wait",
+      "ms": 1500,
+      "hold": 3000,
+      "start": 17.296580896,
+      "end": 21.796196012
+    },
+    {
+      "do": "wait",
+      "ms": 1500,
+      "start": 21.796202882,
+      "end": 24.496150892
+    }
+  ]
+}

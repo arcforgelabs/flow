@@ -24,18 +24,19 @@
     {
       "do": "click",
       "target": "button[title='Create this client in Xero']",
-      "hold": 1500,
+      "hold": 3000,
       "expect": "dialog[open]"
     },
     {
       "do": "click",
       "target": "dialog[open] button[value='ok']",
       "expectHidden": "button[title='Create this client in Xero']",
-      "hold": 1500
+      "hold": 2500
     },
     {
       "do": "wait",
-      "ms": 1500
+      "ms": 1500,
+      "hold": 3000
     },
     {
       "do": "wait",

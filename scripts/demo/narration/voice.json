@@ -1,11 +1,11 @@
 {
   "provider": "openai",
   "model": "gpt-4o-mini-tts-2025-12-15",
-  "voice": "fable",
+  "voice": "cedar",
   "persona": "Dotius",
-  "voiceSelection": "Provisional English male take; Dotius's original saved preset was not available.",
+  "voiceSelection": "Unheard Cedar candidate: OpenAI recommends Cedar or Marin for quality. Keep the existing speech-only model and binding for this trial. The model shuts down on 2027-01-06; its Realtime replacement needs separate access approval. This is not a verified Dotius preset.",
   "speed": 1,
-  "instructions": "Speak as Dotius, giving a friend a relaxed look at a feature we have made. Use warm, conversational English with an English accent, an easy rhythm and small natural pauses between thoughts. Let contractions flow naturally. Keep it short, factual and clear; define an unfamiliar term only when needed. Stay matter-of-fact and quietly interested in what is on screen. Avoid an announcer voice, sales enthusiasm, slogans, motivational catchphrases, formal instruction, exaggerated emphasis and a clipped word-by-word cadence. Do not imitate another person or character. Read only the supplied words, with no introduction, extra claims, music or sound effects. Pronounce Xero as zero.",
+  "instructions": "Read the supplied words in a warm, relaxed English voice with a light English accent. Speak as one connected thought within each cue, at an easy conversational pace. Keep clauses together. Use a brief natural pause at each full stop, then continue with the same tone and energy. Finish each sentence without rushing its last words. Be matter-of-fact and quietly interested in the screen. Avoid an announcer voice, exaggerated emphasis and a clipped word-by-word rhythm. Read only the supplied words. Add no introduction, sign-off, claims, music or sound effects. Do not imitate a person or character. Pronounce Xero as zero.",
   "tokenVariable": "VOICE_EXPLAINER_TOKEN",
   "disclosure": "AI-generated narration"
 }

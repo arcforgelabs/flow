@@ -21,6 +21,7 @@
         "tab": "Project",
         "groups": [
           { "group": "Contributing", "pages": ["design", "design-system", "mobile-tests", "releasing", "low-risk-merge", "ai-bots"] },
+          { "group": "Walkthrough review", "pages": ["evidence/report-2026-10/narration-review/readme", "evidence/narration-428/readme"] },
           { "group": "Releases", "pages": ["releases"] }
         ]
       }
