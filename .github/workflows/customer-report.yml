@@ -61,7 +61,7 @@ jobs:
           # Optional: error counts for Error watch (read-only token; counts only).
           SENTRY_AUTH_TOKEN: ${{ secrets.CUSTOMER_REPORT_SENTRY_TOKEN }}
           SENTRY_ORG: ${{ vars.SENTRY_ORG }}
-          SENTRY_PROJECT: ${{ vars.SENTRY_PROJECT }}
+          SENTRY_PROJECT: ${{ secrets.CUSTOMER_REPORT_SENTRY_PROJECT }}
         run: node scripts/report/collect.mjs --out report.json
 
       - name: Render
