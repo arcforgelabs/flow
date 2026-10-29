@@ -63,3 +63,34 @@ omits the send failure. Its local take is partial and is not a report highlight.
 Local workflow checks can validate the schedule/release/dispatch configuration
 and run collect/render with synthetic API replies. They do not prove the hosted
 GitHub scheduler or artifact upload. No workflow dispatch is performed here.
+
+## Spoken narration
+
+`narration/voice.json` records the provider, model, voice, pace and delivery
+instructions. Each clip has a concise script in `narration/<seed>.json`; cues
+refer to the recorded step numbers and can span several steps. Keep those
+settings consistent across editions. This uses OpenAI's speech endpoint only,
+not ChatGPT live voice or Realtime. The API key needs text-to-speech Request
+permission and must be injected as `VOICE_EXPLAINER_TOKEN` by the environment.
+
+```sh
+node scripts/demo/narrate.mjs \
+  docs/evidence/report-2026-10/xero-paid/timing.json \
+  scripts/demo/narration/xero-paid.json \
+  /private/narrated/xero-paid
+```
+
+The command generates a WAV for each cue, checks that it fits its recorded
+step range, and uses ffmpeg to combine audio with the existing MP4 and WebM
+video streams. It never cuts off or speeds up speech. If a cue is too long,
+shorten its script or record a longer hold. Outputs include MP4, WebM, WAV and
+a `.narration.json` manifest with the exact voice profile, cue times and audio
+hashes. Existing outputs are refused. Temporary audio is discarded on failure.
+No key value enters the output or logs. Narration is disclosed as AI-generated
+in the manifest; the report publisher must show that disclosure to viewers.
+
+Live generation remains unverified until this running environment receives its
+vault secret. A local test-tone transport probe validates muxing and rejection
+of overlong cues; it is not spoken audio and is not report-ready narration.
+
+Reference: https://developers.openai.com/api/docs/guides/text-to-speech

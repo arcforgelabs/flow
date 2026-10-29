@@ -1,0 +1,9 @@
+{
+  "provider": "openai",
+  "model": "gpt-4o-mini-tts-2025-12-15",
+  "voice": "marin",
+  "speed": 1,
+  "instructions": "Speak in clear, calm English as a concise software walkthrough narrator. Use a natural conversational pace. Explain only the supplied text. Pronounce Xero as zero. No introduction, music, sound effects or added words.",
+  "tokenVariable": "VOICE_EXPLAINER_TOKEN",
+  "disclosure": "AI-generated narration"
+}
