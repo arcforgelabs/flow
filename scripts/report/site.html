@@ -11,15 +11,15 @@
   --t-text:#1d3444;--t-strong:#13242f;--t-dim:#4d6575;--t-mute:#526a7a;
   --t-accent:#1d3444;--t-accent-bg:#faefdd;--t-accent-brd:#d4b07a;--t-primary:#1d3444;--t-on-primary:#f8dfb9;--t-ring:#b08850;
   --t-body:'Plus Jakarta Sans',system-ui,-apple-system,'Segoe UI',sans-serif;--t-display:'Playfair Display',Georgia,serif;
-  --t-radius-lg:2px;--t-radius:0px;--t-support:#6d4aa8;--t-on-support:#ffffff;--t-shadow:0 1px 2px rgba(29,52,68,.06);
+  --t-danger:#b42318;--t-danger-bg:rgba(180,35,24,.07);--t-danger-brd:rgba(180,35,24,.40);--t-success:#22663f;--t-success-bg:rgba(34,102,63,.08);--t-success-brd:rgba(34,102,63,.40);--t-radius-lg:2px;--t-radius:0px;--t-support:#6d4aa8;--t-on-support:#ffffff;--t-shadow:0 1px 2px rgba(29,52,68,.06);
   color-scheme:light;
 }
-@media screen and (prefers-color-scheme:dark){:root:not([data-theme="light"]){--t-support:#b79cf0;--t-on-support:#1f1336;
+@media screen and (prefers-color-scheme:dark){:root:not([data-theme="light"]){--t-danger:#f2877b;--t-danger-bg:rgba(242,135,123,.12);--t-danger-brd:rgba(242,135,123,.45);--t-success:#86d3a1;--t-success-bg:rgba(134,211,161,.12);--t-success-brd:rgba(134,211,161,.45);--t-support:#b79cf0;--t-on-support:#1f1336;
   --t-bg:#14252f;--t-s1:#1d3444;--t-paper:#192d3a;--t-brd:#2c4555;--t-brd-hi:#56707f;
   --t-text:#ece5d8;--t-strong:#fbf4e8;--t-dim:#b9c3c9;--t-mute:#a3b2bb;
   --t-accent:#f8dfb9;--t-accent-bg:rgba(248,223,185,.12);--t-accent-brd:rgba(248,223,185,.45);--t-primary:#f8dfb9;--t-on-primary:#1d3444;--t-ring:#f8dfb9;
   --t-shadow:0 1px 2px rgba(0,0,0,.3);color-scheme:dark}}
-@media screen{:root[data-theme="dark"]{--t-support:#b79cf0;--t-on-support:#1f1336;
+@media screen{:root[data-theme="dark"]{--t-danger:#f2877b;--t-danger-bg:rgba(242,135,123,.12);--t-danger-brd:rgba(242,135,123,.45);--t-success:#86d3a1;--t-success-bg:rgba(134,211,161,.12);--t-success-brd:rgba(134,211,161,.45);--t-support:#b79cf0;--t-on-support:#1f1336;
   --t-bg:#14252f;--t-s1:#1d3444;--t-paper:#192d3a;--t-brd:#2c4555;--t-brd-hi:#56707f;
   --t-text:#ece5d8;--t-strong:#fbf4e8;--t-dim:#b9c3c9;--t-mute:#a3b2bb;
   --t-accent:#f8dfb9;--t-accent-bg:rgba(248,223,185,.12);--t-accent-brd:rgba(248,223,185,.45);--t-primary:#f8dfb9;--t-on-primary:#1d3444;--t-ring:#f8dfb9;
@@ -107,7 +107,14 @@ button{font:inherit;color:inherit}
 .br-d--next::before{content:"";position:absolute;left:var(--sx);top:14px;bottom:0;width:2px;margin-left:-1px;background:repeating-linear-gradient(var(--t-accent-brd) 0 5px,var(--t-paper) 5px 10px)}
 .br-d--next .br-i::before{border-left-style:dashed;border-bottom-style:dashed}
 #all .tag{width:310px;max-width:100%}
-#all .tag .sup{margin-left:auto}
+#all .tag .mk,.day-all .tag .mk{margin-left:auto}
+.mk{display:inline-flex;align-items:center;gap:6px;padding-left:8px}
+/* Bug fix and new feature marks use Flow's status tokens (--t-danger, --t-success): the theme engine keeps them readable. */
+.kd{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:50%;border:1px solid}
+.kd svg{width:12px!important;height:12px!important;color:currentColor!important}
+.kd--fix{color:var(--t-danger);background:var(--t-danger-bg);border-color:var(--t-danger-brd)}
+.kd--new{color:var(--t-success);background:var(--t-success-bg);border-color:var(--t-success-brd)}
+.br-i--key .kd{background:var(--t-paper)}
 .br-d--next .br-date span{font-size:15px}
 .br-now{position:relative;margin:4px 0 12px;padding-left:calc(var(--sx) - 30px)}
 .br-now span{position:relative;display:inline-block;padding:3px 10px;background:var(--t-primary);color:var(--t-on-primary);font:700 10.5px var(--t-body);letter-spacing:.16em;text-transform:uppercase;border-radius:var(--t-radius)}
@@ -349,6 +356,8 @@ function svgIcon(name) { return '<svg viewBox="0 0 24 24" fill="none" stroke="cu
 function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
 function of(f) { return ITEMS.filter(f); }
 var BADGE = '<path class="sh" d="M12 1.5l8.5 3.2v6.1c0 5.3-3.6 9.6-8.5 11.7-4.9-2.1-8.5-6.4-8.5-11.7V4.7z"/><circle class="pp" cx="12" cy="9.2" r="2.6"/><path class="pp" d="M7.4 17.2c.8-2.6 2.6-3.9 4.6-3.9s3.8 1.3 4.6 3.9"/>';
+// Bug fix or new feature: a small mark beside the support mark; its name shows on hover.
+function kind(it) { return it.kind ? '<span class="kd kd--' + it.kind + '" title="' + (it.kind === 'fix' ? 'Bug fix' : 'New feature') + '" role="img" aria-label="' + (it.kind === 'fix' ? 'Bug fix' : 'New feature') + '">' + svgIcon(it.kind === 'fix' ? 'bug' : 'sparkles') + '</span>' : ''; }
 function badge() { return '<svg class="sup" viewBox="0 0 24 24" aria-label="Support" role="img">' + BADGE + '</svg>'; }
 
 document.title = R.title;
@@ -385,7 +394,7 @@ document.getElementById('stats').innerHTML = R.stats.map(function (s) {
     g.forEach(function (it, i) {
       var x = x0 + (i % PER) * (IS + G), y = AX - 14 - (Math.floor(i / PER) + 1) * (IS + G) + G;
       var tone = it.next ? (it.major ? 'nk' : 'next') : it.major ? 'key' : '';
-      var nm = esc(it.title) + [it.major && 'Major', it.next && 'In progress', it.support && 'Support'].filter(Boolean).map(function (t) { return ' · ' + t; }).join('');
+      var nm = esc(it.title) + [it.kind === 'fix' && 'Bug fix', it.kind === 'new' && 'New feature', it.major && 'Major', it.next && 'In progress', it.support && 'Support'].filter(Boolean).map(function (t) { return ' · ' + t; }).join('');
       s += '<g class="pillhit" tabindex="0" role="button" aria-label="' + nm + '" data-open="' + it.id + '"><title>' + nm + '</title>' +
         '<rect class="pill' + (tone ? ' pill--' + tone : '') + '" x="' + x + '" y="' + y + '" width="' + IS + '" height="' + IS + '"/>' +
         '<g transform="translate(' + (x + 8) + ' ' + (y + 8) + ') scale(.75)"><g class="pi' + (tone === 'key' || tone === 'nk' ? ' pi--key' : '') + '">' + (I[it.icon] || '') + '</g></g>' +
@@ -404,7 +413,7 @@ function dayItems(key) {
   var its = of(function (it) { return key === 'next' ? it.next : !it.next && it.date === key; }).reverse();
   return its.filter(function (it) { return it.major || it.support; }).concat(its.filter(function (it) { return !it.major && !it.support; }));
 }
-function tagLi(it) { return '<li class="br-i' + (it.major ? ' br-i--key' : '') + '"><button type="button" class="tag" data-open="' + it.id + '">' + svgIcon(it.icon) + esc(it.title) + (it.support ? badge() : '') + '</button></li>'; }
+function tagLi(it) { return '<li class="br-i' + (it.major ? ' br-i--key' : '') + '"><button type="button" class="tag" data-open="' + it.id + '">' + svgIcon(it.icon) + esc(it.title) + '<span class="mk">' + kind(it) + (it.support ? badge() : '') + '</span></button></li>'; }
 var DATES = [];
 for (var t = Date.parse(R.period.today); t >= Date.parse(R.period.from); t -= 864e5) DATES.push(new Date(t).toISOString().slice(0, 10));
 var NODES = [], seenDay = {};
@@ -521,7 +530,7 @@ function open(id) {
   back = document.activeElement;
   document.getElementById('card-i').innerHTML = svgIcon(it.icon);
   document.getElementById('card-t').textContent = it.title;
-  document.getElementById('card-s').textContent = it.status;
+  document.getElementById('card-s').textContent = (it.kind ? (it.kind === 'fix' ? 'Bug fix · ' : 'New feature · ') : '') + it.status;
   var e = it.evidence, b = it.why ? '<p class="cwhy">' + esc(it.why) + '</p>' : '';
   if (e && e.clip) b += '<figure class="media"><video controls playsinline preload="none" poster="' + esc(e.still) + '" src="' + esc(e.clip) + '" aria-label="' + esc(it.title) + ' walkthrough, with sample data"></video><figcaption>Sample data</figcaption></figure>';
   var d = '<p>' + esc(it.what) + '</p>';

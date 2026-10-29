@@ -22,9 +22,9 @@ const data = {
     { published_at: '2026-10-10T02:00:00Z', body: '### Highlights\n\n- Too old for this report. (#9)\n' }
   ],
   pulls: {
-    10: { number: 10, labels: label('report: major'), body: impact('Change a client once.') },
+    10: { number: 10, title: 'feat: Xero contacts both ways', labels: label('report: major'), body: impact('Change a client once.') },
     11: { number: 11, labels: label('report: hide'), body: impact('Nobody sees this.') },
-    12: { number: 12, labels: label('report: support'), body: impact('One bad job no longer stops the batch.') }
+    12: { number: 12, title: 'fix: send keeps going', labels: label('report: support'), body: impact('One bad job no longer stops the batch.') }
   },
   merged: [
     { number: 12, title: 'fix: send keeps going', created_at: '2026-10-26T23:00:00Z', merged_at: '2026-10-27T01:00:00Z', labels: label('report: support'), body: `Closes #40\n\n${impact('One bad job no longer stops the batch.')}` }
@@ -42,6 +42,7 @@ test('the report covers last Monday to Sunday and this week, from labelled recor
   const [contacts, send, photo] = r.items;
   assert.equal(contacts.title, 'Xero contacts both ways');
   assert.equal(contacts.why, 'Change a client once.');
+  assert.deepEqual([contacts.kind, send.kind, photo.kind], ['new', 'fix', 'new']);
   assert.ok(contacts.major && contacts.day === 'wed');
   assert.ok(send.support && send.day === 'wtd');
   assert.deepEqual([photo.title, photo.next, photo.status], ['Photo capture', true, 'In progress · Build, 25% to Ready']);

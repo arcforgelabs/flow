@@ -79,6 +79,8 @@ const cleanTitle = (t) => {
   const s = t.replace(/^\[\w+\]:\s*/, "").replace(/^(?:feat|fix|improve|refactor|docs|chore|rfc)(\([^)]*\))?!?:\s*/i, "");
   return s.charAt(0).toUpperCase() + s.slice(1);
 };
+// "fix" (a bug fix) or "new" (a new feature), from the title's prefix: "fix: …", "[Bug]: …", "feat: …", "[Feature]: …".
+export const kindOf = (title = "") => /^(fix\b|\[bug\])/i.test(title) ? "fix" : /^(feat\b|\[feature\])/i.test(title) ? "new" : "";
 // A request starts when its first linked issue opened, or else when its pull request opened.
 const firstAsked = (pr, opened = {}) => linkedIssues(pr.body).map((n) => opened[n]).filter(Boolean).sort()[0] || pr.created_at;
 // "3 hours" or "2 days"; "no requests" when there is nothing to average.
@@ -118,7 +120,7 @@ export function build(config, data, nowIso) {
       seen.add(h.pr); dayKeys.add(day);
       const impact = userImpact(pr?.body), ev = data.evidence[h.pr], title = config.titles?.[h.pr] || headline(h.title);
       items.push({
-        id: `pr${h.pr}`, title, icon: iconFor(h.title, config.icons), day, date: at.date, next: false,
+        id: `pr${h.pr}`, title, icon: iconFor(h.title, config.icons), kind: kindOf(pr?.title), day, date: at.date, next: false,
         major: has(pr, L.major), support: has(pr, L.support), why: impact.why, what: impact.what || h.title, more: title === h.title ? [] : [`${h.title}.`],
         status: `Live · ${short(at.date)}`, prs: [h.pr], issues: linkedIssues(pr?.body), evidence: ev || null, releasedAt: rel.published_at
       });
@@ -129,7 +131,7 @@ export function build(config, data, nowIso) {
     const pr = data.openPulls.find((p) => linkedIssues(p.body).includes(issue.number) || String(p.body || "").includes(`#${issue.number}`));
     const st = stageOf(pr, config.stages), title = config.titles?.[issue.number] || cleanTitle(issue.title);
     const id = `i${issue.number}`;
-    items.push({ id, title, icon: iconFor(title, config.icons), day: null, next: true, major: (issue.labels || []).some((l) => l.name === L.major),
+    items.push({ id, title, icon: iconFor(title, config.icons), kind: kindOf(issue.title), day: null, next: true, major: (issue.labels || []).some((l) => l.name === L.major),
       support: false, why: "", what: userImpact(issue.body).what || title, more: [], status: `In progress · ${st.stage}, ${st.pct}% to Ready`,
       prs: pr ? [pr.number] : [], issues: [issue.number], evidence: null });
     progress.push({ id, ...st });
