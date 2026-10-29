@@ -755,7 +755,7 @@ a.fx-strong:hover { text-decoration: underline; }
 .fx-table__group-row .fx-board__sum { margin-left: 0; }
 /* The Jobs list's group head folds its rows (jobs.js, list): a click on the
    head or its chevron. */
-.fx-table--jobs .fx-table__group { cursor: pointer; }
+.fx-table__group { cursor: pointer; }
 .fx-table--jobs .fx-table__group td.fx-tick-cell { padding-right: 0; }
 .fx-table__fold { display: inline-flex; align-items: center; gap: 8px; min-width: 0; padding: 2px 4px 2px 0; border: 0; background: none; color: var(--t-dim); font: inherit; cursor: pointer; }
 .fx-table__fold > svg { flex: none; transition: transform .15s; }
@@ -1101,8 +1101,6 @@ th:hover > .fx-th-grip::after { background: var(--t-brd-hi); }
 /* Phones and tablets: Capture and the sheet's controls are thumb sized. */
 @media (max-width: 1023px) {
   .fx-dialog.fx-capture .fx-task__actions .fx-btn { min-height: 44px; }
-  .fx-listhead .fx-toolbar .fx-btn.fx-capture__shoot { height: 44px; }
-  .fx-listhead .fx-toolbar .fx-btn--icon.fx-capture__shoot { width: 44px; }
   .fx-dialog.fx-capture .fx-task__tools .fx-btn--icon { width: 44px; height: 44px; }
 }
 
@@ -1553,20 +1551,9 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
 .fx-set__title { margin: 8px 0 4px; color: var(--t-strong); font: 600 15px/1.3 var(--t-body); }
 .fx-set__hint { color: var(--t-dim); font-size: 13px; line-height: 1.35; }
 .fx-set + .fx-set { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--fx-line); }
-/* Price list (price-list.js): one plain table of Flow's codes. */
-.fx-price { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
-.fx-price__head { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 8px 16px; }
-.fx-price__head .fx-search { margin: 0 0 6px; width: 260px; }
-@media (max-width: 639px) {
-  .fx-price__head .fx-search { width: 100%; }
-  .fx-price__settings .fx-select { min-height: 44px; }
-}
-.fx-price__table th { position: sticky; top: 0; z-index: 1; }
-.fx-price__table td { padding-top: 9px; padding-bottom: 9px; }
+/* Price list (price-list.js): the codes' table, in the list window. */
 .fx-price__table td.fx-num, .fx-price__table th.fx-num { text-align: right; white-space: nowrap; }
 .fx-price__code { width: 1%; white-space: nowrap; font-family: var(--t-data); font-size: 13px; font-weight: 600; color: var(--t-strong); }
-.fx-price__settings { margin-top: 12px; }
-.fx-ph__actions .fx-tabs__count[data-tone="warn"], .fx-btn .fx-tabs__count[data-tone="warn"] { margin-left: 8px; background: var(--t-warn-bg); color: var(--t-warn); }
 /* Price list › Reconcile (price-reconcile.js): Xero › Import's two views. */
 .fx-prc .fx-pager { margin-bottom: 4px; }
 .fx-prc__finder { display: flex; flex-direction: column; gap: 4px; }
@@ -1912,10 +1899,13 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
 .fx-listhead > .fx-toolbar > .fx-tabs button { padding-block: 9px; }
 /* Every control in the toolbar is one height (--fx-control-h). Under a
    tab line, the controls keep 8px clear of the line; only the tabs sit on it. */
+/* A finger needs 44px: on a phone or tablet every list's toolbar controls
+   are that tall (the ListHead card's touch rule). */
+@media (max-width: 1023px) { .fx-listhead { --fx-control-h: 44px; } }
 .fx-listhead .fx-toolbar :is(.fx-btn, .fx-chip, .fx-views__add, .fx-views__tab) { min-height: var(--fx-control-h); }
 .fx-listhead .fx-toolbar .fx-btn:not(.fx-btn--sm) { padding-block: 0; font-size: 14px; }
 .fx-listhead .fx-toolbar :is(.fx-btn, .fx-chip) { height: var(--fx-control-h); }
-.fx-listhead .fx-toolbar .fx-find__button { width: var(--fx-control-h); height: var(--fx-control-h); }
+.fx-listhead .fx-toolbar :is(.fx-find__button, .fx-btn--icon) { width: var(--fx-control-h); height: var(--fx-control-h); }
 .fx-listhead .fx-toolbar .fx-find__input { height: var(--fx-control-h); }
 .fx-listhead .fx-toolbar .fx-seg { padding: 2px; }
 .fx-listhead .fx-toolbar .fx-seg__item { min-height: calc(var(--fx-control-h) - 4px); }
@@ -1928,6 +1918,9 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
   .fx-listhead[data-sticky] { position: static; margin-top: 0; padding-top: 0; }
   .fx-listhead__edge + .fx-listhead[data-sticky] { margin-top: -8px; }
   .fx-alerts { margin-bottom: 4px; }
+  /* The tools have their own row under the tabs: no gap under them, so the
+     44px controls still leave seven rows on a small phone. */
+  .fx-listhead > .fx-toolbar:not(.fx-toolbar--plain) > :not(.fx-tabs) { margin-bottom: 0; }
 }
 
 /* The bulk action bar (bulk-bar.js): floats at the foot while rows are

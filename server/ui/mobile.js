@@ -221,7 +221,8 @@ export const RULES = {
       "invoices-approved",
       "invoices-ticked",
       "invoices-filter",
-      "reconcile"
+      "reconcile",
+      "price-list"
     ],
     "card": "Filter"
   },
@@ -248,7 +249,8 @@ export const RULES = {
       "invoices-approved",
       "invoices-ticked",
       "invoices-filter",
-      "reconcile"
+      "reconcile",
+      "price-list"
     ],
     "card": "FindBox"
   },
@@ -346,7 +348,8 @@ export const RULES = {
       "invoices-approved",
       "invoices-ticked",
       "invoices-filter",
-      "reconcile"
+      "reconcile",
+      "price-list"
     ],
     "card": "ListFrame"
   },
@@ -374,7 +377,8 @@ export const RULES = {
       "invoices-approved",
       "invoices-ticked",
       "invoices-filter",
-      "reconcile"
+      "reconcile",
+      "price-list"
     ],
     "card": "ListHead"
   },
@@ -569,7 +573,8 @@ export const RULES = {
       "invoices-approved",
       "invoices-ticked",
       "invoices-filter",
-      "reconcile"
+      "reconcile",
+      "price-list"
     ],
     "card": "SavedViews"
   },
