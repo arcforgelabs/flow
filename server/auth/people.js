@@ -2,8 +2,8 @@ import { and, asc, eq, isNull, ne, sql } from 'drizzle-orm';
 import { people, PERSON_ROLES } from '../db/schema.js';
 import { FlowError } from '../core/errors.js';
 import { isThemeFamily, normalizeAccent } from '../theme/themes.js';
-import { invoiceColumnsView, normaliseJobsView, normaliseListView, PRICE_COLUMNS, RECONCILE_COLUMNS } from '../ui/job-view.js';
-import { normaliseSavedViews, SAVED_VIEW_PAGES } from '../ui/list-views.js';
+import { invoiceColumnsView, normaliseJobsView, normaliseListView, RECONCILE_COLUMNS } from '../ui/job-view.js';
+import { normalisePriceView, normaliseSavedViews, SAVED_VIEW_PAGES } from '../ui/list-views.js';
 import { normaliseNavPins } from '../ui/nav-pins.js';
 import { isPlainEmail } from './settings.js';
 
@@ -61,7 +61,7 @@ function viewCheck(page) {
     case 'jobs': return normaliseJobsView;
     case 'invoices': return invoiceColumnsView;
     case 'reconcile': return (view) => normaliseListView(view, RECONCILE_COLUMNS);
-    case 'price-list': return (view) => normaliseListView(view, PRICE_COLUMNS);
+    case 'price-list': return normalisePriceView;
     case 'nav': return normaliseNavPins;
     default: return null;
   }
