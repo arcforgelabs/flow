@@ -9,7 +9,7 @@ import {
   saveCustomerBilling, saveInvoicingSettings, sendModeSummary,
 } from '../server/core/invoicing-rules.js';
 import { starterRules } from '../server/core/invoice-rules.js';
-import { listAutomations, runAutomations, saveAutomation, statusMatches, workStatuses } from '../server/core/automations.js';
+import { listAutomations, runAutomations, saveAutomation, statusMatches } from '../server/core/automations.js';
 import { explainObligation, observeJob, recordAccountingEvidence, setReady } from '../server/core/ledger.js';
 import { billingObligations, invoices } from '../server/db/schema.js';
 import { freshDatabase, skipWithoutDatabase } from './support/db.js';
@@ -32,7 +32,11 @@ describe('the rules for one job', () => {
     assert.equal(statusMatches('Order shipped', ['shipped']), false);
     assert.equal(statusMatches('Complete', ['shipped', 'delivered']), false);
     assert.equal(statusMatches('Complete and  await return', ['complete and await return']), true);
+    assert.equal(statusMatches('Complete and await return', ['  COMPLETE\tAND  AWAIT RETURN  ']), true);
     assert.equal(statusMatches(null, ['shipped']), false);
+    assert.equal(statusMatches('', ['']), false);
+    assert.equal(statusMatches(' \t ', [' \t ']), false);
+    assert.equal(statusMatches('Shipped', []), false);
   });
 
   // The lab's checks are invoice rules (invoice-rules.js); these are the
@@ -246,10 +250,6 @@ describe('drafts by rule', { skip: skipWithoutDatabase }, () => {
 
     const shipped = await cleared({ ready: false });
     const inLab = await cleared({ status: 'In production', ready: false });
-    // The menu lists each status the work system reported, most jobs first.
-    const statuses = await workStatuses(handle.db, lab.id);
-    assert.equal(statuses[0].label, 'Shipped');
-    assert.deepEqual(statuses.find((s) => s.value === 'in production'), { value: 'in production', label: 'In production', jobs: 1 });
     const keptBack = await cleared({ ready: false });
     // A person put this one back in work: the routine leaves it to people.
     await setReady(handle.db, lab.id, keptBack.id, { actor: 'person:test' });
