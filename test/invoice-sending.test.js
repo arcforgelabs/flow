@@ -402,6 +402,31 @@ describe('ready, problem and send', { skip: skipWithoutDatabase }, () => {
     await reviseInvoice(handle.db, lab.id, two.id);
     assert.equal((await row(two.id)).sendState, null);
   });
+
+  test('a refused send keeps the matched Xero invoice for the issued page', async () => {
+    const fake = fakeAccounting();
+    const invoice = await good();
+    await markReady(handle.db, lab.id, [invoice.id], { personId: owner.id });
+    await sendAllReady(handle.db, lab.id, { accounting: fake.adapter, personId: owner.id, issueDate: ISSUE_DATE });
+    const xeroId = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+    const message = 'Xero INV-2449 has the same client and reference at 235.00. Nothing was sent. Void the extra one in Xero or in Flow.';
+    fake.outcomes.set(invoice.id, 'failed');
+    fake.errors.set(invoice.id, {
+      code: 'xero_same_reference_different_amount',
+      message,
+      short: 'Duplicate?',
+      details: { xero: { invoiceId: xeroId, number: 'INV-2449', status: 'AUTHORISED', totalCents: 23500 } },
+    });
+    const sent = await sendQueued(handle.db, lab.id, { accounting: fake.adapter });
+    assert.equal(sent.failed, 1);
+    const failed = await row(invoice.id);
+    assert.deepEqual(failed.sendError.xero, { invoiceId: xeroId, number: 'INV-2449', status: 'AUTHORISED' });
+    const view = await invoiceView(handle.db, lab.id, failed, { accounting: fake.adapter });
+    assert.equal(view.view, 'problem');
+    assert.equal(view.problems[0].message, message);
+    assert.equal(view.problems[0].short, 'Duplicate?');
+    assert.deepEqual(view.problems[0].xero, { invoiceId: xeroId, number: 'INV-2449', status: 'AUTHORISED' });
+  });
 });
 
 describe('Send all ready over the API', { skip: skipWithoutDatabase }, () => {

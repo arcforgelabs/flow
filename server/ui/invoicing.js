@@ -1423,6 +1423,21 @@ function issuedView(invoice, ui, context, redraw) {
     ? h('button', { class: 'fx-btn', type: 'button', onclick: () => act('revise', `${invoice.number} is a draft again.`) }, 'Revise') : null;
   const preview = previewButton(ui, invoice.id);
   actionBar = h('div', { class: 'fx-ph__actions' }, [voidButton, reviseButton, preview, send].filter(Boolean));
+  // The same problem notice as a draft. A matched Xero invoice gets the
+  // same Open in Xero link as the Xero card (go.xero.com, reconcile.js).
+  const found = invoice.problems ?? [];
+  const shorts = found.length && found.every((p) => p.short) ? [...new Set(found.map((p) => p.short))].join(', ') : null;
+  const problemNotice = found.length
+    ? ui.notice([...new Set(found.map((p) => brief(p.message)))].join(' '), 'danger', 'Problem.', { short: shorts })
+    : null;
+  const matched = found.find((p) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(p.xero?.invoiceId ?? ''));
+  const openXero = matched ? h('a', {
+    class: 'fx-btn fx-btn--sm fx-btn--ghost',
+    href: `https://go.xero.com/AccountsReceivable/View.aspx?InvoiceID=${encodeURIComponent(matched.xero.invoiceId)}`,
+    target: '_blank',
+    rel: 'noopener',
+  }, 'Open in Xero') : null;
+  const problemRow = problemNotice ? (openXero ? h('div', { class: 'fx-offer' }, problemNotice, openXero) : problemNotice) : null;
   const header = h('header', { class: 'fx-ph' },
     h('div', { class: 'fx-ph__text' },
       h('h1', { class: 'fx-title' }, invoice.number),
@@ -1449,6 +1464,7 @@ function issuedView(invoice, ui, context, redraw) {
     chrome.record,
     chrome.pager,
     header,
+    problemRow,
     h('div', { class: 'fx-invoice__grid' },
       h('div', { class: 'fx-invoice__main' },
         h('section', { class: 'fx-card fx-doc' },
