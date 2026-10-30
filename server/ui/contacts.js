@@ -3,6 +3,7 @@
 // with no integration on. When Xero is connected, the record says whether
 // that contact is in Xero and, for an owner or admin, offers Link and Create.
 import { initialsOf } from '/assets/ui/person.js';
+import { mountPortalSection } from '/assets/ui/portal-lab.js';
 import { xeroContactActions } from '/assets/ui/xero-contact.js';
 
 const DOCS = 'https://github.com/arcforgelabs/flow/blob/main/docs/CONTACTS.md';
@@ -177,6 +178,7 @@ async function renderContact(main, ui, id) {
   }, 'Save');
 
   const xero = h('div');
+  const portal = h('div');
   page.replaceChildren(
     crumbs(['/contacts', 'Contacts'], contact.name),
     pageHeader(contact.name, { actions: [save] }),
@@ -204,8 +206,10 @@ async function renderContact(main, ui, id) {
           h('span', { class: 'fx-label' }, 'Practitioners'),
           practitioners),
         h('label', { class: 'fx-check' }, active, 'Active'))),
+    portal,
     xero,
   );
+  void mountPortalSection(ui, contact, portal);
   void loadXero(ui, contact, canEdit, xero);
 }
 

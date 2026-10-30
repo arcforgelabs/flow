@@ -340,6 +340,35 @@ against a real Clerk instance:
 - how many proxies Replit puts in front of a published app (Flow trusts one);
 - sign-in through `CLERK_PROXY_URL` on a published `*.replit.app` address.
 
+## Health data
+
+Flow treats every record and every file as sensitive health data
+(`VISION.md`). A practice may later send scans, photos and case notes.
+This installation is responsible for where that data lives and who can
+reach it. Flow does not choose the region or the disk.
+
+- **Region.** Run PostgreSQL and the Flow process in the region you are
+  willing to store health information in. Flow has no region setting of
+  its own: the host you pick is the region.
+- **Encryption at rest.** The database volume and any object storage must
+  be encrypted by the provider. Flow does not add a second encryption
+  layer. Backups of the database must be encrypted too, and the backup
+  key must not sit in the same place as the backup.
+- **Who can reach the database.** Only the Flow process needs
+  `DATABASE_URL`. Do not share that role with a report tool, a laptop, or
+  another application. Prefer a private network, and do not publish
+  PostgreSQL's port.
+- **Sign-in.** Portal sessions end after 12 hours with no request. Lab
+  staff can sign a practice member out from the contact page. In Clerk,
+  turn multi-factor on so a member can use it, and require it for lab
+  owners and admins (see "Your own Clerk application" above). Replit's
+  managed Clerk cannot require a second factor; Google Workspace is the
+  owner check there.
+- **Answers.** Portal API answers are `Cache-Control: no-store`. The
+  portal pages send a Content Security Policy that allows scripts only
+  from Flow and from this installation's Clerk host, and HSTS when the
+  request arrived over HTTPS.
+
 ## Move from the earlier codebase
 
 An installation that ran the earlier Flow codebase moves its records into a

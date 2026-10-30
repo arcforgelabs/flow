@@ -50,6 +50,7 @@ run a lab.
 | `docs/LINE_MAPPING.md` | Line mapping: how each work system line finds its price item, and Price codes in Settings |
 | `docs/CUSTOM_FIELDS.md` | Custom fields: the lab's own fields for its jobs, kept in Flow only, and how a board move checks for conflicts |
 | `docs/JOB_BOARD_MOVES.md` | Moving jobs on the Jobs board: custom field moves stay in Flow; Seazona stage moves become a hand-off |
+| `docs/PORTAL.md` | The practice portal: sign-in, jobs, team, and the health-data controls on those pages |
 | `docs/PRICE_LIST.md` | The price list: Flow's own codes and prices, their links to Xero items and Seazona products, and the price check |
 | `docs/AI_BOTS.md` | The AI bots: ClawSweeper reviews and the Docs Agent, their ClawRouter budget and cost, and setup |
 | `docs/LOW_RISK_MERGE.md` | The low-risk merge lane: which pull requests merge themselves when green, with ClawSweeper's risk labels |
