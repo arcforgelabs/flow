@@ -112,7 +112,8 @@ export const invoices = pgTable('invoices', {
   readyAt: timestamp('ready_at', { withTimezone: true }),
   readyBy: uuid('ready_by').references(() => people.id, { onDelete: 'set null' }),
   // Sending to the accounting system (server/core/sending.js): queued by a
-  // person, then sent or failed. `sendError` is { code, message } while failed.
+  // person, then sent or failed. `sendError` is { code, message, short?, xero? }
+  // while failed. `xero` is the matched invoice { invoiceId, number, status }.
   sendState: text('send_state'),
   sendError: jsonb('send_error'),
   sendRequestedBy: uuid('send_requested_by').references(() => people.id, { onDelete: 'set null' }),

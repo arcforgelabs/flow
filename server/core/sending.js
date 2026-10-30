@@ -439,7 +439,8 @@ export async function sendQueued(db, organisationId, { accounting, limit = WORKE
         summary.waiting += 1;
       } else {
         const error = result.error ?? { code: `send_${result.outcome}`, message: `Sending ended as ${result.outcome}.` };
-        await settle(db, organisationId, result.invoiceId, { sendState: 'failed', sendError: { code: error.code, message: error.message, ...(error.short ? { short: error.short } : {}) } });
+        const xero = xeroMatch(error);
+        await settle(db, organisationId, result.invoiceId, { sendState: 'failed', sendError: { code: error.code, message: error.message, ...(error.short ? { short: error.short } : {}), ...(xero ? { xero } : {}) } });
         summary.failed += 1;
         summary.refused = [...new Set([...(summary.refused ?? []), error.code])];
         const fact = refusalFact(known.get(result.invoiceId), error);
@@ -448,6 +449,17 @@ export async function sendQueued(db, organisationId, { accounting, limit = WORKE
     }
   }
   return summary;
+}
+
+// The Xero invoice a refusal matched, kept so the page can link to it.
+// Only an id, a number and a status. Anything else in the error stays out.
+function xeroMatch(error) {
+  const xero = error?.details?.xero;
+  if (!xero || typeof xero !== 'object') return null;
+  if (!INVOICE_ID.test(xero.invoiceId ?? '')) return null;
+  const number = INVOICE_NUMBER.test(xero.number ?? '') ? xero.number : null;
+  const status = /^[A-Z0-9_]{1,32}$/.test(xero.status ?? '') ? xero.status : null;
+  return { invoiceId: xero.invoiceId, ...(number ? { number } : {}), ...(status ? { status } : {}) };
 }
 
 function settle(db, organisationId, invoiceId, fields) {
