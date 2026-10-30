@@ -8,7 +8,7 @@ import { createContact, createOrganisation, createPriceItem } from '../server/co
 import { createDraftInvoice, reviseInvoice, updateDraftInvoice } from '../server/core/invoices.js';
 import { observeJob } from '../server/core/ledger.js';
 import { READ_BEFORE_ACT_MS, READS_PER_PASS } from '../server/core/read-before-act.js';
-import { createSendWorker, draftProblems, invoiceViews, markNotReady, markReady, refusalReport, sendAgain, sendAllReady, sendQueued } from '../server/core/sending.js';
+import { createSendWorker, draftProblems, invoiceView, invoiceViews, markNotReady, markReady, refusalReport, sendAgain, sendAllReady, sendQueued } from '../server/core/sending.js';
 import { billingObligations, invoices } from '../server/db/schema.js';
 import { createRegistry } from '../server/integrations/port.js';
 import { createXeroAdapter } from '../server/integrations/xero/index.js';
