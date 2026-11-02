@@ -158,12 +158,12 @@ export async function observeJob(db, organisationId, job) {
       .for('update');
 
     // A work system without a shipped date (Seazona) says only that the job
-    // is shipped: the day Flow first sees it reach a shipped status is its
-    // shipped day. A job that was shipped before Flow kept this day stays
-    // without one, since its status does not move.
+    // is shipped: the day Flow sees its status move to a shipped one is its
+    // shipped day. A job Flow first sees already shipped (a first sync, or a
+    // job shipped before Flow kept this day) stays without one.
     const statusMoved = existing && String(existing.sourceStatus ?? '') !== String(facts.sourceStatus ?? '');
     facts.shippedOn = job.shippedOn ?? existing?.shippedOn
-      ?? (job.shipped && (!existing || statusMoved) ? localDay(seenAt) : null);
+      ?? (job.shipped && statusMoved ? localDay(seenAt) : null);
 
     if (!existing) {
       const [row] = await tx.insert(billingObligations)

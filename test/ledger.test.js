@@ -66,10 +66,10 @@ describe('billing obligation ledger', { skip: skipWithoutDatabase }, () => {
     const { events } = await explainObligation(db, lab.id, before.id);
     assert.deepEqual(events.filter((e) => e.kind === 'status_changed').map((e) => e.evidence), [{ from: 'Complete', to: 'Shipped' }]);
 
-    // A job already shipped when Flow first kept this day has no day to give.
-    const old = job({ shippedOn: undefined, sourceStatus: 'Shipped', observedAt: '2026-10-20T10:00:00Z' });
-    await observeJob(db, lab.id, old);
-    const again = await observeJob(db, lab.id, { ...old, shipped: true, observedAt: '2026-10-21T10:00:00Z' });
+    // A job Flow first sees already shipped has no day to give.
+    const old = job({ shippedOn: undefined, sourceStatus: 'Shipped', shipped: true, observedAt: '2026-10-20T10:00:00Z' });
+    assert.equal((await observeJob(db, lab.id, old)).shippedOn, null);
+    const again = await observeJob(db, lab.id, { ...old, observedAt: '2026-10-21T10:00:00Z' });
     assert.equal(again.shippedOn, null);
   });
 
