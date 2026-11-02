@@ -54,6 +54,25 @@ describe('billing obligation ledger', { skip: skipWithoutDatabase }, () => {
     return recordAccountingEvidence(db, lab.id, obligation.id, { state: 'not_found', actor });
   };
 
+  test('a job with a shipped status but no shipped date gets the lab day Flow first sees it shipped', async () => {
+    const report = job({ shippedOn: undefined, sourceStatus: 'Complete', observedAt: '2026-10-20T10:00:00Z' });
+    const before = await observeJob(db, lab.id, report);
+    assert.equal(before.shippedOn, null);
+    // 14:00 UTC on 20 Oct is 21 Oct in Sydney.
+    const shipped = await observeJob(db, lab.id, { ...report, sourceStatus: 'Shipped', shipped: true, observedAt: '2026-10-20T14:00:00Z' });
+    assert.equal(shipped.shippedOn, '2026-10-21');
+    const later = await observeJob(db, lab.id, { ...report, sourceStatus: 'Shipped', shipped: true, observedAt: '2026-10-25T01:00:00Z' });
+    assert.equal(later.shippedOn, '2026-10-21');
+    const { events } = await explainObligation(db, lab.id, before.id);
+    assert.deepEqual(events.filter((e) => e.kind === 'status_changed').map((e) => e.evidence), [{ from: 'Complete', to: 'Shipped' }]);
+
+    // A job already shipped when Flow first kept this day has no day to give.
+    const old = job({ shippedOn: undefined, sourceStatus: 'Shipped', observedAt: '2026-10-20T10:00:00Z' });
+    await observeJob(db, lab.id, old);
+    const again = await observeJob(db, lab.id, { ...old, shipped: true, observedAt: '2026-10-21T10:00:00Z' });
+    assert.equal(again.shippedOn, null);
+  });
+
   test('one billable job gives one obligation with a stable identity', async () => {
     const report = job();
     const first = await observeJob(db, lab.id, report);

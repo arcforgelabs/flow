@@ -142,7 +142,6 @@ export async function observeJob(db, organisationId, job) {
       caseRef: job.caseRef ?? null,
       contactId: job.contactId ?? null,
       practitioner: job.practitioner ?? null,
-      shippedOn: job.shippedOn ?? null,
       jobDate: job.jobDate ?? null,
       sourceStatus: job.sourceStatus ?? null,
       lines,
@@ -158,12 +157,20 @@ export async function observeJob(db, organisationId, job) {
       ))
       .for('update');
 
+    // A work system without a shipped date (Seazona) says only that the job
+    // is shipped: the day Flow first sees it reach a shipped status is its
+    // shipped day. A job that was shipped before Flow kept this day stays
+    // without one, since its status does not move.
+    const statusMoved = existing && String(existing.sourceStatus ?? '') !== String(facts.sourceStatus ?? '');
+    facts.shippedOn = job.shippedOn ?? existing?.shippedOn
+      ?? (job.shipped && (!existing || statusMoved) ? localDay(seenAt) : null);
+
     if (!existing) {
       const [row] = await tx.insert(billingObligations)
         .values({ organisationId, sourceSystem, sourceJobRef, sourceSeenAt: seenAt, ...facts })
         .returning();
       await addEvent(tx, row, 'observed', actor, {
-        lineFingerprint: row.lineFingerprint, totalCents: row.totalCents, mappingComplete: row.mappingComplete,
+        lineFingerprint: row.lineFingerprint, totalCents: row.totalCents, mappingComplete: row.mappingComplete, sourceStatus: row.sourceStatus,
       });
       return row;
     }
@@ -176,7 +183,7 @@ export async function observeJob(db, organisationId, job) {
       const row = await update(tx, existing, {
         sourceSeenAt: seenAt, mappingComplete: facts.mappingComplete, lines, jobDate: facts.jobDate, sourceStatus: facts.sourceStatus,
       });
-      await statusBillableAgain(tx, organisationId, existing, row, actor);
+      await statusChanged(tx, organisationId, existing, row, actor);
       return row;
     }
     const fields = { ...facts, sourceSeenAt: seenAt };
@@ -204,15 +211,28 @@ export async function observeJob(db, organisationId, job) {
     } else if (compare) {
       await openReview(tx, organisationId, changedReview(row, compare));
     }
-    await statusBillableAgain(tx, organisationId, existing, row, actor);
+    await statusChanged(tx, organisationId, existing, row, actor);
     return row;
   });
+}
+
+// Each move of the work system status is an event, so "was the job shipped
+// in this range" has an answer after the status moves on.
+async function statusChanged(tx, organisationId, before, row, actor) {
+  if (String(before.sourceStatus ?? '') === String(row.sourceStatus ?? '')) return;
+  await addEvent(tx, row, 'status_changed', actor, { from: before.sourceStatus ?? null, to: row.sourceStatus ?? null });
+  await statusBillableAgain(tx, organisationId, before, row, actor);
+}
+
+// The calendar day of a time where the lab works (FLOW_TIME_ZONE).
+function localDay(at) {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: process.env.FLOW_TIME_ZONE || 'Australia/Sydney' }).format(at);
 }
 
 // A job billable again after its status moved back (observeWithdrawn): the
 // alert is over when no invoice was made in the meantime.
 async function statusBillableAgain(tx, organisationId, before, row, actor) {
-  if (row.invoiceId || String(before.sourceStatus ?? '') === String(row.sourceStatus ?? '')) return;
+  if (row.invoiceId) return;
   await resolveReviewFor(tx, organisationId, { kind: REVIEW_STATUS_BACK, entity: 'obligation', flowId: row.id, resolution: 'status_billable_again', actor });
 }
 
