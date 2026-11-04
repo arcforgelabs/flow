@@ -72,6 +72,34 @@ describe('retained invoice duplicate workflow', { skip: skipWithoutDatabase }, (
     assert.ok(!voids.body.invoices.some((i) => i.id === record.issued.id));
     assert.ok((await api('/invoices?status=duplicate')).body.invoices.some((i) => i.id === record.issued.id));
   });
+  test('Import treats a confirmed duplicate as resolved and cannot make another invoice', async () => {
+    const record = await refused();
+    const body = await confirm(record);
+    assert.equal((await api('/invoices/' + record.issued.id + '/duplicate', { method: 'POST', body })).status, 200);
+    const call = (path, options = {}) => request(flow.app, '/api/xero/import' + path, { token: ownerToken, ...options });
+    const overview = () => call('?organisationId=' + lab.id + '&show=all');
+    const row = (await overview()).body.rows.find((r) => r.xeroInvoiceId === record.candidateId);
+    assert.equal(row.state, 'linked');
+    assert.deepEqual(row.link, { invoiceId: record.issued.id, number: record.issued.number, matchedBy: 'duplicate' });
+    const before = (await api('/invoices')).body.invoices;
+    const settings = await call('/settings', { method: 'PUT', body: { organisationId: lab.id, makeUnmatched: true } });
+    assert.equal(settings.status, 200, settings.text);
+    const matched = await call('/match', { method: 'POST', body: { organisationId: lab.id } });
+    assert.equal(matched.status, 200, matched.text);
+    assert.equal(matched.body.made, 0);
+    const manual = await call('/' + record.candidateId + '/make', { method: 'POST', body: { organisationId: lab.id } });
+    assert.equal(manual.status, 400, manual.text);
+    assert.match(manual.body.error, /linked already/);
+    assert.deepEqual((await api('/invoices')).body.invoices, before, 'neither import path creates or changes an invoice');
+    // A receipt belongs to the tenant it was compared against, not a later connection.
+    const retained = await getInvoice(handle.db, lab.id, record.issued.id);
+    try {
+      await handle.db.execute(sql`update xero_connections set tenant_id='other-tenant' where organisation_id=${lab.id}`);
+      assert.notEqual((await overview()).body.rows.find((r) => r.xeroInvoiceId === record.candidateId).link?.matchedBy, 'duplicate');
+    } finally {
+      await handle.db.execute(sql`update xero_connections set tenant_id=${retained.duplicate.tenantId} where organisation_id=${lab.id}`);
+    }
+  });
   test('changed evidence, wrong clients/products/tenants, stale copies and any prior push fail closed', async () => {
     const record = await refused();
     const body = await confirm(record);

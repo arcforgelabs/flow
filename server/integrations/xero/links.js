@@ -12,7 +12,8 @@ import { canFit, markRivals, scoreFit, sureFits } from './fit.js';
 // from; this integration says which Flow invoice each Xero invoice is.
 //
 //   linked        a Flow invoice is this Xero invoice: Flow sent it (a push),
-//                 the import matched it, or a person linked or made it.
+//                 the import matched it, a person linked or made it, or a
+//                 retained Duplicate receipt resolves it for this tenant.
 //   invoice_fits  a Flow invoice with no Xero invoice fits (fit.js: hard
 //                 evidence from its jobs, or the same client, an amount that
 //                 fits and dates within two weeks). A sure fit is linked by
@@ -60,6 +61,18 @@ async function classify(db, organisationId) {
   for (const r of linkRows) {
     if (!linkOf.has(r.xero_invoice_id)) linkOf.set(r.xero_invoice_id, r);
     linkedInvoices.add(r.invoice_id);
+  }
+  // A confirmed Duplicate is already resolved, not another invoice to make.
+  // Read its one retained receipt; existing push/import links keep precedence.
+  // A receipt from another tenant must never resolve this connection's copy.
+  const { rows: duplicates } = await db.execute(sql`
+    select i.duplicate->>'id' as xero_invoice_id, i.id as invoice_id, i.number
+    from invoices i join xero_connections c on c.organisation_id = i.organisation_id
+    where i.organisation_id = ${organisationId} and i.status = 'void'
+      and i.duplicate->>'system' = 'xero' and i.duplicate->>'tenantId' = c.tenant_id
+    order by i.id`);
+  for (const r of duplicates) {
+    if (!linkOf.has(r.xero_invoice_id)) linkOf.set(r.xero_invoice_id, { ...r, matched_by: 'duplicate' });
   }
   // Flow's customers by name, as the drafts match them (only a name with one
   // contact counts).
@@ -113,7 +126,7 @@ async function classify(db, organisationId) {
     const link = linkOf.get(x.xero_invoice_id);
     if (link) {
       const invoice = flowInvoices.find((i) => i.id === link.invoice_id);
-      row.link = { invoiceId: link.invoice_id, number: invoice?.number ?? null, matchedBy: link.matched_by };
+      row.link = { invoiceId: link.invoice_id, number: link.number ?? invoice?.number ?? null, matchedBy: link.matched_by };
       return { ...row, state: 'linked' };
     }
     row.itemCodes = [...new Set((x.lines ?? []).map((l) => l.itemCode).filter(Boolean))];

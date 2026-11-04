@@ -330,7 +330,7 @@ export async function renderXeroImport(main, ui) {
         h('td', { class: 'fx-dim', ...at(3) }, shortDate(row.issuedOn)),
         h('td', { class: 'fx-num fx-strong', ...at(4) }, money(row.totalCents)),
         h('td', { ...at(5) }, pill(row)),
-        h('td', { class: 'fx-num', ...at(6) }, row.state === 'linked' ? go(`/invoices/${row.link.invoiceId}`, row.link.number ?? 'Draft') : ''));
+        h('td', { class: 'fx-num', ...at(6) }, row.state === 'linked' ? go(`/invoices/${row.link.invoiceId}`, row.link.matchedBy === 'duplicate' ? `${row.link.number} · Duplicate` : row.link.number ?? 'Draft') : ''));
     };
     async function load() {
       let page;

@@ -85,6 +85,18 @@ test('the PDF shows only known values; a gap says why, never a sample', () => {
   });
 });
 
+test('a retained duplicate previews and downloads under its original Flow number', async () => {
+  const source = { seller: 'Synthetic Lab', document: document(1),
+    facts: { system: 'Xero', sent: false, numberedBy: 'xero' },
+    duplicate: { system: 'xero', number: 'SYNTH-XERO' } };
+  const original = structuredClone(source.document);
+  assert.deepEqual(pdfFields(source).number, { value: 'INV-0001' });
+  assert.equal(pdfFilename(pdfFields(source)), 'INV-0001.pdf');
+  const bytes = await renderInvoicePdf(source);
+  assert.match(bytes.toString('latin1'), /\(Invoice INV-0001\)/, 'the rendered PDF title retains the Flow serial');
+  assert.deepEqual(source.document, original, 'previewing never rewrites the issued document');
+});
+
 describe('invoice PDF with PostgreSQL', { skip: skipWithoutDatabase }, () => {
   let handle;
   let app;
