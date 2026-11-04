@@ -14,13 +14,14 @@ import { invoiceStages } from './reconcile.js';
 import { createXeroRouter } from './routes.js';
 import { createXeroRuntime, requireXeroSettings, XERO_CALL_GUARD } from './runtime.js';
 import { writesAllowed } from './settings.js';
+import { migrateLegacyTracking } from './tracking.js';
 import { readChangesFirst } from './webhooks.js';
 
 // The Xero adapter (docs/XERO.md). FLOW_INTEGRATIONS=xero turns it on and
 // XERO_MODE says which Xero it acts on. Its tables are created only while it
 // is on (docs/INTEGRATIONS.md).
 
-export const XERO_TABLES = Object.freeze(['xero_connections', 'xero_contacts', 'xero_items', 'xero_sync_runs', 'xero_invoice_pushes', 'xero_payment_cursors', 'xero_invoices', 'xero_credit_notes', 'xero_payments', 'xero_mirror_cursors', 'xero_call_guard', 'xero_calls', 'xero_webhook_events', 'xero_daily_checks', 'xero_invoice_links', 'xero_import_settings', 'xero_contact_sync']);
+export const XERO_TABLES = Object.freeze(['xero_connections', 'xero_contacts', 'xero_items', 'xero_sync_runs', 'xero_invoice_pushes', 'xero_payment_cursors', 'xero_invoices', 'xero_credit_notes', 'xero_payments', 'xero_mirror_cursors', 'xero_call_guard', 'xero_calls', 'xero_webhook_events', 'xero_daily_checks', 'xero_invoice_links', 'xero_import_settings', 'xero_contact_sync', 'xero_tracking_settings', 'xero_tracking_cutover']);
 
 // What an owner enters in Settings, Integrations (server/integrations/setup.js).
 // The refresh token's key comes from Flow's secrets key.
@@ -79,6 +80,7 @@ export function createXeroAdapter({ runtime: given = null } = {}) {
     // on: that clears a halt, stopped resources and an open circuit.
     async start({ db, log, env, reconfigured = false }) {
       database = db;
+      await migrateLegacyTracking(db, env ?? process.env, log);
       if (!given) runtime = createXeroRuntime({ settings: requireXeroSettings(env ?? process.env) });
       const { settings } = current();
       if (reconfigured) await current().guardFor(db).resume();

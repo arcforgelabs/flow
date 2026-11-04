@@ -1,13 +1,14 @@
 import assert from 'node:assert/strict';
 import { after, before, beforeEach, describe, test } from 'node:test';
 import { sql } from 'drizzle-orm';
-import { createContact, createPriceItem } from '../server/core/directory.js';
+import { createContact, createOrganisation, createPriceItem } from '../server/core/directory.js';
 import { createDraftInvoice, issueInvoice, listInvoiceVersions, reviseInvoice } from '../server/core/invoices.js';
 import { saveCustomerBilling } from '../server/core/invoicing-rules.js';
 import { draftInvoiceForObligation, observeJob, recordAccountingEvidence } from '../server/core/ledger.js';
 import { buildDraft, differences, pushDrafts } from '../server/integrations/xero/drafts.js';
 import { createXeroRuntime } from '../server/integrations/xero/runtime.js';
 import { resolveXeroSettings } from '../server/integrations/xero/settings.js';
+import { migrateLegacyTracking, readTracking, saveTracking } from '../server/integrations/xero/tracking.js';
 import { request } from './support/clerk.js';
 import { freshDatabase, skipWithoutDatabase } from './support/db.js';
 import { bootFlow, connectDirectly, scriptedXero, seedLab, TOKEN_KEY, xeroAnswer } from './support/xero.js';
@@ -126,6 +127,96 @@ describe('Xero drafts from issued invoices', { skip: skipWithoutDatabase }, () =
     token, method: 'POST', body: { organisationId: lab.organisation.id, invoiceIds: ids, ...extra },
   });
   const pushRow = async (invoiceId) => (await handle.db.execute(sql`select * from xero_invoice_pushes where invoice_id = ${invoiceId} order by version`)).rows;
+
+  test('workspace tracking controls every sent line; contact overrides, Off, archives and sent history stay honest', async (t) => {
+    const org = lab.organisation.id;
+    t.after(async () => {
+      await saveTracking(handle.db, org, null);
+      await handle.db.execute(sql`update xero_contacts set sales_tracking = '[]'::jsonb where organisation_id = ${org} and xero_contact_id = ${XC}`);
+    });
+    const choice = { category: 'Department', option: 'Laboratory' };
+    const categories = [{ Name: 'Department', Status: 'ACTIVE', Options: [
+      { Name: 'Laboratory', Status: 'ACTIVE' }, { Name: 'Milling', Status: 'ACTIVE' }, { Name: 'Retired', Status: 'ARCHIVED' },
+    ] }, { Name: 'Old category', Status: 'ARCHIVED', Options: [] }];
+    const trackingReply = (list = categories) => xeroAnswer('TrackingCategories', { TrackingCategories: list }, { repeat: true });
+    const set = (tracking, token = lab.ownerToken) => request(app, '/api/xero/tracking', {
+      token, method: 'PUT', body: { organisationId: org, tracking },
+    });
+    let replay = xero.script([trackingReply()]);
+    assert.equal((await set(choice)).status, 200);
+    const shown = await request(app, '/api/xero/tracking?organisationId=' + org, { token: lab.ownerToken });
+    assert.deepEqual(shown.body.tracking, choice);
+    assert.deepEqual(shown.body.categories, [{ category: 'Department', options: ['Laboratory', 'Milling'] }]);
+    assert.equal((await set(choice, lab.staffToken)).status, 403);
+    assert.equal((await request(app, '/api/xero/tracking?organisationId=' + org, { token: lab.staffToken })).status, 403);
+    assert.equal((await set({ category: 'Department' })).status, 400);
+    const snapshots = [];
+    for (const [index, own, expected] of [[0, [], 'Laboratory'], [1, [{ category: 'Department', option: 'Milling' }], 'Milling'], [2, [{ category: 'Department', option: 'Milling' }], null]]) {
+      await handle.db.execute(sql`update xero_contacts set sales_tracking = ${JSON.stringify(own)}::jsonb where organisation_id = ${org} and xero_contact_id = ${XC}`);
+      if (index === 2) assert.equal((await set(null)).status, 200);
+      const draft = await createDraftInvoice(handle.db, org, { contactId: practice.id, reference: 'TRACK-' + index,
+        lines: [{ priceItemId: crown.id }, { description: 'Courier', quantity: 1, unitAmountCents: 0, taxCode: 'GST_FREE' }] });
+      const invoice = await issueInvoice(handle.db, org, draft.id, { issuedBy: 'user:test', issueDate: '2026-10-18' });
+      const versions = await listInvoiceVersions(handle.db, org, invoice.id);
+      replay = xero.script([trackingReply(), byReference([]), created('tracked-' + index), readBack('tracked-' + index, { reference: invoice.reference, lines: 2 })]);
+      assert.equal((await push([invoice.id])).body.summary.created, 1);
+      const sent = posts(replay)[0].body.Invoices[0];
+      assert.equal(sent.LineItems.length, 2);
+      for (const line of sent.LineItems) assert.deepEqual(line.Tracking, expected ? [{ Name: 'Department', Option: expected }] : undefined);
+      snapshots.push({ invoice, versions, body: (await pushRow(invoice.id))[0].request_body, expected });
+    }
+    // Today's setting and contact must not rewrite the sent request, the
+    // issued document, or the tracking facts the issued page reads.
+    xero.script([trackingReply()]);
+    assert.equal((await set(choice)).status, 200);
+    for (const { invoice, versions, body, expected } of snapshots) {
+      const detail = await request(app, '/api/invoicing/invoices/' + invoice.id, { token: lab.ownerToken });
+      assert.deepEqual(detail.body.invoice.accountingFacts.lineTracking, Array.from({ length: 2 }, () => expected ? [{ category: 'Department', option: expected }] : []));
+      assert.deepEqual(await listInvoiceVersions(handle.db, org, invoice.id), versions);
+      assert.equal((await pushRow(invoice.id))[0].request_body, body);
+    }
+    // Both the configured fallback and the actual contact override are
+    // checked live before the first dispatch. Nothing is posted on refusal.
+    const blocked = await issued('TRACK-ARCHIVED');
+    for (const list of [
+      [{ ...categories[0], Status: 'ARCHIVED' }],
+      [{ ...categories[0], Options: categories[0].Options.map((o) => o.Name === 'Laboratory' ? { ...o, Status: 'ARCHIVED' } : o) }],
+      [{ ...categories[0], Options: categories[0].Options.map((o) => o.Name === 'Milling' ? { ...o, Status: 'ARCHIVED' } : o) }],
+    ]) {
+      replay = xero.script([trackingReply(list)]);
+      const result = (await push([blocked.id])).body.invoices[0];
+      assert.equal(result.error.code, 'xero_tracking_missing');
+      assert.equal(result.error.details.settingUrl, '/integrations/xero#tracking');
+      assert.match(result.error.message, /Integrations.*Xero.*Tracking/);
+      assert.equal(posts(replay).length, 0);
+      assert.deepEqual(await pushRow(blocked.id), []);
+    }
+    // Already sent requests remain settled even after tracking is archived.
+    replay = xero.script([]);
+    assert.equal((await push([snapshots[0].invoice.id])).body.summary.alreadyInXero, 1);
+    assert.equal(replay.calls.length, 0);
+    await set(null);
+  });
+
+  test('legacy tracking imports once, with saved Off and workspace choices taking precedence', async () => {
+    const db = handle.db;
+    const inherited = await createOrganisation(db, { name: 'Legacy Example' });
+    const off = await createOrganisation(db, { name: 'Off Example' });
+    const chosen = await createOrganisation(db, { name: 'Chosen Example' });
+    await saveTracking(db, off.id, null);
+    await saveTracking(db, chosen.id, { category: 'Region', option: 'South' });
+    // Recreate the pre-upgrade receipt state in this disposable test DB.
+    await db.execute(sql`truncate xero_tracking_cutover`);
+    await migrateLegacyTracking(db, { XERO_TRACKING_CATEGORY: 'Department', XERO_TRACKING_OPTION: 'Laboratory' }, xero.log);
+    assert.deepEqual(await readTracking(db, inherited.id), { category: 'Department', option: 'Laboratory' });
+    assert.equal(await readTracking(db, off.id), null);
+    assert.deepEqual(await readTracking(db, chosen.id), { category: 'Region', option: 'South' });
+    const later = await createOrganisation(db, { name: 'New Example' });
+    await migrateLegacyTracking(db, { XERO_TRACKING_CATEGORY: 'Other', XERO_TRACKING_OPTION: 'Different' }, xero.log);
+    assert.deepEqual(await readTracking(db, inherited.id), { category: 'Department', option: 'Laboratory' });
+    assert.equal(await readTracking(db, later.id), null);
+    assert.equal(await readTracking(db, lab.organisation.id), null);
+  });
 
   test('preview shows the draft and what stops it, without calling Xero', async () => {
     const replay = xero.script([]);

@@ -117,14 +117,6 @@ function resolveTaxTypes(env) {
   };
 }
 
-function resolveTracking(env) {
-  const category = readEnv(env, 'XERO_TRACKING_CATEGORY');
-  const option = readEnv(env, 'XERO_TRACKING_OPTION');
-  if (!category && !option) return null;
-  if (!category || !option) throw new Error('XERO_TRACKING_CATEGORY and XERO_TRACKING_OPTION are set together');
-  return { category, option };
-}
-
 // null when the adapter is off. Otherwise the settings the adapter needs.
 export function resolveXeroSettings(env = process.env) {
   const mode = readEnv(env, 'XERO_MODE').toLowerCase();
@@ -181,7 +173,6 @@ export function resolveXeroSettings(env = process.env) {
     dayLimit: readPositiveInteger(env, 'XERO_DAY_LIMIT', DEFAULT_XERO_DAY_LIMIT),
     usageWarningFraction: readFraction(env, 'XERO_USAGE_WARNING_FRACTION', 0.7),
     taxTypes: resolveTaxTypes(env),
-    tracking: resolveTracking(env),
     defaultDueDays: readPositiveInteger(env, 'XERO_DEFAULT_DUE_DAYS', DEFAULT_DUE_DAYS),
     invoiceNumber,
     replayFixtures: readEnv(env, 'XERO_REPLAY_FIXTURES') || null,

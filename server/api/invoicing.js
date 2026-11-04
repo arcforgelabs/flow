@@ -370,6 +370,9 @@ async function invoiceDetail(db, organisationId, invoiceId, accounting = null, w
   const viewed = await invoiceView(db, organisationId, invoice, { accounting });
   return {
     jobChange,
+    accountingFacts: invoice.status !== 'draft' && accounting?.capabilities?.documentFacts
+      ? await accounting.capabilities.documentFacts({ organisationId, invoiceId, version: invoice.issuedVersion })
+      : null,
     ...invoice,
     ...viewed,
     tab: await tabOfInvoice(db, organisationId, invoice, viewed.view, accounting),
