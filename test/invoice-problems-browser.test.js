@@ -57,6 +57,13 @@ test('long compact holds fit their cells; opening the invoice retains full reaso
     }, invoice);
     for (const width of [375, 393, 768, 1280]) {
       await page.setViewportSize({ width, height: 900 });
+      // CSS media queries update before applyPhoneRule's change listener.
+      // Measure only once the real table has entered its responsive layout.
+      await page.waitForFunction(() => {
+        const table = document.querySelector('[data-phone-rule="columnTable"]');
+        const phone = matchMedia('(max-width: 639px)').matches;
+        return table.dataset.phoneLayout === (phone ? 'two-line' : 'table');
+      });
       const geometry = await page.evaluate(() => {
         const cell = document.querySelector('td[data-label="Problem"]');
         const range = document.createRange();
@@ -70,7 +77,7 @@ test('long compact holds fit their cells; opening the invoice retains full reaso
           cellLeft: bounds.left, cellRight: bounds.right, dateLeft: date.left, pageWidth: document.documentElement.scrollWidth };
       });
       assert.ok(geometry.left >= geometry.cellLeft - 1 && geometry.right <= geometry.cellRight + 1, JSON.stringify({ width, ...geometry }));
-      assert.ok(geometry.right <= geometry.dateLeft, 'the explanation never overwrites the adjacent date');
+      assert.ok(geometry.right <= geometry.dateLeft, 'the explanation never overwrites the adjacent date: ' + JSON.stringify({ width, ...geometry }));
       assert.ok(geometry.pageWidth <= width, 'the compact reason never widens the page');
     }
     const summary = page.getByRole('note', { name: new RegExp('A synthetic invoice already bills') });
