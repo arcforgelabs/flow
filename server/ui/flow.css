@@ -512,6 +512,8 @@ a.fx-strong:hover { text-decoration: underline; }
   .fx-alerts__action, .fx-alerts__more { order: 2; }
 }
 .fx-problem { color: var(--t-danger); }
+/* A hold stays inside its list column; open the invoice for reasons and links. */
+.fx-problems--compact { display: block; min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fx-tick-cell { width: 40px; }
 .fx-tick { width: 16px; height: 16px; accent-color: var(--t-brand); cursor: pointer; }
 .fx-search { width: min(320px, 100%); margin-bottom: 8px; }

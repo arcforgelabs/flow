@@ -24,14 +24,25 @@ const safeWeb = (value) => {
 export function invoiceProblems(ui, invoice, { compact = false, problems = invoice.problems ?? [] } = {}) {
   const { h, notice } = ui;
   if (!problems.length) return null;
-  const rows = problems.map((p) => {
+  const described = problems.map((p) => {
     const rule = p.rule ? (p.ruleName ?? p.short ?? 'Lab rule') : null;
     const label = rule ? `Rule: ${rule}` : (p.short ?? p.code ?? 'Problem');
     const message = p.message || 'Sending failed.';
     const reason = rule ? `${label}. ${message}` : message;
+    return { p, rule, label, explanation: `${reason} ${nextStep(p.code ?? '')}` };
+  });
+  if (compact) {
+    const explanation = described.map((p) => p.explanation).join(' ');
+    // The row opens the invoice with every reason and link. Do not squeeze
+    // full explanations or interactive links into its 20px metadata line.
+    return applyPhoneRule(h('span', {
+      class: 'fx-problem fx-problems--compact', role: 'note', title: explanation, 'aria-label': explanation,
+    }, described[0].label, problems.length > 1 ? ` +${problems.length - 1}` : null), 'invoiceProblems');
+  }
+  const rows = described.map(({ p, rule, label, explanation }) => {
     const links = [];
     const link = (href, text, outside = false) => h('a', {
-      class: compact ? 'fx-link' : 'fx-btn fx-btn--sm fx-btn--ghost', href,
+      class: 'fx-btn fx-btn--sm fx-btn--ghost', href,
       ...(outside ? { target: '_blank', rel: 'noopener' } : {}), onclick: (e) => e?.stopPropagation?.(),
     }, text);
     if (uuid.test(p.xero?.invoiceId ?? '')) links.push(link(`https://go.xero.com/AccountsReceivable/View.aspx?InvoiceID=${encodeURIComponent(p.xero.invoiceId)}`, 'Open in Xero', true));
@@ -41,9 +52,7 @@ export function invoiceProblems(ui, invoice, { compact = false, problems = invoi
       const source = safeWeb(invoice.job.link?.url ?? invoice.job.link);
       links.push(link(source ?? `/jobs/${invoice.job.id}`, source ? 'Fix job' : 'Review job', Boolean(source)));
     }
-    if (compact) return h('span', { class: 'fx-problem', title: `${reason} ${nextStep(p.code ?? '')}` },
-      label, ' — ', message, ' ', ...links, ' ', nextStep(p.code ?? ''));
-    return h('div', { class: 'fx-offer' }, notice(`${reason} ${nextStep(p.code ?? '')}`, p.code === 'non_chargeable' ? 'info' : 'danger', rule ? null : label), ...links);
+    return h('div', { class: 'fx-offer' }, notice(explanation, p.code === 'non_chargeable' ? 'info' : 'danger', rule ? null : label), ...links);
   });
-  return applyPhoneRule(h('div', { class: compact ? 'fx-problems--compact' : 'fx-problems' }, ...rows), 'invoiceProblems');
+  return applyPhoneRule(h('div', { class: 'fx-problems' }, ...rows), 'invoiceProblems');
 }

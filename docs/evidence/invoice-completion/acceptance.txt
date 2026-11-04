@@ -114,3 +114,22 @@ git diff --check passed. No full suite, browser, database setup, publication,
 release or deployment was attempted during recovery. Parent owns independent
 review and existing GitHub PostgreSQL/mobile lanes. This checkpoint does not
 implement Link/Duplicate and does not close #441 or #443.
+
+## PR #451 independent-review repairs — 2026-11-04
+
+Repair base: 81df931523125f7a0083d39258b3f37bcaafe53e. Parent owns publication and new-head full CI.
+
+- P1: pass the existing work adapter from autoDraftJobs and sendAllReady through readAccountingFirst to matchJobs. Patient-bearing References now have the same fields on the changed-mirror/pre-act path as on the normal pipeline path.
+- Added one real PostgreSQL owner-boundary regression: a pre-draft read discovers the same-client, patient-bearing Reference/product invoice at a different total, retains its open suggestion and ambiguous state, and creates no draft. No production injection hook or callback was added.
+- Database execution gap: FLOW_TEST_DATABASE_URL is absent. The new boundary test and seven existing database suites did not execute locally. Before/after database execution is NOT claimed; the parent must collect it from the supported PostgreSQL CI lane. No database/container setup or retry was attempted for this repair.
+- P2: restore the existing short list-summary pattern, with all reasons in hover and accessible text. Opening the invoice retains every full reason and safe matched/remediation link. One shared clipping rule keeps text inside its column; no interactive links are clipped or added to the 20px metadata line.
+- The mobile invoice-offer fixture now waits for its intended unique #fx-invoice-problem container instead of the two nested .fx-offer wrappers. No assertion, budget or screenshot baseline was weakened.
+- Browser regression: actual columnTable/rowCells + invoiceProblems, then the actual issued-invoice page entry point, with synthetic API answers only. At widths 375, 393, 768 and 1280, compact text stays inside the cell and off the adjacent date. At 375/1280 the opened invoice retains the complete visible reason and all four remediation links; phone links retain 44px touch targets.
+- Browser before proof serves the frozen 81df931 invoice-problems.js and flow.css with the same test: fails at 375px because text reaches x=2712 while the cell ends at x=180.53. After proof passes. The working tree was not switched for the before run. This is component/page-fixture proof, not a full database-backed app or screenshot-baseline pass.
+- Local browser: Google Chrome 156.0.8078.79, selected only by an external /tmp preload. The committed test uses normal chromium.launch(), so existing CI supplies its locked browser. No browser install, fallback or dependency change was committed.
+- Focused command: node --test --test-concurrency=1 test/invoice-issued-problem.test.js test/invoice-list.test.js test/invoice-page.test.js test/invoicing-rules.test.js test/read-before-act.test.js test/invoice-sending.test.js test/pipeline.test.js test/ui-files.test.js test/design-system.test.js test/breakpoints.test.js
+- Final focused result: 30 passed, zero failed, one skipped test, 8.41 seconds; seven database suites unexecuted separately from the aggregate skipped-test count.
+- Browser after result: one passed, zero failed/skipped, 2.33 seconds (final screenshot-capture repeat: 2.37 seconds). npm run design-system: 111 generated files, no publication. Changed JavaScript syntax and git diff --check passed.
+- Synthetic before/after list and opened-invoice screenshots retained privately under /home/deploy/.openclaw/media/flow451-review/repair-*.png. No public screenshot attachment or dedicated whole-app refusal acceptance is claimed.
+- Historical exact-head evidence for 81df931 remains: npm test 947 passed, zero failed/skipped, 163.815 seconds; package, docker and gitleaks passed. Mobile was NOT green: 699 passed, 50 failed, one configured-retry flake. Its 30 strict-locator and 20 list-screenshot failures motivated this repair. CodeQL had no check/run and remains unrun. New-head full CI is pending publication by the parent.
+- Independent repair-delta review attempted with the installed autoreview helper, one 269193-byte context pass, Codex gpt-6.1-sol/medium/ultrafast. It stopped on authentication: reviewer_unavailable, report_produced=false. No review verdict exists, no credential/login operation or fallback was attempted. Parent review of the repair remains required.

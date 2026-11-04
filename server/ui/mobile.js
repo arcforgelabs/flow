@@ -312,7 +312,7 @@ export const RULES = {
     "direction": "note",
     "phone": {
       "layout": "note",
-      "detail": "full reason and next step; links wrap"
+      "detail": "full page reasons and wrapping links; compact check clips in its column, full text on hover and accessible name"
     },
     "tablet": {
       "layout": "note"

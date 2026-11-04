@@ -286,5 +286,7 @@ that matches, or a fix in the work system clears the hold and closes the item.
 Draft pages, issued pages and the Pending list use one problem presenter.
 It names a lab rule, retains the full reason and next step, and links the
 source job and matched Xero invoice when those records are known. Phone
-pages keep the full explanation. Non-chargeable invoices show their rule
-on the list too. A duplicate warning asks for comparison, not a blind Void.
+pages keep the full explanation. Lists show a short check name and count;
+open the invoice for every reason and matched/remediation link. Hover and
+the accessible name retain the full explanation. Non-chargeable invoices
+show their rule on the list too. A duplicate warning asks for comparison, not a blind Void.

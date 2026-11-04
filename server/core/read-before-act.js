@@ -81,12 +81,12 @@ export function needsRead(obligation, { work, now = new Date() }) {
 // a job someone invoiced in the accounting system meanwhile is linked to that
 // invoice and never drafted or sent twice. Answers { outcome, reason? }:
 // fresh or read (act), or waiting (act on nothing now).
-export async function readAccountingFirst(db, organisationId, { accounting, now = new Date() }) {
+export async function readAccountingFirst(db, organisationId, { accounting, work = null, now = new Date() }) {
   if (typeof accounting?.capabilities?.readChanges !== 'function') return { outcome: 'fresh' };
   const answer = await accounting.capabilities.readChanges({ organisationId });
   if (answer?.state === 'fresh') return { outcome: 'fresh' };
   if (answer?.state !== 'read') return { outcome: 'waiting', reason: answer?.reason || 'the accounting system read failed' };
-  if (answer.changed) await matchJobs(db, organisationId, { accounting, now });
+  if (answer.changed) await matchJobs(db, organisationId, { accounting, work, now });
   return { outcome: 'read', changed: answer.changed ?? 0 };
 }
 

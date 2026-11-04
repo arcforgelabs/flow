@@ -11,7 +11,8 @@ import {
 import { starterRules } from '../server/core/invoice-rules.js';
 import { listAutomations, runAutomations, saveAutomation, statusMatches, workStatuses } from '../server/core/automations.js';
 import { explainObligation, observeJob, recordAccountingEvidence, setReady } from '../server/core/ledger.js';
-import { billingObligations, invoices } from '../server/db/schema.js';
+import { billingObligations, invoices, linkSuggestions } from '../server/db/schema.js';
+import { linkRecord } from '../server/core/links.js';
 import { freshDatabase, skipWithoutDatabase } from './support/db.js';
 
 // The invoicing rules decide when Flow drafts a ready job's invoice by itself,
@@ -304,4 +305,45 @@ describe('drafts by rule', { skip: skipWithoutDatabase }, () => {
     assert.equal(off.ready_when_drafted, undefined);
     assert.equal((await invoiceOf(later)).readyAt, null);
   });
+});
+
+test('an accounting change before drafting retains a patient-reference invoice for review', { skip: skipWithoutDatabase }, async () => {
+  const handle = await freshDatabase();
+  const db = handle.db;
+  try {
+    const lab = await createOrganisation(db, { name: 'Synthetic Lab' });
+    const contact = await createContact(db, lab.id, { kind: 'customer', name: 'Synthetic Practice' });
+    await createPriceItem(db, lab.id, { code: 'CROWN', name: 'Crown', unitAmountCents: 20000 });
+    await linkRecord(db, lab.id, { entity: 'contact', flowId: contact.id, system: 'accounts', externalId: 'practice', matchedBy: 'person' });
+    const row = await observeJob(db, lab.id, {
+      sourceSystem: 'work', sourceJobRef: 'case', contactId: contact.id, practitioner: 'Synthetic Practitioner',
+      sourceStatus: 'Shipped', jobDate: '2026-10-15', lines: [{ itemCode: 'CROWN', description: 'Crown' }], observedAt: NOW,
+    });
+    await setReady(db, lab.id, row.id, { actor: 'test' });
+    await recordAccountingEvidence(db, lab.id, row.id, { state: 'not_found', checkedAt: NOW, actor: 'test' });
+    const copy = { invoices: [], changedAt: new Date(NOW.getTime() - 1000) };
+    const accounting = { id: 'accounts', capabilities: {
+      findInvoices: async ({ contactId, invoiceIds = [], numbers = [] }) => ({
+        complete: true, fresh: true, changedAt: copy.changedAt,
+        invoices: copy.invoices.filter((i) => i.contactId === contactId || invoiceIds.includes(i.id) || numbers.includes(i.number)),
+      }),
+      readChanges: async () => {
+        copy.invoices = [{ id: 'historical', number: 'SYN-1', contactId: 'practice', state: 'authorised',
+          reference: 'Synthetic Practitioner - Synthetic Case', totalCents: 23500, issuedOn: '2026-10-15', itemCodes: ['CROWN', 'FREIGHT'] }];
+        copy.changedAt = new Date(NOW.getTime() + 1000);
+        return { state: 'read', changed: 1 };
+      },
+    } };
+    const work = { id: 'work', capabilities: { jobReferenceFields: async () => ({ patient: 'Synthetic Case' }) } };
+    const result = await autoDraftJobs(db, lab.id, { accounting, work, now: new Date(NOW.getTime() + 5000) });
+    const [after] = await db.select().from(billingObligations).where(eq(billingObligations.id, row.id));
+    assert.equal(result.accountingRead, 'read');
+    assert.equal(result.drafted, 0, 'an invoice discovered by the pre-draft read prevents another draft');
+    assert.equal(after.invoiceId, null);
+    assert.equal(after.accountingState, 'ambiguous');
+    const suggestions = await db.select().from(linkSuggestions).where(eq(linkSuggestions.obligationId, row.id));
+    assert.deepEqual(suggestions.map((s) => [s.externalId, s.state]), [['historical', 'open']]);
+  } finally {
+    await handle.close();
+  }
 });

@@ -147,7 +147,7 @@ test('an issued lab-rule hold names the rule and links the source job', async ()
 
 // Public problem-code contract from draft checks and Xero send refusals. Each
 // fixture includes independent explanatory text: losing a reason must fail.
-test('every invoice hold keeps its reason and matched links in page and list presentations', async () => {
+test('every invoice hold keeps its full page reason, compact accessible text and safe links', async () => {
   const { invoiceProblems } = await import('../server/ui/invoice-problems.js');
   const codes = [
     'no_lines', 'no_amount', 'line_no_item', 'rule', 'non_chargeable', 'job_review', 'send_failed',
@@ -165,14 +165,16 @@ test('every invoice hold keeps its reason and matched links in page and list pre
       ...(rule ? { rule: 'rule-id', ruleName: 'Synthetic rule' } : {}),
       ...(matched ? { xero: { invoiceId: XERO_ID } } : {}),
     }] };
-    for (const compact of [false, true]) {
-      const shown = invoiceProblems({ h, notice }, invoice, { compact });
-      assert.match(shown.textContent, /Synthetic reason\. Fix the source before trying again\./, code);
-      if (rule) assert.match(shown.textContent, /Rule: Synthetic rule/, code);
-      if (code === 'xero_tracking_missing') assert.ok(shown.querySelectorAll('a').some((a) => a.getAttribute('href') === '/integrations/xero#tracking'), code);
-      if (matched) assert.ok(shown.querySelectorAll('a').some((a) => a.getAttribute('href').endsWith(XERO_ID)), code);
-      if (rule || code === 'job_review') assert.ok(shown.querySelectorAll('a').some((a) => a.textContent === 'Fix job'), code);
-    }
+    const summary = invoiceProblems({ h, notice }, invoice, { compact: true });
+    assert.match(summary.getAttribute('title'), /Synthetic reason\. Fix the source before trying again\./, code);
+    assert.match(summary.getAttribute('aria-label'), /Fix the source before trying again/, code);
+    // Lists open the invoice; its full presenter owns every matched/remediation link.
+    const shown = invoiceProblems({ h, notice }, invoice);
+    assert.match(shown.textContent, /Synthetic reason\. Fix the source before trying again\./, code);
+    if (rule) assert.match(shown.textContent, /Rule: Synthetic rule/, code);
+    if (code === 'xero_tracking_missing') assert.ok(shown.querySelectorAll('a').some((a) => a.getAttribute('href') === '/integrations/xero#tracking'), code);
+    if (matched) assert.ok(shown.querySelectorAll('a').some((a) => a.getAttribute('href').endsWith(XERO_ID)), code);
+    if (rule || code === 'job_review') assert.ok(shown.querySelectorAll('a').some((a) => a.textContent === 'Fix job'), code);
   }
 });
 
