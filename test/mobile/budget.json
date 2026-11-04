@@ -554,9 +554,6 @@
  "phone-s-chromium-harbour-light/invoice": {
   "small": 1
  },
- "phone-s-chromium-harbour-light/invoice-offer": {
-  "small": 1
- },
  "phone-s-chromium-harbour-light/invoices-filter-row": {
   "small": 6
  },
@@ -596,9 +593,6 @@
   "small": 4
  },
  "phone-s-chromium-meridian-dark/invoice": {
-  "small": 1
- },
- "phone-s-chromium-meridian-dark/invoice-offer": {
   "small": 1
  },
  "phone-s-chromium-meridian-dark/invoices-filter-row": {
@@ -642,9 +636,6 @@
  "phone-s-chromium-meridian-light/invoice": {
   "small": 1
  },
- "phone-s-chromium-meridian-light/invoice-offer": {
-  "small": 1
- },
  "phone-s-chromium-meridian-light/invoices-filter-row": {
   "small": 6
  },
@@ -684,9 +675,6 @@
   "small": 4
  },
  "phone-s-webkit-harbour-light/invoice": {
-  "small": 1
- },
- "phone-s-webkit-harbour-light/invoice-offer": {
   "small": 1
  },
  "phone-s-webkit-harbour-light/invoices-filter-row": {
@@ -730,9 +718,6 @@
  "phone-s-webkit-meridian-dark/invoice": {
   "small": 1
  },
- "phone-s-webkit-meridian-dark/invoice-offer": {
-  "small": 1
- },
  "phone-s-webkit-meridian-dark/invoices-filter-row": {
   "small": 6
  },
@@ -772,9 +757,6 @@
   "small": 4
  },
  "phone-s-webkit-meridian-light/invoice": {
-  "small": 1
- },
- "phone-s-webkit-meridian-light/invoice-offer": {
   "small": 1
  },
  "phone-s-webkit-meridian-light/invoices-filter-row": {
