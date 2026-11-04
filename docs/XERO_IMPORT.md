@@ -29,7 +29,7 @@ Two layers keep this apart:
 ```mermaid
 flowchart LR
   copy[Xero copy<br/>xero_invoices] --> classify{Classify}
-  classify -- pushed from Flow,<br/>or a link row --> linked[Linked]
+  classify -- pushed from Flow,<br/>link row or retained Duplicate --> linked[Linked]
   classify -- open Flow invoice:<br/>same client, total, ±7 days --> invoice[A Flow invoice fits]
   classify -- job tied by the matcher,<br/>or same client, total, ±7 days --> job[A job fits]
   classify -- none --> none[Nothing fits]
@@ -43,13 +43,21 @@ flowchart LR
 
 | State | Meaning | Action |
 | --- | --- | --- |
-| `linked` | Flow sent it (`xero_invoice_pushes`), or `xero_invoice_links` pairs it | none |
+| `linked` | Flow sent it (`xero_invoice_pushes`), `xero_invoice_links` pairs it, or a confirmed Duplicate receipt resolves it for the current Xero tenant | none |
 | `invoice_fits` | A Flow invoice with no Xero invoice fits (see "Sure match") | Link |
 | `job_fits` | A job with no invoice is tied to it (`accounting_ref`), its work-system invoice number is the Xero number, or it has the same client and total within 7 days | Make Flow invoice + link job |
 | `none` | Nothing fits | Make Flow invoice, or leave it |
 
 A Xero contact matches a Flow contact by name only when exactly one Flow
 contact has that name.
+
+A retained Duplicate is already resolved: History links to its original Flow
+number with **Duplicate**, not Draft or Void. Classification reads the existing
+receipt from `invoices.duplicate`, scoped to the organisation and current Xero
+tenant; it creates no second association record. Existing push/import links
+keep precedence. Neither **Make Flow invoice** nor `make_unmatched` recreates
+that resolved invoice. Its DUPLICATE PDF preview and filename keep the original
+Flow serial; no Xero number is invented and issued documents stay unchanged.
 
 ## Sure match
 

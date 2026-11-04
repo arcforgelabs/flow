@@ -10,12 +10,12 @@ Related: #441, #443. Synthetic data only. No live reads or writes.
 | #441 part 1: Send anyway | Blocked decision | Samuel must decide whether this optional bypass is wanted. Not added. |
 | #441 parts 2–3: shared draft / issued / list presenter | Complete source | invoiceProblems owns full reasons, rule names, matched links and next-step text. Includes Non-chargeable list reasons. |
 | #441 all-code presentation guard | Complete focused proof | 28 explicit public codes, both page and compact list modes; unknown codes retain reason and fallback next step. |
-| #441 three synthetic duplicate cases at 390 / 1280 | Blocked runtime | Existing isolated PostgreSQL runner fails during gosu startup. No real-app screenshots claimed. |
-| #443 step 2 Link to Xero / retained Duplicate | Blocked proof prerequisite | Needs a working disposable PostgreSQL lane before implementing and validating new terminal state, atomic job reassignment, immutable audit and owner/admin transport. Not implemented or claimed complete. |
+| #441 three synthetic duplicate cases at 390 / 1280 | Partial visual proof captured | Three synthetic refused records ($220/$235 pair) at both widths; confirmed Duplicate at each width. Original three distinct amount variants and independent full mobile proof remain unexecuted, not setup-blocked. |
+| #443 step 2 Link to Xero / retained Duplicate | Implemented and focused proof green | Atomic local association + terminal receipt, unchanged issued versions, owner/admin confirmation, guarded candidate and concurrent idempotent retries. 108 PostgreSQL focused tests passed; final constraint addition awaits CI execution. |
 | #443 step 2 Delete | Blocked decision | Decide whether Delete means a retained terminal state and whether the job becomes draftable again. No hard delete of issued records. |
-| #443 step 2 restrict Void | Blocked contract | Retained Duplicate action must land before removing the only existing local cancellation route. No change yet. |
+| #443 step 2 restrict Void | Existing cancellation preserved | Explicit Duplicate action now exists. Void confirmation warns about a possible match but does not assert business identity before consent or remove legitimate cancellation. Broader restriction remains a product decision. |
 | #443 step 3 optional bypass | Blocked decision | Send anyway: yes or no. |
-| #443 step 4 app-wide hold audit | Partial | Inventory below. Invoice fixes implemented; remaining job-match presentation gaps explicitly recorded. |
+| #443 step 4 app-wide hold audit | Source gaps addressed in this stage | Inventory below; job accounting candidates now include safe comparison links, number, total, state, Reference and codes. Parent owns independent review and full mobile proof. |
 | #443 step 5 historical link root cause | Confirmed synthetic source defect and repaired | Amount gate discarded same-reference, same-product invoices with an extra fee. Matcher now keeps these as ambiguous suggestions; never auto-links or records no invoice from that evidence. Red/green owner regression. Production cause not asserted without live evidence. |
 | #443 step 6 shipping | Blocked decision | Should Flow add a fee? Amount, tax, scope and timing need Samuel's decision. No fee added. |
 | #443 step 7 five live records | Blocked authority | No source data read. Needs explicit per-record cleanup approval; separate from source implementation. |
@@ -67,8 +67,8 @@ Page and list refer to invoice views unless Jobs is named. Phone uses the same p
 | job not ready / ready statuses | Jobs page/list/phone | Existing waitingFor + rule reason | Source job | Mark ready / correct source status |
 | job held / review / changed / deleted / status back | Jobs page/phone | Existing reasonFix and change banner | Source job / own invoice | Release / review / accept |
 | no customer / unmapped price / stale work report | Jobs page/phone | Existing reasonFix | Source/price/settings as applicable | Link/map/sync |
-| ambiguous accounting evidence | Jobs page/phone | Cautious possible-invoice wording repaired | Reconcile opens Flow-only candidates | Remaining source gap: expose accounting suggestions in a dedicated comparison flow; do not imply absence. |
-| conflict / accounting voided or deleted | Jobs page/phone | Existing reasonFix | Source / own invoice; accounting candidate link not direct | Remaining source gap: exact accounting comparison link. |
+| ambiguous accounting evidence | Jobs page/phone | Cautious possible-invoice wording repaired | Reconcile opens Flow-only candidates | Job panel now exposes mirrored accounting suggestions with facts and safe comparison links; never implies absence. |
+| conflict / accounting voided or deleted | Jobs page/phone | Existing reasonFix | Source / own invoice; accounting candidate link not direct | Job panel now exposes the exact mirrored accounting candidate link. |
 | automation off / wait / skip / non-chargeable | Automations/Rules + Jobs | Existing on/off and When/If/Then, named ruleReasons | Rules/source | Enable automation or fix named rule condition |
 
 ## Root cause boundary
@@ -133,3 +133,86 @@ Repair base: 81df931523125f7a0083d39258b3f37bcaafe53e. Parent owns publication a
 - Synthetic before/after list and opened-invoice screenshots retained privately under /home/deploy/.openclaw/media/flow451-review/repair-*.png. No public screenshot attachment or dedicated whole-app refusal acceptance is claimed.
 - Historical exact-head evidence for 81df931 remains: npm test 947 passed, zero failed/skipped, 163.815 seconds; package, docker and gitleaks passed. Mobile was NOT green: 699 passed, 50 failed, one configured-retry flake. Its 30 strict-locator and 20 list-screenshot failures motivated this repair. CodeQL had no check/run and remains unrun. New-head full CI is pending publication by the parent.
 - Independent repair-delta review attempted with the installed autoreview helper, one 269193-byte context pass, Codex gpt-6.1-sol/medium/ultrafast. It stopped on authentication: reviewer_unavailable, report_produced=false. No review verdict exists, no credential/login operation or fallback was attempted. Parent review of the repair remains required.
+
+## Duplicate workflow source stage — supersedes the recovery blockers above
+
+Base: 81df931523125f7a0083d39258b3f37bcaafe53e. The Link to Xero invoice /
+retained Duplicate workflow is now implemented, not blocked by local setup.
+The core owns the atomic job association + terminal receipt; the Xero port
+validates mirrored evidence and all push attempts. Owner/admin transport and
+an actual matched-invoice confirmation are required. Duplicate uses the
+existing terminal storage status plus a resolution receipt, so existing
+send/rule/report/import/reconcile guards are reused rather than copied.
+The receipt and append-only job event preserve actor, number and evidence;
+issued version bytes are untouched. The job is not freed or made draftable.
+A new send intent takes the invoice row lock before being persisted, and
+rechecks the issued version, so it cannot escape a completed Duplicate.
+
+Completed source gaps: explicit Link/Duplicate, separate list tab, retained
+preview/number/history, possible-match reminder before Void, and safe job
+accounting-match links (ambiguity/conflict/voided candidates). Existing
+legitimate cancellation routes remain. No issued Delete, optional Send anyway,
+new fee, practitioner-placeholder policy, or production cleanup was added.
+Those remain user decisions/authority items, not source/setup blockers.
+
+Proof: the real authenticated API regression failed on base 81df931 because
+no trusted candidate/action existed. On this source, 108 focused tests passed
+with PostgreSQL on X Forge's task-only duplicate443 lane (latest fingerprint rerun 8.68s):
+node --test --test-concurrency=1 test/duplicate-workflow.test.js
+test/invoice-sending.test.js test/invoices.test.js test/invoice-pdf.test.js
+test/invoicing-api.test.js test/pipeline.test.js test/xero-drafts.test.js
+test/job-board.test.js
+The lifecycle regression covers concurrent identical retries, staff refusal,
+unchanged issued versions/PDF document, durable accounting link/audit, no
+redraft/revise/delete, separate Duplicate/Void lists, changed confirmation,
+wrong client/product, sent/queued, unknown push, changed tenant and stale mirror.
+Each negative starts with a valid offer. Refusal is synthetic precondition
+state, not a claim of exercising the send worker's refusal persistence.
+Local UI/assets/design focused checks: 23 passed, 0 failed (0.89s).
+
+One bounded disposable setup succeeded: copied the inspected direct-postgres
+runner into task-only duplicate443, with its own lock, label, loopback port,
+tmpfs and generated local test password. No shared runner/security settings
+changed and no credential was transferred. No full local suite/startup loop.
+Parent owns full GitHub CI/mobile and independent source-blind review.
+
+Public design artifact is sign-in gated (signed-out render: Sign in to view
+this page); no login attempted. Repo-owned shared Dialog/Notice/card rules
+were used, without a new design component.
+
+Real-app proof (source-aware, not independent): six baseline 81df931 and six
+pre-link source screenshots, plus confirmation and completed Duplicate at
+390x900 and 1280x900. Synthetic $220/$235 pair, three refused records; not
+three different original amount variants. Browser confirmed Link dialog,
+completion, refresh persistence, absent terminal Link/Void, no page errors
+and no completed-page overflow. Initial selector expected an accessible
+Dialog name, but shared Dialog has no name; switching the proof selector to
+the actual open dialog completed the flow. No product workaround was added.
+Artifacts are on X Forge in
+/home/samuelrodda/repos/flow-duplicate-workflow-20261104/.artifacts/:
+baseline-390-{0,1,2}.png, baseline-1280-{0,1,2}.png,
+final-before-390-{0,1,2}.png, final-before-1280-{0,1,2}.png,
+final-confirm-390.png, final-confirm-1280.png,
+final-duplicate-390.png, final-duplicate-1280.png,
+duplicate-baseline.log and duplicate-focused-final.log.
+Screenshots precede the final evidence-fingerprint transport simplification
+and restored cancellation option; that fingerprint was API-tested afterward.
+The task app is stopped and port 19443 has no listener. The task database
+container was stopped; no shared lane was changed.
+
+Closeout review: no pre-confirmation declaration that a candidate is the same
+job; legitimate cancellation remains unchanged. Added the cheap database
+constraint duplicate IS NULL OR status = 'void' in the same migration/schema
+owner. Its new runtime regression and the final cancellation wording have
+not been rerun against PostgreSQL after lane cleanup: parent CI owns that
+small remaining execution gap. Guard generation/check and JavaScript syntax
+are checked locally. The tested source stage is not production activation,
+and does not close #441/#443. Parent's separate baseline repairs are not
+replicated here.
+
+Simplification: one terminal status and one resolution receipt; no new
+lifecycle manager, trigger, external accounting write, or second job link
+store. Evidence fingerprint avoids storing the whole confirmation twice.
+Existing terminal send/import/report/rule paths are reused. Production
+changes excluding generated schema snapshot are under 250 added lines;
+remaining snapshot growth is mechanical Drizzle metadata.

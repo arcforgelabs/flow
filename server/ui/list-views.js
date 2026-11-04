@@ -35,6 +35,7 @@ export const INVOICE_FILTER_STATUSES = Object.freeze([
   { value: 'draft', label: 'Draft' },
   { value: 'approved', label: 'Approved' },
   { value: 'sent', label: 'Sent' },
+  { value: 'duplicate', label: 'Duplicate' },
   { value: 'void', label: 'Void' },
   { value: 'sending', label: 'Sending' },
 ]);

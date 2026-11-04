@@ -5,6 +5,7 @@ import { fieldIdOf, filterRows } from '../ui/job-view.js';
 import { listFields, listJobFieldValues } from '../core/custom-fields.js';
 import { FlowError } from '../core/errors.js';
 import { createActionGuard } from '../integrations/call-guard.js';
+import { invoiceDuplicateCandidate, linkInvoiceDuplicate } from '../core/duplicates.js';
 import {
   createDraftInvoice, deleteDraft, getInvoice, issueInvoice, listInvoiceVersions, reviseInvoice, updateDraftInvoice, voidInvoice,
 } from '../core/invoices.js';
@@ -118,7 +119,7 @@ const DATE = /^\d{4}-\d{2}-\d{2}$/;
 // issued invoice, by its stage in the accounting system (its invoiceStages;
 // Draft while it is on its way); with no accounting system, an issued invoice
 // is Approved. Void: void in Flow or in the accounting system.
-const TABS = ['pending', 'ready', 'draft', 'approved', 'sent', 'non_chargeable', 'void'];
+const TABS = ['pending', 'ready', 'draft', 'approved', 'sent', 'non_chargeable', 'duplicate', 'void'];
 // Earlier names a saved link may still use.
 const OLD_TABS = { problem: 'pending', to_check: 'ready', issued: 'approved' };
 const VIEWS = ['in_work', 'ready', 'pending', 'drafted', 'invoiced', 'paid', 'held', 'review_required'];
@@ -324,13 +325,13 @@ async function invoiceTabs(db, organisationId, system) {
   const [views, issued, voided, stages] = await Promise.all([
     invoiceViews(db, organisationId, { accounting: system }),
     db.select({ id: invoices.id }).from(invoices).where(and(eq(invoices.organisationId, organisationId), eq(invoices.status, 'issued'))),
-    db.select({ id: invoices.id }).from(invoices).where(and(eq(invoices.organisationId, organisationId), eq(invoices.status, 'void'))),
+    db.select({ id: invoices.id, duplicate: invoices.duplicate }).from(invoices).where(and(eq(invoices.organisationId, organisationId), eq(invoices.status, 'void'))),
     typeof system?.capabilities?.invoiceStages === 'function' ? system.capabilities.invoiceStages({ organisationId }) : new Map(),
   ]);
   const tabOf = new Map();
   for (const id of [...views.toCheck, ...views.ready]) tabOf.set(id, 'ready');
   for (const { id } of issued) tabOf.set(id, issuedTab(id, { views, stages, system }));
-  for (const { id } of voided) tabOf.set(id, 'void');
+  for (const { id, duplicate } of voided) tabOf.set(id, duplicate ? 'duplicate' : 'void');
   for (const id of views.problems.keys()) tabOf.set(id, 'pending');
   for (const id of views.nonChargeable.keys()) tabOf.set(id, 'non_chargeable');
   const ids = Object.fromEntries(TABS.map((t) => [t, []]));
@@ -347,7 +348,7 @@ function issuedTab(id, { views, stages, system }) {
 
 // One invoice's tab, for its page (and its pager).
 async function tabOfInvoice(db, organisationId, invoice, view, accounting) {
-  if (invoice.status === 'void') return 'void';
+  if (invoice.status === 'void') return invoice.duplicate ? 'duplicate' : 'void';
   if (view === 'problem') return 'pending';
   if (view === 'non_chargeable') return 'non_chargeable';
   if (invoice.status === 'draft') return 'ready';
@@ -370,6 +371,7 @@ async function invoiceDetail(db, organisationId, invoiceId, accounting = null, w
   const viewed = await invoiceView(db, organisationId, invoice, { accounting });
   return {
     jobChange,
+    duplicateCandidate: await invoiceDuplicateCandidate(db, organisationId, invoiceId, { accounting }),
     accountingFacts: invoice.status !== 'draft' && accounting?.capabilities?.documentFacts
       ? await accounting.capabilities.documentFacts({ organisationId, invoiceId, version: invoice.issuedVersion })
       : null,
@@ -648,6 +650,13 @@ export function createInvoicingRouter({
     const organisationId = await organisationOf(req);
     await reviseInvoice(db, organisationId, invoiceId);
     log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} opened invoice ${invoiceId} for revision`);
+    res.json({ ok: true, invoice: await invoiceDetail(db, organisationId, invoiceId, accounting(), work()) });
+  }));
+
+  router.post('/invoices/:id/duplicate', ...manager, handle(log, async (req, res) => {
+    const organisationId = await organisationOf(req);
+    const invoiceId = pathId(req.params.id, 'invoice');
+    await linkInvoiceDuplicate(db, organisationId, invoiceId, { accounting: accounting(), candidateId: text(req.body?.candidateId), confirmation: text(req.body?.confirmation), actor: `person:${req.person.id}` });
     res.json({ ok: true, invoice: await invoiceDetail(db, organisationId, invoiceId, accounting(), work()) });
   }));
 

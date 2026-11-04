@@ -42,6 +42,7 @@ const SYSTEM_NAME = { seazona: 'Seazona', xero: 'Xero' };
 const ACTIVITY = {
   observed: 'Flow read the job', source_changed: 'The job changed in the lab system', ready: 'Marked ready to invoice',
   in_work: 'Put back in work', drafted: 'Draft invoice made', draft_deleted: 'Draft invoice deleted', draft_refused: 'Draft invoice refused', invoice_linked: 'Linked to an invoice',
+  duplicate_linked: 'Linked to the existing accounting invoice; Flow duplicate retained',
   accounting_checked: 'Checked in the accounting system', payment_recorded: 'Payment recorded', paid: 'Paid in full',
   held: 'Put on hold', review: 'Sent to review', released: 'Hold removed',
   status_moved_back: 'The job status moved back in the lab system', source_lines_used: 'New job lines used on the draft',
@@ -1307,6 +1308,12 @@ export async function renderJobs(main, ui) {
           // link to an accounting system (its Linked card).
           field('Invoice', invoiceText)),
         chooseBox,
+        o?.accountingSystem === 'xero' && o.accountingMatches?.length ? h('section', { class: 'fx-task__custom', 'aria-label': 'Accounting matches' },
+          h('h3', {}, 'Accounting matches'),
+          ...o.accountingMatches.filter((c) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(c.id)).map((c) =>
+            h('p', {}, h('a', { class: 'fx-task__link', href: 'https://go.xero.com/AccountsReceivable/View.aspx?InvoiceID=' + encodeURIComponent(c.id), target: '_blank', rel: 'noopener' }, c.number ?? 'Open in Xero'),
+              ' · ' + formatCents(c.totalCents) + ' · ' + c.state,
+              h('span', { class: 'fx-dim' }, ' · ' + (c.reference ?? '') + ' · ' + (c.itemCodes ?? []).join(', '))))) : null,
         state.fields.length ? h('section', { class: 'fx-task__custom', 'aria-label': 'Custom fields' },
           h('h3', {}, 'Custom fields'),
           h('dl', { class: 'fx-task__fields' }, state.fields.map((f) => h('div', {}, h('dt', {}, f.name), h('dd', {}, fieldControl(job, f)))))) : null,

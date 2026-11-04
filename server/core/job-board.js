@@ -1,5 +1,5 @@
 import { and, eq, inArray, isNull } from 'drizzle-orm';
-import { contacts, invoices, priceItems, reviewItems } from '../db/schema.js';
+import { contacts, invoices, linkSuggestions, priceItems, reviewItems } from '../db/schema.js';
 import { listRules } from './invoice-rules.js';
 import { customerBillingByContact, effectiveSettings, readInvoicingSettings, ruleBlockers } from './invoicing-rules.js';
 import { REVIEW_CHANGED, listObligations } from './ledger.js';
@@ -56,8 +56,14 @@ export async function describeObligations(db, organisationId, listed, { accounti
   // draft can still come from.
   const waitingFor = (o, v) => (o.invoiceId || !['in_work', 'ready', 'pending', 'held'].includes(v)
     ? [] : ruleBlockers(o, { ...effectiveSettings(settings, customers.get(o.contactId)), name: nameOf.get(o.contactId) ?? null }, { rules }));
+  const suggestions = accounting && listed.length ? await db.select().from(linkSuggestions).where(and(eq(linkSuggestions.organisationId, organisationId), inArray(linkSuggestions.obligationId, listed.map((e) => e.obligation.id)), eq(linkSuggestions.state, 'open'))) : [];
+  const ids = [...new Set([...listed.map((e) => e.obligation.accountingRef), ...suggestions.map((s) => s.externalId)].filter(Boolean))];
+  const candidates = ids.length && accounting?.capabilities.findInvoices ? (await accounting.capabilities.findInvoices({ organisationId, invoiceIds: ids })).invoices : [];
+  const accountingMatches = (o) => candidates.filter((c) => c.id === o.accountingRef || suggestions.some((s) => s.obligationId === o.id && s.system === accounting.id && s.externalId === c.id));
   return listed.map(({ obligation: { lineFingerprint: _fingerprint, organisationId: _org, draftBasis: _basis, ...o }, view, reasons }) => ({
     ...o,
+    accountingSystem: accounting?.id ?? null,
+    accountingMatches: accountingMatches(o),
     canUseNewLines: offers.has(o.id),
     contactName: nameOf.get(o.contactId) ?? null,
     invoiceNumber: invoiceOf.get(o.invoiceId)?.number ?? null,

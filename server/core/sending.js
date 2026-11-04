@@ -360,7 +360,7 @@ async function queue(db, organisationId, invoiceIds, personId) {
   if (!invoiceIds.length) return;
   await db.update(invoices)
     .set({ sendState: 'queued', sendError: null, sendRequestedBy: personId ?? null, sendUpdatedAt: sql`now()` })
-    .where(and(eq(invoices.organisationId, organisationId), inArray(invoices.id, invoiceIds)));
+    .where(and(eq(invoices.organisationId, organisationId), inArray(invoices.status, ['draft', 'issued']), inArray(invoices.id, invoiceIds)));
 }
 
 function unqueue(db, organisationId, invoiceId) {

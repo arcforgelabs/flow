@@ -290,3 +290,37 @@ pages keep the full explanation. Lists show a short check name and count;
 open the invoice for every reason and matched/remediation link. Hover and
 the accessible name retain the full explanation. Non-chargeable invoices
 show their rule on the list too. A duplicate warning asks for comparison, not a blind Void.
+
+## Already billed: retain a Duplicate
+
+An owner or admin can press **Link to Xero invoice** on a refused issued
+invoice when Flow's current Xero copy verifies the retained match: the same
+client and currency, an approved or paid sales invoice, and every issued
+product at the same quantity, line amount and tax. Extra lines are shown for
+comparison; Flow neither invents a fee nor treats Reference alone as proof.
+The confirmation names the actual Xero invoice and shows its lines and total.
+
+Confirming is one local transaction. Each job gets that accounting invoice
+and its accounting state; the Flow invoice becomes **Duplicate**, on its own
+tab, not Void. The number, lines and issued versions stay. A durable audit
+event records the person, both invoices and the compared evidence. Repeating
+the same confirmation returns the existing result without another event.
+No Xero write or email happens. The job keeps its retained Flow record too,
+so it cannot become draftable when an integration is disconnected.
+
+Changed evidence requires a fresh comparison. Queued/sent invoices, any
+prior push (including unknown create or email outcomes), other clients or
+currencies, stale/incomplete copies and untrusted ids cannot be linked this
+way. A candidate first seen before the current connection is also refused:
+Flow cannot prove which tenant supplied an old mirror row after reconnect.
+There is no automatic backfill or live cleanup in this operation.
+
+Duplicate reuses the existing terminal storage status with a resolution
+receipt (invoices.duplicate); it is not a second active billing record.
+Existing send, rule, report, import and job-reconcile terminal guards still
+apply. Its preview is marked DUPLICATE while stored issued documents remain
+unchanged. It cannot be revised, deleted or sent. Legitimate existing Void
+cancellation routes remain (including issued invoices without accounting).
+When a possible match is offered, the Void confirmation asks the person to
+compare it and use Link if it bills this work; it does not declare a duplicate
+before their decision.

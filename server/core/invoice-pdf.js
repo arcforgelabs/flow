@@ -34,7 +34,7 @@ async function flowDocument(db, organisationId, invoiceId, { version }) {
     const [row] = await db.select().from(invoiceVersions)
       .where(and(eq(invoiceVersions.organisationId, organisationId), eq(invoiceVersions.invoiceId, invoiceId), eq(invoiceVersions.version, wanted)));
     if (!row) throw notFound('invoice version');
-    return { seller: organisation?.name ?? null, document: row.document };
+    return { seller: organisation?.name ?? null, document: row.document, duplicate: invoice.duplicate ?? null };
   }
   const [contact] = await db.select({ id: contacts.id, name: contacts.name, email: contacts.email }).from(contacts)
     .where(eq(contacts.id, invoice.contactId));
@@ -82,7 +82,7 @@ function addDays(date, days) {
 
 // The number, reference and dates the PDF shows. Each is { value } when it is
 // known, or { missing } with a short note on why it is not.
-export function pdfFields({ document: doc, facts = null }) {
+export function pdfFields({ document: doc, facts = null, duplicate = null }) {
   const known = (value) => ({ value });
   const missing = (note) => ({ missing: note });
   if (facts?.sent) {
@@ -102,7 +102,8 @@ export function pdfFields({ document: doc, facts = null }) {
   if (!doc.dueDate && doc.issueDate && facts?.defaultDueDays) dueDate = known(addDays(doc.issueDate, facts.defaultDueDays));
   const reference = pdfReference(doc);
   return {
-    number: facts?.numberedBy === 'xero'
+    // A terminal duplicate will never be sent; keep its retained Flow serial.
+    number: !duplicate && facts?.numberedBy === 'xero'
       ? missing(`${facts.system} sets it when sent`)
       : doc.number ? known(doc.number) : notIssued,
     reference: reference ? known(reference) : notIssued,
@@ -132,9 +133,9 @@ function showDate(value) {
 // so the customer's copy looks much the same: title and customer on the
 // left, dates and numbers in the middle, the seller on the right, then the
 // lines, the totals and the due date. The payment advice slip is left out.
-export function renderInvoicePdf({ seller, document: doc, facts = null }) {
+export function renderInvoicePdf({ seller, document: doc, facts = null, duplicate = null }) {
   if (!doc || !Array.isArray(doc.lines)) throw new FlowError('invalid', 'nothing to draw');
-  const fields = pdfFields({ document: doc, facts });
+  const fields = pdfFields({ document: doc, facts, duplicate });
   return new Promise((resolve, reject) => {
     const pdf = new PDFDocument({
       size: 'A4',
@@ -158,7 +159,7 @@ export function renderInvoicePdf({ seller, document: doc, facts = null }) {
       pdf.save();
       pdf.rotate(-30, { origin: [pdf.page.width / 2, pdf.page.height / 2] });
       pdf.font(bold).fontSize(96).fillColor(C.mark)
-        .text('EXAMPLE', 0, pdf.page.height / 2 - 60, { width: pdf.page.width, align: 'center', lineBreak: false });
+        .text(duplicate ? 'DUPLICATE' : 'EXAMPLE', 0, pdf.page.height / 2 - 60, { width: pdf.page.width, align: 'center', lineBreak: false });
       pdf.restore();
     };
     drawMark();

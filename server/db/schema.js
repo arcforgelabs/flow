@@ -116,6 +116,9 @@ export const invoices = pgTable('invoices', {
   // while failed. `xero` is the matched invoice { invoiceId, number, status }.
   sendState: text('send_state'),
   sendError: jsonb('send_error'),
+  // A retained duplicate is a terminal (void) record, distinguished by its
+  // immutable resolution receipt; it never appears as a cancelled bill.
+  duplicate: jsonb('duplicate'),
   sendRequestedBy: uuid('send_requested_by').references(() => people.id, { onDelete: 'set null' }),
   sendUpdatedAt: timestamp('send_updated_at', { withTimezone: true }),
   createdAt: createdAt(),
@@ -129,6 +132,7 @@ export const invoices = pgTable('invoices', {
     foreignColumns: [contacts.organisationId, contacts.id],
   }),
   check('invoices_status_valid', sql`${t.status} in ('draft', 'issued', 'void')`),
+  check('invoices_duplicate_terminal', sql`${t.duplicate} is null or ${t.status} = 'void'`),
   check('invoices_issued_has_number', sql`${t.status} = 'draft' or ${t.number} is not null`),
   check('invoices_send_state_valid', sql`${t.sendState} is null or ${t.sendState} in ('queued', 'sent', 'failed')`),
 ]);

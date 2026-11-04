@@ -547,25 +547,36 @@ async function pushOne(db, runtime, client, organisationId, invoiceId, { pushedB
   const bodyHash = createHash('sha256').update(body).digest('hex');
   const key = idempotencyKey(organisationId, invoiceId, version, 1, bodyHash);
   const preExisting = sameReference.map((inv) => inv.InvoiceID);
-  const { rows } = await db.execute(sql`
+  const { rows } = await persistPush(db, organisationId, invoiceId, version, (tx) => tx.execute(sql`
     insert into xero_invoice_pushes (organisation_id, invoice_id, version, state, idempotency_key, request_body, body_hash, pre_existing_ids, pushed_by,
       first_dispatched_at, last_dispatched_at, send_mode, email_state)
     values (${organisationId}, ${invoiceId}, ${version}, 'dispatching', ${key}, ${body}, ${bodyHash}, ${JSON.stringify(preExisting)}::jsonb, ${pushedBy},
       ${new Date(runtime.now())}, ${new Date(runtime.now())}, ${sendMode}, ${sendMode === 'approve_and_email' ? 'pending' : null})
-    on conflict (invoice_id, version) do nothing returning *`);
+    on conflict (invoice_id, version) do nothing returning *`));
   if (!rows.length) throw xeroError('xero_push_in_progress', 'This invoice is being sent to Xero already. Check again shortly.', { status: 409 });
   return dispatch(db, client, mapPush(rows[0]), document, { fresh: true });
+}
+
+// Duplicate and a new send intent take the same row lock. The intent is
+// committed before any accounting call, so Duplicate then refuses even an
+// unknown create/email outcome.
+async function persistPush(db, organisationId, invoiceId, version, write) {
+  return db.transaction(async (tx) => {
+    const [invoice] = await tx.select().from(flowInvoices).where(and(eq(flowInvoices.organisationId, organisationId), eq(flowInvoices.id, invoiceId))).for('update');
+    if (invoice?.status !== 'issued' || invoice.issuedVersion !== version) throw xeroError('invoice_not_issued', 'The invoice changed. Refresh before sending.', { status: 409 });
+    return write(tx);
+  });
 }
 
 async function recordExisting(db, { organisationId, invoiceId, version, draft, same, pushedBy }) {
   const body = JSON.stringify(draft);
   const bodyHash = createHash('sha256').update(body).digest('hex');
-  await db.execute(sql`
+  await persistPush(db, organisationId, invoiceId, version, (tx) => tx.execute(sql`
     insert into xero_invoice_pushes (organisation_id, invoice_id, version, state, idempotency_key, request_body, body_hash, pushed_by,
       xero_invoice_id, xero_invoice_number, xero_status, verified)
     values (${organisationId}, ${invoiceId}, ${version}, 'existing', ${idempotencyKey(organisationId, invoiceId, version, 0, bodyHash)},
       ${body}, ${bodyHash}, ${pushedBy}, ${same.InvoiceID}, ${same.InvoiceNumber ?? null}, ${same.Status ?? null}, false)
-    on conflict (invoice_id, version) do nothing`);
+    on conflict (invoice_id, version) do nothing`));
   return { invoiceId, version, outcome: 'existing', xero: shownXero(same) };
 }
 

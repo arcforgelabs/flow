@@ -1,38 +1,66 @@
-# fix: explain invoice holds and retain possible historical bills
+# feat: link an already billed invoice and retain the Flow duplicate
 
 Related: #441
 Related: #443
 
 ## What Problem This Solves
 
-Lab-rule holds lost their rule name and instructions on invoice pages. Three separate renderers disagreed. Historical invoices with extra charges could be discarded as candidates, allowing the matcher to say no invoice existed.
-
-This is a partial source delivery. It does not close either issue.
+A refused issued invoice could point to an existing Xero bill without a safe
+way to associate its job and retain the extra Flow record. Job panels also
+omitted the accounting candidates that explain ambiguous/conflicting links.
 
 ## User Impact
 
-Draft, issued and list flows share a hold presenter with the full reason, matched links and next steps. Non-chargeable list rows explain their rule. A possible historical invoice with matching Reference and job products stays for review despite a different total. Job wording no longer declares an ambiguous invoice absent.
+Owners and admins can compare the actual matched invoice, then explicitly
+Link to Xero invoice. One transaction associates the jobs and retains the
+Flow record as Duplicate, separately from cancelled invoices. Numbers and
+issued versions remain, the preview is marked Duplicate, retries are
+idempotent, and the jobs cannot draft again. Job panels expose safe links
+and accounting candidate facts. Nothing is written or emailed in Xero.
 
 ## Why This Change Was Made
 
-Reuse the existing Notice, links, rule payload and reference owner. Keep exact-match decisions unchanged. No fee assumption, automatic accounting link, schema change, bypass, number change or issued-version mutation is included.
+Reuse the existing terminal storage status, core ledger events and adapter
+mirror behind the integration port. A single resolution receipt distinguishes
+Duplicate from Void without duplicating the lifecycle. A database constraint
+requires every duplicate receipt to be terminal. Evidence fingerprints and
+row locks reject changed comparisons and competing send intent.
 
-The explicit Link to Xero invoice / retained Duplicate workflow is not implemented: disposable database proof is blocked. Delete retention semantics still need a decision. Full acceptance map and per-hold audit: docs/evidence/invoice-completion/acceptance.txt.
+Candidates require the retained refusal id, a fresh complete same-tenant-era
+mirror, the linked client/currency, an approved/paid sales invoice and all
+issued products with identical quantity/line amount/tax. Reference alone
+never proves the work. A candidate first seen before reconnection is refused
+because old mirror rows lack tenant provenance. Confirmation is the person's
+decision, not an automatic business-identity assertion. Existing legitimate
+Void remains available, with a compare-first reminder for a possible match.
+
+No optional bypass, issued Delete, new fee, placeholder rule, live cleanup,
+release, merge, deployment or publication. Neither issue is closed.
 
 ## Evidence
 
-Local commit: see handoff SHA.
+Commit: see handoff SHA; base 81df931523125f7a0083d39258b3f37bcaafe53e.
 
-- Failing-before/passing-after rule-name/source-job page regression.
-- Failing-before/passing-after conservative matching regression with wrong-reference and wrong-product negative controls.
-- Failing-before/passing-after ambiguous-job wording regression.
-- Saved focused owner/consumer/UI-assets/design suite (/tmp/flow-commit-proof.log): 31 passed, 0 failed, database suites not run.
-- Design-system generation passed (111 files); no publication.
-- Full npm test attempted; final result documented in handoff. Haven has no disposable PostgreSQL. Existing X Forge runner failed before database readiness. Task-owned containers stopped; no unrelated resource touched.
-- Real-product 390px/1280px synthetic screenshots: not captured. No visual or complete-workflow proof claimed.
-- Independent review and database lifecycle/concurrency proof remain required before integration.
-- No release, deployment, live reads/accounting writes, customer cleanup or GitHub publication.
+- Base real authenticated API regression fails: candidate/action absent.
+- X Forge task-only duplicate443 PostgreSQL lane: 108 focused tests passed,
+  0 failed, 13 suites, 8.68s. Command and exact guard coverage are in
+  docs/evidence/invoice-completion/acceptance.txt.
+- Haven UI/assets/design focused checks: 23 passed, 0 failed, 0.89s.
+- Real Flow synthetic baseline and pre-link screenshots of three records at
+  390x900 and 1280x900; two confirmation/completed Duplicate flows, reload
+  persistence, no terminal Link/Void, no page errors or completed overflow.
+  Artifacts and source revision differences are recorded in acceptance.txt.
+- Final cheap database invariant/regression and restored cancellation option
+  were added after disposable lane cleanup: runtime execution awaits parent
+  CI. Local syntax/migration-guard/diff checks cover the final source.
+- Full GitHub CI/mobile, independent source-blind validation, and three
+  original distinct synthetic amount variants remain required; no broad
+  local full-suite/startup retry loop was run. Parent's baseline repair
+  branches are deliberately not copied here.
+- Task app/port stopped; only labelled duplicate443 database was stopped.
+  Shared runner and tracking lanes unchanged. No credential transfer/live
+  account access. Parent owns publication and independent integration review.
 
-Final full-suite attempt: 481 passed, 25 failed, 4 skipped tests (200.82s). New handoff Markdown caused one docs-navigation failure; moved handoff records to .txt and verified docs checks green. Remaining runtime failures: loopback HTTP socket closure and missing locked Chromium build. Later focused presenter check: 4 passed, including tracking settings link and unsafe-source-link probe. Disposable PostgreSQL remains blocked even with approved direct-user equivalent.
-
-Recovery checkpoint: saved 31-test proof inspected; node --test test/invoice-issued-problem.test.js test/pipeline.test.js rerun: 8 passed, 0 failed, two database suites unexecuted (FLOW_TEST_DATABASE_URL unset). Changed JavaScript syntax checks and git diff --check passed. No source implementation changed during recovery; parent owns independent review and GitHub PostgreSQL/mobile proof before integration.
+Simplification: under 250 added production lines excluding mechanical
+Drizzle snapshot metadata. No new lifecycle manager, trigger, second job
+link store, external accounting mutation or duplicate problem presenter.
