@@ -30,7 +30,8 @@ export function fakeClerk({ now = Date.now, inviteFails = false } = {}) {
     if (users.has(userId)) users.get(userId).lastSignInAt = now();
     sessions.set(token, {
       userId,
-      sessionClaims: { sub: userId, exp: Math.floor(now() / 1000) + expiresIn },
+      sessionId: token,
+      sessionClaims: { sub: userId, exp: Math.floor(now() / 1000) + expiresIn, iat: Math.floor(now() / 1000), sid: token },
       factorVerificationAge: [0, secondFactorAge],
     });
     return token;
@@ -99,7 +100,7 @@ export async function request(app, path, { token, method = 'GET', body, headers 
     } catch {
       // not JSON
     }
-    return { status: res.status, body: json, text };
+    return { status: res.status, body: json, text, headers: res.headers };
   } finally {
     server.close();
   }

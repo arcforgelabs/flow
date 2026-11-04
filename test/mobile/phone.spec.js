@@ -29,9 +29,14 @@ const SCROLL_X = Object.values(RULES).map((rule) => rule.scrollX).filter(Boolean
 async function open(page, project, screen) {
   const { theme } = project.metadata;
   const tokens = JSON.parse(process.env.MOBILE_TOKENS);
+  const practice = screen.id.startsWith('portal-') && screen.id !== 'portal-join';
   await page.clock.setFixedTime(TODAY);
   await page.route('https://clerk.example.test/**', (route) => {
-    const body = route.request().url().endsWith('clerk.browser.js') ? clerkBrowserStub({ token: tokens[project.name], email: `owner-${project.name}@example.test`, name: `Owner ${theme.label}` }) : '';
+    const body = route.request().url().endsWith('clerk.browser.js') ? clerkBrowserStub({
+      token: practice ? process.env.MOBILE_PORTAL_TOKEN : tokens[project.name],
+      email: practice ? 'ada.portal@example.test' : `owner-${project.name}@example.test`,
+      name: practice ? 'Ada Owner' : `Owner ${theme.label}`,
+    }) : '';
     return route.fulfill({ status: 200, contentType: 'text/javascript', body });
   });
   const path = typeof screen.path === 'function' ? screen.path() : screen.path;

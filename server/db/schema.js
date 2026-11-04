@@ -649,6 +649,10 @@ export const invoicingSettings = pgTable('invoicing_settings', {
   rushPercent: integer('rush_percent').notNull().default(20),
   // The invoice Reference, from tokens (server/core/references.js).
   referenceTemplate: text('reference_template').notNull().default('{practitioner} - {patient}'),
+  // Practice portal (docs/PORTAL.md). On or off for the whole lab, and the
+  // portal name of each work-system status. A status with no name is hidden.
+  portalEnabled: boolean('portal_enabled').notNull().default(true),
+  portalStatusNames: jsonb('portal_status_names').notNull().default(sql`'{}'::jsonb`),
   // The fixed checks above became invoice rules (invoice_rules). True once
   // this organisation's starter rules were made from them.
   rulesSeeded: boolean('rules_seeded').notNull().default(false),
@@ -861,6 +865,124 @@ export const jobFieldEvents = pgTable('job_field_events', {
 }, (t) => [
   foreignKey({ name: 'job_field_events_field_same_org', columns: [t.organisationId, t.fieldId], foreignColumns: [jobFields.organisationId, jobFields.id] }).onDelete('cascade'),
   index('job_field_events_job').on(t.organisationId, t.sourceSystem, t.sourceJobRef, t.createdAt),
+]);
+
+// Practice portal (docs/PORTAL.md). One row per person per practice. A
+// practice is a customer contact. Roles live here, not in Clerk. A removed
+// row stays, so the history of who could see the practice remains.
+export const PRACTICE_ROLES = ['owner', 'admin', 'dentist', 'staff'];
+export const PRACTICE_MEMBER_STATUSES = ['invited', 'active', 'removed'];
+
+export const practiceMembers = pgTable('practice_members', {
+  id: id(),
+  organisationId: organisationId().references(() => organisations.id),
+  contactId: uuid('contact_id').notNull(),
+  email: text('email').notNull(),
+  name: text('name'),
+  role: text('role').notNull(),
+  status: text('status').notNull().default('invited'),
+  clerkUserId: text('clerk_user_id'),
+  // The name on the practice's jobs that "Mine" matches. Optional.
+  practitionerName: text('practitioner_name'),
+  // Who invited them: a lab person, or a practice member. One of the two.
+  invitedByPerson: uuid('invited_by_person').references(() => people.id, { onDelete: 'set null' }),
+  invitedByMember: uuid('invited_by_member'),
+  // Staff signed this member out at this time. A Clerk token issued before
+  // then is refused (docs/PORTAL.md, sessions).
+  sessionsRevokedAt: timestamp('sessions_revoked_at', { withTimezone: true }),
+  linkedAt: timestamp('linked_at', { withTimezone: true }),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, (t) => [
+  unique('practice_members_org_id').on(t.organisationId, t.id),
+  unique('practice_members_practice_email').on(t.organisationId, t.contactId, t.email),
+  uniqueIndex('practice_members_clerk')
+    .on(t.organisationId, t.contactId, t.clerkUserId)
+    .where(sql`${t.clerkUserId} is not null`),
+  foreignKey({
+    name: 'practice_members_contact_same_org',
+    columns: [t.organisationId, t.contactId],
+    foreignColumns: [contacts.organisationId, contacts.id],
+  }),
+  foreignKey({
+    name: 'practice_members_invited_by_member',
+    columns: [t.invitedByMember],
+    foreignColumns: [t.id],
+  }).onDelete('set null'),
+  check('practice_members_email_lower', sql`${t.email} = lower(${t.email})`),
+  check('practice_members_role_valid', sql`${t.role} in ('owner', 'admin', 'dentist', 'staff')`),
+  check('practice_members_status_valid', sql`${t.status} in ('invited', 'active', 'removed')`),
+]);
+
+// Someone asked to join a practice. The lab approves it and links a contact.
+export const PORTAL_REQUEST_STATUSES = ['open', 'approved', 'declined'];
+
+export const portalAccessRequests = pgTable('portal_access_requests', {
+  id: id(),
+  organisationId: organisationId().references(() => organisations.id),
+  name: text('name').notNull(),
+  email: text('email').notNull(),
+  practiceName: text('practice_name').notNull(),
+  phone: text('phone'),
+  status: text('status').notNull().default('open'),
+  contactId: uuid('contact_id'),
+  decidedBy: uuid('decided_by').references(() => people.id, { onDelete: 'set null' }),
+  decidedAt: timestamp('decided_at', { withTimezone: true }),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, (t) => [
+  index('portal_access_requests_status').on(t.organisationId, t.status),
+  foreignKey({
+    name: 'portal_access_requests_contact_same_org',
+    columns: [t.organisationId, t.contactId],
+    foreignColumns: [contacts.organisationId, contacts.id],
+  }),
+  check('portal_access_requests_email_lower', sql`${t.email} = lower(${t.email})`),
+  check('portal_access_requests_status_valid', sql`${t.status} in ('open', 'approved', 'declined')`),
+]);
+
+// Append-only record of who touched practice data (issue #363). A trigger
+// refuses updates and deletes. Owners read it on the contact page.
+export const AUDIT_ACTIONS = ['read', 'create', 'change', 'delete', 'download'];
+export const AUDIT_ACTOR_KINDS = ['member', 'person', 'anonymous'];
+
+export const auditEvents = pgTable('audit_events', {
+  id: id(),
+  organisationId: organisationId().references(() => organisations.id),
+  actorKind: text('actor_kind').notNull(),
+  actorId: uuid('actor_id'),
+  practiceContactId: uuid('practice_contact_id'),
+  action: text('action').notNull(),
+  recordType: text('record_type').notNull(),
+  recordId: text('record_id'),
+  ip: text('ip'),
+  createdAt: createdAt(),
+}, (t) => [
+  index('audit_events_practice').on(t.organisationId, t.practiceContactId, t.createdAt),
+  foreignKey({
+    name: 'audit_events_practice_same_org',
+    columns: [t.organisationId, t.practiceContactId],
+    foreignColumns: [contacts.organisationId, contacts.id],
+  }),
+  check('audit_events_action_valid', sql`${t.action} in ('read', 'create', 'change', 'delete', 'download')`),
+  check('audit_events_actor_kind_valid', sql`${t.actorKind} in ('member', 'person', 'anonymous')`),
+]);
+
+// One Clerk session the portal has seen, so an idle session can end and a
+// lab can sign a member out without waiting for the token to expire.
+export const portalSessions = pgTable('portal_sessions', {
+  sessionId: text('session_id').primaryKey(),
+  organisationId: organisationId().references(() => organisations.id),
+  memberId: uuid('member_id').notNull(),
+  lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).notNull().defaultNow(),
+  revokedAt: timestamp('revoked_at', { withTimezone: true }),
+}, (t) => [
+  index('portal_sessions_member').on(t.memberId),
+  foreignKey({
+    name: 'portal_sessions_member_same_org',
+    columns: [t.organisationId, t.memberId],
+    foreignColumns: [practiceMembers.organisationId, practiceMembers.id],
+  }),
 ]);
 
 // A photo of a handwritten lab form (server/core/captures.js). The bytes live

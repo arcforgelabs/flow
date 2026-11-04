@@ -50,7 +50,8 @@ function bootScript(defaultFamily) {
  * A full HTML page in the installation's design system. `body` is trusted
  * markup (escape any text with escapeHtml); `scripts` are module URLs.
  */
-export function renderPage({ title, body, defaultFamily, scripts = [], bodyClass = '', state = '' }) {
+export function renderPage({ title, body, defaultFamily, scripts = [], bodyClass = '', state = '', nonce = null }) {
+  const nonceAttr = nonce ? ` nonce="${escapeHtml(nonce)}"` : '';
   return `<!doctype html>
 <html lang="en" data-theme="${escapeHtml(defaultFamily)}" data-mode="light" data-default-theme="${escapeHtml(defaultFamily)}">
 <head>
@@ -61,8 +62,8 @@ export function renderPage({ title, body, defaultFamily, scripts = [], bodyClass
 <link rel="icon" href="/assets/ui/flow-mark.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/assets/themes.css">
 <link rel="stylesheet" href="/assets/ui/flow.css">
-<script>${bootScript(defaultFamily)}</script>
-${scripts.map((src) => `<script type="module" src="${escapeHtml(src)}"></script>`).join('\n')}
+<script${nonceAttr}>${bootScript(defaultFamily)}</script>
+${scripts.map((src) => `<script type="module" src="${escapeHtml(src)}"${nonceAttr}></script>`).join('\n')}
 </head>
 <body${bodyClass ? ` class="${escapeHtml(bodyClass)}"` : ''}${state ? ` data-state="${escapeHtml(state)}"` : ''}>
 ${body}

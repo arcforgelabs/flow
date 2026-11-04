@@ -2129,6 +2129,11 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
 .fx-contacts__wide { grid-column: 1 / -1; }
 .fx-contacts textarea.fx-input { min-height: 96px; padding: 8px 10px; resize: vertical; }
 .fx-contacts .fx-person { color: inherit; text-decoration: none; }
+.fx-track { display: flex; flex-wrap: wrap; gap: 8px 16px; margin: 0 0 16px; padding: 0; list-style: none; }
+.fx-track li { color: var(--t-dim); font-size: 13px; }
+.fx-track li[data-state="done"] { color: var(--t-text); }
+.fx-track li[data-state="current"] { color: var(--t-strong); font-weight: 600; }
+.fx-due[data-late="true"] { color: var(--t-accent); font-weight: 600; }
 @media (max-width: 639px) {
   .fx-contacts__grid { grid-template-columns: minmax(0, 1fr); }
   /* The note on its own line, then Link and Create side by side. */
@@ -2140,4 +2145,11 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
   .fx-offer .fx-btn,
   .fx-contacts :is(.fx-btn, .fx-input, .fx-select, .fx-check) { min-height: 44px; }
   .fx-contacts .fx-help { min-width: 44px; min-height: 44px; }
+}
+@media (max-width: 1023px) {
+  .fx-portal { --fx-control-h: 44px; }
+  .fx-portal :is(.fx-btn, .fx-input, .fx-select, .fx-check) { min-height: 44px; }
+  .fx-portal :is(.fx-auth a, .fx-crumbs a, .fx-nav a, .fx-cfm__more, #menu-toggle) {
+    display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px;
+  }
 }

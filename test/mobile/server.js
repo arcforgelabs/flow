@@ -9,8 +9,11 @@ import { createField } from '../../server/core/custom-fields.js';
 import { createLocalObjectStorage } from '../../server/core/storage.js';
 import { createContact, createOrganisation, createPriceItem } from '../../server/core/directory.js';
 import { createDraftInvoice, issueInvoice } from '../../server/core/invoices.js';
+import { observeJob } from '../../server/core/ledger.js';
 import { adapters as shippedAdapters } from '../../server/integrations/adapters.js';
 import { createRegistry } from '../../server/integrations/port.js';
+import { savePortalSettings } from '../../server/portal/settings.js';
+import { practiceMembers } from '../../server/db/schema.js';
 import { fakeClerk, TEST_PUBLISHABLE_KEY } from '../support/clerk.js';
 import { freshDatabase } from '../support/db.js';
 import { ENGINES, SIZES, THEMES } from './themes.js';
@@ -111,6 +114,60 @@ export async function startFlow({ port = 0, env = {} } = {}) {
     invoiceIds.push(invoice.id);
   }
 
+  // Practice portal jobs use their own case numbers, so they never appear on
+  // the lab board. One practice member signs in for every project; a second
+  // member gives the team page its row menu. Lab owners stay off this team.
+  let portalJobId = null;
+  for (let i = 0; i < 12; i += 1) {
+    const product = PRODUCTS[i % PRODUCTS.length];
+    const row = await observeJob(db, lab.id, {
+      sourceSystem: 'worksystem',
+      sourceJobRef: `PORTAL-${91000 + i}`,
+      caseRef: String(91000 + i),
+      contactId: contacts[0].id,
+      practitioner: PRACTITIONERS[i % PRACTITIONERS.length],
+      jobDate: day(10 + (i % 20)),
+      sourceStatus: STAGES[i % STAGES.length],
+      observedAt: new Date(Date.UTC(2026, 9, 20, 9, 0, i)).toISOString(),
+      lines: [{ description: product[1], unitAmountCents: product[2], itemCode: product[0] }],
+    });
+    if (!portalJobId) portalJobId = row.id;
+  }
+  await savePortalSettings(db, lab.id, {
+    statusNames: {
+      Received: 'Received',
+      Design: 'In work',
+      Milling: 'In work',
+      Finishing: 'In work',
+      'Quality check': 'Quality check',
+      Shipped: 'Sent',
+    },
+  }, { personId: firstOwner.id });
+  const portalUserId = clerk.addUser({ email: 'ada.portal@example.test' });
+  const portalToken = clerk.signIn(portalUserId, { expiresIn: 6 * 3600 });
+  await db.insert(practiceMembers).values([
+    {
+      organisationId: lab.id,
+      contactId: contacts[0].id,
+      email: 'ada.portal@example.test',
+      name: 'Ada Owner',
+      role: 'owner',
+      status: 'active',
+      clerkUserId: portalUserId,
+      practitionerName: 'Dr A. Example',
+      linkedAt: new Date('2026-10-20T09:00:00Z'),
+    },
+    {
+      organisationId: lab.id,
+      contactId: contacts[0].id,
+      email: 'sam.staff@example.test',
+      name: 'Sam Staff',
+      role: 'staff',
+      status: 'active',
+      practitionerName: null,
+      linkedAt: new Date('2026-10-20T09:00:01Z'),
+    },
+  ]);
   // Captures for the tray and the result sheet: one read and matched, one
   // the reader could not read. The photo is a drawn 1x1 PNG, not a form.
   const storage = createLocalObjectStorage({ root: mkdtempSync(path.join(tmpdir(), 'flow-mobile-')), signingKey: Buffer.alloc(32, 5) });
@@ -140,6 +197,8 @@ export async function startFlow({ port = 0, env = {} } = {}) {
   // the order of its case, or rows that tie would swap between runs.
   await handle.pool.query(`UPDATE invoices SET created_at = timestamptz '2026-10-20T09:00:00Z' - o.n * interval '1 minute'
     FROM (SELECT id, row_number() OVER (ORDER BY reference) AS n FROM invoices) o WHERE invoices.id = o.id`);
+  await handle.pool.query(`UPDATE practice_members SET created_at = timestamptz '2026-10-20T09:00:00Z' + o.n * interval '1 second'
+    FROM (SELECT id, row_number() OVER (ORDER BY email) AS n FROM practice_members) o WHERE practice_members.id = o.id`);
   await handle.pool.query(`UPDATE captures SET created_at = timestamptz '2026-10-20T09:00:00Z' - (CASE idempotency_key WHEN 'mobile-read' THEN 0 ELSE 1 END) * interval '1 minute'`);
 
   const integrations = createRegistry({ log: quiet, env });
@@ -154,6 +213,7 @@ export async function startFlow({ port = 0, env = {} } = {}) {
   const app = createApp({ database: handle, auth: { settings, clerk, personAuth }, integrations, log: quiet, storage,
     // Every project loads every page from one address at once.
     rateLimitPerMinute: 100_000, signInRateLimitPerMinute: 100_000, assetRateLimitPerMinute: 100_000,
+    portalApiLimit: 100_000, portalJoinLimit: 100_000, portalMemberLimit: 100_000,
   });
   const server = await new Promise((resolve) => { const s = app.listen(port, '127.0.0.1', () => resolve(s)); });
   return {
@@ -162,6 +222,8 @@ export async function startFlow({ port = 0, env = {} } = {}) {
     organisationId: lab.id,
     invoiceId: invoiceIds[1],
     issuedId,
+    portalJobId,
+    portalToken,
     async close() {
       await new Promise((resolve) => server.close(resolve));
       await integrations.stop?.();
@@ -177,5 +239,7 @@ export default async function globalSetup() {
   process.env.MOBILE_TOKENS = JSON.stringify(flow.tokens);
   process.env.MOBILE_INVOICE = flow.invoiceId;
   process.env.MOBILE_ISSUED = flow.issuedId;
+  process.env.MOBILE_PORTAL_JOB = flow.portalJobId;
+  process.env.MOBILE_PORTAL_TOKEN = flow.portalToken;
   return () => flow.close();
 }

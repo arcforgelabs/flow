@@ -86,6 +86,22 @@ export async function ensureClerkAccount(clerk, email) {
 
 // The Clerk user's primary email and whether Clerk has verified it. Flow
 // links people only by a verified primary address.
+// The Clerk Frontend API origin this installation's browser talks to.
+// A proxy URL wins; otherwise the host is in the publishable key.
+export function clerkFrontendOrigin({ publishableKey, proxyUrl } = {}) {
+  if (proxyUrl) {
+    try {
+      return new URL(proxyUrl).origin;
+    } catch {
+      return null;
+    }
+  }
+  const encoded = String(publishableKey ?? '').split('_')[2] ?? '';
+  if (!encoded) return null;
+  const host = Buffer.from(encoded, 'base64').toString('utf8').replace(/\$$/, '');
+  return host ? `https://${host}` : null;
+}
+
 export function primaryEmailOf(clerkUser) {
   const addresses = Array.isArray(clerkUser?.emailAddresses) ? clerkUser.emailAddresses : [];
   const primary = addresses.find((address) => address?.id === clerkUser?.primaryEmailAddressId) ?? null;

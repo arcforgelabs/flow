@@ -17,6 +17,7 @@ import { renderInvoicingSettings, sendModeSection } from '/assets/ui/invoicing-s
 import { renderPriceList } from '/assets/ui/price-list.js';
 import { renderPriceReconcile } from '/assets/ui/price-reconcile.js';
 import { renderCustomFields } from '/assets/ui/custom-fields.js';
+import { renderPortalSettings } from '/assets/ui/portal-settings.js';
 import { renderJobs } from '/assets/ui/jobs.js';
 import { renderReconcile } from '/assets/ui/reconcile.js';
 import { renderXeroImport } from '/assets/ui/xero-import.js';
@@ -162,6 +163,7 @@ const VIEWS = {
   'invoicing-settings': { label: 'Rules', icon: 'rules', render: (main, id) => renderInvoicingSettings(main, ui(), id) },
   automations: { label: 'Automations', icon: 'bolt', place: 'more', render: (main) => renderAutomations(main, ui()) },
   'custom-fields': { label: 'Custom fields', icon: 'fields', place: 'more', render: (main) => renderCustomFields(main, ui()) },
+  'portal-settings': { label: 'Portal', icon: 'flag', place: 'more', render: (main) => renderPortalSettings(main, ui()) },
   integrations: { label: 'Integrations', icon: 'plug', place: 'more', ownerOnly: true, render: (main, id) => (id ? renderIntegration(main, id) : renderIntegrations(main)) },
   people: { label: 'People', icon: 'people', place: 'account', ownerOnly: true, render: renderPeople },
   // Not in the sidebar: "Manage account" in the account menu opens the same

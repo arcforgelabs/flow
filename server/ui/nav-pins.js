@@ -13,6 +13,7 @@ export const NAV_PAGES = Object.freeze([
   'invoicing-settings',
   'automations',
   'custom-fields',
+  'portal-settings',
   'integrations',
 ]);
 
