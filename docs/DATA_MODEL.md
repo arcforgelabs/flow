@@ -66,7 +66,11 @@ the work that the matcher compares with invoice dates.
 and send modes (`docs/INVOICING_RULES.md`). `billing_obligations.ready_at`
 and `ready_by` record Flow's own "ready to invoice" stage: when, and which
 person or automation. `billing_obligations.source_status` is the work
-system's status. `automations` holds each organisation's choices for Flow's
+system's status; each move of it is a `status_changed` event.
+`billing_obligations.shipped_on` is the work system's shipped date. A work
+system without one (Seazona) gives the day Flow sees the job's status move
+to a shipped one, in `FLOW_TIME_ZONE` (default `Australia/Sydney`). A job Flow
+first sees already shipped has none. `automations` holds each organisation's choices for Flow's
 routines, such as marking a job ready from that status (`docs/AUTOMATIONS.md`).
 `invoice_rules` holds the checks each lab builds on a ready job: When, If,
 Then (`docs/INVOICE_RULES.md`).
