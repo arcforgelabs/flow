@@ -335,7 +335,7 @@ async function invoiceTabs(db, organisationId, system) {
   for (const id of views.nonChargeable.keys()) tabOf.set(id, 'non_chargeable');
   const ids = Object.fromEntries(TABS.map((t) => [t, []]));
   for (const [id, tab] of tabOf) ids[tab].push(id);
-  return { tabOf, ids, problems: views.problems, sending: views.sending };
+  return { tabOf, ids, problems: new Map([...views.problems, ...views.nonChargeable]), sending: views.sending };
 }
 
 function issuedTab(id, { views, stages, system }) {

@@ -1,0 +1,116 @@
+# Invoice completion: source acceptance
+
+Related: #441, #443. Synthetic data only. No live reads or writes.
+
+## Acceptance map
+
+| Requirement | State | Evidence or exact blocker |
+| --- | --- | --- |
+| #441 part 1: retain refusal match, issued notice and Xero link | Superseded by merged #444 | Existing send persistence and page regressions retained. |
+| #441 part 1: Send anyway | Blocked decision | Samuel must decide whether this optional bypass is wanted. Not added. |
+| #441 parts 2–3: shared draft / issued / list presenter | Complete source | invoiceProblems owns full reasons, rule names, matched links and next-step text. Includes Non-chargeable list reasons. |
+| #441 all-code presentation guard | Complete focused proof | 28 explicit public codes, both page and compact list modes; unknown codes retain reason and fallback next step. |
+| #441 three synthetic duplicate cases at 390 / 1280 | Blocked runtime | Existing isolated PostgreSQL runner fails during gosu startup. No real-app screenshots claimed. |
+| #443 step 2 Link to Xero / retained Duplicate | Blocked proof prerequisite | Needs a working disposable PostgreSQL lane before implementing and validating new terminal state, atomic job reassignment, immutable audit and owner/admin transport. Not implemented or claimed complete. |
+| #443 step 2 Delete | Blocked decision | Decide whether Delete means a retained terminal state and whether the job becomes draftable again. No hard delete of issued records. |
+| #443 step 2 restrict Void | Blocked contract | Retained Duplicate action must land before removing the only existing local cancellation route. No change yet. |
+| #443 step 3 optional bypass | Blocked decision | Send anyway: yes or no. |
+| #443 step 4 app-wide hold audit | Partial | Inventory below. Invoice fixes implemented; remaining job-match presentation gaps explicitly recorded. |
+| #443 step 5 historical link root cause | Confirmed synthetic source defect and repaired | Amount gate discarded same-reference, same-product invoices with an extra fee. Matcher now keeps these as ambiguous suggestions; never auto-links or records no invoice from that evidence. Red/green owner regression. Production cause not asserted without live evidence. |
+| #443 step 6 shipping | Blocked decision | Should Flow add a fee? Amount, tax, scope and timing need Samuel's decision. No fee added. |
+| #443 step 7 five live records | Blocked authority | No source data read. Needs explicit per-record cleanup approval; separate from source implementation. |
+| #443 step 8 shipped data checks | Blocked authority | Current task forbids source-data reads. No private records inspected. |
+| #443 step 9 shipped date/events/filter | Superseded by merged #447 | Preserved unchanged. |
+| #443 item 10 practitioner rule display | Complete invoice source | Rule name, full note, source-job link and rule settings link. Failing-before/passing-after page regression. |
+| #443 item 10 placeholder semantics | Blocked decision | Treat Not Listed as empty, add a lab rule, or leave source correction? No invented rule. |
+| #446 tracking | Separate owner | No tracking implementation changed. |
+
+## Hold/refusal audit
+
+Page and list refer to invoice views unless Jobs is named. Phone uses the same presenter and retains full page reasons. “Not applicable” means the check has no matched record.
+
+| Code / owner | Surfaces | Rule/check and why | Matched record | Next step / gap |
+| --- | --- | --- | --- | --- |
+| no_lines | list/page/phone | Yes | Not applicable | Edit lines |
+| no_amount | list/page/phone | Yes | Not applicable | Correct amount |
+| line_no_item | list/page/phone | Yes, line identified | Not applicable | Choose item |
+| rule (pending) | list/page/phone | Rule name and entire note | Source job + Rules | Fix source / check rule |
+| rule (skip existing draft) | list/page/phone | Rule name and entire note | Source job + Rules | Check rule; existing note still says Void |
+| non_chargeable | list/page/phone | Rule name and entire reason | Source job + Rules | Never sends; check rule if wrong |
+| job_review | list/page/phone | Reason; changed-job banner retains comparison | Source job | Review/accept through existing banner |
+| send_failed | list/page/phone | Full stored reason | Optional match retained | Check reason then retry |
+| xero_contact_missing | list/page/phone | Yes | Contact link/create controls on draft | Link existing client; optional Create remains existing gated action |
+| xero_contact_ambiguous | list/page/phone | Yes | Contact selector on draft | Choose correct contact |
+| xero_item_missing | list/page/phone | Yes, item named | Not applicable | Correct item and sync |
+| xero_not_synced | preview/page | Yes | Not applicable | Sync |
+| xero_sync_stale | preview/page | Yes, date | Not applicable | Sync |
+| invoice_void | preview/page | Yes | Own invoice | Cannot send terminal invoice |
+| invoice_not_issued | preview/page | Yes | Own invoice | Issue first |
+| xero_contact_no_email | preview/page | Yes, nonblocking | Client context | Correct email and sync |
+| xero_preview_failed | list/page/phone | Full error | Optional match | Check reason |
+| xero_same_reference_different_amount | list/page/phone | Yes; misleading Void instruction removed | Open in Xero | Compare; explicit Duplicate action still blocked above |
+| xero_earlier_version_in_xero | list/page/phone | Yes | Open in Xero | Resolve earlier version there |
+| xero_earlier_version_unresolved | list/page/phone | Yes | No id when uncertain | Settle earlier attempt first |
+| xero_tracking_missing | list/page/phone | Yes | Tracking settings link | Shared presenter owns /integrations/xero#tracking; separate #446 settings owner |
+| xero_validation_failed | list/page/phone | Full reason | Optional match | Correct reported field |
+| xero_reconnect_needed | list/page/phone | Yes | Not applicable | Integrations |
+| xero_token_failed | list/page/phone | Yes | Not applicable | Integrations |
+| xero_unreachable | list/page/phone | Yes | Not applicable | Retry after provider recovery |
+| xero_writes_off | list/page/phone | Yes | Not applicable | Owner checks integration |
+| xero_push_in_progress | list/page/phone | Yes | Optional match | Check before retry |
+| xero_outcome_unknown | list/page/phone | Yes | Optional match | Check before retry |
+| xero_push_failed and unknown provider errors | list/page/phone | Full reason retained | Optional match | Generic actionable fallback; no silent disappearance |
+| accounting_not_connected | Send API/toast | Yes | Not applicable | Connect Integrations |
+| accounting_writes_off | Send API/toast | Yes | Not applicable | Owner checks writes |
+| xero_rate_limited | queued list + existing rate state | Reason in integration | Not applicable | Worker retries; no forced bypass |
+| Xero out-of-sync finding | issued page/phone, list tag | Difference table and message | Existing Open in Xero | Existing Mark resolved / recheck |
+| job not ready / ready statuses | Jobs page/list/phone | Existing waitingFor + rule reason | Source job | Mark ready / correct source status |
+| job held / review / changed / deleted / status back | Jobs page/phone | Existing reasonFix and change banner | Source job / own invoice | Release / review / accept |
+| no customer / unmapped price / stale work report | Jobs page/phone | Existing reasonFix | Source/price/settings as applicable | Link/map/sync |
+| ambiguous accounting evidence | Jobs page/phone | Cautious possible-invoice wording repaired | Reconcile opens Flow-only candidates | Remaining source gap: expose accounting suggestions in a dedicated comparison flow; do not imply absence. |
+| conflict / accounting voided or deleted | Jobs page/phone | Existing reasonFix | Source / own invoice; accounting candidate link not direct | Remaining source gap: exact accounting comparison link. |
+| automation off / wait / skip / non-chargeable | Automations/Rules + Jobs | Existing on/off and When/If/Then, named ruleReasons | Rules/source | Enable automation or fix named rule condition |
+
+## Root cause boundary
+
+The existing matcher requires an amount match or a prior link. An invoice with the same client, reference and all job products plus a fee was removed before scoring. The fresh mirror then allowed “not_found”, which can permit another draft and skip the live duplicate check. The repair retains that evidence as ambiguous. It adds no shipping assumption and never uses a reference alone as an exact link. Candidate search keeps the existing client/date/rejection/taken-amount guards. Old checked jobs are re-evaluated on the next existing source or mirror change; no automatic production backfill runs.
+
+## Source proof and runtime limits
+
+- Baseline dcc1ebddeae86f7bbb290bab41fb8cdc14c006c8 was clean on the assigned branch.
+- Existing issued-Xero-link regression passed before edits.
+- New lab-rule page regression failed before repair: Rule: Bare name was absent. It passes after repair.
+- New matcher regression failed before repair: none instead of unsure. It passes after repair, with mismatched reference/product negative controls.
+- Ambiguous job explanation regression failed before repair; after repair it warns that an invoice may exist.
+- Focused command: node --test test/ui-files.test.js test/design-system.test.js test/invoice-issued-problem.test.js test/invoice-page.test.js test/invoice-list.test.js test/job-board.test.js test/pipeline.test.js
+- Focused result: 31 tests passed, zero failures (saved final run in /tmp/flow-commit-proof.log). Database suites were not executed because FLOW_TEST_DATABASE_URL is unset; Node's aggregate skipped count does not count skipped suites here.
+- npm run design-system: passed; 111 generated files. No design publication performed.
+- Full npm test was attempted: 479 passed, 26 failed, 4 skipped tests, 91 suites, 194.26 seconds. Most failures are loopback HTTP fetch socket closures; two dialog/browser checks also fail (locked Playwright Chromium build 1194 is absent) in this environment. Two in-scope failures (phone-rule generation and served-module registry) were repaired and focused checks passed afterward. Full rerun pending.
+- Existing X Forge runner was inspected: PostgreSQL 16, task label, loopback publish, tmpfs data and per-lane lock. Task-owned invoice-20261104 and invoice441 containers failed at gosu startup before database readiness. One diagnostic init reached a Unix socket but the postmaster could not accept process signals; no host fix or guard bypass applied. Both task containers were stopped and verified absent. No unrelated database touched.
+- No live-account sign-in attempted. agent-test-access reports no browser-worker profile and the native GitHub account is Samuel, not RoboForgeBot. No GitHub write performed.
+- Real-app phone/desktop proof, database lifecycle/retention proof and source-blind independent validation remain blocked. No screenshot or complete workflow claim is made.
+
+### Final rerun
+
+Full npm test rerun: 481 passed, 25 failed, 4 skipped tests, 91 suites, 200.82s. One failure was the new Markdown handoff files entering docs navigation; those handoff files were changed to .txt and the docs navigation check passed afterward. Other reported failures remain loopback socket closures and absent locked Chromium build. No security/test skip changes made. Focused sibling command (invoice-rules, xero-fit, invoice-sending): 16 passed; database suites unexecuted.
+
+Parent-authorised task-only direct-postgres-user container was also tried with the same label, loopback binding, per-lane lock and 1GB tmpfs, plus 1GB memory/one CPU. Initdb and the temporary Unix socket succeeded, but pg_ctl could not signal its own postmaster (Permission denied), so startup exited. The failed task container was removed and verified absent. No tracking446 container, shared runner, host configuration or security profile was changed.
+
+Tracking integration note: invoiceProblems owns the xero_tracking_missing link to /integrations/xero#tracking. Parent must drop tracking branch's temporary hardcoded problemRow link during integration, while retaining its read-only accountingFacts.lineTracking display. Shared conflicts: server/ui/invoicing.js, server/api/invoicing.js, server/ui/routes.js, scripts/design-system/entry.js and generated server/ui/mobile.js may need integration review.
+
+Simplification: removed three competing problem renderers. Reused Notice, source-job metadata, reference renderer and existing matcher suggestion lifecycle. No new state/table/dependency/production callback seam. Independent review belongs to parent; this partial slice must not close #441/#443 or be described as the complete Duplicate workflow.
+
+## Saved-source recovery checkpoint — 2026-11-04
+
+Recovered in place from dcc1ebddeae86f7bbb290bab41fb8cdc14c006c8 on
+arc/flow-invoice-completion-20261104, canonical origin
+https://github.com/arcforgelabs/flow.git. No source edits during recovery.
+The saved /tmp/flow-commit-proof.log reports 31 passing tests, zero failures;
+two database suites explicitly did not run because FLOW_TEST_DATABASE_URL is unset.
+Recovery reran only node --test test/invoice-issued-problem.test.js test/pipeline.test.js:
+8 passed, zero failures; the same two database suites did not run. node --check
+passed for all changed JavaScript files and the new invoice-problems.js.
+git diff --check passed. No full suite, browser, database setup, publication,
+release or deployment was attempted during recovery. Parent owns independent
+review and existing GitHub PostgreSQL/mobile lanes. This checkpoint does not
+implement Link/Duplicate and does not close #441 or #443.

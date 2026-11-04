@@ -7,6 +7,7 @@
 // (server/api/invoicing.js). app.js passes in its shared pieces as `ui`.
 import { alertStrip } from '/assets/ui/alerts.js';
 import { bulkBar } from '/assets/ui/bulk-bar.js';
+import { invoiceProblems } from '/assets/ui/invoice-problems.js';
 import { draftNote, sendModeNote } from '/assets/ui/invoice-notes.js';
 import { caseNumber } from '/assets/ui/job-board.js';
 import { jobChangeReview } from '/assets/ui/job-change.js';
@@ -591,7 +592,7 @@ export async function renderInvoiceList(main, ui) {
     saveNav({ tab: state.status, q: state.q, offset: state.offset, ids: body.invoices.map((i) => i.id) });
     const open = (href) => { saveNav({ ...readNav(), scrollY: window.scrollY, frameY: frame.body.scrollTop }); go(href); };
     const link = (href, label) => h('a', { class: 'fx-strong', href, onclick: (event) => { event.preventDefault(); event.stopPropagation(); open(href); } }, label);
-    const showProblem = state.status === 'pending';
+    const showProblem = ['pending', 'non_chargeable'].includes(state.status);
     const created = ['pending', 'ready', 'non_chargeable'].includes(state.status);
     // An invoice gets its number when it is sent or issued, so only the
     // Numbered tabs show a Number column; the others open on Client.
@@ -634,11 +635,7 @@ export async function renderInvoiceList(main, ui) {
       statusCells.set(invoice.id, cell);
       return cell;
     };
-    const problemCell = (invoice) => {
-      const first = invoice.problems?.[0];
-      return h('span', { class: 'fx-problem', title: invoice.problems.map((p) => p.message).join(' ') },
-        first?.short ?? first?.message ?? '—', invoice.problems.length > 1 ? h('span', { class: 'fx-dim' }, ` +${invoice.problems.length - 1}`) : null);
-    };
+    const problemCell = (invoice) => invoiceProblems(ui, invoice, { compact: true });
     const href = (invoice) => `/invoices/${invoice.id}`;
     const ALL = {
       // The client is the row's link: on a phone it is the title, with a 44px hit area.
@@ -1224,14 +1221,10 @@ function draftView(invoice, ui, context, redraw) {
   // Pending. A changed job is fixed at its source or accepted here.
   const jobChange = invoice?.jobChange ?? null;
   // The job changed after the invoice was made: its own banner shows what
-  // changed. Other problems stay one line.
+  // changed. Other problems retain their reason and next step.
   const otherProblems = (invoice?.problems ?? []).filter((p) => !(jobChange && p.code === 'job_review'));
   const offer = otherProblems.find((p) => ['xero_contact_missing', 'xero_contact_ambiguous'].includes(p.code) && (p.offerLink || p.offerCreate));
-  // A phone shows each problem's short name ("Client not in Xero") on one line.
-  const shorts = otherProblems.every((p) => p.short) ? [...new Set(otherProblems.map((p) => p.short))].join(', ') : null;
-  const problemNotice = otherProblems.length
-    ? notice([...new Set(otherProblems.map((p) => brief(p.message)))].join(' '), 'danger', 'Problem.', { short: shorts })
-    : null;
+  const problemNotice = invoiceProblems(ui, invoice ?? {}, { problems: otherProblems });
   const organisationId = context.organisations[0]?.id;
   // Link or Create the Xero client, then the invoice is checked again.
   const clientActions = offer && context.canIssue && invoice?.contact?.id && organisationId
@@ -1274,7 +1267,7 @@ function draftView(invoice, ui, context, redraw) {
     chrome.pager,
     header,
     draftNote(to, invoice) ? ui.notice(draftNote(to, invoice), 'warn') : null,
-    nonChargeable ? ui.notice(brief(invoice.nonChargeable?.[0]?.message ?? 'Non-chargeable.')) : null,
+    nonChargeable ? invoiceProblems(ui, invoice, { problems: invoice.nonChargeable ?? [] }) : null,
     ...problems,
     h('div', { class: 'fx-invoice__grid' },
       h('div', { class: 'fx-invoice__main' },
@@ -1423,23 +1416,7 @@ function issuedView(invoice, ui, context, redraw) {
     ? h('button', { class: 'fx-btn', type: 'button', onclick: () => act('revise', `${invoice.number} is a draft again.`) }, 'Revise') : null;
   const preview = previewButton(ui, invoice.id);
   actionBar = h('div', { class: 'fx-ph__actions' }, [voidButton, reviseButton, preview, send].filter(Boolean));
-  // The same problem notice as a draft. A matched Xero invoice gets the
-  // same Open in Xero link as the Xero card (go.xero.com, reconcile.js).
-  const found = invoice.problems ?? [];
-  const shorts = found.length && found.every((p) => p.short) ? [...new Set(found.map((p) => p.short))].join(', ') : null;
-  const problemNotice = found.length
-    ? ui.notice([...new Set(found.map((p) => brief(p.message)))].join(' '), 'danger', 'Problem.', { short: shorts })
-    : null;
-  const matched = found.find((p) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(p.xero?.invoiceId ?? ''));
-  const openXero = matched ? h('a', {
-    class: 'fx-btn fx-btn--sm fx-btn--ghost',
-    href: `https://go.xero.com/AccountsReceivable/View.aspx?InvoiceID=${encodeURIComponent(matched.xero.invoiceId)}`,
-    target: '_blank',
-    rel: 'noopener',
-  }, 'Open in Xero') : null;
-  const trackingLink = found.some((p) => p.code === 'xero_tracking_missing')
-    ? h('a', { class: 'fx-btn fx-btn--sm', href: '/integrations/xero#tracking' }, 'Tracking') : null;
-  const problemRow = problemNotice ? h('div', { class: 'fx-offer' }, problemNotice, openXero, trackingLink) : null;
+  const problemRow = invoiceProblems(ui, invoice);
   const header = h('header', { class: 'fx-ph' },
     h('div', { class: 'fx-ph__text' },
       h('h1', { class: 'fx-title' }, invoice.number),

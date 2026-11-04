@@ -280,3 +280,11 @@ The job and its draft hold one fact: the job is in review. Flow stores it once
 updates that item). The panel shows it once: the draft's copy of the hold
 (`job_review`) is left out, as on the invoice page. Accept change, a recheck
 that matches, or a fix in the work system clears the hold and closes the item.
+
+## Hold explanations
+
+Draft pages, issued pages and the Pending list use one problem presenter.
+It names a lab rule, retains the full reason and next step, and links the
+source job and matched Xero invoice when those records are known. Phone
+pages keep the full explanation. Non-chargeable invoices show their rule
+on the list too. A duplicate warning asks for comparison, not a blind Void.

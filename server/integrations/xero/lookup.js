@@ -89,6 +89,7 @@ function invoiceRow(r) {
   return {
     id: r.xero_invoice_id,
     number: r.invoice_number,
+    reference: r.reference,
     contactId: r.xero_contact_id,
     status: r.status,
     // The ledger's accounting state for this invoice.

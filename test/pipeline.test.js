@@ -307,3 +307,14 @@ describe('the Xero copy the matcher reads', { skip: skipWithoutDatabase }, () =>
     await refreshStaleCatalogues(handle.db, xero.runtime, { log: { info() {}, error: (line) => assert.fail(line) } });
   });
 });
+
+test('same reference and all job products at another total require review, never no invoice', () => {
+  const job = { totalCents: 22000, subtotalCents: 22000, jobDate: '2026-10-16', reference: 'Synthetic practitioner - Case A', lines: [{ itemCode: 'CROWN' }] };
+  const historical = { id: 'historical', reference: job.reference, totalCents: 23500, issuedOn: '2026-10-16', itemCodes: ['CROWN', 'FREIGHT'], state: 'authorised' };
+  const found = rankCandidates(job, [historical]);
+  assert.equal(found.decision, 'unsure');
+  assert.equal(found.ranked[0].invoice.id, historical.id);
+  assert.equal(rankCandidates(job, [{ ...historical, totalCents: 22000 }]).decision, 'suggested');
+  assert.equal(rankCandidates(job, [{ ...historical, reference: 'Another case' }]).decision, 'none');
+  assert.equal(rankCandidates(job, [{ ...historical, itemCodes: ['OTHER'] }]).decision, 'none');
+});

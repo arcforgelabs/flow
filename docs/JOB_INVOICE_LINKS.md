@@ -77,8 +77,10 @@ order's due date, then its order date.
 | `not_live` | -3 | The invoice is voided or deleted |
 | `closer_job` | -4 | Another unlinked job of the customer, at an amount that fits, is closer in date |
 
-A candidate counts only with a total signal or `prior_link`. An invoice for
-the same customer at another amount is other work.
+A candidate counts with a total signal or `prior_link`. An invoice for
+the same customer at another amount can also need review: when its Reference
+and every job product match, Flow keeps it as an ambiguous suggestion. It
+never links automatically from that evidence, and never calls it no invoice.
 
 | Result | Rule | The job |
 | --- | --- | --- |
@@ -101,7 +103,7 @@ invoice whose whole total is taken is not a candidate for another job.
 ### A person settles it
 
 A job with no invoice whose evidence is `ambiguous` shows a warning icon and
-"Needs invoice" on its panel, one line, "This job has no invoice.", and two
+"Needs invoice" on its panel, one line, "An invoice may already bill this job.", and two
 buttons.
 
 | Button | What Flow does |

@@ -72,7 +72,7 @@ test('each problem is a short label, what is wrong, and what to do', () => {
 test('a job fix points to Flow\'s invoice or the work system, never an accounting system', () => {
   const review = (reason) => fixes({ view: 'review_required', reasons: [reason], waitingFor: [], invoiceProblems: [] })[0];
   const unclear = review('the accounting evidence is ambiguous');
-  assert.deepEqual(unclear, { label: 'No invoice', text: 'This job has no invoice.', todo: null, go: 'choose' }, 'one line; the buttons are the instruction');
+  assert.deepEqual(unclear, { label: 'Possible invoice', text: 'An invoice may already bill this job.', todo: 'Compare the possible invoice before making another one.', go: 'choose' }, 'ambiguous evidence never claims that no invoice exists');
   assert.equal(review('the accounting evidence is conflict').go, 'work');
   assert.equal(review('invoice INV-1 was voided').go, 'invoice');
   assert.equal(review('the job changed after its invoice was made').go, 'review', 'the job panel\'s Review sidecar');

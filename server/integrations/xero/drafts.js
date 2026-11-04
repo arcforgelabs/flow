@@ -430,8 +430,8 @@ export async function checkDrafts(db, runtime, { organisationId, invoiceIds }) {
     for (const preview of invoices) {
       found.set(preview.invoiceId, preview.problems
         .filter((p) => p.blocking !== false && p.code !== 'invoice_not_issued')
-        .map(({ code, message, short, offerCreate, offerLink }) => ({
-          code, message, ...(short ? { short } : {}), ...(offerCreate ? { offerCreate: true } : {}), ...(offerLink ? { offerLink: true } : {}),
+        .map(({ code, message, short, offerCreate, offerLink, xero }) => ({
+          code, message, ...(short ? { short } : {}), ...(offerCreate ? { offerCreate: true } : {}), ...(offerLink ? { offerLink: true } : {}), ...(xero ? { xero } : {}),
         })));
     }
   }
@@ -538,7 +538,7 @@ async function pushOne(db, runtime, client, organisationId, invoiceId, { pushedB
     });
     if (recent) {
       throw xeroError('xero_same_reference_different_amount',
-        `Xero ${recent.InvoiceNumber || 'invoice'} has the same client and reference at ${(cents(recent.Total) / 100).toFixed(2)}. Nothing was sent. Void the extra one in Xero or in Flow.`,
+        `Xero ${recent.InvoiceNumber || 'invoice'} has the same client and reference at ${(cents(recent.Total) / 100).toFixed(2)}. Nothing was sent. Compare the matched invoice before taking another action.`,
         { status: 409, details: { xero: shownXero(recent) } });
     }
   }
