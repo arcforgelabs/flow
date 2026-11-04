@@ -18,7 +18,7 @@ import { resolveObjectStorage } from './core/storage.js';
 import { createTracing, traceQueries } from './core/tracing.js';
 import { createPipelineWorker } from './core/pipeline.js';
 import { createReconcileWorker } from './core/reconcile.js';
-import { backgroundJobsOn } from './core/host.js';
+import { backgroundJobsOn, resolveTrustProxy } from './core/host.js';
 import { createSendWorker } from './core/sending.js';
 import { resolveSecretsKey } from './core/secrets.js';
 import { adapters as shippedAdapters } from './integrations/adapters.js';
@@ -31,8 +31,10 @@ const port = Number(process.env.FLOW_PORT || process.env.PORT || 19300);
 
 // Settings first: a malformed setting stops boot before anything runs.
 let settings;
+let trustProxy;
 try {
   settings = resolveSignInSettings();
+  trustProxy = resolveTrustProxy();
 } catch (error) {
   console.error(`[auth] ${error.message}`);
   process.exit(1);
@@ -194,9 +196,6 @@ if (settings.mode === 'clerk') {
 } else {
   console.log('[auth] sign-in off (FLOW_AUTH unset): person routes answer 503');
 }
-
-// Replit puts one proxy in front of the app.
-const trustProxy = process.env.REPL_ID || process.env.REPLIT_DEPLOYMENT ? 1 : false;
 
 const updates = createUpdateChecker();
 

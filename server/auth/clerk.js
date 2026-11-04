@@ -148,8 +148,10 @@ export function createClerkProxy({ proxyPath, publishableKey, secretKey, proxy }
         if (Array.isArray(value)) value.forEach((item) => headers.append(name, item));
         else headers.set(name, value);
       }
-      // The client address as Express resolved it, so a client cannot hand
-      // Clerk a forged X-Forwarded-For.
+      // Express owns the client address. Clerk's proxy prefers these other
+      // headers over X-Forwarded-For, so remove them to prevent an override.
+      headers.delete('cf-connecting-ip');
+      headers.delete('x-real-ip');
       headers.delete('x-forwarded-for');
       if (req.ip) headers.set('x-forwarded-for', req.ip);
       const hasBody = req.method !== 'GET' && req.method !== 'HEAD';

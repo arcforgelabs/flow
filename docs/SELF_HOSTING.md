@@ -204,6 +204,44 @@ The first owner comes from `FLOW_FIRST_OWNER_EMAIL`. At boot, while the
 installation has no owner, Flow invites that address as owner. Once an owner
 exists, the setting does nothing.
 
+### Client addresses behind a proxy
+
+For a container or Node installation behind a reverse proxy, set
+`FLOW_TRUST_PROXY_HOPS` to the exact number of trusted proxy hops before Flow.
+For example, one load balancer needs `FLOW_TRUST_PROXY_HOPS=1`.
+Replit defaults to one hop. Other hosts default to no trusted proxy.
+An explicit `0` trusts no proxy, including on Replit. An invalid value stops
+startup.
+
+Restrict access to Flow to the configured proxy chain. Every request must
+pass through the same number of trusted hops. Each proxy must replace or
+append the actual peer address in `X-Forwarded-For`. A direct path or a
+shorter path can let a client forge an address within the trusted hops.
+See [Express's proxy guide](https://expressjs.com/en/guide/behind-proxies/).
+
+Flow uses Express's resolved client address for rate limits and the Clerk
+proxy. It strips inbound `CF-Connecting-IP`, `X-Real-IP` and
+`X-Forwarded-For`, then sets `X-Forwarded-For` to that address. Clerk can use
+it for new-device sign-in alerts. A network address gives an approximate
+location; a virtual private network or mobile network can show another city.
+
+### Sign-in alert time
+
+Clerk sends and formats new-device alert emails. Flow has no setting for
+their timezone. Clerk's browser library supplies the browser timezone for
+sign-in attempts. Flow passes that request body through without a change.
+See [Clerk's sign-in reference](https://clerk.com/docs/reference/objects/sign-in-future).
+This does not document how the email formats its time.
+Changing the Flow server's timezone does not change these emails.
+For your own Clerk application, review **Emails > Sign in from new
+device** in the [Clerk Dashboard](https://dashboard.clerk.com/).
+[Clerk's alert guide](https://clerk.com/docs/guides/secure/best-practices/unauthorized-sign-in)
+describes template changes, but does not document an email timezone control.
+Confirm the available template variables with Clerk before changing the time
+format. Replit's managed Clerk has no dashboard; use the host's support route
+if the time format needs a change. Flow does not substitute its server's
+local time for the sign-in time.
+
 ### Settings
 
 Keep these in the installation's secret store, never in a repository.
@@ -214,6 +252,7 @@ Keep these in the installation's secret store, never in a repository.
 | `CLERK_SECRET_KEY` | secret | Set by the Clerk integration (`sk_test_…` or `sk_live_…`). Server only; never logged. |
 | `CLERK_PUBLISHABLE_KEY` | secret | Set by the Clerk integration (`pk_test_…` or `pk_live_…`; `VITE_CLERK_PUBLISHABLE_KEY` also works). Flow gives it to the browser at runtime from `GET /api/auth/config`. |
 | `CLERK_PROXY_URL` | set by Replit | On a published Replit app. Flow serves Clerk's Frontend API on that path. |
+| `FLOW_TRUST_PROXY_HOPS` | configuration | Exact number of trusted reverse proxy hops. Unset: `1` on Replit, no trusted proxy elsewhere. `0` trusts no proxy. Used for client addresses in Clerk alerts and rate limits. See "Client addresses behind a proxy". |
 | `FLOW_PUBLIC_SIGN_UP` | configuration | `on` lets strangers ask for access. Unset or `off`: invitation only. |
 | `FLOW_SIGN_UP_DOMAINS` | configuration | Comma-separated email domains whose people may ask for access without an invitation (they wait for an owner's approval). Everyone else needs an invitation. Unset: none. |
 | `FLOW_FIRST_OWNER_EMAIL` | configuration | The first owner's email. Used only while there is no owner. |
