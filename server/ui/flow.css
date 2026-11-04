@@ -1825,7 +1825,6 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
 @media (max-width: 639px) {
   .fx-rule__condition { grid-template-columns: minmax(0, 1fr); }
 }
-}
 .fx-multi { position: relative; width: 220px; max-width: 100%; }
 .fx-multi__summary { display: flex; align-items: center; list-style: none; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width: 639px) { .fx-multi { width: 150px; } }
