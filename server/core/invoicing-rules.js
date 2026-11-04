@@ -300,7 +300,7 @@ export async function autoDraftJobs(db, organisationId, { accounting = null, wor
     // have its invoice.
     if (accounting) {
       if (!accountingRead) {
-        accountingRead = await readAccountingFirst(db, organisationId, { accounting, now });
+        accountingRead = await readAccountingFirst(db, organisationId, { accounting, work, now });
         // The summary says when the copy read or could not read.
         if (accountingRead.outcome !== 'fresh') result.accountingRead = accountingRead.outcome;
       }

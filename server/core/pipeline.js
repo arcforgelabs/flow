@@ -5,6 +5,7 @@ import {
 } from '../db/schema.js';
 import { FlowError } from './errors.js';
 import { listAutomations, runAutomations } from './automations.js';
+import { jobReference } from './references.js';
 import { readInvoicingSettings } from './invoicing-rules.js';
 import { observeJob, observeWithdrawn, recordAccountingEvidence, setHold } from './ledger.js';
 import { loadMappingContext, mapLines } from './line-mapping.js';
@@ -307,6 +308,10 @@ export function scoreCandidate(obligation, invoice, { prior = null, rivals = [] 
     if (shared === codes.size && shared === theirs.size) signals.push({ signal: 'items_same', weight: 3 });
     else if (shared) signals.push({ signal: 'items_overlap', weight: 1 });
   }
+  // Another total can include a fee. Same reference and every job product
+  // is evidence to review, not proof that no invoice exists or an exact link.
+  if (obligation.reference && invoice.reference === obligation.reference && codes.size
+    && [...codes].every((code) => theirs.has(code))) signals.push({ signal: 'reference_items', weight: 1 });
   if (obligation.jobDate && invoice.issuedOn) {
     const apart = daysApart(obligation.jobDate, invoice.issuedOn);
     if (apart <= 3) signals.push({ signal: 'date_close', weight: 2 });
@@ -323,9 +328,9 @@ export function scoreCandidate(obligation, invoice, { prior = null, rivals = [] 
   return { score: signals.reduce((sum, s) => sum + s.weight, 0), signals };
 }
 
-// A candidate counts only when its total or an earlier link ties it to the
-// job; an invoice for the same customer at another amount is other work.
-const relevant = (scored) => scored.signals.some((s) => ['total', 'total_gst', 'prior_link'].includes(s.signal));
+// A total, an earlier link, or the same reference with every job product
+// makes a candidate. Different totals never establish an exact link.
+const relevant = (scored) => scored.signals.some((s) => ['total', 'total_gst', 'prior_link', 'reference_items'].includes(s.signal));
 
 // Ranks the candidates and decides: `suggested` (one clear leader), `unsure`
 // (several, or a weak one) or `none`.
@@ -441,7 +446,7 @@ async function holdIfStale(db, organisationId, obligation, { now, staleDays }) {
 
 // Matches every job that changed, or whose candidates may have changed, since
 // it was last checked. Answers counts by outcome.
-export async function matchJobs(db, organisationId, { accounting, now = new Date(), staleDays = STALE_DAYS, limit = MATCH_BATCH }) {
+export async function matchJobs(db, organisationId, { accounting, work = null, now = new Date(), staleDays = STALE_DAYS, limit = MATCH_BATCH }) {
   const mirror = await accounting.capabilities.findInvoices({ organisationId });
   const result = { checked: 0, linked: 0, followed: 0, suggested: 0, unsure: 0, notFound: 0, noContact: 0, held: 0, waiting: 0 };
   if (!mirror.complete) return { ...result, skipped: 'the accounting copy is still importing' };
@@ -485,7 +490,9 @@ export async function matchJobs(db, organisationId, { accounting, now = new Date
   const rivalsOf = new Map();
   for (const o of open) rivalsOf.set(o.contactId, [...(rivalsOf.get(o.contactId) ?? []), o]);
 
+  const { referenceTemplate } = await readInvoicingSettings(db, organisationId);
   for (const obligation of due) {
+    obligation.reference = await jobReference(db, organisationId, obligation, { template: referenceTemplate, work, read: false });
     result.checked += 1;
     const { evidence, ranked, decision, reason } = await matchJob(db, organisationId, obligation, {
       accounting,
@@ -557,7 +564,7 @@ export async function runPipelineOnce(db, integrations, { now = new Date() } = {
       });
     }
     const settings = await readInvoicingSettings(db, organisationId);
-    summary.matching = await matchJobs(db, organisationId, { accounting, now, staleDays: settings.staleDays });
+    summary.matching = await matchJobs(db, organisationId, { accounting, work, now, staleDays: settings.staleDays });
   }
   if (work || accounting) summary.automations = await runAutomations(db, organisationId, { accounting: accounting ?? null, work: work ?? null, now });
   return summary;

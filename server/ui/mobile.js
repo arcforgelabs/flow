@@ -307,6 +307,24 @@ export const RULES = {
     "screens": [],
     "card": "IconPicker"
   },
+  "invoiceProblems": {
+    "component": "invoiceProblems",
+    "direction": "note",
+    "phone": {
+      "layout": "note",
+      "detail": "full page reasons and wrapping links; compact check clips in its column, full text on hover and accessible name"
+    },
+    "tablet": {
+      "layout": "note"
+    },
+    "desk": {
+      "layout": "note"
+    },
+    "touch": 44,
+    "pageOverflow": "none",
+    "screens": [],
+    "card": "InvoiceProblems"
+  },
   "jobChangeBanner": {
     "component": "jobChangeBanner",
     "direction": "banner",

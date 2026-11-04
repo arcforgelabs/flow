@@ -104,7 +104,7 @@ function reasonFix(reason) {
   // The matcher found invoices that may be this job's, but no exact link.
   // A person makes an invoice or links one (jobs.js draws the two buttons).
   if (/^the accounting evidence is ambiguous/.test(reason)) {
-    return { label: 'No invoice', text: 'This job has no invoice.', todo: null, go: 'choose' };
+    return { label: 'Possible invoice', text: 'An invoice may already bill this job.', todo: 'Compare the possible invoice before making another one.', go: 'choose' };
   }
   if (/^the accounting evidence is conflict/.test(reason)) {
     return { label: 'Invoice link changed', text: 'A second invoice now answers for this job, or its invoice is gone.', todo: 'Check the invoice number on the job in the work system. Void an extra invoice.', go: 'work' };

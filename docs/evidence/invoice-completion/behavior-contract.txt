@@ -1,0 +1,16 @@
+# Invoice hold behavior contract
+
+Target: real Flow application using synthetic data and existing fake sign-in.
+Do not inspect implementation during validation. No live integration calls.
+Use 390x900 and 1280x900 viewports.
+
+1. Open three synthetic issued invoices refused because a Xero invoice has the same reference at another total. Each must show the full reason, matched invoice number, safe Open in Xero link and comparison next step. Use totals 220/235, 295/310 and 415/430 as synthetic amounts; no real record ids or customer names.
+2. Open a draft with a named practitioner rule. The page must name the rule, show the complete note, and offer its source-job link and Rules link. On a phone the next step must not disappear behind a short label.
+3. Open Pending and Non-chargeable lists. Their explanations must retain the rule/check and matched links. Open the invoice to read all details.
+4. A different-total historical invoice with the same client, Reference and all job product codes plus another fee must not be declared absent. It must wait for a person. Wrong-reference and wrong-product invoices must not become exact links.
+5. Ambiguous jobs must say an invoice may exist, not that none exists.
+6. Unknown refusal codes must retain their reason and a next step. Unsafe source URL schemes must not become navigation.
+
+Probe refresh, role restrictions and persistence. Capture real screenshots of each relevant page at both widths. Report each clause pass/fail/blocked. No release, deployment, live cleanup or accounting mutation.
+
+Explicitly incomplete and excluded from passing this slice: new Duplicate/link lifecycle, issued Delete, optional Send anyway, fee policy and placeholder-practitioner policy. These remain open under the overall request.

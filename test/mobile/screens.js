@@ -64,7 +64,7 @@ export const SCREENS = [
       return route.fulfill({ response, json: body });
     });
     await page.reload();
-    await page.locator('.fx-offer').waitFor();
+    await page.locator('#fx-invoice-problem').waitFor();
     await page.waitForLoadState('networkidle');
   } },
   { id: 'reconcile', path: '/reconcile', ready: '.fx-main > *', list: true },

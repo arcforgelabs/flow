@@ -1,0 +1,6 @@
+<!-- @dsCard group="Feedback" height=300 -->
+<div id="root" class="fds"></div>
+<script>
+const { h, notice, invoiceProblems } = window.FlowDesignSystem;
+document.getElementById("root").append(invoiceProblems({ h, notice }, { problems: [{ code: "rule", rule: "example", short: "Practitioner required", message: "Add the practitioner in the work system." }], job: { id: "example", link: { url: "https://example.test/jobs/1" } } }));
+</script>

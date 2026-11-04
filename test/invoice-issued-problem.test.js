@@ -127,3 +127,65 @@ test('an issued invoice that Xero refused shows the reason and Open in Xero', as
   assert.equal(link.getAttribute('href'), `https://go.xero.com/AccountsReceivable/View.aspx?InvoiceID=${XERO_ID}`);
   assert.match(main.textContent, /Xero INV-2449 has the same client and reference at 235\.00/);
 });
+
+test('an issued lab-rule hold names the rule and links the source job', async () => {
+  const invoice = {
+    id: '11111111-1111-4111-8111-111111111111', status: 'issued', number: 'TEST-1', tab: 'pending',
+    sendState: 'failed', totalCents: 10000, lines: [], versions: [], linksTo: [],
+    contact: { name: 'Synthetic Practice' },
+    job: { id: '22222222-2222-4222-8222-222222222222', link: 'https://example.test/jobs/CASE-1', systemName: 'Work system' },
+    problems: [{ code: 'rule', rule: '33333333-3333-4333-8333-333333333333', short: 'Bare name', message: 'Use the practitioner full name in the work system.' }],
+  };
+  const flow = async (path) => path === '/api/invoicing/context'
+    ? { canIssue: false, organisations: [{ id: 'lab' }] }
+    : { invoice };
+  const main = document.createElement('main');
+  await renderInvoice(main, { h, notice, flow, toast() {}, go() {}, dialog: async () => false }, invoice.id);
+  assert.match(main.textContent, /Rule: Bare name/);
+  assert.ok(main.querySelectorAll('a').some((a) => a.getAttribute('href') === invoice.job.link && /Fix job/.test(a.textContent)));
+});
+
+// Public problem-code contract from draft checks and Xero send refusals. Each
+// fixture includes independent explanatory text: losing a reason must fail.
+test('every invoice hold keeps its full page reason, compact accessible text and safe links', async () => {
+  const { invoiceProblems } = await import('../server/ui/invoice-problems.js');
+  const codes = [
+    'no_lines', 'no_amount', 'line_no_item', 'rule', 'non_chargeable', 'job_review', 'send_failed',
+    'xero_contact_missing', 'xero_contact_ambiguous', 'xero_item_missing', 'xero_not_synced', 'xero_sync_stale',
+    'invoice_void', 'invoice_not_issued', 'xero_contact_no_email', 'xero_preview_failed',
+    'xero_same_reference_different_amount', 'xero_earlier_version_in_xero', 'xero_earlier_version_unresolved',
+    'xero_tracking_missing', 'xero_validation_failed', 'xero_reconnect_needed', 'xero_token_failed',
+    'xero_unreachable', 'xero_writes_off', 'xero_push_in_progress', 'xero_outcome_unknown', 'xero_push_failed',
+  ];
+  for (const code of codes) {
+    const rule = ['rule', 'non_chargeable'].includes(code);
+    const matched = ['xero_same_reference_different_amount', 'xero_earlier_version_in_xero'].includes(code);
+    const invoice = { job: { id: 'job', link: { url: 'https://example.test/jobs/1' } }, problems: [{
+      code, message: 'Synthetic reason. Fix the source before trying again.', short: 'Hold',
+      ...(rule ? { rule: 'rule-id', ruleName: 'Synthetic rule' } : {}),
+      ...(matched ? { xero: { invoiceId: XERO_ID } } : {}),
+    }] };
+    const summary = invoiceProblems({ h, notice }, invoice, { compact: true });
+    assert.match(summary.getAttribute('title'), /Synthetic reason\. Fix the source before trying again\./, code);
+    assert.match(summary.getAttribute('aria-label'), /Fix the source before trying again/, code);
+    // Lists open the invoice; its full presenter owns every matched/remediation link.
+    const shown = invoiceProblems({ h, notice }, invoice);
+    assert.match(shown.textContent, /Synthetic reason\. Fix the source before trying again\./, code);
+    if (rule) assert.match(shown.textContent, /Rule: Synthetic rule/, code);
+    if (code === 'xero_tracking_missing') assert.ok(shown.querySelectorAll('a').some((a) => a.getAttribute('href') === '/integrations/xero#tracking'), code);
+    if (matched) assert.ok(shown.querySelectorAll('a').some((a) => a.getAttribute('href').endsWith(XERO_ID)), code);
+    if (rule || code === 'job_review') assert.ok(shown.querySelectorAll('a').some((a) => a.textContent === 'Fix job'), code);
+  }
+});
+
+test('unknown holds retain their reason and unsafe source links never become navigation', async () => {
+  const { invoiceProblems } = await import('../server/ui/invoice-problems.js');
+  const shown = invoiceProblems({ h, notice }, {
+    job: { id: 'synthetic-job', link: { url: 'javascript:alert(1)' } },
+    problems: [{ code: 'job_review', message: 'Synthetic change needs review.' }, { code: 'future_provider_hold', message: 'Synthetic provider reason.' }],
+  });
+  assert.match(shown.textContent, /Synthetic provider reason/);
+  assert.match(shown.textContent, /Check the reason, then retry/);
+  assert.ok(shown.querySelectorAll('a').every((a) => !a.getAttribute('href').startsWith('javascript:')));
+  assert.ok(shown.querySelectorAll('a').some((a) => a.getAttribute('href') === '/jobs/synthetic-job'));
+});

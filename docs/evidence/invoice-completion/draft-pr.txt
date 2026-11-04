@@ -1,0 +1,38 @@
+# fix: explain invoice holds and retain possible historical bills
+
+Related: #441
+Related: #443
+
+## What Problem This Solves
+
+Lab-rule holds lost their rule name and instructions on invoice pages. Three separate renderers disagreed. Historical invoices with extra charges could be discarded as candidates, allowing the matcher to say no invoice existed.
+
+This is a partial source delivery. It does not close either issue.
+
+## User Impact
+
+Draft, issued and list flows share a hold presenter with the full reason, matched links and next steps. Non-chargeable list rows explain their rule. A possible historical invoice with matching Reference and job products stays for review despite a different total. Job wording no longer declares an ambiguous invoice absent.
+
+## Why This Change Was Made
+
+Reuse the existing Notice, links, rule payload and reference owner. Keep exact-match decisions unchanged. No fee assumption, automatic accounting link, schema change, bypass, number change or issued-version mutation is included.
+
+The explicit Link to Xero invoice / retained Duplicate workflow is not implemented: disposable database proof is blocked. Delete retention semantics still need a decision. Full acceptance map and per-hold audit: docs/evidence/invoice-completion/acceptance.txt.
+
+## Evidence
+
+Local commit: see handoff SHA.
+
+- Failing-before/passing-after rule-name/source-job page regression.
+- Failing-before/passing-after conservative matching regression with wrong-reference and wrong-product negative controls.
+- Failing-before/passing-after ambiguous-job wording regression.
+- Saved focused owner/consumer/UI-assets/design suite (/tmp/flow-commit-proof.log): 31 passed, 0 failed, database suites not run.
+- Design-system generation passed (111 files); no publication.
+- Full npm test attempted; final result documented in handoff. Haven has no disposable PostgreSQL. Existing X Forge runner failed before database readiness. Task-owned containers stopped; no unrelated resource touched.
+- Real-product 390px/1280px synthetic screenshots: not captured. No visual or complete-workflow proof claimed.
+- Independent review and database lifecycle/concurrency proof remain required before integration.
+- No release, deployment, live reads/accounting writes, customer cleanup or GitHub publication.
+
+Final full-suite attempt: 481 passed, 25 failed, 4 skipped tests (200.82s). New handoff Markdown caused one docs-navigation failure; moved handoff records to .txt and verified docs checks green. Remaining runtime failures: loopback HTTP socket closure and missing locked Chromium build. Later focused presenter check: 4 passed, including tracking settings link and unsafe-source-link probe. Disposable PostgreSQL remains blocked even with approved direct-user equivalent.
+
+Recovery checkpoint: saved 31-test proof inspected; node --test test/invoice-issued-problem.test.js test/pipeline.test.js rerun: 8 passed, 0 failed, two database suites unexecuted (FLOW_TEST_DATABASE_URL unset). Changed JavaScript syntax checks and git diff --check passed. No source implementation changed during recovery; parent owns independent review and GitHub PostgreSQL/mobile proof before integration.
