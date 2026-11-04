@@ -34,7 +34,7 @@ async function flowDocument(db, organisationId, invoiceId, { version }) {
     const [row] = await db.select().from(invoiceVersions)
       .where(and(eq(invoiceVersions.organisationId, organisationId), eq(invoiceVersions.invoiceId, invoiceId), eq(invoiceVersions.version, wanted)));
     if (!row) throw notFound('invoice version');
-    return { seller: organisation?.name ?? null, document: row.document };
+    return { seller: organisation?.name ?? null, document: row.document, duplicate: invoice.duplicate ?? null };
   }
   const [contact] = await db.select({ id: contacts.id, name: contacts.name, email: contacts.email }).from(contacts)
     .where(eq(contacts.id, invoice.contactId));
@@ -132,7 +132,7 @@ function showDate(value) {
 // so the customer's copy looks much the same: title and customer on the
 // left, dates and numbers in the middle, the seller on the right, then the
 // lines, the totals and the due date. The payment advice slip is left out.
-export function renderInvoicePdf({ seller, document: doc, facts = null }) {
+export function renderInvoicePdf({ seller, document: doc, facts = null, duplicate = null }) {
   if (!doc || !Array.isArray(doc.lines)) throw new FlowError('invalid', 'nothing to draw');
   const fields = pdfFields({ document: doc, facts });
   return new Promise((resolve, reject) => {
@@ -158,7 +158,7 @@ export function renderInvoicePdf({ seller, document: doc, facts = null }) {
       pdf.save();
       pdf.rotate(-30, { origin: [pdf.page.width / 2, pdf.page.height / 2] });
       pdf.font(bold).fontSize(96).fillColor(C.mark)
-        .text('EXAMPLE', 0, pdf.page.height / 2 - 60, { width: pdf.page.width, align: 'center', lineBreak: false });
+        .text(duplicate ? 'DUPLICATE' : 'EXAMPLE', 0, pdf.page.height / 2 - 60, { width: pdf.page.width, align: 'center', lineBreak: false });
       pdf.restore();
     };
     drawMark();

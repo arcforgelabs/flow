@@ -27,12 +27,12 @@ import { findBox, today, viewBar } from '/assets/ui/view-bar.js';
 // stages: Draft (a draft there, or on its way), Approved, Sent (to the
 // customer). With no accounting system, an issued invoice is Approved.
 // Non-chargeable: work a lab's rule keeps in Flow and never bills.
-const TABS = [['pending', 'Pending'], ['ready', 'Ready'], ['draft', 'Draft'], ['approved', 'Approved'], ['sent', 'Sent'], ['non_chargeable', 'Non-chargeable'], ['void', 'Void']];
+const TABS = [['pending', 'Pending'], ['ready', 'Ready'], ['draft', 'Draft'], ['approved', 'Approved'], ['sent', 'Sent'], ['non_chargeable', 'Non-chargeable'], ['duplicate', 'Duplicate'], ['void', 'Void']];
 const TAB_LABEL = Object.fromEntries(TABS);
-const TAB_TONE = { pending: 'danger', ready: 'success', draft: 'info', approved: 'info', sent: 'success', non_chargeable: 'mute', void: 'mute' };
+const TAB_TONE = { pending: 'danger', ready: 'success', draft: 'info', approved: 'info', sent: 'success', non_chargeable: 'mute', duplicate: 'mute', void: 'mute' };
 // Tab names an earlier Flow kept in this browser.
 const OLD_TAB = { problem: 'pending', to_check: 'ready', issued: 'approved' };
-const NUMBERED = ['draft', 'approved', 'sent', 'void'];
+const NUMBERED = ['draft', 'approved', 'sent', 'duplicate', 'void'];
 const EMPTY = {
   pending: 'Nothing needs a look.',
   ready: 'Nothing is ready. Press New invoice to start one.',
@@ -1406,6 +1406,7 @@ function issuedView(invoice, ui, context, redraw) {
     const live = xeroStatus?.xero && !['VOIDED', 'DELETED'].includes(xeroStatus.xero.status);
     return h('div', {},
       h('p', {}, 'The number stays used. A void invoice cannot be used again.'),
+      invoice.duplicateCandidate ? h('p', {}, 'There is a possible Xero match. Compare it first. If it bills this work, use Link to Xero invoice instead of cancelling.') : null,
       live ? h('p', { class: 'fx-problem' }, `Xero still holds it as ${xeroStatus.label.replace(/ in Xero$/, '').toLowerCase()}${xeroStatus.xero.number ? ` (${xeroStatus.xero.number})` : ''}. Flow does not change Xero: void it in Xero too.`) : null);
   };
   const voidButton = invoice.status === 'issued' && context.canIssue ? h('button', {
@@ -1414,15 +1415,36 @@ function issuedView(invoice, ui, context, redraw) {
   }, 'Void') : null;
   const reviseButton = invoice.status === 'issued' && context.canIssue
     ? h('button', { class: 'fx-btn', type: 'button', onclick: () => act('revise', `${invoice.number} is a draft again.`) }, 'Revise') : null;
+  const candidate = invoice.duplicateCandidate;
+  const duplicateButton = candidate && context.canIssue ? h('button', {
+    class: 'fx-btn', type: 'button', onclick: async () => {
+      const body = h('div', {},
+        h('p', {}, 'Confirm this Xero invoice bills the same work. Flow keeps its number and versions as Duplicate, and links its jobs. Nothing is changed or emailed in Xero.'),
+        h('dl', { class: 'fx-doc__meta' },
+          h('div', {}, h('dt', {}, 'Flow'), h('dd', {}, invoice.number + ' · ' + formatCents(invoice.totalCents))),
+          h('div', {}, h('dt', {}, 'Xero'), h('dd', {}, candidate.number + ' · ' + formatCents(candidate.totalCents))),
+          h('div', {}, h('dt', {}, 'Reference'), h('dd', {}, candidate.reference ?? '—'))),
+        h('ul', {}, candidate.lines.map((l) => h('li', {}, (l.itemCode ?? l.description ?? 'Line') + ' × ' + l.quantity + ' · ' + formatCents(l.lineAmountCents)))),
+        h('a', { class: 'fx-btn', href: candidate.url, target: '_blank', rel: 'noopener' }, 'Open in Xero'));
+      if (!await ui.dialog({ title: 'Link to ' + candidate.number + '?', body, confirm: 'Link' })) return;
+      duplicateButton.disabled = true;
+      try {
+        const res = await flow('/api/invoicing/invoices/' + invoice.id + '/duplicate', { method: 'POST', body: JSON.stringify({ candidateId: candidate.id, confirmation: candidate.confirmation }) });
+        toast('Linked to ' + candidate.number + '. Flow invoice retained as Duplicate.', 'success');
+        redraw(res.invoice);
+      } catch (error) { toast(error.message, 'danger', { stay: true }); duplicateButton.disabled = false; }
+    },
+  }, 'Link to Xero invoice') : null;
   const preview = previewButton(ui, invoice.id);
-  actionBar = h('div', { class: 'fx-ph__actions' }, [voidButton, reviseButton, preview, send].filter(Boolean));
+  actionBar = h('div', { class: 'fx-ph__actions' }, [duplicateButton, voidButton, reviseButton, preview, send].filter(Boolean));
   const problemRow = invoiceProblems(ui, invoice);
   const header = h('header', { class: 'fx-ph' },
     h('div', { class: 'fx-ph__text' },
       h('h1', { class: 'fx-title' }, invoice.number),
       h('span', { class: 'fx-status', 'data-tone': TAB_TONE[invoice.tab] }, TAB_LABEL[invoice.tab] ?? 'Approved')),
     actionBar);
-  const chrome = mountRecord(ui, invoice, header, () => send, (skip) => [
+  const chrome = mountRecord(ui, invoice, header, () => duplicateButton ?? send, (skip) => [
+    menuEntry(duplicateButton, 'link', skip),
     menuEntry(deleteButton, 'trash-2', skip),
     menuEntry(voidButton, 'ban', skip),
     menuEntry(reviseButton, 'pencil', skip),
@@ -1436,7 +1458,7 @@ function issuedView(invoice, ui, context, redraw) {
       h('span', { class: 'fx-dim' }, new Date(v.issuedAt).toLocaleString('en-AU', { dateStyle: 'medium', timeStyle: 'short' })))),
     // Void, including a delete that removed the Xero draft, sits on the same list.
     ...(invoice.status === 'void' ? [h('li', {},
-      h('span', { class: 'fx-strong' }, 'Void'),
+      h('span', { class: 'fx-strong' }, invoice.duplicate ? 'Duplicate · ' + invoice.duplicate.number + ' · ' + invoice.duplicate.actor : 'Void'),
       h('span', { class: 'fx-dim' }, new Date(invoice.updatedAt).toLocaleString('en-AU', { dateStyle: 'medium', timeStyle: 'short' })))] : []),
   ];
   return [
@@ -1444,6 +1466,7 @@ function issuedView(invoice, ui, context, redraw) {
     chrome.pager,
     header,
     problemRow,
+    invoice.duplicate ? h('div', { class: 'fx-offer' }, ui.notice('Already billed by ' + invoice.duplicate.number + '. This Flow invoice is retained as Duplicate; its number is never reused.'), h('a', { class: 'fx-btn', href: invoice.duplicate.url, target: '_blank', rel: 'noopener' }, 'Open in Xero')) : null,
     h('div', { class: 'fx-invoice__grid' },
       h('div', { class: 'fx-invoice__main' },
         h('section', { class: 'fx-card fx-doc' },

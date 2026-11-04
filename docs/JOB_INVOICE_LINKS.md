@@ -194,3 +194,15 @@ it has decided, and the matcher does not hold it again.
 - Find an invoice by hand in the linking tool, beyond the suggestions.
 - Credit notes and payments on the linked job (step 3).
 - Draft rules and send modes are built: `docs/INVOICING_RULES.md`.
+
+## Accounting comparisons and retained duplicates
+
+Job panels show the actual mirrored accounting matches for open suggestions,
+conflicts and voided/deleted links, including number, total, state, Reference
+and product codes. Validated Xero ids open a fixed Xero origin. Reconcile
+continues to compare Flow records; these links do not silently associate a
+candidate. A refused Flow invoice can instead be explicitly linked and
+retained as Duplicate, as described in INVOICE_SENDING.md. Its job remains
+associated with the retained Flow invoice for history and with the actual
+accounting bill for approval/payment state; it is never freed for another
+draft by that action.

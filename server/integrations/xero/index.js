@@ -6,6 +6,7 @@ import { CONTACT_DIFFERS } from './contact-sync.js';
 import { deleteXeroInvoice } from './delete-invoice.js';
 import { createCustomer } from './create-contact.js';
 import { checkDrafts, documentFacts, pushInvoice, pushInvoices } from './drafts.js';
+import { duplicateCandidate } from './duplicates.js';
 import { readConnection } from './connections.js';
 import { createImportWorker } from './import.js';
 import { readPayments, xeroLiveCheck } from './ledger.js';
@@ -151,6 +152,7 @@ export function createXeroAdapter({ runtime: given = null } = {}) {
       },
       // What the customer's Xero copy of a Flow invoice version says, from
       // Flow's copy of Xero (drafts.js; no calls). The invoice PDF uses it.
+      duplicateCandidate: ({ transaction, organisationId, invoice, candidateId = null }) => duplicateCandidate(transaction, organisationId, invoice, candidateId),
       documentFacts: ({ organisationId, invoiceId, version = null }) => documentFacts(database, current(), { organisationId, invoiceId, version }),
       // Sales invoice payments changed since `since` (ledger.js). The answer's
       // cursor is the next `since`.
