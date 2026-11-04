@@ -15,6 +15,7 @@ import { accountingStatus, checkSentInvoices } from './reconcile.js';
 import { CUSTOM_CONNECTION, decryptToken, deleteConnection, describeConnection, readConnection, saveConnection } from './connections.js';
 import { authorizeUrl, clientCredentials, exchangeCode, fetchConnections, revokeToken, selectConnection } from './oauth.js';
 import { writesAllowed } from './settings.js';
+import { activeTracking, assertTracking, readTracking, saveTracking, trackingCategories } from './tracking.js';
 import { readXeroUsage } from './usage.js';
 import { saveEvents, signatureValid } from './webhooks.js';
 import { DEFAULT_FAMILY } from '../../theme/themes.js';
@@ -153,6 +154,33 @@ export function createXeroRouter({ db, personAuth, runtime, log = console, butto
     : [(_req, res) => res.status(503).json({ ok: false, code: 'sign_in_not_configured', error: 'Sign-in is not configured on this installation (FLOW_AUTH is unset).' })];
   const owner = personAuth ? [...signedIn, personAuth.requireOwner] : signedIn;
   const manager = personAuth ? [...signedIn, personAuth.requireRole('owner', 'admin')] : signedIn;
+
+  // Saving Off needs no connection; a selected option is checked in Xero.
+  router.get('/tracking', ...manager, handle(log, async (req, res) => {
+    const organisationId = await requireOrganisation(db, req.query.organisationId);
+    const tracking = await readTracking(db, organisationId);
+    const connection = await readConnection(db, organisationId);
+    const connected = Boolean(connection && connection.mode === settings.mode);
+    let categories = [];
+    let warning = null;
+    if (connected) {
+      try { categories = activeTracking(await trackingCategories(db, runtime, organisationId)); }
+      catch (error) { warning = error instanceof FlowError ? error.message : 'Could not read tracking from Xero. Try again.'; }
+    }
+    res.json({ ok: true, tracking, categories, connected, warning });
+  }));
+
+  router.put('/tracking', ...manager, handle(log, async (req, res) => {
+    const organisationId = await requireOrganisation(db, req.body?.organisationId);
+    const raw = req.body?.tracking;
+    if (raw !== null && (!raw || typeof raw.category !== 'string' || typeof raw.option !== 'string'
+      || !raw.category.trim() || !raw.option.trim() || raw.category.length > 200 || raw.option.length > 200)) {
+      throw new FlowError('invalid', 'Choose a tracking category and option, or Off.');
+    }
+    const tracking = raw === null ? null : { category: raw.category.trim(), option: raw.option.trim() };
+    if (tracking) assertTracking(await trackingCategories(db, runtime, organisationId), tracking);
+    res.json({ ok: true, tracking: await saveTracking(db, organisationId, tracking, `person:${req.person.id}`) });
+  }));
 
   router.get('/status', ...signedIn, handle(log, async (req, res) => {
     const organisationId = await requireOrganisation(db, req.query.organisationId);

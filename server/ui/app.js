@@ -22,6 +22,7 @@ import { renderReconcile } from '/assets/ui/reconcile.js';
 import { renderXeroImport } from '/assets/ui/xero-import.js';
 import { syncStatus } from '/assets/ui/sync-status.js';
 import { xeroUsage } from '/assets/ui/xero-usage.js';
+import { xeroTracking } from '/assets/ui/xero-tracking.js';
 import { startMonitoring } from '/assets/ui/monitoring.js';
 import { isSearchKey, openSearch } from '/assets/ui/search.js';
 import { alertStrip } from '/assets/ui/alerts.js';
@@ -162,7 +163,7 @@ const VIEWS = {
   'invoicing-settings': { label: 'Rules', icon: 'rules', render: (main, id) => renderInvoicingSettings(main, ui(), id) },
   automations: { label: 'Automations', icon: 'bolt', place: 'more', render: (main) => renderAutomations(main, ui()) },
   'custom-fields': { label: 'Custom fields', icon: 'fields', place: 'more', render: (main) => renderCustomFields(main, ui()) },
-  integrations: { label: 'Integrations', icon: 'plug', place: 'more', ownerOnly: true, render: (main, id) => (id ? renderIntegration(main, id) : renderIntegrations(main)) },
+  integrations: { label: 'Integrations', icon: 'plug', place: 'more', ownerOnly: true, admin: true, render: (main, id) => me?.person.role === 'admin' ? renderTrackingIntegration(main, id) : (id ? renderIntegration(main, id) : renderIntegrations(main)) },
   people: { label: 'People', icon: 'people', place: 'account', ownerOnly: true, render: renderPeople },
   // Not in the sidebar: "Manage account" in the account menu opens the same
   // Clerk profile. The page stays for links and Search.
@@ -171,6 +172,9 @@ const VIEWS = {
   account: { label: 'Account', icon: 'person', sidebar: false, render: renderAccount },
   appearance: { label: 'Appearance', icon: 'palette', place: 'account', render: renderAppearance },
 };
+
+// Admins get only the Xero business setting, never the owner's setup API.
+const allowedView = (view) => !view.ownerOnly || me?.person.role === 'owner' || (view.admin && me?.person.role === 'admin');
 
 // Line icons for the sidebar, drawn on a 24-unit grid in the text colour.
 const ICON_PATHS = {
@@ -266,7 +270,7 @@ document.addEventListener('click', (event) => {
 // open, invoices and jobs (search.js).
 function search() {
   const views = Object.entries(VIEWS)
-    .filter(([, view]) => !view.ownerOnly || me?.person.role === 'owner')
+    .filter(([, view]) => allowedView(view))
     .map(([name, view]) => ({ name, label: view.label, icon: view.icon }));
   openSearch({ h, flow, go, icon, views });
 }
@@ -300,7 +304,7 @@ const START_VIEW = 'invoices';
 // The view and, for one record, its id: /invoices/<id> is ['invoices', '<id>'].
 function currentView() {
   const [name, id = null] = location.pathname.replace(/^\/+|\/+$/g, '').split('/');
-  if (VIEWS[name] && (!VIEWS[name].ownerOnly || me?.person.role === 'owner')) return [name, id];
+  if (VIEWS[name] && allowedView(VIEWS[name])) return [name, id];
   return [START_VIEW, null];
 }
 
@@ -366,7 +370,7 @@ function renderSignedOut() {
 
 // Sidebar pages this person may open. Account pages stay in the account menu.
 function sidebarViews() {
-  return Object.entries(VIEWS).filter(([, view]) => view.sidebar !== false && view.place !== 'account' && (!view.ownerOnly || me?.person.role === 'owner'));
+  return Object.entries(VIEWS).filter(([, view]) => view.sidebar !== false && view.place !== 'account' && allowedView(view));
 }
 
 // Null until the shell reads the account. Jobs and Invoices are always in it.
@@ -479,7 +483,7 @@ function renderShell() {
   // (the email when the account has no name). It opens the account menu.
   // People (owners) and Appearance live in the account menu.
   const accountItems = Object.entries(VIEWS)
-    .filter(([, view]) => view.place === 'account' && (!view.ownerOnly || me?.person.role === 'owner'))
+    .filter(([, view]) => view.place === 'account' && allowedView(view))
     .map(([name, view]) => accountMenuItem(view.label, view.icon, () => go(`/${name}`)));
   const userButton = { afterSignOutUrl: '/sign-in', showName: true, customMenuItems: accountItems };
   $('search').replaceChildren(icon('search'));
@@ -715,6 +719,23 @@ function integrationTile(integration) {
 }
 
 
+// The admin surface uses nonsecret workspace context and the tracking API.
+// Host credentials and integration setup stay owner-only.
+async function renderTrackingIntegration(main, id) {
+  try {
+    const { organisations, sendsTo } = await flow('/api/invoicing/context');
+    main.append(pageHeader(id ? 'Xero' : 'Integrations'));
+    if (sendsTo !== 'Xero' || (id && id !== 'xero')) {
+      main.append(notice('An owner must connect Xero before tracking can be selected.', 'warn'));
+    } else if (!id) {
+      main.append(tileSection('Accounting', [tileCard({ href: '/integrations/xero', title: 'Xero', mark: integrationLogo({ id: 'xero', name: 'Xero' }), action: 'Manage' })]));
+    } else {
+      main.prepend(crumbs(['/integrations', 'Integrations'], 'Xero'));
+      main.append(xeroTracking(ui(), organisations, true));
+    }
+  } catch (error) { main.append(notice(error.message, 'danger')); }
+}
+
 // One integration's page (/integrations/<id>): its logo, name and Connect
 // (each step shown as it runs), the setup steps (closed), its settings, and the
 // facts beside them.
@@ -876,6 +897,7 @@ async function renderIntegration(main, id) {
           current.id === 'seazona' ? h('section', { class: 'fx-int-section fx-card', style: { padding: '8px 20px 16px' } }, automationSection(ui(), 'seazona', 'Ready to invoice')) : null,
           on && current.state === 'ready' ? personSettingsSection(current) : null,
           current.id === 'seazona' && current.state === 'ready' ? seazonaHistorySection() : null,
+          current.id === 'xero' && current.state === 'ready' ? xeroTracking(ui(), body.organisations, ['owner', 'admin'].includes(me?.person?.role)) : null,
           current.id === 'xero' && current.state === 'ready' ? xeroImportSection(body.organisations) : null,
           current.id === 'xero' ? h('section', { class: 'fx-int-section fx-card', style: { padding: '8px 20px 16px' } }, automationSection(ui(), 'xero', 'Contacts')) : null,
           current.id === 'xero' ? h('section', { class: 'fx-int-section fx-card', style: { padding: '8px 20px 16px' } }, sendModeSection(ui())) : null,

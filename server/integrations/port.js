@@ -18,7 +18,7 @@ export const CAPABILITIES = Object.freeze([
   'deleteInvoice', // { organisationId, invoiceId, actor }: read the accounting invoice live, then delete it only while it is still a draft. Answers { state: deleted | gone | approved | unavailable, status, message? }. deleted: it was deleted now. gone: it was already deleted or voided, and nothing was written. approved: it is approved or paid; nothing was written. unavailable: it cannot be deleted. The core voids the Flow invoice only after deleted or gone.
   'checkDrafts', // the accounting system's problems with Flow drafts, from its copy; null while not connected
   'invoiceStages', // { organisationId, invoiceIds? }: Map(invoiceId -> draft | approved | sent | void | pending) for issued invoices, from its copy
-  'documentFacts', // what the customer's copy of a sent invoice says (number, reference, dates), from the system's copy in Flow; never a live call
+  'documentFacts', // what the customer's copy of a sent invoice says (number, reference, dates, per-line tracking), from the system's copy in Flow; never a live call
   'sendStatus', // { connected, writesAllowed }: may Flow send invoices now?
   'pushBill', // send an approved bill; the Flow record id is the idempotency key
   'pullPayments', // payments since a cursor, matched to invoices and bills
