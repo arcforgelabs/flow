@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { and, asc, desc, eq, gt, inArray, sql } from 'drizzle-orm';
 import { FlowError } from '../../../core/errors.js';
 import { listClients } from '../feed.js';
+import { ledgerLine } from '../ledger.js';
 import { hashOf, parseSeazonaDate, text } from '../map.js';
 import {
   seazonaClients,
@@ -517,13 +518,9 @@ export async function readHistoryWork(db, { cursor = null, limit = 200 } = {}) {
         shippedOn: job.shippedDate,
         jobDate: job.jobDate ?? job.dueDate ?? job.shippedDate,
         sourceStatus: job.status,
-        lines: (job.lines ?? []).map((l) => ({
-          itemCode: l.code ?? null,
-          description: l.description,
-          quantity: 1,
-          unitAmountCents: l.amountCents ?? undefined,
-          taxCode: typeof l.taxable === 'boolean' ? (l.taxable ? 'GST' : 'GST_FREE') : undefined,
-        })),
+        lines: (job.lines ?? []).map(ledgerLine),
+        // The CSV reports a total, but no invoice tax allocation.
+        sourceTotals: job.totalCents == null ? null : { totalCents: job.totalCents },
         observedAt: job.lastChangedAt.toISOString(),
         actor: 'seazona:history_import',
       },

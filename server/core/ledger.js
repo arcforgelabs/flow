@@ -100,12 +100,13 @@ async function normaliseLines(tx, organisationId, lines) {
     priceItemId = item?.archivedAt ? null : (item?.id ?? null);
     description = (description ?? item?.name ?? '').trim();
     unitAmountCents ??= item?.unitAmountCents;
-    taxCode ??= item?.taxCode ?? 'GST';
+    taxCode ??= item?.taxCode ?? (line.taxCode === null ? null : 'GST');
     const quantity = line.quantity ?? 1;
     if (!description) throw new FlowError('invalid', `line ${index + 1}: description is required`);
     let totals;
     try {
-      totals = lineTotals({ quantity, unitAmountCents, taxCode });
+      totals = lineTotals({ quantity, unitAmountCents, taxCode: taxCode ?? 'GST_FREE' });
+      if (taxCode === null) totals.taxCents = null;
     } catch (error) {
       throw new FlowError('invalid', `line ${index + 1}: ${error.message}`);
     }
@@ -128,6 +129,48 @@ function fingerprint(lines) {
   return createHash('sha256').update(JSON.stringify(keys)).digest('hex');
 }
 
+const SOURCE_TOTAL_FIELDS = ['subtotalCents', 'taxCents', 'totalCents'];
+const REVIEW_SOURCE_TOTALS = 'job.source_totals';
+
+function readSourceTotals(raw) {
+  if (raw == null) return null;
+  const totals = {};
+  for (const field of SOURCE_TOTAL_FIELDS) {
+    if (raw[field] == null) continue;
+    if (!Number.isSafeInteger(raw[field])) throw new FlowError('invalid', 'source ' + field + ' must be whole cents');
+    totals[field] = raw[field];
+  }
+  return Object.keys(totals).length ? totals : null;
+}
+
+// A source invoice total is evidence, not permission to allocate its tax.
+export function sourceBillingProblems(obligation) {
+  const reasons = [];
+  const lines = obligation.lines ?? [];
+  if (lines.some((line) => line.taxCode === null)) reasons.push('a source line has unknown tax treatment');
+  const calculated = invoiceTotals(lines);
+  if (SOURCE_TOTAL_FIELDS.some((field) => obligation.sourceTotals?.[field] != null && obligation.sourceTotals[field] !== calculated[field])) {
+    reasons.push('the source invoice totals differ from the reconstructed lines');
+  }
+  return reasons;
+}
+
+async function recordSourceReview(tx, row, actor) {
+  const reasons = sourceBillingProblems(row);
+  if (reasons.length) {
+    await openReview(tx, row.organisationId, {
+      kind: REVIEW_SOURCE_TOTALS, entity: 'obligation', flowId: row.id,
+      systems: [row.sourceSystem, 'flow'], moneyAtRiskCents: Math.abs(row.totalCents),
+      evidence: { reasons, sourceTotals: row.sourceTotals, reconstructed: invoiceTotals(row.lines),
+        unknownTaxLines: row.lines.flatMap((line, index) => line.taxCode === null ? [index + 1] : []),
+        sourceJobRef: row.sourceJobRef, invoiceId: row.invoiceId },
+    });
+  } else {
+    await resolveReviewFor(tx, row.organisationId, { kind: REVIEW_SOURCE_TOTALS, entity: 'obligation', flowId: row.id, resolution: 'source_totals_match', actor });
+  }
+  return row;
+}
+
 // Records what the work system reports about a billable job. The first report
 // makes the obligation; a later report with other lines or totals changes it.
 // If the job changes after Flow made its invoice, the obligation goes to review.
@@ -137,6 +180,9 @@ export async function observeJob(db, organisationId, job) {
   const seenAt = job.observedAt ? new Date(job.observedAt) : new Date();
   return db.transaction(async (tx) => {
     const lines = await normaliseLines(tx, organisationId, job.lines);
+    const sourceTotals = readSourceTotals(job.sourceTotals);
+    const totals = { ...invoiceTotals(lines), ...sourceTotals };
+    if (sourceTotals?.totalCents == null) totals.totalCents = totals.subtotalCents + totals.taxCents;
     const facts = {
       sourceInvoiceRef: job.sourceInvoiceRef ?? null,
       caseRef: job.caseRef ?? null,
@@ -146,7 +192,8 @@ export async function observeJob(db, organisationId, job) {
       sourceStatus: job.sourceStatus ?? null,
       lines,
       lineFingerprint: fingerprint(lines),
-      ...invoiceTotals(lines),
+      sourceTotals,
+      ...totals,
       mappingComplete: lines.every((l) => l.priceItemId || l.accountCode),
     };
     const [existing] = await tx.select().from(billingObligations)
@@ -170,21 +217,23 @@ export async function observeJob(db, organisationId, job) {
         .values({ organisationId, sourceSystem, sourceJobRef, sourceSeenAt: seenAt, ...facts })
         .returning();
       await addEvent(tx, row, 'observed', actor, {
-        lineFingerprint: row.lineFingerprint, totalCents: row.totalCents, mappingComplete: row.mappingComplete, sourceStatus: row.sourceStatus,
+        lineFingerprint: row.lineFingerprint, totalCents: row.totalCents, mappingComplete: row.mappingComplete, sourceStatus: row.sourceStatus, sourceTotals: row.sourceTotals,
       });
-      return row;
+      return recordSourceReview(tx, row, actor);
     }
 
     // An older report never replaces a newer one.
     if (seenAt < existing.sourceSeenAt) return existing;
-    const changed = ['sourceInvoiceRef', 'caseRef', 'contactId', 'practitioner', 'shippedOn', 'lineFingerprint', 'totalCents']
-      .filter((key) => String(existing[key] ?? '') !== String(facts[key] ?? ''));
+    const changed = ['sourceInvoiceRef', 'caseRef', 'contactId', 'practitioner', 'shippedOn', 'lineFingerprint', 'subtotalCents', 'taxCents', 'totalCents', 'sourceTotals']
+      .filter((key) => key === 'sourceTotals'
+        ? SOURCE_TOTAL_FIELDS.some((field) => (existing.sourceTotals?.[field] ?? null) !== (facts.sourceTotals?.[field] ?? null))
+        : String(existing[key] ?? '') !== String(facts[key] ?? ''));
     if (!changed.length) {
       const row = await update(tx, existing, {
         sourceSeenAt: seenAt, mappingComplete: facts.mappingComplete, lines, jobDate: facts.jobDate, sourceStatus: facts.sourceStatus,
       });
       await statusChanged(tx, organisationId, existing, row, actor);
-      return row;
+      return recordSourceReview(tx, row, actor);
     }
     const fields = { ...facts, sourceSeenAt: seenAt };
     let compare = null;
@@ -201,8 +250,8 @@ export async function observeJob(db, organisationId, job) {
     const row = await update(tx, existing, fields);
     await addEvent(tx, row, 'source_changed', actor, {
       changed,
-      before: { lineFingerprint: existing.lineFingerprint, totalCents: existing.totalCents },
-      after: { lineFingerprint: row.lineFingerprint, totalCents: row.totalCents },
+      before: { lineFingerprint: existing.lineFingerprint, totalCents: existing.totalCents, sourceTotals: existing.sourceTotals },
+      after: { lineFingerprint: row.lineFingerprint, totalCents: row.totalCents, sourceTotals: row.sourceTotals },
       ...(compare ? { compare: { outcome: compare.outcome, fields: compare.fields.map(({ field, changedIn }) => ({ field, changedIn })) } } : {}),
       ...(fields.holdState === 'review' ? { holdReason: fields.holdReason } : {}),
     });
@@ -212,7 +261,7 @@ export async function observeJob(db, organisationId, job) {
       await openReview(tx, organisationId, changedReview(row, compare));
     }
     await statusChanged(tx, organisationId, existing, row, actor);
-    return row;
+    return recordSourceReview(tx, row, actor);
   });
 }
 
@@ -333,6 +382,8 @@ export async function useSourceLines(db, organisationId, obligationId, { actor, 
   return db.transaction(async (tx) => {
     const obligation = await loadObligation(tx, organisationId, obligationId, { lock: true });
     if (!obligation.invoiceId) throw new FlowError('invalid', 'the job has no invoice');
+    const sourceProblems = sourceBillingProblems(obligation);
+    if (sourceProblems.length) throw new FlowError('not_ready', sourceProblems.join('; '));
     const compare = await compareWithDraft(tx, organisationId, obligation, obligation);
     if (compare.outcome === 'conflict' && (compare.sent || compare.missing || !accept)) {
       throw new FlowError('conflict', compare.missing ? 'the invoice was not found' : compare.sent ? 'the invoice has left Flow; change it where it is now' : 'the draft changed in Flow too; a person must compare them', { fields: compare.fields });
@@ -802,6 +853,8 @@ export function ledgerView(obligation, { now = new Date(), sourceMaxAgeMs = SOUR
     return { view: 'review_required', reasons: [`invoice ${o.accountingRef} was ${o.accountingState}`] };
   }
   if (o.holdState === 'held') return { view: 'held', reasons: [o.holdReason ?? 'held'] };
+  const sourceProblems = sourceBillingProblems(o);
+  if (sourceProblems.length) return { view: 'review_required', reasons: sourceProblems };
   if (o.accountingState === 'paid') return { view: 'paid', reasons: [`invoice ${o.accountingRef} is paid`] };
   if (['authorised', 'part_paid'].includes(o.accountingState)) {
     return { view: 'invoiced', reasons: [`invoice ${o.accountingRef} is ${o.accountingState.replace('_', ' ')}`] };
@@ -815,7 +868,7 @@ export function ledgerView(obligation, { now = new Date(), sourceMaxAgeMs = SOUR
 }
 
 function draftBlockers(o, { now, sourceMaxAgeMs, accounting = true }) {
-  const reasons = [];
+  const reasons = sourceBillingProblems(o);
   if (o.holdState !== 'none') reasons.push(`the job is ${o.holdState}`);
   if (o.invoiceId) reasons.push('the job already has an invoice');
   if (o.accountingState === 'unknown') {

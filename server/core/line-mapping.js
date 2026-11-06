@@ -156,7 +156,7 @@ export function mapLine(line, context) {
     description: (item.description || item.name || original).trim(),
     quantity,
     unitAmountCents: config.linePrice === 'list' ? item.unitAmountCents : (price ?? item.unitAmountCents),
-    taxCode: taxCode ?? line.taxCode ?? item.taxCode,
+    taxCode: line.taxCode ?? taxCode ?? item.taxCode,
     mappedBy: step,
   });
   const fromRow = (row, step) => {
@@ -180,7 +180,7 @@ export function mapLine(line, context) {
         if (row) {
           return {
             ...base, itemCode: null, accountCode: row.accountCode, description: row.description || original, quantity,
-            unitAmountCents: price, taxCode: row.taxCode ?? line.taxCode, mappedBy: step,
+            unitAmountCents: price, taxCode: line.taxCode ?? row.taxCode ?? (line.taxCode === null ? null : undefined), mappedBy: step,
           };
         }
         break;

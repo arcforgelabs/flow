@@ -11,15 +11,16 @@
 
 export const SEAZONA_SOURCE_SYSTEM = 'seazona';
 
-function ledgerLine(line) {
+export function ledgerLine(line) {
   return {
     // The ledger maps a line to a price item by its exact code only.
     itemCode: line.code ?? null,
     description: line.description,
     quantity: 1,
-    // Unknown amount or tax: the price item with the same code fills them.
+    // A mapped price item can fill unknown amounts or tax.
+    // Explicit null tax must not take the legacy GST default.
     unitAmountCents: line.amountCents ?? undefined,
-    taxCode: typeof line.taxable === 'boolean' ? (line.taxable ? 'GST' : 'GST_FREE') : undefined,
+    taxCode: typeof line.taxable === 'boolean' ? (line.taxable ? 'GST' : 'GST_FREE') : null,
   };
 }
 
@@ -37,6 +38,13 @@ export function ledgerLinesFor(item) {
 // `observedAt` is the last successful read from Seazona, so the ledger's
 // out-of-date check measures how old Seazona's report really is.
 export function toLedgerJob(item) {
+  const { lines, linesFrom } = ledgerLinesFor(item);
+  // A shared invoice cannot supply one job's totals. Never split its tax.
+  const sourceTotals = linesFrom === 'invoice' ? {
+    subtotalCents: item.invoice.subtotalCents ?? null,
+    taxCents: item.invoice.taxCents ?? null,
+    totalCents: item.invoice.totalCents ?? null,
+  } : null;
   return {
     sourceSystem: SEAZONA_SOURCE_SYSTEM,
     sourceJobRef: item.sourceId,
@@ -51,7 +59,8 @@ export function toLedgerJob(item) {
     jobDate: item.invoice?.invoiceDate ?? item.dueOn ?? item.orderedOn ?? null,
     // The draft rules bill only the statuses the lab chose (for example Shipped).
     sourceStatus: item.status ?? null,
-    lines: ledgerLinesFor(item).lines,
+    lines,
+    sourceTotals,
     observedAt: item.syncedAt,
     actor: SEAZONA_SOURCE_SYSTEM,
   };

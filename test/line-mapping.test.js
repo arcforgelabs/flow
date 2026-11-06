@@ -59,6 +59,17 @@ test('an account row books a surcharge line to an account', () => {
   assert.equal(mapped.itemCode, null);
 });
 
+test('source tax takes precedence over saved item and account choices', () => {
+  for (const kind of ['alias', 'account']) {
+    const mappings = [{ kind, match: 'exact', label: 'sample adjustment', itemCode: 'RLN', accountCode: '200', taxCode: 'GST' }];
+    const context = mappingContext({ items, mappings });
+    assert.equal(mapLine(line('Sample adjustment', 1000), context).taxCode, 'GST_FREE');
+    assert.equal(mapLine(line('Sample adjustment', 1000, { taxCode: null }), context).taxCode, 'GST');
+  }
+  const context = mappingContext({ items: [], mappings: [{ kind: 'account', match: 'exact', label: 'sample adjustment', accountCode: '200' }] });
+  assert.equal(mapLine(line('Sample adjustment', -1000, { taxCode: null }), context).taxCode, null);
+});
+
 test('a line no step answers keeps no code, so the ledger holds the job', () => {
   const [mapped] = mapLines([line('Something new', 999)], mappingContext({ items }));
   assert.equal(mapped.itemCode, null);
