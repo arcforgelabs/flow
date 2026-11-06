@@ -4,7 +4,7 @@ import { createSeazonaClient } from './client.js';
 import { listClients, listProducts, listWork, readBillableWork } from './feed.js';
 import { historyJobIssues, historySummary, readHistoryWork } from './history/index.js';
 import { readSeazonaSyncHealth, runSeazonaSync } from './lanes.js';
-import { readBillableJobs } from './reconcile.js';
+import { readBillableJobs, readWorkJobPresence } from './reconcile.js';
 import { SEAZONA_CALL_GUARD } from './governor.js';
 import { createSeazonaRouter } from './routes.js';
 import {
@@ -198,6 +198,10 @@ export function createSeazonaAdapter({ env = null, fetchImpl = null, now = Date.
       // (server/core/reconcile.js). Reads Flow's copy only.
       async billableJobs({ from = null, to = null } = {}) {
         return readBillableJobs(current().db, { from, to });
+      },
+
+      async workJobPresence({ jobRefs }) {
+        return readWorkJobPresence(current().db, { jobRefs });
       },
 
       // Seazona clients by id and company name, for the identity map. Reads
