@@ -30,7 +30,8 @@ person's choice or an exact code, so it always goes first and is not a step
 in the list.
 
 The label is compared without sizes, arch ("upper", "lower 4") and "per set".
-A line keeps the work system's amount and tax flag. The routine's setting
+A line keeps the work system's amount and explicit tax flag.
+A saved tax choice or price item supplies tax only when the source gave none. The routine's setting
 `linePrice` changes that: `work` (the default) keeps the work system's amount,
 `list` takes the price list's price. Price list settings, "Invoice line price"
 sets it. A line that no step

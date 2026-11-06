@@ -4,6 +4,23 @@ Flow keeps its records in PostgreSQL. The schema is in
 `server/db/schema.js`; migrations are in `server/db/migrations/` and run when
 the server starts.
 
+## Source total upgrade
+
+Migration `0025` adds nullable `billing_obligations.source_totals` without a default.
+It does not backfill rows or change their totals, holds or invoice links.
+Old rows keep `source_totals = NULL` until a later source read supplies explicit totals.
+The new code uses the existing line totals when source aggregates are absent.
+The additive column leaves the old query shape valid.
+The new code requires the migration before it can read the ledger.
+Do not reverse the database to remove this column.
+A release that excludes migrations must not include this change.
+
+A source conflict blocks a new draft, Mark ready, Use new lines and Send for an unsent draft.
+Retry of an issued invoice still uses its issued version.
+A later source conflict does not change that version or its totals.
+
+## Database schema
+
 Flow's tables, the integrations' included, live in the PostgreSQL schema
 `flow`, not `public` (migration `0021`). Each of Flow's connections searches
 `flow, public` (`FLOW_SEARCH_PATH` in `server/db/index.js`), and the
@@ -236,6 +253,7 @@ installation low maintenance.
 | What was sent never changes: `invoice_versions` rows cannot be updated or deleted, lines change only on a draft, a number never changes, an issued invoice is voided and never deleted, and a void invoice is final. A draft that was never issued (`issued_version` 0) can be deleted, which frees its job. With no accounting system, an issued invoice answers `accounting_unavailable`. Deleting an issued invoice whose accounting copy is a draft voids it and keeps the versions. | Triggers in `0001_records_are_append_only.sql`; `deleteDraft` in `server/core/invoices.js` |
 | A person's email is stored lower-case and is unique. A Clerk user links to at most one person. | Constraints on `people` |
 | One job gives one obligation. Its view comes only from stored evidence. A draft invoice is made only when the evidence allows it and a live accounting check just before the write finds no invoice; any doubt refuses it and records why. | `server/core/ledger.js` |
+| Source invoice aggregates stay in `billing_obligations.source_totals`. Unknown line tax stays null. A conflict opens a review item and blocks a draft or send. | `server/core/ledger.js`, `server/core/sending.js` |
 | `obligation_events` rows cannot be updated or deleted. | Trigger in `0004_ledger_events_append_only.sql` |
 | To change an issued invoice, revise it to a draft and issue it again. It keeps its number and gets the next version. | `reviseInvoice` |
 | One active link per external record and per Flow record in each system. A name match stays proposed until a person confirms it. | Partial unique indexes and a check on `external_links`; `server/core/links.js` |

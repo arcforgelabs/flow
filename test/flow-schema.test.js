@@ -12,6 +12,7 @@ import { migrateEverything } from '../server/db/migrate-all.js';
 import { adapters } from '../server/integrations/adapters.js';
 import { migrateAdapterSchema } from '../server/integrations/schema.js';
 import { freshDatabase, skipWithoutDatabase, testDatabaseUrl } from './support/db.js';
+import { explainObligation } from '../server/core/ledger.js';
 
 async function inSchema(pool, schema) {
   const { rows } = await pool.query(
@@ -27,13 +28,13 @@ async function functionsIn(pool, schema) {
   return rows.map((row) => row.proname);
 }
 
-// The core migrations up to 0020, as an installation before the move has them.
-function coreBeforeMove() {
-  const folder = mkdtempSync(join(tmpdir(), 'flow-before-move-'));
+// The core migrations before one schema change, for an upgrade fixture.
+function coreBeforeMigration(index) {
+  const folder = mkdtempSync(join(tmpdir(), 'flow-before-migration-'));
   cpSync(migrationsFolder, folder, { recursive: true });
   const journalFile = join(folder, 'meta', '_journal.json');
   const journal = JSON.parse(readFileSync(journalFile, 'utf8'));
-  journal.entries = journal.entries.filter((entry) => entry.idx < 21);
+  journal.entries = journal.entries.filter((entry) => entry.idx < index);
   writeFileSync(journalFile, JSON.stringify(journal));
   return folder;
 }
@@ -73,7 +74,7 @@ test('Flow\'s tables live in "flow"', { skip: skipWithoutDatabase }, async (t) =
     const handle = await freshDatabase();
     // freshDatabase ran every core migration; start again from before the move.
     await handle.pool.query('DROP SCHEMA IF EXISTS drizzle CASCADE; DROP SCHEMA IF EXISTS flow CASCADE; DROP SCHEMA public CASCADE; CREATE SCHEMA public;');
-    const before = coreBeforeMove();
+    const before = coreBeforeMigration(21);
     try {
       await migrateDatabase(handle.db, { folder: before });
       for (const adapter of adapters.filter((a) => a.schema)) await migrateAdapterSchema(handle.db, adapterBeforeMove(adapter));
@@ -98,7 +99,7 @@ test('Flow\'s tables live in "flow"', { skip: skipWithoutDatabase }, async (t) =
   await t.test('the move closes idle sessions opened before it, as a pooler keeps them', async () => {
     const handle = await freshDatabase();
     await handle.pool.query('DROP SCHEMA IF EXISTS drizzle CASCADE; DROP SCHEMA IF EXISTS flow CASCADE; DROP SCHEMA public CASCADE; CREATE SCHEMA public;');
-    const before = coreBeforeMove();
+    const before = coreBeforeMigration(21);
     // A pooler's server session: open before the move, searching "public".
     const stale = new pg.Client({ connectionString: testDatabaseUrl });
     const closed = new Promise((resolve) => stale.on('error', resolve));
@@ -137,4 +138,36 @@ test('Flow\'s tables live in "flow"', { skip: skipWithoutDatabase }, async (t) =
       await handle.close();
     }
   });
+});
+
+test('source totals upgrade preserves old rows and does not backfill them', { skip: skipWithoutDatabase }, async () => {
+  const handle = await freshDatabase();
+  const before = coreBeforeMigration(25);
+  try {
+    await handle.pool.query('DROP SCHEMA IF EXISTS drizzle CASCADE; DROP SCHEMA IF EXISTS flow CASCADE; DROP SCHEMA public CASCADE; CREATE SCHEMA public;');
+    await migrateDatabase(handle.db, { folder: before });
+    const { rows: [organisation] } = await handle.pool.query("insert into organisations (name) values ('Sample Upgrade Lab') returning id");
+    const { rows: [old] } = await handle.pool.query(
+      `insert into billing_obligations (organisation_id, source_system, source_job_ref, lines, line_fingerprint,
+        subtotal_cents, tax_cents, total_cents, mapping_complete, source_seen_at, hold_state, hold_reason)
+        values ($1, 'sample', 'SAMPLE-OLD', '[]', 'sample', 10000, 1000, 11000, false, now(), 'held', 'Sample hold')
+        returning to_jsonb(billing_obligations) as data`, [organisation.id],
+    );
+    assert.equal('source_totals' in old.data, false);
+    await migrateDatabase(handle.db);
+    await migrateDatabase(handle.db);
+    const { rows: [upgraded] } = await handle.pool.query('select to_jsonb(o) as data from billing_obligations o where id = $1', [old.data.id]);
+    const { source_totals, ...unchanged } = upgraded.data;
+    assert.equal(source_totals, null);
+    assert.deepEqual(unchanged, old.data, 'the upgrade changes no existing value');
+    const { rows: [column] } = await handle.pool.query(`select is_nullable, column_default from information_schema.columns
+      where table_schema = 'flow' and table_name = 'billing_obligations' and column_name = 'source_totals'`);
+    assert.deepEqual(column, { is_nullable: 'YES', column_default: null });
+    const detail = await explainObligation(handle.db, organisation.id, old.data.id);
+    assert.equal(detail.view, 'held');
+    assert.ok(detail.reasons.includes('Sample hold'));
+  } finally {
+    rmSync(before, { recursive: true, force: true });
+    await handle.close();
+  }
 });
