@@ -1154,20 +1154,29 @@ function draftView(invoice, ui, context, redraw) {
   const sendButton = context.canIssue && to && ready ? h('button', {
     class: 'fx-btn fx-btn--primary', type: 'button',
     onclick: async () => {
-      if (changed() && !(await save())) return;
-      const ok = await ui.dialog({
-        title: `Send this invoice to ${to}?`,
-        body: h('p', {}, `It gets the next number (${nextNumber}). ${sendModeNote(to, invoice.sendMode, 'it')}`),
-        confirm: emails ? 'Send and email' : 'Send',
-      });
-      if (!ok) return;
+      if (sendButton.disabled) return;
+      sendButton.disabled = true;
+      const label = sendButton.textContent;
       try {
+        if (changed() && !(await save())) return;
+        const ok = await ui.dialog({
+          title: `Send this invoice to ${to}?`,
+          body: h('p', {}, `It gets the next number (${nextNumber}). ${sendModeNote(to, invoice.sendMode, 'it')}`),
+          confirm: emails ? 'Send and email' : 'Send',
+        });
+        if (!ok) return;
+        sendButton.setAttribute('aria-busy', 'true');
+        sendButton.replaceChildren(h('span', { class: 'fx-spinner fx-spinner--sm', 'aria-hidden': 'true' }), 'Sending…');
         await flow('/api/invoicing/invoices/send-ready', { method: 'POST', body: JSON.stringify({ issueDate: localDate(), invoiceIds: [invoice.id] }) });
         const { invoice: fresh } = await flow(`/api/invoicing/invoices/${invoice.id}`);
         toast(`${fresh.number} is on the way to ${to}.`, 'success');
         openNext(ui, invoice.id);
       } catch (error) {
         toast(error.message, 'danger', { stay: true });
+      } finally {
+        sendButton.disabled = false;
+        sendButton.removeAttribute('aria-busy');
+        sendButton.textContent = label;
       }
     },
   }, emails ? `Send to ${to} and email` : `Send to ${to}`) : null;
