@@ -4,6 +4,23 @@ Flow keeps its records in PostgreSQL. The schema is in
 `server/db/schema.js`; migrations are in `server/db/migrations/` and run when
 the server starts.
 
+## Source total upgrade
+
+Migration `0025` adds nullable `billing_obligations.source_totals` without a default.
+It does not backfill rows or change their totals, holds or invoice links.
+Old rows keep `source_totals = NULL` until a later source read supplies explicit totals.
+The new code uses the existing line totals when source aggregates are absent.
+The additive column leaves the old query shape valid.
+The new code requires the migration before it can read the ledger.
+Do not reverse the database to remove this column.
+A release that excludes migrations must not include this change.
+
+A source conflict blocks a new draft, Mark ready, Use new lines and Send for an unsent draft.
+Retry of an issued invoice still uses its issued version.
+A later source conflict does not change that version or its totals.
+
+## Database schema
+
 Flow's tables, the integrations' included, live in the PostgreSQL schema
 `flow`, not `public` (migration `0021`). Each of Flow's connections searches
 `flow, public` (`FLOW_SEARCH_PATH` in `server/db/index.js`), and the

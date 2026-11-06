@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
 import { after, before, describe, test } from 'node:test';
+import { eq } from 'drizzle-orm';
+import { invoices } from '../server/db/schema.js';
 import { createContact, createOrganisation, createPriceItem } from '../server/core/directory.js';
-import { draftInvoiceForObligation, explainObligation, observeJob, setHold } from '../server/core/ledger.js';
+import { draftInvoiceForObligation, explainObligation, observeJob, setHold, useSourceLines } from '../server/core/ledger.js';
 import { mapLines, mappingContext } from '../server/core/line-mapping.js';
 import { getInvoice, issueInvoice, listInvoiceVersions } from '../server/core/invoices.js';
-import { invoiceView, sendAllReady } from '../server/core/sending.js';
+import { invoiceView, markReady, sendAgain, sendAllReady } from '../server/core/sending.js';
 import { listReview } from '../server/core/review.js';
 import { readBillableOrder } from '../server/integrations/seazona/feed.js';
 import { createSeazonaClient } from '../server/integrations/seazona/client.js';
@@ -74,6 +76,10 @@ describe('source invoice tax through the Seazona feed and ledger', { skip: skipW
     const draft = await getInvoice(db, lab.id, invoice.id);
     assert.equal(draft.totalCents, 11000, 'a source read never rewrites an invoice');
     assert.equal((await invoiceView(db, lab.id, draft)).view, 'problem');
+    const approval = await markReady(db, lab.id, [invoice.id], { personId: 'test' });
+    assert.equal(approval.marked, 0);
+    assert.ok(approval.refused[0].problems.some((problem) => problem.code === 'job_review'));
+    await assert.rejects(useSourceLines(db, lab.id, row.id, { actor: 'test', accept: true }), { code: 'not_ready' });
     await assert.rejects(sendAllReady(db, lab.id, { personId: 'test', issueDate: '2026-08-12', invoiceIds: [invoice.id] }), { code: 'not_ready' });
     await observeJob(db, lab.id, job);
     assert.equal((await invoiceView(db, lab.id, draft)).view, 'ready');
@@ -81,6 +87,14 @@ describe('source invoice tax through the Seazona feed and ledger', { skip: skipW
     const versions = await listInvoiceVersions(db, lab.id, invoice.id);
     await observeJob(db, lab.id, conflict);
     assert.equal((await getInvoice(db, lab.id, invoice.id)).totalCents, 11000);
+    assert.deepEqual(await listInvoiceVersions(db, lab.id, invoice.id), versions);
+    // Retry keeps the issued version. It does not apply the later source totals.
+    await db.update(invoices).set({ sendState: 'failed', sendError: { code: 'sample_refusal', message: 'Sample refusal.' } }).where(eq(invoices.id, invoice.id));
+    const accounting = { capabilities: { sendStatus: async () => ({ connected: true, writesAllowed: true }) } };
+    assert.deepEqual(await sendAgain(db, lab.id, { accounting, personId: null, invoiceIds: [invoice.id] }), { queued: 1 });
+    const retried = await getInvoice(db, lab.id, invoice.id);
+    assert.equal(retried.sendState, 'queued');
+    assert.equal(retried.totalCents, 11000);
     assert.deepEqual(await listInvoiceVersions(db, lab.id, invoice.id), versions);
   });
 
