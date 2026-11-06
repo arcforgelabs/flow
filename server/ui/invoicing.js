@@ -1157,6 +1157,7 @@ function draftView(invoice, ui, context, redraw) {
       if (sendButton.disabled) return;
       sendButton.disabled = true;
       const label = sendButton.textContent;
+      let cancelled = false;
       try {
         if (changed() && !(await save())) return;
         const ok = await ui.dialog({
@@ -1164,7 +1165,7 @@ function draftView(invoice, ui, context, redraw) {
           body: h('p', {}, `It gets the next number (${nextNumber}). ${sendModeNote(to, invoice.sendMode, 'it')}`),
           confirm: emails ? 'Send and email' : 'Send',
         });
-        if (!ok) return;
+        if (!ok) { cancelled = true; return; }
         sendButton.setAttribute('aria-busy', 'true');
         sendButton.replaceChildren(h('span', { class: 'fx-spinner fx-spinner--sm', 'aria-hidden': 'true' }), 'Sending…');
         await flow('/api/invoicing/invoices/send-ready', { method: 'POST', body: JSON.stringify({ issueDate: localDate(), invoiceIds: [invoice.id] }) });
@@ -1177,6 +1178,7 @@ function draftView(invoice, ui, context, redraw) {
         sendButton.disabled = false;
         sendButton.removeAttribute('aria-busy');
         sendButton.textContent = label;
+        if (cancelled && sendButton.isConnected && document.activeElement === document.body) sendButton.focus();
       }
     },
   }, emails ? `Send to ${to} and email` : `Send to ${to}`) : null;
