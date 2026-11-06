@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { after, before, describe, test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 import { and, eq } from 'drizzle-orm';
 import { createApp } from '../server/app.js';
 import { createContact, createOrganisation, createPriceItem } from '../server/core/directory.js';
@@ -7,7 +8,9 @@ import { observeJob, recordAccountingEvidence } from '../server/core/ledger.js';
 import {
   RECONCILE_KIND, RECONCILE_REVIEW_KIND, createReconcileWorker, reconcileDays, reconcileDue, reconcileHealth, runReconcile,
 } from '../server/core/reconcile.js';
-import { backgroundJobs, reviewItems } from '../server/db/schema.js';
+import { backgroundJobs, billingObligations, obligationEvents, reviewItems } from '../server/db/schema.js';
+import { createSeazonaAdapter } from '../server/integrations/seazona/index.js';
+import { defineAdapter } from '../server/integrations/port.js';
 import { readBillableJobs } from '../server/integrations/seazona/reconcile.js';
 import { seazonaOrders } from '../server/integrations/seazona/schema.js';
 import { skipWithoutDatabase } from './support/db.js';
@@ -202,4 +205,67 @@ describe('daily reconcile', { skip: skipWithoutDatabase }, () => {
       { ref: 'ORD-2', day: '2026-10-19', subtotalCents: null },
     ]);
   });
+});
+
+test('daily reconcile distinguishes a non-billable source job from an absent job', { skip: skipWithoutDatabase }, async () => {
+  const handle = await freshSeazonaDatabase();
+  const { db } = handle;
+  const adapter = defineAdapter(createSeazonaAdapter({ env: {
+    SEAZONA_MODE: 'replay', SEAZONA_REPLAY_FILE: fileURLToPath(new URL('./fixtures/seazona/billing.json', import.meta.url)),
+  } }));
+  try {
+    await adapter.start({ db, log: {} });
+    const lab = await createOrganisation(db, { name: 'Synthetic Lab' });
+    const practice = await createContact(db, lab.id, { kind: 'customer', name: 'Synthetic Customer' });
+    const at = new Date('2025-01-05T03:00:00Z');
+    const integrations = integrationsOf([adapter]);
+    const obligations = [];
+    for (const [ref, day] of [
+      ['SYN-RETURNED', '2025-01-02'], ['SYN-NO-LINES', '2025-01-02'], ['SYN-NEW-DAY', '2025-01-02'],
+      ['SYN-ABSENT', '2025-01-03'], ['SYN-DELETED', '2025-01-03'],
+    ]) {
+      obligations.push(await observeJob(db, lab.id, {
+        sourceSystem: 'seazona', sourceJobRef: ref, caseRef: ref, contactId: practice.id, jobDate: day,
+        lines: [{ description: 'Synthetic item', quantity: 1, unitAmountCents: 100, taxCode: 'GST_FREE' }],
+        observedAt: at.toISOString(), actor: 'seazona',
+      }));
+    }
+    const snapshot = async () => ({
+      obligations: await db.select().from(billingObligations),
+      events: await db.select().from(obligationEvents),
+      orders: await db.select().from(seazonaOrders),
+    });
+    const run = (unconfirmed = []) => runReconcile(db, lab.id, { integrations, now: at.getTime(), days: 4, unconfirmed });
+    const first = await run();
+    await run(first.unconfirmed);
+    const order = (id, status, orderedText, lines = [{ code: 'SYN', amountCents: 100 }], extra = {}) => ({
+      id, status, orderedText, lines, recordHash: id, firstSeenAt: at, lastSyncedAt: at, lastChangedAt: at, ...extra,
+    });
+    await db.insert(seazonaOrders).values([
+      order('SYN-RETURNED', 'In Progress', '02/01/2025'),
+      order('SYN-NO-LINES', 'Shipped', '02/01/2025', []),
+      order('SYN-NEW-DAY', 'Shipped', '01/01/2024'),
+      order('SYN-DELETED', 'Shipped', '03/01/2025', [], { deletedInSourceAt: at }),
+      order('SYN-UNOBSERVED', 'Shipped', '04/01/2025'),
+    ]);
+    const before = await snapshot();
+    const result = await run();
+    assert.equal(result.closed, 1, 'the old false alert closes after the source copy contains the jobs');
+    const { days } = await reconcileDays(db, lab.id, { integrations, from: '2025-01-02', to: '2025-01-05' });
+    const returned = days.find((d) => d.day === '2025-01-02');
+    assert.equal(returned.work.count, 0, 'non-billable jobs do not increase billable counts');
+    assert.equal(returned.ledger.count, 3, 'existing obligations stay in the ledger');
+    assert.deepEqual(returned.differences.missingInWork, []);
+    const absent = days.find((d) => d.day === '2025-01-03');
+    assert.deepEqual(absent.differences.missingInWork.map((d) => d.id).sort(), obligations.slice(3).map((o) => o.id).sort());
+    assert.deepEqual(days.find((d) => d.day === '2025-01-04').differences.missingInLedger.map((d) => d.id), ['SYN-UNOBSERVED']);
+    const items = await db.select().from(reviewItems).where(and(
+      eq(reviewItems.organisationId, lab.id), eq(reviewItems.kind, RECONCILE_REVIEW_KIND), eq(reviewItems.state, 'open'),
+    ));
+    assert.deepEqual(items.map((i) => i.evidence.day), ['2025-01-03'], 'the confirmed real missing-job alert stays open');
+    assert.deepEqual(await snapshot(), before, 'reconciliation changes reviews only, not jobs or obligations');
+  } finally {
+    await adapter.stop();
+    await handle.close();
+  }
 });

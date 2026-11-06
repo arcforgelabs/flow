@@ -1,4 +1,16 @@
+import { and, inArray, isNull } from 'drizzle-orm';
 import { readBillableWork } from './feed.js';
+import { seazonaOrders } from './schema.js';
+
+// Presence is not billing eligibility. Keep a job that returned to an open
+// status, lost its lines, or changed its date separate from a missing job.
+export async function readWorkJobPresence(db, { jobRefs }) {
+  if (!jobRefs.length) return { presentRefs: [] };
+  const rows = await db.select({ ref: seazonaOrders.id }).from(seazonaOrders).where(and(
+    inArray(seazonaOrders.id, jobRefs), isNull(seazonaOrders.deletedInSourceAt),
+  ));
+  return { presentRefs: rows.map((row) => row.ref) };
+}
 
 // The billable jobs in Flow's copy of Seazona, by day, behind the port's
 // `billableJobs` (the daily reconcile, server/core/reconcile.js). It walks the
