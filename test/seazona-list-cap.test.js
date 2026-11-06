@@ -238,9 +238,15 @@ describe('Seazona lists at the row cap (issue #125)', { skip: skipWithoutDatabas
     const day = Date.parse('2026-10-01T00:00:00Z');
     const orders = Array.from({ length: 80 }, (_, i) => order(i, day + 60_000 * i));
     const seazona = fakeSeazona({ orders, ignorePaging: true });
-    const result = await run(seazona, { only: ['orders_recent'] });
-    assert.equal(result.results.orders_recent.ok, false);
-    assert.equal(result.results.orders_recent.code, 'seazona_list_at_cap');
-    assert.equal((await laneHealth('orders_recent')).status, 'held');
+    for (const env of [{}, { SEAZONA_LIST_PAGES_PER_RUN: '2' }]) {
+      await db.execute(sql`truncate seazona_orders, seazona_lane_state`);
+      let result = await run(seazona, { env, only: ['orders_recent'] });
+      // A one-page share must detect the repeated page after a persisted
+      // cursor is loaded on the next run, not silently advance forever.
+      if (result.ok) result = await run(seazona, { env, only: ['orders_recent'] });
+      assert.equal(result.results.orders_recent.ok, false);
+      assert.equal(result.results.orders_recent.code, 'seazona_list_at_cap');
+      assert.equal((await laneHealth('orders_recent')).status, 'held');
+    }
   });
 });

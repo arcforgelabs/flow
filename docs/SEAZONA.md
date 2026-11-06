@@ -201,6 +201,9 @@ A list `SEAZONA_LIST_CAP` long may be cut off, so the lane reads on (issue
   new day, and the former day's partial joins the older walk if it has no
   older partial already in progress. Otherwise that day is revisited on the
   next rolling cycle. Pages outside the configured window are discarded.
+  Partial cursors also retain the previous page's IDs (at most 500), so an
+  API that ignores paging is held even when each run reads only one page.
+  Legacy partial cursors learn those IDs on their first resumed page.
   Discovery is eventual within that window, not a historical backfill.
 
 The lane holds (`held`), keeps where it got to and tries again in an hour

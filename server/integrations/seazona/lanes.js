@@ -456,10 +456,12 @@ const laneRuns = {
     let lastDone = null;
     let stoppedAt = partial;
     let todayPartial = todayPartialDay === today ? cursor.todayPartial : partialDay === today ? cursor.partial : null;
-    async function readDay(day, firstPage, callLimit) {
+    async function readDay(day, progress, callLimit) {
       const label = `order list for ${formatOrderedDay(day)}`;
-      let page = Math.max(1, Number(firstPage) || 1);
-      let previous = null;
+      let page = Math.max(1, Number(progress?.page) || 1);
+      // Keep at most one page of IDs in the existing cursor, so splitting
+      // the budget never disables the guard against an API ignoring page.
+      let previous = progress?.previousIds ? new Set(progress.previousIds) : null;
       while (calls < callLimit) {
         calls += 1;
         if (!days.includes(day)) days.push(day);
@@ -472,15 +474,15 @@ const laneRuns = {
         previous = new Set(ids);
         page += 1;
       }
-      return { day: new Date(day).toISOString(), page };
+      return { day: new Date(day).toISOString(), page, previousIds: [...previous] };
     }
     if (readToday) {
       const todayCalls = single ? sync.listPagesPerRun : Math.ceil(sync.listPagesPerRun / 2);
-      todayPartial = await readDay(today, todayPartial?.page, todayCalls);
+      todayPartial = await readDay(today, todayPartial, todayCalls);
     }
     if (!single || !readToday) {
       for (let day = resume; day < today && days.length < sync.orderDaysPerRun && calls < sync.listPagesPerRun; day += DAY_MS) {
-        stoppedAt = await readDay(day, day === resume ? partial?.page : 1, sync.listPagesPerRun);
+        stoppedAt = await readDay(day, day === resume ? partial : null, sync.listPagesPerRun);
         if (stoppedAt) break;
         lastDone = day;
       }
