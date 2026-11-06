@@ -854,7 +854,7 @@ export function ledgerView(obligation, { now = new Date(), sourceMaxAgeMs = SOUR
   }
   if (o.holdState === 'held') return { view: 'held', reasons: [o.holdReason ?? 'held'] };
   const sourceProblems = sourceBillingProblems(o);
-  if (sourceProblems.length) return { view: 'review_required', reasons: sourceProblems };
+  if (sourceProblems.length) return { view: 'review_required', reasons: draftBlockers(o, { now, sourceMaxAgeMs, accounting }) };
   if (o.accountingState === 'paid') return { view: 'paid', reasons: [`invoice ${o.accountingRef} is paid`] };
   if (['authorised', 'part_paid'].includes(o.accountingState)) {
     return { view: 'invoiced', reasons: [`invoice ${o.accountingRef} is ${o.accountingState.replace('_', ' ')}`] };
