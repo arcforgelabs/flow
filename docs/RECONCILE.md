@@ -10,6 +10,7 @@ to any other system, and it never changes a record: a difference is an alert.
 ```mermaid
 flowchart LR
   copy[Work system copy<br/>billableJobs] --> compare{Per day}
+  presence[Work copy presence<br/>workJobPresence] --> compare
   ledger[Billing obligation ledger] --> compare
   ledger --> invoices[Flow invoices]
   ledger --> acc[Accounting copy<br/>findInvoices]
@@ -39,9 +40,15 @@ own reconciliation record (`docs/SEAZONA.md`, "History import").
 | Difference | Meaning |
 | --- | --- |
 | `missingInLedger` | A billable job in the work system's copy has no obligation. |
-| `missingInWork` | An obligation's job is not billable in the copy now (gone, deleted, or its status moved back). |
+| `missingInWork` | An obligation's job is absent or deleted in the work copy. |
 | `missingInAccounting` | A linked invoice is not in the accounting copy. |
 | `accountingTotalDiffers` | The accounting copy's total is not the Flow invoice's total (an invoice Flow issued), or not the job's total with or without GST (an invoice Flow only matched). |
+
+The reconcile checks source presence separately from billable eligibility.
+`workJobPresence` checks ledger refs without status, date or line filters. A
+job that returns to an open status is not missing. Deleted jobs remain
+missing. An adapter without this capability keeps the billable-feed comparison.
+Billable counts and ledger totals do not change.
 
 Totals between the copy and the ledger, and between the ledger and a Flow
 invoice, are shown but not compared: line mapping can price a line from the

@@ -124,6 +124,20 @@ export async function reconcileDays(db, organisationId, { integrations, from, to
           and e.kind in ('observed', 'source_changed') and e.actor <> ${HISTORY_ACTOR})`,
     ));
 
+  // A billable feed cannot prove absence. Check the remaining ledger refs
+  // against the source copy without billing filters. Older adapters retain
+  // the feed comparison until they declare workJobPresence.
+  const present = new Set(work.keys());
+  for (const adapter of workAdapters) {
+    if (!adapter.capabilities.workJobPresence) continue;
+    const jobRefs = [...new Set(obligations
+      .filter((o) => o.sourceSystem === adapter.id && !present.has(`${adapter.id}:${o.sourceJobRef}`))
+      .map((o) => o.sourceJobRef))];
+    for (let i = 0; i < jobRefs.length; i += FIND_BATCH) {
+      const { presentRefs } = await adapter.capabilities.workJobPresence({ organisationId, jobRefs: jobRefs.slice(i, i + FIND_BATCH) });
+      for (const ref of presentRefs) present.add(`${adapter.id}:${ref}`);
+    }
+  }
   const reported = new Set(workAdapters.map((a) => a.id));
   const inLedger = new Set();
   for (const o of obligations) {
@@ -139,7 +153,7 @@ export async function reconcileDays(db, organisationId, { integrations, from, to
     if (reported.has(o.sourceSystem)) {
       const key = `${o.sourceSystem}:${o.sourceJobRef}`;
       inLedger.add(key);
-      if (!work.has(key)) entry.differences.missingInWork.push({ id: o.id, cents: o.totalCents });
+      if (!present.has(key)) entry.differences.missingInWork.push({ id: o.id, cents: o.totalCents });
     }
   }
   for (const [key, job] of work) {

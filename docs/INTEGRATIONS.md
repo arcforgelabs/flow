@@ -31,7 +31,7 @@ export const exampleAdapter = {
 
 The capabilities are `pullWorkItems`, `pullHistoryJobs`, `pushInvoice`, `pushBill`,
 `pullPayments`, `checkInvoice`, `listCustomers`, `createCustomer`, `findInvoices`, `listWork`,
-`billableJobs`, `listPriceItems`, `jobIssues`, `moveWork`, `cancelMove`, `personSettings`,
+`billableJobs`, `workJobPresence`, `listPriceItems`, `jobIssues`, `moveWork`, `cancelMove`, `personSettings`,
 `setPersonSetting`, `captureError`, `browserMonitoring`, `traceSpan`, `traceRequest`, `alerts` and
 `health`. `alerts({ organisationId })` answers what only a person can clear,
 for the quiet alert on the Integrations page (docs/ALERTS.md).
@@ -63,7 +63,13 @@ them on each job (Seazona: history jobs a person must decide).
 `billableJobs({ organisationId, from, to })` answers the billable jobs in the
 adapter's own copy whose job day is in that range, never a live call:
 `{ jobs }`, each `{ ref, day, subtotalCents }` (`subtotalCents` null when a
-line has no amount); the daily reconcile counts them (`docs/RECONCILE.md`). `captureError({ message,
+line has no amount); the daily reconcile counts them (`docs/RECONCILE.md`).
+`workJobPresence({ organisationId, jobRefs })` answers `{ presentRefs }` for
+requested refs still present in that copy. It reads no outside system. It
+ignores status, date and line filters, but excludes deleted jobs. The core
+checks refs missing from the billable feed in batches of 400. Adapters without
+this capability keep the billable-feed comparison.
+`captureError({ message,
 source, error })` takes each error Flow logs, and `browserMonitoring()`
 answers the public settings a browser needs. `traceSpan({ name, op,
 attributes }, work)` runs work inside a span of the current performance
