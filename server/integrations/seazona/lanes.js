@@ -430,47 +430,60 @@ const laneRuns = {
 
   async orders_recent(ctx) {
     const { db, client, sync, at } = ctx;
-    const nowMs = at.getTime();
-    const lookbackStart = floorUtcDay(nowMs - sync.orderLookbackDays * DAY_MS);
-    const doneThrough = Date.parse(ctx.state?.cursor?.completedThrough ?? '');
-    const partial = ctx.state?.cursor?.partial;
-    const partialDay = Date.parse(partial?.day ?? '');
-    // Go on inside a day a run did not finish; otherwise re-read the last
-    // finished day as well, so late orders on it are seen.
-    const resumeInside = Number.isFinite(partialDay) && partialDay >= lookbackStart;
-    const resume = resumeInside ? partialDay : Number.isFinite(doneThrough) ? Math.max(lookbackStart, doneThrough) : lookbackStart;
+    const today = floorUtcDay(at.getTime());
+    const lookbackStart = today - sync.orderLookbackDays * DAY_MS;
+    const cursor = ctx.state?.cursor ?? {};
+    const doneThrough = Date.parse(cursor.completedThrough ?? '');
+    const partialDay = Date.parse(cursor.partial?.day ?? '');
+    const todayPartialDay = Date.parse(cursor.todayPartial?.day ?? '');
+    let partial = partialDay >= lookbackStart && partialDay < today ? cursor.partial : null;
+    // A partial newest day becomes an older day at midnight. Keep its page
+    // unless an older partial already owns the rolling walk; that walk will
+    // revisit the former newest day on its next cycle too.
+    if (!partial && todayPartialDay >= lookbackStart && todayPartialDay < today) partial = cursor.todayPartial;
+    let resume = partial ? Date.parse(partial.day) : Number.isFinite(doneThrough) ? Math.max(lookbackStart, floorUtcDay(doneThrough) + DAY_MS) : lookbackStart;
+    if (resume >= today) resume = lookbackStart;
 
-    // Issue #125: the list is paged (page, pageSize). A full page goes on to
-    // the next page; a short page, or a page past the day, ends the day. The
-    // guide says the list answers orders on or after `ordered`; a list that
-    // answers one day works the same way.
+    // Give today and the rolling previous-day walk a share of the existing
+    // budgets. With only one day or call available, alternate them instead
+    // of permanently starving either. Missing fields migrate naturally.
+    const single = sync.listPagesPerRun === 1 || sync.orderDaysPerRun === 1;
+    const readToday = !single || !cursor.historyNext;
     const pageSize = Math.min(ORDER_PAGE_MAX, sync.listCap);
     const byId = new Map();
     const days = [];
     let calls = 0;
     let lastDone = null;
-    let stoppedAt = null;
-    for (let day = floorUtcDay(resume); day <= floorUtcDay(nowMs) && days.length < sync.orderDaysPerRun && !stoppedAt; day += DAY_MS) {
+    let stoppedAt = partial;
+    let todayPartial = todayPartialDay === today ? cursor.todayPartial : partialDay === today ? cursor.partial : null;
+    async function readDay(day, firstPage, callLimit) {
       const label = `order list for ${formatOrderedDay(day)}`;
-      let page = resumeInside && day === floorUtcDay(resume) ? Math.max(1, Number(partial.page) || 1) : 1;
+      let page = Math.max(1, Number(firstPage) || 1);
       let previous = null;
-      for (;;) {
-        if (calls >= sync.listPagesPerRun) {
-          stoppedAt = { day, page };
-          break;
-        }
+      while (calls < callLimit) {
         calls += 1;
         if (!days.includes(day)) days.push(day);
         const list = listOrFail(await client.get('orders/', { ordered: formatOrderedDay(day), page, pageSize }), label);
         const ids = list.map((item) => text(item?.id)).filter(Boolean);
-        // A Seazona that does not page answers the same rows again.
         if (previous && ids.length && ids.every((id) => previous.has(id))) throw cannotGoOn(label, sync, 'the next page answers the same orders');
         for (const item of list) if (text(item?.id)) byId.set(text(item.id), item);
-        if (list.length < pageSize || placedAfter(list[list.length - 1], day + DAY_MS)) break;
+        // The guide's on-or-after lists and single-day lists both work.
+        if (list.length < pageSize || placedAfter(list[list.length - 1], day + DAY_MS)) return null;
         previous = new Set(ids);
         page += 1;
       }
-      if (!stoppedAt) lastDone = day;
+      return { day: new Date(day).toISOString(), page };
+    }
+    if (readToday) {
+      const todayCalls = single ? sync.listPagesPerRun : Math.ceil(sync.listPagesPerRun / 2);
+      todayPartial = await readDay(today, todayPartial?.page, todayCalls);
+    }
+    if (!single || !readToday) {
+      for (let day = resume; day < today && days.length < sync.orderDaysPerRun && calls < sync.listPagesPerRun; day += DAY_MS) {
+        stoppedAt = await readDay(day, day === resume ? partial?.page : 1, sync.listPagesPerRun);
+        if (stoppedAt) break;
+        lastDone = day;
+      }
     }
     const known = await readKnown(db, 'orders', [...byId.keys()]);
     const summary = { created: 0, changed: 0, unchanged: 0 };
@@ -506,7 +519,9 @@ const laneRuns = {
       cursorTime: through === null ? ctx.state?.cursorTime ?? null : new Date(through),
       cursor: {
         ...(through === null ? {} : { completedThrough: new Date(through).toISOString() }),
-        ...(stoppedAt ? { partial: { day: new Date(stoppedAt.day).toISOString(), page: stoppedAt.page } } : {}),
+        ...(stoppedAt ? { partial: stoppedAt } : {}),
+        ...(todayPartial ? { todayPartial } : {}),
+        ...(single ? { historyNext: readToday } : {}),
       },
     };
   },

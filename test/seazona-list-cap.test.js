@@ -29,7 +29,7 @@ const settingsFor = (env = {}) => resolveSeazonaSettings({
 const seazonaTime = (ms) => new Date(ms).toISOString().replace(/\.\d{3}Z$/, '');
 const parseUtc = (value) => Date.parse(/[zZ]|[+-]\d\d:?\d\d$/.test(value) ? value : `${value}Z`);
 
-function fakeSeazona({ invoices = [], orders = [], ignorePaging = false } = {}) {
+function fakeSeazona({ invoices = [], orders = [], ignorePaging = false, exactDay = false } = {}) {
   const calls = [];
   const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
   async function fetchImpl(input) {
@@ -51,7 +51,7 @@ function fakeSeazona({ invoices = [], orders = [], ignorePaging = false } = {}) 
       const since = parseUtc(query.ordered);
       const size = Number(query.pageSize ?? 100);
       const page = ignorePaging ? 1 : Number(query.page ?? 1);
-      const rows = orders.filter((row) => parseUtc(row.ordered) >= since)
+      const rows = orders.filter((row) => parseUtc(row.ordered) >= since && (!exactDay || parseUtc(row.ordered) < since + 86_400_000))
         .sort((a, b) => parseUtc(a.ordered) - parseUtc(b.ordered) || a.id.localeCompare(b.id));
       return json(rows.slice((page - 1) * size, page * size));
     }
@@ -173,6 +173,65 @@ describe('Seazona lists at the row cap (issue #125)', { skip: skipWithoutDatabas
     const pages = seazona.calls.filter((call) => call.path === 'orders/' && call.query.ordered.startsWith('2026-10-01'));
     assert.deepEqual(pages.map((call) => [call.query.page, call.query.pageSize]), [['1', '50'], ['2', '50'], ['3', '50']]);
     assert.equal((await laneHealth('orders_recent')).status, 'ok');
+  });
+
+  test('recent discovery revisits completed days while polling new orders within tight budgets', async () => {
+    const today = Date.parse('2026-10-01T00:00:00Z');
+    for (const limits of [
+      { SEAZONA_LIST_PAGES_PER_RUN: '2', SEAZONA_ORDER_DAYS_PER_RUN: '2' },
+      { SEAZONA_LIST_PAGES_PER_RUN: '1', SEAZONA_ORDER_DAYS_PER_RUN: '2' },
+      { SEAZONA_LIST_PAGES_PER_RUN: '2', SEAZONA_ORDER_DAYS_PER_RUN: '1' },
+    ]) {
+      await db.execute(sql`truncate seazona_orders, seazona_lane_state`);
+      const env = { SEAZONA_ORDER_LOOKBACK_DAYS: '3', ...limits };
+      const orders = [];
+      const seazona = fakeSeazona({ orders, exactDay: true });
+      // A released cursor that has already reached today, without new fields.
+      await run(seazona, { env, only: ['orders_recent'] });
+      await db.execute(sql`update seazona_lane_state set cursor = ${JSON.stringify({ completedThrough: new Date(today).toISOString() })}::jsonb where lane = 'orders_recent'`);
+      orders.push(order(801, today - 86_400_000), order(802, today));
+      for (let i = 0; i < 8; i += 1) {
+        seazona.calls.length = 0;
+        const result = await run(seazona, { env, only: ['orders_recent'] });
+        assert.equal(result.ok, true, JSON.stringify(result));
+        const lists = seazona.calls.filter((call) => call.path === 'orders/');
+        assert.ok(lists.length <= Number(limits.SEAZONA_LIST_PAGES_PER_RUN));
+        assert.ok(new Set(lists.map((call) => call.query.ordered)).size <= Number(limits.SEAZONA_ORDER_DAYS_PER_RUN));
+        if (i === 0) assert.ok((await db.select().from(seazonaOrders)).some((row) => row.id === order(802, today).id), 'today is polled before the older window');
+        clock.advance(5 * 60_000);
+      }
+      const stored = await db.select().from(seazonaOrders);
+      assert.ok(stored.some((row) => row.id === order(801, today).id), 'a late-listed order on a completed previous day is discovered');
+    }
+  });
+
+  test('a partial previous day resumes without delaying today, including after midnight', async () => {
+    const today = Date.parse('2026-10-01T00:00:00Z');
+    const yesterday = today - 86_400_000;
+    const orders = Array.from({ length: 120 }, (_, i) => order(i, yesterday + 60_000 * i));
+    orders.push(...Array.from({ length: 80 }, (_, i) => order(901 + i, today + 60_000 * i)));
+    const seazona = fakeSeazona({ orders, exactDay: true });
+    const env = { SEAZONA_ORDER_LOOKBACK_DAYS: '3', SEAZONA_LIST_PAGES_PER_RUN: '2', SEAZONA_ORDER_DAYS_PER_RUN: '2' };
+    await run(fakeSeazona(), { env, only: ['orders_recent'] });
+    await db.execute(sql`update seazona_lane_state set cursor = ${JSON.stringify({ completedThrough: new Date(yesterday - 86_400_000).toISOString(), partial: { day: new Date(yesterday).toISOString(), page: 2 } })}::jsonb where lane = 'orders_recent'`);
+    const first = await run(seazona, { env, only: ['orders_recent'] });
+    assert.equal(first.ok, true, JSON.stringify(first));
+    let stored = await db.select().from(seazonaOrders);
+    assert.ok(stored.some((row) => row.id === order(901, today).id), 'today is not starved by older full pages');
+    assert.ok(stored.some((row) => row.id === order(50, yesterday).id), 'the old partial page is read');
+    assert.ok(!stored.some((row) => row.id === order(0, yesterday).id), 'the partial page was not restarted at page one');
+    assert.equal((await laneState('orders_recent')).cursor.partial.page, 3);
+    clock.advance(5 * 60_000);
+    const second = await run(seazona, { env, only: ['orders_recent'] });
+    assert.equal(second.ok, true, JSON.stringify(second));
+    stored = await db.select().from(seazonaOrders);
+    for (const id of [order(119, yesterday).id, order(980, today).id]) assert.ok(stored.some((row) => row.id === id), 'stored ' + id);
+    clock.set('2026-10-02T00:05:00Z');
+    orders.push(order(1001, today + 86_400_000));
+    const third = await run(seazona, { env, only: ['orders_recent'] });
+    assert.equal(third.ok, true, JSON.stringify(third));
+    assert.ok((await db.select().from(seazonaOrders)).some((row) => row.id === order(1001, today).id), 'midnight polls the new day from page one');
+    assert.ok(seazona.calls.filter((call) => call.path === 'orders/').length <= 6, 'two list calls per run');
   });
 
   test('when Seazona answers the same page again, the order lane holds', async () => {
