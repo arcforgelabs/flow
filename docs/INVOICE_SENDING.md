@@ -104,7 +104,10 @@ in Xero from the Flow contact (`docs/CONTACTS.md`). With it off, add the
 client in Xero, then sync. Owners and admins see Create. Staff see the flag.
 
 An issued invoice that the accounting system refused is in Pending (Send
-failed). It shows the refusal until a person sends it again.
+failed). Its page shows the refusal reason. If the refusal identifies a
+matched Xero invoice, **Open in Xero** opens that invoice. The notice stays
+until a person sends the Flow invoice again. Existing saved refusals without
+a matched invoice identifier have no link.
 
 ## Send all ready
 
