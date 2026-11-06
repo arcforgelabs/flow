@@ -40,6 +40,10 @@ passes). Draft is the accounting system's word for an invoice it holds.
 On the invoice the buttons are, left to right, **Delete** (a draft that was
 never issued; an owner or admin), **Preview**, **Save**, then
 **Send to Xero** (accounting system on) or **Approve** (no accounting system).
+While Send waits for confirmation or a response, its button cannot start another
+send. After confirmation it shows a spinner and **Sending…** until the request
+finishes. Cancel and Escape return keyboard focus to Send.
+A refused request keeps its reason visible and enables Send for retry.
 A Pending draft has no send button. Delete asks first, removes the draft,
 and frees its job: the lab's rules then decide whether Flow drafts it again.
 The result stays until the person closes it.
