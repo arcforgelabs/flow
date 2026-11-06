@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { ledgerView } from '../server/core/ledger.js';
 import {
   caseNumber, fixes, GO, invoiceStage, matches, NO_STATUS, orderStatuses, phoneLaneIndex, problemSummary,
 } from '../server/ui/job-board.js';
@@ -39,6 +40,24 @@ test('a job\'s invoice stage follows its obligation; a job in work has none', ()
   assert.equal(stage({ view: 'drafted', invoiceStatus: 'void' }), 'problem');
   assert.equal(stage({ view: 'invoiced' }), 'invoiced');
   assert.equal(stage({ view: 'paid' }), 'paid');
+});
+
+test('a source-tax warning does not replace an existing invoice stage', () => {
+  const obligation = {
+    invoiceId: 'SAMPLE-INVOICE', holdState: 'none', accountingState: 'not_found',
+    lines: [{ quantity: 1, unitAmountCents: 10000, taxCode: null, lineAmountCents: 10000, taxCents: null }],
+    sourceTotals: { subtotalCents: 10000, taxCents: 0, totalCents: 10000 },
+    mappingComplete: true, contactId: 'SAMPLE-CONTACT', sourceSeenAt: new Date(),
+  };
+  const stage = (values) => {
+    const row = { ...obligation, ...values };
+    return invoiceStage({ ...row, ...ledgerView(row, { accounting: false }) });
+  };
+  assert.equal(stage({ invoiceStatus: 'draft', invoiceView: 'non_chargeable' }), 'non_chargeable');
+  assert.equal(stage({ invoiceStatus: 'draft', invoiceView: 'problem' }), 'problem', 'an unsent chargeable invoice still needs review');
+  assert.equal(stage({ accountingState: 'paid' }), 'paid');
+  assert.equal(stage({ accountingState: 'authorised' }), 'invoiced');
+  assert.equal(stage({ invoiceStatus: 'draft', invoiceView: 'non_chargeable', holdState: 'held' }), 'problem', 'an explicit hold still takes precedence');
 });
 
 test('each problem is a short label, what is wrong, and what to do', () => {

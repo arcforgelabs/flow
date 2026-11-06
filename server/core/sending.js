@@ -5,7 +5,7 @@ import { FlowError } from './errors.js';
 import { listRules, ruleNonChargeable, rulePending, ruleSkip } from './invoice-rules.js';
 import { customerBillingByContact, effectiveSettings, readInvoicingSettings } from './invoicing-rules.js';
 import { issueInvoice } from './invoices.js';
-import { CHANGED_REASON, diffJobLines, STATUS_BACK_REASON } from './ledger.js';
+import { CHANGED_REASON, diffJobLines, sourceBillingProblems, STATUS_BACK_REASON } from './ledger.js';
 import { soleOrganisation } from './pipeline.js';
 import { needsRead, readAccountingFirst, readBeforeAct, READS_PER_PASS } from './read-before-act.js';
 import { deadHoldSince, deadSince, enqueueJob, runNextJob } from './queue.js';
@@ -116,6 +116,12 @@ async function checkDrafts(db, organisationId, drafts, accounting) {
   }
   // A draft whose job the ledger sent to review (the job changed after the
   // draft was made, or the work system deleted it) waits for a person.
+  for (const { obligation } of jobs) {
+    for (const reason of sourceBillingProblems(obligation)) {
+      const found = problem('job_review', 'Check the source invoice: ' + reason + '.', 'Source tax');
+      problems.set(obligation.invoiceId, [...(problems.get(obligation.invoiceId) ?? []), found]);
+    }
+  }
   const reviewed = jobs.map((j) => j.obligation).filter((o) => o.holdState === 'review');
   for (const obligation of reviewed) {
     const { invoiceId, holdReason: reason } = obligation;

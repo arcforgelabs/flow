@@ -127,4 +127,20 @@ describe('read before act', { skip: skipWithoutDatabase }, () => {
     const { problems } = await invoiceViews(db, lab.id);
     assert.equal(problems.get(dropInvoice)?.[0].code, 'job_review');
   });
+
+  test('a tax conflict found by the last source read stops Send without changing the draft', async () => {
+    const row = await readyJob();
+    await autoDraftJobs(db, lab.id, { work, now: new Date(SEEN.getTime() + 60_000) });
+    const { invoiceId } = await reload(row);
+    assert.ok(invoiceId);
+    const before = await getInvoice(db, lab.id, invoiceId);
+    const answer = item(row.sourceJobRef, [crown], LATER);
+    answer.item.ledgerJob.sourceTotals = { subtotalCents: 20000, taxCents: 0, totalCents: 20000 };
+    answers.set(row.sourceJobRef, answer);
+    await assert.rejects(sendAllReady(db, lab.id, { work, personId: 'test', invoiceIds: [invoiceId], issueDate: '2026-10-19', now: LATER }), { code: 'not_ready' });
+    const after = await getInvoice(db, lab.id, invoiceId);
+    assert.equal(after.status, 'draft');
+    assert.equal(after.totalCents, before.totalCents);
+    assert.ok((await invoiceViews(db, lab.id)).problems.get(invoiceId).some((p) => p.code === 'job_review'));
+  });
 });

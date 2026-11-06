@@ -334,11 +334,23 @@ for (const { ledgerWithdrawn } of page.withdrawn) {
 | `practitioner` | The dentist on the order |
 | `shippedOn` | Always null: the API gives a shipped status, not a date |
 | `lines` | The Seazona invoice's lines, discounts included, when that invoice carries this order and no other (`linesFrom: 'invoice'`); otherwise the order's lines (`linesFrom: 'order'`), so an invoice is never split or billed twice. Each line has quantity 1, the line's `code` as `itemCode`, and its amount. An unknown amount or tax treatment is left for the price item with the same code. |
+| `sourceTotals` | The invoice subtotal, tax and total when the invoice bills this job alone, even without invoice lines. Zero stays zero. Shared invoice totals are not split. |
 | `observedAt` | The last successful read from Seazona, so the ledger's out-of-date check is real |
 | `contactId` | Not set: the core resolves the Flow contact from `item.client` |
 
-Amounts are tax-exclusive, as Seazona reports them, and the ledger adds GST
-per line. An order deleted in Seazona sends its obligation to review
+Amounts are tax-exclusive. The ledger keeps each explicit source aggregate.
+It calculates line tax separately and compares the results with those aggregates.
+A difference opens one `job.source_totals` review item and blocks drafting, approval and Send for an unsent draft.
+Unknown line tax stays null unless a saved mapping or price item supplies it.
+Flow does not apply the GST fallback to an unmapped line with unknown tax.
+Flow does not allocate invoice tax between lines or use a client's current tax rate to rewrite an invoice.
+Fix the cause and read the source again to close the review item.
+Existing holds, history holds and issued invoice versions stay unchanged.
+An existing invoice keeps its Non-chargeable, Invoiced or Paid stage.
+Source conflicts still block approval and Send for an unsent chargeable invoice.
+The CSV history feed also keeps its explicit invoice total without an inferred tax allocation.
+
+An order deleted in Seazona sends its obligation to review
 (`ledgerWithdrawn`); a person decides what happens to any invoice already
 made. An order whose status moves back (for example from Shipped to In
 Production) loses an unsent ready mark, and goes to review when its invoice

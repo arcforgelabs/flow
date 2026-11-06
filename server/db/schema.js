@@ -260,6 +260,8 @@ export const billingObligations = pgTable('billing_obligations', {
   // The lines as the work system reported them, normalised.
   lines: jsonb('lines').notNull().default(sql`'[]'::jsonb`),
   lineFingerprint: text('line_fingerprint').notNull(),
+  // Exact source aggregates for a job billed alone. Missing fields are unknown.
+  sourceTotals: jsonb('source_totals'),
   subtotalCents: integer('subtotal_cents').notNull(),
   taxCents: integer('tax_cents').notNull(),
   totalCents: integer('total_cents').notNull(),
