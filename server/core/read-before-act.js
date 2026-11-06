@@ -1,7 +1,7 @@
 import { and, eq } from 'drizzle-orm';
 import { billingObligations } from '../db/schema.js';
 import { FlowError } from './errors.js';
-import { observeJob, observeWithdrawn } from './ledger.js';
+import { observeJob, observeWithdrawn, sourceBillingProblems } from './ledger.js';
 import { matchJobs, workJobMaker } from './pipeline.js';
 
 // Read before act (issue #141). Flow drafts and sends from its own copy of
@@ -50,7 +50,7 @@ export async function readBeforeAct(db, organisationId, obligations, { work, now
         continue;
       }
       const fresh = await reload(db, organisationId, obligation.id);
-      outcomes.set(obligation.id, { outcome: fresh.holdState === 'review' ? 'review' : 'read', obligation: fresh });
+      outcomes.set(obligation.id, { outcome: fresh.holdState === 'review' || sourceBillingProblems(fresh).length ? 'review' : 'read', obligation: fresh });
     } else if (answer?.state === 'withdrawn') {
       // The ledger decides as for the feed (observeWithdrawn): deleted, or
       // moved back after its invoice, goes to review; moved back while only

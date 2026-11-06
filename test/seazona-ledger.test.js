@@ -32,7 +32,8 @@ test('an invoice that carries several orders is never split: each job keeps its 
   assert.equal(ledgerLinesFor({ ...item, invoiceOrderCount: 1 }).linesFrom, 'invoice');
   const unknown = toLedgerJob({ ...item, lines: [{ description: 'Example crown', code: 'CRN', amountCents: null }] }).lines[0];
   assert.equal(unknown.unitAmountCents, undefined, 'an unknown amount is left for the price list');
-  assert.equal(unknown.taxCode, undefined, 'an unknown tax treatment is left for the price list');
+  assert.equal(unknown.taxCode, null, 'an unknown tax treatment stays explicit until a price item supplies it');
+  assert.equal(toLedgerJob(item).sourceTotals, null, 'shared invoice totals never become one order total');
 });
 
 describe('Seazona work in the billing ledger', { skip: skipWithoutDatabase }, () => {
@@ -69,11 +70,11 @@ describe('Seazona work in the billing ledger', { skip: skipWithoutDatabase }, ()
     assert.equal(obligation.sourceSeenAt.toISOString(), crown.syncedAt);
     assert.ok(!JSON.stringify(obligation).includes('Synthetic Patient'));
 
-    // Not marked ready, no contact and no price list yet: the ledger keeps it
-    // in work, with every reason.
+    // The discount has no tax flag. Its invoice totals stay authoritative,
+    // but Flow cannot assign the discount tax without evidence.
     const { view, reasons } = ledgerView(obligation, { now: new Date(clock.now()) });
-    assert.equal(view, 'in_work');
-    assert.ok(reasons.includes('the job has no customer contact'));
+    assert.equal(view, 'review_required');
+    assert.ok(reasons.includes('a source line has unknown tax treatment'));
 
     // The same report again changes nothing.
     const again = await observeJob(db, lab.id, { ...crown.ledgerJob, contactId: null });
