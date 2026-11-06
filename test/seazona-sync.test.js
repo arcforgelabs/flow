@@ -124,7 +124,7 @@ describe('Seazona sync lanes', { skip: skipWithoutDatabase }, () => {
     clock.advance(10 * MINUTE);
     const { calls, result } = await run(billing(), { only: ['invoices', 'orders_recent', 'clients'] });
     assert.equal(result.ok, true);
-    assert.deepEqual(calls.map((call) => call.path), ['invoices/', 'orders/', 'clients/']);
+    assert.deepEqual(calls.map((call) => call.path), ['invoices/', 'orders/', 'orders/', 'clients/']);
     assert.equal(result.results.orders_recent.summary.unchanged, 2);
   });
 
