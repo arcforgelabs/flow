@@ -85,6 +85,9 @@ for (const width of [1280, 393]) test(`detail Send stays busy, rejects repeat ac
     assert.equal(await page.locator('dialog[open]').count(), 1);
     await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
     assert.equal(calls, 0);
+    // Cancel resolves on the dialog's close event; focus() does not wait for enabled.
+    await page.waitForFunction(() => [...document.querySelectorAll('button')]
+      .some((button) => button.textContent === 'Send to Xero' && !button.disabled));
     await send.focus();
     await page.keyboard.press('Enter');
     await dialog.getByRole('button', { name: 'Send', exact: true }).focus();
