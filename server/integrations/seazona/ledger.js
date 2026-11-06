@@ -38,9 +38,10 @@ export function ledgerLinesFor(item) {
 // `observedAt` is the last successful read from Seazona, so the ledger's
 // out-of-date check measures how old Seazona's report really is.
 export function toLedgerJob(item) {
-  const { lines, linesFrom } = ledgerLinesFor(item);
+  const { lines } = ledgerLinesFor(item);
+  // Totals remain evidence when an invoice has no lines.
   // A shared invoice cannot supply one job's totals. Never split its tax.
-  const sourceTotals = linesFrom === 'invoice' ? {
+  const sourceTotals = item.invoice && item.invoiceOrderCount === 1 ? {
     subtotalCents: item.invoice.subtotalCents ?? null,
     taxCents: item.invoice.taxCents ?? null,
     totalCents: item.invoice.totalCents ?? null,

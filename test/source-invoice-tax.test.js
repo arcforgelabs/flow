@@ -35,8 +35,8 @@ describe('source invoice tax through the Seazona feed and ledger', { skip: skipW
   });
   after(async () => handle?.close());
 
-  async function read(ref, { products, discounts = [], subtotal, tax, total }) {
-    const invoice = { id: 'INV-' + ref, invoiceNumber: ref, clientId: 'CLIENT', company: 'Sample Customer', status: 'Open', invoiceDate: '12/08/2026', subtotal, tax, total, productServiceItems: products, discountItems: discounts };
+  async function read(ref, { products, invoiceProducts = products, discounts = [], subtotal, tax, total }) {
+    const invoice = { id: 'INV-' + ref, invoiceNumber: ref, clientId: 'CLIENT', company: 'Sample Customer', status: 'Open', invoiceDate: '12/08/2026', subtotal, tax, total, productServiceItems: invoiceProducts, discountItems: discounts };
     const order = { id: 'ORDER-' + ref, invoiceNumber: ref, clientId: 'CLIENT', company: 'Sample Customer', status: 'Shipped', ordered: '12/08/2026', products };
     const responses = [
       { path: 'invoices/', query: { lastModified: '*' }, body: [invoice] },
@@ -61,6 +61,17 @@ describe('source invoice tax through the Seazona feed and ledger', { skip: skipW
     assert.equal(row.lines[0].taxCode, 'GST', 'do not invent a line allocation from an invoice total or current client rate');
     const detail = await explainObligation(db, lab.id, row.id, { now: new Date(clock.now()) });
     assert.equal(detail.view, 'review_required');
+    await assert.rejects(draftInvoiceForObligation(db, lab.id, row.id, { actor: 'test', liveCheck: null, now: new Date(clock.now()) }), { code: 'not_ready' });
+  });
+
+  test('an invoice without lines retains its single-job totals and blocks conflicting tax', async () => {
+    const job = await read('SAMPLE-EMPTY', {
+      products: [{ code: 'PRODUCT', name: 'Sample product', price: 100, taxable: true }],
+      invoiceProducts: [], subtotal: 100, tax: 0, total: 100,
+    });
+    const row = await observeJob(db, lab.id, job);
+    assert.deepEqual([row.subtotalCents, row.taxCents, row.totalCents], [10000, 0, 10000]);
+    assert.equal((await explainObligation(db, lab.id, row.id)).view, 'review_required');
     await assert.rejects(draftInvoiceForObligation(db, lab.id, row.id, { actor: 'test', liveCheck: null, now: new Date(clock.now()) }), { code: 'not_ready' });
   });
 

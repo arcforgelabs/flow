@@ -853,13 +853,14 @@ export function ledgerView(obligation, { now = new Date(), sourceMaxAgeMs = SOUR
     return { view: 'review_required', reasons: [`invoice ${o.accountingRef} was ${o.accountingState}`] };
   }
   if (o.holdState === 'held') return { view: 'held', reasons: [o.holdReason ?? 'held'] };
-  const sourceProblems = sourceBillingProblems(o);
-  if (sourceProblems.length) return { view: 'review_required', reasons: draftBlockers(o, { now, sourceMaxAgeMs, accounting }) };
   if (o.accountingState === 'paid') return { view: 'paid', reasons: [`invoice ${o.accountingRef} is paid`] };
   if (['authorised', 'part_paid'].includes(o.accountingState)) {
     return { view: 'invoiced', reasons: [`invoice ${o.accountingRef} is ${o.accountingState.replace('_', ' ')}`] };
   }
+  // Existing invoices own their stage. sending.js still checks source conflicts
+  // before approval or Send, after the non-chargeable rules.
   if (o.invoiceId || o.accountingState === 'drafted') return { view: 'drafted', reasons: ['a draft invoice exists'] };
+  if (sourceBillingProblems(o).length) return { view: 'review_required', reasons: draftBlockers(o, { now, sourceMaxAgeMs, accounting }) };
   const reasons = draftBlockers(o, { now, sourceMaxAgeMs, accounting });
   // Flow's own stage: a job is in work until a person or an automation marks
   // it ready to invoice (setReady).
