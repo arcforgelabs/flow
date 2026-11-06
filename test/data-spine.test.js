@@ -180,15 +180,25 @@ describe('data spine', { skip: skipWithoutDatabase }, () => {
       assert.equal(retryDelayMs(3), 240000);
       assert.equal(retryDelayMs(50), 6 * 60 * 60 * 1000);
 
-      const { job } = await enqueueJob(db, lab.id, { kind: 'test.fail', maxAttempts: 2 });
-      let [claimed] = await claimJobs(db, { workerId: 'w', kinds: ['test.fail'] });
-      const retried = await failJob(db, claimed, { workerId: 'w', error: new Error('synthetic 500') });
-      assert.equal(retried.state, 'queued');
-      assert.ok(retried.runAfter > new Date());
-      assert.deepEqual(await claimJobs(db, { workerId: 'w', kinds: ['test.fail'] }), []);
+      const { job } = await enqueueJob(db, lab.id, { kind: 'test.fail', maxAttempts: 3 });
+      for (const delaySeconds of [60, 120]) {
+        const [claimed] = await claimJobs(db, { workerId: 'w', kinds: ['test.fail'] });
+        await db.transaction(async (tx) => {
+          const retried = await failJob(tx, claimed, { workerId: 'w', error: new Error('synthetic 500') });
+          assert.equal(retried.state, 'queued');
+          assert.equal(retried.lockedBy, null);
+          assert.equal(retried.lockedUntil, null);
+          // PostgreSQL keeps now() fixed within this transaction. No sleep or clock tolerance.
+          const { rows: [stored] } = await tx.execute(sql`
+            select extract(epoch from (run_after - now())) as delay
+            from background_jobs where id = ${job.id}`);
+          assert.equal(Number(stored.delay), delaySeconds);
+        });
+        assert.deepEqual(await claimJobs(db, { workerId: 'w', kinds: ['test.fail'] }), []);
+        await db.execute(sql`update background_jobs set run_after = now() where id = ${job.id}`);
+      }
 
-      await db.execute(sql`update background_jobs set run_after = now() where id = ${job.id}`);
-      [claimed] = await claimJobs(db, { workerId: 'w', kinds: ['test.fail'] });
+      const [claimed] = await claimJobs(db, { workerId: 'w', kinds: ['test.fail'] });
       const dead = await failJob(db, claimed, { workerId: 'w', error: 'synthetic 500 again' });
       assert.equal(dead.state, 'dead');
       const items = await listReview(db, lab.id, { kind: 'job.dead' });
@@ -205,6 +215,47 @@ describe('data spine', { skip: skipWithoutDatabase }, () => {
       await assert.rejects(completeJob(db, first, { workerId: 'slow' }), { code: 'conflict' });
       const done = await completeJob(db, second, { workerId: 'fast', result: { ok: true } });
       assert.equal(done.state, 'succeeded');
+    });
+
+    test('an old attempt cannot finish or fail a new lease with the same worker name', async () => {
+      const kind = 'test.reused-worker';
+      const workerId = 'restarted-worker';
+      await enqueueJob(db, lab.id, { kind });
+      const [first] = await claimJobs(db, { workerId, kinds: [kind] });
+      await db.execute(sql`update background_jobs set locked_until = now() - interval '1 second' where id = ${first.id}`);
+      const [second] = await claimJobs(db, { workerId, kinds: [kind] });
+      assert.equal(second.id, first.id);
+      assert.equal(second.attempts, 2);
+      await assert.rejects(completeJob(db, first, { workerId }), { code: 'conflict' });
+      for (const retry of [true, false]) {
+        await assert.rejects(failJob(db, first, { workerId, error: 'stale failure', retry }), { code: 'conflict' });
+      }
+      assert.deepEqual((await listReview(db, lab.id, { kind: 'job.dead' })).filter((i) => i.flowId === first.id), []);
+      const done = await completeJob(db, second, { workerId, result: { currentAttempt: true } });
+      assert.equal(done.state, 'succeeded');
+      assert.deepEqual(done.result, { currentAttempt: true });
+    });
+
+    test('a final attempt that loses its lease dies once and releases its dedupe key', async () => {
+      const kind = 'test.last-lease';
+      const { job } = await enqueueJob(db, lab.id, { kind, dedupeKey: 'all', maxAttempts: 1 });
+      await claimJobs(db, { workerId: 'lost', kinds: [kind] });
+      await db.execute(sql`update background_jobs set locked_until = now() - interval '1 second' where id = ${job.id}`);
+      assert.deepEqual(await claimJobs(db, { workerId: 'next', kinds: [kind] }), []);
+      assert.deepEqual(await claimJobs(db, { workerId: 'next', kinds: [kind] }), []);
+      const dead = await deadSince(db, lab.id, { kind, dedupeKey: 'all', since: new Date(0) });
+      assert.equal(dead.id, job.id);
+      assert.equal(dead.attempts, 1);
+      assert.equal(dead.lockedBy, null);
+      assert.equal(dead.lockedUntil, null);
+      const items = (await listReview(db, lab.id, { kind: 'job.dead' })).filter((i) => i.flowId === job.id);
+      assert.equal(items.length, 1);
+      assert.equal(items[0].seenCount, 1);
+      assert.equal(items[0].evidence.attempts, 1);
+      assert.equal(items[0].evidence.error, 'lease ran out on the last attempt');
+      const replacement = await enqueueJob(db, lab.id, { kind, dedupeKey: 'all' });
+      assert.equal(replacement.queued, true);
+      assert.notEqual(replacement.job.id, job.id);
     });
 
     test('runNextJob runs a handler and records its result', async () => {
@@ -293,6 +344,70 @@ describe('data spine', { skip: skipWithoutDatabase }, () => {
       assert.deepEqual(await claimWrites(db, { system: 'stale-test' }), []);
       const [row] = (await db.execute(sql`select state from outbox where id = ${claimed.id}`)).rows;
       assert.equal(row.state, 'ambiguous');
+    });
+
+    test('a second sender skips writes held by the first and claims only its system', async () => {
+      const system = 'parallel-send';
+      const queued = [];
+      for (let i = 0; i < 3; i++) queued.push((await queueWrite(db, lab.id, write(randomUUID(), { system }))).write.id);
+      const other = await queueWrite(db, lab.id, write(randomUUID(), { system: 'parallel-other' }));
+      await db.transaction(async (tx) => {
+        // Keep the first claim uncommitted so the second sender must skip its row lock.
+        const first = await claimWrites(tx, { system, limit: 1 });
+        const second = await db.transaction(async (otherTx) => {
+          await otherTx.execute(sql`set local statement_timeout = '2s'`);
+          return claimWrites(otherTx, { system, limit: 2 });
+        });
+        assert.equal(first.length, 1);
+        assert.equal(second.length, 2);
+        assert.deepEqual([...first, ...second].map((w) => w.id).sort(), queued.sort());
+        for (const claimed of [...first, ...second]) {
+          assert.equal(claimed.state, 'sending');
+          assert.equal(claimed.attempts, 1);
+        }
+      });
+      assert.deepEqual(await claimWrites(db, { system }), []);
+      assert.deepEqual((await claimWrites(db, { system: 'parallel-other' })).map((w) => w.id), [other.write.id]);
+    });
+
+    test('a lookup that finds an ambiguous write settles it without another send', async () => {
+      const system = 'lookup-found';
+      const flowId = randomUUID();
+      await queueWrite(db, lab.id, write(flowId, { system }));
+      const [claimed] = await claimWrites(db, { system });
+      await markAmbiguous(db, lab.id, claimed.id, { error: 'synthetic timeout' });
+      assert.deepEqual(await claimWrites(db, { system }), []);
+      const externalId = ext();
+      const { write: sent } = await markSent(db, lab.id, claimed.id, { externalId });
+      assert.equal(sent.state, 'sent');
+      assert.equal(sent.attempts, 1);
+      assert.equal(sent.lastError, null);
+      assert.equal(await externalIdFor(db, lab.id, { system, entity: 'invoice', flowId }), externalId);
+      await assert.rejects(markFailed(db, lab.id, sent.id, { error: 'late failure', retry: true }), { code: 'conflict' });
+      assert.deepEqual(await claimWrites(db, { system }), []);
+    });
+
+    test('cancellation needs an actor and the right organisation, and cannot interrupt a send', async () => {
+      for (const state of ['pending', 'sending', 'ambiguous', 'sent']) {
+        const system = `cancel-${state}`;
+        const { write: queued } = await queueWrite(db, lab.id, write(randomUUID(), { system }));
+        if (state !== 'pending') await claimWrites(db, { system });
+        if (state === 'ambiguous') await markAmbiguous(db, lab.id, queued.id, { error: 'synthetic timeout' });
+        if (state === 'sent') await markSent(db, lab.id, queued.id, { externalId: ext() });
+        await assert.rejects(cancelWrite(db, lab.id, queued.id, {}), { code: 'invalid' });
+        await assert.rejects(cancelWrite(db, otherLab.id, queued.id, { actor }), { code: 'not_found' });
+        if (state === 'sending' || state === 'sent') {
+          await assert.rejects(cancelWrite(db, lab.id, queued.id, { actor }), { code: 'conflict' });
+        } else {
+          const cancelled = await cancelWrite(db, lab.id, queued.id, { actor });
+          assert.equal(cancelled.state, 'cancelled');
+          assert.equal(cancelled.lastError, `cancelled by ${actor}`);
+          await assert.rejects(markFailed(db, lab.id, queued.id, { error: 'late retry', retry: true }), { code: 'conflict' });
+        }
+        const { rows: [stored] } = await db.execute(sql`select state from outbox where id = ${queued.id}`);
+        assert.equal(stored.state, ['pending', 'ambiguous'].includes(state) ? 'cancelled' : state);
+        assert.deepEqual(await claimWrites(db, { system }), []);
+      }
     });
 
     test('an unknown outcome is settled by a lookup; a refusal opens a review item', async () => {
