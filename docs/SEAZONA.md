@@ -168,7 +168,7 @@ another.
 | Lane | Reads | Cadence |
 | --- | --- | --- |
 | `invoices` | `GET invoices/?lastModified=` since the cursor (less 5 minutes), then each changed invoice's detail | 2 minutes |
-| `orders_recent` | `GET orders/?ordered=&page=&pageSize=` for each day of the last 30 (6 days a run), page by page, then each new or changed order's detail | 5 minutes |
+| `orders_recent` | `GET orders/?ordered=&page=&pageSize=` for today first, then a rolling revisit of the previous 30 days (6 days a run in total), page by page, then each new or changed order's detail | 5 minutes |
 | `orders_active` | Each open order Flow already knows, oldest first, 25 a run. "Complete" stays open until Seazona says it shipped. | 5 minutes |
 | `clients` | The whole list the first time, then changes since the cursor, then each changed client's detail | 30 minutes |
 | `products`, `users` | The whole list | Daily |
@@ -188,7 +188,23 @@ A list `SEAZONA_LIST_CAP` long may be cut off, so the lane reads on (issue
   the next run goes on from it, with no 5-minute overlap.
 - **Orders** are paged. A full page goes on to the next page. A short page, or
   a page whose last order is two days past the day, ends the day. A run that
-  stops inside a day goes on from that page next time.
+  stops inside a day goes on from that page next time. Today gets up to half
+  the list-call budget (rounded up); the remaining calls revisit previous
+  days, advancing after each completed day and wrapping to the configured
+  window start after yesterday. Unused today calls are available to that
+  walk. Today's unfinished page is kept separately, so a busy older day
+  cannot starve new orders. When either the day or list-call budget is one,
+  runs alternate today and the previous-day walk instead. No limits increase.
+  Existing completed-through and partial-page cursors need no database
+  migration. A completed-through cursor at today wraps on the next run;
+  valid partial pages resume. At midnight today's page starts over for the
+  new day, and the former day's partial joins the older walk if it has no
+  older partial already in progress. Otherwise that day is revisited on the
+  next rolling cycle. Pages outside the configured window are discarded.
+  Partial cursors also retain the previous page's IDs (at most 500), so an
+  API that ignores paging is held even when each run reads only one page.
+  Legacy partial cursors learn those IDs on their first resumed page.
+  Discovery is eventual within that window, not a historical backfill.
 
 The lane holds (`held`), keeps where it got to and tries again in an hour
 only where it cannot go on: a full list whose rows are not oldest first, a
