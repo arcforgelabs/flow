@@ -1,9 +1,14 @@
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { readFile } from 'node:fs/promises';
+import { readFile, mkdtemp } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { after, before, test } from 'node:test';
 import { chromium } from 'playwright';
-import { draftProblems } from '../server/core/sending.js';
+import { draftProblems, invoiceView } from '../server/core/sending.js';
+import { createContact, createOrganisation, createPriceItem } from '../server/core/directory.js';
+import { draftInvoiceForObligation, jobChangeFor, observeJob, observeWithdrawn, recordAccountingEvidence, setHold } from '../server/core/ledger.js';
+import { freshDatabase, skipWithoutDatabase } from './support/db.js';
 import { readRule, rulePending } from '../server/core/invoice-rules.js';
 
 // Exercise the real detail page and confirmation with synthetic HTTP responses.
@@ -378,4 +383,55 @@ test('a job without an invoice is Not drafted after its Wait or Skip rule clears
   } finally {
     await page.close();
   }
+});
+
+
+// The existing browser boundary consumes real ledger/send-check output here:
+// no fabricated warning intent can hide a mismatch between the two owners.
+test('non-change job holds show their existing review steps without inventing a missing comparison', { skip: skipWithoutDatabase }, async () => {
+  const handle = await freshDatabase();
+  const actor = 'user:synthetic-review';
+  const captures = await mkdtemp(path.join(tmpdir(), 'flow-job-hold-'));
+  try {
+    const lab = await createOrganisation(handle.db, { name: 'Example Lab' });
+    const contact = await createContact(handle.db, lab.id, { kind: 'customer', name: 'Example Clinic' });
+    await createPriceItem(handle.db, lab.id, { code: 'CRN', name: 'Crown', unitAmountCents: 10000 });
+    for (const kind of ['deleted', 'status', 'manual']) {
+      const report = { sourceSystem: 'worksystem', sourceJobRef: kind, contactId: contact.id,
+        sourceStatus: 'Shipped', lines: [{ itemCode: 'CRN' }] };
+      const obligation = await observeJob(handle.db, lab.id, report);
+      await recordAccountingEvidence(handle.db, lab.id, obligation.id, { state: 'not_found', actor });
+      const { invoice: saved } = await draftInvoiceForObligation(handle.db, lab.id, obligation.id,
+        { actor, liveCheck: async () => ({ state: 'not_found' }) });
+      if (kind === 'manual') await setHold(handle.db, lab.id, obligation.id,
+        { actor, holdState: 'review', reason: 'Confirm the cancelled case with the work team' });
+      else await observeWithdrawn(handle.db, lab.id,
+        { sourceSystem: report.sourceSystem, sourceJobRef: kind, deleted: kind === 'deleted', sourceStatus: 'Design', actor });
+      const viewed = await invoiceView(handle.db, lab.id, saved);
+      const jobChange = await jobChangeFor(handle.db, lab.id, saved.id);
+      assert.equal(jobChange, null, 'a real non-change hold has no comparison');
+      assert.equal(viewed.view, 'problem', 'the financial hold is still authoritative');
+      for (const canIssue of [true, false]) {
+        const withSource = kind !== 'manual';
+        const invoice = draft({ ...saved, id: 'synthetic-invoice', ...viewed, tab: 'pending', jobChange,
+          contact, job: { id: obligation.id, systemName: 'Work system', sourceJobRef: kind,
+            link: withSource ? { url: 'https://work.example.test/job/' + kind, exact: true } : null } });
+        let writes = 0;
+        const page = await open(invoice, { canIssue, width: canIssue ? 1280 : 393, action: async () => { writes++; } });
+        try {
+          await page.screenshot({ path: path.join(captures, kind + '-' + (canIssue ? 'owner' : 'staff') + '.png'), fullPage: true });
+          assert.equal(await page.getByText(/The resolution view is unavailable/).count(), 0,
+            'a supported non-change hold is not a missing comparison view');
+          await page.getByText(withSource ? /Check the job in the work system/ : /Check the job and its invoice/).waitFor();
+          if (withSource) assert.equal(await page.getByRole('link', { name: 'Open in Work system', exact: true }).getAttribute('href'), invoice.job.link.url);
+          else await page.getByText(/source link is unavailable/).waitFor();
+          const approve = page.getByRole('button', { name: 'Approve', exact: true });
+          assert.equal(canIssue ? await approve.isDisabled() : await approve.count() === 0, true);
+          assert.equal(await page.getByRole('button', { name: 'Accept change', exact: true }).count(), 0);
+          assert.equal(writes, 0, 'reading the review never releases a hold or writes to a source');
+        } finally { await page.close(); }
+      }
+      assert.equal((await invoiceView(handle.db, lab.id, saved)).view, 'problem');
+    }
+  } finally { console.log('Non-change hold screenshots:', captures); await handle.close(); }
 });

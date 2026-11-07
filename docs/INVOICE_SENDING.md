@@ -263,9 +263,14 @@ The invoice page consumes that intent in the existing product UI:
 - invoice_edit uses the real draft editor and Save/check flow for missing
   lines, a nonpositive amount and missing price items. Reuse it only when
   changing the invoice facts actually resolves the warning.
+- job_hold uses the existing Jobs hold instructions and the linked source job
+  for deleted, moved-back-status or other non-change review reasons. No
+  comparison is invented and reading the instructions never releases a hold.
+  Missing source links name the job and the restoration step; owners retain
+  the existing draft Delete control, while staff are directed to an owner.
 - job_review uses the existing JobChangeBanner/Review comparison and its
   actions. Source billing warnings preserve sourceBilling: true and require
-  the source comparison; ordinary job holds require the ordinary comparison.
+  the source comparison; changed-job warnings require the ordinary comparison.
 - rule_review is supplied by rulePending/ruleSkip for every matched saved
   rule, including user-created rules. ruleWait supplies the same intent for
   wait/skip rules holding work before drafting. The warning's existing rule identity

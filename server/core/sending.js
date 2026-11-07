@@ -129,7 +129,9 @@ async function checkDrafts(db, organisationId, drafts, accounting) {
   const reviewed = jobs.map((j) => j.obligation).filter((o) => o.holdState === 'review');
   for (const obligation of reviewed) {
     const { invoiceId, holdReason: reason } = obligation;
-    const found = problem('job_review', `The job needs a look before this invoice goes: ${reason ?? 'it was sent to review'}.`, reviewShort(obligation), { kind: 'job_review' });
+    const resolution = reason === CHANGED_REASON ? { kind: 'job_review' }
+      : { kind: 'job_hold', reason: reason ?? 'the job is review' };
+    const found = problem('job_review', `The job needs a look before this invoice goes: ${reason ?? 'it was sent to review'}.`, reviewShort(obligation), resolution);
     problems.set(invoiceId, [...(problems.get(invoiceId) ?? []), found]);
   }
   if (accounting) {
