@@ -911,3 +911,37 @@ export const captures = pgTable('captures', {
   check('captures_sha256_valid', sql`${t.fileSha256} ~ '^[0-9a-f]{64}$'`),
   check('captures_problem_valid', sql`${t.problem} is null or length(${t.problem}) between 1 and 200`),
 ]);
+
+// A read grant binds one person and client to one installation and organisation.
+export const agentGrants = pgTable('agent_grants', {
+  id: id(),
+  personId: uuid('person_id').notNull().references(() => people.id, { onDelete: 'cascade' }),
+  clientId: text('client_id').notNull(),
+  appName: text('app_name').notNull(),
+  resource: text('resource').notNull(),
+  organisationId: organisationId().references(() => organisations.id),
+  accessLevel: text('access_level').notNull().default('read'),
+  createdAt: createdAt(),
+  lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+  revokedAt: timestamp('revoked_at', { withTimezone: true }),
+  failureDay: date('failure_day'),
+  failureCount: integer('failure_count').notNull().default(0),
+  pausedAt: timestamp('paused_at', { withTimezone: true }),
+}, (t) => [
+  unique('agent_grants_person_client_resource').on(t.personId, t.clientId, t.resource),
+  check('agent_grants_read_only', sql`access_level = 'read'`),
+]);
+
+// No arguments, token, source evidence, error text or patient data belongs here.
+// Historical UUID snapshots deliberately have no foreign keys: removing a
+// person or grant must not erase or rewrite the retained read history.
+export const agentAudit = pgTable('agent_audit', {
+  id: id(),
+  createdAt: createdAt(),
+  grantId: uuid('grant_id').notNull(),
+  personId: uuid('person_id').notNull(),
+  tool: text('tool').notNull(),
+  status: integer('status').notNull(),
+  rowCount: integer('row_count').notNull().default(0),
+  durationMs: integer('duration_ms').notNull(),
+}, (t) => [index('agent_audit_created').on(t.createdAt)]);
