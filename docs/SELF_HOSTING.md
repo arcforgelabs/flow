@@ -411,3 +411,64 @@ imports at its own start:
    `prior_links`. It adds only links Flow does not hold, copies ids only (no
    notes, no names), and logs `[import] links`. A failure here is logged and
    the start goes on. Unset both settings when the links are in.
+
+## Native MCP read door
+
+MCP stays off by default. The source slice exposes connection, exact-ID invoice
+diagnosis, exact-ID job and stored health reads. It makes no financial changes.
+Read [Agent access](AGENT_ACCESS.md) before a private test.
+This security change needs Samuel's acceptance before merge or live activation.
+
+For an approved test, set `FLOW_MCP=on`, `FLOW_AUTH=clerk` and
+`FLOW_PUBLIC_ORIGIN=https://flow.example.com`. Keep the normal Clerk keys.
+The origin must be HTTPS and must have no path, query or credentials.
+Do not add a trailing path such as `/mcp` to this setting.
+
+In the installation's Clerk application, register the exact MCP resource
+`https://flow.example.com/mcp` under Agents, MCP servers.
+Use that same URL for the client, metadata and token audience.
+Check the current Clerk public-client settings (CIMD or dynamic registration),
+PKCE, client restrictions and plan limits before enabling a client.
+Do not widen an existing restriction or buy a plan as part of setup.
+Use the existing Flow sign-in. Do not create another identity store.
+
+OAuth consent does not provision a Flow grant in this draft.
+A verified owner must provision their own person/client/organisation read grant
+through the authenticated management API in Agent access.
+The Connected apps page and ordinary-person consent path are not built yet.
+Without an explicit grant, the MCP door refuses the client.
+No database connection URL, Clerk key or browser token belongs in OpenClaw config.
+
+Every domain read runs in a PostgreSQL READ ONLY transaction with a five-second
+statement timeout. This slice uses the existing pool and enforces READ ONLY even
+when the application role can write. A separate SELECT-only pool remains #291
+work. Do not point an unimplemented read-only URL setting at another database.
+This source draft does not change Clerk, OpenClaw or production settings.
+
+### MCP gate settings
+
+Each setting is an integer. Invalid or disabled values stop startup.
+Defaults work for one process with the normal ten-connection pool.
+Do not raise a bound to work around a refusal. Check the queue and grant first.
+
+| Setting | Default | Allowed |
+| --- | --- | --- |
+| FLOW_MCP_MINUTE | 60 | 1–120 |
+| FLOW_MCP_DAY | 3000 | 1–6000 |
+| FLOW_MCP_CONCURRENT | 2 | 1–2 |
+| FLOW_MCP_FLEET | 3 | 1–3 |
+| FLOW_MCP_QUEUE | 100 | 1–1000 |
+| FLOW_MCP_DEADLINE_MS | 15000 | 50–15000 |
+| FLOW_MCP_STATEMENT_MS | 5000 | 1–5000 |
+| FLOW_MCP_ROWS | 100 | 1–100 |
+| FLOW_MCP_BYTES | 524288 | 32768–524288 |
+| FLOW_MCP_TEXT | 16000 | 512–16000 |
+| FLOW_MCP_BODY | 102400 | 1024–102400 |
+| FLOW_MCP_FAILURES | 20 | 1–20 |
+
+Byte limits include duplicate MCP text and structured content with envelope headroom.
+The read tools use exact IDs. They do not expose an unbounded search or list.
+Grant rate counters are in memory and reset with the process. The UTC-day failure
+breaker is durable and needs a person to resume it. Idle installations run audit
+cleanup on their next call. A busy installation removes at most 100 expired rows
+per minute. No new host scheduler is installed.

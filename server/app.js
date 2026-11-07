@@ -1,4 +1,6 @@
 import express from 'express';
+import { createMcpRouter } from './agents/server.js';
+import { createAgentGrantsRouter } from './agents/grants.js';
 import { createAlertsRouter } from './api/alerts.js';
 import { createCapturesRouter } from './api/captures.js';
 import { createCustomFieldsRouter } from './api/custom-fields.js';
@@ -47,6 +49,7 @@ export function createApp({
   database = null,
   schemaJournals = null,
   auth = null,
+  mcp = null,
   updates = null,
   integrations = null,
   secrets = null,
@@ -113,6 +116,12 @@ export function createApp({
   // Machine access first, with its own authentication (issue #9). A Clerk
   // session never opens it.
   app.use('/api/flow/v1', createConnectorApi());
+
+  // MCP has a separate OAuth-only verifier. Never use browser session middleware.
+  if (mcp && database) {
+    app.use(createMcpRouter({ ...mcp, pool: database.pool, build, log }));
+    if (auth?.personAuth) app.use('/api/agent-grants', createAgentGrantsRouter({ ...mcp, pool: database.pool, personAuth: auth.personAuth }));
+  }
 
   // Is a newer Flow release out on this installation's channel? Owners only,
   // as in Field. It only reads, so an owner session is enough; it needs no
