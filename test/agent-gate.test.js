@@ -3,6 +3,7 @@ import { test, describe, before, after } from 'node:test';
 import express from 'express';
 import inject from 'light-my-request';
 import { createAgentGate } from '../server/agents/gate.js';
+import { rateLimit } from '../server/rate-limit.js';
 import { agentLimits } from '../server/agents/settings.js';
 import { createMcpVerifier } from '../server/agents/auth.js';
 import { TEST_PUBLISHABLE_KEY } from './support/clerk.js';
@@ -40,10 +41,18 @@ describe('agent gate lifecycle and host share',{skip:skipWithoutDatabase},()=>{
   const verify=async token=>token==='invalid'?null:{clientId:token,extra:{userId:'user_gate'}};
   function app(handler,limits={},verifier=verify) {
     const a=express(),gate=createAgentGate({pool,resource,verify:verifier,limits,log:quiet});
-    a.post('/',gate.handle(handler));return a;
+    a.post('/',rateLimit({limit:120,windowMs:60000}),gate.handle(handler));return a;
   }
   const call=(a,token='a')=>inject(a,{method:'POST',url:'/',headers:{authorization:token}});
   async function reset(){await until(()=>pool.totalCount===pool.idleCount);await pool.query('UPDATE agent_grants SET paused_at=NULL,failure_count=0,failure_day=NULL');}
+  test('the production address ceiling rejects excess invalid tokens before verification',async()=>{
+    let verified=0;
+    const a=app(async(_req,res)=>res.json({ok:true}),{},async()=>{verified++;return null;});
+    for(let n=0;n<120;n++)assert.equal((await call(a,'invalid')).statusCode,401);
+    const limited=await call(a,'invalid');assert.equal(limited.statusCode,429);
+    assert.equal(limited.json().code,'rate_limited');assert.ok(limited.headers['retry-after']);
+    assert.equal(verified,120,'address refusals must not reach verification or database admission');
+  });
   test('two per grant, three collectively, and all seven human connections remain available',async()=>{
     let entered=0,release;const held=new Promise(r=>release=r);
     const a=app(async(req,res)=>{entered++;await held;req.agent.check();res.json({ok:true});});
@@ -107,7 +116,7 @@ describe('agent gate lifecycle and host share',{skip:skipWithoutDatabase},()=>{
     const a=app(async(_req,res)=>res.json({ok:true}),{minute:2,day:3});
     for(let n=0;n<4;n++)assert.equal((await call(a,'invalid')).statusCode,401);
     assert.equal((await call(a)).statusCode,200);assert.equal((await call(a)).statusCode,200);
-    const limited=await call(a);assert.equal(limited.statusCode,429);assert.match(limited.headers.ratelimit,/agent-minute/);assert.ok(limited.headers['ratelimit-policy']);assert.ok(limited.headers['retry-after']);
+    const limited=await call(a);assert.equal(limited.statusCode,429);assert.match(String(limited.headers.ratelimit),/agent-minute/);assert.ok(limited.headers['ratelimit-policy']);assert.ok(limited.headers['retry-after']);
     for(let n=0;n<19;n++) { await until(()=>pool.totalCount===pool.idleCount); assert.equal((await call(a)).statusCode,429); }
     await until(async()=>Boolean((await pool.query('SELECT paused_at FROM agent_grants WHERE id=$1',[g.id])).rows[0].paused_at));
     const restarted=app(async(_req,res)=>res.json({ok:true}));assert.equal((await call(restarted)).statusCode,403);
