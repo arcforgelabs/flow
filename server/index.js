@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 import { createApp } from './app.js';
+import { createMcpVerifier } from './agents/auth.js';
+import { resolveMcpSettings } from './agents/settings.js';
 import { createClerkProxy, ensureClerkAccount, loadClerkAdapter, resolveClerkProxyPath } from './auth/clerk.js';
 import { seedFirstOwner } from './auth/people.js';
 import { createPersonAuth } from './auth/session.js';
@@ -31,8 +33,14 @@ const port = Number(process.env.FLOW_PORT || process.env.PORT || 19300);
 
 // Settings first: a malformed setting stops boot before anything runs.
 let settings;
+let mcp;
 try {
   settings = resolveSignInSettings();
+  const mcpSettings = resolveMcpSettings();
+  if (mcpSettings) {
+    if (settings.mode !== 'clerk') throw new Error('MCP requires FLOW_AUTH=clerk');
+    mcp = { ...mcpSettings, publishableKey: settings.keys.publishableKey, verify: createMcpVerifier({ keys: settings.keys, ...mcpSettings }) };
+  }
 } catch (error) {
   console.error(`[auth] ${error.message}`);
   process.exit(1);
@@ -201,7 +209,7 @@ const trustProxy = process.env.REPL_ID || process.env.REPLIT_DEPLOYMENT ? 1 : fa
 const updates = createUpdateChecker();
 
 createApp({
-  database, schemaJournals: expectedSchema({ adapters: shippedAdapters }).journals, auth, trustProxy, updates, integrations, secrets, defaultFamily, log, tracing, storage,
+  database, mcp, schemaJournals: expectedSchema({ adapters: shippedAdapters }).journals, auth, trustProxy, updates, integrations, secrets, defaultFamily, log, tracing, storage,
   publicOrigin: process.env.FLOW_PUBLIC_ORIGIN,
   reader: reader ? { on: true, schedule: reader.schedule } : null,
 }).listen(port, () => {

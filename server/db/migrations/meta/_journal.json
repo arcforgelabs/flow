@@ -183,6 +183,13 @@
       "when": 1793972387349,
       "tag": "0025_powerful_leopardon",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1794019099844,
+      "tag": "0026_bitter_sersi",
+      "breakpoints": true
     }
   ]
 }

@@ -54,6 +54,7 @@ run a lab.
 | `docs/AI_BOTS.md` | The AI bots: ClawSweeper reviews and the Docs Agent, their ClawRouter budget and cost, and setup |
 | `docs/LOW_RISK_MERGE.md` | The low-risk merge lane: which pull requests merge themselves when green, with ClawSweeper's risk labels |
 | `docs/RELEASING.md` | Versions and channels, the release workflows, how to cut and roll back a release, and the one-time setup |
+| `docs/AGENT_ACCESS.md` | The off-by-default native MCP read tools, grants, host gates and stock OpenClaw setup |
 | `docs/SELF_HOSTING.md` | Running a Flow release with Docker, Node or Replit, the update notice, and Clerk sign-in |
 | `docs/REPLIT.md` | A Replit workspace of this repository that follows a release channel (`FLOW_DEPLOY_REF`) |
 | `docs/INTEGRATIONS.md` | How an integration adapter is built, turned on and off, and owns its tables |

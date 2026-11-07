@@ -44,6 +44,9 @@ erDiagram
   price_items |o--o{ invoice_lines : "fills"
   invoices ||--o{ invoice_versions : "was sent as"
   people |o--o{ people : "invited"
+  people ||--o{ agent_grants : "owns"
+  organisations ||--o{ agent_grants : "bounds"
+  agent_grants ||..o{ agent_audit : "historical grant UUID"
   organisations ||--o{ billing_obligations : tracks
   contacts |o--o{ billing_obligations : "is billed for"
   billing_obligations |o--o| invoices : "is invoiced by"
@@ -115,6 +118,16 @@ and links through `external_links`.
 
 `people` lists who may sign in and their role (`owner`, `admin`, `staff`).
 One installation serves one lab, so it is installation-wide.
+
+`agent_grants` binds one linked person and OAuth client to one MCP resource
+and one organisation. Only read access is available. It stores revocation,
+last use and the durable failure pause. `agent_audit` stores person, grant,
+fixed tool name, status, count and duration. Its person and grant UUIDs are
+historical snapshots, not foreign keys: deleting a person or grant preserves
+the audits unchanged until normal retention removes them. It stores no arguments,
+tokens or domain text. Migration `0026` adds these tables. It changes no financial
+record. The four read tools and their host gates are in
+`docs/AGENT_ACCESS.md`.
 
 Each integration adapter owns its own tables, named after it (`seazona_…`).
 They exist only once the adapter has been on at a start, and they are not in
