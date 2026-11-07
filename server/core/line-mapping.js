@@ -24,8 +24,10 @@ import { FlowError, notFound } from './errors.js';
 //
 // A mapped line keeps the work system's amount and tax flag; the price item
 // gives its code, its text and, when the work system gave none, its price and
-// tax. With `linePrice: 'list'` the price item's price wins instead. A line
-// no step answers keeps no code, so the ledger holds the job.
+// tax. A closest-name guess cannot supply missing source tax; it needs an
+// explicit tax flag before mapping. With `linePrice: 'list'` the price item's
+// price wins instead. A line no step answers keeps no code, so the ledger
+// holds the job.
 
 export const STEPS = Object.freeze([
   'same_code', 'account', 'saved', 'catalog_name', 'price_alias', 'catalog_name_price', 'catalog_score', 'alias',
@@ -207,7 +209,9 @@ export function mapLine(line, context) {
         break;
       }
       case 'catalog_score': {
-        if (price === null) break;
+        // A guessed item would also supply its tax here (or in the ledger).
+        // Leave unknown tax for an exact match or a person's saved choice.
+        if (price === null || line.taxCode == null) break;
         const scored = (context.byPrice.get(price) ?? [])
           .map((item) => ({ item, score: nameScore(item, { exact, lookup, original: lineText(original) }) }))
           .sort((a, b) => b.score - a.score || a.item.name.localeCompare(b.item.name) || a.item.code.localeCompare(b.item.code));

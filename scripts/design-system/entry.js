@@ -19,7 +19,7 @@ import { captureButton } from '/assets/ui/captures.js';
 const OPTION_COLORS = __FLOW_OPTION_COLORS__;
 
 // What app.js hands a view module, minus the network: enough for a card.
-const ui = () => ({ h, toast, notice, pageHeader, listHead, listFrame, sectionTitle, dialog, holdButton, me: null, flow: async () => ({}), go: () => {} });
+const ui = () => ({ h, toast, notice, cardRows, pageHeader, listHead, listFrame, sectionTitle, dialog, holdButton, me: null, flow: async () => ({}), go: () => {} });
 
 // A toast needs its region, as on every Flow page.
 function ready() {

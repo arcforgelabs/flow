@@ -350,6 +350,35 @@ An existing invoice keeps its Non-chargeable, Invoiced or Paid stage.
 Source conflicts still block approval and Send for an unsent chargeable invoice.
 The CSV history feed also keeps its explicit invoice total without an inferred tax allocation.
 
+### Resolve a source amount problem
+
+A Pending draft uses the existing job comparison banner.
+It shows the source subtotal, GST and total beside reconstructed Flow job amounts.
+The Difference column shows Flow job lines minus source invoice amounts.
+Unknown tax stays unknown.
+The Saved invoice disclosure shows the separate saved Flow amounts.
+
+Open the source job, then check its linked invoice.
+A home-page link gives the record to find.
+A missing link gives a manual instruction.
+Check source prices, quantities, discounts and tax before you change a mapping.
+Correct a mapping in Price codes or Price list only when verified source facts support the change.
+Do not choose tax only to make the totals agree.
+
+Select Recheck after the correction.
+Recheck reads one source job and runs the invoice checks again.
+It does not send the invoice or change its saved amounts.
+A cached response states that no new source read occurred.
+A failed read stays failed during its cooldown.
+Unsaved edits must be saved or discarded before Recheck.
+The source problem stays until the recorded facts pass the existing checks.
+Other holds remain subject to their existing rules.
+
+This is not the daily presence reconciliation or orphan-link workflow.
+Shared source invoice totals are not split between jobs.
+Flow does not infer a tax allocation from a source invoice total.
+
+
 An order deleted in Seazona sends its obligation to review
 (`ledgerWithdrawn`); a person decides what happens to any invoice already
 made. An order whose status moves back (for example from Shipped to In

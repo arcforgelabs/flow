@@ -47,6 +47,9 @@ export function ruleSummary(rule, meta) {
 export function rulesSection(ui, title = 'Rules') {
   const { h, flow, toast, notice, dialog, me, settingRow, iconPicker } = ui;
   const disabled = !['owner', 'admin'].includes(me?.person.role);
+  // A Pending invoice opens the exact rule responsible, using this same
+  // conditions/editor UI. Read-only users see the rule, never write controls.
+  const targetRule = new URLSearchParams(location.search).get('rule');
   const section = h('section', { class: 'fx-set' }, h('h2', { class: 'fx-set__title' }, title), h('div', { class: 'fx-skeleton' }));
   let meta;
   let rules = [];
@@ -177,13 +180,25 @@ export function rulesSection(ui, title = 'Rules') {
         if (editors.length === 1) return toast('A rule needs at least one condition.', 'danger');
         editors = editors.filter((e) => e.element !== element);
         element.remove();
+        validateAction();
         return null;
       });
       editors.push(editor);
       list.append(editor.element);
+      validateAction();
       return null;
     };
+    // Draft-only fields cannot hold work before a draft exists. Native form
+    // validation keeps this editor and its choices open instead of a refused PUT.
+    const validateAction = () => {
+      const field = editors.map((e) => meta.fields.find((f) => f.key === e.read().field)).find((f) => f?.draftOnly);
+      action.setCustomValidity(action.value !== 'pending' && field
+        ? `${field.label} checks require Pending, with a note. Choose Pending or remove that condition.` : '');
+    };
+    list.addEventListener('change', validateAction);
+    action.addEventListener('change', validateAction);
     for (const c of draft?.conditions ?? [null]) addCondition(c);
+    validateAction();
     const more = h('button', { class: 'fx-btn fx-btn--ghost fx-btn--sm', type: 'button' }, 'Add condition');
     more.addEventListener('click', () => addCondition());
 
@@ -242,16 +257,22 @@ export function rulesSection(ui, title = 'Rules') {
       open.addEventListener('click', () => edit(rule));
       controls.unshift(open);
     }
-    return row(rule.name, ruleSummary(rule, meta), controls);
+    const element = row(rule.name, ruleSummary(rule, meta), controls);
+    element.setAttribute('role', 'region');
+    element.setAttribute('aria-label', `Rule ${rule.name}`);
+    return element;
   };
 
   function draw() {
-    const add = disabled ? null : h('button', { class: 'fx-btn fx-btn--ghost fx-btn--sm', type: 'button' }, 'Add rule');
+    const shown = targetRule ? rules.filter((rule) => rule.id === targetRule) : rules;
+    const add = disabled || targetRule ? null : h('button', { class: 'fx-btn fx-btn--ghost fx-btn--sm', type: 'button' }, 'Add rule');
     add?.addEventListener('click', () => edit(null));
     section.replaceChildren(
       h('h2', { class: 'fx-set__title' }, title),
       h('p', { class: 'fx-set__hint', style: { margin: '0 0 4px' } }, 'When a rule matches, a ready job waits, is never drafted, or its draft is Pending with the rule\'s note.'),
-      ...(rules.length ? rules.map(rowOf) : [h('p', { class: 'fx-dim' }, 'No rules. Every ready job is drafted.')]),
+      ...(shown.length ? shown.map(rowOf) : [targetRule
+        ? notice('This rule is no longer available. Reopen the invoice to check its remaining problems.', 'danger')
+        : h('p', { class: 'fx-dim' }, 'No rules. Every ready job is drafted.')]),
       h('div', { class: 'fx-rule__footer' }, add,
         h('a', { class: 'fx-dim', href: DOCS, target: '_blank', rel: 'noopener' }, 'How rules work')));
   }

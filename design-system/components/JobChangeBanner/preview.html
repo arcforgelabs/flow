@@ -10,3 +10,18 @@ const change = {
 };
 document.getElementById('root').append(jobChangeBanner(ui(), change, { money, onAccept: () => toast('Change accepted.', 'success'), onRecheck: async () => {} }));
 </script>
+<details>
+  <summary>Source amount example</summary>
+  <div id="source-example"></div>
+</details>
+<script>
+document.getElementById('source-example').append(jobChangeBanner(ui(), {
+  systemName: 'Source', sourceInvoiceRef: 'EXAMPLE-1', canAccept: false, canRecheck: true,
+  sourceReview: {
+    sourceTotals: { subtotalCents: 10000, taxCents: 0, totalCents: 10000 },
+    reconstructed: { subtotalCents: 10000, taxCents: 1000, totalCents: 11000 },
+    savedInvoice: { subtotalCents: 10000, taxCents: 1000, totalCents: 11000 },
+    unknownTaxLines: [],
+  },
+}, { money, onRecheck: async () => toast('Example only. No source was read.', 'info') }));
+</script>

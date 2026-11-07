@@ -122,11 +122,12 @@ describe('one rule against one job', () => {
     const odd = job({ practitioner: 'Not Listed', reference: 'Not Listed - Ann - 13909' });
     assert.deepEqual(ruleReasons(rules, odd, { now: NOW }), []);
     assert.deepEqual(rulePending(rules, odd, { now: NOW }), [
-      { code: 'rule', message: 'Put the practitioner in the job.', short: 'Practitioner not known', rule: 'r-1', fields: ['practitioner'] },
-      { code: 'rule', message: 'Put the practitioner in the job.', short: 'Number in Reference', rule: 'r-2', fields: ['reference'] },
+      { code: 'rule', message: 'Put the practitioner in the job.', short: 'Practitioner not known', rule: 'r-1', fields: ['practitioner'], resolution: { kind: 'rule_review' } },
+      { code: 'rule', message: 'Put the practitioner in the job.', short: 'Number in Reference', rule: 'r-2', fields: ['reference'], resolution: { kind: 'rule_review' } },
     ]);
     assert.deepEqual(rulePending(rules, job({ practitioner: 'Dr Ann Lee', reference: 'Dr Ann Lee - Ben Ng' }), { now: NOW }), []);
     assert.deepEqual(rulePending([{ ...rules[0], enabled: false }], odd, { now: NOW }), []);
+    assert.throws(() => rulePending([{ ...rules[0], id: null }], odd, { now: NOW }), { code: 'warning_resolution_required' });
   });
 
   test('a skip rule holds a matching draft; a wait rule does not', () => {
@@ -139,6 +140,7 @@ describe('one rule against one job', () => {
       short: 'Own branches',
       rule: 'r-9',
       fields: ['customer'],
+      resolution: { kind: 'rule_review' },
     }]);
     assert.deepEqual(ruleSkip([{ ...skip, enabled: false }], job(), opts), []);
     assert.deepEqual(ruleSkip([skip], job(), { customer: { name: 'Harbour Smiles' }, now: NOW }), []);
@@ -255,7 +257,7 @@ describe('rules a lab keeps', { skip: skipWithoutDatabase }, () => {
     assert.ok(obligation.invoiceId, 'a pending rule never stops the draft');
     let views = await invoiceViews(handle.db, lab.id);
     assert.deepEqual(views.problems.get(obligation.invoiceId), [
-      { code: 'rule', message: 'Put the practitioner in the job, then check the Reference.', short: 'Reference not known', rule: made.id, fields: ['reference'] },
+      { code: 'rule', message: 'Put the practitioner in the job, then check the Reference.', short: 'Reference not known', rule: made.id, fields: ['reference'], resolution: { kind: 'rule_review' } },
     ]);
     assert.equal(views.ready.includes(obligation.invoiceId), false);
     // Send is a gate: every check runs again at the press.
@@ -310,6 +312,7 @@ describe('rules a lab keeps', { skip: skipWithoutDatabase }, () => {
       short: 'Own branches',
       rule: made.id,
       fields: ['customer'],
+      resolution: { kind: 'rule_review' },
     }]);
     assert.equal(views.ready.includes(held.invoiceId), false);
     assert.equal(views.ready.includes(fine.invoiceId), true);

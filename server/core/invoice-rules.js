@@ -197,15 +197,24 @@ function matches(condition, job, context) {
 // The reasons the enabled rules give for one job, in rule order. An empty list
 // means no rule stops its draft. `customer` is the customer's own billing
 // settings (invoicing-rules.js).
-export function ruleReasons(rules, job, { customer = {}, now = new Date() } = {}) {
-  const context = { customer, now };
-  const reasons = [];
-  for (const rule of rules) {
-    if (!rule.enabled || rule.trigger !== 'job_ready' || ['pending', 'non_chargeable'].includes(rule.action.kind)) continue;
-    if (!rule.conditions.every((c) => matches(c, job, context))) continue;
-    reasons.push(rule.action.kind === 'skip' ? `rule "${rule.name}": not drafted by rule` : `rule "${rule.name}": waits for a person`);
-  }
-  return reasons;
+const waitingRules = (rules, job, { customer = {}, now = new Date() } = {}) => rules
+  .filter((rule) => rule.enabled && rule.trigger === 'job_ready' && !['pending', 'non_chargeable'].includes(rule.action.kind))
+  .filter((rule) => rule.conditions.every((c) => matches(c, job, { customer, now })));
+const waitMessage = (rule) => rule.action.kind === 'skip'
+  ? `rule "${rule.name}": not drafted by rule` : `rule "${rule.name}": waits for a person`;
+
+// Keep the text-only reason API for draft checks, including evaluation of
+// starter rules before they are saved. Selection/text have one owner here.
+export function ruleReasons(rules, job, options) {
+  return waitingRules(rules, job, options).map(waitMessage);
+}
+
+// Pending work needs the saved rule identity, just as a Pending invoice does.
+export function ruleWait(rules, job, options) {
+  return waitingRules(rules, job, options).map((rule) => ({ code: 'rule',
+    message: waitMessage(rule), short: rule.name.slice(0, 40), rule: rule.id,
+    resolution: ruleResolution(rule),
+  }));
 }
 
 // The notes of the enabled pending rules that match one draft, as problems:
@@ -213,12 +222,17 @@ export function ruleReasons(rules, job, { customer = {}, now = new Date() } = {}
 // `reference`, the draft's Reference. A pending rule never stops a draft.
 // `fields` names the fields the rule reads, so the invoice page marks the
 // one to fix (the Reference box goes red).
+const ruleResolution = (rule) => {
+  if (!rule.id) throw new FlowError('warning_resolution_required', 'A Pending rule needs its saved rule to resolve it.');
+  return { kind: 'rule_review' };
+};
+
 export function rulePending(rules, job, { customer = {}, now = new Date() } = {}) {
   const context = { customer, now };
   return rules
     .filter((r) => r.enabled && r.trigger === 'job_ready' && r.action.kind === 'pending')
     .filter((r) => r.conditions.every((c) => matches(c, job, context)))
-    .map((r) => ({ code: 'rule', message: r.action.note, short: r.name.slice(0, 40), rule: r.id ?? null, fields: [...new Set(r.conditions.map((c) => c.field))] }));
+    .map((r) => ({ code: 'rule', message: r.action.note, short: r.name.slice(0, 40), rule: r.id ?? null, fields: [...new Set(r.conditions.map((c) => c.field))], resolution: ruleResolution(r) }));
 }
 
 // Drafts an enabled skip rule matches stay on Pending at Send (sending.js).
@@ -236,6 +250,7 @@ export function ruleSkip(rules, job, { customer = {}, now = new Date() } = {}) {
       short: r.name.slice(0, 40),
       rule: r.id ?? null,
       fields: [...new Set(r.conditions.map((c) => c.field))],
+      resolution: ruleResolution(r),
     }));
 }
 
