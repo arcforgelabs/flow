@@ -45,6 +45,38 @@ test('the closest name at the same price maps a label no row knows', () => {
   assert.equal(mapped.mappedBy, 'catalog_score');
 });
 
+test('an approximate catalog name cannot supply unknown source tax', () => {
+  const context = mappingContext({ items: [{ code: 'SYNTH', name: 'Synthetic crown', unitAmountCents: 10000, taxCode: 'GST' }] });
+  for (const taxCode of [null, undefined]) {
+    const source = { description: 'Synthetic unknown-tax service', accountCode: '200', quantity: 1, unitAmountCents: 10000, taxCode };
+    const [mapped] = mapLines([source], context);
+    assert.equal(mapped.taxCode, taxCode);
+    assert.equal(mapped.itemCode, null);
+    assert.equal(mapped.description, source.description);
+    assert.equal(mapped.unitAmountCents, 10000);
+  }
+});
+
+test('exact items and saved choices can supply tax when the source gives none', () => {
+  const item = { id: 'synthetic-item', code: 'SYNTH', name: 'Synthetic crown', unitAmountCents: 10000, taxCode: 'GST' };
+  const unknown = { description: 'Synthetic unknown-tax service', quantity: 1, unitAmountCents: 10000, taxCode: null };
+  const cases = [
+    { source: { ...unknown, itemCode: 'SYNTH' } },
+    { source: { ...unknown, itemCode: '9001' }, links: [{ externalCode: '9001', priceItemId: item.id }] },
+    { source: { ...unknown, description: item.name } },
+    { source: { ...unknown, description: item.name }, config: { steps: ['catalog_name_price'] } },
+    ...['saved', 'price_alias', 'alias'].flatMap((kind) => [null, 'GST_FREE'].map((taxCode) => ({
+      source: unknown, mappings: [{ kind, match: 'exact', label: 'synthetic unknown tax service', unitAmountCents: 10000, itemCode: 'SYNTH', taxCode }],
+      taxCode: taxCode ?? 'GST',
+    }))),
+  ];
+  for (const { source, taxCode = 'GST', ...options } of cases) {
+    const [mapped] = mapLines([source], mappingContext({ items: [item], ...options }));
+    assert.equal(mapped.itemCode, 'SYNTH');
+    assert.equal(mapped.taxCode, taxCode);
+  }
+});
+
 test('a label with its own quantity keeps it, and the work system amount stays', () => {
   const mapped = mapLine(line('Teeth (6 x $12.50)', 7500), mappingContext({ items }));
   assert.equal(mapped.itemCode, 'TTH');

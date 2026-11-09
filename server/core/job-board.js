@@ -1,6 +1,6 @@
 import { and, eq, inArray, isNull } from 'drizzle-orm';
 import { contacts, invoices, priceItems, reviewItems } from '../db/schema.js';
-import { listRules } from './invoice-rules.js';
+import { listRules, ruleWait } from './invoice-rules.js';
 import { customerBillingByContact, effectiveSettings, readInvoicingSettings, ruleBlockers } from './invoicing-rules.js';
 import { REVIEW_CHANGED, listObligations } from './ledger.js';
 import { isHistoryHeld } from './history.js';
@@ -54,8 +54,16 @@ export async function describeObligations(db, organisationId, listed, { accounti
       : views.sending.has(id) ? 'sending' : null);
   // The invoicing rules a job with no invoice waits on, for every view a
   // draft can still come from.
-  const waitingFor = (o, v) => (o.invoiceId || !['in_work', 'ready', 'pending', 'held'].includes(v)
-    ? [] : ruleBlockers(o, { ...effectiveSettings(settings, customers.get(o.contactId)), name: nameOf.get(o.contactId) ?? null }, { rules }));
+  const waiting = (o, v) => {
+    if (o.invoiceId || !['in_work', 'ready', 'pending', 'held'].includes(v)) return { waitingFor: [], waitingRules: [] };
+    const customer = { ...effectiveSettings(settings, customers.get(o.contactId)), name: nameOf.get(o.contactId) ?? null };
+    const waitingRules = ruleWait(rules, o, { customer });
+    // Keep the existing text projection for API consumers; links use identity.
+    return { waitingRules, waitingFor: [
+      ...ruleBlockers(o, customer),
+      ...waitingRules.map((problem) => problem.message),
+    ] };
+  };
   return listed.map(({ obligation: { lineFingerprint: _fingerprint, organisationId: _org, draftBasis: _basis, ...o }, view, reasons }) => ({
     ...o,
     canUseNewLines: offers.has(o.id),
@@ -66,7 +74,7 @@ export async function describeObligations(db, organisationId, listed, { accounti
     invoiceProblems: (o.invoiceId && views?.problems.get(o.invoiceId)) || [],
     view,
     reasons,
-    waitingFor: waitingFor(o, view),
+    ...waiting(o, view),
   }));
 }
 

@@ -8,7 +8,7 @@
 import { alertStrip } from '/assets/ui/alerts.js';
 import { bulkBar } from '/assets/ui/bulk-bar.js';
 import { draftNote, sendModeNote } from '/assets/ui/invoice-notes.js';
-import { caseNumber } from '/assets/ui/job-board.js';
+import { caseNumber, fixes } from '/assets/ui/job-board.js';
 import { jobChangeReview } from '/assets/ui/job-change.js';
 import { cardRows, rowMenu } from '/assets/ui/kit.js';
 import { isPhone, WIDTHS } from '/assets/ui/mobile.js';
@@ -981,6 +981,20 @@ function draftView(invoice, ui, context, redraw) {
   // item. A check on something this page cannot change (the job's
   // practitioner) marks nothing; the banner says it.
   const problemList = invoice?.problems ?? [];
+  // Dispatch intents to the real editor or shared job comparison, not a
+  // parallel warning-code list. Missing data/unknown intents stay blocked.
+  // Adapter warnings retain their existing owner-specific actions.
+  const hasRuleReview = (p) => p.resolution?.kind === 'rule_review' && Boolean(p.rule);
+  const hasJobHold = (p) => p.resolution?.kind === 'job_hold' && Boolean(invoice?.job?.id)
+    && typeof p.resolution.reason === 'string' && Boolean(p.resolution.reason.trim());
+  const hasJobReview = (p) => p.resolution?.kind === 'job_review' && invoice?.jobChange
+    && Boolean(p.sourceBilling) === Boolean(invoice.jobChange.sourceReview);
+  // The source check runs first. Its Recheck reveals the ordinary job
+  // comparison once the source problem clears; that view is not missing.
+  const deferredJobReview = (p) => p.resolution?.kind === 'job_review'
+    && !p.sourceBilling && Boolean(invoice?.jobChange?.sourceReview);
+  const unavailable = problemList.filter((p) => p.resolution
+    && p.resolution.kind !== 'invoice_edit' && !hasJobReview(p) && !deferredJobReview(p) && !hasRuleReview(p) && !hasJobHold(p));
   const failed = new Set(problemList.flatMap((p) => p.fields ?? []));
   const badLines = new Set(problemList.filter((p) => p.fields?.includes('line_item')).map((p) => p.line));
   const boxes = { reference };
@@ -1146,7 +1160,7 @@ function draftView(invoice, ui, context, redraw) {
   // it and queues it, the same as Send all ready. With none, Flow issues it
   // and keeps it. A Pending draft has no send: fix its problem first.
   const to = invoice?.sendsTo ?? context.sendsTo ?? null;
-  const ready = invoice?.view === 'ready';
+  const ready = invoice?.view === 'ready' && !problemList.length;
   // A lab's rule keeps a non-chargeable draft in Flow: nothing sends or approves it.
   const nonChargeable = invoice?.view === 'non_chargeable';
   const nextNumber = `${context.organisations[0]?.invoicePrefix ?? ''}${String(context.organisations[0]?.nextInvoiceNumber ?? '').padStart(4, '0')}`;
@@ -1210,8 +1224,8 @@ function draftView(invoice, ui, context, redraw) {
   const syncIssue = () => {
     if (!issueButton) return;
     const missing = [contact ? null : 'a client', dueDate.value ? null : 'a due date'].filter(Boolean);
-    issueButton.disabled = missing.length > 0 || Boolean(invoice?.jobChange);
-    issueButton.title = invoice?.jobChange ? 'Fix the problem first.' : missing.length ? `Choose ${missing.join(' and ')} first.` : 'Gives it the next number and locks it. Nothing is sent.';
+    issueButton.disabled = missing.length > 0 || Boolean(invoice?.jobChange) || problemList.length > 0;
+    issueButton.title = invoice?.jobChange || problemList.length ? 'Fix the problem first.' : missing.length ? `Choose ${missing.join(' and ')} first.` : 'Gives it the next number and locks it. Nothing is sent.';
   };
   onContact = syncIssue;
   clientInput.addEventListener('input', syncIssue);
@@ -1236,7 +1250,7 @@ function draftView(invoice, ui, context, redraw) {
   const jobChange = invoice?.jobChange ?? null;
   // The job changed after the invoice was made: its own banner shows what
   // changed. Other problems stay one line.
-  const otherProblems = (invoice?.problems ?? []).filter((p) => !(jobChange && p.code === 'job_review'));
+  const otherProblems = problemList.filter((p) => !hasJobReview(p));
   const offer = otherProblems.find((p) => ['xero_contact_missing', 'xero_contact_ambiguous'].includes(p.code) && (p.offerLink || p.offerCreate));
   // A phone shows each problem's short name ("Client not in Xero") on one line.
   const shorts = otherProblems.every((p) => p.short) ? [...new Set(otherProblems.map((p) => p.short))].join(', ') : null;
@@ -1251,10 +1265,32 @@ function draftView(invoice, ui, context, redraw) {
       done: async () => redraw((await flow(`/api/invoicing/invoices/${invoice.id}`)).invoice),
     })
     : [];
+  // Every matching rule links to its own conditions and existing controls,
+  // including custom rules. The target enforces read-only roles itself.
+  const ruleActions = [...new Map(problemList.filter(hasRuleReview).map((p) => [p.rule, p])).values()]
+    .map((p) => h('a', { class: 'fx-btn fx-btn--sm',
+      href: `/invoicing-settings/invoices?rule=${encodeURIComponent(p.rule)}`,
+      onclick: (event) => go(event),
+    }, `Review ${p.short ?? 'rule'}`));
+  // Non-change holds use the Jobs workflow's existing instructions, not a
+  // comparison that does not exist. Reading them never releases the hold.
+  const holdSteps = fixes({ view: 'review_required', holdState: 'review',
+    reasons: [...new Set(problemList.filter(hasJobHold).map((p) => p.resolution.reason))] });
+  const holdReview = holdSteps.length ? h('section', { 'aria-label': 'Job hold review' },
+    ...holdSteps.map((step) => h('p', {}, step.todo)),
+    invoice.job.link?.url ? h('a', { class: 'fx-btn fx-btn--sm', href: invoice.job.link.url, target: '_blank', rel: 'noopener' },
+      `Open in ${invoice.job.systemName ?? 'work system'}`)
+      : h('p', {}, `The source link is unavailable. Check job ${invoice.job.sourceJobRef ?? ''} in the work system, or ask an administrator to restore its link.`),
+    h('p', {}, deleteButton
+      ? 'If this unissued draft is no longer needed, use Delete. It remains Pending while the job is in review.'
+      : 'Ask an owner or administrator to review this draft. It remains Pending while the job is in review.')) : null;
   const problems = [
+    holdReview,
     // Accepting changes the draft for the business: owners and admins only.
     jobChange ? jobChangeReview(ui, jobChange, { money: formatCents, canAccept: context.canIssue, unsaved: changed, done: redraw }) : null,
-    problemNotice ? (clientActions.length ? h('div', { class: 'fx-offer' }, problemNotice, ...clientActions) : problemNotice) : null,
+    problemList.some(deferredJobReview) ? notice('The job also changed after this invoice was made. Resolve the source amount problem first. Select Recheck, then review the remaining job changes.', 'danger') : null,
+    unavailable.length ? notice('The resolution view is unavailable. Ask an administrator to restore it, then reopen this invoice. It remains Pending.', 'danger', 'Cannot resolve.') : null,
+    problemNotice ? (clientActions.length || ruleActions.length ? h('div', { class: 'fx-offer' }, problemNotice, ...clientActions, ...ruleActions) : problemNotice) : null,
   ];
   // A red field names the banner as its reason (for a screen reader).
   const banner = problemNotice;

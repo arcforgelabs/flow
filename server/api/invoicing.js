@@ -313,7 +313,7 @@ async function jobChangeDetail(db, organisationId, invoiceId, work) {
   const link = typeof source?.capabilities.jobLink === 'function'
     ? source.capabilities.jobLink({ sourceJobRef: change.sourceJobRef, sourceInvoiceRef: change.sourceInvoiceRef })
     : null;
-  return { ...change, contact, systemName: source?.name ?? change.sourceSystem, link: link ?? null };
+  return { ...change, contact, systemName: source?.name ?? change.sourceSystem, link: link ?? null, canRecheck: typeof source?.capabilities?.readWorkItem === 'function' };
 }
 
 // Each invoice's tab (TABS): Map(id -> tab), the ids on each tab, the
@@ -783,18 +783,35 @@ export function createInvoicingRouter({
     const source = work().find((a) => a.id === obligation.sourceSystem) ?? null;
     if (typeof source?.capabilities?.readWorkItem !== 'function') throw new FlowError('not_ready', 'the work system cannot read one job');
     // One read for each job in RECHECK_GAP_MS, whatever the clicks.
-    const last = rechecked.get(obligationId) ?? 0;
+    const last = rechecked.get(obligationId);
+    const retryAfter = (entry) => Math.max(1, Math.ceil((RECHECK_GAP_MS - (Date.now() - entry.at)) / 1000));
     let outcome = 'fresh';
-    if (Date.now() - last >= RECHECK_GAP_MS) {
-      rechecked.set(obligationId, Date.now());
-      const actor = `person:${req.person.id}`;
-      const read = (await readBeforeAct(db, organisationId, [obligation], { work: source, actor, force: true })).get(obligationId);
-      outcome = 'read';
-      if (read.outcome === 'waiting') throw new FlowError('not_ready', `${source.name} could not be read: ${read.reason ?? 'try again soon'}`);
-      await settleJobChange(db, organisationId, obligationId, { actor });
+    if (last && (last.state === 'reading' || Date.now() - last.at < RECHECK_GAP_MS)) {
+      if (last.state !== 'read') {
+        const retryAfterSeconds = retryAfter(last);
+        throw new FlowError('not_ready', last.state === 'reading'
+          ? 'No new source read. The previous recheck is still running. Wait, then recheck again.'
+          : 'No new source read. Wait ' + retryAfterSeconds + ' seconds, then recheck again. Previous error: ' + last.error,
+        { outcome: last.state === 'reading' ? 'read_in_progress' : 'cached_failed', retryAfterSeconds });
+      }
+    } else {
+      const entry = { at: Date.now(), state: 'reading', error: null };
+      rechecked.set(obligationId, entry);
+      const actor = 'person:' + req.person.id;
+      try {
+        const read = (await readBeforeAct(db, organisationId, [obligation], { work: source, actor, force: true })).get(obligationId);
+        if (read.outcome === 'waiting') throw new FlowError('not_ready', source.name + ' could not be read: ' + (read.reason ?? 'the source is unavailable') + '. Wait, then recheck again.');
+        await settleJobChange(db, organisationId, obligationId, { actor });
+        entry.state = 'read';
+        outcome = 'read';
+      } catch (error) {
+        entry.state = 'failed';
+        entry.error = error instanceof FlowError ? error.message : 'The source recheck failed. Wait, then recheck again.';
+        throw new FlowError('not_ready', entry.error, { retryAfterSeconds: retryAfter(entry) });
+      }
     }
     const invoice = obligation.invoiceId ? await invoiceDetail(db, organisationId, obligation.invoiceId, accounting(), work()) : null;
-    res.json({ ok: true, outcome, invoice });
+    res.json({ ok: true, outcome, retryAfterSeconds: retryAfter(rechecked.get(obligationId)), invoice });
   }));
 
   // A job with no invoice whose match is unclear (ledger.js). The linking

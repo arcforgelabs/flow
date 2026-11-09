@@ -6,7 +6,7 @@ import { updateDraftInvoice } from '../server/core/invoices.js';
 import { reviewShort } from '../server/core/sending.js';
 import { billingObligations } from '../server/db/schema.js';
 import {
-  diffJobLines, draftInvoiceForObligation, jobChangeFor, observeJob, recordAccountingEvidence, useSourceLines,
+  diffJobLines, draftInvoiceForObligation, jobChangeFor, observeJob, recordAccountingEvidence, setHold, settleJobChange, useSourceLines,
 } from '../server/core/ledger.js';
 import { orderLink, orderUrlTemplate } from '../server/integrations/seazona/settings.js';
 import { changeRows, changeSummary } from '../server/ui/job-change.js';
@@ -34,6 +34,25 @@ describe('was and now, line by line', () => {
     const changes = diffJobLines([line('A', 1, 1)], [line('A', 1, 1), line('B', 2, 5)]);
     assert.deepEqual(changes.map((c) => [c.change, c.position]), [['added', 2]]);
     assert.deepEqual(diffJobLines([line('A', 1, 1), line('B', 1, 1)], [line('A', 1, 1)]).map((c) => [c.change, c.position]), [['removed', 2]]);
+  });
+
+  test('source amount rows distinguish known zero, missing amounts and unknown tax', () => {
+    const cases = [
+      {
+        sourceTotals: { subtotalCents: 10000, taxCents: 0, totalCents: 10000 },
+        reconstructed: { subtotalCents: 10000, taxCents: 1000, totalCents: 11000 },
+        expected: [['Subtotal', '$100.00', '$100.00', 'Same'], ['GST', '$0.00', '$10.00', '+$10.00'], ['Total', '$100.00', '$110.00', '+$10.00']],
+      },
+      {
+        sourceTotals: { subtotalCents: 10000 },
+        reconstructed: { subtotalCents: 10000, taxCents: null, totalCents: null },
+        expected: [['Subtotal', '$100.00', '$100.00', 'Same'], ['GST', 'Not supplied', 'Unknown', 'Unknown'], ['Total', 'Not supplied', 'Unknown', 'Unknown']],
+      },
+    ];
+    for (const { sourceTotals, reconstructed, expected } of cases) {
+      const rows = changeRows({ sourceReview: { sourceTotals, reconstructed } }, money);
+      assert.deepEqual(rows.map(({ field, was, now, difference }) => [field, was, now, difference]), expected);
+    }
   });
 
   test('rows in plain words, with the total last', () => {
@@ -117,6 +136,36 @@ describe('the job change on an invoice', { skip: skipWithoutDatabase }, () => {
     const { invoice: adopted } = await useSourceLines(db, lab.id, obligation.id, { actor });
     assert.equal(await jobChangeFor(db, lab.id, invoice.id), null, 'adopted: the problem is gone');
     assert.ok(adopted.readyAt, 'the draft matches a job ready to invoice, so it goes to Ready');
+  });
+
+  test('source totals and unknown tax use the existing comparison without authorising adoption or releasing a manual hold', async () => {
+    const { report, obligation, invoice } = await drafted();
+    await observeJob(db, lab.id, { ...report, caseRef: 'CASE-SOURCE', sourceTotals: { taxCents: 0 } });
+    const change = await jobChangeFor(db, lab.id, invoice.id);
+    assert.equal(change.jobId, obligation.id);
+    assert.equal(change.caseRef, 'CASE-SOURCE');
+    assert.equal(change.canAdopt, false);
+    assert.equal(change.canAccept, false);
+    assert.deepEqual(change.sourceReview, {
+      sourceTotals: { taxCents: 0 },
+      reconstructed: { subtotalCents: 22000, taxCents: 2200, totalCents: 24200 },
+      unknownTaxLines: [],
+      savedInvoice: { subtotalCents: 22000, taxCents: 2200, totalCents: 24200 },
+    });
+    assert.deepEqual(change.lines, [], 'a totals-only problem is not a line change');
+    await assert.rejects(useSourceLines(db, lab.id, obligation.id, { actor, accept: true }), { code: 'not_ready' });
+    await observeJob(db, lab.id, { ...report, lines: [{ accountCode: '200', description: 'Unclassified service', quantity: 1, unitAmountCents: 22000, taxCode: null }] });
+    const unknown = await jobChangeFor(db, lab.id, invoice.id);
+    assert.deepEqual(unknown.sourceReview.reconstructed, { subtotalCents: 22000, taxCents: null, totalCents: null });
+    assert.equal(unknown.sourceReview.sourceTotals, null, 'missing source amounts are not fabricated');
+    assert.deepEqual(unknown.sourceReview.unknownTaxLines, [{ position: 1, description: 'Unclassified service', itemCode: null }]);
+    await setHold(db, lab.id, obligation.id, { actor, holdState: 'held', reason: 'Manual billing hold' });
+    assert.ok((await jobChangeFor(db, lab.id, invoice.id)).sourceReview, 'a manual hold does not hide the source comparison');
+    await observeJob(db, lab.id, report);
+    const settled = await settleJobChange(db, lab.id, obligation.id, { actor });
+    assert.equal(settled.holdState, 'held');
+    assert.equal(settled.holdReason, 'Manual billing hold');
+    assert.equal(await jobChangeFor(db, lab.id, invoice.id), null);
   });
 
   test('both changed: shown, but not to adopt', async () => {

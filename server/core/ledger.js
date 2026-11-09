@@ -349,7 +349,7 @@ async function compareWithDraft(tx, organisationId, obligation, facts) {
   }
   const flow = { lines: invoice.lines, contactId: invoice.contactId };
   const compare = compareThreeWays(base, facts, flow, { sent: invoiceSent(invoice, obligation) });
-  return { ...compare, base, flow, invoiceStatus: invoice.status };
+  return { ...compare, base, flow, invoiceStatus: invoice.status, invoiceTotals: { subtotalCents: invoice.subtotalCents, taxCents: invoice.taxCents, totalCents: invoice.totalCents } };
 }
 
 function changedReview(obligation, compare) {
@@ -479,17 +479,29 @@ export function diffJobLines(wasLines = [], nowLines = []) {
   return changes.sort((a, b) => a.position - b.position || (a.change === 'removed' ? -1 : 1));
 }
 
-// The open "job changed" problem of an invoice, for the invoice page, or
+// The open job-change or source-billing problem, for the invoice page, or
 // null: the job as it was when the invoice was made, as the work system has
 // it now, and whether a person can adopt the change into Flow's own draft
 // ("Adopt changes", useSourceLines). An invoice drafted before the basis was
 // kept compares with the invoice's own lines.
 export async function jobChangeFor(db, organisationId, invoiceId) {
   const [obligation] = await db.select().from(billingObligations)
-    .where(and(eq(billingObligations.organisationId, organisationId), eq(billingObligations.invoiceId, invoiceId),
-      eq(billingObligations.holdState, 'review'), eq(billingObligations.holdReason, CHANGED_REASON)));
+    .where(and(eq(billingObligations.organisationId, organisationId), eq(billingObligations.invoiceId, invoiceId)));
   if (!obligation) return null;
+  const changed = obligation.holdState === 'review' && obligation.holdReason === CHANGED_REASON;
+  const sourceProblems = sourceBillingProblems(obligation);
+  if (!changed && !sourceProblems.length) return null;
   const compare = await compareWithDraft(db, organisationId, obligation, obligation);
+  // Source review is only for Flow's draft. Issued documents keep the existing
+  // job-change/accounting comparison, never a new source-resolution action.
+  const sourceReview = sourceProblems.length && compare.invoiceStatus === 'draft' ? {
+    sourceTotals: obligation.sourceTotals ?? null,
+    reconstructed: { ...invoiceTotals(obligation.lines), ...(obligation.lines.some((line) => line.taxCode === null) ? { taxCents: null, totalCents: null } : {}) },
+    unknownTaxLines: obligation.lines.flatMap((line, index) => line.taxCode === null
+      ? [{ position: index + 1, description: line.description, itemCode: line.itemCode ?? null }] : []),
+    savedInvoice: compare.invoiceTotals,
+  } : null;
+  if (!changed && !sourceReview) return null;
   const was = obligation.draftBasis
     ?? (compare.flow ? { lines: compare.flow.lines, contactId: compare.flow.contactId, totalCents: null } : basisOf(obligation));
   return {
@@ -497,13 +509,15 @@ export async function jobChangeFor(db, organisationId, invoiceId) {
     sourceSystem: obligation.sourceSystem,
     sourceJobRef: obligation.sourceJobRef,
     sourceInvoiceRef: obligation.sourceInvoiceRef,
+    caseRef: obligation.caseRef,
+    sourceReview,
     seenAt: obligation.sourceSeenAt,
     outcome: compare.outcome,
     sent: compare.sent,
-    canAdopt: compare.outcome === 'offer',
+    canAdopt: !sourceReview && compare.outcome === 'offer',
     // "Accept change": the draft takes the work system's values, even when
     // the draft changed too. Not once the invoice has left Flow.
-    canAccept: !compare.sent && !compare.missing,
+    canAccept: !sourceReview && !compare.sent && !compare.missing,
     lines: diffJobLines(was.lines ?? [], obligation.lines ?? []),
     contact: (was.contactId ?? null) === (obligation.contactId ?? null) ? null : { was: was.contactId ?? null, now: obligation.contactId ?? null },
     total: { was: was.totalCents ?? null, now: obligation.totalCents },

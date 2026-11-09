@@ -50,20 +50,24 @@ const REFUSAL_CODE = /^[a-z0-9_]{1,64}$/i;
 const SENT = new Set(['created', 'reconciled', 'existing', 'already_in_xero']);
 
 // `short` is the few words the Invoices list shows; `message` says how to fix
-// it. `extra` adds `fields` (the invoice fields to fix) and `line`.
-const problem = (code, message, short = null, extra = {}) => ({ code, message, ...(short ? { short } : {}), ...extra });
+// it. Draft warnings must name their resolution UI at the owner, not in a
+// separate warning-code inventory. The invoice page dispatches this intent.
+const problem = (code, message, short, resolution, extra = {}) => {
+  if (typeof resolution?.kind !== 'string' || !resolution.kind) throw new FlowError('warning_resolution_required', `Draft warning ${code} needs a resolution UI.`);
+  return { code, message, ...(short ? { short } : {}), ...extra, resolution };
+};
 
 // An issued invoice the accounting system refused. A refusal stored without
 // its few words (before 2026-10-28) shows "Not sent"; its message stays.
-const refusal = (sendError) => (sendError ? { short: 'Not sent', ...sendError } : problem('send_failed', 'Sending failed.', 'Not sent'));
+const refusal = (sendError) => (sendError ? { short: 'Not sent', ...sendError } : { code: 'send_failed', message: 'Sending failed.', short: 'Not sent' });
 
 // Flow's own checks of one draft. `lines` are its invoice lines.
 export function draftProblems(invoice, lines) {
   const problems = [];
-  if (!lines.length) problems.push(problem('no_lines', 'The invoice has no lines.', 'No lines'));
-  else if (invoice.totalCents <= 0) problems.push(problem('no_amount', 'The total is $0.00 or less.', 'Total $0'));
+  if (!lines.length) problems.push(problem('no_lines', 'The invoice has no lines.', 'No lines', { kind: 'invoice_edit' }));
+  else if (invoice.totalCents <= 0) problems.push(problem('no_amount', 'The total is $0.00 or less.', 'Total $0', { kind: 'invoice_edit' }));
   for (const line of lines) {
-    if (!line.priceItemId && !line.accountCode) problems.push(problem('line_no_item', `Line ${line.position} has no price item.`, `Line ${line.position}: no item`, { fields: ['line_item'], line: line.position }));
+    if (!line.priceItemId && !line.accountCode) problems.push(problem('line_no_item', `Line ${line.position} has no price item.`, `Line ${line.position}: no item`, { kind: 'invoice_edit' }, { fields: ['line_item'], line: line.position }));
   }
   return problems;
 }
@@ -118,14 +122,16 @@ async function checkDrafts(db, organisationId, drafts, accounting) {
   // draft was made, or the work system deleted it) waits for a person.
   for (const { obligation } of jobs) {
     for (const reason of sourceBillingProblems(obligation)) {
-      const found = problem('job_review', 'Check the source invoice: ' + reason + '.', 'Source tax');
+      const found = { ...problem('job_review', 'Check the source invoice: ' + reason + '.', 'Source tax', { kind: 'job_review' }), sourceBilling: true };
       problems.set(obligation.invoiceId, [...(problems.get(obligation.invoiceId) ?? []), found]);
     }
   }
   const reviewed = jobs.map((j) => j.obligation).filter((o) => o.holdState === 'review');
   for (const obligation of reviewed) {
     const { invoiceId, holdReason: reason } = obligation;
-    const found = problem('job_review', `The job needs a look before this invoice goes: ${reason ?? 'it was sent to review'}.`, reviewShort(obligation));
+    const resolution = reason === CHANGED_REASON ? { kind: 'job_review' }
+      : { kind: 'job_hold', reason: reason ?? 'the job is review' };
+    const found = problem('job_review', `The job needs a look before this invoice goes: ${reason ?? 'it was sent to review'}.`, reviewShort(obligation), resolution);
     problems.set(invoiceId, [...(problems.get(invoiceId) ?? []), found]);
   }
   if (accounting) {

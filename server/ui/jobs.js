@@ -1136,7 +1136,7 @@ export async function renderJobs(main, ui) {
       ? link({ href: `/invoices/${o.invoiceId}`, onclick: (event) => { close(); ui.go(event); } },
         `${o.invoiceStatus === 'draft' ? 'Draft' : 'Invoice'} ${o.invoiceNumber ?? ''}`.trim() + (stage ? ` · ${INVOICE_STAGES[stage]}` : ''))
       : choose ? h('span', { class: 'fx-task__none' }, svg(WARN_ICON), 'Needs invoice')
-        : stage ? INVOICE_STAGES[stage] : o ? 'Not ready to invoice' : 'No invoice yet';
+        : stage === 'drafted' ? 'Not drafted' : stage ? INVOICE_STAGES[stage] : o ? 'Not ready to invoice' : 'No invoice yet';
     const rest = found.filter((f) => f.go !== 'choose');
     // What to fix: one chip a problem, beside the stage, so the panel keeps
     // one layout with or without a fix. A chip is a toggle: a click opens
@@ -1181,7 +1181,7 @@ export async function renderJobs(main, ui) {
     }
     // Each fix's link: Flow's own invoice, the job in the work system, or
     // the Flow page where the fix is made (job-board.js GO).
-    function fixLink(go, tip = null) {
+    function fixLink(go, tip = null, rule = null) {
       const button = (icon, text, attrs) => h(attrs.href ? 'a' : 'button', {
         class: 'fx-btn fx-btn--sm fx-btn--primary fx-task__fixgo', title: tip, ...(attrs.href ? {} : { type: 'button' }), ...attrs,
       }, lucide(h, icon), text);
@@ -1189,7 +1189,7 @@ export async function renderJobs(main, ui) {
       if ((go === 'review' || go === 'invoice') && o?.invoiceId) return inFlow('file-text', `/invoices/${o.invoiceId}`, 'Invoice');
       if (go === 'work' && job.link?.url) return button('external-link', system, { href: job.link.url, target: '_blank', rel: 'noopener' });
       if (go === 'price-list') return inFlow('tag', '/price-list', 'Price list');
-      if (go === 'invoicing-settings') return inFlow('list-checks', '/invoicing-settings', 'Rules');
+      if (go === 'rule' && rule) return inFlow('list-checks', `/invoicing-settings/invoices?rule=${encodeURIComponent(rule)}`, 'Review rule');
       if (go === 'integrations' && ui.me?.person?.role === 'owner') return inFlow('plug', '/integrations', 'Integrations');
       return null;
     }
@@ -1230,7 +1230,7 @@ export async function renderJobs(main, ui) {
         return h('section', { class: 'fx-task__fixitem', 'aria-label': f.label }, reviewBody);
       }
       return h('section', { class: 'fx-task__fixitem', 'aria-label': f.label },
-        h('strong', {}, f.label), h('p', {}, f.text), f.todo ? h('p', { class: 'fx-dim' }, f.todo) : null, fixLink(f.go));
+        h('strong', {}, f.label), h('p', {}, f.text), f.todo ? h('p', { class: 'fx-dim' }, f.todo) : null, fixLink(f.go, null, f.rule));
     }
     const sideButton = h('button', {
       class: 'fx-btn fx-btn--ghost fx-btn--icon', type: 'button', 'aria-label': 'Side panel', title: 'Side panel', 'aria-pressed': 'false',

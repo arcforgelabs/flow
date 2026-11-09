@@ -251,6 +251,62 @@ Xero's `SentToContact` flag.
   system now (at most once per job every 10 seconds), runs the checks again,
   and answers the invoice.
 
+## Draft warning resolution contract
+
+Draft warnings created by problem() in server/core/sending.js require a
+structured resolution intent at their owner. Adding a text-only warning
+fails with warning_resolution_required, before checking/issuing can finish.
+There is no parallel warning-code inventory or message-string scan.
+
+The invoice page consumes that intent in the existing product UI:
+
+- invoice_edit uses the real draft editor and Save/check flow for missing
+  lines, a nonpositive amount and missing price items. Reuse it only when
+  changing the invoice facts actually resolves the warning.
+- job_hold uses the existing Jobs hold instructions and the linked source job
+  for deleted, moved-back-status or other non-change review reasons. No
+  comparison is invented and reading the instructions never releases a hold.
+  Missing source links name the job and the restoration step; owners retain
+  the existing draft Delete control, while staff are directed to an owner.
+- job_review uses the existing JobChangeBanner/Review comparison and its
+  actions. Source billing warnings preserve sourceBilling: true and require
+  the source comparison; changed-job warnings require the ordinary comparison.
+- rule_review is supplied by rulePending/ruleSkip for every matched saved
+  rule, including user-created rules. ruleWait supplies the same intent for
+  wait/skip rules holding work before drafting. The warning's existing rule identity
+  links to /invoicing-settings/invoices?rule=<id>. That same Rules component
+  shows only the responsible rule's conditions and existing controls.
+  Owners/admins may edit it; other people can read it but cannot change it.
+  A deleted/unavailable target says to reopen the invoice and recheck rather
+  than silently showing unrelated settings. Editing a rule never corrects
+  invoice amounts automatically; the draft is checked again on return/save.
+  The board carries structured waitingRules alongside its compatible text
+  waitingFor projection. Its Fix panel links to that exact Rules target; it
+  does not recover an identity by parsing the rule's name from its message.
+  Hold/release and manual-drafting policy are unchanged.
+
+Unknown intent or missing comparison data means **blocked**, not resolved.
+The page names the unavailable view and keeps approval/send off. Diagnostic
+text is not a valid resolution UI. With no source-read capability, the
+existing comparison still provides manual source instructions and real
+mapping/price-list links, and names the required connection restoration.
+
+The primary action proof reuses test/invoice-send-progress.test.js: actual
+Save and source Recheck callbacks, comparison differences, unsaved edits,
+restricted access, unavailable readers/metadata, unknown intents, and
+navigation from a generated custom-rule warning into its actual Rules
+component and edit control. Removing comparison metadata must fail the
+positive comparison contract; a fallback notice does not make it pass.
+Core warning/rule metadata belongs in the existing sending/rule tests.
+
+The bounded gate does not certify accounting-adapter checks or issued send
+refusals: their current owner-specific contact/correction/retry actions and
+safety checks remain unchanged. New adapter warning types require their
+owner's real resolution UI and action proof. Non-chargeable rules do not
+enter Pending. Wait and skip rules can put work in Pending and are included
+in this contract through the board/Jobs Fix path above. This contract does
+not replace non-rule holds or perform financial corrections.
+
 ## The job changed after the draft was made
 
 When the work system's job changes after Flow made its draft

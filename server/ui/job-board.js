@@ -126,7 +126,16 @@ function reasonFix(reason) {
 // system's) as a job fix. Flow's own invoice problems keep their words. A
 // problem an accounting system found stays on the invoice page; the job only
 // says that its invoice needs a fix.
+function ruleFix(problem) {
+  const supported = problem.resolution?.kind === 'rule_review' && Boolean(problem.rule);
+  return { label: problem.short ?? 'Stopped by a rule', text: sentence(problem.message),
+    todo: supported ? 'Review this rule and the job facts, then reopen the job to check again.' : 'The rule resolution is unavailable. Reopen this job after an administrator restores it.',
+    go: supported ? 'rule' : null, rule: problem.rule ?? null,
+  };
+}
+
 function draftFix(problem) {
+  if (problem.resolution?.kind === 'rule_review') return ruleFix(problem);
   const code = problem.code ?? '';
   const fix = (label, todo) => ({ label, text: sentence(problem.message ?? label), todo, go: 'invoice' });
   if (code === 'no_lines') return fix('No lines', 'Open the invoice and add the lines.');
@@ -141,7 +150,7 @@ function draftFix(problem) {
 // Where a fix's link goes: Flow's invoice, the job in the work system, a
 // Flow settings page, `review`: the job's Review sidecar, or `choose`: Make
 // invoice and Link invoice buttons (jobs.js draws them).
-export const GO = ['invoice', 'work', 'price-list', 'invoicing-settings', 'integrations', 'review', 'choose'];
+export const GO = ['invoice', 'work', 'price-list', 'rule', 'integrations', 'review', 'choose'];
 
 // What a person must fix on a job, in order: [{ label, text, todo, go }];
 // `todo` is null when the buttons are the instruction.
@@ -152,11 +161,7 @@ export function fixes(o) {
   if (invoiceStage(o) !== 'problem') return [];
   const found = [];
   if (PROBLEM_VIEWS.includes(o.view)) found.push(...(o.reasons ?? []).map((r) => reasonFix(r)));
-  if (o.view === 'ready') {
-    found.push(...(o.waitingFor ?? []).filter(isRule).map((r) => ({
-      label: 'Stopped by a rule', text: sentence(r), todo: 'Draft the invoice here, or change the rule under Settings, Rules.', go: 'invoicing-settings',
-    })));
-  }
+  found.push(...(o.waitingRules ?? []).map(ruleFix));
   if (o.invoiceStatus === 'void') {
     found.push({ label: 'Invoice void', text: 'The invoice for this job is void.', todo: 'Make a new invoice, or close the job.', go: 'invoice' });
   }
@@ -164,7 +169,7 @@ export function fixes(o) {
   found.push(...(o.invoiceProblems ?? []).filter((p) => !(held && p.code === 'job_review')).map((p) => draftFix(p)));
   const seen = new Set();
   return found.filter((f) => {
-    const key = `${f.label}\u0000${f.text}`;
+    const key = `${f.rule ?? ''}\u0000${f.label}\u0000${f.text}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;

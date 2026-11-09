@@ -7,6 +7,7 @@ import { measure } from './checks.js';
 import { clerkBrowserStub } from '../support/clerk.js';
 import { RULES, rulesFor } from '../../server/ui/mobile.js';
 import { SCREENS } from './screens.js';
+import { boardSurface } from './board-surface.js';
 
 // The phone suite (docs/MOBILE_TESTS.md). Each screen, in each project (size,
 // engine, theme), is checked for page overflow, small touch targets, cut text
@@ -164,4 +165,25 @@ test('toolbar stays in place', async ({ page }, info) => {
   record(info.project.name, 'toolbar', { moved });
   const allowed = BUDGET[`${info.project.name}/toolbar`]?.moved ?? [];
   if (!process.env.MOBILE_RECORD) expect(moved.filter((id) => !allowed.includes(id)), `the toolbar moves on these lists: ${JSON.stringify(boxes)}`).toEqual([]);
+});
+
+// One rendered contract for the board surface and independent lane geometry.
+test('board surface stays continuous without stretching lanes', async ({ page }, info) => {
+  await open(page, info.project, SCREENS.find((screen) => screen.id === 'jobs-board'));
+  const found = await boardSurface(page);
+  expect(found.laneWidths.length).toBeGreaterThan(1);
+  expect(found.laneSurfaces, 'lanes and the space around them share one surface').toEqual(found.laneSurfaces.map(() => found.surface));
+  expect(found.pageOverflow).toBeLessThanOrEqual(1);
+  const phone = info.project.metadata.size.width < 640;
+  for (const width of found.laneWidths) expect(Math.abs(width - (phone ? found.width : 272))).toBeLessThanOrEqual(1);
+  for (const gap of found.gaps) expect(Math.abs(gap - (phone ? 0 : 12))).toBeLessThanOrEqual(1);
+  if (phone) {
+    const tabs = page.locator('.fx-board-tabs button');
+    await tabs.nth(1).click();
+    await expect(tabs.nth(1)).toHaveAttribute('aria-selected', 'true');
+    await expect.poll(async () => (await boardSurface(page)).scrollLeft).toBeGreaterThan(0);
+  } else {
+    await page.locator('.fx-board').evaluate((board) => { board.scrollLeft = board.scrollWidth; });
+    await expect.poll(async () => { const end = await boardSurface(page); return end.lastRight - end.right; }).toBeLessThanOrEqual(1);
+  }
 });

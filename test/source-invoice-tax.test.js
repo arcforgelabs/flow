@@ -3,7 +3,7 @@ import { after, before, describe, test } from 'node:test';
 import { eq } from 'drizzle-orm';
 import { invoices } from '../server/db/schema.js';
 import { createContact, createOrganisation, createPriceItem } from '../server/core/directory.js';
-import { draftInvoiceForObligation, explainObligation, observeJob, setHold, useSourceLines } from '../server/core/ledger.js';
+import { draftInvoiceForObligation, explainObligation, jobChangeFor, observeJob, setHold, useSourceLines } from '../server/core/ledger.js';
 import { mapLines, mappingContext } from '../server/core/line-mapping.js';
 import { getInvoice, issueInvoice, listInvoiceVersions } from '../server/core/invoices.js';
 import { invoiceView, markReady, sendAgain, sendAllReady } from '../server/core/sending.js';
@@ -99,6 +99,7 @@ describe('source invoice tax through the Seazona feed and ledger', { skip: skipW
     await observeJob(db, lab.id, conflict);
     assert.equal((await getInvoice(db, lab.id, invoice.id)).totalCents, 11000);
     assert.deepEqual(await listInvoiceVersions(db, lab.id, invoice.id), versions);
+    assert.equal(await jobChangeFor(db, lab.id, invoice.id), null, 'an issued invoice does not gain a draft source review');
     // Retry keeps the issued version. It does not apply the later source totals.
     await db.update(invoices).set({ sendState: 'failed', sendError: { code: 'sample_refusal', message: 'Sample refusal.' } }).where(eq(invoices.id, invoice.id));
     const accounting = { capabilities: { sendStatus: async () => ({ connected: true, writesAllowed: true }) } };

@@ -588,6 +588,54 @@ describe('invoicing API', { skip: skipWithoutDatabase }, () => {
     assert.notEqual(rechecked.body.invoice.view, 'problem');
     const again = await call(`/jobs/${job.id}/recheck`, { method: 'POST', body: { organisationId: lab.id } });
     assert.equal(again.body.outcome, 'fresh', 'a second click soon after makes no call');
+    assert.ok(again.body.retryAfterSeconds > 0);
+  });
+
+  test('source review extends the existing comparison and preserves the send guard', async () => {
+    const report = { sourceSystem: 'worksystem', sourceJobRef: 'JOB-SOURCE-RESOLVE', sourceInvoiceRef: 'SOURCE-TEST', caseRef: 'CASE-TEST', contactId: practice.id, sourceStatus: 'Shipped', lines: [{ itemCode: 'CRN' }] };
+    const job = await observeJob(handle.db, lab.id, report);
+    const { invoice } = await draftInvoiceForObligation(handle.db, lab.id, job.id, { actor: 'user:test', liveCheck: null });
+    await observeJob(handle.db, lab.id, { ...report, sourceTotals: { subtotalCents: 22000, taxCents: 0, totalCents: 22000 } });
+    const open = (await call(`/invoices/${invoice.id}?organisationId=${lab.id}`)).body.invoice;
+    const change = open.jobChange;
+    const review = change.sourceReview;
+    assert.equal(change.jobId, job.id);
+    assert.equal(change.caseRef, 'CASE-TEST');
+    assert.equal(change.canAdopt, false);
+    assert.equal(change.canAccept, false);
+    assert.deepEqual(review.sourceTotals, { subtotalCents: 22000, taxCents: 0, totalCents: 22000 });
+    assert.deepEqual(review.reconstructed, { subtotalCents: 22000, taxCents: 2200, totalCents: 24200 });
+    assert.deepEqual(review.savedInvoice, { subtotalCents: 22000, taxCents: 2200, totalCents: 24200 });
+    assert.equal(change.link, null, 'no guessed source URL');
+    assert.equal(change.canRecheck, true);
+    const disconnected = await request(appWithoutCheck, `/api/invoicing/invoices/${invoice.id}?organisationId=${lab.id}`, { token: ownerToken });
+    assert.equal(disconnected.body.invoice.jobChange.canRecheck, false);
+    assert.equal(open.totalCents, 24200, 'the saved invoice is separate from source totals');
+    const refused = await call('/invoices/send-ready', { method: 'POST', body: { organisationId: lab.id, invoiceIds: [invoice.id] } });
+    assert.equal(refused.status, 409);
+    const unchanged = (await call(`/invoices/${invoice.id}?organisationId=${lab.id}`)).body.invoice;
+    assert.deepEqual(unchanged.jobChange.sourceReview, review);
+    assert.equal(unchanged.status, 'draft');
+    assert.equal(unchanged.versions.length, 0);
+    workReads.set(report.sourceJobRef, report);
+    const fixed = await call(`/jobs/${job.id}/recheck`, { method: 'POST', body: { organisationId: lab.id } });
+    assert.equal(fixed.status, 200, JSON.stringify(fixed.body));
+    assert.equal(fixed.body.invoice.jobChange, null);
+    assert.equal(fixed.body.invoice.totalCents, 24200);
+  });
+
+  test('a failed source recheck cannot become a successful cached result', async () => {
+    const job = await observeJob(handle.db, lab.id, { sourceSystem: 'worksystem', sourceJobRef: 'JOB-UNAVAILABLE-RECHECK', contactId: practice.id, lines: [{ itemCode: 'CRN' }] });
+    const first = await call(`/jobs/${job.id}/recheck`, { method: 'POST', body: { organisationId: lab.id } });
+    assert.equal(first.status, 409);
+    assert.match(first.body.error, /could not be read/);
+    assert.doesNotMatch(first.body.error, /No new source read/);
+    const again = await call(`/jobs/${job.id}/recheck`, { method: 'POST', body: { organisationId: lab.id } });
+    assert.equal(again.status, 409, 'a cached failure must not report success');
+    assert.match(again.body.error, /^No new source read[.] Wait [1-9][0-9]* seconds, then recheck again[.]/);
+    assert.ok(again.body.error.endsWith(first.body.error), 'the previous source error remains visible');
+    assert.equal(again.body.details.outcome, 'cached_failed');
+    assert.ok(again.body.details.retryAfterSeconds > 0);
   });
 
   test('Accept change takes the work system lines even when the draft changed too', async () => {

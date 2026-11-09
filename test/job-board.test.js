@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { ledgerView } from '../server/core/ledger.js';
+import { ruleWait } from '../server/core/invoice-rules.js';
 import {
   caseNumber, fixes, GO, invoiceStage, matches, NO_STATUS, orderStatuses, phoneLaneIndex, problemSummary,
 } from '../server/ui/job-board.js';
@@ -142,4 +143,30 @@ test('a phone swipe names the lane that is more than halfway across', () => {
   assert.equal(phoneLaneIndex(200, 375, 6), 1);
   assert.equal(phoneLaneIndex(2000, 375, 6), 5);
   assert.equal(phoneLaneIndex(10, 0, 6), 0);
+});
+
+
+test('wait and skip rules preserve their identity through Pending work fixes', () => {
+  const rule = (id, kind) => ({ id, name: 'Check this job', enabled: true, trigger: 'job_ready',
+    conditions: [{ field: 'job_total', test: 'is', value: 0 }], action: { kind } });
+  const rules = [rule('wait-rule', 'wait'), rule('skip-rule', 'skip'), rule('not-pending', 'non_chargeable')];
+  const waitingRules = ruleWait(rules, { totalCents: 0 });
+  assert.deepEqual(waitingRules, [
+    { code: 'rule', short: 'Check this job', message: 'rule "Check this job": waits for a person', rule: 'wait-rule', resolution: { kind: 'rule_review' } },
+    { code: 'rule', short: 'Check this job', message: 'rule "Check this job": not drafted by rule', rule: 'skip-rule', resolution: { kind: 'rule_review' } },
+  ]);
+  for (const view of ['ready', 'pending', 'held']) {
+    const found = fixes({ view, waitingRules, waitingFor: waitingRules.map((p) => p.message), reasons: [], invoiceProblems: [] });
+    assert.deepEqual(found.map((f) => [f.rule, f.go, f.text]), [
+      ['wait-rule', 'rule', 'Rule "Check this job": waits for a person.'],
+      ['skip-rule', 'rule', 'Rule "Check this job": not drafted by rule.'],
+    ]);
+  }
+  const duplicateNames = ruleWait([rule('one', 'wait'), rule('two', 'wait')], { totalCents: 0 });
+  assert.equal(fixes({ view: 'ready', waitingFor: duplicateNames.map((p) => p.message), waitingRules: duplicateNames }).length, 2,
+    'different rules must not disappear merely because their words match');
+  assert.throws(() => ruleWait([rule(null, 'wait')], { totalCents: 0 }), { code: 'warning_resolution_required' });
+  const missing = fixes({ view: 'pending', waitingRules: [{ ...waitingRules[0], rule: null }], reasons: [] });
+  assert.equal(missing[0].go, null);
+  assert.match(missing[0].todo, /resolution is unavailable/);
 });
