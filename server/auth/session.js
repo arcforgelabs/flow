@@ -1,3 +1,4 @@
+import { decideOperation, roleAllowed } from '../core/operations.js';
 import { displayNameOf, googleWorkspaceOwner, primaryEmailOf, secondFactorVerified } from './clerk.js';
 import { fillPersonName, findPersonByClerkId, findPersonByEmail, linkPerson, recordPendingPerson } from './people.js';
 import { DEFAULT_OWNER_MFA_MAX_AGE_MINUTES, isPlainEmail } from './settings.js';
@@ -146,7 +147,16 @@ export function createPersonAuth({
   }
 
   function requireRole(...roles) {
-    return (req, res, next) => (roles.includes(req.person?.role) ? next() : deny(res, 'role_required'));
+    return (req, res, next) => (roleAllowed(req.person, roles) ? next() : deny(res, 'role_required'));
+  }
+
+  // The operation list owns the role decision for this slice.
+  function requireOperation(id) {
+    return (req, res, next) => {
+      const decision = decideOperation(req.person, id, { surface: 'web' });
+      if (decision.ok) return next();
+      return deny(res, decision.code === 'role_required' ? 'role_required' : decision.code);
+    };
   }
 
   async function cachedClerkUser(clerkUserId) {
@@ -188,5 +198,5 @@ export function createPersonAuth({
     return next();
   }
 
-  return { requireSession, requireRole, requireOwner, ownerVerification };
+  return { requireSession, requireRole, requireOperation, requireOwner, ownerVerification };
 }

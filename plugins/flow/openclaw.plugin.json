@@ -1,0 +1,29 @@
+{
+  "id": "flow",
+  "name": "Flow",
+  "description": "Read and edit Horizon Flow jobs and draft invoices through a signed connector.",
+  "categories": ["productivity"],
+  "contracts": {
+    "tools": [
+      "flow_jobs_list",
+      "flow_jobs_set_field",
+      "flow_invoices_list",
+      "flow_invoices_get",
+      "flow_invoices_update_draft"
+    ]
+  },
+  "activation": {
+    "onStartup": true
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "baseUrl": { "type": "string" },
+      "keyId": { "type": "string" },
+      "flowVersion": { "type": "string" },
+      "operationRevision": { "type": "string" }
+    },
+    "required": ["baseUrl", "keyId", "flowVersion", "operationRevision"]
+  }
+}

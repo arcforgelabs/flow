@@ -412,6 +412,7 @@ export function createInvoicingRouter({
 
   const signedIn = [personAuth.requireSession];
   const manager = [...signedIn, personAuth.requireRole('owner', 'admin')];
+  const operation = (id) => personAuth.requireOperation(id);
   const organisationOf = (req) => resolveOrganisation(db, req.method === 'GET' ? req.query.organisationId : (req.body?.organisationId ?? req.query.organisationId));
 
   router.get('/context', ...signedIn, handle(log, async (req, res) => {
@@ -553,7 +554,7 @@ export function createInvoicingRouter({
     res.json({ ok: true, ...(await markNotReady(db, organisationId, invoiceIdsOf(req.body))) });
   }));
 
-  router.post('/invoices/send-ready', ...manager, act('sendReady'), handle(log, async (req, res) => {
+  router.post('/invoices/send-ready', ...signedIn, operation('invoices.send'), act('sendReady'), handle(log, async (req, res) => {
     const organisationId = await organisationOf(req);
     const issueDate = optionalDate(req.body?.issueDate, 'issueDate') ?? today();
     const ids = req.body?.invoiceIds === undefined ? null : invoiceIdsOf(req.body);
@@ -564,7 +565,7 @@ export function createInvoicingRouter({
     res.json({ ok: true, ...result });
   }));
 
-  router.post('/invoices/send-again', ...manager, act('sendAgain'), handle(log, async (req, res) => {
+  router.post('/invoices/send-again', ...signedIn, operation('invoices.send'), act('sendAgain'), handle(log, async (req, res) => {
     const organisationId = await organisationOf(req);
     const ids = req.body?.invoiceIds === undefined ? null : invoiceIdsOf(req.body);
     const result = await sendAgain(db, organisationId, { accounting: accounting(), personId: req.person.id, invoiceIds: ids });
@@ -607,7 +608,7 @@ export function createInvoicingRouter({
     res.status(201).json({ ok: true, invoice: await invoiceDetail(db, organisationId, draft.id, accounting(), work()) });
   }));
 
-  router.patch('/invoices/:id', ...signedIn, handle(log, async (req, res) => {
+  router.patch('/invoices/:id', ...signedIn, operation('invoices.updateDraft'), handle(log, async (req, res) => {
     const invoiceId = pathId(req.params.id, 'invoice');
     const organisationId = await organisationOf(req);
     const body = req.body ?? {};
@@ -621,7 +622,7 @@ export function createInvoicingRouter({
     res.json({ ok: true, invoice: await invoiceDetail(db, organisationId, invoiceId, accounting(), work()) });
   }));
 
-  router.post('/invoices/:id/issue', ...manager, handle(log, async (req, res) => {
+  router.post('/invoices/:id/issue', ...signedIn, operation('invoices.issue'), handle(log, async (req, res) => {
     const invoiceId = pathId(req.params.id, 'invoice');
     const organisationId = await organisationOf(req);
     const issueDate = optionalDate(req.body?.issueDate, 'issueDate') ?? today();
@@ -640,7 +641,7 @@ export function createInvoicingRouter({
     res.json({ ok: true, invoice: await invoiceDetail(db, organisationId, invoiceId, accounting(), work()) });
   }));
 
-  router.post('/invoices/:id/revise', ...manager, handle(log, async (req, res) => {
+  router.post('/invoices/:id/revise', ...signedIn, operation('invoices.revise'), handle(log, async (req, res) => {
     const invoiceId = pathId(req.params.id, 'invoice');
     const organisationId = await organisationOf(req);
     await reviseInvoice(db, organisationId, invoiceId);
@@ -648,7 +649,7 @@ export function createInvoicingRouter({
     res.json({ ok: true, invoice: await invoiceDetail(db, organisationId, invoiceId, accounting(), work()) });
   }));
 
-  router.post('/invoices/:id/void', ...manager, handle(log, async (req, res) => {
+  router.post('/invoices/:id/void', ...signedIn, operation('invoices.void'), handle(log, async (req, res) => {
     const invoiceId = pathId(req.params.id, 'invoice');
     const organisationId = await organisationOf(req);
     await voidInvoice(db, organisationId, invoiceId);
@@ -710,7 +711,7 @@ export function createInvoicingRouter({
     res.json({ ok: true, priceItems: rows });
   }));
 
-  router.get('/jobs', ...signedIn, handle(log, async (req, res) => {
+  router.get('/jobs', ...signedIn, operation('jobs.list'), handle(log, async (req, res) => {
     const organisationId = await organisationOf(req);
     const view = text(req.query.view);
     if (view && !VIEWS.includes(view)) throw invalid(`view must be one of ${VIEWS.join(', ')}`);
