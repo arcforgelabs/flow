@@ -53,14 +53,54 @@ test('the local folder stores a photo and will not leave that folder', async () 
   assert.equal(await storage.get('captures/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'), null);
   await assert.rejects(() => storage.put({ key: '../outside.png', body: PNG, contentType: 'image/png' }));
   assert.equal(path.resolve(root).startsWith(path.resolve(tmpdir())), true);
-  const link = storage.signedLink({
-    key: 'captures/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
-    baseUrl: 'http://127.0.0.1:9',
-    expiresInSeconds: -1,
+});
+
+test('a local link binds the object and expiry, and expires at the deadline', () => {
+  let at = new Date('2026-01-01T00:00:00Z');
+  const storage = createLocalObjectStorage({ signingKey: Buffer.alloc(32, 7), now: () => at });
+  const key = 'captures/synthetic.png';
+  const link = storage.signedLink({ key, baseUrl: 'https://flow.example.test/', expiresInSeconds: 60 });
+  const url = new URL(link.url);
+  assert.equal(url.pathname, '/api/captures/file');
+  assert.equal(link.expiresAt, '2026-01-01T00:01:00.000Z');
+  const token = url.searchParams.get('token');
+  assert.deepEqual(storage.openLink(token), { ok: true, key });
+  const [encoded, signature] = token.split('.');
+  const payload = Buffer.from(encoded, 'base64url').toString('utf8');
+  for (const changed of [payload.replace(key, 'captures/other.png'), payload.replace(/\d+$/, '9999999999')]) {
+    const forged = `${Buffer.from(changed).toString('base64url')}.${signature}`;
+    assert.deepEqual(storage.openLink(forged), { ok: false, code: 'link_invalid' });
+  }
+  const other = createLocalObjectStorage({ signingKey: Buffer.alloc(32, 8), now: () => at });
+  assert.deepEqual(other.openLink(token), { ok: false, code: 'link_invalid' });
+  for (const malformed of [null, '', 'not-a-token', `${token}.extra`, `${encoded}.x`]) {
+    assert.deepEqual(storage.openLink(malformed), { ok: false, code: 'link_invalid' });
+  }
+  at = new Date('2026-01-01T00:00:59.999Z');
+  assert.deepEqual(storage.openLink(token), { ok: true, key });
+  at = new Date(link.expiresAt);
+  assert.deepEqual(storage.openLink(token), { ok: false, code: 'link_expired' });
+});
+
+test('storage selection honours off and S3 configuration', async () => {
+  assert.deepEqual(await resolveObjectStorage({ env: { FLOW_STORAGE: ' OFF ' } }), {
+    storage: null, mode: 'off', reason: 'off',
   });
-  const token = new URL(link.url).searchParams.get('token');
-  assert.equal(storage.openLink(token).code, 'link_expired');
-  assert.equal(storage.openLink(`${token.slice(0, -1)}x`).code, 'link_invalid');
+  await assert.rejects(() => resolveObjectStorage({ env: { FLOW_STORAGE: 'unknown' } }), /FLOW_STORAGE must be/);
+  const resolved = await resolveObjectStorage({
+    env: {
+      FLOW_STORAGE: ' S3 ', FLOW_S3_BUCKET: 'synthetic', FLOW_S3_REGION: 'ap-southeast-2',
+      FLOW_S3_ACCESS_KEY_ID: 'synthetic-id', FLOW_S3_SECRET_ACCESS_KEY: 'synthetic-only',
+      FLOW_S3_ENDPOINT: 'https://objects.example.test', FLOW_S3_FORCE_PATH_STYLE: ' ON ',
+    },
+  });
+  assert.equal(resolved.mode, 's3');
+  assert.equal(resolved.reason, null);
+  const url = new URL(resolved.storage.signedLink({ key: 'captures/synthetic.png' }).url);
+  assert.equal(url.origin, 'https://objects.example.test');
+  assert.equal(url.pathname, '/synthetic/captures/synthetic.png');
+  assert.equal(url.searchParams.get('X-Amz-Expires'), '900');
+  assert.match(url.searchParams.get('X-Amz-Credential'), /^synthetic-id\/\d{8}\/ap-southeast-2\/s3\/aws4_request$/);
 });
 
 test('an S3 link matches the published signature example', () => {
@@ -83,8 +123,14 @@ test('an S3 link matches the published signature example', () => {
     accessKeyId: AWS_KEY, secretAccessKey: AWS_SECRET, region: 'us-east-1', bucket: 'examplebucket', key: 'test.txt',
     expiresInSeconds: 86400, now: AWS_NOW,
   });
-  assert.equal(presigned.signature, 'aeeed9bbccd4d02ee5c0109b86d86835f995330da4c265957d157751f604d404');
   assert.equal(presigned.requestHash, '3bfa292879f6447bbcda7001decf97f4a54dc650c8942174ae0a9121cf58ad04');
+  const url = new URL(presigned.url);
+  assert.equal(url.origin, 'https://examplebucket.s3.amazonaws.com');
+  assert.equal(url.pathname, '/test.txt');
+  assert.equal(url.searchParams.get('X-Amz-Signature'), 'aeeed9bbccd4d02ee5c0109b86d86835f995330da4c265957d157751f604d404');
+  assert.equal(url.searchParams.get('X-Amz-Date'), '20130524T000000Z');
+  assert.equal(url.searchParams.get('X-Amz-Expires'), '86400');
+  assert.equal(presigned.expiresAt, '2013-05-25T00:00:00.000Z');
 });
 
 test('S3 put and delete send the photo bytes and no error text from the store', async () => {
@@ -147,7 +193,9 @@ test('Replit storage reads the client buffer and signs a Flow link', async () =>
 test('a local folder without a signing key makes one and keeps it', async () => {
   const root = mkdtempSync(path.join(tmpdir(), 'flow-storage-key-'));
   const key = 'captures/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
-  const first = await resolveObjectStorage({ env: { FLOW_STORAGE: 'local' }, root });
+  const first = await resolveObjectStorage({ env: {}, root });
+  assert.equal(first.mode, 'local');
+  assert.equal(first.reason, null);
   await first.storage.put({ key, body: PNG, contentType: 'image/png' });
   const second = await resolveObjectStorage({ env: { FLOW_STORAGE: 'local' }, root });
   const got = await second.storage.get(key);
