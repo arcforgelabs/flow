@@ -115,7 +115,7 @@ export function createApp({
 
   // Machine access first, with its own authentication (issue #9). A Clerk
   // session never opens it.
-  app.use('/api/flow/v1', createConnectorApi());
+  app.use('/api/flow/v1', createConnectorApi({ db: database?.db ?? null, pool: database?.pool ?? null }));
 
   // MCP has a separate OAuth-only verifier. Never use browser session middleware.
   if (mcp && database) {
