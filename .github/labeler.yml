@@ -1,0 +1,149 @@
+# Area labels for pull requests, applied by .github/workflows/labeler.yml
+# (actions/labeler v7 syntax). The workflow reads this file from the base
+# branch only, so a pull request cannot change how it is itself labelled.
+"area: invoices":
+  - changed-files:
+      - any-glob-to-any-file:
+          - server/core/invoices.js
+          - server/core/money.js
+          - server/api/invoicing.js
+          - server/ui/invoicing.js
+          - test/invoices.test.js
+          - test/invoicing-api.test.js
+          - test/money.test.js
+
+"area: jobs":
+  - changed-files:
+      - any-glob-to-any-file:
+          - server/core/pipeline.js
+          - server/core/links.js
+          - server/core/review.js
+          - server/core/directory.js
+          - server/ui/jobs.js
+          - test/pipeline.test.js
+          - docs/JOB_INVOICE_LINKS.md
+
+"area: data":
+  - changed-files:
+      - any-glob-to-any-file:
+          - server/db/**
+          - server/core/ledger.js
+          - server/core/outbox.js
+          - server/core/queue.js
+          - server/import/**
+          - server/import-earlier-flow.js
+          - drizzle.config.js
+          - test/data-spine.test.js
+          - test/ledger.test.js
+          - test/import-*.test.js
+          - test/support/db.js
+          - docs/DATA_MODEL.md
+          - docs/DATA_SPINE.md
+
+"area: integrations":
+  - changed-files:
+      - any-glob-to-any-file:
+          - server/integrations/*.js
+          - server/api/connector.js
+          - test/integration-*.test.js
+          - test/health.test.js
+          - test/fixtures/sample-adapter/**
+          - docs/INTEGRATIONS.md
+
+"area: seazona":
+  - changed-files:
+      - any-glob-to-any-file:
+          - server/integrations/seazona/**
+          - server/ui/logos/seazona.svg
+          - test/seazona-*.test.js
+          - test/fixtures/seazona/**
+          - test/support/seazona.js
+          - docs/SEAZONA.md
+
+"area: xero":
+  - changed-files:
+      - any-glob-to-any-file:
+          - server/integrations/xero/**
+          - server/ui/logos/xero.svg
+          - test/xero-*.test.js
+          - test/support/xero.js
+          - docs/XERO.md
+
+"area: auth":
+  - changed-files:
+      - any-glob-to-any-file:
+          - server/auth/**
+          - server/core/secrets.js
+          - server/rate-limit.js
+          - server/ui/clerk-appearance.js
+          - test/sign-in*.test.js
+          - test/rate-limit.test.js
+          - test/support/clerk.js
+
+"area: ui":
+  - changed-files:
+      - any-glob-to-any-file:
+          - server/ui/*.js
+          - server/ui/*.css
+          - server/ui/*.svg
+          - server/theme/**
+          - scripts/theme-contrast.mjs
+          - scripts/port-openclaw-themes.mjs
+          - test/theme*.test.js
+          - docs/DESIGN.md
+
+"area: server":
+  - changed-files:
+      - any-glob-to-any-file:
+          - server/app.js
+          - server/index.js
+          - server/flow-server.js
+          - server/core/errors.js
+          - server/update-check.js
+          - server/release-channel.js
+          - test/release-channel.test.js
+          - test/update-check.test.js
+
+"area: deploy":
+  - changed-files:
+      - any-glob-to-any-file:
+          - Dockerfile
+          - .dockerignore
+          - .replit
+          - replit.md
+          - deploy/**
+          - scripts/replit-*
+          - scripts/deploy-*.js
+          - scripts/github-sync.sh
+          - server/deployed-build.js
+          - .agents/**
+          - test/deploy-checks.test.js
+          - test/replit-deploy.test.js
+          - docs/REPLIT.md
+          - docs/SELF_HOSTING.md
+
+# CI, release tooling and the test harness it runs.
+"area: ci":
+  - changed-files:
+      - any-glob-to-any-file:
+          - .github/**
+          - .claude/**
+          - .gitignore
+          - scripts/release/**
+          - test/release*.test.js
+          - test/support/**
+          - docs/RELEASING.md
+
+"area: docs":
+  - changed-files:
+      - any-glob-to-any-file:
+          - docs/**
+          - "*.md"
+          - LICENSE
+
+"area: dependencies":
+  - changed-files:
+      - any-glob-to-any-file:
+          - package.json
+          - package-lock.json
+          - .npmrc
