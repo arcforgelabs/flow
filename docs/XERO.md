@@ -32,6 +32,35 @@ The refresh token's key (`XERO_TOKEN_KEY`) comes from Flow's secrets key
 `FLOW_INTEGRATIONS=xero`, `XERO_MODE` and the settings below; a host setting
 wins over the screen.
 
+## Tracking
+
+An **Owner or Admin** chooses **Tracking** on **Integrations › Xero**:
+select an active category and option, then **Save**, or select **Off**.
+Admins see only this business setting; host credentials, integration setup
+and connection changes remain owner-only.
+The choice belongs to the Flow workspace, not the host. The page reads
+Xero's active categories and options; an unavailable saved value stays
+visible until a person replaces it or turns tracking off.
+
+Every new invoice line uses the client's Xero default sales option in the
+selected category, otherwise the workspace option. Off sends no tracking,
+even when the contact has a default. Before a first send Flow checks both
+the workspace choice and the contact override against Xero. An archived or
+missing category or option refuses the send and links to this setting.
+
+On the first startup after this upgrade, the adapter imports a complete
+legacy server tracking pair for existing workspaces that have no saved
+choice. Saved choices, including Off, take precedence. An incomplete pair
+is not imported and logs a warning. A transactional cutover receipt prevents
+later restarts or new workspaces from inheriting obsolete host values.
+Remove the old server tracking configuration after checking the page.
+There is no environment fallback in preview or send.
+
+The issued invoice shows each line's tracking from the stored request for
+that version, not the current setting. A sent request and its invoice
+version never change. A matched pre-existing invoice or an unreadable old
+request says **Tracking: not recorded**, rather than inventing a value.
+
 ## Modes
 
 `XERO_MODE` says which Xero the adapter acts on. It has no default
@@ -62,7 +91,6 @@ credentials. Tests use replay only and never call the real Xero API.
 | `XERO_SCOPE` | configuration | OAuth scopes. Default `offline_access accounting.contacts accounting.invoices accounting.payments.read accounting.settings.read` (a Custom Connection leaves out `offline_access`). A connection made before a scope was added keeps its old scopes until a person connects again. |
 | `XERO_DAY_LIMIT` | configuration | The app's daily call limit per organisation until Xero reports its own: 1000 on the Starter plan (the default), 5000 on Core and above. |
 | `XERO_USAGE_WARNING_FRACTION` | configuration | Log a warning when this share of the day's calls is used. Default 0.7. |
-| `XERO_TRACKING_CATEGORY` / `XERO_TRACKING_OPTION` | configuration | A tracking category and option put on every invoice line. Set both or neither. |
 | `XERO_TAX_TYPE_GST` / `XERO_TAX_TYPE_GST_FREE` | configuration | Xero tax types for Flow's tax codes. Default `OUTPUT` and `EXEMPTOUTPUT` (Australian Xero). |
 | `XERO_DEFAULT_DUE_DAYS` | configuration | Days from the invoice date to the due date when a Flow invoice has none. Default 30. |
 | `XERO_INVOICE_NUMBER` | configuration | `xero` (default): Xero numbers the invoice. `flow`: Xero gets Flow's invoice number. |
@@ -292,6 +320,8 @@ The rules:
 
 | Route | Who | What |
 | --- | --- | --- |
+| `GET /api/xero/tracking?organisationId=` | owner or admin | Saved tracking, active categories/options, and connection state. A failed Xero read leaves the saved choice visible. |
+| `PUT /api/xero/tracking` `{ organisationId, tracking }` | owner or admin | Save `{ category, option }` validated against active Xero values, or `null` for Off (no Xero call). |
 | `POST /api/xero/invoices/preview` `{ organisationId, invoiceIds }` | anyone signed in | Each invoice's Xero draft, its contact match, and what stops it. No Xero calls. |
 | `POST /api/xero/invoices/push` `{ organisationId, invoiceIds, allowExistingReference? }` | owner or admin | Sends up to 100 issued invoices. Each answers `created`, `reconciled`, `existing`, `already_in_xero`, `mismatch`, `ambiguous`, `failed` or `not_tried`. |
 | `GET /api/xero/invoices/<invoiceId>/pushes?organisationId=` | anyone signed in | The push records of one invoice, without the request. |

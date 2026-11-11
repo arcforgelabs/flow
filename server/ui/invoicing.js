@@ -1484,7 +1484,9 @@ function issuedView(invoice, ui, context, redraw) {
     target: '_blank',
     rel: 'noopener',
   }, 'Open in Xero') : null;
-  const problemRow = problemNotice ? (openXero ? h('div', { class: 'fx-offer' }, problemNotice, openXero) : problemNotice) : null;
+  const trackingLink = found.some((p) => p.code === 'xero_tracking_missing')
+    ? h('a', { class: 'fx-btn fx-btn--sm', href: '/integrations/xero#tracking' }, 'Tracking') : null;
+  const problemRow = problemNotice ? h('div', { class: 'fx-offer' }, problemNotice, openXero, trackingLink) : null;
   const header = h('header', { class: 'fx-ph' },
     h('div', { class: 'fx-ph__text' },
       h('h1', { class: 'fx-title' }, invoice.number),
@@ -1523,7 +1525,11 @@ function issuedView(invoice, ui, context, redraw) {
           cardRows(h('table', { class: 'fx-lines__table fx-lines__table--read' },
             h('thead', {}, h('tr', {}, h('th', {}, 'Description'), h('th', { class: 'fx-num' }, 'Qty'), h('th', { class: 'fx-num' }, 'Unit price'), h('th', {}, 'Tax'), h('th', { class: 'fx-num' }, 'Amount'))),
             h('tbody', {}, invoice.lines.map((line) => h('tr', {},
-              h('td', { 'data-area': 'desc' }, line.description),
+              h('td', { 'data-area': 'desc' }, line.description,
+                invoice.accountingFacts?.sent ? h('div', { class: 'fx-dim' },
+                  invoice.accountingFacts.lineTracking?.[line.position - 1]?.length
+                    ? invoice.accountingFacts.lineTracking[line.position - 1].map((t) => t.category + ': ' + t.option).join(' · ')
+                    : invoice.accountingFacts.lineTracking ? 'Tracking: none' : 'Tracking: not recorded') : null),
               h('td', { class: 'fx-num', 'data-area': 'qty', 'data-label': 'Qty' }, String(line.quantity)),
               h('td', { class: 'fx-num', 'data-area': 'price', 'data-label': 'Unit price' }, formatCents(line.unitAmountCents)),
               h('td', { class: 'fx-dim', 'data-area': 'gst', 'data-label': 'Tax' }, line.taxCode === 'GST' ? 'GST' : 'GST free'),
@@ -1599,6 +1605,8 @@ function sendToXero(invoice, ui, context) {
         else if (email?.state === 'sent') toast(`${invoice.number} is approved in Xero, and Xero emailed it to the customer.`, 'success');
         else if (['created', 'reconciled', 'existing'].includes(result?.outcome)) toast(`${invoice.number} is in Xero as a draft.`, 'success');
         else if (result?.outcome === 'already_in_xero') toast(`Xero already has ${invoice.number}.`, 'info');
+        else if (result?.error?.code === 'xero_tracking_missing') toast(h('span', {}, result.error.message, ' ',
+          h('a', { class: 'fx-btn fx-btn--sm', href: '/integrations/xero#tracking' }, 'Tracking')), 'danger', { stay: true });
         else toast(result?.error?.message ?? 'Xero did not take it.', 'danger');
         sent = ['created', 'reconciled', 'existing', 'already_in_xero'].includes(result?.outcome);
       } catch (error) {

@@ -10,6 +10,7 @@ import { writesAllowed } from './settings.js';
 import { xeroError } from './client.js';
 import { withXeroLane } from './governor.js';
 import { mirrorState } from './lookup.js';
+import { assertTracking, readTracking } from './tracking.js';
 
 // Issued Flow invoices go to Xero. How depends on the customer's send mode
 // (server/core/invoicing-rules.js):
@@ -247,7 +248,7 @@ export async function documentFacts(db, runtime, { organisationId, invoiceId, ve
   const { settings } = runtime;
   const facts = { system: 'Xero', sent: false, numberedBy: settings.invoiceNumber, defaultDueDays: settings.defaultDueDays };
   if (!version) return facts;
-  const { rows: [push] } = await db.execute(sql`select xero_invoice_id, xero_invoice_number, xero_status, request_body
+  const { rows: [push] } = await db.execute(sql`select xero_invoice_id, xero_invoice_number, xero_status, request_body, state
     from xero_invoice_pushes
     where organisation_id = ${organisationId} and invoice_id = ${invoiceId} and version = ${version} and xero_invoice_id is not null`);
   if (!push) return facts;
@@ -255,8 +256,13 @@ export async function documentFacts(db, runtime, { organisationId, invoiceId, ve
       to_char(issued_on, 'YYYY-MM-DD') as issued_on, to_char(due_on, 'YYYY-MM-DD') as due_on
     from xero_invoices where organisation_id = ${organisationId} and xero_invoice_id = ${push.xero_invoice_id}`);
   let sent = {};
+  let lineTracking = null;
   try {
     sent = JSON.parse(push.request_body) ?? {};
+    // A matched pre-existing invoice was not sent by Flow. Its hypothetical
+    // request is not evidence of tracking, nor is an unreadable old request.
+    if (push.state !== 'existing' && Array.isArray(sent.LineItems)) lineTracking = sent.LineItems.map((line) =>
+      (line.Tracking ?? []).map((tracking) => ({ category: tracking.Name, option: tracking.Option })));
   } catch {
     // An unreadable body leaves only the mirror and the push's own columns.
   }
@@ -268,6 +274,7 @@ export async function documentFacts(db, runtime, { organisationId, invoiceId, ve
     issueDate: copy?.issued_on || sent.Date || null,
     dueDate: copy?.due_on || sent.DueDate || null,
     status: copy?.status || push.xero_status || null,
+    lineTracking,
   };
 }
 
@@ -326,7 +333,7 @@ async function previewOne(db, runtime, organisationId, invoiceId) {
   if (match.state === 'ambiguous') problems.push(twiceContact(document.contact.name));
   const items = await itemsByCode(db, organisationId, document.lines.map((l) => l.itemCode));
   const sendMode = await sendModeFor(db, organisationId, invoice.contactId);
-  const { draft, problems: lineProblems } = buildDraft(document, { settings: runtime.settings, contact: match.contact, items, sendMode });
+  const { draft, problems: lineProblems } = buildDraft(document, { settings: { ...runtime.settings, tracking: await readTracking(db, organisationId) }, contact: match.contact, items, sendMode });
   problems.push(...lineProblems);
   if (sendMode === 'approve_and_email' && match.state === 'matched' && !match.contact.email) {
     problems.push(problem('xero_contact_no_email', `The Xero contact "${match.contact.name}" has no email address, so Xero cannot email the invoice. Add one in Xero, then sync.`, { blocking: false }));
@@ -372,12 +379,13 @@ export async function pushDrafts(db, runtime, organisationId, invoiceIds, { push
   return runtime.serial(organisationId, () => withXeroLane('writes', async () => {
     const { client } = await runtime.clientFor(db, organisationId);
     await runtime.assertEnvironment(client);
-    if (runtime.settings.tracking) await assertTracking(client, runtime.settings.tracking);
+    let categories;
+    const getCategories = () => categories ??= client.getTrackingCategories();
     const allowed = new Set(allowExistingReference);
     const results = [];
     for (const invoiceId of invoiceIds) {
       try {
-        results.push(await pushOne(db, runtime, client, organisationId, invoiceId, { pushedBy, allowExisting: allowed.has(invoiceId) }));
+        results.push(await pushOne(db, runtime, client, organisationId, invoiceId, { pushedBy, allowExisting: allowed.has(invoiceId), getCategories }));
       } catch (error) {
         if (stopsTheBatch(error)) {
           // Every later invoice would fail the same way: stop and say so.
@@ -451,15 +459,6 @@ function summarise(results) {
   };
 }
 
-async function assertTracking(client, tracking) {
-  const categories = await client.getTrackingCategories();
-  const category = categories.find((c) => normaliseName(c.Name) === normaliseName(tracking.category) && c.Status !== 'ARCHIVED');
-  if (!category) throw xeroError('xero_tracking_missing', `Xero has no tracking category "${tracking.category}" (XERO_TRACKING_CATEGORY).`, { status: 409 });
-  if (!(category.Options ?? []).some((o) => normaliseName(o.Name) === normaliseName(tracking.option) && o.Status !== 'ARCHIVED')) {
-    throw xeroError('xero_tracking_missing', `Xero tracking category "${tracking.category}" has no option "${tracking.option}" (XERO_TRACKING_OPTION).`, { status: 409 });
-  }
-}
-
 // Errors after which every later call would fail the same way: stop the batch.
 const stopsTheBatch = (error) => error.code === 'xero_rate_limited' || error.code === 'xero_reconnect_needed' || isCallsStopped(error);
 
@@ -473,7 +472,7 @@ function provesNothingCreated(error) {
 
 const shownXero = (inv) => ({ invoiceId: inv.InvoiceID, number: inv.InvoiceNumber ?? null, status: inv.Status ?? null });
 
-async function pushOne(db, runtime, client, organisationId, invoiceId, { pushedBy, allowExisting }) {
+async function pushOne(db, runtime, client, organisationId, invoiceId, { pushedBy, allowExisting, getCategories }) {
   const { invoice, version, document } = await documentFor(db, organisationId, invoiceId);
   if (invoice.status === 'void') throw xeroError('invoice_void', 'This invoice is void. Flow does not send it to Xero.', { status: 409 });
   if (invoice.status !== 'issued') throw xeroError('invoice_not_issued', 'Only an issued invoice goes to Xero. Issue it first.', { status: 409 });
@@ -511,7 +510,14 @@ async function pushOne(db, runtime, client, organisationId, invoiceId, { pushedB
   }
   const items = await itemsByCode(db, organisationId, document.lines.map((l) => l.itemCode));
   const sendMode = await sendModeFor(db, organisationId, invoice.contactId);
-  const { draft, problems } = buildDraft(document, { settings: runtime.settings, contact: match.contact, items, sendMode });
+  const tracking = await readTracking(db, organisationId);
+  const { draft, problems } = buildDraft(document, { settings: { ...runtime.settings, tracking }, contact: match.contact, items, sendMode });
+  if (tracking) {
+    const active = await getCategories();
+    assertTracking(active, tracking);
+    const sent = draft.LineItems[0]?.Tracking?.[0];
+    if (sent) assertTracking(active, { category: sent.Name, option: sent.Option });
+  }
   if (problems.length) throw xeroError(problems[0].code, problems.map((p) => p.message).join(' '), { status: 409, short: problems[0].short });
 
   // Live duplicate check: invoices in Xero with this reference, made by Flow

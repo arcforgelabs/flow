@@ -81,8 +81,7 @@ describe('Xero settings', () => {
     assert.equal(replay({ FLOW_PUBLIC_ORIGIN: 'http://localhost:19300' }).redirectUri, 'http://localhost:19300/api/xero/oauth/callback');
   });
 
-  test('tracking is configured as a pair; tax types and numbering have Xero defaults', () => {
-    assert.throws(() => resolveXeroSettings({ XERO_MODE: 'replay', XERO_TRACKING_CATEGORY: 'Department' }), /set together/);
+  test('tax types and numbering have Xero defaults', () => {
     const settings = resolveXeroSettings({ XERO_MODE: 'replay' });
     assert.deepEqual(settings.taxTypes, { GST: 'OUTPUT', GST_FREE: 'EXEMPTOUTPUT' });
     assert.equal(settings.invoiceNumber, 'xero');

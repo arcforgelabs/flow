@@ -51,7 +51,7 @@ function adapterBeforeMove(adapter) {
   const journal = JSON.parse(readFileSync(journalFile, 'utf8'));
   journal.entries = journal.entries.filter((entry) => entry.idx < from);
   writeFileSync(journalFile, JSON.stringify(journal));
-  const tables = adapter.schema.tables.filter((table) => !['xero_contact_sync'].includes(table));
+  const tables = adapter.schema.tables.filter((table) => !['xero_contact_sync', 'xero_tracking_settings', 'xero_tracking_cutover'].includes(table));
   return { ...adapter, schema: { ...adapter.schema, migrationsFolder: folder, tables } };
 }
 
