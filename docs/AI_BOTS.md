@@ -42,7 +42,7 @@ The Docs Agent runs `openai/codex-action` with the prompt in
    merges it once its checks are green, as long as it changes only `docs/**`
    and `README.md`.
 
-With the Barnacle App (`BARNACLE_APP_ID`, `BARNACLE_APP_PRIVATE_KEY`) the
+With the Barnacle App (`GH_APP_ID`, `GH_APP_PRIVATE_KEY` and their `_FALLBACK` pair) the
 pull request is opened by the App, so CI runs on it; with the workflow token
 alone, CI does not start on it.
 

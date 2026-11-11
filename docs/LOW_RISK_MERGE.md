@@ -84,6 +84,6 @@ through the API. It never checks out or runs pull request code.
 - The ruleset (`.github/rulesets/main.json`) needs no change: the lane merges
   through a pull request with the required checks green, as a person does.
 - Optional: with the Barnacle App installed on this repository
-  (`BARNACLE_APP_ID`, `BARNACLE_APP_PRIVATE_KEY`), the App makes the merge,
+  (`GH_APP_ID`, `GH_APP_PRIVATE_KEY` and their `_FALLBACK` pair), the App makes the merge,
   so CI and Secret Scan run on the merge commit on `main`. With the
   workflow's own token, GitHub starts no workflow for that push.
