@@ -36,3 +36,16 @@ updates:
     groups:
       actions-minor-and-patch:
         update-types: [minor, patch]
+
+  # Upstream OpenClaw skills: .agents/skills links unchanged skills into this
+  # submodule, so a bump pull request brings in upstream skill changes.
+  - package-ecosystem: gitsubmodule
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      timezone: Australia/Adelaide
+    commit-message:
+      prefix: chore
+    cooldown:
+      default-days: 3
