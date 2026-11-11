@@ -299,12 +299,24 @@ jobs:
       # request start CI; the low-risk lane merges it once green.
       - name: Create pull request token
         id: app-token
-        if: steps.gate.outputs.run_agent == 'true' && vars.BARNACLE_APP_ID != ''
+        if: steps.gate.outputs.run_agent == 'true' && vars.GH_APP_ID != ''
         continue-on-error: true
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
         with:
-          app-id: ${{ vars.BARNACLE_APP_ID }}
-          private-key: ${{ secrets.BARNACLE_APP_PRIVATE_KEY }}
+          app-id: ${{ vars.GH_APP_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Create pull request token (fallback App)
+        id: app-token-fallback
+        if: (steps.gate.outputs.run_agent == 'true' && vars.GH_APP_ID != '') && steps.app-token.outcome == 'failure' && vars.GH_APP_ID_FALLBACK != ''
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          app-id: ${{ vars.GH_APP_ID_FALLBACK }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY_FALLBACK }}
           owner: ${{ github.repository_owner }}
           repositories: ${{ github.event.repository.name }}
           permission-contents: write
@@ -314,7 +326,7 @@ jobs:
         if: steps.gate.outputs.run_agent == 'true'
         env:
           BASE_SHA: ${{ steps.gate.outputs.base_sha }}
-          GH_TOKEN: ${{ steps.app-token.outputs.token || github.token }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token || steps.app-token-fallback.outputs.token || github.token }}
           DOCS_BRANCH: docs-agent/refresh
         run: |
           set -euo pipefail

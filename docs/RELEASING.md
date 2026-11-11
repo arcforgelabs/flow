@@ -308,7 +308,7 @@ installation's deploy as the one step):
 3. **The closeout pull request.** Arc Forge's enterprise policy keeps
    **Allow GitHub Actions to create and approve pull requests** off, so
    Flow Release Closeout opens its pull request with the Barnacle App token
-   (`BARNACLE_APP_ID` variable, `BARNACLE_APP_PRIVATE_KEY` secret), as
+   (`GH_APP_ID` and `GH_APP_PRIVATE_KEY`, with their `_FALLBACK` pair), as
    openclaw/openclaw's workflows use an App token. The App needs **Pull
    requests: Read and write** on this repository. Without the token,
    `release:stable` opens the pull request itself.
