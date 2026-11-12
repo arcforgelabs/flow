@@ -1140,6 +1140,16 @@ function seazonaHistorySection() {
   return section;
 }
 
+// How much of the last 12 months of the copy has a Reference: a low share
+// is a copy that missed it (docs/XERO.md, "Copy version").
+function copyFill(mirror) {
+  const months = mirror.completeness ?? [];
+  const invoices = months.reduce((sum, m) => sum + m.invoices, 0);
+  if (!invoices) return '';
+  const withReference = months.reduce((sum, m) => sum + m.withReference, 0);
+  return ` Reference on ${withReference} of ${invoices} in the last 12 months.`;
+}
+
 // Once Xero is on: each organisation's connection, the history copy, and
 // Connect, which goes to Xero and comes back.
 function xeroConnection(organisations, canChange) {
@@ -1153,6 +1163,7 @@ function xeroConnection(organisations, canChange) {
       let control = null;
       let stopped = false;
       let refused = false;
+      let mirror = null;
       try {
         const status = await flow(`/api/xero/status?organisationId=${organisation.id}`);
         usage.replaceChildren(xeroUsage(status) ?? '');
@@ -1168,8 +1179,8 @@ function xeroConnection(organisations, canChange) {
           stopped = status.calls.all;
           refused = !status.calls.all;
         } else if (status.connected) {
-          const mirror = await flow(`/api/xero/mirror?organisationId=${organisation.id}`).catch(() => null);
-          hint = `Connected to ${status.connection?.tenantName ?? 'Xero'}.${mirror ? ` ${mirror.counts.invoices} invoices copied.` : ''}`;
+          mirror = await flow(`/api/xero/mirror?organisationId=${organisation.id}`).catch(() => null);
+          hint = `Connected to ${status.connection?.tenantName ?? 'Xero'}.${mirror ? ` ${mirror.counts.invoices} invoices copied.${copyFill(mirror)}` : ''}`;
         } else {
           hint = 'Not connected.';
         }
@@ -1185,6 +1196,19 @@ function xeroConnection(organisations, canChange) {
               toast(error.message, 'danger');
             }
           } }, status.connected ? 'Connect again' : 'Connect to Xero');
+          // The owner can ask for the whole copy to be read again (a copy
+          // that missed a field). The next sync reads it; no call now.
+          if (mirror && me?.person.role === 'owner') {
+            const reread = h('button', { class: 'fx-btn fx-btn--sm', type: 'button', title: 'Read every Xero invoice again on the next sync', onclick: async () => {
+              try {
+                await flow('/api/xero/mirror/reread', { method: 'POST', body: JSON.stringify({ organisationId: organisation.id }) });
+                toast('Flow reads the copy again on the next sync.');
+              } catch (error) {
+                toast(error.message, 'danger');
+              }
+            } }, 'Read again');
+            control = h('div', { class: 'fx-row' }, reread, control);
+          }
         }
       } catch (error) {
         hint = error.message;

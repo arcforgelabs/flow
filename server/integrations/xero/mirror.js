@@ -23,6 +23,12 @@ import { withXeroLane } from './governor.js';
 
 export const MIRROR_RESOURCES = Object.freeze(['invoices', 'credit_notes', 'payments']);
 
+// The mapper's version. Raise it when a mapper copies a new field: each
+// resource is then read again from the beginning, so old rows get the field
+// (docs/XERO.md, "Copy version").
+export const COPY_VERSION = 1;
+const copyVersion = (keepReference) => `${COPY_VERSION}:${keepReference ? 'text' : 'no_text'}`;
+
 // A Xero amount (a JSON number with up to 4 decimals) to whole cents, half away
 // from zero, without float drift.
 export function toCents(amount) {
@@ -202,10 +208,15 @@ export async function storeRows(tx, organisationId, resource, rows, counts) {
 // would keep the free text they were read with. The rows stay; each is
 // written again only if it differs.
 async function readCursor(db, organisationId, resource, { keepReference }) {
-  await db.execute(sql`insert into xero_mirror_cursors (organisation_id, resource, kept_reference)
-    values (${organisationId}, ${resource}, ${keepReference}) on conflict do nothing`);
-  await db.execute(sql`update xero_mirror_cursors set modified_since = null, page = 1, kept_reference = ${keepReference}
-    where organisation_id = ${organisationId} and resource = ${resource} and kept_reference is distinct from ${keepReference}`);
+  const version = copyVersion(keepReference);
+  await db.execute(sql`insert into xero_mirror_cursors (organisation_id, resource, kept_reference, copy_version)
+    values (${organisationId}, ${resource}, ${keepReference}, ${version}) on conflict do nothing`);
+  await db.execute(sql`update xero_mirror_cursors set modified_since = null, page = 1, kept_reference = ${keepReference}, copy_version = ${version}
+    where organisation_id = ${organisationId} and resource = ${resource}
+      and (kept_reference is distinct from ${keepReference} or (copy_version is not null and copy_version <> ${version}))`);
+  // A copy read before Flow noted its version takes the version as it is.
+  await db.execute(sql`update xero_mirror_cursors set copy_version = ${version}
+    where organisation_id = ${organisationId} and resource = ${resource} and copy_version is null`);
   const { rows: [row] } = await db.execute(sql`select * from xero_mirror_cursors
     where organisation_id = ${organisationId} and resource = ${resource}`);
   return { modifiedSince: row.modified_since ? new Date(row.modified_since) : null, page: row.page };
@@ -311,10 +322,38 @@ export async function mirrorXero(db, runtime, organisationId, { resources = MIRR
   });
 }
 
+// A person asks for the whole copy to be read again (an owner only): the next
+// read of each resource starts from the beginning. The rows stay; each is
+// written again only if it differs. No call is made here.
+export async function rereadCopy(db, organisationId, { resources = MIRROR_RESOURCES, actor }) {
+  if (!actor) throw new TypeError('actor is required');
+  for (const resource of resources) {
+    await db.execute(sql`insert into xero_mirror_cursors (organisation_id, resource) values (${organisationId}, ${resource}) on conflict do nothing`);
+    await db.execute(sql`update xero_mirror_cursors set modified_since = null, page = 1, reread_by = ${actor}, reread_at = now()
+      where organisation_id = ${organisationId} and resource = ${resource}`);
+  }
+  return mirrorStatus(db, organisationId);
+}
+
+// For each of the last 12 months, the sales invoices in the copy and how many
+// have a Reference and line item codes: the fields the matcher reads. A low
+// month is a copy that missed them (docs/XERO.md, "Copy version").
+async function completeness(db, organisationId) {
+  const { rows } = await db.execute(sql`select to_char(date_trunc('month', issued_on), 'YYYY-MM') as month,
+      count(*)::int as invoices,
+      count(*) filter (where coalesce(trim(reference), '') <> '')::int as with_reference,
+      count(*) filter (where exists (select 1 from jsonb_array_elements(lines) l where coalesce(l->>'itemCode', '') <> ''))::int as with_item_codes
+    from xero_invoices
+    where organisation_id = ${organisationId} and type = 'ACCREC' and status not in ('DELETED', 'VOIDED')
+      and issued_on >= date_trunc('month', now()) - interval '11 months'
+    group by 1 order by 1`);
+  return rows.map((r) => ({ month: r.month, invoices: r.invoices, withReference: r.with_reference, withItemCodes: r.with_item_codes }));
+}
+
 // What the copy holds, and where each cursor stands. No Xero calls.
 export async function mirrorStatus(db, organisationId) {
   const { rows: cursors } = await db.execute(sql`select resource, modified_since, page, passes, rows_read,
-    last_read_at, last_pass_finished_at, last_error from xero_mirror_cursors where organisation_id = ${organisationId}
+    last_read_at, last_pass_finished_at, last_error, copy_version, reread_by, reread_at from xero_mirror_cursors where organisation_id = ${organisationId}
     order by resource`);
   const { rows: [counts] } = await db.execute(sql`select
     (select count(*)::int from xero_invoices where organisation_id = ${organisationId}) as invoices,
@@ -331,6 +370,9 @@ export async function mirrorStatus(db, organisationId) {
       lastReadAt: c.last_read_at,
       lastPassFinishedAt: c.last_pass_finished_at,
       lastError: c.last_error,
+      copyVersion: c.copy_version ?? null,
+      rereadAt: c.reread_at ?? null,
     })),
+    completeness: await completeness(db, organisationId),
   };
 }
