@@ -8,7 +8,7 @@ import { createWorkMovesRouter } from './api/work-moves.js';
 import { createConnectorApi } from './api/connector.js';
 import { createInvoicingRouter } from './api/invoicing.js';
 import { createSignInRouter } from './auth/routes.js';
-import { integrationAlertsSource, invoiceProblemsSource, priceDifferencesSource } from './core/alerts.js';
+import { integrationAlertsSource, invoiceProblemsSource, jobGapsSource, priceDifferencesSource } from './core/alerts.js';
 import { boardJobs } from './core/job-board.js';
 import { reconcileHealth } from './core/reconcile.js';
 import { appliedMigrationCounts } from './db/doctor.js';
@@ -184,6 +184,7 @@ export function createApp({
       personAuth: auth.personAuth,
       log,
       sources: {
+        jobs: [jobGapsSource(database.db)],
         invoices: [invoiceProblemsSource(database.db, { accounting })],
         'price-list': [priceDifferencesSource(database.db)],
         integrations: [integrationAlertsSource(() => integrations?.with('alerts') ?? [])],

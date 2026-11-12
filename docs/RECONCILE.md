@@ -43,6 +43,7 @@ own reconciliation record (`docs/SEAZONA.md`, "History import").
 | `missingInWork` | An obligation's job is absent or deleted in the work copy. |
 | `missingInAccounting` | A linked invoice is not in the accounting copy. |
 | `accountingTotalDiffers` | The accounting copy's total is not the Flow invoice's total (an invoice Flow issued), or not the job's total with or without GST (an invoice Flow only matched). |
+| `readyNotInvoiced` | A job ready for more than 3 days, with no hold, has no Flow invoice and no accounting invoice linked. |
 
 The reconcile checks source presence separately from billable eligibility.
 `workJobPresence` checks ledger refs without status, date or line filters. A

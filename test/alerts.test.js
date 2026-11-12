@@ -3,9 +3,10 @@ import { after, before, describe, test } from 'node:test';
 import { createApp } from '../server/app.js';
 import { invitePerson, seedFirstOwner } from '../server/auth/people.js';
 import { createPersonAuth } from '../server/auth/session.js';
-import { alertsFor, dismissAlert, integrationAlertsSource, priceDifferencesSource } from '../server/core/alerts.js';
+import { alertsFor, dismissAlert, integrationAlertsSource, jobGapsSource, priceDifferencesSource } from '../server/core/alerts.js';
 import { createContact, createOrganisation } from '../server/core/directory.js';
 import { createDraftInvoice } from '../server/core/invoices.js';
+import { observeJob, setHold, setReady } from '../server/core/ledger.js';
 import { openReview, resolveReviewFor } from '../server/core/review.js';
 import { guardAlerts } from '../server/integrations/call-guard.js';
 import { createRegistry } from '../server/integrations/port.js';
@@ -76,7 +77,7 @@ describe('quiet alerts against PostgreSQL', { skip: skipWithoutDatabase }, () =>
   after(async () => handle?.close());
 
   test('nothing shows when nothing needs a person', async () => {
-    for (const page of ['invoices', 'price-list', 'integrations']) {
+    for (const page of ['jobs', 'invoices', 'price-list', 'integrations']) {
       const res = await call(`?page=${page}`, ownerToken);
       assert.equal(res.status, 200);
       assert.deepEqual(res.body.alerts, [], page);
@@ -187,5 +188,23 @@ describe('quiet alerts against PostgreSQL', { skip: skipWithoutDatabase }, () =>
     for (const page of ['invoices', 'price-list', 'integrations']) {
       assert.deepEqual(await alertsFor(handle.db, lab.id, ownerPerson, { page, sources }), [], page);
     }
+  });
+
+  test('a finished job with no invoice after the grace makes a Jobs alert; a hold clears it', async () => {
+    const job = await observeJob(handle.db, lab.id, {
+      sourceSystem: 'seazona', sourceJobRef: 'J-ALERT', caseRef: 'J-ALERT', contactId: practice.id, jobDate: '2026-10-10',
+      lines: [{ itemCode: 'CRN', description: 'Crown', quantity: 1, unitAmountCents: 22000 }], observedAt: new Date().toISOString(), actor: 'seazona',
+    });
+    await setReady(handle.db, lab.id, job.id, { actor: 'test' });
+    const ownerPerson = { id: owner.id, role: 'owner' };
+    const at = (ms) => ({ jobs: [jobGapsSource(handle.db, { now: () => Date.now() + ms })] });
+    assert.deepEqual(await alertsFor(handle.db, lab.id, ownerPerson, { page: 'jobs', sources: at(0) }), [], 'a new ready job has time to draft');
+    const [alert] = await alertsFor(handle.db, lab.id, { id: staff.id, role: 'staff' }, { page: 'jobs', sources: at(4 * 86_400_000) });
+    assert.equal(alert.key, 'jobs:not-invoiced');
+    assert.equal(alert.title, '1 finished job has no invoice after 3 days.');
+    assert.deepEqual(alert.action, { label: 'Open Reconcile', href: '/reconcile' });
+    assert.deepEqual(alert.members, [job.id]);
+    await setHold(handle.db, lab.id, job.id, { holdState: 'held', reason: 'the lab checks it', actor: 'test' });
+    assert.deepEqual(await alertsFor(handle.db, lab.id, ownerPerson, { page: 'jobs', sources: at(4 * 86_400_000) }), [], 'a hold is a reason');
   });
 });

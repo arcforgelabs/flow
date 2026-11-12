@@ -12,6 +12,7 @@
 // shows what to do there and the card waits in its new lane. On a phone a
 // long press opens Move to. With a keyboard, the job's panel has the same moves.
 
+import { alertStrip } from '/assets/ui/alerts.js';
 import { bulkBar } from '/assets/ui/bulk-bar.js';
 import { captureButton } from '/assets/ui/captures.js';
 import { columnTable, dateCell, fieldColumn, groupHead, personCell, rowCells, viewSaver } from '/assets/ui/columns.js';
@@ -128,7 +129,10 @@ export async function renderJobs(main, ui) {
   const frame = listFrame(main, host);
   // A form photo from the Jobs page; Capture lists it with its result.
   const shoot = captureButton(ui, { icon: true, added: () => ui.toast('Sent to Capture.', 'success') });
-  main.append(...listHead('Jobs', { views: views.element, controls, end: [find.element, toggle, ...shoot.nodes] }).nodes, frame.element, bulk.element);
+  // Finished jobs that nothing is billing (server/core/alerts.js).
+  const alerts = alertStrip(ui, 'jobs');
+  const [title, ...top] = listHead('Jobs', { views: views.element, controls, end: [find.element, toggle, ...shoot.nodes] }).nodes;
+  main.append(title, alerts.element, ...top, frame.element, bulk.element);
 
   const drawToggle = () => toggle.replaceChildren(...[['board', 'Board'], ['list', 'List']].map(([id, label]) => h('button', {
     type: 'button', role: 'radio', class: 'fx-seg__item', 'aria-checked': String(state.view.layout === id),
@@ -336,6 +340,9 @@ export async function renderJobs(main, ui) {
       state.systemFields = fields?.systemFields ?? [];
       state.people = fields?.people ?? [];
       state.values = new Map((values?.values ?? []).map((v) => [valueKey(v, v.fieldId), { value: v.value, updatedAt: v.updatedAt }]));
+      // The strip loads itself once; a later load follows a change.
+      if (state.loaded) alerts.refresh();
+      state.loaded = true;
     } catch (error) {
       host.replaceChildren(notice(error.message, 'danger'));
       return;

@@ -9,6 +9,7 @@ import { listWork, readBillableWork } from '../server/integrations/seazona/feed.
 import { runSeazonaSync } from '../server/integrations/seazona/lanes.js';
 import { ledgerLinesFor, toLedgerJob } from '../server/integrations/seazona/ledger.js';
 import { seazonaOrders } from '../server/integrations/seazona/schema.js';
+import { billingObligations } from '../server/db/schema.js';
 import { createReplayFetch, loadReplay } from '../server/integrations/seazona/replay.js';
 import { resolveSeazonaSettings } from '../server/integrations/seazona/settings.js';
 import { skipWithoutDatabase } from './support/db.js';
@@ -113,5 +114,10 @@ describe('Seazona work in the billing ledger', { skip: skipWithoutDatabase }, ()
     await db.update(seazonaOrders).set({ status: 'Shipped', lastChangedAt: new Date(clock.now()) }).where(eq(seazonaOrders.id, 'ORD-1002'));
     assert.equal((await listWork(db, { now: clock.now() })).items.length, 1, 'a shipped order shows for a while');
     assert.equal((await listWork(db, { now: clock.now() + 40 * 86_400_000 })).items.length, 0);
+    // A shipped job with no invoice yet stays on the board until it is billed.
+    const unbilled = await observeJob(db, lab.id, { sourceSystem: 'seazona', sourceJobRef: 'ORD-1002', caseRef: 'ORD-1002', contactId: null, lines: [{ description: 'Crown', quantity: 1, unitAmountCents: 22000, taxCode: 'GST' }] });
+    assert.deepEqual((await listWork(db, { now: clock.now() + 40 * 86_400_000 })).items.map((i) => i.sourceJobRef), ['ORD-1002']);
+    await db.update(billingObligations).set({ accountingRef: 'ACC-1' }).where(eq(billingObligations.id, unbilled.id));
+    assert.equal((await listWork(db, { now: clock.now() + 40 * 86_400_000 })).items.length, 0, 'billed, it leaves');
   });
 });
