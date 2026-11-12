@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { and, eq } from 'drizzle-orm';
 import { createApp } from '../server/app.js';
 import { createContact, createOrganisation, createPriceItem } from '../server/core/directory.js';
-import { observeJob, recordAccountingEvidence } from '../server/core/ledger.js';
+import { observeJob, recordAccountingEvidence, setHold, setReady } from '../server/core/ledger.js';
 import {
   RECONCILE_KIND, RECONCILE_REVIEW_KIND, createReconcileWorker, reconcileDays, reconcileDue, reconcileHealth, runReconcile,
 } from '../server/core/reconcile.js';
@@ -184,6 +184,21 @@ describe('daily reconcile', { skip: skipWithoutDatabase }, () => {
     } finally {
       server.close();
     }
+  });
+
+  test('a job ready for days with no invoice anywhere is a difference', async () => {
+    const job = await observe('J-READY', '2026-10-10');
+    workJobs = [{ ref: 'J-READY', day: '2026-10-10', subtotalCents: 22000 }];
+    copies = [];
+    await setReady(db, lab.id, job.id, { actor: 'test' });
+    const readyAt = Date.now();
+    const soon = await reconcileDays(db, lab.id, { integrations, from: '2026-10-10', to: '2026-10-10', now: readyAt + HOUR });
+    assert.deepEqual(soon.days[0].differences.readyNotInvoiced, [], 'a new ready job has time to draft');
+    const later = await reconcileDays(db, lab.id, { integrations, from: '2026-10-10', to: '2026-10-10', now: readyAt + 4 * 24 * HOUR });
+    assert.deepEqual(later.days[0].differences.readyNotInvoiced.map((d) => d.id), [job.id]);
+    await setHold(db, lab.id, job.id, { holdState: 'held', reason: 'the lab checks it', actor: 'test' });
+    const held = await reconcileDays(db, lab.id, { integrations, from: '2026-10-10', to: '2026-10-10', now: readyAt + 4 * 24 * HOUR });
+    assert.deepEqual(held.days[0].differences.readyNotInvoiced, [], 'a held job has its own reason');
   });
 
   test('the Seazona copy counts each billable job once, on its job day', async () => {

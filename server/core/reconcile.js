@@ -30,6 +30,9 @@ export const RECONCILE_REVIEW_KIND = 'reconcile.day';
 export const ACTOR = 'system:reconcile';
 export const RECONCILE_DAYS = 60;
 export const EVIDENCE_IDS = 20;
+// A job ready this long with no invoice in Flow or the accounting system,
+// and no hold, is a difference: something stops it that nobody sees.
+export const READY_GRACE_DAYS = 3;
 const RUN_EVERY_MS = 24 * 60 * 60 * 1000;
 const RECHECK_MS = 60 * 60 * 1000;
 const TICK_MS = 10 * 60 * 1000;
@@ -55,7 +58,7 @@ function emptyDay(day) {
     flowInvoices: { count: 0, totalCents: 0 },
     accounting: { linked: 0, found: 0, totalCents: 0 },
     differences: {
-      missingInLedger: [], missingInWork: [], missingInAccounting: [], accountingTotalDiffers: [],
+      missingInLedger: [], missingInWork: [], missingInAccounting: [], accountingTotalDiffers: [], readyNotInvoiced: [],
     },
   };
 }
@@ -76,7 +79,7 @@ const moneyAtRisk = (entry) => Object.values(entry.differences).flat()
   .reduce((cents, d) => cents + Math.abs(d.cents ?? 0), 0);
 
 // One pass over Flow's own tables. Answers one entry per day, oldest first.
-export async function reconcileDays(db, organisationId, { integrations, from, to }) {
+export async function reconcileDays(db, organisationId, { integrations, from, to, now = Date.now() }) {
   const byDay = new Map();
   const dayOf = (day) => {
     if (!byDay.has(day)) byDay.set(day, emptyDay(day));
@@ -110,6 +113,8 @@ export async function reconcileDays(db, organisationId, { integrations, from, to
     accountingState: billingObligations.accountingState,
     accountingRef: billingObligations.accountingRef,
     invoiceId: billingObligations.invoiceId,
+    readyAt: billingObligations.readyAt,
+    holdState: billingObligations.holdState,
     invoiceStatus: invoices.status,
     invoiceTotalCents: invoices.totalCents,
   })
@@ -148,6 +153,9 @@ export async function reconcileDays(db, organisationId, { integrations, from, to
     if (o.invoiceId) {
       entry.flowInvoices.count += 1;
       entry.flowInvoices.totalCents += o.invoiceTotalCents ?? 0;
+    } else if (!o.accountingRef && o.holdState === 'none' && o.readyAt
+      && new Date(o.readyAt).getTime() < now - READY_GRACE_DAYS * 86_400_000) {
+      entry.differences.readyNotInvoiced.push({ id: o.id, cents: o.totalCents });
     }
     // Only a work system that is on can say a job is gone from its copy.
     if (reported.has(o.sourceSystem)) {
@@ -217,7 +225,7 @@ export async function runReconcile(db, organisationId, {
   const open = await openDayItems(db, organisationId);
   // An open item older than the window is checked too, so it can close.
   const oldest = [...open.keys()].reduce((min, day) => (day < min ? day : min), isoDay(now - (days - 1) * 86_400_000));
-  const { systems, days: entries } = await reconcileDays(db, organisationId, { integrations, from: oldest, to });
+  const { systems, days: entries } = await reconcileDays(db, organisationId, { integrations, from: oldest, to, now });
   const differing = entries.filter((e) => differenceCount(e) > 0);
   const recheck = new Set(unconfirmed);
   const firstSeen = [];
