@@ -31,6 +31,15 @@ paste a credential, in full or in part.
   person/client/organisation read grant. The first slice exposes four bounded read tools
   (`docs/AGENT_ACCESS.md`). The reserved `/api/flow/v1` stub still refuses all
   requests. It does not implement connector keys.
+- **AI assistant key.** Also off by default. When the host sets
+  `FLOW_AGENT_KEY_SHA256` and `FLOW_AGENT_EMAIL`, one bearer key acts as one
+  Flow person, inside that person's role, on `/api/me`, `/api/invoicing/…` and
+  `GET /api/seazona/api/…` only (`docs/AGENT_ACCESS.md`, "AI assistant key").
+  With the admin role that includes invoice writes: rules, void, delete draft
+  and send to the accounting system. Flow stores only the key's SHA-256; the key
+  stays with the assistant. Owner actions always refuse the key. Turning the
+  person off stops the key on the next request and stops sends it queued. The
+  Seazona read drops patient, note, file and other clinical fields at any depth.
 - **Integrations.** Seazona, Xero and every later adapter reach the core only
   through the integration port. Their credentials are stored per
   organisation, encrypted, and are write-only in Settings.

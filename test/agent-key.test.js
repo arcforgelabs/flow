@@ -1,0 +1,113 @@
+import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
+import { after, before, describe, test } from 'node:test';
+import express from 'express';
+import { createApp } from '../server/app.js';
+import { invitePerson, seedFirstOwner, updatePerson } from '../server/auth/people.js';
+import { createPersonAuth } from '../server/auth/session.js';
+import { resolveAgentKey } from '../server/auth/settings.js';
+import { createOrganisation } from '../server/core/directory.js';
+import { createRegistry } from '../server/integrations/port.js';
+import { SeazonaApiError } from '../server/integrations/seazona/client.js';
+import { createSeazonaRouter } from '../server/integrations/seazona/routes.js';
+import { fakeClerk, request, TEST_PUBLISHABLE_KEY } from './support/clerk.js';
+import { freshDatabase, skipWithoutDatabase } from './support/db.js';
+
+const quiet = { info() {}, warn() {}, error() {} };
+const KEY = 'agent-key-for-tests-0123456789abcdef';
+const DIGEST = createHash('sha256').update(KEY).digest('hex');
+
+test('the agent key needs both settings, a SHA-256 digest and a plain email', () => {
+  assert.equal(resolveAgentKey({}), null);
+  assert.deepEqual(resolveAgentKey({ FLOW_AGENT_KEY_SHA256: DIGEST.toUpperCase(), FLOW_AGENT_EMAIL: 'Assistant@Example.test' }), { digest: DIGEST, email: 'assistant@example.test' });
+  assert.throws(() => resolveAgentKey({ FLOW_AGENT_KEY_SHA256: DIGEST }), /set together/);
+  assert.throws(() => resolveAgentKey({ FLOW_AGENT_EMAIL: 'assistant@example.test' }), /set together/);
+  assert.throws(() => resolveAgentKey({ FLOW_AGENT_KEY_SHA256: KEY, FLOW_AGENT_EMAIL: 'assistant@example.test' }), /64 hex/);
+});
+
+describe('the agent key against PostgreSQL', { skip: skipWithoutDatabase }, () => {
+  let handle;
+  let app;
+  let owner;
+  let agent;
+  let personAuth;
+  const asAgent = (path, options = {}) => request(app, path, { token: KEY, ...options });
+
+  before(async () => {
+    handle = await freshDatabase();
+    await createOrganisation(handle.db, { name: 'Example Lab' });
+    owner = await seedFirstOwner(handle.db, 'owner@example.test');
+    agent = await invitePerson(handle.db, { email: 'assistant@example.test', role: 'admin', invitedBy: owner.id });
+    const clerk = fakeClerk();
+    const settings = { mode: 'clerk', keys: { publishableKey: TEST_PUBLISHABLE_KEY, proxyUrl: null } };
+    personAuth = createPersonAuth({
+      db: handle.db, clerk, ownerGoogleDomains: ['example.test'], log: quiet,
+      agentKey: { digest: DIGEST, email: 'assistant@example.test' },
+    });
+    app = createApp({ database: handle, auth: { settings, clerk, personAuth }, integrations: createRegistry({ log: quiet, env: {} }), log: quiet });
+  });
+
+  after(async () => handle?.close());
+
+  test('the key acts as its Flow person, inside that role', async () => {
+    const me = await asAgent('/api/me');
+    assert.equal(me.status, 200, JSON.stringify(me.body));
+    assert.equal(me.body.person.email, 'assistant@example.test');
+    const created = await asAgent('/api/invoicing/contacts', { method: 'POST', body: { kind: 'customer', name: 'Harbour Dental' } });
+    assert.equal(created.status, 201, JSON.stringify(created.body));
+    const rules = await asAgent('/api/invoicing/rules');
+    assert.equal(rules.status, 200, JSON.stringify(rules.body));
+  });
+
+  test('the key opens only invoicing, the Seazona read and /api/me', async () => {
+    const fields = await asAgent('/api/custom-fields');
+    assert.equal(fields.status, 403);
+    assert.equal(fields.body.code, 'role_required');
+  });
+
+  test('a wrong key is an ordinary failed sign-in', async () => {
+    const wrong = await request(app, '/api/me', { token: `${KEY}x` });
+    assert.equal(wrong.status, 401);
+  });
+
+  test('owner actions stay with people', async () => {
+    await updatePerson(handle.db, { id: agent.id, actorId: owner.id, role: 'owner' });
+    const me = await asAgent('/api/me');
+    assert.equal(me.status, 200);
+    assert.equal(me.body.ownerActions.allowed, false);
+    const people = await asAgent('/api/people');
+    assert.equal(people.status, 403);
+    await updatePerson(handle.db, { id: agent.id, actorId: owner.id, role: 'admin' });
+  });
+
+  test('the key reads Seazona through Flow, and only reads', async () => {
+    const calls = [];
+    const read = async (path, query) => {
+      calls.push([path, query]);
+      if (path === 'orders/missing') throw new SeazonaApiError('Seazona GET /v1/orders/missing failed with HTTP 404', { statusCode: 404 });
+      return { path, Patient: 'Ada Example', notes: 'shade A2', lines: [{ code: 'ZR', PatientName: 'Ada Example', qty: 1 }] };
+    };
+    const seazona = express().use('/api/seazona', createSeazonaRouter({ db: handle.db, personAuth, read, log: quiet }));
+    const list = await request(seazona, '/api/seazona/api/orders/?ordered=2026-11-11T00:00:00&page=1&bad-key=x', { token: KEY });
+    assert.equal(list.status, 200, JSON.stringify(list.body));
+    assert.deepEqual(list.body.data, { path: 'orders/', lines: [{ code: 'ZR', qty: 1 }] });
+    assert.doesNotMatch(JSON.stringify(list.body), /Ada Example|shade/);
+    assert.deepEqual(calls[0], ['orders/', { ordered: '2026-11-11T00:00:00', page: '1' }]);
+    const one = await request(seazona, '/api/seazona/api/clients/1234', { token: KEY });
+    assert.equal(one.body.data.path, 'clients/1234');
+    const missing = await request(seazona, '/api/seazona/api/orders/missing', { token: KEY });
+    assert.equal(missing.status, 404);
+    const other = await request(seazona, '/api/seazona/api/secrets/', { token: KEY });
+    assert.equal(other.status, 404);
+    const write = await request(seazona, '/api/seazona/api/orders/', { token: KEY, method: 'POST', body: {} });
+    assert.equal(write.status, 404);
+    assert.equal(calls.length, 3);
+  });
+
+  test('turning the person off stops the key on the next request', async () => {
+    await updatePerson(handle.db, { id: agent.id, actorId: owner.id, status: 'disabled' });
+    const off = await asAgent('/api/invoicing/rules');
+    assert.equal(off.status, 403);
+    assert.equal(off.body.code, 'access_disabled');
+  });
+});

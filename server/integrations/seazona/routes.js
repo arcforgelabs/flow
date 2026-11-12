@@ -36,7 +36,16 @@ import { readBackfill, startBackfill, stopBackfill } from './history/backfill.js
 //                                         (state: one state, or needs_person)
 //   POST /history/ledger/:obligationId/release   owner or admin: the job may draft
 //
-// None of these call Seazona.
+// None of these call Seazona, except one read:
+//
+//   GET  /api/<resource>[/<id>]?<query>   owner or admin: one GET to the
+//                                         Seazona REST API, through Flow's
+//                                         rate governor, answered as
+//                                         { ok, data }. resource is invoices,
+//                                         orders, clients, products or users.
+//                                         It never writes to Seazona. It is how
+//                                         an AI assistant reads Seazona with its
+//                                         Flow key (docs/AGENT_ACCESS.md).
 
 export const MAX_UPLOAD = '25mb';
 
@@ -56,7 +65,23 @@ const handle = (log, fn) => async (req, res) => {
   }
 };
 
-export function createSeazonaRouter({ db, personAuth, settings, log = console }) {
+const API_RESOURCES = ['invoices', 'orders', 'clients', 'products', 'users'];
+
+// Clinical and patient detail never leaves through the read: any field whose
+// name says patient, note, file, prescription and the like is dropped, at any
+// depth (VISION.md, "Why does Flow keep as little patient data as it can?").
+const PRIVATE_FIELD = /patient|note|comment|instruction|remark|file|attach|image|photo|prescri|shade|clinical|medical|birth|dob/i;
+export function withoutPrivateFields(value, depth = 0) {
+  if (depth > 20) return null;
+  if (Array.isArray(value)) return value.map((item) => withoutPrivateFields(item, depth + 1));
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(Object.entries(value)
+    .filter(([key]) => !PRIVATE_FIELD.test(key))
+    .map(([key, item]) => [key, withoutPrivateFields(item, depth + 1)]));
+}
+const API_PATH = new RegExp(`^/api/(${API_RESOURCES.join('|')})(?:/([A-Za-z0-9-]{1,64}))?/?$`);
+
+export function createSeazonaRouter({ db, personAuth, settings, read = null, log = console }) {
   const router = express.Router();
   // Sign-in off: every route answers 503, as the Xero routes do.
   const signedIn = personAuth
@@ -71,6 +96,25 @@ export function createSeazonaRouter({ db, personAuth, settings, log = console })
     router.use((req, res) => res.status(503).json({ ok: false, code: 'no_database', error: 'Flow has no database' }));
     return router;
   }
+
+  // One read from the Seazona API (above). Only plain query values pass on.
+  router.get(API_PATH, ...manager, handle(log, async (req, res) => {
+    if (!read) throw Object.assign(new FlowError('seazona_off', 'Seazona is not connected'), { status: 503 });
+    const [, resource, id] = API_PATH.exec(req.path);
+    const query = {};
+    for (const [key, value] of Object.entries(req.query)) {
+      if (typeof value === 'string' && /^[A-Za-z][A-Za-z0-9_]{0,40}$/.test(key)) query[key] = value.slice(0, 200);
+    }
+    try {
+      const data = await read(id ? `${resource}/${id}` : `${resource}/`, query);
+      log.info?.(`[seazona] api read ${resource}${id ? '/:id' : ''} by ${actor(req)}`);
+      res.json({ ok: true, data: withoutPrivateFields(data) });
+    } catch (error) {
+      if (error?.name !== 'SeazonaApiError' && error?.name !== 'SeazonaCallsStopped') throw error;
+      const status = error.statusCode === 404 ? 404 : error.name === 'SeazonaCallsStopped' || error.statusCode === 429 || error.kind === 'governor_timeout' ? 429 : 502;
+      res.status(status).json({ ok: false, code: 'seazona_read_failed', error: error.message });
+    }
+  }));
 
   router.get('/history', ...signedIn, handle(log, async (req, res) => {
     res.json({ ok: true, history: await historySummary(db), backfill: await readBackfill(db), batches: await listBatches(db) });

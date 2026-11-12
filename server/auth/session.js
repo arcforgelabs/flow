@@ -1,3 +1,4 @@
+import { createHash, timingSafeEqual } from 'node:crypto';
 import { displayNameOf, googleWorkspaceOwner, primaryEmailOf, secondFactorVerified } from './clerk.js';
 import { fillPersonName, findPersonByClerkId, findPersonByEmail, linkPerson, recordPendingPerson } from './people.js';
 import { DEFAULT_OWNER_MFA_MAX_AGE_MINUTES, isPlainEmail } from './settings.js';
@@ -52,6 +53,7 @@ export function createPersonAuth({
   log = console,
   now = Date.now,
   clerkUserCacheMs = 60 * 1000,
+  agentKey = null,
 }) {
   if (!db) throw new Error('createPersonAuth: db is required');
   if (!clerk?.authenticate || !clerk?.getUser) throw new Error('createPersonAuth: a Clerk adapter is required');
@@ -118,7 +120,9 @@ export function createPersonAuth({
   // Every person route starts here. The session token must be in the
   // Authorization header; Clerk verifies it, and Flow checks its expiry too.
   async function requireSession(req, res, next) {
-    if (!bearerToken(req)) return deny(res, 'signed_out');
+    const token = bearerToken(req);
+    if (!token) return deny(res, 'signed_out');
+    if (agentKey && isAgentKey(token)) return agentSession(req, res, next);
     let auth;
     try {
       auth = await clerk.authenticate(req);
@@ -145,6 +149,35 @@ export function createPersonAuth({
     return next();
   }
 
+  // The AI assistant key (FLOW_AGENT_KEY). It acts as one Flow person, and
+  // only inside that person's role. Owner actions stay with people: an agent
+  // request is never a verified owner sign-in.
+  // Keys shorter than 32 characters are refused, so a digest of a short
+  // guess never matches.
+  const agentDigest = agentKey ? Buffer.from(agentKey.digest, 'hex') : null;
+  function isAgentKey(token) {
+    return token.length >= 32 && timingSafeEqual(createHash('sha256').update(token).digest(), agentDigest);
+  }
+  // The key opens only these routes: invoicing, the Seazona read and /api/me.
+  const AGENT_PATHS = /^\/api\/(?:me$|invoicing\/|seazona\/api\/)/;
+  async function agentSession(req, res, next) {
+    if (!AGENT_PATHS.test(`${req.baseUrl}${req.path}`)) return deny(res, 'role_required');
+    let person;
+    try {
+      person = await findPersonByEmail(db, agentKey.email);
+    } catch (error) {
+      log.error?.(`[auth] Flow agent person lookup failed: ${error.message}`);
+      return deny(res, 'sign_in_unavailable');
+    }
+    if (!person) return deny(res, 'not_invited');
+    if (person.status !== 'active') return deny(res, 'access_disabled');
+    req.person = person;
+    req.clerkAuth = null;
+    req.agent = true;
+    log.info?.(`[auth] agent key: ${req.method} ${req.baseUrl}${req.path} as Flow person ${person.id} (${person.role})`);
+    return next();
+  }
+
   function requireRole(...roles) {
     return (req, res, next) => (roles.includes(req.person?.role) ? next() : deny(res, 'role_required'));
   }
@@ -165,6 +198,7 @@ export function createPersonAuth({
   //       (Replit's managed Clerk, which has no MFA).
   // A Clerk error fails closed. Returns { verified, by } or { unavailable }.
   async function ownerVerification(person, auth) {
+    if (!auth) return { verified: false, by: null };
     if (secondFactorVerified(auth, ownerMfaMaxAgeMinutes)) return { verified: true, by: 'second_factor' };
     if (!ownerGoogleDomains.length) return { verified: false, by: null };
     try {
@@ -182,6 +216,7 @@ export function createPersonAuth({
   // requireSession.
   async function requireOwner(req, res, next) {
     if (req.person?.role !== 'owner') return deny(res, 'owner_required');
+    if (req.agent) return deny(res, 'owner_verification_required', ownerMessage);
     const check = await ownerVerification(req.person, req.clerkAuth);
     if (check.unavailable) return deny(res, 'sign_in_unavailable');
     if (!check.verified) return deny(res, 'owner_verification_required', ownerMessage);

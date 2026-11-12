@@ -574,6 +574,20 @@ link to the Seazona integration's reconciliation,
 clears the issue: the board reads issues again each time. `health()` shows
 `history.waitingForPerson`, the count for the integration's card.
 
+## Read through Flow
+
+`GET /api/seazona/api/<resource>[/<id>]?<query>` makes one GET to the Seazona
+API and answers `{ ok, data }`. The resource is `invoices`, `orders`,
+`clients`, `products` or `users`. Only an owner or an admin may call it,
+including an AI assistant's key (`docs/AGENT_ACCESS.md`). It uses this
+installation's API client and the rate governor, so it shares the 30 a minute
+limit with the sync. It never writes to Seazona and stores nothing. Before it
+answers, it drops every field whose name says patient, note, comment,
+instruction, file, image, prescription, shade, clinical, medical or birth, at
+any depth. A Seazona
+404 answers 404; a limit or a stopped client answers 429; any other failure
+answers 502. Each call logs one line with the resource and the person.
+
 ## Health
 
 `health()` reads Flow's database only; it never calls Seazona. `GET /health`

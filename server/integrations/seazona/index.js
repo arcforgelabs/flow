@@ -85,7 +85,10 @@ export function createSeazonaAdapter({ env = null, fetchImpl = null, now = Date.
     schema: seazonaSchema,
     setup: SEAZONA_SETUP,
     // The history import's routes (routes.js), under /api/seazona.
-    routes: ({ db, personAuth, log }) => createSeazonaRouter({ db: runtime?.db ?? db, personAuth, settings: current().settings, log }),
+    routes: ({ db, personAuth, log }) => createSeazonaRouter({
+      db: runtime?.db ?? db, personAuth, settings: current().settings, log,
+      read: (path, query) => current().client.get(path, query),
+    }),
     // Every Seazona call goes through this call guard, inside the rate
     // governor (governor.js; docs/INTEGRATIONS.md, "Outbound calls").
     callGuard: SEAZONA_CALL_GUARD,
