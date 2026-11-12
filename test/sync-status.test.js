@@ -30,7 +30,8 @@ test('History uses Layers, retains totals on reload and stops polling when inact
     await page.route('**/api/seazona/history', route => { reads++; return route.fulfill({ json: { history: { jobs: totalCount }, backfill: run } }); });
     await page.goto(`${app.url}/integrations/seazona`);
     await page.getByRole('heading', { name: 'History', exact: true }).waitFor();
-    assert.match(await page.locator('section').filter({ has: page.getByRole('heading', { name: 'History', exact: true }) }).innerText(), /412 jobs/);
+    // The panel reads "Checking…" until the history read answers.
+    await page.locator('section').filter({ has: page.getByRole('heading', { name: 'History', exact: true }) }).getByText(/412 jobs/).waitFor();
     assert.equal(await page.locator('.fx-history .fx-spinner').count(), 0);
     assert.equal(await page.locator('.fx-sync [role="status"]').getAttribute('aria-live'), 'polite');
     await page.getByRole('button', { name: 'Stop', exact: true }).focus();
