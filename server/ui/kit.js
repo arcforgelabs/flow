@@ -213,7 +213,7 @@ export function toast(text, tone = 'info', { stay = false } = {}) {
 // browser refuses, a dialog shows the text selected to copy by hand.
 export function copyButton({ label, text, copied = 'Copied.' }) {
   return h('button', {
-    class: 'fx-btn fx-btn--sm fx-btn--icon', type: 'button', 'aria-label': label, title: label,
+    class: 'fx-btn fx-btn--sm fx-btn--icon fx-copy', type: 'button', 'aria-label': label, title: label,
     onclick: () => {
       const value = text();
       const byHand = () => {
