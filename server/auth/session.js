@@ -159,8 +159,9 @@ export function createPersonAuth({
     return token.length >= 32 && timingSafeEqual(createHash('sha256').update(token).digest(), agentDigest);
   }
   // The key opens only these routes: invoicing, Xero (owner routes refuse it
-  // below), the Seazona read, /api/me and its own skill files.
-  const AGENT_PATHS = /^\/api\/(?:me$|invoicing\/|xero\/|seazona\/api\/|agent-skill\/flow\/)/;
+  // below), the Seazona read, the Seazona history import, /api/me and its own
+  // skill files.
+  const AGENT_PATHS = /^\/api\/(?:me$|invoicing\/|xero\/|seazona\/(?:api|history)(?:\/|$)|agent-skill\/flow\/)/;
   async function agentSession(req, res, next) {
     if (!AGENT_PATHS.test(`${req.baseUrl}${req.path}`)) return deny(res, 'role_required');
     let person;

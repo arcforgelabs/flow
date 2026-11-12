@@ -7,12 +7,14 @@ import { invitePerson, seedFirstOwner, updatePerson } from '../server/auth/peopl
 import { createPersonAuth } from '../server/auth/session.js';
 import { resolveAgentKey } from '../server/auth/settings.js';
 import { createOrganisation } from '../server/core/directory.js';
+import { openReview } from '../server/core/review.js';
 import { createRegistry } from '../server/integrations/port.js';
 import { SeazonaApiError } from '../server/integrations/seazona/client.js';
 import { createSeazonaRouter } from '../server/integrations/seazona/routes.js';
 import { createXeroRouter } from '../server/integrations/xero/routes.js';
 import { fakeClerk, request, TEST_PUBLISHABLE_KEY } from './support/clerk.js';
-import { freshDatabase, skipWithoutDatabase } from './support/db.js';
+import { skipWithoutDatabase } from './support/db.js';
+import { freshSeazonaDatabase } from './support/seazona.js';
 
 const quiet = { info() {}, warn() {}, error() {} };
 const KEY = 'agent-key-for-tests-0123456789abcdef';
@@ -36,7 +38,7 @@ describe('the agent key against PostgreSQL', { skip: skipWithoutDatabase }, () =
   const asAgent = (path, options = {}) => request(app, path, { token: KEY, ...options });
 
   before(async () => {
-    handle = await freshDatabase();
+    handle = await freshSeazonaDatabase();
     ({ id: organisationId } = await createOrganisation(handle.db, { name: 'Example Lab' }));
     owner = await seedFirstOwner(handle.db, 'owner@example.test');
     agent = await invitePerson(handle.db, { email: 'assistant@example.test', role: 'admin', invitedBy: owner.id });
@@ -86,10 +88,35 @@ describe('the agent key against PostgreSQL', { skip: skipWithoutDatabase }, () =
     await updatePerson(handle.db, { id: agent.id, actorId: owner.id, role: 'admin' });
   });
 
-  test('the key opens only invoicing, Xero, the Seazona read and /api/me', async () => {
+  test('the key opens only invoicing, Xero, the Seazona read and history, and /api/me', async () => {
     const fields = await asAgent('/api/custom-fields');
     assert.equal(fields.status, 403);
     assert.equal(fields.body.code, 'role_required');
+  });
+
+  test('the key reads the open review queue', async () => {
+    const jobId = '00000000-0000-4000-8000-000000000001';
+    await openReview(handle.db, organisationId, { kind: 'reconcile.day', entity: 'day', flowId: jobId, evidence: { day: '2026-11-10' }, moneyAtRiskCents: 4150 });
+    const open = await asAgent('/api/invoicing/review');
+    assert.equal(open.status, 200, JSON.stringify(open.body));
+    assert.deepEqual(open.body.items.map((i) => [i.kind, i.evidence.day, i.moneyAtRiskCents]), [['reconcile.day', '2026-11-10', 4150]]);
+    const other = await asAgent('/api/invoicing/review?kind=job.changed');
+    assert.deepEqual(other.body.items, []);
+    const bad = await asAgent('/api/invoicing/review?state=everything');
+    assert.equal(bad.status, 400);
+  });
+
+  test('the key works the Seazona history import inside its role', async () => {
+    const seazona = express().use('/api/seazona', createSeazonaRouter({ db: handle.db, personAuth, settings: { sync: { orderLookbackDays: 7 } }, log: quiet }));
+    const history = await request(seazona, '/api/seazona/history', { token: KEY });
+    assert.equal(history.status, 200, JSON.stringify(history.body));
+    assert.ok(Array.isArray(history.body.batches));
+    const ledger = await request(seazona, '/api/seazona/history/ledger?state=needs_person', { token: KEY });
+    assert.equal(ledger.status, 200, JSON.stringify(ledger.body));
+    // A manager action: past sign-in and role, the route itself checks the day.
+    const backfill = await request(seazona, '/api/seazona/history/backfill', { token: KEY, method: 'POST', body: { from: 'last year' } });
+    assert.equal(backfill.status, 400, JSON.stringify(backfill.body));
+    assert.match(backfill.body.error, /yyyy-mm-dd/);
   });
 
   test('a wrong key is an ordinary failed sign-in', async () => {

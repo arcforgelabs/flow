@@ -6,6 +6,7 @@
 #   flow.sh post   <path> [json]     POST   with an optional JSON body
 #   flow.sh put    <path> <json>     PUT    with a JSON body
 #   flow.sh delete <path>            DELETE
+#   flow.sh health                   GET <FLOW_URL>/health (public, no key sent)
 #   flow.sh update                   replace this skill with the copy the
 #                                    saved Flow serves (its own release)
 # The key stays in FLOW_AGENT_KEY_FILE (mode 600). It never goes on a command
@@ -83,6 +84,7 @@ case "${1:-}" in
   post) call POST "${2:-}" "${3:-}" ;;
   put) [[ -n "${3:-}" ]] || die "put needs a JSON body"; call PUT "${2:-}" "$3" ;;
   delete) call DELETE "${2:-}" ;;
+  health) curl -sS -H 'Accept: application/json' -w '\nHTTP %{http_code}\n' "$(flow_url)/health" ;;
   update) update ;;
-  *) sed -n '2,11p' "$0"; exit 2 ;;
+  *) sed -n '2,12p' "$0"; exit 2 ;;
 esac

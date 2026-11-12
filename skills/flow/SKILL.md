@@ -1,6 +1,6 @@
 ---
 name: flow
-description: Run the lab's Flow app and read Seazona through it - invoice tabs, send ready invoices, void or delete drafts, invoice rules, jobs, reconcile Seazona jobs with Flow and Xero, compare prices across Flow, Xero and Seazona, link price codes, and Seazona orders, invoices and clients.
+description: Run the lab's Flow app and read Seazona through it - invoice tabs, send ready invoices, void or delete drafts, invoice rules, jobs, reconcile Seazona jobs with Flow and Xero, compare prices across Flow, Xero and Seazona, link price codes, review items, the Seazona history import, and Seazona orders, invoices and clients.
 metadata: { "openclaw": { "requires": { "bins": ["curl", "openssl", "sha256sum"] } } }
 ---
 
@@ -187,6 +187,40 @@ short groups, then act on the group they confirm.
 Links, "no invoice", rules and mappings are Flow records only: say what you
 will change and do it after the person's yes. Mirror, match and recheck only
 read Xero. Sending to Xero still goes through `invoicing/invoices/send-ready`.
+
+## Review queue, health and history import
+
+Use these to find gaps in past billing: jobs Flow never saw, jobs held from
+the history import, and days where Seazona, Flow and Xero disagree.
+
+| Do this | Command |
+| --- | --- |
+| Flow health (build, Seazona sync, daily reconcile, history counts) | `flow.sh health` |
+| Open review items | `flow.sh get 'invoicing/review?limit=100'` (also `kind=`, `state=resolved`) |
+| History import state, backfill and batches | `flow.sh get seazona/history` |
+| One batch, or its rows that wait | `flow.sh get 'seazona/history/batches/<id>?outcome=needs_person'` |
+| Held history jobs that need a person | `flow.sh get 'seazona/history/ledger?state=needs_person'` (no state: all) |
+| Decide batch jobs | `flow.sh post seazona/history/batches/<id>/decisions '{"decisions":[{"jobKey":"<key>","decision":"import"}]}'` (`import`, `skip`, or `null` to undo) |
+| Apply a batch (once only) | `flow.sh post seazona/history/batches/<id>/apply` |
+| Read past Seazona days into Flow | `flow.sh post seazona/history/backfill '{"from":"2026-07-01"}'`; stop: `post seazona/history/backfill/stop` |
+| Let one held history job draft | `flow.sh post seazona/history/ledger/<job id>/release` |
+
+How to read them:
+
+- `health`: `integrations[].health.history` counts history jobs and open
+  batches; `reconcile` shows the last daily check, `daysDifferent` and
+  `openItems`; Seazona `missing` lists Seazona records Flow's copy lacks.
+- Review items: `kind` says what differs (for example `reconcile.day`,
+  `job.changed`, `job.source_totals`); `evidence` holds the numbers. An item
+  closes by itself when its cause is fixed, so fix the cause (link, mapping,
+  rule, recheck) and read the list again.
+- History jobs are held with reason `history_import`: they are past work,
+  most already billed. A matched one stays held. Release only a job that the
+  person agrees was never invoiced.
+
+Decisions, apply, backfill and release change Flow records or spend Seazona
+calls: say what you will do and act only after the person's yes. A backfill
+uses the shared Seazona limit a few calls at a time; one at a time only.
 
 ## Xero
 
