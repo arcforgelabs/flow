@@ -67,9 +67,9 @@ const handle = (log, fn) => async (req, res) => {
 
 const API_RESOURCES = ['invoices', 'orders', 'clients', 'products', 'users'];
 
-// Clinical and patient detail never leaves through the read: any field whose
-// name says patient, note, file, prescription and the like is dropped, at any
-// depth (VISION.md, "Why does Flow keep as little patient data as it can?").
+// With "Hide patient details" on (SEAZONA_API_READ_HIDE_PATIENT), any field
+// whose name says patient, note, file, prescription and the like is dropped
+// from the read, at any depth. Off by default.
 const PRIVATE_FIELD = /patient|note|comment|instruction|remark|file|attach|image|photo|prescri|shade|clinical|medical|birth|dob/i;
 export function withoutPrivateFields(value, depth = 0) {
   if (depth > 20) return null;
@@ -81,7 +81,7 @@ export function withoutPrivateFields(value, depth = 0) {
 }
 const API_PATH = new RegExp(`^/api/(${API_RESOURCES.join('|')})(?:/([A-Za-z0-9-]{1,64}))?/?$`);
 
-export function createSeazonaRouter({ db, personAuth, settings, read = null, log = console }) {
+export function createSeazonaRouter({ db, personAuth, settings, read = null, hidePatientFields = () => false, log = console }) {
   const router = express.Router();
   // Sign-in off: every route answers 503, as the Xero routes do.
   const signedIn = personAuth
@@ -108,7 +108,7 @@ export function createSeazonaRouter({ db, personAuth, settings, read = null, log
     try {
       const data = await read(id ? `${resource}/${id}` : `${resource}/`, query);
       log.info?.(`[seazona] api read ${resource}${id ? '/:id' : ''} by ${actor(req)}`);
-      res.json({ ok: true, data: withoutPrivateFields(data) });
+      res.json({ ok: true, data: hidePatientFields() ? withoutPrivateFields(data) : data });
     } catch (error) {
       if (error?.name !== 'SeazonaApiError' && error?.name !== 'SeazonaCallsStopped') throw error;
       const status = error.statusCode === 404 ? 404 : error.name === 'SeazonaCallsStopped' || error.statusCode === 429 || error.kind === 'governor_timeout' ? 429 : 502;

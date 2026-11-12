@@ -74,8 +74,9 @@ sync: make few calls, and never loop over many records.
 | Clients changed since | `flow.sh get 'seazona/api/clients/?lastModified=2026-11-01T00:00:00'` |
 | Products, users | `flow.sh get seazona/api/products/`, `flow.sh get seazona/api/users/` |
 
-Answers are `{ "ok": true, "data": ... }`. Flow drops patient, note, file and
-other clinical fields first. Do not ask for patient names; Flow will not give them. 429: wait a
+Answers are `{ "ok": true, "data": ... }`, as Seazona gives them. If the owner
+turned on "Hide patient details", patient, note, file and clinical fields are
+left out. Do not copy patient names outside this chat. 429: wait a
 minute and try once more.
 
 ## Xero

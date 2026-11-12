@@ -42,11 +42,10 @@ logs one line with the route and the person, never the key.
 
 `GET /api/seazona/api/<resource>[/<id>]` lets an owner, an admin or the
 assistant read Seazona through Flow's own Seazona connection and rate governor
-(`docs/SEAZONA.md`), so the assistant needs no Seazona credentials. Flow drops
-every field whose name says patient, note, comment, instruction, file, image,
-prescription, shade, clinical, medical or birth, at any depth, before it
-answers. Other free text (for example a line description) passes as Seazona
-gives it.
+(`docs/SEAZONA.md`), so the assistant needs no Seazona credentials. It answers
+what Seazona gives. With "Hide patient details" on (Seazona settings), Flow
+first drops every field whose name says patient, note, comment, instruction,
+file, image, prescription, shade, clinical, medical or birth, at any depth.
 
 ## Authentication and grants
 

@@ -80,19 +80,23 @@ describe('the agent key against PostgreSQL', { skip: skipWithoutDatabase }, () =
     await updatePerson(handle.db, { id: agent.id, actorId: owner.id, role: 'admin' });
   });
 
-  test('the key reads Seazona through Flow, and only reads', async () => {
+  test('the key reads Seazona through Flow, and only reads; patient fields go only when hidden', async () => {
     const calls = [];
     const read = async (path, query) => {
       calls.push([path, query]);
       if (path === 'orders/missing') throw new SeazonaApiError('Seazona GET /v1/orders/missing failed with HTTP 404', { statusCode: 404 });
       return { path, Patient: 'Ada Example', notes: 'shade A2', lines: [{ code: 'ZR', PatientName: 'Ada Example', qty: 1 }] };
     };
-    const seazona = express().use('/api/seazona', createSeazonaRouter({ db: handle.db, personAuth, read, log: quiet }));
+    let hide = false;
+    const seazona = express().use('/api/seazona', createSeazonaRouter({ db: handle.db, personAuth, read, hidePatientFields: () => hide, log: quiet }));
+    const full = await request(seazona, '/api/seazona/api/orders/', { token: KEY });
+    assert.equal(full.body.data.Patient, 'Ada Example');
+    hide = true;
     const list = await request(seazona, '/api/seazona/api/orders/?ordered=2026-11-11T00:00:00&page=1&bad-key=x', { token: KEY });
     assert.equal(list.status, 200, JSON.stringify(list.body));
     assert.deepEqual(list.body.data, { path: 'orders/', lines: [{ code: 'ZR', qty: 1 }] });
     assert.doesNotMatch(JSON.stringify(list.body), /Ada Example|shade/);
-    assert.deepEqual(calls[0], ['orders/', { ordered: '2026-11-11T00:00:00', page: '1' }]);
+    assert.deepEqual(calls[1], ['orders/', { ordered: '2026-11-11T00:00:00', page: '1' }]);
     const one = await request(seazona, '/api/seazona/api/clients/1234', { token: KEY });
     assert.equal(one.body.data.path, 'clients/1234');
     const missing = await request(seazona, '/api/seazona/api/orders/missing', { token: KEY });
@@ -101,7 +105,7 @@ describe('the agent key against PostgreSQL', { skip: skipWithoutDatabase }, () =
     assert.equal(other.status, 404);
     const write = await request(seazona, '/api/seazona/api/orders/', { token: KEY, method: 'POST', body: {} });
     assert.equal(write.status, 404);
-    assert.equal(calls.length, 3);
+    assert.equal(calls.length, 4);
   });
 
   test('turning the person off stops the key on the next request', async () => {

@@ -39,7 +39,9 @@ paste a credential, in full or in part.
   and send to the accounting system. Flow stores only the key's SHA-256; the key
   stays with the assistant. Owner actions always refuse the key. Turning the
   person off stops the key on the next request and stops sends it queued. The
-  Seazona read drops patient, note, file and other clinical fields at any depth.
+  Seazona read answers what Seazona gives, patient fields included; the owner
+  can turn on "Hide patient details" to drop them. Use an assistant whose model
+  runs locally or with zero data retention.
 - **Integrations.** Seazona, Xero and every later adapter reach the core only
   through the integration port. Their credentials are stored per
   organisation, encrypted, and are write-only in Settings.

@@ -187,6 +187,9 @@ export function resolveSeazonaSettings(env = process.env) {
     // print one. Off by default; on, orders and invoices keep Seazona's
     // patient field as the reference.
     keepPatientReference: ['1', 'true', 'on', 'yes'].includes(text(env.SEAZONA_KEEP_PATIENT_REFERENCE).toLowerCase()),
+    // Off by default: the Seazona read (routes.js) answers what Seazona gives.
+    // On, it drops patient, note, file and clinical fields first.
+    hidePatientFields: ['1', 'true', 'on', 'yes'].includes(text(env.SEAZONA_API_READ_HIDE_PATIENT).toLowerCase()),
   };
 
   const settings = {
