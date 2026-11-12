@@ -10,7 +10,7 @@ import { observeJob, observeWithdrawn, recordAccountingEvidence, setHold } from 
 import { loadMappingContext, mapLines } from './line-mapping.js';
 import { checkPrices, readCatalogues } from './price-list.js';
 import { linkRecord, priorLinkFor } from './links.js';
-import { createContact, readContact } from './contacts.js';
+import { billedBy, createContact, payersOf, readContact } from './contacts.js';
 import { HISTORY_ACTOR, HISTORY_HOLD_REASON, isHistoryHeld } from './history.js';
 import { deadHoldSince, deadSince, enqueueJob, runNextJob } from './queue.js';
 
@@ -203,7 +203,8 @@ export async function hideNonClients(db, organisationId, { system, customers, wo
   const client = sql`(
     exists (select 1 from billing_obligations o where o.organisation_id = c.organisation_id and o.contact_id = c.id)
     or exists (select 1 from invoices i where i.organisation_id = c.organisation_id and i.contact_id = c.id)
-    or exists (select 1 from customer_billing_settings s where s.organisation_id = c.organisation_id and s.contact_id = c.id)
+    or exists (select 1 from customer_billing_settings s where s.organisation_id = c.organisation_id
+      and (s.contact_id = c.id or s.bill_to_contact_id = c.id))
     or exists (select 1 from external_links l where l.organisation_id = c.organisation_id and l.entity = 'contact'
       and l.flow_id = c.id and l.state = 'active'
       and (l.system <> ${system} or l.external_id = any(${sql.param(marked)}::text[]))))`;
@@ -560,9 +561,16 @@ export async function matchJobs(db, organisationId, { accounting, work = null, n
     select accounting_ref, sum(total_cents)::bigint as cents from billing_obligations
     where organisation_id = ${organisationId} and accounting_ref is not null group by accounting_ref`);
   const taken = new Map(linked.map((r) => [r.accounting_ref, Number(r.cents)]));
-  // Each customer's unlinked jobs, so two jobs at the same price share out
+  // Bill to (docs/CONTACTS.md): a customer with a payer is billed under the
+  // payer's accounting contact, so its jobs look there, with the jobs of every
+  // other customer of that payer as one pool.
+  const payerOf = await payersOf(db, organisationId, due.map((o) => o.contactId));
+  const pools = await billedBy(db, organisationId, [...payerOf.values()]);
+  const poolOf = new Map();
+  for (const [payer, members] of pools) for (const member of members) poolOf.set(member, payer);
+  // Each pool's unlinked jobs, so two jobs at the same price share out
   // their invoices by date.
-  const contactIds = [...new Set(due.map((o) => o.contactId).filter(Boolean))];
+  const contactIds = [...poolOf.keys()];
   const open = contactIds.length
     ? await db.select({
       id: billingObligations.id, contactId: billingObligations.contactId, jobDate: billingObligations.jobDate,
@@ -574,7 +582,10 @@ export async function matchJobs(db, organisationId, { accounting, work = null, n
     ))
     : [];
   const rivalsOf = new Map();
-  for (const o of open) rivalsOf.set(o.contactId, [...(rivalsOf.get(o.contactId) ?? []), o]);
+  for (const o of open) {
+    const pool = poolOf.get(o.contactId);
+    rivalsOf.set(pool, [...(rivalsOf.get(pool) ?? []), o]);
+  }
   // The patient name the work system gives a job, read from its copy; only
   // PATIENT_READS jobs a pass may ask the work system itself.
   let reads = 0;
@@ -590,13 +601,14 @@ export async function matchJobs(db, organisationId, { accounting, work = null, n
 
   for (const obligation of due) {
     result.checked += 1;
+    const payer = obligation.contactId ? payerOf.get(obligation.contactId) : null;
     const { evidence, ranked, decision, reason } = await matchJob(db, organisationId, obligation, {
       accounting,
-      xeroContactId: obligation.contactId ? xeroContactOf.get(obligation.contactId) ?? null : null,
+      xeroContactId: payer ? xeroContactOf.get(payer) ?? null : null,
       mirror,
       rejected: rejectedFor.get(obligation.id) ?? new Set(),
       taken,
-      rivals: rivalsOf.get(obligation.contactId) ?? [],
+      rivals: payer ? rivalsOf.get(payer) ?? [] : [],
       patientOf,
     });
     await saveSuggestions(db, organisationId, obligation.id, accounting.id, ranked);

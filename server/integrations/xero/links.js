@@ -1,5 +1,6 @@
 import { and, eq, sql } from 'drizzle-orm';
 import { billingObligations, contacts, invoices, obligationEvents, priceItems } from '../../db/schema.js';
+import { payersOf } from '../../core/contacts.js';
 import { createContact } from '../../core/directory.js';
 import { FlowError } from '../../core/errors.js';
 import { createDraftInvoice, issueInvoice } from '../../core/invoices.js';
@@ -71,6 +72,11 @@ async function classify(db, organisationId) {
     const key = normaliseName(p.name);
     byName.set(key, byName.has(key) ? null : p.id);
   }
+  // The identity-map link first, so a Xero contact of another name finds its
+  // Flow customer, then the name.
+  const { rows: contactLinks } = await db.execute(sql`select external_id, flow_id from external_links
+    where organisation_id = ${organisationId} and system = 'xero' and entity = 'contact' and state = 'active'`);
+  const byLink = new Map(contactLinks.map((l) => [l.external_id, l.flow_id]));
   const { rows: flowInvoices } = await db.execute(sql`
     select i.id, i.number, i.contact_id, i.total_cents, i.subtotal_cents, i.reference, i.status, coalesce(i.issue_date, i.created_at::date) as date,
       coalesce((select array_agg(distinct p.code) from invoice_lines l join price_items p on p.id = l.price_item_id
@@ -84,6 +90,10 @@ async function classify(db, organisationId) {
     select o.id, o.contact_id, o.total_cents, o.job_date, o.practitioner, o.case_ref, o.accounting_ref, o.source_invoice_ref, o.lines
     from billing_obligations o
     where o.organisation_id = ${organisationId} and o.invoice_id is null`);
+  // Bill to (docs/CONTACTS.md): a customer with a payer is billed under the
+  // payer's Xero contact, so its jobs and invoices fit that contact's invoices.
+  const payerOf = await payersOf(db, organisationId, [...flowInvoices.map((i) => i.contact_id), ...jobs.map((j) => j.contact_id)]);
+  const billedAs = (contactId) => (contactId ? payerOf.get(contactId) ?? contactId : null);
   const jobByRef = new Map(jobs.filter((j) => j.accounting_ref).map((j) => [j.accounting_ref, j]));
   // The work system's own invoice number, as Xero numbers it (a trailing R is
   // a reissue). Only a number one job holds counts.
@@ -96,7 +106,7 @@ async function classify(db, organisationId) {
   }
 
   const rows = xero.map((x) => {
-    const contactId = x.contact_name ? byName.get(normaliseName(x.contact_name)) ?? null : null;
+    const contactId = byLink.get(x.xero_contact_id) ?? (x.contact_name ? byName.get(normaliseName(x.contact_name)) ?? null : null);
     const row = {
       xeroInvoiceId: x.xero_invoice_id,
       number: x.invoice_number,
@@ -121,7 +131,7 @@ async function classify(db, organisationId) {
     const xeroFit = { id: x.xero_invoice_id, number: x.invoice_number, contactId, totalCents: row.totalCents, issuedOn: row.issuedOn,
       itemCodes: (x.lines ?? []).map((l) => l.itemCode).filter(Boolean), reference: x.reference };
     row.invoices = open.map((i) => {
-      const flowFit = { id: i.id, contactId: i.contact_id, totalCents: num(i.total_cents), subtotalCents: num(i.subtotal_cents), date: day(i.date),
+      const flowFit = { id: i.id, contactId: billedAs(i.contact_id), totalCents: num(i.total_cents), subtotalCents: num(i.subtotal_cents), date: day(i.date),
         itemCodes: i.item_codes ?? [], reference: i.reference, jobs: i.jobs ?? [] };
       const scored = scoreFit(xeroFit, flowFit);
       return canFit(xeroFit, flowFit, scored)
@@ -131,7 +141,7 @@ async function classify(db, organisationId) {
     }).filter(Boolean);
     const tied = jobByRef.get(x.xero_invoice_id) ?? (x.invoice_number ? jobByNumber.get(workNumber(x.invoice_number)) : null) ?? null;
     const fits = tied ? [tied] : contactId
-      ? jobs.filter((j) => !j.accounting_ref && j.contact_id === contactId && num(j.total_cents) === row.totalCents && near(day(j.job_date), row.issuedOn))
+      ? jobs.filter((j) => !j.accounting_ref && billedAs(j.contact_id) === contactId && num(j.total_cents) === row.totalCents && near(day(j.job_date), row.issuedOn))
       : [];
     row.jobs = fits.map((j) => ({ id: j.id, jobDate: day(j.job_date), practitioner: j.practitioner, caseRef: j.case_ref, totalCents: num(j.total_cents), tied: j === tied,
       itemCodes: [...new Set((j.lines ?? []).map((l) => l.itemCode).filter(Boolean))] }));
@@ -252,7 +262,8 @@ export async function useXeroInvoice(db, organisationId, invoiceId, { xeroInvoic
     if (!invoice) throw new FlowError('not_found', 'Flow invoice not found');
     // A copy voided earlier, still holding its job, gives way the same way.
     if (!['issued', 'void'].includes(invoice.status)) throw new FlowError('invalid', 'only an approved or void Flow invoice can give way to a Xero invoice');
-    if (row.contactId !== invoice.contact_id) throw new FlowError('invalid', 'the Xero invoice is for another client');
+    const [payer] = (await payersOf(tx, organisationId, [invoice.contact_id])).values();
+    if (row.contactId !== payer) throw new FlowError('invalid', 'the Xero invoice is for another client');
     const { rows: pushed } = await tx.execute(sql`select 1 from xero_invoice_pushes where organisation_id = ${organisationId} and invoice_id = ${invoiceId} and xero_invoice_id is not null limit 1`);
     if (pushed.length) throw new FlowError('invalid', 'Flow sent that invoice to Xero already');
     const jobs = await tx.select({ id: billingObligations.id }).from(billingObligations)
@@ -289,7 +300,13 @@ async function makeFrom(db, organisationId, row, { jobId = null, actor }) {
     where x.organisation_id = ${organisationId} and x.xero_invoice_id = ${xeroInvoiceId}`);
   if (!row.clientName) throw new FlowError('invalid', 'the Xero invoice has no contact in the copy; sync contacts first');
   return db.transaction(async (tx) => {
-    const contactId = row.contactId ?? (await createContact(tx, organisationId, { kind: 'customer', name: row.clientName, email: x.email ?? null })).id;
+    // The job's own customer when it bills to this payer (Bill to), so the
+    // Flow invoice stays with the client the work was for.
+    const { rows: [job] } = jobId ? await tx.execute(sql`select contact_id from billing_obligations
+      where organisation_id = ${organisationId} and id = ${jobId}`) : { rows: [] };
+    const jobPayer = job?.contact_id ? (await payersOf(tx, organisationId, [job.contact_id])).get(job.contact_id) : null;
+    const contactId = (row.contactId && jobPayer === row.contactId ? job.contact_id : null)
+      ?? row.contactId ?? (await createContact(tx, organisationId, { kind: 'customer', name: row.clientName, email: x.email ?? null })).id;
     const items = await tx.select({ id: priceItems.id, code: priceItems.code, name: priceItems.name }).from(priceItems)
       .where(eq(priceItems.organisationId, organisationId));
     const byCode = new Map(items.map((i) => [i.code.toUpperCase(), i]));

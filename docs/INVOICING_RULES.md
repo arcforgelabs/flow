@@ -141,3 +141,4 @@ setting.
 | `autoDraft` | Drafts on or off for this customer |
 | `sendMode` | The send mode for this customer |
 | `paymentTermsDays` | The customer's payment terms |
+| `billToContactId` | Bill to: the payer, another customer whose accounting contact gets this customer's invoices (`docs/CONTACTS.md`) |

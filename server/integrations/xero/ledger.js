@@ -1,7 +1,8 @@
 import { and, eq, inArray, sql } from 'drizzle-orm';
+import { payersOf } from '../../core/contacts.js';
 import { recordAccountingEvidence, recordPayment } from '../../core/ledger.js';
 import { billingObligations, contacts as flowContacts } from '../../db/schema.js';
-import { matchContact, parseXeroDate } from './catalogue.js';
+import { matchContactFor, parseXeroDate } from './catalogue.js';
 import { withXeroLane } from './governor.js';
 
 // What the billing obligation ledger (server/core/ledger.js) needs from Xero:
@@ -136,9 +137,11 @@ export async function checkInvoice(db, runtime, client, organisationId, obligati
   if (references.length) {
     let customer = null;
     if (obligation.contactId) {
+      // A customer with a payer is billed under the payer's name (Bill to).
+      const payer = (await payersOf(db, organisationId, [obligation.contactId])).get(obligation.contactId);
       const [contact] = await db.select({ name: flowContacts.name }).from(flowContacts)
-        .where(and(eq(flowContacts.organisationId, organisationId), eq(flowContacts.id, obligation.contactId)));
-      const match = contact ? await matchContact(db, organisationId, contact.name) : { state: 'missing' };
+        .where(and(eq(flowContacts.organisationId, organisationId), eq(flowContacts.id, payer)));
+      const match = contact ? await matchContactFor(db, organisationId, { contactId: payer, name: contact.name }) : { state: 'missing' };
       customer = match.state === 'matched' ? match.contact.xeroContactId : null;
       if (match.state === 'ambiguous') {
         const error = new Error(`More than one Xero contact is named "${contact.name}"; Flow cannot tell which invoices are this customer's.`);

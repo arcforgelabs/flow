@@ -3,6 +3,7 @@ import { after, before, describe, test } from 'node:test';
 import { and, eq, sql } from 'drizzle-orm';
 import { createContact, createPriceItem } from '../server/core/directory.js';
 import { createDraftInvoice, issueInvoice } from '../server/core/invoices.js';
+import { saveCustomerBilling } from '../server/core/invoicing-rules.js';
 import { linkJobToInvoice, observeJob, recordAccountingEvidence, setReady } from '../server/core/ledger.js';
 import { billingObligations, invoices } from '../server/db/schema.js';
 import { importOverview, matchXero, useXeroInvoice } from '../server/integrations/xero/links.js';
@@ -140,6 +141,19 @@ describe('Xero import: Xero invoices against Flow invoices', { skip: skipWithout
     assert.equal(made.status, 200, JSON.stringify(made.body));
     const [row] = await handle.db.select().from(billingObligations).where(and(eq(billingObligations.organisationId, org()), eq(billingObligations.id, job.id)));
     assert.deepEqual([row.accountingState, row.accountingRef, row.invoiceId], ['authorised', id, made.body.invoice.id]);
+  });
+
+  test('a client billed to another customer finds the payer\'s Xero invoices; Make keeps the Flow invoice with the client', async () => {
+    const member = await createContact(handle.db, org(), { kind: 'customer', name: 'Member Clinic' });
+    await saveCustomerBilling(handle.db, org(), member.id, { billToContactId: practice.id });
+    const job = await observeJob(handle.db, org(), { sourceSystem: 'worksystem', sourceJobRef: 'JOB-BT', caseRef: 'CASE-BT', contactId: member.id, shippedOn: '2026-09-03', jobDate: '2026-09-03', lines: [{ itemCode: 'CROWN' }] });
+    const id = await copy(19, { issuedOn: '2026-09-03' });
+    const row = await stateOf(id);
+    assert.deepEqual(row.jobs.map((j) => [j.id, j.tied]), [[job.id, false]]);
+    const made = await call(`/import/${id}/make`, { method: 'POST', body: { organisationId: org(), jobId: job.id } });
+    assert.equal(made.status, 200, JSON.stringify(made.body));
+    const [invoice] = await handle.db.select().from(invoices).where(eq(invoices.id, made.body.invoice.id));
+    assert.equal(invoice.contactId, member.id, 'the work was for the clinic; the payer is only who Xero bills');
   });
 
   test('nothing fits: it stays in the copy, until the setting makes Flow invoices', async () => {

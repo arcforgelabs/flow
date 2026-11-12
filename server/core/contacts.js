@@ -1,5 +1,5 @@
-import { and, asc, eq, ilike, or, sql } from 'drizzle-orm';
-import { contacts, CONTACT_KINDS } from '../db/schema.js';
+import { and, asc, eq, ilike, inArray, isNotNull, or, sql } from 'drizzle-orm';
+import { contacts, CONTACT_KINDS, customerBillingSettings } from '../db/schema.js';
 import { FlowError, notFound } from './errors.js';
 
 // Flow's own contacts (docs/CONTACTS.md). A contact is a customer or a
@@ -178,4 +178,37 @@ export async function listContacts(db, organisationId, { q = '', kind = 'custome
     .limit(limit)
     .offset(offset);
   return rows.map(presentContact);
+}
+
+// Bill to (docs/CONTACTS.md): the contact each customer's work is billed to
+// in the accounting system. A customer with a payer bills to the payer; any
+// other bills to itself. Answers a map for every id given.
+export async function payersOf(db, organisationId, contactIds) {
+  const ids = [...new Set(contactIds.filter(Boolean))];
+  const out = new Map(ids.map((id) => [id, id]));
+  if (!ids.length) return out;
+  const rows = await db.select({ contactId: customerBillingSettings.contactId, payer: customerBillingSettings.billToContactId })
+    .from(customerBillingSettings)
+    .where(and(eq(customerBillingSettings.organisationId, organisationId), inArray(customerBillingSettings.contactId, ids),
+      isNotNull(customerBillingSettings.billToContactId)));
+  for (const r of rows) out.set(r.contactId, r.payer);
+  return out;
+}
+
+// The customers that bill to each payer given, the payer included.
+export async function billedBy(db, organisationId, payerIds) {
+  const ids = [...new Set(payerIds.filter(Boolean))];
+  const out = new Map(ids.map((id) => [id, new Set([id])]));
+  if (!ids.length) return out;
+  const rows = await db.select({ contactId: customerBillingSettings.contactId, payer: customerBillingSettings.billToContactId })
+    .from(customerBillingSettings)
+    .where(and(eq(customerBillingSettings.organisationId, organisationId), inArray(customerBillingSettings.billToContactId, ids)));
+  for (const r of rows) out.get(r.payer).add(r.contactId);
+  return out;
+}
+
+// The contact one customer is billed as: its payer, else itself.
+export async function billedContact(db, organisationId, contactId) {
+  const payer = (await payersOf(db, organisationId, [contactId])).get(contactId);
+  return getContact(db, organisationId, payer);
 }
