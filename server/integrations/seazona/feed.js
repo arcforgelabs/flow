@@ -217,9 +217,16 @@ export const WORK_FINISHED_DAYS = 30;
 const WORK_LIMIT = 2000;
 const FINAL_SQL = sql`coalesce(${seazonaOrders.status}, '') ~* '(shipped|delivered|cancelled|canceled|void|closed|archived|deleted)'`;
 
+// A finished order that still has no invoice stays on the board past
+// WORK_FINISHED_DAYS: its job has no Flow invoice and no accounting invoice
+// linked, and the order was not cancelled. It leaves when it is billed.
+const UNBILLED_SQL = sql`(coalesce(${seazonaOrders.status}, '') !~* '(cancelled|canceled|void|deleted)' and exists (
+  select 1 from billing_obligations o where o.source_system = 'seazona' and o.source_job_ref = ${seazonaOrders.id}
+    and o.invoice_id is null and o.accounting_ref is null))`;
+
 // The orders behind the port's listWork, for the Jobs board: every open
-// order, and each final order that changed in the last WORK_FINISHED_DAYS
-// days, newest change first. An order deleted in Seazona is never listed.
+// order, each final order that changed in the last WORK_FINISHED_DAYS
+// days, and each finished order not billed yet, newest change first. An order deleted in Seazona is never listed.
 // The client name is the Seazona client's company (or full name), else the
 // order's own company. `statuses` lists each status once, with the first time
 // Flow saw an order in it, so the board can order its columns.
@@ -228,7 +235,7 @@ export async function listWork(db, { now = Date.now(), finishedDays = WORK_FINIS
   const rows = await db.select({ order: seazonaOrders, company: seazonaClients.company, fullName: seazonaClients.fullName })
     .from(seazonaOrders)
     .leftJoin(seazonaClients, eq(seazonaClients.id, seazonaOrders.clientId))
-    .where(and(isNull(seazonaOrders.deletedInSourceAt), or(sql`not (${FINAL_SQL})`, gte(seazonaOrders.lastChangedAt, since))))
+    .where(and(isNull(seazonaOrders.deletedInSourceAt), or(sql`not (${FINAL_SQL})`, gte(seazonaOrders.lastChangedAt, since), UNBILLED_SQL)))
     .orderBy(desc(seazonaOrders.lastChangedAt), seazonaOrders.id)
     .limit(limit);
   const firstSeen = new Map();
