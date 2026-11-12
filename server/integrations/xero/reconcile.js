@@ -105,7 +105,7 @@ export async function accountingStatus(db, runtime, organisationId, invoiceIds =
     ) p on true
     left join invoice_versions v on v.invoice_id = i.id and v.version = p.version
     -- A Flow invoice the Import page linked to a Xero invoice (links.js).
-    left join xero_invoice_links l on l.organisation_id = i.organisation_id and l.invoice_id = i.id
+    left join xero_invoice_links l on l.organisation_id = i.organisation_id and l.invoice_id = i.id and l.released_at is null
     left join xero_invoices x on x.organisation_id = i.organisation_id and x.xero_invoice_id = coalesce(p.xero_invoice_id, l.xero_invoice_id)
     where i.organisation_id = ${organisationId} ${only} ${sentOnly}`);
   const web = runtime.settings.endpoints?.web ?? 'https://go.xero.com';

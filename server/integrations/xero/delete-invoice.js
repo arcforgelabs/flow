@@ -30,7 +30,7 @@ async function linkedXeroId(db, organisationId, invoiceId) {
   if (pushes[0]?.xero_invoice_id) return pushes[0].xero_invoice_id;
   const { rows: links } = await db.execute(sql`
     select xero_invoice_id from xero_invoice_links
-    where organisation_id = ${organisationId} and invoice_id = ${invoiceId}`);
+    where organisation_id = ${organisationId} and invoice_id = ${invoiceId} and released_at is null`);
   return links[0]?.xero_invoice_id ?? null;
 }
 
