@@ -132,14 +132,25 @@ export function isPlainEmail(email) {
 // the key's SHA-256 is FLOW_AGENT_KEY_SHA256, acts as the Flow person with
 // FLOW_AGENT_EMAIL, inside that person's role. Flow holds only the digest, so
 // the key itself never leaves the assistant's machine. Both or neither.
-export function resolveAgentKey(env = process.env) {
-  const digest = readEnv(env, 'FLOW_AGENT_KEY_SHA256').toLowerCase();
-  const email = readEnv(env, 'FLOW_AGENT_EMAIL').toLowerCase();
+export function resolveAgentKey(env = process.env, suffix = '') {
+  const digestName = `FLOW_AGENT_KEY_SHA256${suffix}`;
+  const emailName = `FLOW_AGENT_EMAIL${suffix}`;
+  const digest = readEnv(env, digestName).toLowerCase();
+  const email = readEnv(env, emailName).toLowerCase();
   if (!digest && !email) return null;
-  if (!digest || !email) throw new Error('FLOW_AGENT_KEY_SHA256 and FLOW_AGENT_EMAIL must be set together');
-  if (!/^[0-9a-f]{64}$/.test(digest)) throw new Error('FLOW_AGENT_KEY_SHA256 must be 64 hex characters (the SHA-256 of the key)');
-  if (!isPlainEmail(email)) throw new Error('FLOW_AGENT_EMAIL must be a plain (ASCII) email address');
+  if (!digest || !email) throw new Error(`${digestName} and ${emailName} must be set together`);
+  if (!/^[0-9a-f]{64}$/.test(digest)) throw new Error(`${digestName} must be 64 hex characters (the SHA-256 of the key)`);
+  if (!isPlainEmail(email)) throw new Error(`${emailName} must be a plain (ASCII) email address`);
   return { digest, email };
+}
+
+// Up to two assistant keys: the first pair, and a second pair with the
+// suffix _2. Each key acts as its own Flow person.
+export function resolveAgentKeys(env = process.env) {
+  const keys = [resolveAgentKey(env), resolveAgentKey(env, '_2')].filter(Boolean);
+  if (keys.length === 2 && keys[0].digest === keys[1].digest) throw new Error('FLOW_AGENT_KEY_SHA256_2 must differ from FLOW_AGENT_KEY_SHA256');
+  if (keys.length === 2 && keys[0].email === keys[1].email) throw new Error('FLOW_AGENT_EMAIL_2 must differ from FLOW_AGENT_EMAIL');
+  return keys;
 }
 
 export function resolveSignInSettings(env = process.env) {
@@ -154,6 +165,6 @@ export function resolveSignInSettings(env = process.env) {
     ownerGoogleDomains: parseOwnerGoogleDomains(readEnv(env, 'FLOW_OWNER_GOOGLE_DOMAINS')),
     authorizedParties: resolveAuthorizedParties(env),
     firstOwnerEmail: resolveFirstOwnerEmail(env),
-    agentKey: resolveAgentKey(env),
+    agentKeys: resolveAgentKeys(env),
   };
 }

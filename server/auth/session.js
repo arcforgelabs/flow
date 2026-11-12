@@ -54,6 +54,7 @@ export function createPersonAuth({
   now = Date.now,
   clerkUserCacheMs = 60 * 1000,
   agentKey = null,
+  agentKeys = agentKey ? [agentKey] : [],
 }) {
   if (!db) throw new Error('createPersonAuth: db is required');
   if (!clerk?.authenticate || !clerk?.getUser) throw new Error('createPersonAuth: a Clerk adapter is required');
@@ -122,7 +123,8 @@ export function createPersonAuth({
   async function requireSession(req, res, next) {
     const token = bearerToken(req);
     if (!token) return deny(res, 'signed_out');
-    if (agentKey && isAgentKey(token)) return agentSession(req, res, next);
+    const agent = agentKeys.length ? agentKeyFor(token) : null;
+    if (agent) return agentSession(req, res, next, agent);
     let auth;
     try {
       auth = await clerk.authenticate(req);
@@ -149,24 +151,28 @@ export function createPersonAuth({
     return next();
   }
 
-  // The AI assistant key (FLOW_AGENT_KEY). It acts as one Flow person, and
+  // The AI assistant keys (FLOW_AGENT_KEY_SHA256, and _2). Each acts as its own Flow person, and
   // only inside that person's role. Owner actions stay with people: an agent
   // request is never a verified owner sign-in.
   // Keys shorter than 32 characters are refused, so a digest of a short
   // guess never matches.
-  const agentDigest = agentKey ? Buffer.from(agentKey.digest, 'hex') : null;
-  function isAgentKey(token) {
-    return token.length >= 32 && timingSafeEqual(createHash('sha256').update(token).digest(), agentDigest);
+  const agentDigests = agentKeys.map((key) => ({ email: key.email, digest: Buffer.from(key.digest, 'hex') }));
+  function agentKeyFor(token) {
+    if (token.length < 32) return null;
+    const hash = createHash('sha256').update(token).digest();
+    let found = null;
+    for (const key of agentDigests) if (timingSafeEqual(hash, key.digest)) found = key;
+    return found;
   }
   // The key opens only these routes: invoicing, Xero (owner routes refuse it
   // below), the Seazona read, the Seazona history import, /api/me and its own
   // skill files.
   const AGENT_PATHS = /^\/api\/(?:me$|invoicing\/|xero\/|seazona\/(?:api|history)(?:\/|$)|agent-skill\/flow\/)/;
-  async function agentSession(req, res, next) {
+  async function agentSession(req, res, next, agent) {
     if (!AGENT_PATHS.test(`${req.baseUrl}${req.path}`)) return deny(res, 'role_required');
     let person;
     try {
-      person = await findPersonByEmail(db, agentKey.email);
+      person = await findPersonByEmail(db, agent.email);
     } catch (error) {
       log.error?.(`[auth] Flow agent person lookup failed: ${error.message}`);
       return deny(res, 'sign_in_unavailable');
