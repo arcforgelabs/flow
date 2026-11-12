@@ -140,6 +140,7 @@ describe('Settings, Integrations', { skip: skipWithoutDatabase }, () => {
     const again = await request(app, path, { token: lab.ownerToken, method: 'POST' });
     assert.equal(again.status, 429);
     assert.equal(again.body.code, 'action_cooldown');
+    assert.equal((await request(app, path, { token: lab.ownerToken, method: 'POST', body: { only: 'nothing-here' } })).status, 404, 'its own wait; an unknown integration');
     assert.equal((await put(lab.ownerToken, { values: { SEAZONA_SYNC_NOW: 'on' } })).status, 200);
   });
 

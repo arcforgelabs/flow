@@ -39,7 +39,7 @@ export const CAPABILITIES = Object.freeze([
   'readChanges', // { state: fresh | read | unavailable }: the accounting system's latest changes into its copy now, just before Flow drafts or sends (read before act)
   'itemMatches', // { organisationId, codes } -> the Flow price codes that send as an item the system sells (Xero: linked item, else same code), from its copy; null while not connected or its item list was never read; never a live call
   'listPriceItems', // the system's own price list from its copy in Flow, for the price list's links and check; never a live call
-  'syncNow', // {} -> { state: started | running | read | off | unavailable, reason?, changed? }: a person's Sync now; read the system's latest changes into its copy now, inside its call guard. off: its "Include in Sync now" setting is off (server/core/sync-now.js)
+  'syncNow', // { asked } -> { state: started | running | read | off | unavailable, reason?, changed? }: a person's Sync now; read the system's latest changes into its copy now, inside its call guard. off: its "Include in Sync now" setting is off and `asked` (a person's Sync for this integration alone) is false (server/core/sync-now.js)
   'syncNowStatus', // {} -> { included, running, lastAt, ok }: for the Sync now button; reads Flow's data only
   'health', // connection state for Settings
   'alerts', // what only a person can clear (a refused sign-in, stopped calls), for the Integrations page; reads Flow's data only
