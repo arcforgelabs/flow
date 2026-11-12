@@ -9,7 +9,6 @@ import { lastSuccessfulSyncAt, xeroItemsForCodes, matchContactFor, normaliseName
 import { writesAllowed } from './settings.js';
 import { xeroError } from './client.js';
 import { withXeroLane } from './governor.js';
-import { mirrorState } from './lookup.js';
 
 // Issued Flow invoices go to Xero. How depends on the customer's send mode
 // (server/core/invoicing-rules.js):
@@ -526,13 +525,12 @@ async function pushOne(db, runtime, client, organisationId, invoiceId, { pushedB
   if (problems.length) throw xeroError(problems[0].code, problems.map((p) => p.message).join(' '), { status: 409, short: problems[0].short });
 
   // Live duplicate check: invoices in Xero with this reference, made by Flow
-  // or by hand. Not needed when Flow's own copy of Xero already answered it
-  // for the job this invoice bills.
+  // or by hand. Always, even when Flow's copy of Xero showed no invoice for
+  // the job: the copy can miss a Reference, and a Xero total can differ from
+  // the job's (a fee the job lacks), so "no invoice" in the copy is no proof.
   const earlierIds = new Set(pushes.map((p) => p.xero?.invoiceId).filter(Boolean));
-  const sameReference = (await copyShowsNoInvoice(db, runtime, organisationId, invoiceId))
-    ? []
-    : (await client.findInvoicesByReference(draft.Reference))
-      .filter((inv) => !GONE.has(inv.Status) && !earlierIds.has(inv.InvoiceID));
+  const sameReference = (await client.findInvoicesByReference(draft.Reference))
+    .filter((inv) => !GONE.has(inv.Status) && !earlierIds.has(inv.InvoiceID));
   const sameContact = sameReference.filter((inv) => inv.Contact?.ContactID === match.contact.xeroContactId);
   if (!allowExisting) {
     const same = sameContact.find((inv) => cents(inv.Total) === document.totalCents);
@@ -664,16 +662,6 @@ async function emailIfDue(db, client, push) {
   const { rows: [done] } = await db.execute(sql`update xero_invoice_pushes set email_state = 'sent', email_error = null, emailed_at = now(), updated_at = now()
     where id = ${push.id} returning emailed_at`);
   return { state: 'sent', error: null, at: done.emailed_at };
-}
-
-// Flow drafted this invoice from a job, and its complete, fresh copy of Xero
-// showed no invoice for that job: Xero needs no live duplicate check.
-async function copyShowsNoInvoice(db, runtime, organisationId, invoiceId) {
-  const { rows: [job] } = await db.execute(sql`select accounting_state from billing_obligations
-    where organisation_id = ${organisationId} and invoice_id = ${invoiceId}`);
-  if (job?.accounting_state !== 'not_found') return false;
-  const mirror = await mirrorState(db, organisationId, { now: new Date(runtime.now()) });
-  return mirror.complete && mirror.fresh;
 }
 
 // An earlier attempt whose outcome is unknown.

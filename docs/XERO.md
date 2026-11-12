@@ -262,10 +262,10 @@ The rules:
   its number. The date is the issue date; the due date is the invoice's, or
   `XERO_DEFAULT_DUE_DAYS` later. With `XERO_INVOICE_NUMBER=flow` Xero gets
   Flow's number.
-- **Duplicates.** For an invoice Flow drafted from a job that its complete,
-  fresh copy of Xero showed has no invoice, Flow asks Xero nothing more.
-  Otherwise, before it creates, Flow asks Xero for invoices with the same
-  reference. One for the same contact and total is the same work: Flow records
+- **Duplicates.** Before it creates, Flow always asks Xero itself for
+  invoices with the same reference, also for a job that Flow's copy of Xero
+  showed has no invoice: the copy can miss a Reference, and a Xero total can
+  differ from the job's. One for the same contact and total is the same work: Flow records
   it (`existing`) and sends nothing. One for the same contact at another total
   dated within 90 days is held, unless the person sends again with that
   invoice in `allowExistingReference`. The held invoice offers **Use Xero
