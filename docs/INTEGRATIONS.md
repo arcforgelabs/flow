@@ -351,7 +351,10 @@ The waits each adapter declares:
 
 Check prices (`POST /api/invoicing/price-list/check`) reads Flow's copies
 only, so it has no action. The Seazona routes call nothing at a press (a backfill is paced by the rate
-governor), so they have no action. A new route that calls an outside system
+governor), so they have no action. The one exception, `GET /api/seazona/api/...`
+(one read for a person or an agent key), lets at most 10 reads a minute
+through (`API_READS_PER_MINUTE`) and answers 429 with the wait after that, so
+Flow's own sync keeps the rest of the governor's 30. A new route that calls an outside system
 at a press declares an action. The state is in memory: one Flow process
 serves one lab, as for the request limit (`server/rate-limit.js`); the call
 guard still protects every process. `createApp({ buttonCooldowns: false })`

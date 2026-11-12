@@ -98,8 +98,17 @@ export function listQueryProblem(resource, query) {
 }
 const API_PATH = new RegExp(`^/api/(${API_RESOURCES.join('|')})(?:/([A-Za-z0-9-]{1,64}))?/?$`);
 
-export function createSeazonaRouter({ db, personAuth, settings, read = null, hidePatientFields = () => false, log = console }) {
+// Reads through the route below share Seazona's minute with Flow's own sync
+// (the rate governor allows 30 a minute). They get at most this many a
+// minute, so an agent that reads in a loop never leaves the sync waiting.
+export const API_READS_PER_MINUTE = 10;
+
+export function createSeazonaRouter({
+  db, personAuth, settings, read = null, hidePatientFields = () => false, log = console,
+  apiReadsPerMinute = API_READS_PER_MINUTE, now = Date.now,
+}) {
   const router = express.Router();
+  const apiReads = [];
   // Sign-in off: every route answers 503, as the Xero routes do.
   const signedIn = personAuth
     ? [personAuth.requireSession]
@@ -124,6 +133,17 @@ export function createSeazonaRouter({ db, personAuth, settings, read = null, hid
     }
     const problem = id ? null : listQueryProblem(resource, query);
     if (problem) return res.status(400).json({ ok: false, code: 'invalid', error: problem });
+    const at = Number(now());
+    while (apiReads.length && apiReads[0] <= at - 60_000) apiReads.shift();
+    if (apiReads.length >= apiReadsPerMinute) {
+      const waitSeconds = Math.max(1, Math.ceil((apiReads[0] + 60_000 - at) / 1000));
+      res.set('Retry-After', String(waitSeconds));
+      return res.status(429).json({
+        ok: false, code: 'rate_limited',
+        error: `At most ${apiReadsPerMinute} Seazona reads a minute go through here, so Flow's own sync keeps its share. Try again in ${waitSeconds} s.`,
+      });
+    }
+    apiReads.push(at);
     try {
       const data = await read(id ? `${resource}/${id}` : `${resource}/`, query);
       log.info?.(`[seazona] api read ${resource}${id ? '/:id' : ''} by ${actor(req)}`);

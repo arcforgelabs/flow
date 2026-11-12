@@ -200,7 +200,8 @@ the person's yes in the chat first, like a send.
 
 Flow reads Seazona for you with its own Seazona connection, so you need no
 Seazona password. Calls share Seazona's limit of 30 a minute with Flow's
-sync: make few calls, and never loop over many records.
+sync, and Flow lets at most 10 a minute through here. A read over that
+answers 429 with the wait: make few calls, and never loop over many records.
 
 | Do this | Command |
 | --- | --- |
