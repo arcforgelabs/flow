@@ -94,7 +94,11 @@ test('a job fix points to Flow\'s invoice or the work system, never an accountin
   const unclear = review('the accounting evidence is ambiguous');
   assert.deepEqual(unclear, { label: 'No invoice', text: 'This job has no invoice.', todo: null, go: 'choose' }, 'one line; the buttons are the instruction');
   assert.equal(review('the accounting evidence is conflict').go, 'work');
-  assert.equal(review('invoice INV-1 was voided').go, 'invoice');
+  // Voided in the accounting system with no Flow invoice: the job's own
+  // Make invoice button, not a link to an invoice Flow does not have.
+  assert.deepEqual(review('invoice INV-1 was voided'), { label: 'Invoice voided', text: 'The invoice for this job was voided.', todo: null, go: 'choose' });
+  const flowVoided = fixes({ view: 'review_required', reasons: ['invoice INV-1 was deleted'], invoiceId: 'i1', waitingFor: [], invoiceProblems: [] })[0];
+  assert.equal(flowVoided.go, 'invoice');
   assert.equal(review('the job changed after its invoice was made').go, 'review', 'the job panel\'s Review sidecar');
   const sent = fixes({
     view: 'drafted', invoiceStatus: 'draft', invoiceView: 'problem', reasons: [], waitingFor: [],

@@ -7,6 +7,8 @@
 #   flow.sh put    <path> <json>     PUT    with a JSON body
 #   flow.sh delete <path>            DELETE
 #   flow.sh health                   GET <FLOW_URL>/health (public, no key sent)
+#   flow.sh update                   replace this skill with the copy the
+#                                    saved Flow serves (its own release)
 # The key stays in FLOW_AGENT_KEY_FILE (mode 600). It never goes on a command
 # line or into the output.
 set -euo pipefail
@@ -51,6 +53,31 @@ call() {
     | curl "${args[@]}" "$(flow_url)/api/${path#/}"
 }
 
+# Fetch SKILL.md and flow.sh from the saved Flow, so the skill always matches
+# the release that Flow runs. Both files arrive first, then both replace the
+# old ones; a bad answer changes nothing.
+update() {
+  [[ -s "$KEY_FILE" ]] || die "no key yet: run flow.sh setup https://<your Flow> first"
+  local dir tmp file code
+  dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  tmp="$(mktemp -d "$dir/.update.XXXXXX")"
+  trap "rm -rf '$tmp'" EXIT
+  for file in SKILL.md flow.sh; do
+    code="$(printf 'header = "Authorization: Bearer %s"\n' "$(tr -d '\n' < "$KEY_FILE")" \
+      | curl -sS -K - -o "$tmp/$file" -w '%{http_code}' "$(flow_url)/api/agent-skill/flow/$file")" \
+      || die "could not reach $(flow_url)"
+    [[ "$code" == 200 && -s "$tmp/$file" ]] || die "$file: HTTP $code from $(flow_url); nothing changed"
+  done
+  head -n 1 "$tmp/flow.sh" | grep -q '^#!/usr/bin/env bash' && bash -n "$tmp/flow.sh" \
+    || die "flow.sh from $(flow_url) is not a valid script; nothing changed"
+  grep -q '^name: flow$' "$tmp/SKILL.md" || die "SKILL.md from $(flow_url) is not the flow skill; nothing changed"
+  chmod 755 "$tmp/flow.sh"
+  chmod 644 "$tmp/SKILL.md"
+  mv -f "$tmp/SKILL.md" "$dir/SKILL.md"
+  mv -f "$tmp/flow.sh" "$dir/flow.sh"
+  echo "Skill updated from $(flow_url)"
+}
+
 case "${1:-}" in
   setup) setup "${2:-}" ;;
   get) call GET "${2:-}" ;;
@@ -58,5 +85,6 @@ case "${1:-}" in
   put) [[ -n "${3:-}" ]] || die "put needs a JSON body"; call PUT "${2:-}" "$3" ;;
   delete) call DELETE "${2:-}" ;;
   health) curl -sS -H 'Accept: application/json' -w '\nHTTP %{http_code}\n' "$(flow_url)/health" ;;
-  *) sed -n '2,10p' "$0"; exit 2 ;;
+  update) update ;;
+  *) sed -n '2,12p' "$0"; exit 2 ;;
 esac

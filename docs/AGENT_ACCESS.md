@@ -31,21 +31,28 @@ Flow for the lab. It is separate from the MCP door below and is off by default.
 
 A request with `Authorization: Bearer <key>` then acts as that person, inside
 the person's role, on `/api/me`, `/api/invoicing/…`, `/api/xero/…`,
-`/api/seazona/api/…` and `/api/seazona/history…` only. Every other route
-refuses the key. With **admin** it can read invoices and jobs, change invoice
-rules, void, delete drafts, send ready invoices and reconcile: link jobs and
-invoices, match Flow against Flow's copy of Xero and refresh that copy, read
-the open review queue (`GET /api/invoicing/review`), and work the Seazona
-history import (batches, decisions, apply, backfill, release a held history
-job; `docs/SEAZONA.md`, "History import"). It can also compare and fix the
-price list: Flow codes, links to Xero items and Seazona products, and the price
-codes that hold job lines (`docs/PRICE_LIST.md`). Owner
+`/api/seazona/api/…`, `/api/seazona/history…` and `/api/agent-skill/flow/…`
+only. Every other route refuses the key. With **admin** it can read invoices
+and jobs, change invoice rules, void, delete drafts, send ready invoices and
+reconcile: link jobs and invoices, match Flow against Flow's copy of Xero and
+refresh that copy, read the open review queue (`GET /api/invoicing/review`),
+and work the Seazona history import (batches, decisions, apply, backfill,
+release a held history job; `docs/SEAZONA.md`, "History import"). It can also
+compare and fix the price list: Flow codes, links to Xero items and Seazona
+products, and the price codes that hold job lines (`docs/PRICE_LIST.md`). Owner
 actions (People, Integrations, updates) always refuse the key: an agent request
 is never a verified owner sign-in. Turning the person off in People stops the
 key on the next request, and a send it queued fails as `requester_disabled`
 instead of reaching the accounting system. Removing either setting turns the
 door off. Each call
 logs one line with the route and the person, never the key.
+
+`GET /api/agent-skill/flow/SKILL.md` and `GET /api/agent-skill/flow/flow.sh`
+serve the `flow` skill from the release this Flow runs (any signed-in person or
+the key; no other file). `flow.sh update` fetches both from the saved Flow
+address, checks them, and only then replaces the installed copy. So the skill
+never runs ahead of, or behind, the Flow it calls. Install from GitHub only the
+first time.
 
 `GET /api/seazona/api/<resource>[/<id>]` lets an owner, an admin or the
 assistant read Seazona through Flow's own Seazona connection and rate governor

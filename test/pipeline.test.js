@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { after, before, describe, test } from 'node:test';
 import { and, eq, sql } from 'drizzle-orm';
 import { createContact, createOrganisation, createPriceItem } from '../server/core/directory.js';
-import { ledgerView } from '../server/core/ledger.js';
+import { confirmNoInvoice, ledgerView } from '../server/core/ledger.js';
 import { listContacts } from '../server/core/contacts.js';
 import { externalIdFor } from '../server/core/links.js';
 import {
@@ -230,6 +230,29 @@ describe('the pipeline', { skip: skipWithoutDatabase }, () => {
     const row = await obligation('1001');
     assert.equal(row.accountingState, 'voided');
     assert.equal(ledgerView(row, { now: later }).view, 'review_required');
+  });
+
+  test('a voided invoice never links a job by its number; Make invoice lets go of a voided link', async () => {
+    // X-100 (number 5001) is voided now. A new job with that number does not
+    // link to it: a voided invoice bills nothing.
+    const work = fakeWork([{ items: [job('1008', { clientId: 'c1', invoiceRef: '5001', jobDate: '2026-02-01' })], withdrawn: [] }]);
+    await handle.db.execute(sql`delete from pipeline_cursors`);
+    await runPipelineOnce(handle.db, integrationsOf([work.adapter, accounting]), { now: new Date('2026-04-03T01:00:00Z') });
+    const fresh = await obligation('1008');
+    assert.notEqual(fresh.accountingState, 'voided');
+    assert.equal(fresh.accountingRef, null);
+
+    // 1001 is stuck on the voided X-100. Make invoice releases it, and the
+    // matcher does not take it back.
+    const stuck = await obligation('1001');
+    const row = await confirmNoInvoice(handle.db, organisationId, stuck.id, { actor: 'person:test', system: 'xero' });
+    assert.deepEqual([row.accountingState, row.accountingRef], ['not_found', null]);
+    assert.notEqual(ledgerView(row, { now: NOW }).view, 'review_required');
+    state.changedAt = new Date('2026-04-03T02:00:00Z');
+    await runPipelineOnce(handle.db, integrationsOf([fakeWork([]).adapter, accounting]), { now: new Date('2026-04-03T03:00:00Z') });
+    const after = await obligation('1001');
+    assert.equal(after.accountingRef, null);
+    assert.notEqual(after.accountingState, 'voided');
   });
 
   test('a person\'s "not this one" removes the pair for good', async () => {

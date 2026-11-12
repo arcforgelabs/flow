@@ -24,6 +24,14 @@ run `setup`, and give the new digest to Flow.
 
 Then check: `{baseDir}/flow.sh get me` must answer `HTTP 200`.
 
+## Keep the skill current
+
+Run `{baseDir}/flow.sh update` after Flow gets a new release, and when a call
+answers 404 for a route this skill lists. It gets this skill from the Flow it
+talks to, so the skill always matches the release that Flow runs. It changes
+nothing if the answer is not a good skill. Install the skill from GitHub only
+the first time.
+
 ## Calls
 
 Every answer ends with a line `HTTP <code>`. 401 or 403: the key is not set up
@@ -148,6 +156,16 @@ short groups, then act on the group they confirm.
    - Job needs no invoice: `flow.sh post invoicing/jobs/<job id>/no-invoice`
    - Make the invoice now: `flow.sh post invoicing/jobs/<job id>/draft`
    - Read the job again from Seazona: `flow.sh post invoicing/jobs/<job id>/recheck`
+   - **Stuck on a void invoice** (the job shows "Invoice voided", or its Flow
+     invoice is void, and nothing drafts): `flow.sh post invoicing/jobs/<job id>/free '{"reason":"<why, in the person's words>"}'`.
+     The job lets go of the void invoice and goes on hold, so it does not
+     draft by itself. It refuses a live Flow invoice: void that first, only
+     after the person says yes to that invoice
+     (`flow.sh post invoicing/invoices/<id>/void`).
+   - **Held or in review:** `flow.sh get invoicing/jobs/<job id>/activity`
+     shows why. Release it: `flow.sh post invoicing/jobs/<job id>/hold '{"state":"none","reason":"<why>"}'`;
+     hold it: `'{"state":"held","reason":"<why>"}'` (or `"review"`).
+     A `history_import` hold is refused here: use the history import decisions.
 2. **Flow against Xero.** First get the lab id:
    `flow.sh get invoicing/context` (`organisations[0].id`, below `<org>`).
    - Refresh Flow's copy of Xero: `flow.sh post xero/mirror '{"organisationId":"<org>"}'`
