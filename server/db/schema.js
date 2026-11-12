@@ -65,10 +65,23 @@ export const contacts = pgTable('contacts', {
   // accounting system does not mark a customer, and nothing in Flow makes it
   // one. It stays, out of the lists (docs/CONTACTS.md, "Hidden contacts").
   hidden: boolean('hidden').notNull().default(false),
+  // Merge (docs/CONTACTS.md, "Merge two contacts"): a person merged this
+  // contact into another. Its jobs, invoices and links moved there; the row
+  // stays, out of every list. The kept contact holds its name in `aliases`.
+  mergedIntoId: uuid('merged_into_id'),
+  mergedAt: timestamp('merged_at', { withTimezone: true }),
+  mergedBy: text('merged_by'),
+  aliases: jsonb('aliases').notNull().default([]),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 }, (t) => [
   unique('contacts_org_id').on(t.organisationId, t.id),
+  foreignKey({
+    name: 'contacts_merged_into_same_org',
+    columns: [t.organisationId, t.mergedIntoId],
+    foreignColumns: [t.organisationId, t.id],
+  }),
+  check('contacts_merged_into_other', sql`${t.mergedIntoId} is null or ${t.mergedIntoId} <> ${t.id}`),
   unique('contacts_org_kind_name').on(t.organisationId, t.kind, t.name),
   check('contacts_kind_valid', sql`${t.kind} in ('customer', 'supplier')`),
 ]);

@@ -1,4 +1,4 @@
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import { billingObligations, contacts, invoices, obligationEvents, priceItems } from '../../db/schema.js';
 import { payersOf } from '../../core/contacts.js';
 import { createContact } from '../../core/directory.js';
@@ -65,12 +65,16 @@ async function classify(db, organisationId) {
   }
   // Flow's customers by name, as the drafts match them (only a name with one
   // contact counts).
-  const people = await db.select({ id: contacts.id, name: contacts.name }).from(contacts)
-    .where(and(eq(contacts.organisationId, organisationId), eq(contacts.kind, 'customer')));
+  // A merged contact is gone; the kept one answers to its aliases too.
+  const people = await db.select({ id: contacts.id, name: contacts.name, aliases: contacts.aliases }).from(contacts)
+    .where(and(eq(contacts.organisationId, organisationId), eq(contacts.kind, 'customer'), isNull(contacts.mergedIntoId)));
   const byName = new Map();
   for (const p of people) {
-    const key = normaliseName(p.name);
-    byName.set(key, byName.has(key) ? null : p.id);
+    for (const name of [p.name, ...(p.aliases ?? [])]) {
+      const key = normaliseName(name);
+      if (byName.has(key) && byName.get(key) === p.id) continue;
+      byName.set(key, byName.has(key) ? null : p.id);
+    }
   }
   // The identity-map link first, so a Xero contact of another name finds its
   // Flow customer, then the name.

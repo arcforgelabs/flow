@@ -119,6 +119,40 @@ flowchart LR
 
 Code: `payersOf`, `billedBy` and `billedContact` in `server/core/contacts.js`.
 
+## Merge two contacts
+
+One client is sometimes two Flow contacts: the work system's name and the
+accounting system's longer name. **Merge** on a contact's page picks the
+other contact. The page's contact stays; the other moves into it.
+
+```mermaid
+flowchart LR
+  from[Contact to merge] -- jobs, invoices --> keep[Kept contact]
+  from -- links in each system --> keep
+  from -- rule values, Bill to --> keep
+  from -- name --> alias[Kept contact's other names]
+  from --> stays[Row stays: merged, out of every list]
+```
+
+- Moves the jobs, Flow invoices, links to other systems, rule values
+  ("Customer is" tests) and Bill to rows. Each moved job notes the merge
+  (`contact_merged`, with who did it). An unbilled job goes back to the
+  matcher under the kept contact.
+- The kept contact keeps the other's name as another name (`aliases`).
+  Search finds it by that name, and a client of that name in another system
+  links to it.
+- The merged contact stays, read only, out of every list, and points at the
+  kept one. Flow never deletes it. New refuses its name and names the kept
+  contact.
+- Refused when both contacts are linked in one system (keep one link first),
+  when they are not the same kind, when one was already merged, or when the
+  result would break Bill to's one level.
+- Flow never merges by itself.
+- `POST /api/invoicing/contacts/:id/merge {fromId}`, owner or admin. `:id`
+  stays.
+
+Code: `mergeContacts` in `server/core/merge-contacts.js`.
+
 ## Two-way edits
 
 With **Two-way edits** on (`sync_contact_edits`, off by default, on the Xero

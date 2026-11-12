@@ -113,8 +113,8 @@ async function renderContactList(main, ui) {
 }
 
 async function renderContact(main, ui, id) {
-  const { h, flow, toast, notice, pageHeader, crumbs, me } = ui;
-  const canEdit = ['owner', 'admin'].includes(me?.person.role);
+  const { h, flow, toast, notice, pageHeader, crumbs, me, go } = ui;
+  let canEdit = ['owner', 'admin'].includes(me?.person.role);
   const page = h('div', { class: 'fx-contacts' }, h('div', { class: 'fx-skeleton' }));
   main.append(page);
   let contact;
@@ -124,6 +124,8 @@ async function renderContact(main, ui, id) {
     page.replaceChildren(notice(error.message, 'danger'));
     return;
   }
+  // A merged contact is read only, and points at the one it moved into.
+  if (contact.mergedIntoId) canEdit = false;
 
   const values = {
     name: input(h, { value: contact.name ?? '' }),
@@ -190,6 +192,38 @@ async function renderContact(main, ui, id) {
     },
   }, 'Save');
 
+  // Merge (docs/CONTACTS.md, "Merge two contacts"): another contact moves
+  // into this one, which keeps its name as an alias.
+  const merge = h('button', {
+    class: 'fx-btn', type: 'button', hidden: !canEdit, title: 'Merge another contact into this one',
+    onclick: async () => {
+      const picked = await ui.pickOne({
+        title: `Merge into ${contact.name}`,
+        intro: `Its jobs, invoices, links and rules move to ${contact.name}. Its name stays as another name of ${contact.name}.`,
+        label: 'Contacts',
+        find: 'Find a contact',
+        remote: true,
+        load: async (q) => (await flow(`/api/invoicing/contacts?${new URLSearchParams({ q, kind: contact.kind, hidden: 'all', active: 'all', limit: '50' })}`)).contacts
+          .filter((row) => row.id !== contact.id),
+        item: (row) => ({ value: row.id, title: row.name, meta: row.email ?? null }),
+        empty: 'No contact has that name.',
+        confirm: 'Merge',
+      });
+      if (!picked) return;
+      merge.disabled = true;
+      try {
+        const { moved } = await flow(`/api/invoicing/contacts/${id}/merge`, { method: 'POST', body: JSON.stringify({ fromId: picked.id }) });
+        toast(`Merged: ${moved.jobs} jobs, ${moved.invoices} invoices.`, 'success');
+        go(`/contacts/${id}`);
+      } catch (error) {
+        toast(error.message, 'danger');
+        merge.disabled = false;
+      }
+    },
+  }, 'Merge');
+  const mergedNote = contact.mergedIntoId ? h('section', { class: 'fx-card fx-offer' },
+    notice('This contact moved into another.', 'info', 'Merged.'),
+    h('a', { class: 'fx-btn', href: `/contacts/${contact.mergedIntoId}`, onclick: go }, 'Open')) : null;
   const xero = h('div');
   const billTo = h('div');
   // A contact that is not a client (docs/CONTACTS.md, "Hidden contacts").
@@ -216,8 +250,9 @@ async function renderContact(main, ui, id) {
   drawHidden();
   page.replaceChildren(
     crumbs(['/contacts', 'Contacts'], contact.name),
-    pageHeader(contact.name, { actions: [save] }),
-    hiddenNote,
+    pageHeader(contact.name, { actions: [merge, save] }),
+    mergedNote,
+    contact.mergedIntoId ? null : hiddenNote,
     h('section', { class: 'fx-card' },
       h('div', { class: 'fx-contacts__grid' },
         field(h, 'Name', values.name),
@@ -246,7 +281,7 @@ async function renderContact(main, ui, id) {
     xero,
   );
   const reloadXero = () => loadXero(ui, contact, canEdit, xero);
-  if (contact.kind === 'customer') void loadBillTo(ui, contact, canEdit, billTo, reloadXero);
+  if (contact.kind === 'customer' && !contact.mergedIntoId) void loadBillTo(ui, contact, canEdit, billTo, reloadXero);
   void reloadXero();
 }
 

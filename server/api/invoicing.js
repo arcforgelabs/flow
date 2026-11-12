@@ -35,6 +35,7 @@ import { isHistoryHeld } from '../core/history.js';
 import { invoicePdfDocument, pdfFields, pdfFilename, renderInvoicePdf } from '../core/invoice-pdf.js';
 import { invoiceView, invoiceViews, markNotReady, markReady, sendAgain, sendAllReady } from '../core/sending.js';
 import { createContact, getContact, listContacts, presentContact, updateContact } from '../core/contacts.js';
+import { mergeContacts } from '../core/merge-contacts.js';
 import {
   billingObligations, contacts, invoices, INVOICE_STATUSES, organisations, priceItems, TAX_CODES,
 } from '../db/schema.js';
@@ -725,6 +726,18 @@ export function createInvoicingRouter({
     const contact = presentContact(await updateContact(db, organisationId, pathId(req.params.id, 'contact'), req.body ?? {}));
     log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} updated contact ${contact.id}`);
     res.json({ ok: true, contact });
+  }));
+
+  // Merge two contacts: this one stays; `fromId` moves into it
+  // (docs/CONTACTS.md, "Merge two contacts").
+  router.post('/contacts/:id/merge', ...manager, handle(log, async (req, res) => {
+    const organisationId = await organisationOf(req);
+    const keepId = pathId(req.params.id, 'contact');
+    const fromId = text(req.body?.fromId);
+    if (!UUID.test(fromId)) throw invalid('fromId must name the contact to merge');
+    const result = await mergeContacts(db, organisationId, { keepId, fromId, actor: `person:${req.person.id}` });
+    log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} merged contact ${fromId} into ${keepId}`);
+    res.json({ ok: true, ...result, contact: presentContact(await getContact(db, organisationId, keepId)) });
   }));
 
   router.get('/price-items', ...signedIn, handle(log, async (req, res) => {
