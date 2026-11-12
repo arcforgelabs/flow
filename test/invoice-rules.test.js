@@ -3,10 +3,11 @@ import { after, before, describe, test } from 'node:test';
 import { eq } from 'drizzle-orm';
 import { createContact, createOrganisation, createPriceItem } from '../server/core/directory.js';
 import {
-  createRule, deleteRule, FIELDS, listRules, readRule, ruleNonChargeable, rulePending, ruleReasons, ruleSkip, starterRules, TESTS, updateRule,
+  addRuleItem, createRule, deleteRule, exceptDraft, exceptJob, FIELDS, listRuleExceptions, listRules, readRule, removeRuleException, ruleNonChargeable, rulePending, ruleReasons, ruleSkip, starterRules, TESTS, updateRule,
 } from '../server/core/invoice-rules.js';
 import { deleteDraft, getInvoice } from '../server/core/invoices.js';
 import { autoDraftJobs, saveInvoicingSettings } from '../server/core/invoicing-rules.js';
+import { describeObligations } from '../server/core/job-board.js';
 import { draftInvoiceForObligation, explainObligation, observeJob, setReady } from '../server/core/ledger.js';
 import { invoiceView, invoiceViews, markReady, sendAllReady } from '../server/core/sending.js';
 import { billingObligations, invoices } from '../server/db/schema.js';
@@ -416,5 +417,72 @@ describe('rules a lab keeps', { skip: skipWithoutDatabase }, () => {
     assert.equal((await reload(internal)).invoiceId, null, 'a Never draft rule does not draft the job again');
     assert.ok((await reload(open)).invoiceId, 'a job the rule does not match is drafted');
     await deleteRule(handle.db, lab.id, rule.id);
+  });
+
+  test('a shipping rule offers Add, or Skip with a reason; the rule lists each exception', async () => {
+    await createPriceItem(handle.db, lab.id, { code: 'S/H', name: 'Shipping', unitAmountCents: 1500 });
+    const rule = await createRule(handle.db, lab.id, {
+      name: 'Shipping', conditions: [{ field: 'line_item', test: 'has_not', value: 'S/H' }],
+      action: { kind: 'pending', note: 'Add shipping, or skip with a reason.', addItem: 'S/H' },
+    });
+    assert.equal(rule.action.addItem, 'S/H');
+    const draftOf = async () => {
+      const row = await observeJob(handle.db, lab.id, {
+        sourceSystem: 'seazona', sourceJobRef: `job-${++counter}`, caseRef: `CASE-${counter}`, contactId: practice.id, practitioner: 'Dr Ann Lee',
+        sourceStatus: 'Shipped', jobDate: '2026-10-15', lines: [{ itemCode: 'CROWN', description: 'Crown' }], observedAt: NOW,
+      });
+      await setReady(handle.db, lab.id, row.id, { actor: 'person:test' });
+      await autoDraftJobs(handle.db, lab.id, { now: NOW });
+      return (await handle.db.select().from(billingObligations).where(eq(billingObligations.id, row.id)))[0];
+    };
+    const ruleProblem = async (invoiceId) => ((await invoiceViews(handle.db, lab.id)).problems.get(invoiceId) ?? []).find((p) => p.rule === rule.id);
+
+    // Add: the draft gets one S/H line at the price list's price, and the rule is satisfied.
+    const first = await draftOf();
+    assert.equal((await ruleProblem(first.invoiceId)).addItem, 'S/H');
+    const added = await addRuleItem(handle.db, lab.id, first.invoiceId, rule.id);
+    assert.equal(added.totalCents - 20000 - 2000, 1500 + 150, 'crown plus shipping, each with GST');
+    await addRuleItem(handle.db, lab.id, first.invoiceId, rule.id);
+    assert.equal((await getInvoice(handle.db, lab.id, first.invoiceId)).lines.length, 2, 'a second press adds nothing');
+    assert.equal(await ruleProblem(first.invoiceId), undefined);
+
+    // Skip: an exception with a reason; the rule leaves that job alone and lists it.
+    const second = await draftOf();
+    await assert.rejects(exceptDraft(handle.db, lab.id, second.invoiceId, rule.id, { reason: ' ', actor: 'person:test' }), /reason/);
+    await exceptDraft(handle.db, lab.id, second.invoiceId, rule.id, { reason: 'Picked up by the clinic', actor: 'person:test' });
+    assert.equal(await ruleProblem(second.invoiceId), undefined);
+    const listed = await listRuleExceptions(handle.db, lab.id, rule.id);
+    assert.deepEqual(listed.map((e) => [e.obligationId, e.reason]), [[second.id, 'Picked up by the clinic']]);
+    assert.equal((await listRules(handle.db, lab.id)).find((r) => r.id === rule.id).exceptions, 1);
+    // The job board says what the work system still lacks: the added S/H is
+    // on Flow's invoice only; the excepted job needs nothing.
+    const needs = async (job) => (await describeObligations(handle.db, lab.id, [{ obligation: job, view: 'pending', reasons: [] }]))[0].sourceNeeds;
+    assert.deepEqual((await needs(first)).map((n) => n.item), ['S/H']);
+    assert.deepEqual(await needs(second), []);
+    // A job can be excepted before it has a draft; another lab's job cannot.
+    const third = await observeJob(handle.db, lab.id, {
+      sourceSystem: 'seazona', sourceJobRef: `job-${++counter}`, caseRef: `CASE-${counter}`, contactId: practice.id,
+      sourceStatus: 'Shipped', jobDate: '2026-10-15', lines: [{ itemCode: 'CROWN', description: 'Crown' }], observedAt: NOW,
+    });
+    assert.deepEqual((await needs(third)).map((n) => n.item), ['S/H']);
+    await exceptJob(handle.db, lab.id, third.id, rule.id, { reason: 'Picked up', actor: 'person:test' });
+    assert.deepEqual(await needs(third), []);
+    const otherLab = await createOrganisation(handle.db, { name: 'Other Lab' });
+    await assert.rejects(exceptJob(handle.db, otherLab.id, third.id, rule.id, { reason: 'x', actor: 'person:test' }), /job/);
+    assert.equal((await listRules(handle.db, lab.id)).find((r) => r.id === rule.id).exceptions, 2);
+    // Taken back, the rule applies again.
+    await removeRuleException(handle.db, lab.id, rule.id, listed[0].id);
+    assert.ok(await ruleProblem(second.invoiceId));
+    await deleteRule(handle.db, lab.id, rule.id);
+  });
+
+  test('a customer rule can leave out a list of customers', () => {
+    const rule = readRule({
+      name: 'Shipping', conditions: [{ field: 'customer', test: 'is_not_one_of', value: ['branch-a', 'branch-b'] }],
+      action: { kind: 'pending', note: 'Add shipping.', addItem: 'S/H' },
+    });
+    const pending = (contactId) => rulePending([{ ...rule, id: 'r1', enabled: true, trigger: 'job_ready' }], { contactId, lines: [] }, { customer: {} });
+    assert.equal(pending('practice').length, 1);
+    assert.equal(pending('branch-b').length, 0);
   });
 });

@@ -715,6 +715,23 @@ export const invoiceRules = pgTable('invoice_rules', {
   check('invoice_rules_icon_valid', sql`${t.icon} is null or (length(${t.icon}) between 1 and 64 and ${t.icon} !~ '[^a-z0-9-]')`),
 ]);
 
+// A person's exception to one invoice rule for one job (docs/INVOICE_RULES.md,
+// "Exceptions"): the rule matched, and a person said this job is fine as it
+// is, with a reason. The rule then leaves that job alone, and its card counts
+// and lists each exception, so none is hidden.
+export const invoiceRuleExceptions = pgTable('invoice_rule_exceptions', {
+  id: id(),
+  organisationId: organisationId().references(() => organisations.id),
+  ruleId: uuid('rule_id').notNull().references(() => invoiceRules.id, { onDelete: 'cascade' }),
+  obligationId: uuid('obligation_id').notNull().references(() => billingObligations.id),
+  reason: text('reason').notNull(),
+  actor: text('actor').notNull(),
+  createdAt: createdAt(),
+}, (t) => [
+  uniqueIndex('invoice_rule_exceptions_rule_job').on(t.ruleId, t.obligationId),
+  check('invoice_rule_exceptions_reason_valid', sql`length(${t.reason}) between 1 and 200`),
+]);
+
 // Automations (server/core/automations.js): Flow's routines, each on or off,
 // with its own settings. The routines are defined in code; a row holds an
 // organisation's choice. No row means the routine's default.

@@ -385,7 +385,12 @@ export async function renderJobs(main, ui) {
       h('span', { class: 'fx-job__space' }),
       problemMark(job),
       h('span', { class: 'fx-job__amount' }, job.totalCents == null ? '—' : formatCents(job.totalCents))),
-    job.pendingMove ? h('span', { class: 'fx-job__wait', title: `Set the status to ${job.pendingMove.to} in ${system}. Flow then reads the change.` }, `Waiting for ${system}`) : null);
+    job.pendingMove ? h('span', { class: 'fx-job__wait', title: `Set the status to ${job.pendingMove.to} in ${system}. Flow then reads the change.` }, `Waiting for ${system}`) : null,
+    // A rule asks for an item the job lacks in the work system (job-board.js).
+    // Fix it there: the lab prints from it too.
+    ...(job.obligation?.sourceNeeds ?? []).map((need) => h('span', {
+      class: 'fx-job__wait fx-job__wait--warn', title: `${need.note} Add it in ${system}.`,
+    }, `${system} needs ${need.item}`)));
     cardJobs.set(card, job);
     return card;
   }

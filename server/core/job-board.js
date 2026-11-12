@@ -1,6 +1,6 @@
 import { and, eq, inArray, isNull } from 'drizzle-orm';
 import { contacts, invoices, priceItems, reviewItems } from '../db/schema.js';
-import { listRules, ruleWait } from './invoice-rules.js';
+import { listRules, ruleExceptionsFor, rulePending, ruleWait } from './invoice-rules.js';
 import { customerBillingByContact, effectiveSettings, readInvoicingSettings, ruleBlockers } from './invoicing-rules.js';
 import { REVIEW_CHANGED, listObligations } from './ledger.js';
 import { isHistoryHeld } from './history.js';
@@ -47,6 +47,17 @@ export async function describeObligations(db, organisationId, listed, { accounti
   const settings = await readInvoicingSettings(db, organisationId);
   const customers = await customerBillingByContact(db, organisationId, contactIds);
   const rules = await listRules(db, organisationId);
+  // A rule with an item to add also checks the job as the work system has it,
+  // from the first read: the lab prints from the work system, so it must be
+  // right there, not only on Flow's invoice. The card says what to add.
+  const addRules = rules.filter((r) => r.action.kind === 'pending' && r.action.addItem);
+  const excepted = addRules.length ? await ruleExceptionsFor(db, organisationId, listed.map((e) => e.obligation.id)) : new Map();
+  const sourceNeeds = (o) => {
+    if (!addRules.length) return [];
+    const customer = { ...effectiveSettings(settings, customers.get(o.contactId)), name: nameOf.get(o.contactId) ?? null };
+    return rulePending(addRules, { ...o, ruleExceptions: excepted.get(o.id) ?? [] }, { customer })
+      .map((p) => ({ rule: p.rule, item: p.addItem, note: p.message, short: p.short }));
+  };
   const ready = new Set(views?.ready ?? []);
   const toCheck = new Set(views?.toCheck ?? []);
   const invoiceView = (id) => (!id || !views ? null
@@ -74,6 +85,7 @@ export async function describeObligations(db, organisationId, listed, { accounti
     invoiceProblems: (o.invoiceId && views?.problems.get(o.invoiceId)) || [],
     view,
     reasons,
+    sourceNeeds: sourceNeeds(o),
     ...waiting(o, view),
   }));
 }

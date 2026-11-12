@@ -77,6 +77,30 @@ so `Dr Ann Lee - 21764` is a good Reference. "Has a number beside words"
 reads each part between ` - ` and finds a number only next to words, as in
 `Coral Smith (OIQ-9902)`.
 
+### An item to add, and exceptions
+
+A pending rule can name a price item to add: `{ kind: 'pending', note,
+addItem: 'S/H' }`. Use it for a rule such as "every job has shipping": the
+condition is `line_item` `has_not` `S/H`.
+
+- On the invoice page the problem has two buttons. **Add S/H** puts one line
+  of that item on the draft, at the price list's price. A second press adds
+  nothing. The rule then matches no more.
+- **Skip** asks for a reason (1 to 200 characters) and records an exception:
+  this rule leaves this job alone. The rule's summary counts its exceptions,
+  and `GET /api/invoicing/rules/:id/exceptions` lists them with the reason,
+  who and when. Delete an exception and the rule applies again.
+- A job with no draft yet can have its exception too, from the job's
+  "needs" line: the person knows the job needs no shipping.
+- The work system must have the item too, because the lab prints from it.
+  Flow cannot write lines there. So a job card shows a yellow
+  "<system> needs S/H" while the job in the work system lacks it and has no
+  exception. The invoice page shows "Not in <system>." with the lines that
+  are on Flow's invoice only, and a link to the job there.
+
+Exceptions are in `invoice_rule_exceptions` (migration
+`0027_high_doctor_strange.sql`, add only), one for each rule and job.
+
 ## Non-chargeable rules
 
 Non-chargeable work is work the lab does but never bills, for example work
@@ -100,10 +124,10 @@ itself. Turn the rule off, and its drafts are checked as usual again.
 | --- | --- | --- | --- |
 | `job_age_days` | number | Days from the job date to now | more than, at most, is, is not, is empty |
 | `job_total` | money (dollars) | The job's total | more than, at most, is, is not |
-| `job_status` | menu of the work system's statuses | The job's status there | is, is not, is one of, is empty |
+| `job_status` | menu of the work system's statuses | The job's status there | is, is not, is one of, is not one of, is empty |
 | `practitioner` | text, with a menu of the practitioners on jobs | The job's practitioner, else the customer's default | is, is not, is one of, is not one of, contains, does not contain, starts with, does not start with, has a number, has a number beside words, is one word, is empty, is not empty |
 | `reference` | text | The draft's Reference. Pending rules only | the same tests as `practitioner` |
-| `customer` | menu of customers | The job's customer. Contains and does not contain read the customer's name | is, is not, is one of, contains, does not contain, is empty |
+| `customer` | menu of customers | The job's customer. Contains and does not contain read the customer's name | is, is not, is one of, is not one of, contains, does not contain, is empty |
 | `customer_billable` | yes or no | The customer's `billable` setting | is |
 | `line_item` | menu of price items | The item codes on the job's lines | has, does not have |
 | `line_share` | price item and percent | That item's lines as a share of the other lines, to within 1 cent | is, is not |
@@ -132,6 +156,11 @@ deleted starter rule does not come back.
 | `POST /api/invoicing/rules` | owner, admin | A new rule `{ name, icon, enabled, conditions, action }`. A pending rule's action is `{ kind: 'pending', note }` |
 | `PUT /api/invoicing/rules/:id` | owner, admin | Change some of a rule; the result must be a whole valid rule |
 | `DELETE /api/invoicing/rules/:id` | owner, admin | Delete a rule |
+| `GET /api/invoicing/rules/:id/exceptions` | everyone | The rule's exceptions |
+| `DELETE /api/invoicing/rules/:id/exceptions/:exceptionId` | owner, admin | Take an exception back |
+| `POST /api/invoicing/invoices/:id/rules/:ruleId/add-item` | owner, admin | Add the rule's item to the draft |
+| `POST /api/invoicing/invoices/:id/rules/:ruleId/exception` | owner, admin | `{ reason }`: skip the rule for this invoice's job |
+| `POST /api/invoicing/jobs/:id/rules/:ruleId/exception` | owner, admin | `{ reason }`: skip the rule for a job with no draft yet |
 
 An organisation has 100 rules at most. The table is `invoice_rules`
 (migration `0011_invoice_rules.sql`, add only; `icon` from `0024_rule_icon.sql`).

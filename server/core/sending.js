@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
-import { billingObligations, contacts, invoiceLines, invoices, people } from '../db/schema.js';
+import { billingObligations, contacts, invoiceLines, invoices, people, priceItems } from '../db/schema.js';
 import { FlowError } from './errors.js';
-import { listRules, ruleNonChargeable, rulePending, ruleSkip } from './invoice-rules.js';
+import { listRules, ruleExceptionsFor, ruleNonChargeable, rulePending, ruleSkip } from './invoice-rules.js';
 import { customerBillingByContact, effectiveSettings, readInvoicingSettings } from './invoicing-rules.js';
 import { issueInvoice } from './invoices.js';
 import { CHANGED_REASON, diffJobLines, sourceBillingProblems, STATUS_BACK_REASON } from './ledger.js';
@@ -111,9 +111,18 @@ async function checkDrafts(db, organisationId, drafts, accounting) {
   if (rules.length && jobs.length) {
     const settings = await readInvoicingSettings(db, organisationId);
     const customers = await customerBillingByContact(db, organisationId, jobs.map((j) => j.obligation.contactId));
+    const exceptions = await ruleExceptionsFor(db, organisationId, jobs.map((j) => j.obligation.id));
+    const itemRows = await db.select({ invoiceId: invoiceLines.invoiceId, code: priceItems.code }).from(invoiceLines)
+      .innerJoin(priceItems, eq(priceItems.id, invoiceLines.priceItemId))
+      .where(inArray(invoiceLines.invoiceId, jobs.map((j) => j.obligation.invoiceId)));
+    const itemsOf = Map.groupBy(itemRows, (r) => r.invoiceId);
     for (const { obligation, reference, customerName } of jobs) {
       const customer = { ...effectiveSettings(settings, customers.get(obligation.contactId)), name: customerName ?? null };
-      const job = { ...obligation, reference };
+      const job = {
+        ...obligation, reference,
+        ruleExceptions: exceptions.get(obligation.id) ?? [],
+        draftItems: (itemsOf.get(obligation.invoiceId) ?? []).map((r) => r.code),
+      };
       const found = [...ruleNonChargeable(rules, job, { customer }), ...rulePending(rules, job, { customer }), ...ruleSkip(rules, job, { customer })];
       if (found.length) problems.set(obligation.invoiceId, [...(problems.get(obligation.invoiceId) ?? []), ...found]);
     }

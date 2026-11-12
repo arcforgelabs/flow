@@ -940,6 +940,20 @@ const LINE_CARD_READ = { areas: ['desc desc amount', 'qty price gst'], columns: 
 const brief = (text) => String(text ?? '').match(/^.*?[.!?](?=\s|$)/s)?.[0] ?? String(text ?? '');
 
 // A draft, or a new invoice before its first save.
+// Lines this invoice has that its job in the work system does not (the
+// invoice detail's sourceGap). Flow cannot add them there, so a yellow line
+// says what to add and links to the job.
+function sourceGapNotice(ui, invoice) {
+  const gap = invoice?.sourceGap ?? [];
+  if (!gap.length || !invoice.job) return null;
+  const system = invoice.job.systemName ?? 'the work system';
+  const what = gap.map((l) => `${l.description} (${formatCents(l.unitAmountCents * (l.quantity ?? 1))})`).join(', ');
+  const line = ui.notice(`This invoice has ${what}; the job in ${system} does not. Add it there so both agree.`, 'warn', `Not in ${system}.`);
+  if (!invoice.job.link?.url) return line;
+  return ui.h('div', { class: 'fx-offer' }, line,
+    ui.h('a', { class: 'fx-btn fx-btn--sm fx-btn--ghost', href: invoice.job.link.url, target: '_blank', rel: 'noopener' }, `Open in ${system}`));
+}
+
 function draftView(invoice, ui, context, redraw) {
   const { h, flow, toast, go, notice, fieldError } = ui;
   const isNew = !invoice;
@@ -1274,11 +1288,33 @@ function draftView(invoice, ui, context, redraw) {
     : [];
   // Every matching rule links to its own conditions and existing controls,
   // including custom rules. The target enforces read-only roles itself.
+  // A rule with an item to add offers it in one press, and Skip records an
+  // exception with a reason (POST .../rules/:rule/add-item and /exception).
+  const ruleFix = async (path, payload, done) => {
+    try {
+      const body = await flow(`/api/invoicing/invoices/${invoice.id}/rules/${path}`, { method: 'POST', body: JSON.stringify(payload ?? {}) });
+      ui.toast(done, 'success');
+      redraw(body.invoice);
+    } catch (error) {
+      ui.toast(error.message, 'danger');
+    }
+  };
+  const skipRule = async (p) => {
+    const reason = h('textarea', { class: 'fx-input', rows: 2, maxlength: 200, 'aria-label': 'Reason' });
+    const ok = await ui.dialog({ title: `Skip ${p.short ?? 'this rule'} for this job?`, body: h('div', {}, h('p', {}, 'The rule lists this job as an exception, with your reason.'), reason), confirm: 'Skip' });
+    if (!ok) return;
+    if (!reason.value.trim()) { ui.toast('Give a reason.', 'danger'); return; }
+    await ruleFix(`${p.rule}/exception`, { reason: reason.value.trim() }, 'Skipped. The rule shows the exception.');
+  };
   const ruleActions = [...new Map(problemList.filter(hasRuleReview).map((p) => [p.rule, p])).values()]
-    .map((p) => h('a', { class: 'fx-btn fx-btn--sm',
-      href: `/invoicing-settings/invoices?rule=${encodeURIComponent(p.rule)}`,
-      onclick: (event) => go(event),
-    }, `Review ${p.short ?? 'rule'}`));
+    .flatMap((p) => [
+      p.addItem && context.canIssue ? h('button', { class: 'fx-btn fx-btn--sm fx-btn--primary', type: 'button', onclick: () => ruleFix(`${p.rule}/add-item`, null, `${p.addItem} added.`) }, `Add ${p.addItem}`) : null,
+      p.addItem && context.canIssue ? h('button', { class: 'fx-btn fx-btn--sm fx-btn--ghost', type: 'button', onclick: () => skipRule(p) }, 'Skip') : null,
+      h('a', { class: 'fx-btn fx-btn--sm',
+        href: `/invoicing-settings/invoices?rule=${encodeURIComponent(p.rule)}`,
+        onclick: (event) => go(event),
+      }, `Review ${p.short ?? 'rule'}`),
+    ].filter(Boolean));
   // Non-change holds use the Jobs workflow's existing instructions, not a
   // comparison that does not exist. Reading them never releases the hold.
   const holdSteps = fixes({ view: 'review_required', holdState: 'review',
@@ -1330,6 +1366,7 @@ function draftView(invoice, ui, context, redraw) {
     draftNote(to, invoice) ? ui.notice(draftNote(to, invoice), 'warn') : null,
     nonChargeable ? ui.notice(brief(invoice.nonChargeable?.[0]?.message ?? 'Non-chargeable.')) : null,
     ...problems,
+    sourceGapNotice(ui, invoice),
     h('div', { class: 'fx-invoice__grid' },
       h('div', { class: 'fx-invoice__main' },
         h('section', { class: 'fx-card fx-invoice__head' },
@@ -1538,6 +1575,7 @@ function issuedView(invoice, ui, context, redraw) {
     chrome.pager,
     header,
     problemRow,
+    sourceGapNotice(ui, invoice),
     h('div', { class: 'fx-invoice__grid' },
       h('div', { class: 'fx-invoice__main' },
         h('section', { class: 'fx-card fx-doc' },
