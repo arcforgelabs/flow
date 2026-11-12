@@ -41,6 +41,7 @@ setup() {
   fi
   chmod 600 "$KEY_FILE"
   echo "FLOW_AGENT_KEY_SHA256=$(tr -d '\n' < "$KEY_FILE" | sha256sum | cut -d' ' -f1)"
+  echo "(For a second assistant, the host sets this digest as FLOW_AGENT_KEY_SHA256_2.)"
 }
 
 call() {

@@ -32,7 +32,8 @@ paste a credential, in full or in part.
   (`docs/AGENT_ACCESS.md`). The reserved `/api/flow/v1` stub still refuses all
   requests. It does not implement connector keys.
 - **AI assistant key.** Also off by default. When the host sets
-  `FLOW_AGENT_KEY_SHA256` and `FLOW_AGENT_EMAIL`, one bearer key acts as one
+  `FLOW_AGENT_KEY_SHA256` and `FLOW_AGENT_EMAIL` (and at most one more pair,
+  `FLOW_AGENT_KEY_SHA256_2` and `FLOW_AGENT_EMAIL_2`), each bearer key acts as its own
   Flow person, inside that person's role, on `/api/me`, `/api/invoicing/…`,
   `/api/xero/…` (never connect or disconnect), `GET /api/seazona/api/…` and the Seazona history import `/api/seazona/history…` only (`docs/AGENT_ACCESS.md`, "AI assistant key").
   With the admin role that includes invoice writes: rules, void, delete draft
