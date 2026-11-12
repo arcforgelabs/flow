@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { sql } from 'drizzle-orm';
-import { getContact } from '../../core/contacts.js';
+import { billedContact, getContact } from '../../core/contacts.js';
 import { flowIdFor, linkRecord, supersedeLink } from '../../core/links.js';
 import { mapContact, matchContactFor, normaliseName, upsertContact } from './catalogue.js';
 import { xeroError } from './client.js';
@@ -79,8 +79,20 @@ export async function matchCustomer(db, runtime, { organisationId, contactId }) 
   const connected = Boolean(connection && connection.mode === runtime.settings.mode);
   if (!connected) return { state: 'off', offerCreate: false, offerLink: false, xeroContactId: null, name: null, differs: [] };
   const contact = await getContact(db, organisationId, contactId);
+  // Bill to: a customer with a payer is billed as the payer. Link and Create
+  // are for the payer's own page.
+  const payer = await billedContact(db, organisationId, contactId);
+  if (payer.id !== contactId) {
+    const billed = await matchContactFor(db, organisationId, { contactId: payer.id, name: payer.name });
+    return {
+      state: billed.state, offerCreate: false, offerLink: false, differs: [],
+      xeroContactId: billed.contact?.xeroContactId ?? null, name: billed.contact?.name ?? null,
+      billTo: { id: payer.id, name: payer.name },
+    };
+  }
   const match = await matchContactFor(db, organisationId, { contactId, name: contact.name });
   return {
+    billTo: null,
     // Fields both sides changed (Two-way edits, contact-sync.js): alert only.
     differs: match.state === 'matched' ? (await contactClashes(db, organisationId, contactId)).map(({ field, flow, xero }) => ({ field, flow, xero })) : [],
     state: match.state,

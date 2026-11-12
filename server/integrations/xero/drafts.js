@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { isCallsStopped } from '../call-guard.js';
+import { billedContact } from '../../core/contacts.js';
 import { getInvoice, listInvoiceVersions } from '../../core/invoices.js';
 import { sendModeFor } from '../../core/invoicing-rules.js';
 import { contacts as flowContacts, invoices as flowInvoices, priceItems } from '../../db/schema.js';
@@ -325,15 +326,29 @@ export async function previewDrafts(db, runtime, organisationId, invoiceIds) {
   return { syncedAt, warnings, invoices: results };
 }
 
+// The Xero contact an invoice goes to: its customer's, or its payer's when the
+// customer bills to another customer (docs/CONTACTS.md, "Bill to"). A missing
+// payer is linked or made on the payer's own contact page, not here.
+async function accountingContactFor(db, organisationId, invoice, document) {
+  const payer = await billedContact(db, organisationId, invoice.contactId);
+  const own = payer.id === invoice.contactId;
+  const name = own ? document.contact.name : payer.name;
+  return { match: await matchContactFor(db, organisationId, { contactId: payer.id, name }), name, own };
+}
+
+const payerMissing = (name) => problem('xero_contact_missing',
+  `This client is billed to ${name}, and no Xero contact is named "${name}". Link ${name} to its Xero client on its contact page, then check again.`,
+  { short: 'Payer not in Xero' });
+
 async function previewOne(db, runtime, organisationId, invoiceId) {
   const { invoice, version, document } = await documentFor(db, organisationId, invoiceId);
   const problems = [];
   if (invoice.status === 'void') problems.push(problem('invoice_void', 'This invoice is void. Flow does not send it to Xero.'));
   if (invoice.status === 'draft') problems.push(problem('invoice_not_issued', 'This invoice is a draft. Issue it, then send it to Xero.'));
-  const match = await matchContactFor(db, organisationId, { contactId: invoice.contactId, name: document.contact.name });
+  const { match, name, own } = await accountingContactFor(db, organisationId, invoice, document);
   const offerCreate = match.state === 'missing' && runtime.settings.createContacts && writesAllowed(runtime.settings);
-  if (match.state === 'missing') problems.push(missingContact(document.contact.name, { offerCreate }));
-  if (match.state === 'ambiguous') problems.push(twiceContact(document.contact.name));
+  if (match.state === 'missing') problems.push(own ? missingContact(name, { offerCreate }) : payerMissing(name));
+  if (match.state === 'ambiguous') problems.push(own ? twiceContact(name) : { ...twiceContact(name), offerLink: false });
   const items = await xeroItemsForCodes(db, organisationId, document.lines.map((l) => l.itemCode));
   const sendMode = await sendModeFor(db, organisationId, invoice.contactId);
   const { draft, problems: lineProblems } = buildDraft(document, { settings: runtime.settings, contact: match.contact, items, sendMode });
@@ -513,10 +528,10 @@ async function pushOne(db, runtime, client, organisationId, invoiceId, { pushedB
     }
   }
 
-  const match = await matchContactFor(db, organisationId, { contactId: invoice.contactId, name: document.contact.name });
+  const { match, name, own } = await accountingContactFor(db, organisationId, invoice, document);
   if (match.state !== 'matched') {
     const offerCreate = match.state === 'missing' && runtime.settings.createContacts && writesAllowed(runtime.settings);
-    const found = match.state === 'missing' ? missingContact(document.contact.name, { offerCreate }) : twiceContact(document.contact.name);
+    const found = match.state === 'missing' ? (own ? missingContact(name, { offerCreate }) : payerMissing(name)) : { ...twiceContact(name), offerLink: own };
     throw xeroError(found.code, found.message, { status: 409, short: found.short });
   }
   const items = await xeroItemsForCodes(db, organisationId, document.lines.map((l) => l.itemCode));

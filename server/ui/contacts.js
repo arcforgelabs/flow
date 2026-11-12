@@ -191,6 +191,7 @@ async function renderContact(main, ui, id) {
   }, 'Save');
 
   const xero = h('div');
+  const billTo = h('div');
   // A contact that is not a client (docs/CONTACTS.md, "Hidden contacts").
   const hiddenNote = h('div');
   const drawHidden = () => {
@@ -241,9 +242,67 @@ async function renderContact(main, ui, id) {
           h('span', { class: 'fx-label' }, 'Practitioners'),
           practitioners),
         h('label', { class: 'fx-check' }, active, 'Active'))),
+    billTo,
     xero,
   );
-  void loadXero(ui, contact, canEdit, xero);
+  const reloadXero = () => loadXero(ui, contact, canEdit, xero);
+  if (contact.kind === 'customer') void loadBillTo(ui, contact, canEdit, billTo, reloadXero);
+  void reloadXero();
+}
+
+// Bill to (docs/CONTACTS.md): another customer, the payer, whose accounting
+// contact this client's work is billed to. Many clients may name one payer.
+async function loadBillTo(ui, contact, canEdit, host, changed) {
+  const { h, flow, toast, notice } = ui;
+  let payer = null;
+  const save = async (billToContactId, button) => {
+    if (button) button.disabled = true;
+    try {
+      await flow(`/api/invoicing/contacts/${contact.id}/billing`, { method: 'PUT', body: JSON.stringify({ billToContactId }) });
+      toast(billToContactId ? 'Bill to saved.' : 'Bill to cleared.', 'success');
+      await load();
+      await changed();
+    } catch (error) {
+      toast(error.message, 'danger');
+      if (button) button.disabled = false;
+    }
+  };
+  const pick = async (event) => {
+    const button = event.currentTarget;
+    const picked = await ui.pickOne({
+      title: `Bill ${contact.name} to`,
+      intro: 'Pick the customer that pays for this client. Its Xero contact gets the invoices.',
+      label: 'Customers',
+      find: 'Find a customer',
+      remote: true,
+      load: async (q) => (await flow(`/api/invoicing/contacts?${new URLSearchParams({ q, limit: '50' })}`)).contacts
+        .filter((row) => row.id !== contact.id),
+      item: (row) => ({ value: row.id, title: row.name, meta: row.email ?? null }),
+      empty: 'No customer has that name.',
+      confirm: 'Save',
+    });
+    if (picked) await save(picked.id, button);
+  };
+  const draw = () => {
+    const change = canEdit ? h('button', { class: 'fx-btn', type: 'button', title: 'Pick the customer that pays', onclick: pick }, payer ? 'Change' : 'Set') : null;
+    const clear = canEdit && payer ? h('button', {
+      class: 'fx-btn fx-btn--ghost', type: 'button', title: 'Bill this client itself',
+      onclick: (event) => save(null, event.currentTarget),
+    }, 'Clear') : null;
+    host.replaceChildren(h('section', { class: 'fx-card fx-offer' },
+      notice(payer ? `Billed to ${payer.name}.` : 'Billed to itself.', 'info', 'Bill to.'),
+      change, clear));
+  };
+  async function load() {
+    try {
+      const { billing } = await flow(`/api/invoicing/contacts/${contact.id}/billing`);
+      payer = billing.billToContactId ? (await flow(`/api/invoicing/contacts/${billing.billToContactId}`)).contact : null;
+      draw();
+    } catch (error) {
+      host.replaceChildren(notice(error.message, 'danger'));
+    }
+  }
+  await load();
 }
 
 async function loadXero(ui, contact, canEdit, host) {
@@ -268,7 +327,11 @@ async function loadXero(ui, contact, canEdit, host) {
     done: (outcome) => host.replaceChildren(h('section', { class: 'fx-card' },
       notice(outcome === 'linked' ? `${contact.name} is linked to Xero.` : `${contact.name} is in Xero.`, 'success'))),
   }) : [];
-  const text = match.state === 'matched'
+  const text = match.billTo
+    ? (match.state === 'matched'
+      ? `Billed to ${match.billTo.name}, in Xero as ${match.name}.`
+      : `Billed to ${match.billTo.name}, which is not linked to Xero. Link it on its contact page.`)
+    : match.state === 'matched'
     ? `In Xero${match.name ? ` as ${match.name}` : ''}.`
     : match.state === 'ambiguous'
       ? `More than one Xero contact is named "${contact.name}".`

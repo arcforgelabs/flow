@@ -73,8 +73,8 @@ flowchart LR
   (`hidden` on `PATCH /api/invoicing/contacts/:id`).
 - Each pass shows a hidden contact that became a client: the accounting
   system now marks it a customer, a work system has it, or Flow has a job,
-  an invoice or the customer's own invoicing settings for it. This also
-  undoes a person's Hide of a contact that is a client.
+  an invoice, the customer's own invoicing settings, or a client that bills
+  to it. This also undoes a person's Hide of a contact that is a client.
 - A contact a person made in Flow, one that was in Flow before its
   accounting link, and one whose accounting contact is archived there, is
   never hidden by the rule.
@@ -83,6 +83,41 @@ flowchart LR
 
 Code: `hideNonClients` in `server/core/pipeline.js`. The accounting system's
 mark is `customer` on `listCustomers` (`server/integrations/xero/lookup.js`).
+
+## Bill to
+
+Some clients do not pay their own bills: a group pays for each of its
+clinics, under one accounting contact. **Bill to** on a client's page names
+the payer, another Flow customer. The client keeps its own jobs and Flow
+invoices; only the accounting side looks under the payer.
+
+```mermaid
+flowchart LR
+  a[Clinic A] -- Bill to --> p[Payer]
+  b[Clinic B] -- Bill to --> p
+  p --> x[The payer's accounting contact]
+  x --> m[Matcher, Import page, Send, copy check]
+```
+
+- The matcher looks for a client's invoices under the payer's accounting
+  contact. The jobs of all the payer's clients, and the payer's own, are one
+  pool, so two jobs at one price share the invoices by date.
+- The Import page fits a Xero invoice of the payer to the jobs and Flow
+  invoices of each client. Make Flow invoice keeps the Flow invoice with the
+  job's client.
+- Send gives the payer's accounting contact. When the payer has none, Send
+  stops with "Payer not in Xero"; link the payer on its own page.
+- An invoice under the client's own accounting contact, from before Bill
+  to, still fits the client's jobs.
+- Setting or clearing Bill to sends the client's unbilled jobs back to the
+  matcher on its next pass.
+- One level only: a payer bills to itself, and a client that others bill to
+  names no payer. The payer must be a customer, and a customer in a Bill to
+  cannot become a supplier until Bill to is cleared.
+- `billToContactId` on `PUT /api/invoicing/contacts/:id/billing`; null clears
+  it. A payer is never hidden (Hidden contacts, above).
+
+Code: `payersOf`, `billedBy` and `billedContact` in `server/core/contacts.js`.
 
 ## Two-way edits
 

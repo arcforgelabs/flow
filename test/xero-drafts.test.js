@@ -208,6 +208,31 @@ describe('Xero drafts from issued invoices', { skip: skipWithoutDatabase }, () =
     assert.equal(replay.calls.length, 0);
   });
 
+  test('a client billed to another customer previews under the payer\'s Xero contact', async () => {
+    const org = lab.organisation.id;
+    const member = await createContact(handle.db, org, { kind: 'customer', name: 'Member Clinic' });
+    await saveCustomerBilling(handle.db, org, member.id, { billToContactId: practice.id });
+    const lost = await createContact(handle.db, org, { kind: 'customer', name: 'Lost Payer' });
+    const orphan = await createContact(handle.db, org, { kind: 'customer', name: 'Orphan Clinic' });
+    await saveCustomerBilling(handle.db, org, orphan.id, { billToContactId: lost.id });
+    const ids = [];
+    for (const contactId of [member.id, orphan.id]) {
+      const draft = await createDraftInvoice(handle.db, org, { contactId, reference: `CASE-${++counter}`, lines: [{ priceItemId: crown.id }] });
+      ids.push((await issueInvoice(handle.db, org, draft.id, { issuedBy: 'user:test', issueDate: '2026-10-18' })).id);
+    }
+    const res = await request(app, '/api/xero/invoices/preview', {
+      token: lab.staffToken, method: 'POST', body: { organisationId: org, invoiceIds: ids },
+    });
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    const [billed, missing] = res.body.invoices;
+    assert.equal(billed.state, 'ready');
+    assert.equal(billed.contact.xeroContactId, XC);
+    assert.equal(missing.state, 'blocked');
+    assert.deepEqual(missing.problems.map((p) => [p.code, p.short]), [['xero_contact_missing', 'Payer not in Xero']]);
+    assert.match(missing.problems[0].message, /billed to Lost Payer/);
+    for (const c of [member, orphan]) await saveCustomerBilling(handle.db, org, c.id, { billToContactId: null });
+  });
+
   test('staff cannot send invoices to Xero', async () => {
     const invoice = await issued();
     assert.equal((await push([invoice.id], {}, lab.staffToken)).status, 403);

@@ -682,6 +682,10 @@ export const customerBillingSettings = pgTable('customer_billing_settings', {
   autoDraft: boolean('auto_draft'),
   sendMode: text('send_mode'),
   paymentTermsDays: integer('payment_terms_days'),
+  // The payer: another Flow customer whose accounting contact this
+  // customer's work is billed to (a parent organisation). Many customers may
+  // name one payer. Null bills the customer itself (docs/CONTACTS.md, "Bill to").
+  billToContactId: uuid('bill_to_contact_id'),
   updatedBy: uuid('updated_by').references(() => people.id, { onDelete: 'set null' }),
   updatedAt: updatedAt(),
 }, (t) => [
@@ -691,6 +695,13 @@ export const customerBillingSettings = pgTable('customer_billing_settings', {
     columns: [t.organisationId, t.contactId],
     foreignColumns: [contacts.organisationId, contacts.id],
   }),
+  foreignKey({
+    name: 'customer_billing_settings_bill_to_same_org',
+    columns: [t.organisationId, t.billToContactId],
+    foreignColumns: [contacts.organisationId, contacts.id],
+  }),
+  index('customer_billing_settings_bill_to').on(t.organisationId, t.billToContactId),
+  check('customer_billing_settings_bill_to_other', sql`${t.billToContactId} is null or ${t.billToContactId} <> ${t.contactId}`),
   check('customer_billing_settings_send_mode_valid', sql`${t.sendMode} is null or ${t.sendMode} in ('accounting_draft', 'approve_and_email')`),
   check('customer_billing_settings_terms_valid', sql`${t.paymentTermsDays} is null or ${t.paymentTermsDays} between 0 and 365`),
 ]);
