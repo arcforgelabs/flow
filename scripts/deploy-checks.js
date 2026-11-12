@@ -36,12 +36,16 @@ export function githubRepoSlug(url) {
 
 // Whether the check runs show every required check passed. Per name, the
 // newest GitHub Actions run counts (a re-run replaces the earlier result).
+// A skipped run (a pull request whose change skipped the lane) counts only
+// when the name has no run that was not skipped.
 export function evaluateChecks(checkRuns, required = REQUIRED_CHECKS) {
   const latest = new Map();
   for (const run of checkRuns ?? []) {
     if (run?.app?.id !== GITHUB_ACTIONS_APP_ID) continue;
     const seen = latest.get(run.name);
-    if (!seen || run.id > seen.id) latest.set(run.name, run);
+    const rank = (r) => [r.conclusion === "skipped" ? 0 : 1, r.id];
+    const [a, b] = [rank(run), seen && rank(seen)];
+    if (!seen || a[0] > b[0] || (a[0] === b[0] && a[1] > b[1])) latest.set(run.name, run);
   }
   const problems = [];
   for (const name of required) {

@@ -36,6 +36,11 @@ test("every required check must have completed with success", () => {
   assert.deepEqual(evaluateChecks(allPassed()), { passed: true, problems: [] });
   const skipped = allPassed().map((r) => (r.name === "test" ? { ...r, conclusion: "skipped" } : r));
   assert.deepEqual(evaluateChecks(skipped).problems, ["test: skipped"]);
+  // A later pull request run that skipped the lane does not hide a dispatch run that passed or failed.
+  const laterSkip = [...allPassed(), run(30, "test", "skipped")];
+  assert.deepEqual(evaluateChecks(laterSkip), { passed: true, problems: [] });
+  const failedThenSkip = [...allPassed().filter((r) => r.name !== "test"), run(31, "test", "failure"), run(32, "test", "skipped")];
+  assert.deepEqual(evaluateChecks(failedThenSkip).problems, ["test: failure"]);
   const queued = allPassed().map((r) => (r.name === "gitleaks" ? { ...r, status: "queued", conclusion: null } : r));
   assert.deepEqual(evaluateChecks(queued).problems, ["gitleaks: still queued"]);
   assert.deepEqual(evaluateChecks([]).problems, REQUIRED_CHECKS.map((name) => `${name}: no run on this commit`));

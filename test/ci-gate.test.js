@@ -63,7 +63,7 @@ function select(files, env = {}) {
     const out = execFileSync("python3", ["-I", SCOPE], {
       cwd: dir,
       encoding: "utf8",
-      env: { PATH: process.env.PATH, EVENT: "pull_request", BASE: base, HEAD: head, SCOPES: JSON.stringify(scopes()), ...env },
+      env: { PATH: process.env.PATH, EVENT: "pull_request", BASE: base, HEAD: head, BASE_REF: "main", DEFAULT_BRANCH: "main", SCOPES: JSON.stringify(scopes()), ...env },
     });
     return Object.fromEntries(out.trim().split("\n").map((l) => l.split("=")).map(([k, v]) => [k, v === "true"]));
   } finally {
@@ -93,4 +93,52 @@ test("CI itself, an empty diff and every run that is not a pull request select e
   assert.deepEqual(select([]), { app: true, check_docs: true });
   assert.deepEqual(select(["docs/XERO.md"], { EVENT: "push" }), { app: true, check_docs: true });
   assert.deepEqual(select(["docs/XERO.md"], { REF: "abc123" }), { app: true, check_docs: true });
+});
+
+test("a pull request to another branch runs every lane, so a later retarget to main cannot skip a lane", () => {
+  assert.deepEqual(select(["docs/XERO.md"], { BASE_REF: "feature-a" }), { app: true, check_docs: true });
+});
+
+test("npm test imports test/mobile files, so only the phone suite's saved images skip the app lanes", () => {
+  assert.deepEqual(select(["test/mobile/server.js"]), { app: true, check_docs: false });
+  assert.deepEqual(select(["test/mobile/screens.js"]), { app: true, check_docs: false });
+  assert.deepEqual(select(["test/mobile/__screenshots__/phone.spec.js/jobs-dark.png"]), { app: false, check_docs: false });
+});
+
+function lanesMap() {
+  return JSON.parse(CI.match(/LANES: '([^']+)'/)[1]);
+}
+
+test("the gate's lane map and preflight's outputs name every lane and scope", () => {
+  const keys = Object.keys(scopes()).map((l) => l.replace(/-/g, "_"));
+  assert.deepEqual(Object.keys(lanesMap()).sort(), gateNeeds().filter((j) => j !== "preflight").sort());
+  assert.deepEqual([...new Set(Object.values(lanesMap()))].sort(), keys.sort());
+  for (const key of keys) assert.match(CI, new RegExp(`\\n {6}${key}: \\$\\{\\{ steps\\.scope\\.outputs\\.${key} \\}\\}\\n`), key);
+});
+
+function gate(outputs, results, preflight = "success") {
+  const code = CI.match(/python3 -I -c '\n([\s\S]*?)\n {10}'\n/)[1].replace(/^ {10}/gm, "");
+  const needs = { preflight: { result: preflight, outputs } };
+  for (const [lane, result] of Object.entries(results)) needs[lane] = { result, outputs: {} };
+  try {
+    execFileSync("python3", ["-I", "-c", code], { env: { PATH: process.env.PATH, NEEDS: JSON.stringify(needs), LANES: JSON.stringify(lanesMap()) }, stdio: "pipe" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+test("the gate passes only when each selected lane passed and each other lane skipped", () => {
+  const on = { app: "true", check_docs: "false" };
+  const ok = { test: "success", "docker-build": "success", package: "success", "check-docs": "skipped" };
+  assert.equal(gate(on, ok), true);
+  assert.equal(gate(on, { ...ok, test: "failure" }), false);
+  assert.equal(gate(on, { ...ok, test: "cancelled" }), false);
+  assert.equal(gate(on, { ...ok, test: "skipped" }), false, "a selected lane that skipped");
+  assert.equal(gate({ app: "false", check_docs: "true" }, { test: "skipped", "docker-build": "skipped", package: "skipped", "check-docs": "success" }), true);
+  assert.equal(gate({ app: "true" }, ok), false, "a missing preflight output");
+  assert.equal(gate({ app: "", check_docs: "false" }, ok), false, "an empty preflight output");
+  assert.equal(gate(on, ok, "failure"), false);
+  const { package: _, ...noPackage } = ok;
+  assert.equal(gate(on, noPackage), false, "a lane the gate does not wait for");
 });

@@ -5,8 +5,9 @@ addition: a glob that starts with "!" removes paths from a lane.
 
 SCOPES is a JSON map of lane -> path globs. A pull request turns a lane on when
 a changed path matches one of its globs and none of its "!" globs. A push, a
-manual run, a release check (a workflow_call with a ref), or a change to CI
-itself turns every lane on. Prints one `lane=true|false` line per lane for
+manual run, a release check (a workflow_call with a ref), a pull request to a
+branch other than the default branch (it can be retargeted to main later
+without a new run), or a change to CI itself turns every lane on. Prints one `lane=true|false` line per lane for
 $GITHUB_OUTPUT.
 """
 import json
@@ -36,6 +37,8 @@ def regex(glob):
 def changed_paths():
     """The changed paths of a pull request, or None for every other run."""
     if os.environ.get("EVENT") != "pull_request" or os.environ.get("REF"):
+        return None
+    if os.environ.get("BASE_REF") != os.environ.get("DEFAULT_BRANCH"):
         return None
     # --no-renames: a rename lists both its old and its new path.
     return subprocess.run(

@@ -85,8 +85,10 @@ pushes and deletion of `main`.
 `flow/ci-gate` follows upstream OpenClaw's `ci-gate`. CI's preflight job reads
 the paths a pull request changes and runs only the lanes those paths need
 (`.github/scripts/ci-scope.py`). A change to `docs/`, `.agents/`, the agent
-notes or `README.md` skips `test`, `docker-build` and `package`; a change to
-`docs/` runs `check-docs`. Any other path runs every app lane. The gate passes
+notes, `README.md` or the phone suite's saved images skips `test`,
+`docker-build` and `package`; a change to `docs/` runs `check-docs`. Any
+other path, and any pull request to a branch other than `main`, runs every
+app lane. The gate passes
 when every lane it selected passed. A push to `main`, a manual run, a release
 check and a change to CI run every lane. A release commit still needs the
 `test` lane itself (`scripts/deploy-checks.js`). The ruleset in `.github/rulesets/release-tags.json` stops

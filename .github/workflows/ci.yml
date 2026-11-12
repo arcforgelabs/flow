@@ -57,18 +57,22 @@ jobs:
           fetch-depth: 0
 
       # The app lanes (test, docker-build, package) run for every path but
-      # the "!" ones. No test reads those paths (a traced full `npm test`),
-      # the image and the npm tarball do not ship them, docs/ has its own
-      # lane, and test/mobile/ has its own Mobile workflow.
+      # the "!" ones. No test reads or imports those paths (a traced full
+      # `npm test`, then a grep), the image and the npm tarball do not ship
+      # them, docs/ has its own lane, and the phone suite's saved images
+      # have their own Mobile workflow. npm test imports other test/mobile/
+      # files, so they stay in.
       - name: Select lanes from changed paths
         id: scope
         env:
           EVENT: ${{ github.event_name }}
           REF: ${{ inputs.ref }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
           BASE: ${{ github.event.pull_request.base.sha }}
           HEAD: ${{ github.event.pull_request.head.sha }}
           SCOPES: >-
-            {"app": ["**", "!docs/**", "!.agents/**", "!test/mobile/**",
+            {"app": ["**", "!docs/**", "!.agents/**", "!test/mobile/__screenshots__/**",
             "!AGENTS.md", "!CLAUDE.md", "!GEMINI.md", "!CONTRIBUTING.md", "!README.md",
             "!.github/ISSUE_TEMPLATE/**", "!.github/pull_request_template.md", "!.github/CODEOWNERS"],
             "check-docs": ["docs/**"]}
@@ -238,15 +242,26 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
+      # LANES maps each lane to the preflight output that selects it. A lane
+      # preflight selected must pass; only a lane it did not select may skip.
       - name: Every selected lane passed
         env:
           NEEDS: ${{ toJSON(needs) }}
+          LANES: '{"test": "app", "docker-build": "app", "package": "app", "check-docs": "check_docs"}'
         run: |
           python3 -I -c '
           import json, os, sys
           needs = json.loads(os.environ["NEEDS"])
-          bad = {k: v["result"] for k, v in needs.items() if v["result"] not in ("success", "skipped")}
+          lanes = json.loads(os.environ["LANES"])
+          out = needs["preflight"].get("outputs") or {}
+          bad = {}
           if needs["preflight"]["result"] != "success": bad["preflight"] = needs["preflight"]["result"]
-          for k, v in sorted(needs.items()): print(k, v["result"])
-          sys.exit("lanes not passed: " + ", ".join(sorted(bad)) if bad else 0)
+          if set(lanes) != set(needs) - {"preflight"}: bad["LANES"] = "does not list every lane"
+          for lane, key in lanes.items():
+              on, result = out.get(key), needs.get(lane, {}).get("result")
+              if on not in ("true", "false"): bad[lane] = f"preflight output {key}={on!r}"
+              elif on == "true" and result != "success": bad[lane] = f"selected, {result}"
+              elif on == "false" and result != "skipped": bad[lane] = f"not selected, {result}"
+              print(lane, key, on, result)
+          sys.exit("lanes not passed: " + "; ".join(f"{k}: {v}" for k, v in sorted(bad.items())) if bad else 0)
           '
