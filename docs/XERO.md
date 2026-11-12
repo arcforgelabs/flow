@@ -574,6 +574,7 @@ Xero's copy of it. No Xero calls.
 | `flow_invoice` | yes | Made by Flow from the job's Flow invoice (`xero_invoice_pushes`) |
 | `accounting_ref` | yes | The Xero invoice id the ledger already holds |
 | `source_invoice_ref` | yes | A Xero sales invoice whose number or reference is the work system's invoice number |
+| `patient_reference` | yes | The one live Xero invoice of the customer, near the job date, whose Reference has the job's patient name, at an amount that fits (`docs/JOB_INVOICE_LINKS.md`, step 5) |
 | `reference` | no | A Xero invoice for the same customer with the job's case reference |
 | `several` | no | More than one Xero invoice answers |
 | `unsettled_push` | no | A push to Xero whose outcome is still unknown |

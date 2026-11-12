@@ -156,7 +156,8 @@ stateDiagram-v2
 ```
 
 - Accounting evidence counts only when it matches the job exactly
-  (`flow_invoice`, `source_invoice_ref` or `accounting_ref`). Any other match
+  (`flow_invoice`, `source_invoice_ref`, `patient_reference`, `accounting_ref`,
+  `prior_link` or `person`). Any other match
   makes the obligation `ambiguous`, for a person to resolve.
 - A payment counts only with an exact match and a confirmed invoice. A part
   payment shows as `part_paid`.

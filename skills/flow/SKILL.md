@@ -275,6 +275,11 @@ short groups, then act on the group they confirm.
    `flow.sh get invoicing/jobs/<job id>/reconcile` or
    `flow.sh get invoicing/invoices/<id>/reconcile` (each lists the likely other
    side; `best: true` is the top guess).
+   - **Twins** (same client, same products, same price): the patient decides.
+     Flow links a job by itself to the one Xero invoice whose Reference has
+     the job's patient ("<practitioner> - <patient>"). Read the patient in the
+     Seazona order and the Reference in Xero itself (Read the source first)
+     before you pair twins by hand.
    - Link a job to its invoice: `flow.sh post invoicing/jobs/<job id>/link '{"invoiceId":"<id>"}'`
    - Job needs no invoice: `flow.sh post invoicing/jobs/<job id>/no-invoice`
    - Make the invoice now: `flow.sh post invoicing/jobs/<job id>/draft`
