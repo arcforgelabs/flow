@@ -940,11 +940,49 @@ export async function linkJobToInvoice(db, organisationId, obligationId, { invoi
     const row = await update(tx, obligation, {
       invoiceId: invoice.id,
       draftBasis: basisOf(obligation),
+      // A job a person unlinked (unlinkJobInvoice) waited for this link.
+      ...(obligation.holdReason === UNLINKED_HOLD_REASON ? { holdState: 'none', holdReason: null } : {}),
       ...(settled ? { accountingState: 'unknown', accountingCheckedAt: null } : {}),
       ...(accountingRef && !obligation.accountingRef ? { accountingRef, accountingCheckedAt: null } : {}),
       ...(obligation.readyAt ? {} : { readyAt: sql`now()`, readyBy: actor }),
     });
     await addEvent(tx, row, 'invoice_linked', actor, { invoiceId: invoice.id, matchedBy: 'person', rejected });
+    return row;
+  });
+}
+
+// A person (an owner or admin) unlinks a job from its invoice: the pair is
+// wrong, for example twin jobs (the same work for two patients) paired the
+// wrong way round. Nothing is voided and nothing is written to the
+// accounting system. The Flow invoice keeps its number and its accounting
+// invoice, and waits on Reconcile for its right job. The job waits on hold
+// until a person links its right invoice (linkJobToInvoice), so no new draft
+// is made for it, and the matcher never pairs it with that invoice again. A
+// job with recorded payments is not unlinked: a person checks those first.
+export const UNLINKED_HOLD_REASON = 'unlinked from its invoice: link its right invoice';
+
+export async function unlinkJobInvoice(db, organisationId, obligationId, { actor, reason, system = 'xero' }) {
+  requireActor(actor);
+  if (!reason?.trim()) throw new FlowError('invalid', 'say why the job is unlinked');
+  return db.transaction(async (tx) => {
+    const job = await loadObligation(tx, organisationId, obligationId, { lock: true });
+    if (!job.invoiceId) throw new FlowError('invalid', 'the job has no invoice to unlink');
+    const paid = await tx.select({ id: obligationPayments.id }).from(obligationPayments)
+      .where(and(eq(obligationPayments.organisationId, organisationId), eq(obligationPayments.obligationId, job.id))).limit(1);
+    const sent = await tx.select({ id: obligationWritebacks.id }).from(obligationWritebacks)
+      .where(and(eq(obligationWritebacks.organisationId, organisationId), eq(obligationWritebacks.obligationId, job.id))).limit(1);
+    if (paid.length || sent.length) throw new FlowError('invalid', 'the job has recorded payments; a person checks them first');
+    const row = await update(tx, job, {
+      invoiceId: null, draftBasis: null, paidCents: 0,
+      accountingState: 'unknown', accountingRef: null, accountingUrl: null, accountingMatchedBy: null, accountingCheckedAt: null,
+      holdState: 'held', holdReason: UNLINKED_HOLD_REASON,
+    });
+    if (job.accountingRef) {
+      await tx.insert(linkRejections).values({ organisationId, obligationId: job.id, system, externalId: job.accountingRef, actor }).onConflictDoNothing();
+    }
+    await addEvent(tx, row, 'invoice_unlinked', actor, {
+      reason: reason.trim(), invoiceId: job.invoiceId, accountingRef: job.accountingRef, accountingState: job.accountingState,
+    });
     return row;
   });
 }

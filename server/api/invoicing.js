@@ -28,7 +28,7 @@ import {
   acceptFindings, archivePriceItem, checkPrices, createPriceItem, linkPriceItem, linkPriceItems, MAX_LINKS_AT_ONCE, readCatalogues, readPriceList, unlinkPriceItem, updatePriceItem,
 } from '../core/price-list.js';
 import {
-  confirmNoInvoice, draftInvoiceForObligation, freeVoidedJob, setHold, explainObligation, jobChangeFor, linkJobToInvoice, listObligations,
+  confirmNoInvoice, draftInvoiceForObligation, freeVoidedJob, setHold, explainObligation, jobChangeFor, linkJobToInvoice, listObligations, unlinkJobInvoice,
   setReady, settleJobChange, useSourceLines,
 } from '../core/ledger.js';
 import { isHistoryHeld } from '../core/history.js';
@@ -946,6 +946,15 @@ export function createInvoicingRouter({
     const invoiceId = pathId(text(req.body?.invoiceId) ?? '', 'invoice');
     const job = await linkJobToInvoice(db, organisationId, obligationId, { invoiceId, actor: `person:${req.person.id}` });
     res.json({ ok: true, job: { id: job.id, invoiceId: job.invoiceId } });
+  }));
+
+  // An owner or admin unlinks a wrong pair (unlinkJobInvoice). Nothing is
+  // voided or written to the accounting system.
+  router.post('/jobs/:id/unlink', ...manager, handle(log, async (req, res) => {
+    const obligationId = pathId(req.params.id, 'job');
+    const organisationId = await organisationOf(req);
+    const job = await unlinkJobInvoice(db, organisationId, obligationId, { reason: text(req.body?.reason), actor: `person:${req.person.id}` });
+    res.json({ ok: true, job: { id: job.id, invoiceId: job.invoiceId, holdState: job.holdState } });
   }));
 
   router.post('/jobs/:id/ready', ...signedIn, handle(log, async (req, res) => {

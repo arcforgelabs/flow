@@ -133,6 +133,24 @@ was voided." (or deleted).
 | Make invoice | Rejects every open suggestion, records the job as `not_found` (by a person), then drafts its invoice. For a voided or deleted link, it also lets go of that Xero invoice and records it as "not this one", so the matcher never links it again. The live check before the draft still runs. |
 | Reconcile | Opens the Reconcile page at this job. |
 
+### Unlink a wrong pair
+
+An owner or admin can unlink a job from its invoice: More, then Unlink, with
+a reason. Use it when the pair is wrong, for example twin jobs (the same work
+for two patients) paired the wrong way round.
+
+- Nothing is voided and nothing is written to Xero. The Flow invoice keeps its
+  number and its Xero invoice, and shows on Reconcile as an invoice with no
+  job.
+- The job lets go of the invoice and its Xero invoice, and records that Xero
+  invoice as "not this one", so the matcher never pairs them again.
+- The job waits on hold, so Flow makes no new draft for it. Linking its right
+  invoice on Reconcile ends the hold.
+- A job with recorded payments is not unlinked: a person checks those first.
+
+API: `POST /api/invoicing/jobs/:id/unlink {reason}` (`unlinkJobInvoice` in
+`server/core/ledger.js`).
+
 ### Reconcile
 
 The Reconcile page (`/reconcile`, under Work) matches Flow's own records:
