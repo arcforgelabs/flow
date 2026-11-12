@@ -61,7 +61,9 @@ when the Xero copy changed. Only exact evidence links a job by itself.
 
 A voided or deleted Xero invoice bills nothing, so it never links a job by
 itself. When a lab reissues work, the first invoice is voided and keeps the
-Seazona number; the job goes on to step 5.
+Seazona number; the job goes on to step 5. The live check before a draft
+looks for the reissue number (with an R) too, so Make invoice never drafts
+work that a reissue already bills.
 | 5 | The customer's invoices from 7 days before to 45 days after the job date | Scored |
 
 The job date is the Seazona invoice date. When there is none, it is the

@@ -470,13 +470,15 @@ async function renderGap(main, ui, id) {
       };
     });
     results.replaceChildren(...[
-      job.open ? null : h('p', { class: 'fx-notice' }, 'This job has an invoice already.'),
+      job.open || job.unclear ? null : h('p', { class: 'fx-notice' }, 'This job has an invoice already.'),
       candidates.length ? compareView({ ours: jobFacts(job), oursTitle: 'This job', oursSub: system, candidates })
         : h('p', { class: 'fx-empty' }, q.trim() ? 'No Flow invoice matches the search.' : 'Flow found no invoice that may be for this job. Find one, or make it.'),
     ].flat().filter(Boolean));
     actions.replaceChildren(...[
       skip(),
-      canAct && job.open ? h('button', {
+      // An unclear job (a voided or deleted Xero link) is not open to a link,
+      // but Make invoice settles it.
+      canAct && (job.open || job.unclear) ? h('button', {
         class: `fx-btn${candidates.some((c) => c.best) ? '' : ' fx-btn--primary'}`, type: 'button',
         onclick: () => act(async () => {
           if (job.unclear) await flow(`/api/invoicing/jobs/${job.id}/no-invoice`, { method: 'POST', body: '{}' });
