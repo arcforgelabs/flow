@@ -71,13 +71,13 @@ const API_RESOURCES = ['invoices', 'orders', 'clients', 'products', 'users'];
 // whose name says patient, note, file, prescription and the like is dropped
 // from the read, at any depth. Off by default.
 const PRIVATE_FIELD = /patient|note|comment|instruction|remark|file|attach|image|photo|prescri|shade|clinical|medical|birth|dob/i;
-export function withoutPrivateFields(value, depth = 0) {
-  if (depth > 20) return null;
-  if (Array.isArray(value)) return value.map((item) => withoutPrivateFields(item, depth + 1));
+// The value is parsed JSON, so it has no cycles.
+export function withoutPrivateFields(value) {
+  if (Array.isArray(value)) return value.map(withoutPrivateFields);
   if (!value || typeof value !== 'object') return value;
   return Object.fromEntries(Object.entries(value)
     .filter(([key]) => !PRIVATE_FIELD.test(key))
-    .map(([key, item]) => [key, withoutPrivateFields(item, depth + 1)]));
+    .map(([key, item]) => [key, withoutPrivateFields(item)]));
 }
 const API_PATH = new RegExp(`^/api/(${API_RESOURCES.join('|')})(?:/([A-Za-z0-9-]{1,64}))?/?$`);
 
