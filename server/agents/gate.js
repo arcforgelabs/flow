@@ -6,7 +6,21 @@ import { agentLimits } from './settings.js';
 export function createAgentGate({ pool, verify, resource, limits: input, log = console }) {
   const limits = agentLimits(input);
   let active = 0, pruneAfter = 0;
-  const running = new Map();
+  const running = new Map(), waiting = new Set();
+  const capacity = () => Math.min(limits.fleet, Math.max(0,(pool.options?.max ?? 10)-1));
+  // A lease stays held through the audit after a response. A call that comes
+  // while a lease is only auditing waits up to a second for it, then is refused.
+  const lease = async () => {
+    const until = Date.now() + 1000;
+    while (active >= capacity()) {
+      const left = until - Date.now();
+      if (left <= 0) return false;
+      await new Promise(resolve => { const timer = setTimeout(done, left); function done() { clearTimeout(timer); waiting.delete(done); resolve(); } waiting.add(done); });
+    }
+    active++;
+    return true;
+  };
+  const unlease = () => { active--; for (const wake of [...waiting]) wake(); };
   const fail = (res, status, code) => {
     if (res.writableEnded || res.destroyed) return;
     if ([429,503].includes(status) && !res.hasHeader('Retry-After')) res.set('Retry-After', '60');
@@ -35,8 +49,7 @@ export function createAgentGate({ pool, verify, resource, limits: input, log = c
     }
   }
   const handle = handler => async (req,res) => {
-    if (active >= Math.min(limits.fleet, Math.max(0,(pool.options?.max ?? 10)-1))) return fail(res,429,'agent_capacity');
-    active++;
+    if (!await lease()) return fail(res,429,'agent_capacity');
     const started = Date.now(), controller = new AbortController();
     let client, acquiring, grant, ownConcurrency = false, status = 200, count = 0, tool = 'protocol', expired = false;
     // pg.Pool has no per-acquisition cancellation. Bound only the MCP wait,
@@ -104,6 +117,14 @@ export function createAgentGate({ pool, verify, resource, limits: input, log = c
       check();
       await handler(req,res);
     })();
+    // The grant's slot covers its work, not the audit after the response: a
+    // client that sends its next call at once must not meet its own last call.
+    const freed = () => {
+      if (!ownConcurrency) return;
+      ownConcurrency = false;
+      const n = running.get(grant.id) - 1; n ? running.set(grant.id,n) : running.delete(grant.id);
+    };
+    work.then(freed, freed);
     try { await Promise.race([work,deadline]); }
     catch { if (!expired) { status=503; fail(res,503,'agent_unavailable'); } }
     finally {
@@ -122,8 +143,7 @@ export function createAgentGate({ pool, verify, resource, limits: input, log = c
         }
       } catch { if (client) { client.release(true); client=undefined; } log.warn?.('[mcp] audit unavailable'); }
       await Promise.allSettled([acquiring]);
-      if (ownConcurrency) { const n=running.get(grant.id)-1; n ? running.set(grant.id,n) : running.delete(grant.id); }
-      active--;
+      unlease();
     }
   };
   return { handle, fail, limits };
