@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises';
 import express from 'express';
 import { FlowError } from '../core/errors.js';
 import { rateLimit } from '../rate-limit.js';
@@ -18,6 +19,9 @@ import {
   updatePerson,
 } from './people.js';
 import { isPlainEmail } from './settings.js';
+
+// The files of skills/flow that GET /api/agent-skill/flow/<file> serves.
+const SKILL_FILES = { 'SKILL.md': 'text/markdown', 'flow.sh': 'text/x-shellscript' };
 import { APP_PATHS, appPage } from '../ui/app-page.js';
 import { navPinsFromViews } from '../ui/nav-pins.js';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -108,6 +112,22 @@ export function createSignInRouter({ settings, db, clerk, personAuth, defaultFam
     // No pins saved yet: today's sidebar. A saved choice is checked the same way.
     body.views.nav = navPinsFromViews(req.person.views);
     res.json(body);
+  });
+
+  // The AI assistant's own skill, from the Flow it talks to, so the skill
+  // always matches this Flow's routes (`flow.sh update`). Only the two skill
+  // files; the release that runs here is the one they come from.
+  router.get('/api/agent-skill/flow/:file', requireSession, async (req, res) => {
+    const file = SKILL_FILES[req.params.file];
+    if (!file) return res.status(404).json({ ok: false, code: 'not_found', error: 'No such skill file.' });
+    try {
+      const text = await readFile(new URL(`../../skills/flow/${req.params.file}`, import.meta.url), 'utf8');
+      res.set('Cache-Control', 'no-store');
+      res.type(file).send(text);
+    } catch (error) {
+      log.error?.(`[auth] skill file ${req.params.file} unreadable: ${error.message}`);
+      res.status(503).json({ ok: false, code: 'skill_unavailable', error: 'This Flow has no skill files.' });
+    }
   });
 
   // Each person sets their own appearance; it follows their account.

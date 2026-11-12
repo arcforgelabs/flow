@@ -19,6 +19,8 @@ ENV FLOW_RELEASE="${FLOW_RELEASE}"
 COPY --from=deps /app/node_modules ./node_modules
 COPY package.json ./
 COPY server ./server
+# The AI assistant skill, served at GET /api/agent-skill/flow/<file>.
+COPY skills ./skills
 # The code is read only; the server keeps its records in PostgreSQL.
 RUN chown -R root:root /app \
   && find /app -type d -exec chmod 0555 {} + \
