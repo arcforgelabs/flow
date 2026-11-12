@@ -30,9 +30,11 @@ Flow for the lab. It is separate from the MCP door below and is off by default.
    Flow holds only the digest. The key never leaves the assistant's machine.
 
 A request with `Authorization: Bearer <key>` then acts as that person, inside
-the person's role, on `/api/me`, `/api/invoicing/…` and `/api/seazona/api/…`
-only. Every other route refuses the key. With **admin** it can read invoices and
-jobs, change invoice rules, void, delete drafts and send ready invoices. Owner
+the person's role, on `/api/me`, `/api/invoicing/…`, `/api/xero/…` and
+`/api/seazona/api/…` only. Every other route refuses the key. With **admin** it
+can read invoices and jobs, change invoice rules, void, delete drafts, send
+ready invoices and reconcile: link jobs and invoices, match Flow against
+Flow's copy of Xero and refresh that copy. Owner
 actions (People, Integrations, updates) always refuse the key: an agent request
 is never a verified owner sign-in. Turning the person off in People stops the
 key on the next request, and a send it queued fails as `requester_disabled`
