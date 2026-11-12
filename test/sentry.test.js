@@ -10,7 +10,7 @@ import { adapters } from '../server/integrations/adapters.js';
 import { createRegistry } from '../server/integrations/port.js';
 import { createTracing, requestName, sqlName, traceQueries } from '../server/core/tracing.js';
 import { createSentryAdapter, readSentrySettings, SENTRY_BROWSER, SENTRY_BROWSER_REPLAY, SENTRY_BROWSER_TRACING, SENTRY_SETUP, sentryRelease } from '../server/integrations/sentry/index.js';
-import { routePattern, scrubRecordingEvent, scrubSpan, tagNotify } from '../server/ui/monitoring.js';
+import { maskText, routePattern, scrubEvent, scrubRecordingEvent, scrubSpan, tagNotify } from '../server/ui/monitoring.js';
 import { fakeClerk, request, TEST_PUBLISHABLE_KEY } from './support/clerk.js';
 import { freshDatabase, skipWithoutDatabase } from './support/db.js';
 
@@ -57,15 +57,15 @@ test('with the real SDK, a logged line reaches Sentry as the title, with no stac
 test('Flow ships the Sentry adapter, with no DSN of its own', () => {
   const sentry = adapters.find((a) => a.id === 'sentry');
   assert.ok(sentry);
-  assert.deepEqual(sentry.setup.fields.map((f) => f.name), ['SENTRY_DSN', 'SENTRY_ENVIRONMENT', 'SENTRY_CLIENT', 'SENTRY_FEEDBACK', 'SENTRY_REPLAY', 'SENTRY_TRACES_SAMPLE_RATE']);
+  assert.deepEqual(sentry.setup.fields.map((f) => f.name), ['SENTRY_DSN', 'SENTRY_ENVIRONMENT', 'SENTRY_CLIENT', 'SENTRY_FEEDBACK', 'SENTRY_SCREENSHOT', 'SENTRY_REPLAY', 'SENTRY_TRACES_SAMPLE_RATE']);
   assert.equal(sentry.schema, undefined);
 });
 
 test('the settings need a Sentry DSN; environment and the report button have defaults', () => {
   assert.throws(() => readSentrySettings({}), /SENTRY_DSN is not set/);
   assert.throws(() => readSentrySettings({ SENTRY_DSN: 'https://example.test/1' }), /not a Sentry DSN/);
-  assert.deepEqual(readSentrySettings({ SENTRY_DSN: DSN }), { dsn: DSN, environment: 'production', feedback: true, replay: true, tracesSampleRate: 0.2, tags: { product: 'flow' } });
-  assert.deepEqual(readSentrySettings({ SENTRY_DSN: ` ${DSN} `, SENTRY_ENVIRONMENT: 'staging', SENTRY_FEEDBACK: 'off', SENTRY_REPLAY: 'off', SENTRY_TRACES_SAMPLE_RATE: '0' }), { dsn: DSN, environment: 'staging', feedback: false, replay: false, tracesSampleRate: 0, tags: { product: 'flow' } });
+  assert.deepEqual(readSentrySettings({ SENTRY_DSN: DSN }), { dsn: DSN, environment: 'production', feedback: true, screenshot: false, replay: true, tracesSampleRate: 0.2, tags: { product: 'flow' } });
+  assert.deepEqual(readSentrySettings({ SENTRY_DSN: ` ${DSN} `, SENTRY_ENVIRONMENT: 'staging', SENTRY_FEEDBACK: 'off', SENTRY_SCREENSHOT: 'on', SENTRY_REPLAY: 'off', SENTRY_TRACES_SAMPLE_RATE: '0' }), { dsn: DSN, environment: 'staging', feedback: false, screenshot: true, replay: false, tracesSampleRate: 0, tags: { product: 'flow' } });
   assert.deepEqual(readSentrySettings({ SENTRY_DSN: DSN, SENTRY_CLIENT: ' Example Lab ' }).tags, { product: 'flow', client: 'Example Lab' });
   assert.throws(() => readSentrySettings({ SENTRY_DSN: DSN, SENTRY_CLIENT: 'a\nb' }), /SENTRY_CLIENT must be one short line/);
 });
@@ -76,6 +76,7 @@ test('each empty on/off setting shows what Sentry does with it', () => {
   const read = readSentrySettings({ SENTRY_DSN: DSN });
   const fields = Object.fromEntries(SENTRY_SETUP.fields.map((f) => [f.name, f]));
   assert.equal(fields.SENTRY_FEEDBACK.default === 'on', read.feedback);
+  assert.equal(fields.SENTRY_SCREENSHOT.default === 'on', read.screenshot);
   assert.equal(fields.SENTRY_REPLAY.default === 'on', read.replay);
 });
 
@@ -122,6 +123,7 @@ test('the adapter starts the SDK without personal data, and sends errors only wh
   assert.equal(options.environment, 'production');
   assert.deepEqual(options.initialScope, { tags: { product: 'flow' } });
   assert.equal(options.beforeSendSpan, scrubSpan);
+  assert.equal(options.beforeSend, scrubEvent);
   // The host's health check is never traced; a browser's choice is kept.
   const sampled = (path) => options.tracesSampler({ attributes: { 'url.path': path }, inheritOrSampleWith: (rate) => rate });
   assert.equal(sampled('/health'), 0);
@@ -136,7 +138,7 @@ test('the adapter starts the SDK without personal data, and sends errors only wh
   assert.deepEqual(sdk.calls[2][2].tags, { source: 'http' });
 
   assert.deepEqual(adapter.capabilities.browserMonitoring(), {
-    dsn: DSN, environment: 'production', release: 'flow@2026.10.26', feedback: true, replay: true, tags: { product: 'flow' }, tracesSampleRate: 0.2, script: SENTRY_BROWSER_TRACING,
+    dsn: DSN, environment: 'production', release: 'flow@2026.10.26', feedback: true, screenshot: false, replay: true, tags: { product: 'flow' }, tracesSampleRate: 0.2, script: SENTRY_BROWSER_TRACING,
   });
   assert.deepEqual(await adapter.capabilities.health(), { ok: true, environment: 'production', feedback: true });
 
@@ -299,6 +301,60 @@ test('a problem report is tagged notify=yes only when the person asks for a resp
   const error = { type: undefined, tags: {} };
   tagNotify(error, true);
   assert.deepEqual(error.tags, {});
+});
+
+test('an error event keeps the fault and drops names, emails, amounts and record ids', () => {
+  // Synthetic text in the shapes Flow logs: its own line, then a passed-on message.
+  const cases = [
+    ['[sending] refused 1 invoice: INV-1001 (0f0e0d0c-0b0a-4908-8706-050403020100) same reference at 235.00.', '[sending] refused 1 invoice: <ref> (<id>) same reference at <amount>.'],
+    ['[http] duplicate key value violates unique constraint "clients_name_key" Key (name)=(Example Person)', '[http] duplicate key value violates unique constraint <text> Key (<field>)=(<value>)'],
+    ["[xero] validation: Contact 'Example Clinic' exists; call 0400 000 000 or someone@example.test", '[xero] validation: Contact <text> exists; call <number> or <email>'],
+    ["[xero] copy out of date (last full read 2026-01-02T03:04:05.000Z); Flow's drafts wait", "[xero] copy out of date (last full read <time>); Flow's drafts wait"],
+    ['[seazona] invoices lane failed: seazona_api_circuit_open', '[seazona] invoices lane failed: seazona_api_circuit_open'],
+  ];
+  for (const [text, masked] of cases) assert.equal(maskText(text), masked);
+  // The same fault with other records reads the same, so Sentry makes one issue.
+  assert.equal(maskText('[sending] refused 1 invoice: INV-2002 at 99.50.'), maskText('[sending] refused 1 invoice: INV-3003 at 410.00.'));
+
+  const event = scrubEvent({
+    message: '[http] Key (email)=(someone@example.test)',
+    exception: { values: [{ type: 'Error', value: 'Contact "Example Clinic" not found' }] },
+    extra: { log: '[http] INV-1001 failed', row: { name: 'Example Person' } },
+    breadcrumbs: [{ category: 'console', message: 'sent INV-1001 to someone@example.test', data: { arguments: ['Example Person'] } }],
+    request: { method: 'POST', url: 'https://flow.example.test/api/search?q=Example', data: '{"name":"Example"}', cookies: { a: 'b' }, headers: { cookie: 'a=b' } },
+    user: { id: 'person-1', email: 'someone@example.test', username: 'Example Person', ip_address: '192.0.2.1' },
+  });
+  assert.equal(event.message, '[http] Key (<field>)=(<value>)');
+  assert.equal(event.exception.values[0].value, 'Contact <text> not found');
+  assert.deepEqual(event.extra, { log: '[http] <ref> failed', row: '<data>' });
+  assert.deepEqual(event.breadcrumbs, [{ category: 'console', message: 'sent <ref> to <email>' }]);
+  assert.deepEqual(event.request, { method: 'POST', url: 'https://flow.example.test/api/search' });
+  assert.deepEqual(event.user, { id: 'person-1' });
+});
+
+test('a problem report keeps its words and keeps the email only when the person asks for a response', () => {
+  const report = (notify) => scrubEvent({
+    type: 'feedback', tags: { notify },
+    user: { id: 'person-1', email: 'someone@example.test', username: 'Example Person' },
+    contexts: { feedback: { message: 'Invoice 1001 shows 235.00; mail someone@example.test', contact_email: 'someone@example.test', name: 'Example Person' } },
+  });
+  const quiet = report('no');
+  assert.equal(quiet.contexts.feedback.message, 'Invoice 1001 shows 235.00; mail <email>');
+  assert.equal(quiet.contexts.feedback.contact_email, undefined);
+  assert.equal(quiet.contexts.feedback.name, undefined);
+  assert.deepEqual(quiet.user, { id: 'person-1' });
+  const asked = report('yes');
+  assert.equal(asked.contexts.feedback.contact_email, 'someone@example.test');
+  assert.deepEqual(asked.user, { id: 'person-1', email: 'someone@example.test' });
+});
+
+test('a report sends no screenshot unless the installation turns it on', async () => {
+  const adapter = createSentryAdapter({ sdk: fakeSdk(), env: {} });
+  await adapter.start({ log: quiet, env: { SENTRY_DSN: DSN } });
+  assert.equal(adapter.capabilities.browserMonitoring().screenshot, false);
+  await adapter.stop();
+  await adapter.start({ log: quiet, env: { SENTRY_DSN: DSN, SENTRY_SCREENSHOT: 'on' } });
+  assert.equal(adapter.capabilities.browserMonitoring().screenshot, true);
 });
 
 test('without a DSN the adapter does not start', async () => {
