@@ -191,10 +191,11 @@ export function createSeazonaAdapter({ env = null, fetchImpl = null, now = Date.
       // Sync now (server/core/sync-now.js): read new and changed orders,
       // invoices and practices now, inside the rate governor. It answers at
       // once; the run goes on in the background. Off while "Include in Sync
-      // now" is off.
-      async syncNow() {
+      // now" is off, unless a person asked for Seazona alone (`asked`, its own
+      // Sync button).
+      async syncNow({ asked = false } = {}) {
         if (!runtime) return { state: 'unavailable', reason: 'Seazona has not started' };
-        if (!runtime.settings.syncNow) return { state: 'off' };
+        if (!runtime.settings.syncNow && !asked) return { state: 'off' };
         const options = { only: SYNC_NOW_LANES };
         if (runtime.scheduler) {
           const state = runtime.scheduler.runNow(options);

@@ -48,7 +48,7 @@ export const XERO_SETUP = {
     { name: 'XERO_TENANT_NAME', label: 'Xero organisation name', help: 'Live mode connects only the organisation with this exact name.' },
     { name: 'XERO_ALLOW_LIVE_WRITES', label: 'Create draft invoices in live Xero', kind: 'onoff', help: 'Off: Flow only reads from Xero.' },
     { name: 'XERO_CREATE_CONTACTS', label: 'Create missing clients', kind: 'onoff', default: 'on', help: 'On: a pending invoice whose client is not in Xero offers Create. Off: add the client in Xero, then sync.' },
-    { name: 'XERO_SYNC_NOW', label: 'Include in Sync now', kind: 'onoff', help: 'On: Sync now on the Integrations page also reads Xero\'s changed invoices and credit notes. It uses a few of the day\'s Xero calls.' },
+    { name: 'XERO_SYNC_NOW', label: 'Include in Sync now', kind: 'onoff', default: 'on', help: 'On: Sync now on the Integrations page also reads Xero\'s changed invoices and credit notes. Each uses a few of the day\'s Xero calls.' },
     { name: 'XERO_WEBHOOK_KEY', label: 'Webhook key', secret: true, help: 'From the Xero app\'s Webhooks page. Empty: Flow reads Xero\'s changes every 15 minutes instead.' },
   ],
   derivedKeys: ['XERO_TOKEN_KEY'],
@@ -163,10 +163,11 @@ export function createXeroAdapter({ runtime: given = null } = {}) {
       readChanges: ({ organisationId }) => readChangesFirst(database, current(), organisationId),
       // Sync now (server/core/sync-now.js): Xero's latest invoice and credit
       // note changes into the copy now, for each connected organisation, even
-      // when the copy counts as current. Off while "Include in Sync now" is off.
-      syncNow: async () => {
+      // when the copy counts as current. Off while "Include in Sync now" is off,
+      // unless a person asked for Xero alone (`asked`, its own Sync button).
+      syncNow: async ({ asked = false } = {}) => {
         const { settings } = current();
-        if (!settings.syncNow) return { state: 'off' };
+        if (!settings.syncNow && !asked) return { state: 'off' };
         const { rows } = await database.execute(sql`select organisation_id from xero_connections where mode = ${settings.mode}`);
         if (!rows.length) return { state: 'unavailable', reason: 'Xero is not connected' };
         let changed = 0;

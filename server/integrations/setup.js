@@ -188,7 +188,7 @@ export async function saveSettings(db, { adapter, secrets, actor, enabled, value
 export function createSetupRouter({ db, registry, personAuth, secrets, baseEnv = process.env, log = console, buttonCooldowns = true }) {
   const router = express.Router();
   // Sync now can call Xero at a press, so it is an action (docs/INTEGRATIONS.md,
-  // "Button presses"): one a minute.
+  // "Button presses"): one a minute, for all and for each integration alone.
   const actions = createActionGuard({ integration: 'sync-now', actions: { syncNow: { cooldownMs: 60_000 } }, off: !buttonCooldowns });
   const owner = [personAuth.requireSession, personAuth.requireRole('owner')];
   // A change needs a verified owner sign-in, as connecting Xero does.
@@ -217,9 +217,11 @@ export function createSetupRouter({ db, registry, personAuth, secrets, baseEnv =
       res.json({ ok: true, integrations: await syncNowStatus(registry) });
     } catch (error) { next(error); }
   });
-  router.post('/sync-now', ...owner, actions.route('syncNow'), async (req, res, next) => {
+  router.post('/sync-now', ...owner, express.json({ limit: '4kb' }), actions.route('syncNow', { key: (req) => req.body?.only ?? 'all' }), async (req, res, next) => {
     try {
-      res.json({ ok: true, results: await startSyncNow(registry, { actor: req.person.id, log }) });
+      const only = req.body?.only ?? null;
+      if (only !== null && !registry.get(only)) return res.status(404).json({ ok: false, code: 'not_found', error: 'No such integration' });
+      res.json({ ok: true, results: await startSyncNow(registry, { only, actor: req.person.id, log }) });
     } catch (error) { next(error); }
   });
 

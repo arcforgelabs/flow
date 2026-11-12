@@ -641,21 +641,24 @@ function integrationLogo(integration, size = '') {
 }
 
 // Sync now (server/core/sync-now.js): reads each integration whose "Include
-// in Sync now" setting is on, now. Which ones, and when the last read
-// started, are on hover. While a read goes on, the button says so and asks
-// Flow again every 5 seconds (Flow's data only). Hidden while no integration
-// can sync.
-function syncNowButton() {
-  const button = h('button', { class: 'fx-btn', type: 'button', hidden: true, disabled: true }, 'Sync now');
+// in Sync now" setting is on, now. With `only`, it is that integration's own
+// Sync on its page, and reads it whatever the setting says. Which ones, and
+// when the last read started, are on hover. While a read goes on, the button
+// says so and asks Flow again every 5 seconds (Flow's data only). Hidden while
+// nothing it would read can sync.
+function syncNowButton({ only = null } = {}) {
+  const word = only ? 'Sync' : 'Sync now';
+  const button = h('button', { class: 'fx-btn', type: 'button', hidden: true, disabled: true }, word);
   const when = (at) => new Date(at).toLocaleString('en-AU', { dateStyle: 'medium', timeStyle: 'short' });
   let timer = null;
-  const show = (list) => {
-    const included = list.filter((i) => i.included);
+  const show = (all) => {
+    const list = only ? all.filter((i) => i.id === only) : all;
+    const included = only ? list : list.filter((i) => i.included);
     const running = included.some((i) => i.running);
     const last = included.map((i) => i.lastAt).filter(Boolean).sort().pop();
     button.hidden = !list.length;
     button.disabled = running || !included.length;
-    button.replaceChildren(...(running ? [h('span', { class: 'fx-spinner fx-spinner--sm', 'aria-hidden': 'true' }), 'Syncing'] : ['Sync now']));
+    button.replaceChildren(...(running ? [h('span', { class: 'fx-spinner fx-spinner--sm', 'aria-hidden': 'true' }), 'Syncing'] : [word]));
     button.title = included.length
       ? `Reads ${included.map((i) => i.name).join(' and ')}.${last ? ` Last read ${when(last)}.` : ''}`
       : 'Turn on "Include in Sync now" in an integration\'s settings.';
@@ -668,7 +671,7 @@ function syncNowButton() {
   button.addEventListener('click', async () => {
     button.disabled = true;
     try {
-      const { results } = await flow('/api/integrations/sync-now', { method: 'POST' });
+      const { results } = await flow('/api/integrations/sync-now', { method: 'POST', body: JSON.stringify(only ? { only } : {}) });
       for (const r of results.filter((r) => r.state === 'unavailable')) toast(`${r.name}: ${r.reason}`, 'danger');
       const reading = results.filter((r) => ['started', 'running', 'read'].includes(r.state));
       if (reading.length) toast(`Reading ${reading.map((r) => r.name).join(' and ')}.`, 'success');
@@ -910,6 +913,7 @@ async function renderIntegration(main, id) {
             h('h1', { class: 'fx-title' }, current.name),
             h('div', { class: 'fx-int-hero__actions' },
               on ? statusPill(current) : null,
+              on && current.state === 'ready' ? syncNowButton({ only: current.id }) : null,
               primary,
               progress ? connectProgress(progress) : null)),
           alerts.element,

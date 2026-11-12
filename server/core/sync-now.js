@@ -1,7 +1,8 @@
 // Sync now (docs/INTEGRATIONS.md, "Sync now"): a person asks Flow to read its
 // systems again now, not at the next background run. An integration takes
-// part only while its own "Include in Sync now" setting is on: Seazona is on
-// by default, Xero off. Each read goes through the integration's call guard
+// part while its own "Include in Sync now" setting is on, the default. Each
+// integration's page also has its own Sync, which reads that one integration
+// whatever the setting says. Each read goes through the integration's call guard
 // and rate limit, as a background read does. The pipeline joins what they
 // bring into jobs at its next run (every 2 minutes).
 
@@ -20,14 +21,14 @@ export async function syncNowStatus(registry) {
   }));
 }
 
-// Starts each included integration's read, one after the other. An
-// integration that cannot read answers `unavailable` with its reason; the
-// others still run.
-export async function startSyncNow(registry, { actor = null, log = console } = {}) {
+// Starts each included integration's read, one after the other, or only the
+// integration `only` names. An integration that cannot read answers
+// `unavailable` with its reason; the others still run.
+export async function startSyncNow(registry, { only = null, actor = null, log = console } = {}) {
   const results = [];
-  for (const adapter of registry.with('syncNow')) {
+  for (const adapter of registry.with('syncNow').filter((a) => !only || a.id === only)) {
     try {
-      results.push(named(adapter, await adapter.capabilities.syncNow()));
+      results.push(named(adapter, await adapter.capabilities.syncNow({ asked: Boolean(only) })));
     } catch (error) {
       results.push(named(adapter, { state: 'unavailable', reason: error?.message || 'the read failed' }));
     }
