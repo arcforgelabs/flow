@@ -769,7 +769,51 @@ export async function setHold(db, organisationId, obligationId, { holdState, rea
     const obligation = await loadObligation(tx, organisationId, obligationId, { lock: true });
     const row = await update(tx, obligation, { holdState, holdReason: holdState === 'none' ? null : reason.trim() });
     await addEvent(tx, row, holdState === 'none' ? 'released' : holdState, actor, {
-      from: obligation.holdState, reason: row.holdReason,
+      from: obligation.holdState, reason: holdState === 'none' ? (reason?.trim() || null) : row.holdReason,
+    });
+    return row;
+  });
+}
+
+const GONE_STATES = ['voided', 'deleted'];
+
+// A person (or the assistant, after the lab says yes) frees a job that is
+// stuck on an invoice that bills nothing now: a Flow invoice that was voided,
+// or an accounting invoice that was voided or deleted there. The job lets go
+// of that invoice and goes on hold, so nothing drafts until a person releases
+// it (setHold to 'none'). A Flow invoice that is still live must be voided
+// first: this never voids or changes an invoice.
+export async function freeVoidedJob(db, organisationId, obligationId, { actor, reason, system = null }) {
+  requireActor(actor);
+  if (!reason?.trim()) throw new FlowError('invalid', 'say why the job is freed');
+  return db.transaction(async (tx) => {
+    const obligation = await loadObligation(tx, organisationId, obligationId, { lock: true });
+    let flowInvoice = null;
+    if (obligation.invoiceId) {
+      [flowInvoice] = await tx.select({ id: invoices.id, number: invoices.number, status: invoices.status }).from(invoices)
+        .where(and(eq(invoices.organisationId, organisationId), eq(invoices.id, obligation.invoiceId)));
+      if (flowInvoice && flowInvoice.status !== 'void') {
+        throw new FlowError('invalid', `Flow invoice ${flowInvoice.number ?? flowInvoice.id} is ${flowInvoice.status}: void it first, then free the job`);
+      }
+    }
+    const gone = GONE_STATES.includes(obligation.accountingState) ? obligation.accountingRef : null;
+    if (!flowInvoice && !gone) throw new FlowError('invalid', 'the job is not linked to a void or deleted invoice');
+    const row = await update(tx, obligation, {
+      ...(flowInvoice ? { invoiceId: null, draftBasis: null } : {}),
+      ...(gone || GONE_STATES.includes(obligation.accountingState)
+        ? { accountingState: 'not_found', accountingRef: null, accountingUrl: null, accountingMatchedBy: null, accountingCheckedAt: sql`now()` }
+        : {}),
+      holdState: 'held',
+      holdReason: reason.trim(),
+    });
+    if (gone && system) {
+      await tx.insert(linkRejections).values({ organisationId, obligationId: obligation.id, system, externalId: gone, actor }).onConflictDoNothing();
+    }
+    await addEvent(tx, row, 'freed', actor, {
+      reason: reason.trim(),
+      ...(flowInvoice ? { invoiceId: flowInvoice.id } : {}),
+      ...(gone ? { released: gone } : {}),
+      from: obligation.holdState,
     });
     return row;
   });
@@ -780,7 +824,6 @@ export async function setHold(db, organisationId, obligationId, { holdState, rea
 // exactly. Or the accounting invoice the matcher linked was voided or deleted
 // there: it bills nothing now. A person settles it on the Reconcile page or
 // the job: "Make invoice", or a link to a Flow invoice (linkJobToInvoice).
-const GONE_STATES = ['voided', 'deleted'];
 const unlinked = (o) => !o.invoiceId && (GONE_STATES.includes(o.accountingState) || (o.accountingState === 'ambiguous' && !o.accountingRef));
 
 // The matcher's open suggestions for one job, best first.
