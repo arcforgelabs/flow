@@ -244,7 +244,7 @@ export function dialog({ title, body, confirm, tone = 'primary', choices = null 
       h('h2', { class: 'fx-dialog__title' }, title),
       choiceList ?? body,
       actions);
-    const element = applyPhoneRule(h('dialog', { class: 'fx-dialog' }, form), 'dialog');
+    const element = applyPhoneRule(h('dialog', { class: 'fx-dialog', 'aria-label': title }, form), 'dialog');
     element.addEventListener('close', () => {
       const value = element.returnValue;
       element.remove();
@@ -258,7 +258,8 @@ export function dialog({ title, body, confirm, tone = 'primary', choices = null 
     if (choices) element.addEventListener('click', (event) => { if (event.target === element) element.close(); });
     document.body.append(element);
     element.showModal();
-    element.querySelector(choices ? '.fx-sheet__choice' : 'input, select, button[value="ok"]')?.focus();
+    // A danger step starts on Cancel, so Enter or a second tap does not confirm it.
+    element.querySelector(choices ? '.fx-sheet__choice' : `input, select, button[value="${tone === 'danger' ? 'cancel' : 'ok'}"]`)?.focus();
   });
 }
 

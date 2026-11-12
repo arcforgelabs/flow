@@ -889,6 +889,18 @@ async function renderIntegration(main, id) {
       }
     };
 
+    // A disconnect stops the integration, so it asks first: one stray click
+    // must not stop a lab's sync.
+    const disconnect = async () => {
+      const ok = await dialog({
+        title: `Disconnect ${current.name}?`,
+        body: h('p', {}, `Flow stops working with ${current.name} until someone connects it again. Its settings and Flow's records stay.`),
+        confirm: 'Disconnect',
+        tone: 'danger',
+      });
+      if (ok) await save(false);
+    };
+
     const on = current.enabled;
     const guide = current.guide;
     const hostOwned = current.enabledBy === 'host';
@@ -897,7 +909,7 @@ async function renderIntegration(main, id) {
     const busy = progress && progress.steps.some((step) => step.state === 'running');
 
     const primary = !canChange || hostOwned ? null : on
-      ? h('button', { class: 'fx-btn', type: 'button', onclick: () => save(false) }, 'Disconnect')
+      ? h('button', { class: 'fx-btn', type: 'button', onclick: disconnect }, 'Disconnect')
       : h('button', { class: 'fx-btn fx-btn--primary', type: 'button', disabled: busy, onclick: connect },
         busy ? h('span', { class: 'fx-spinner fx-spinner--sm', 'aria-hidden': 'true' }) : null, busy ? 'Connecting' : 'Connect');
 
