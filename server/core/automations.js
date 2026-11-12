@@ -1,4 +1,4 @@
-import { and, eq, sql } from 'drizzle-orm';
+import { and, asc, eq, sql } from 'drizzle-orm';
 import { automations, billingObligations, invoices } from '../db/schema.js';
 import { FlowError, notFound } from './errors.js';
 import { autoDraftJobs, readInvoicingSettings } from './invoicing-rules.js';
@@ -176,14 +176,19 @@ const actorOf = (key) => `automation:${key}`;
 // that job to people from then on.
 async function markReadyFromWorkStatus(db, organisationId, { statuses }) {
   const actor = actorOf('mark_ready_from_work_status');
+  const wanted = [...new Set(statuses.map(norm).filter(Boolean))];
+  if (!wanted.length) return { marked: 0 };
+  // The status test runs in the query, with the same normalising as
+  // statusMatches, so the batch holds only jobs to mark, oldest first: jobs
+  // still in work never fill it and push a shipped job out.
   const jobs = await db.select().from(billingObligations).where(and(
     eq(billingObligations.organisationId, organisationId),
     sql`${billingObligations.readyAt} is null`,
     sql`${billingObligations.invoiceId} is null`,
-    sql`${billingObligations.sourceStatus} is not null`,
+    sql`lower(regexp_replace(btrim(${billingObligations.sourceStatus}), '\\s+', ' ', 'g')) in (${sql.join(wanted.map((w) => sql`${w}`), sql`, `)})`,
     sql`not exists (select 1 from obligation_events e where e.obligation_id = ${billingObligations.id}
       and e.kind = 'in_work' and e.actor not like 'automation:%')`,
-  )).limit(BATCH);
+  )).orderBy(asc(billingObligations.createdAt)).limit(BATCH);
   let marked = 0;
   for (const job of jobs) {
     if (!statusMatches(job.sourceStatus, statuses)) continue;
