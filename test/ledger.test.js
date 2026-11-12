@@ -165,6 +165,14 @@ describe('billing obligation ledger', { skip: skipWithoutDatabase }, () => {
     await assert.rejects(unlink(one.job.id, ' '), /say why/);
     const freed = await unlink(one.job.id);
     assert.deepEqual([freed.invoiceId, freed.accountingRef, freed.holdState], [null, null, 'held']);
+    // A matcher pass that read the job before the unlink cannot put the old
+    // invoice back.
+    const late = await recordAccountingEvidence(db, lab.id, one.job.id, {
+      state: 'paid', accountingRef: 'ACC-TWIN-1', matchedBy: 'accounting_ref', actor,
+      seen: { invoiceId: one.invoice.id, accountingRef: 'ACC-TWIN-1' },
+    });
+    assert.equal(late, null);
+    assert.equal((await explainObligation(db, lab.id, one.job.id)).obligation.accountingRef, null);
     await unlink(two.job.id);
     await assert.rejects(unlink(two.job.id), /no invoice to unlink/);
     const kept = await getInvoice(db, lab.id, one.invoice.id);

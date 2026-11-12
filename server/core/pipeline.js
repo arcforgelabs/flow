@@ -607,6 +607,10 @@ export async function matchJobs(db, organisationId, { accounting, work = null, n
 
   for (const obligation of due) {
     result.checked += 1;
+    // The job as this pass saw it. A person may link or unlink it while the
+    // pass runs; what the pass found then belongs to the old job, so it is
+    // dropped and the next pass checks again.
+    const seen = { invoiceId: obligation.invoiceId ?? null, accountingRef: obligation.accountingRef ?? null };
     const payer = obligation.contactId ? payerOf.get(obligation.contactId) : null;
     const { evidence, ranked, decision, reason } = await matchJob(db, organisationId, obligation, {
       accounting,
@@ -622,12 +626,19 @@ export async function matchJobs(db, organisationId, { accounting, work = null, n
       if (reason === 'no_contact') result.noContact += 1;
       else result.waiting += 1;
       // Seen, so the next run waits for a change before it looks again.
-      await db.update(billingObligations).set({ accountingCheckedAt: now })
-        .where(eq(billingObligations.id, obligation.id));
+      await db.update(billingObligations).set({ accountingCheckedAt: now }).where(and(
+        eq(billingObligations.id, obligation.id),
+        sql`${billingObligations.invoiceId} is not distinct from ${seen.invoiceId}::uuid`,
+        sql`${billingObligations.accountingRef} is not distinct from ${seen.accountingRef}::text`,
+      ));
       continue;
     }
     const before = obligation.accountingRef;
-    await recordAccountingEvidence(db, organisationId, obligation.id, { ...evidence, checkedAt: now, actor: ACTOR });
+    const row = await recordAccountingEvidence(db, organisationId, obligation.id, { ...evidence, seen, checkedAt: now, actor: ACTOR });
+    if (!row) {
+      result.waiting += 1;
+      continue;
+    }
     if (evidence.state === 'not_found') {
       result.notFound += 1;
       if (await holdIfStale(db, organisationId, obligation, { now, staleDays })) result.held += 1;
