@@ -207,6 +207,27 @@ export function toast(text, tone = 'info', { stay = false } = {}) {
   region.append(item);
 }
 
+// An icon-only copy button (`label` names it and shows on hover). `text()`
+// builds what is copied at the click, so it holds the page's current facts,
+// and the copy runs inside the click (iOS refuses one after an await). If the
+// browser refuses, a dialog shows the text selected to copy by hand.
+export function copyButton({ label, text, copied = 'Copied.' }) {
+  return h('button', {
+    class: 'fx-btn fx-btn--sm fx-btn--icon fx-copy', type: 'button', 'aria-label': label, title: label,
+    onclick: () => {
+      const value = text();
+      const byHand = () => {
+        const box = h('textarea', { class: 'fx-input fx-copy__text', readonly: true, rows: 12, 'aria-label': label }, value);
+        dialog({ title: label, body: h('div', {}, h('p', {}, 'Copy this text.'), box), confirm: 'Done' });
+        box.focus(); box.select();
+      };
+      try {
+        navigator.clipboard.writeText(value).then(() => toast(copied, 'success'), byHand);
+      } catch { byHand(); }
+    },
+  }, lucide(h, 'copy'));
+}
+
 // A modal built on <dialog>: resolves with the button's value, or null.
 export function dialog({ title, body, confirm, tone = 'primary', choices = null }) {
   return new Promise((resolve) => {

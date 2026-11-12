@@ -147,6 +147,24 @@ export const RULES = {
     "minRowsAt375": 7,
     "card": "Columns"
   },
+  "copyButton": {
+    "component": "copyButton",
+    "direction": "control",
+    "phone": {
+      "layout": "control"
+    },
+    "tablet": {
+      "layout": "control"
+    },
+    "desk": {
+      "layout": "control"
+    },
+    "touch": 44,
+    "pageOverflow": "none",
+    "screens": [],
+    "mark": false,
+    "card": "CopyButton"
+  },
   "crumbs": {
     "component": "crumbs",
     "direction": "trail",
