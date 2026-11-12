@@ -219,8 +219,9 @@ export function classify({ title, files, labels = [], authorAssociation, baseRef
 }
 
 // Whether every check on the head commit is done and none failed, and the
-// required ones (.github/rulesets/main.json) are there.
-export const REQUIRED_CHECKS = ["test", "gitleaks"];
+// required ones (.github/rulesets/main.json) are there. A lane the CI gate
+// skipped for this change (conclusion "skipped") does not hold it.
+export const REQUIRED_CHECKS = ["flow/ci-gate", "gitleaks"];
 const PASSING = new Set(["success", "neutral", "skipped"]);
 export function checksState(checkRuns, ignore = []) {
   const runs = checkRuns.filter((run) => !ignore.includes(run.name));

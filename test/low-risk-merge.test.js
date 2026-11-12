@@ -94,13 +94,18 @@ test("size follows Barnacle's labeler buckets and skips docs and lockfiles", () 
   assert.equal(sizeLabel([file("docs/A.md", 5000), file("package-lock.json", 5000)]), "size: XS");
 });
 
-test("checks are green only when all are done, none failed, and test and gitleaks passed", () => {
+test("checks are green only when all are done, none failed, and flow/ci-gate and gitleaks passed", () => {
   const done = (name, conclusion = "success") => ({ name, status: "completed", conclusion });
-  assert.equal(checksState([done("test"), done("gitleaks"), done("package")]).green, true);
-  assert.equal(checksState([done("test"), done("gitleaks"), { name: "docker-build", status: "in_progress" }]).green, false);
-  assert.equal(checksState([done("test"), done("gitleaks"), done("package", "failure")]).green, false);
-  assert.deepEqual(checksState([done("test")]).missing, ["gitleaks"]);
-  assert.equal(checksState([done("test"), done("gitleaks"), done("lane", "failure")], ["lane"]).green, true);
+  const gate = done("flow/ci-gate");
+  assert.equal(checksState([gate, done("test"), done("gitleaks"), done("package")]).green, true);
+  assert.equal(checksState([gate, done("gitleaks"), { name: "docker-build", status: "in_progress" }]).green, false);
+  assert.equal(checksState([gate, done("test"), done("gitleaks"), done("package", "failure")]).green, false);
+  assert.deepEqual(checksState([gate]).missing, ["gitleaks"]);
+  assert.deepEqual(checksState([done("test"), done("gitleaks")]).missing, ["flow/ci-gate"]);
+  assert.equal(checksState([gate, done("gitleaks"), done("lane", "failure")], ["lane"]).green, true);
+  // A docs-only change: the gate skipped the app lanes.
+  assert.equal(checksState([gate, done("gitleaks"), done("test", "skipped"), done("check-docs")]).green, true);
+  assert.equal(checksState([done("flow/ci-gate", "failure"), done("gitleaks"), done("test", "skipped")]).green, false);
 });
 
 function fakeGitHub({ pr, files, checkRuns, labels = [] }) {
@@ -150,6 +155,7 @@ const openPr = {
 };
 const context = { repo: { owner: "arcforgelabs", repo: "flow" }, payload: { pull_request: { number: 7 }, repository: { default_branch: "main" } } };
 const green = [
+  { name: "flow/ci-gate", status: "completed", conclusion: "success" },
   { name: "test", status: "completed", conclusion: "success" },
   { name: "gitleaks", status: "completed", conclusion: "success" },
 ];

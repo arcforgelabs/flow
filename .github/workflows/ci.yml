@@ -1,10 +1,18 @@
 name: CI
 
-# The `test` job is the gate the main ruleset (.github/rulesets/main.json)
-# and the release and Replit deploy checks (scripts/deploy-checks.js) require
-# by name, so keep that name. `docker-build` builds the image and starts it;
-# `package` packs the npm tarball, installs it in an empty directory and
-# starts it, as Flow Release Checks does for a release.
+# Every pull request check, in the upstream openclaw/openclaw ci.yml shape
+# (as arcforgelabs/platform). The preflight job reads the changed paths and
+# turns each lane on or off (.github/scripts/ci-scope.py). `flow/ci-gate` is
+# the one CI check the main ruleset (.github/rulesets/main.json) requires: it
+# passes when every selected lane passed or was skipped. A push, a manual run,
+# a release check and a change to CI itself select every lane.
+#
+# Keep the lane names. The release and Replit deploy checks
+# (scripts/deploy-checks.js) require `test` by name on the release commit, and
+# a release commit always runs every lane. `docker-build` builds the image and
+# starts it; `package` packs the npm tarball, installs it in an empty
+# directory and starts it, as Flow Release Checks does for a release;
+# `check-docs` checks docs/ when nothing else changed.
 
 on:
   pull_request:
@@ -34,8 +42,51 @@ concurrency:
   cancel-in-progress: ${{ !inputs.ref }}
 
 jobs:
+  preflight:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      app: ${{ steps.scope.outputs.app }}
+      check_docs: ${{ steps.scope.outputs.check_docs }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref || '' }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      # The app lanes (test, docker-build, package) run for every path but
+      # the "!" ones. No test reads or imports those paths (a traced full
+      # `npm test`, then a grep), the image and the npm tarball do not ship
+      # them, docs/ has its own lane, and the phone suite's saved images
+      # have their own Mobile workflow. npm test imports other test/mobile/
+      # files, so they stay in.
+      - name: Select lanes from changed paths
+        id: scope
+        env:
+          EVENT: ${{ github.event_name }}
+          REF: ${{ inputs.ref }}
+          # Lane selection is off until the main ruleset requires
+          # flow/ci-gate (repository variable FLOW_CI_SCOPE=on). Off, every
+          # lane runs, so a skipped `test` can never stand in for the gate.
+          SWITCH: ${{ vars.FLOW_CI_SCOPE }}
+          # The diff is against the default branch, not the pull request's
+          # base, so a pull request retargeted to main later (which starts
+          # no new run) was already judged against main.
+          BASE: origin/${{ github.event.repository.default_branch }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+          SCOPES: >-
+            {"app": ["**", "!docs/**", "!.agents/**", "!test/mobile/__screenshots__/**",
+            "!AGENTS.md", "!CLAUDE.md", "!GEMINI.md", "!CONTRIBUTING.md", "!README.md",
+            "!.github/ISSUE_TEMPLATE/**", "!.github/pull_request_template.md", "!.github/CODEOWNERS"],
+            "check-docs": ["docs/**"]}
+        run: python3 -I .github/scripts/ci-scope.py >> "$GITHUB_OUTPUT"
+
   test:
     name: test
+    needs: preflight
+    if: needs.preflight.outputs.app == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     services:
@@ -84,6 +135,8 @@ jobs:
 
   docker-build:
     name: docker-build
+    needs: preflight
+    if: needs.preflight.outputs.app == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     services:
@@ -118,6 +171,8 @@ jobs:
 
   package:
     name: package
+    needs: preflight
+    if: needs.preflight.outputs.app == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     services:
@@ -159,3 +214,59 @@ jobs:
           # A throwaway database inside this job; not a secret.
           DATABASE_URL: postgres://flow:flow@localhost:5432/flow_smoke
         run: scripts/release/package-smoke.sh "$RUNNER_TEMP"/package/*.tgz
+
+  # docs/ only: the docs/docs.json navigation and the changelog's release
+  # pages, the two tests that read docs/. No database, no install.
+  check-docs:
+    name: check-docs
+    needs: preflight
+    if: needs.preflight.outputs.check_docs == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref || '' }}
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24.22.1
+
+      - name: Docs navigation and release pages
+        run: node --test test/docs-sync-publish.test.js test/changelog.test.js
+
+  # The one required CI check (upstream openclaw/ci-gate). It passes when
+  # preflight passed and every lane passed or was skipped.
+  ci-gate:
+    name: flow/ci-gate
+    needs: [preflight, test, docker-build, package, check-docs]
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      # LANES maps each lane to the preflight output that selects it. A lane
+      # preflight selected must pass; only a lane it did not select may skip.
+      - name: Every selected lane passed
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+          LANES: '{"test": "app", "docker-build": "app", "package": "app", "check-docs": "check_docs"}'
+        run: |
+          python3 -I -c '
+          import json, os, sys
+          needs = json.loads(os.environ["NEEDS"])
+          lanes = json.loads(os.environ["LANES"])
+          out = needs["preflight"].get("outputs") or {}
+          bad = {}
+          if needs["preflight"]["result"] != "success": bad["preflight"] = needs["preflight"]["result"]
+          if set(lanes) != set(needs) - {"preflight"}: bad["LANES"] = "does not list every lane"
+          for lane, key in lanes.items():
+              on, result = out.get(key), needs.get(lane, {}).get("result")
+              if on not in ("true", "false"): bad[lane] = f"preflight output {key}={on!r}"
+              elif on == "true" and result != "success": bad[lane] = f"selected, {result}"
+              elif on == "false" and result != "skipped": bad[lane] = f"not selected, {result}"
+              print(lane, key, on, result)
+          sys.exit("lanes not passed: " + "; ".join(f"{k}: {v}" for k, v in sorted(bad.items())) if bad else 0)
+          '
