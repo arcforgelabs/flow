@@ -138,7 +138,7 @@ export async function findInvoices(db, organisationId, query = {}) {
         where organisation_id = i.organisation_id and xero_invoice_id = i.xero_invoice_id
         union all
         select invoice_id, 1, 0 from xero_invoice_links
-        where organisation_id = i.organisation_id and xero_invoice_id = i.xero_invoice_id
+        where organisation_id = i.organisation_id and xero_invoice_id = i.xero_invoice_id and released_at is null
       ) f order by pick, version desc limit 1
     ) p on true
     where i.organisation_id = ${organisationId} and i.type = 'ACCREC'
