@@ -69,6 +69,7 @@ workspace live credentials.
 | `SEAZONA_API_TELEMETRY_RETENTION_DAYS` | How long request telemetry is kept. Default 35, so last month's question from Seazona can be answered. Maximum 90. |
 | `SEAZONA_ORDER_URL` | Optional. The address of one order in Seazona's own screens, with `{ref}` where the order number goes, for example `https://<your Seazona>/orders/{ref}`. A person may instead paste the address of any one order as the browser shows it: Flow turns the order id in it (a GUID) into `{ref}`. A stage move on the Jobs board opens it, and so does **Open in Seazona** on a changed job. Must use https and hold `{ref}` or an order id; otherwise Flow ignores it: the Jobs board shows the order number to copy, and with the API address `https://{lab}.seazonaapi.net`, Flow opens the order at `https://{lab}.seazona.net/OrderEdit.aspx?id={order id}`. Also on the Seazona integration screen as "Order address". |
 | `SEAZONA_KEEP_PATIENT_REFERENCE` | `on` keeps Seazona's patient field on orders and invoices as the patient reference an invoice prints (the `{patient}` token of the Reference rule). Default off: no patient field is stored. Also on the Seazona integration screen as "Keep patient names". When on, the Jobs list can show a Patient column. |
+| `SEAZONA_API_READ_HIDE_PATIENT` | `on` makes the Seazona read (`/api/seazona/api/…`, used by an AI assistant) drop patient, note, file and clinical fields before it answers. Default off: the read answers what Seazona gives. Also on the Seazona integration screen as "Hide patient details". |
 | `SEAZONA_INVOICE_CADENCE_MS`, `SEAZONA_ORDER_CADENCE_MS`, `SEAZONA_ACTIVE_ORDER_CADENCE_MS`, `SEAZONA_CLIENT_CADENCE_MS`, `SEAZONA_REFERENCE_CADENCE_MS` | How often each lane runs in live mode. Defaults below. |
 | `SEAZONA_ORDER_LOOKBACK_DAYS` | How far back the recent-order lane reads. Default 30. |
 | `SEAZONA_ORDER_DAYS_PER_RUN` | Days the recent-order lane reads per run. Default 6. |
@@ -573,6 +574,21 @@ link to the Seazona integration's reconciliation,
 `/integrations/seazona?batch=<id>&job=<job key>`. A person's decision there
 clears the issue: the board reads issues again each time. `health()` shows
 `history.waitingForPerson`, the count for the integration's card.
+
+## Read through Flow
+
+`GET /api/seazona/api/<resource>[/<id>]?<query>` makes one GET to the Seazona
+API and answers `{ ok, data }`. The resource is `invoices`, `orders`,
+`clients`, `products` or `users`. Only an owner or an admin may call it,
+including an AI assistant's key (`docs/AGENT_ACCESS.md`). It uses this
+installation's API client and the rate governor, so it shares the 30 a minute
+limit with the sync. It never writes to Seazona and stores nothing. With
+`SEAZONA_API_READ_HIDE_PATIENT` on ("Hide patient details"), it first drops
+every field whose name says patient, note, comment, instruction, file, image,
+prescription, shade, clinical, medical or birth, at any depth. Off by default.
+A Seazona
+404 answers 404; a limit or a stopped client answers 429; any other failure
+answers 502. Each call logs one line with the resource and the person.
 
 ## Health
 

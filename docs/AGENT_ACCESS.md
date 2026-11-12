@@ -13,6 +13,40 @@ It keeps `@clerk/backend` at 3.25.0. It pins `@clerk/express` at 2.1.6
 and `@clerk/mcp-tools` at 0.9.0. The Express package accepts this backend.
 No custom plugin, connector key or OAuth server is required.
 
+## AI assistant key
+
+This is the quick door for one AI assistant (an OpenClaw Gateway) that runs
+Flow for the lab. It is separate from the MCP door below and is off by default.
+
+1. In Flow, an owner opens **People** and invites the assistant as its own
+   person, for example `assistant@<lab domain>`, with the role **admin**. The
+   person never signs in. Activity shows this person.
+2. On the assistant's machine, the `flow` skill (`skills/flow/`) runs
+   `flow.sh setup https://<this Flow>`. It saves that address, makes a random
+   key, keeps it in a file with mode 600, and prints only the key's SHA-256.
+   The script has no default address: the key goes only to the saved one.
+3. The host sets two settings and restarts Flow:
+   `FLOW_AGENT_KEY_SHA256=<that digest>` and `FLOW_AGENT_EMAIL=<that person>`.
+   Flow holds only the digest. The key never leaves the assistant's machine.
+
+A request with `Authorization: Bearer <key>` then acts as that person, inside
+the person's role, on `/api/me`, `/api/invoicing/…` and `/api/seazona/api/…`
+only. Every other route refuses the key. With **admin** it can read invoices and
+jobs, change invoice rules, void, delete drafts and send ready invoices. Owner
+actions (People, Integrations, updates) always refuse the key: an agent request
+is never a verified owner sign-in. Turning the person off in People stops the
+key on the next request, and a send it queued fails as `requester_disabled`
+instead of reaching the accounting system. Removing either setting turns the
+door off. Each call
+logs one line with the route and the person, never the key.
+
+`GET /api/seazona/api/<resource>[/<id>]` lets an owner, an admin or the
+assistant read Seazona through Flow's own Seazona connection and rate governor
+(`docs/SEAZONA.md`), so the assistant needs no Seazona credentials. It answers
+what Seazona gives. With "Hide patient details" on (Seazona settings), Flow
+first drops every field whose name says patient, note, comment, instruction,
+file, image, prescription, shade, clinical, medical or birth, at any depth.
+
 ## Authentication and grants
 
 Set `FLOW_MCP=on`, `FLOW_AUTH=clerk` and a fixed HTTPS `FLOW_PUBLIC_ORIGIN`.

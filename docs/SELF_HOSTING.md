@@ -218,6 +218,8 @@ Keep these in the installation's secret store, never in a repository.
 | `FLOW_SIGN_UP_DOMAINS` | configuration | Comma-separated email domains whose people may ask for access without an invitation (they wait for an owner's approval). Everyone else needs an invitation. Unset: none. |
 | `FLOW_FIRST_OWNER_EMAIL` | configuration | The first owner's email. Used only while there is no owner. |
 | `FLOW_OWNER_GOOGLE_DOMAINS` | configuration | Your Google Workspace domain, for example `example.com`. Comma-separated. Required on Replit's managed Clerk: unset, no owner can manage people. No default. |
+| `FLOW_AGENT_KEY_SHA256` | configuration | The SHA-256 (64 hex) of one AI assistant's key (`docs/AGENT_ACCESS.md`, "AI assistant key"). Not a secret: the key itself stays with the assistant. Set with `FLOW_AGENT_EMAIL`. Unset: off. |
+| `FLOW_AGENT_EMAIL` | configuration | The Flow person the assistant's key acts as. Invite it as **admin** in People. Set with `FLOW_AGENT_KEY_SHA256`. |
 | `FLOW_OWNER_MFA_MAX_AGE` | configuration | How long a Clerk second factor counts for owner actions. Default `12h`. |
 | `FLOW_PUBLIC_ORIGIN` | configuration | The published app's `https://` origin: its `*.replit.app` address, or a custom domain if it has one. Clerk then accepts only sessions minted for it. In a Replit workspace its development address is accepted too, because the workspace and the published app share secrets. Elsewhere, leave it unset in development. |
 | `FLOW_SECRETS_KEY` | secret | Flow's secrets key: 64 hex characters (`openssl rand -hex 32`). It seals the credentials an owner enters in Integrations. Unset: derived from `SESSION_SECRET` when that is at least 32 characters (`docs/INTEGRATIONS.md`, "The secrets key"). |

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { after, before, beforeEach, describe, test } from 'node:test';
 import { eq } from 'drizzle-orm';
 import { createApp } from '../server/app.js';
-import { seedFirstOwner } from '../server/auth/people.js';
+import { invitePerson, seedFirstOwner, updatePerson } from '../server/auth/people.js';
 import { createPersonAuth } from '../server/auth/session.js';
 import { createContact, createOrganisation, createPriceItem } from '../server/core/directory.js';
 import { createDraftInvoice, reviseInvoice, updateDraftInvoice } from '../server/core/invoices.js';
@@ -351,6 +351,22 @@ describe('ready, problem and send', { skip: skipWithoutDatabase }, () => {
     await assert.rejects(sendAllReady(handle.db, lab.id, { accounting: fake.adapter, personId: owner.id, issueDate: ISSUE_DATE }), { code: 'accounting_writes_off' });
     assert.equal((await row(ready.id)).status, 'draft');
     assert.equal((await row(ready.id)).sendState, null);
+  });
+
+  test('a queued send stops when the person who asked is turned off before it goes', async () => {
+    const fake = fakeAccounting();
+    const assistant = await invitePerson(handle.db, { email: 'assistant@example.test', role: 'admin', invitedBy: owner.id });
+    const one = await good();
+    await markReady(handle.db, lab.id, [one.id], { personId: assistant.id });
+    await sendAllReady(handle.db, lab.id, { accounting: fake.adapter, personId: assistant.id, issueDate: ISSUE_DATE, invoiceIds: [one.id] });
+    assert.equal((await row(one.id)).sendState, 'queued');
+    await updatePerson(handle.db, { id: assistant.id, actorId: owner.id, status: 'disabled' });
+    const sent = await sendQueued(handle.db, lab.id, { accounting: fake.adapter });
+    assert.deepEqual(sent, { sent: 0, failed: 1, waiting: 0, refused: ['requester_disabled'] });
+    assert.equal(fake.pushed.length, 0);
+    const stopped = await row(one.id);
+    assert.equal(stopped.sendState, 'failed');
+    assert.equal(stopped.sendError.code, 'requester_disabled');
   });
 
   test('Send all ready issues and queues; the worker sends; a refusal is a problem until sent again', async () => {

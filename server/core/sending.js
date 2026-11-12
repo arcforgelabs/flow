@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
-import { billingObligations, contacts, invoiceLines, invoices } from '../db/schema.js';
+import { billingObligations, contacts, invoiceLines, invoices, people } from '../db/schema.js';
 import { FlowError } from './errors.js';
 import { listRules, ruleNonChargeable, rulePending, ruleSkip } from './invoice-rules.js';
 import { customerBillingByContact, effectiveSettings, readInvoicingSettings } from './invoicing-rules.js';
@@ -430,6 +430,11 @@ export function refusalReport(result) {
   return `[sending] the accounting system refused ${count} ${word}${detail ? `: ${detail}` : ''}`;
 }
 
+async function requesterActive(db, personId) {
+  const [row] = await db.select({ status: people.status }).from(people).where(eq(people.id, personId));
+  return row?.status === 'active';
+}
+
 // One pass of the send worker: up to `limit` queued invoices, oldest first.
 export async function sendQueued(db, organisationId, { accounting, limit = WORKER_BATCH }) {
   const rows = await db.select({ id: invoices.id, number: invoices.number, by: invoices.sendRequestedBy }).from(invoices)
@@ -439,6 +444,17 @@ export async function sendQueued(db, organisationId, { accounting, limit = WORKE
   const summary = { sent: 0, failed: 0, waiting: 0 };
   for (const [by, group] of Map.groupBy(rows, (r) => r.by ?? null)) {
     const known = new Map(group.map((row) => [row.id, row]));
+    // A send waits in the queue. The person who asked for it must still be
+    // active when it goes, so turning a person (or an assistant's key) off
+    // also stops what they queued.
+    if (by && !(await requesterActive(db, by))) {
+      for (const row of group) {
+        await settle(db, organisationId, row.id, { sendState: 'failed', sendError: { code: 'requester_disabled', message: 'The person who asked to send this is turned off. Send it again.' } });
+        summary.failed += 1;
+      }
+      summary.refused = [...new Set([...(summary.refused ?? []), 'requester_disabled'])];
+      continue;
+    }
     const { invoices: results } = await accounting.capabilities.pushInvoices({
       organisationId, invoiceIds: group.map((r) => r.id), pushedBy: by,
     });

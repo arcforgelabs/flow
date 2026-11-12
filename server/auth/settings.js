@@ -127,6 +127,21 @@ export function isPlainEmail(email) {
   return typeof email === 'string' && /^[\x21-\x3f\x41-\x7e]+@[a-z0-9.-]+\.[a-z0-9-]+$/i.test(email);
 }
 
+// FLOW_AGENT_KEY_SHA256 and FLOW_AGENT_EMAIL: one key for one AI assistant
+// (an OpenClaw Gateway). A request with `Authorization: Bearer <key>`, where
+// the key's SHA-256 is FLOW_AGENT_KEY_SHA256, acts as the Flow person with
+// FLOW_AGENT_EMAIL, inside that person's role. Flow holds only the digest, so
+// the key itself never leaves the assistant's machine. Both or neither.
+export function resolveAgentKey(env = process.env) {
+  const digest = readEnv(env, 'FLOW_AGENT_KEY_SHA256').toLowerCase();
+  const email = readEnv(env, 'FLOW_AGENT_EMAIL').toLowerCase();
+  if (!digest && !email) return null;
+  if (!digest || !email) throw new Error('FLOW_AGENT_KEY_SHA256 and FLOW_AGENT_EMAIL must be set together');
+  if (!/^[0-9a-f]{64}$/.test(digest)) throw new Error('FLOW_AGENT_KEY_SHA256 must be 64 hex characters (the SHA-256 of the key)');
+  if (!isPlainEmail(email)) throw new Error('FLOW_AGENT_EMAIL must be a plain (ASCII) email address');
+  return { digest, email };
+}
+
 export function resolveSignInSettings(env = process.env) {
   const mode = resolveAuthMode(env);
   if (mode === 'off') return { mode };
@@ -139,5 +154,6 @@ export function resolveSignInSettings(env = process.env) {
     ownerGoogleDomains: parseOwnerGoogleDomains(readEnv(env, 'FLOW_OWNER_GOOGLE_DOMAINS')),
     authorizedParties: resolveAuthorizedParties(env),
     firstOwnerEmail: resolveFirstOwnerEmail(env),
+    agentKey: resolveAgentKey(env),
   };
 }

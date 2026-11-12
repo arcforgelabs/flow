@@ -53,6 +53,7 @@ export const SEAZONA_SETUP = {
     { name: 'SEAZONA_API_CLIENT_SECRET', label: 'Client secret', secret: true, help: 'Stored encrypted. Flow never shows it again.' },
     { name: 'SEAZONA_ORDER_URL', label: 'Order address', kind: 'url', help: 'Optional. Open any order in Seazona and paste its address here, or write {ref} where the order id goes. Stage moves on the Jobs board and Open in Seazona use it.' },
     { name: 'SEAZONA_KEEP_PATIENT_REFERENCE', label: 'Keep patient names', kind: 'onoff', help: 'On: Flow keeps the patient name of each job for the invoice Reference.' },
+    { name: 'SEAZONA_API_READ_HIDE_PATIENT', label: 'Hide patient details', kind: 'onoff', help: 'On: an AI assistant reading Seazona through Flow gets no patient, note, file or clinical fields.' },
   ],
 };
 
@@ -85,7 +86,11 @@ export function createSeazonaAdapter({ env = null, fetchImpl = null, now = Date.
     schema: seazonaSchema,
     setup: SEAZONA_SETUP,
     // The history import's routes (routes.js), under /api/seazona.
-    routes: ({ db, personAuth, log }) => createSeazonaRouter({ db: runtime?.db ?? db, personAuth, settings: current().settings, log }),
+    routes: ({ db, personAuth, log }) => createSeazonaRouter({
+      db: runtime?.db ?? db, personAuth, settings: current().settings, log,
+      read: (path, query) => current().client.get(path, query),
+      hidePatientFields: () => Boolean(current().settings.sync.hidePatientFields),
+    }),
     // Every Seazona call goes through this call guard, inside the rate
     // governor (governor.js; docs/INTEGRATIONS.md, "Outbound calls").
     callGuard: SEAZONA_CALL_GUARD,
