@@ -35,8 +35,9 @@ All of these must be true:
 3. The size is `XS`, `S` or `M` (under 500 lines).
 4. No file carries a merge risk (below), and no `merge-risk:` label is on it.
 5. It is not a draft.
-6. Every check on its head commit is done and none failed, and `test` and
-   `gitleaks` passed.
+6. Every check on its head commit is done and none failed, and
+   `flow/ci-gate` and `gitleaks` passed. A lane the CI gate skipped for the
+   change (for example `test` on a docs-only change) does not hold it.
 
 Then the workflow merges it (squash) at that exact head commit. If the head
 moves, GitHub refuses the merge and the lane decides again on the next event.

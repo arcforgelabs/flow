@@ -15,11 +15,11 @@ function reply(status, body, headers = {}) {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", ...headers } });
 }
 
-test("the required checks are the main ruleset's: CI's test and Secret Scan's gitleaks", () => {
+test("a release commit needs CI's test lane and Secret Scan's gitleaks; main needs the CI gate and gitleaks", () => {
   assert.deepEqual(REQUIRED_CHECKS, ["test", "gitleaks"]);
   const ruleset = JSON.parse(readFileSync(join(import.meta.dirname, "../.github/rulesets/main.json"), "utf8"));
   const required = ruleset.rules.find((rule) => rule.type === "required_status_checks").parameters.required_status_checks;
-  assert.deepEqual(required.map((check) => check.context), REQUIRED_CHECKS);
+  assert.deepEqual(required.map((check) => check.context), ["flow/ci-gate", "gitleaks"]);
   assert.ok(required.every((check) => check.integration_id === 15368));
 });
 
@@ -36,6 +36,11 @@ test("every required check must have completed with success", () => {
   assert.deepEqual(evaluateChecks(allPassed()), { passed: true, problems: [] });
   const skipped = allPassed().map((r) => (r.name === "test" ? { ...r, conclusion: "skipped" } : r));
   assert.deepEqual(evaluateChecks(skipped).problems, ["test: skipped"]);
+  // A later pull request run that skipped the lane does not hide a dispatch run that passed or failed.
+  const laterSkip = [...allPassed(), run(30, "test", "skipped")];
+  assert.deepEqual(evaluateChecks(laterSkip), { passed: true, problems: [] });
+  const failedThenSkip = [...allPassed().filter((r) => r.name !== "test"), run(31, "test", "failure"), run(32, "test", "skipped")];
+  assert.deepEqual(evaluateChecks(failedThenSkip).problems, ["test: failure"]);
   const queued = allPassed().map((r) => (r.name === "gitleaks" ? { ...r, status: "queued", conclusion: null } : r));
   assert.deepEqual(evaluateChecks(queued).problems, ["gitleaks: still queued"]);
   assert.deepEqual(evaluateChecks([]).problems, REQUIRED_CHECKS.map((name) => `${name}: no run on this commit`));
