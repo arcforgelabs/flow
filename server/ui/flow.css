@@ -359,11 +359,78 @@ a.fx-link:hover, a.fx-link:focus-visible { border-color: var(--t-strong); }
   background: #fff; box-shadow: inset 0 0 0 1px var(--fx-line);
 }
 .fx-logo--icon { background: var(--t-accent-bg); color: var(--t-accent); box-shadow: none; }
+/* Home: the invoices ready to send and one Send, then the way an invoice
+   goes after Send, drawn as one line of steps (a column on a phone). */
+.fx-home { display: grid; gap: 20px; max-width: 880px; }
+.fx-home__send {
+  position: relative; overflow: hidden;
+  display: grid; justify-items: start; gap: 6px; padding: 32px;
+  border: 1px solid var(--fx-line); border-radius: var(--t-radius-lg);
+  background:
+    radial-gradient(120% 140% at 100% 0%, color-mix(in srgb, var(--t-primary) 10%, transparent), transparent 60%),
+    var(--t-paper);
+}
+.fx-home__send[data-done] {
+  grid-template-columns: auto 1fr; align-items: center; column-gap: 16px;
+  background:
+    radial-gradient(120% 140% at 100% 0%, color-mix(in srgb, var(--t-success) 12%, transparent), transparent 60%),
+    var(--t-paper);
+}
+.fx-home__send[data-done] > :not(.fx-home__done) { grid-column: 2; }
+.fx-home__done {
+  grid-row: span 2; display: grid; place-items: center; width: 52px; height: 52px; border-radius: 50%;
+  background: var(--t-success-bg); color: var(--t-success);
+}
+.fx-home__done .fx-lucide { width: 26px; height: 26px; }
+.fx-home__count {
+  display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 12px;
+  color: var(--t-strong); font: 700 72px/1 var(--t-body); font-variant-numeric: tabular-nums; letter-spacing: -0.02em;
+}
+.fx-home__count span { font: 600 20px/1.2 var(--t-body); letter-spacing: 0; color: var(--t-text); }
+.fx-home__send[data-done] .fx-home__count span { font-size: 22px; color: var(--t-strong); }
+.fx-home__sum { color: var(--t-dim); font-size: 16px; font-variant-numeric: tabular-nums; }
+.fx-home__btn { min-height: 56px; min-width: 200px; margin-top: 14px; padding: 0 32px; font-size: 17px; border-radius: 999px; }
+.fx-home__btn .fx-lucide { width: 20px; height: 20px; }
+.fx-home__note { color: var(--t-dim); font-size: 13.5px; }
+
+/* Needs you: at most three rows beside Send; each opens its page. */
+.fx-home__needs { display: grid; align-content: start; gap: 10px; }
+.fx-home__needs h2 { margin: 0; }
+.fx-home__needs ul { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.fx-home__needs a {
+  display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 12px;
+  min-height: 64px; padding: 10px 16px; border: 1px solid var(--fx-line); border-radius: var(--t-radius-lg);
+  background: var(--t-paper); color: var(--t-text); text-decoration: none;
+  transition: border-color 140ms var(--fx-ease), transform 140ms var(--fx-ease);
+}
+.fx-home__needs a:hover, .fx-home__needs a:focus-visible { border-color: var(--t-control); transform: translateY(-1px); }
+.fx-home__dot { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; background: var(--fx-hover); color: var(--t-dim); }
+.fx-home__dot .fx-lucide { width: 18px; height: 18px; }
+.fx-home__needs [data-tone="danger"] .fx-home__dot { background: var(--t-danger-bg); color: var(--t-danger); }
+.fx-home__needs [data-tone="warn"] .fx-home__dot { background: var(--t-warn-bg); color: var(--t-warn); }
+.fx-home__needs [data-tone="info"] .fx-home__dot { background: var(--t-accent-bg); color: var(--t-accent); }
+.fx-home__needs [data-tone="clear"] .fx-home__dot { background: var(--t-success-bg); color: var(--t-success); }
+.fx-home__what { display: grid; font-weight: 600; color: var(--t-strong); }
+.fx-home__what small { color: var(--t-dim); font-weight: 400; font-size: 13px; font-variant-numeric: tabular-nums; }
+.fx-home__needs [data-tone="clear"] .fx-home__what { color: var(--t-dim); font-weight: 500; }
+.fx-home__n { color: var(--t-strong); font: 700 22px/1 var(--t-body); font-variant-numeric: tabular-nums; }
+.fx-home__needs [data-tone="clear"] .fx-home__n { color: var(--t-dim); font-weight: 500; }
+
+@media (min-width: 1024px) {
+  .fx-home { grid-template-columns: minmax(0, 3fr) minmax(260px, 2fr); align-items: stretch; max-width: 1040px; }
+  .fx-home__send { align-content: center; }
+}
+@media (max-width: 639px) {
+  .fx-home__send { padding: 24px 20px; }
+  .fx-home__count { font-size: 60px; }
+  .fx-home__btn { width: 100%; }
+}
+
 .fx-tiles { display: grid; gap: 12px; }
 .fx-tiles + .fx-tiles { margin-top: 16px; }
 .fx-tiles__head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .fx-tiles__head h2 { color: var(--t-strong); font: 600 15px/1.3 var(--t-body); }
-.fx-tiles__more { display: inline-flex; align-items: center; gap: 4px; color: var(--t-dim); font-size: 13.5px; text-decoration: none; }
+.fx-tiles__more { display: inline-flex; align-items: center; gap: 4px; min-height: 44px; color: var(--t-dim); font-size: 13.5px; text-decoration: none; }
 .fx-tiles__more:hover, .fx-tiles__more:focus-visible { color: var(--t-strong); }
 .fx-tiles__more .fx-lucide { width: 15px; height: 15px; }
 .fx-tiles__grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 12px; }

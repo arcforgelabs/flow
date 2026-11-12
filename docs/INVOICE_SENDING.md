@@ -29,6 +29,18 @@ Xero calls). An invoice in that copy from before the `sent_to_contact` column
 (Xero migration 0009) shows as Approved until Xero changes it and Flow reads
 it again.
 
+## Home
+
+Home is the page a person lands on (`server/ui/home.js`). It greets them,
+shows the number of Ready invoices and their total, and one Send. Send sends
+every Ready invoice with the same step as the Invoices page (`POST
+/invoices/send-ready`, up to 100 a press); the confirm dialog says what the
+send mode does. With none ready, it says "All caught up". Beside it, "Needs
+you" lists three things that need a person most days, each with its count:
+invoices that need a look (the Pending tab), jobs and invoices to match
+(Reconcile) and form photos to check (Capture). Each opens its page. An
+owner or admin can send; other people see the counts only.
+
 ## Ready
 
 A draft with no problem is in Ready. A saved change keeps it there while the

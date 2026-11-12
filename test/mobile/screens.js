@@ -11,6 +11,7 @@ const tab = (name) => async (page) => {
 const JOBS = '.fx-board, .fx-table';
 
 export const SCREENS = [
+  { id: 'home', path: '/home', ready: '.fx-home__send' },
   { id: 'jobs-board', path: '/jobs', ready: JOBS, prepare: layout('board') },
   { id: 'jobs-list', path: '/jobs', ready: JOBS, prepare: layout('list'), list: true },
   { id: 'job-panel', path: '/jobs', ready: JOBS, prepare: async (page) => {

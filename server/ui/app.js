@@ -18,6 +18,7 @@ import { renderPriceList } from '/assets/ui/price-list.js';
 import { renderPriceReconcile } from '/assets/ui/price-reconcile.js';
 import { renderCustomFields } from '/assets/ui/custom-fields.js';
 import { renderJobs } from '/assets/ui/jobs.js';
+import { renderHome } from '/assets/ui/home.js';
 import { renderReconcile } from '/assets/ui/reconcile.js';
 import { renderXeroImport } from '/assets/ui/xero-import.js';
 import { syncStatus } from '/assets/ui/sync-status.js';
@@ -153,6 +154,7 @@ let me = null;
 // menu. `sidebar: false`: opened by a link or Search only. Jobs and Invoices
 // cannot be unpinned (nav-pins.js).
 const VIEWS = {
+  home: { label: 'Home', icon: 'home', render: (main) => renderHome(main, ui()) },
   jobs: { label: 'Jobs', icon: 'jobs', render: (main) => renderJobs(main, ui()) },
   captures: { label: 'Capture', icon: 'camera', render: (main) => renderCaptures(main, ui()) },
   invoices: { label: 'Invoices', icon: 'invoices', render: (main, id) => (id ? renderInvoice(main, ui(), id) : renderInvoiceList(main, ui())) },
@@ -174,6 +176,7 @@ const VIEWS = {
 
 // Line icons for the sidebar, drawn on a 24-unit grid in the text colour.
 const ICON_PATHS = {
+  home: '<path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/><path d="M10 20v-6h4v6"/>',
   jobs: '<rect x="3" y="4" width="5" height="16" rx="1"/><rect x="10" y="4" width="5" height="11" rx="1"/><rect x="17" y="4" width="4" height="14" rx="1"/>',
   invoices: '<path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 13h7M9 17h5"/>',
   contacts: '<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M6 16c.4-1.6 1.5-2.4 3-2.4s2.6.8 3 2.4M14 9h5M14 13h4"/>',
@@ -293,9 +296,9 @@ function reportMenuItem(openReport) {
   return accountMenuItem('Report a problem', 'flag', () => { openReport().catch((error) => toast(error.message, 'danger')); });
 }
 
-// The page a person lands on after sign-in, and for / or an unknown path.
-// Invoices opens on its Ready tab. A home page can take this over later.
-const START_VIEW = 'invoices';
+// The page a person lands on after sign-in, and for / or an unknown path:
+// Home, with the invoices ready to send and one Send.
+const START_VIEW = 'home';
 
 // The view and, for one record, its id: /invoices/<id> is ['invoices', '<id>'].
 function currentView() {
@@ -369,7 +372,7 @@ function sidebarViews() {
   return Object.entries(VIEWS).filter(([, view]) => view.sidebar !== false && view.place !== 'account' && (!view.ownerOnly || me?.person.role === 'owner'));
 }
 
-// Null until the shell reads the account. Jobs and Invoices are always in it.
+// Null until the shell reads the account. Home, Jobs and Invoices are always in it.
 let pinned = null;
 let pinEpoch = 0;
 let pinWrite = Promise.resolve();
