@@ -5,10 +5,11 @@ import { sql } from 'drizzle-orm';
 import { createApp } from '../server/app.js';
 import { createIntegrations } from '../server/integrations/index.js';
 import { createSeazonaClient } from '../server/integrations/seazona/client.js';
-import { createSeazonaAdapter, requireSeazonaSettings } from '../server/integrations/seazona/index.js';
+import { createSeazonaAdapter, requireSeazonaSettings, SYNC_NOW_LANES } from '../server/integrations/seazona/index.js';
 import { runSeazonaSync } from '../server/integrations/seazona/lanes.js';
 import { createReplayFetch, loadReplay } from '../server/integrations/seazona/replay.js';
 import { createSeazonaScheduler } from '../server/integrations/seazona/scheduler.js';
+import { startSyncNow, syncNowStatus } from '../server/core/sync-now.js';
 import { seazonaSchema } from '../server/integrations/seazona/tables.js';
 import { freshDatabase, skipWithoutDatabase } from './support/db.js';
 import { fakeClock } from './support/seazona.js';
@@ -80,6 +81,33 @@ test('the scheduler runs, then sleeps until the next lane is due, one run at a t
   assert.equal(scheduler.status().lastRun.ok, true);
   await scheduler.stop();
   assert.equal(timers.next(), undefined, 'stop clears the next run');
+});
+
+test('Sync now moves the waiting run to now, with its lanes, and never starts a second run', async () => {
+  const timers = manualTimers();
+  const db = { select: () => ({ from: async () => [] }) };
+  const asked = [];
+  let release;
+  const scheduler = createSeazonaScheduler({
+    db, log: silent, timers, firstDelayMs: 60_000,
+    run: (options) => {
+      asked.push(options);
+      return new Promise((resolve) => { release = () => resolve({ ok: true, results: { invoices: { ok: true } } }); });
+    },
+  });
+  scheduler.start();
+  const waiting = timers.next();
+  assert.equal(scheduler.runNow({ only: ['invoices'] }), 'started');
+  assert.equal(waiting.cleared, true, 'the waiting run is moved, not doubled');
+  assert.deepEqual(asked, [{ only: ['invoices'] }]);
+  assert.equal(scheduler.runNow({ only: ['invoices'] }), 'running');
+  assert.equal(asked.length, 1);
+  release();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(scheduler.status().lastRun.ok, true);
+  assert.ok(timers.next(), 'the schedule goes on after it');
+  await scheduler.stop();
+  assert.equal(scheduler.runNow(), 'stopped');
 });
 
 test('a run that never ends is reported once, and the next run starts without it (issue #143)', async () => {
@@ -318,5 +346,24 @@ describe('Seazona adapter on the integration port', { skip: skipWithoutDatabase 
     await db.execute(sql`update seazona_lane_state set last_success_at = now(), status = 'ok'`);
     assert.equal((await live.capabilities.health()).ok, true);
     assert.deepEqual(await live.capabilities.alerts(), []);
+  });
+
+  test('Sync now reads the changing lanes when it is included, and does nothing when it is off', async () => {
+    await boot(REPLAY_ENV);
+    assert.deepEqual((await syncNowStatus(registry)).map(({ id, included, running, lastAt }) => [id, included, running, lastAt]), [['seazona', true, false, null]]);
+    const [first] = await startSyncNow(registry, { log: silent });
+    assert.deepEqual(first, { id: 'seazona', name: 'Seazona', state: 'started' });
+    assert.equal((await startSyncNow(registry, { log: silent }))[0].state, 'running', 'one read at a time');
+    while ((await syncNowStatus(registry))[0].running) await new Promise((resolve) => setTimeout(resolve, 10));
+    const [done] = await syncNowStatus(registry);
+    assert.ok(done.lastAt);
+    assert.equal(done.ok, true);
+    const { rows: lanes } = await db.execute(sql`select lane from seazona_lane_state where last_success_at is not null order by lane`);
+    assert.deepEqual(lanes.map((r) => r.lane), [...SYNC_NOW_LANES].sort());
+    await registry.stop();
+
+    await boot({ ...REPLAY_ENV, SEAZONA_SYNC_NOW: 'off' });
+    assert.equal((await syncNowStatus(registry))[0].included, false);
+    assert.deepEqual(await startSyncNow(registry, { log: silent }), [{ id: 'seazona', name: 'Seazona', state: 'off' }]);
   });
 });

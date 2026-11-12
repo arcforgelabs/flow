@@ -69,6 +69,7 @@ workspace live credentials.
 | `SEAZONA_API_TELEMETRY_RETENTION_DAYS` | How long request telemetry is kept. Default 35, so last month's question from Seazona can be answered. Maximum 90. |
 | `SEAZONA_ORDER_URL` | Optional. The address of one order in Seazona's own screens, with `{ref}` where the order number goes, for example `https://<your Seazona>/orders/{ref}`. A person may instead paste the address of any one order as the browser shows it: Flow turns the order id in it (a GUID) into `{ref}`. A stage move on the Jobs board opens it, and so does **Open in Seazona** on a changed job. Must use https and hold `{ref}` or an order id; otherwise Flow ignores it: the Jobs board shows the order number to copy, and with the API address `https://{lab}.seazonaapi.net`, Flow opens the order at `https://{lab}.seazona.net/OrderEdit.aspx?id={order id}`. Also on the Seazona integration screen as "Order address". |
 | `SEAZONA_KEEP_PATIENT_REFERENCE` | `on` keeps Seazona's patient field on orders and invoices as the patient reference an invoice prints (the `{patient}` token of the Reference rule). Default off: no patient field is stored. Also on the Seazona integration screen as "Keep patient names". When on, the Jobs list can show a Patient column. |
+| `SEAZONA_SYNC_NOW` | `off` leaves Seazona out of Sync now on the Integrations page ([Sync now](INTEGRATIONS.md#sync-now)). Default on. Also on the Seazona integration screen as "Include in Sync now". |
 | `SEAZONA_API_READ_HIDE_PATIENT` | `on` makes the Seazona read (`/api/seazona/api/…`, used by an AI assistant) drop patient, note, file and clinical fields before it answers. Default off: the read answers what Seazona gives. Also on the Seazona integration screen as "Hide patient details". |
 | `SEAZONA_INVOICE_CADENCE_MS`, `SEAZONA_ORDER_CADENCE_MS`, `SEAZONA_ACTIVE_ORDER_CADENCE_MS`, `SEAZONA_CLIENT_CADENCE_MS`, `SEAZONA_REFERENCE_CADENCE_MS` | How often each lane runs in live mode. Defaults below. |
 | `SEAZONA_ORDER_LOOKBACK_DAYS` | How far back the recent-order lane reads. Default 30. |
@@ -158,7 +159,9 @@ reads last month?".
 Only `live` mode starts it (`server/integrations/seazona/scheduler.js`). It
 first runs 5 seconds after start, runs every lane that is due, then sleeps
 until the next lane is due (at least 15 seconds, at most 30 minutes). One run
-at a time; a lane that another process is running is skipped.
+at a time; a lane that another process is running is skipped. Sync now moves
+the waiting run to now, with only the day-to-day lanes; while a run is going
+it starts nothing.
 
 ## Sync lanes
 

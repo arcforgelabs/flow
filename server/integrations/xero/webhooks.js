@@ -272,16 +272,17 @@ export async function dueDailyChecks(db, runtime, { now = Date.now() } = {}) {
 //   unavailable  the read could not run (`reason`); act on nothing
 export const READ_FIRST_MS = 10 * 60 * 1000;
 
-export async function readChangesFirst(db, runtime, organisationId, { now = Date.now } = {}) {
+// `force` (Sync now) reads even when the copy counts as current.
+export async function readChangesFirst(db, runtime, organisationId, { now = Date.now, force = false } = {}) {
   const { rows: [connection] } = await db.execute(sql`select tenant_id from xero_connections
     where organisation_id = ${organisationId} and mode = ${runtime.settings.mode}`);
   if (!connection) return { state: 'unavailable', reason: 'Xero is not connected' };
   const { rows: [{ waiting }] } = await db.execute(sql`select count(*)::int as waiting from xero_webhook_events
     where organisation_id = ${organisationId} and pending`);
-  if (!waiting && await webhooksActive(db, runtime, organisationId, { now: Number(now()) })) return { state: 'fresh' };
+  if (!force && !waiting && await webhooksActive(db, runtime, organisationId, { now: Number(now()) })) return { state: 'fresh' };
   const { rows: [{ oldest }] } = await db.execute(sql`select min(last_read_at) as oldest from xero_mirror_cursors
     where organisation_id = ${organisationId} and resource in ('invoices', 'credit_notes')`);
-  if (!waiting && oldest && Number(now()) - new Date(oldest).getTime() <= READ_FIRST_MS) return { state: 'fresh' };
+  if (!force && !waiting && oldest && Number(now()) - new Date(oldest).getTime() <= READ_FIRST_MS) return { state: 'fresh' };
   try {
     const inbox = await readInbox(db, runtime, organisationId, { now });
     if (inbox.stopped) return { state: 'unavailable', reason: inbox.stopped === 'budget' ? 'the day\'s Xero calls are kept for people' : 'Xero calls are stopped' };

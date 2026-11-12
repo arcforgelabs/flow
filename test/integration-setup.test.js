@@ -125,6 +125,24 @@ describe('Settings, Integrations', { skip: skipWithoutDatabase }, () => {
     assert.equal(stored.get('seazona').enabled, true);
   });
 
+  test('Sync now: an owner sees who takes part; "Include in Sync now" off leaves Seazona out; one press a minute', async () => {
+    const path = '/api/integrations/sync-now';
+    assert.equal((await request(app, path, { token: lab.staffToken })).status, 403);
+    assert.equal((await request(app, path, { token: lab.staffToken, method: 'POST' })).status, 403);
+    const status = await request(app, path, { token: lab.ownerToken });
+    assert.deepEqual(status.body.integrations.map(({ id, included, running }) => [id, included, running]), [['seazona', true, false]], 'on by default');
+    // Off, so the press calls nothing (this test has no network).
+    assert.equal((await put(lab.ownerToken, { values: { SEAZONA_SYNC_NOW: 'off' } })).status, 200);
+    assert.equal((await request(app, path, { token: lab.ownerToken })).body.integrations[0].included, false);
+    const pressed = await request(app, path, { token: lab.ownerToken, method: 'POST' });
+    assert.equal(pressed.status, 200, JSON.stringify(pressed.body));
+    assert.deepEqual(pressed.body.results, [{ id: 'seazona', name: 'Seazona', state: 'off' }]);
+    const again = await request(app, path, { token: lab.ownerToken, method: 'POST' });
+    assert.equal(again.status, 429);
+    assert.equal(again.body.code, 'action_cooldown');
+    assert.equal((await put(lab.ownerToken, { values: { SEAZONA_SYNC_NOW: 'on' } })).status, 200);
+  });
+
   test('bad values are refused before anything is stored', async () => {
     assert.equal((await put(lab.ownerToken, { values: { SEAZONA_MODE: 'replay' } })).status, 400);
     assert.equal((await put(lab.ownerToken, { values: { SEAZONA_API_BASE_URL: 'http://plain.example.test' } })).status, 400);

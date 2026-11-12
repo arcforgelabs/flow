@@ -53,9 +53,14 @@ export const SEAZONA_SETUP = {
     { name: 'SEAZONA_API_CLIENT_SECRET', label: 'Client secret', secret: true, help: 'Stored encrypted. Flow never shows it again.' },
     { name: 'SEAZONA_ORDER_URL', label: 'Order address', kind: 'url', help: 'Optional. Open any order in Seazona and paste its address here, or write {ref} where the order id goes. Stage moves on the Jobs board and Open in Seazona use it.' },
     { name: 'SEAZONA_KEEP_PATIENT_REFERENCE', label: 'Keep patient names', kind: 'onoff', help: 'On: Flow keeps the patient name of each job for the invoice Reference.' },
+    { name: 'SEAZONA_SYNC_NOW', label: 'Include in Sync now', kind: 'onoff', default: 'on', help: 'On: Sync now on the Integrations page reads Seazona\'s new and changed orders, invoices and practices.' },
     { name: 'SEAZONA_API_READ_HIDE_PATIENT', label: 'Hide patient details', kind: 'onoff', help: 'On: an AI assistant reading Seazona through Flow gets no patient, note, file or clinical fields.' },
   ],
 };
+
+// The lanes Sync now reads: what changes from day to day. Products, lab
+// users, the history read and the sweep keep their own schedule.
+export const SYNC_NOW_LANES = Object.freeze(['invoices', 'orders_recent', 'orders_active', 'clients']);
 
 // What a person reads for each lane: the Seazona records it copies.
 const READ_NAMES = {
@@ -72,6 +77,10 @@ const readNames = (lanes) => lanes.map((lane) => READ_NAMES[lane.lane] ?? lane.l
 export function createSeazonaAdapter({ env = null, fetchImpl = null, now = Date.now, timers } = {}) {
   let runtime = null; // { settings, db, client, scheduler }
   const actReader = createActReader({ now });
+  // Sync now with no background sync (sandbox, replay, or background jobs
+  // off): one run at a time, and when the last one ended.
+  let manual = null;
+  let manualLast = null;
 
   function current() {
     if (!runtime) throw new Error('The Seazona adapter has not started');
@@ -121,6 +130,7 @@ export function createSeazonaAdapter({ env = null, fetchImpl = null, now = Date.
 
     async stop() {
       await runtime?.scheduler?.stop();
+      await manual;
       runtime = null;
     },
 
@@ -176,6 +186,39 @@ export function createSeazonaAdapter({ env = null, fetchImpl = null, now = Date.
           });
         }
         return alerts;
+      },
+
+      // Sync now (server/core/sync-now.js): read new and changed orders,
+      // invoices and practices now, inside the rate governor. It answers at
+      // once; the run goes on in the background. Off while "Include in Sync
+      // now" is off.
+      async syncNow() {
+        if (!runtime) return { state: 'unavailable', reason: 'Seazona has not started' };
+        if (!runtime.settings.syncNow) return { state: 'off' };
+        const options = { only: SYNC_NOW_LANES };
+        if (runtime.scheduler) {
+          const state = runtime.scheduler.runNow(options);
+          return state === 'stopped' ? { state: 'unavailable', reason: 'Seazona is stopping' } : { state };
+        }
+        if (manual) return { state: 'running' };
+        const at = new Date(Number(now())).toISOString();
+        manual = runtime.run(options)
+          .then((result) => { manualLast = { at, ok: result.ok }; })
+          .catch(() => { manualLast = { at, ok: false }; })
+          .finally(() => { manual = null; });
+        return { state: 'started' };
+      },
+
+      async syncNowStatus() {
+        if (!runtime) return { included: false, running: false, lastAt: null, ok: null };
+        const scheduled = runtime.scheduler?.status();
+        const last = scheduled ? scheduled.lastRun : manualLast;
+        return {
+          included: runtime.settings.syncNow,
+          running: Boolean(scheduled?.running || manual),
+          lastAt: last?.at ?? null,
+          ok: last ? last.ok : null,
+        };
       },
 
       // Billable work since a cursor: complete and shipped orders that

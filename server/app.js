@@ -146,7 +146,7 @@ export function createApp({
   // Settings, Integrations: an owner turns integrations on and enters their
   // settings (server/integrations/setup.js).
   if (integrations && database && auth?.personAuth) {
-    app.use('/api/integrations', createSetupRouter({ db: database.db, registry: integrations, personAuth: auth.personAuth, secrets, log }));
+    app.use('/api/integrations', createSetupRouter({ db: database.db, registry: integrations, personAuth: auth.personAuth, secrets, log, buttonCooldowns }));
   }
   // Invoicing for signed-in people (server/api/invoicing.js). A job's draft
   // invoice needs a live check in the accounting system: the first enabled

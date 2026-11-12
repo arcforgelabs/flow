@@ -4,6 +4,7 @@ import { after, before, beforeEach, describe, test } from 'node:test';
 import { sql } from 'drizzle-orm';
 import { IMPORT_KIND, queueChangesRead, REFRESH_MS, runImportOnce } from '../server/integrations/xero/import.js';
 import { dailyCheck, DAILY_FLAG_MAX, READ_FIRST_MS, readChangesFirst, readInbox, runWebhookWork, signatureValid, summaryDiffers, WEBHOOK_REFRESH_MS } from '../server/integrations/xero/webhooks.js';
+import { startSyncNow, syncNowStatus } from '../server/core/sync-now.js';
 import { request } from './support/clerk.js';
 import { freshDatabase, skipWithoutDatabase } from './support/db.js';
 import { bootFlow, connectDirectly, quietLog, scriptedXero, seedLab, TENANT, xeroAnswer } from './support/xero.js';
@@ -223,6 +224,11 @@ describe('Xero webhooks', { skip: skipWithoutDatabase }, () => {
     assert.deepEqual(await readChangesFirst(handle.db, xero.runtime, org()), { state: 'fresh' });
     assert.equal(replay.calls.length, 0);
 
+    // Sync now (force) reads even then.
+    replay = xero.script([xeroAnswer('Invoices', { Invoices: [] }, { query: { page: 1 } }), empty('CreditNotes')]);
+    assert.deepEqual(await readChangesFirst(handle.db, xero.runtime, org(), { force: true }), { state: 'read', changed: 0 });
+    assert.deepEqual(replay.calls.map((c) => c.path.split('/').pop()), ['Invoices', 'CreditNotes']);
+
     // A failing read, or no connection, means wait.
     await deliver({ events: [event('INVOICE', 'r2')] });
     xero.script([xeroAnswer('Invoices', { Message: 'boom' }, { status: 500, repeat: true })]);
@@ -230,6 +236,26 @@ describe('Xero webhooks', { skip: skipWithoutDatabase }, () => {
     await handle.db.execute(sql`update xero_webhook_events set pending = false`);
     const other = await handle.db.execute(sql`select gen_random_uuid() as id`);
     assert.deepEqual(await readChangesFirst(handle.db, xero.runtime, other.rows[0].id), { state: 'unavailable', reason: 'Xero is not connected' });
+  });
+
+  test('Sync now leaves Xero out by default; included, it reads the latest changes now', async () => {
+    const out = await bootFlow(handle, { runtime: xero.runtime });
+    assert.deepEqual(await startSyncNow(out.integrations, { log: quietLog() }), [{ id: 'xero', name: 'Xero', state: 'off' }]);
+    assert.equal((await syncNowStatus(out.integrations))[0].included, false);
+    await out.integrations.stop?.();
+
+    // XERO_SYNC_NOW=on, with the same signed-in client.
+    const runtime = { ...xero.runtime, settings: { ...xero.runtime.settings, syncNow: true } };
+    const booted = await bootFlow(handle, { runtime });
+    await handle.db.execute(sql`update xero_webhook_events set pending = false`);
+    await handle.db.execute(sql`update xero_mirror_cursors set last_read_at = now()`);
+    const replay = xero.script([xeroAnswer('Invoices', { Invoices: [] }, { query: { page: 1 } }), xeroAnswer('CreditNotes', { CreditNotes: [] }, { query: { page: 1 } })]);
+    assert.deepEqual(await startSyncNow(booted.integrations, { log: quietLog() }), [{ id: 'xero', name: 'Xero', state: 'read', changed: 0 }]);
+    assert.deepEqual(replay.calls.map((c) => c.path.split('/').pop()), ['Invoices', 'CreditNotes'], 'read although the copy was current');
+    const [status] = await syncNowStatus(booted.integrations);
+    assert.equal(status.included, true);
+    assert.ok(status.lastAt);
+    await booted.integrations.stop?.();
   });
 
   test('without a webhook key, the endpoint does not answer', async () => {

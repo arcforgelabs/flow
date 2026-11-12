@@ -206,6 +206,9 @@ export function resolveSeazonaSettings(env = process.env) {
     // order number, for "Open in Seazona" on a stage move. Optional; one
     // without {ref} is ignored.
     orderUrlTemplate: orderUrlTemplate(env.SEAZONA_ORDER_URL),
+    // "Include in Sync now" (server/core/sync-now.js): on unless the lab
+    // turns it off.
+    syncNow: !['0', 'false', 'off', 'no'].includes(text(env.SEAZONA_SYNC_NOW).toLowerCase()),
   };
 
   if (mode === 'live' || mode === 'sandbox') {
