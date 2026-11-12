@@ -1,6 +1,6 @@
 ---
 name: flow
-description: Run the lab's Flow app and read Seazona through it - invoice tabs, send ready invoices, void or delete drafts, invoice rules, jobs, and Seazona orders, invoices and clients.
+description: Run the lab's Flow app and read Seazona through it - invoice tabs, send ready invoices, void or delete drafts, invoice rules, jobs, compare prices across Flow, Xero and Seazona, link price codes, and Seazona orders, invoices and clients.
 metadata: { "openclaw": { "requires": { "bins": ["curl", "openssl", "sha256sum"] } } }
 ---
 
@@ -59,6 +59,59 @@ confirm.
 
 Sending: Flow sends each invoice to Xero as a draft unless the "Approve and
 email" setting is on (`invoicing/settings`). Say which one applies before a send.
+
+## Prices and price codes
+
+Flow's price list is the lab's own list of codes and prices
+(`docs/PRICE_LIST.md`). Flow keeps a copy of the Xero items and the Seazona
+products and links each one to a Flow code. `price-list` reads only Flow's
+copies, so it costs no Xero or Seazona calls.
+
+| Do this | Command |
+| --- | --- |
+| Compare all prices | `flow.sh get invoicing/price-list` |
+| Flow codes only | `flow.sh get 'invoicing/price-items?q=<text>'` |
+| Change a Flow price | `flow.sh put invoicing/price-items/<id> '{"unitAmountCents":13500}'` (also `name`, `taxCode` GST or GST_FREE) |
+| Add a Flow code | `flow.sh post invoicing/price-items '{"code":"...","name":"...","unitAmountCents":13500,"taxCode":"GST"}'` |
+| Link records to codes | `flow.sh post invoicing/price-links '{"links":[{"priceItemId":"<id>","system":"xero","externalId":"<id>"}]}'` |
+| Remove a link | `flow.sh delete invoicing/price-links/<link id>` |
+| Accept a difference | `flow.sh post invoicing/price-items/<id>/resolve` |
+| Lines that wait for a code | `flow.sh get invoicing/line-labels` (rows with `unmapped` above 0) |
+| Give a line its code | `flow.sh post invoicing/line-mappings '{"kind":"saved","label":"<label>","unitAmountCents":<label price>,"itemCode":"<Flow code>"}'` |
+| Saved code choices | `flow.sh get invoicing/line-mappings`; change `put invoicing/line-mappings/<id>`, remove `delete invoicing/line-mappings/<id>` |
+
+How to read `price-list`:
+
+- `systems`: each connected list (`xero`, `seazona`), its record count and
+  `syncedAt`. An old `syncedAt` means Flow's copy can be behind.
+- `items`: each Flow code with its `links` (the linked Xero item or Seazona
+  product, as `record`) and `findings`. A finding `kind` is `price` (Flow and
+  the other system differ: `flow` and `other` in cents), `tax`, `missing` (the
+  linked record is gone) or `not_linked` (no Xero item for this code).
+- `unlinked`: Xero items and Seazona products that no Flow code has yet.
+
+Reconcile steps:
+
+1. Read `price-list` and `line-labels`. Show the person one table: each code
+   with the Flow, Xero and Seazona price, what differs, and each line label
+   that waits.
+2. For each difference, ask which price is right. Do not guess.
+3. When the person says yes, fix it in the right place:
+   - Flow price or code: the Flow commands above.
+   - Xero item: your own `xero` command (Flow never changes a Xero item).
+     Flow's copy takes the change on its next Xero sync.
+   - Seazona product: read only. Tell the person to change it in Seazona.
+   - A record that is the same thing as a code but has no link: link it.
+   - A difference that is correct (for example a Seazona product at $0):
+     accept it with `resolve`.
+4. Waiting lines: match each label to a code by name and price, show the
+   person the pairs, and save each pair they agree with as a line mapping.
+   The `label` and `unitAmountCents` come from that `line-labels` row. Jobs
+   with that line move on at the next Flow sync (a few minutes).
+5. Read `price-list` and `line-labels` again and show what is left.
+
+Every change on this list (price, code, link, resolve, line mapping) needs
+the person's yes in the chat first, like a send.
 
 ## Seazona (read only)
 
