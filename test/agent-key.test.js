@@ -103,7 +103,7 @@ describe('the agent key against PostgreSQL', { skip: skipWithoutDatabase }, () =
     };
     let hide = false;
     const seazona = express().use('/api/seazona', createSeazonaRouter({ db: handle.db, personAuth, read, hidePatientFields: () => hide, log: quiet }));
-    const full = await request(seazona, '/api/seazona/api/orders/', { token: KEY });
+    const full = await request(seazona, '/api/seazona/api/orders/?ordered=2026-11-10T00:00:00', { token: KEY });
     assert.equal(full.body.data.Patient, 'Ada Example');
     hide = true;
     const list = await request(seazona, '/api/seazona/api/orders/?ordered=2026-11-11T00:00:00&page=1&bad-key=x', { token: KEY });
@@ -111,6 +111,11 @@ describe('the agent key against PostgreSQL', { skip: skipWithoutDatabase }, () =
     assert.deepEqual(list.body.data, { path: 'orders/', lines: [{ code: 'ZR', qty: 1 }] });
     assert.doesNotMatch(JSON.stringify(list.body), /Ada Example|shade/);
     assert.deepEqual(calls[1], ['orders/', { ordered: '2026-11-11T00:00:00', page: '1' }]);
+    const bare = await request(seazona, '/api/seazona/api/orders/?page=1&pageSize=5', { token: KEY });
+    assert.equal(bare.status, 400);
+    assert.match(bare.body.error, /ordered=/);
+    const users = await request(seazona, '/api/seazona/api/users/', { token: KEY });
+    assert.equal(users.status, 200);
     const one = await request(seazona, '/api/seazona/api/clients/1234', { token: KEY });
     assert.equal(one.body.data.path, 'clients/1234');
     const missing = await request(seazona, '/api/seazona/api/orders/missing', { token: KEY });
@@ -119,7 +124,7 @@ describe('the agent key against PostgreSQL', { skip: skipWithoutDatabase }, () =
     assert.equal(other.status, 404);
     const write = await request(seazona, '/api/seazona/api/orders/', { token: KEY, method: 'POST', body: {} });
     assert.equal(write.status, 404);
-    assert.equal(calls.length, 4);
+    assert.equal(calls.length, 5);
   });
 
   test('turning the person off stops the key on the next request', async () => {

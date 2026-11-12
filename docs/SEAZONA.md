@@ -586,7 +586,10 @@ limit with the sync. It never writes to Seazona and stores nothing. With
 `SEAZONA_API_READ_HIDE_PATIENT` on ("Hide patient details"), it first drops
 every field whose name says patient, note, comment, instruction, file, image,
 prescription, shade, clinical, medical or birth, at any depth. Off by default.
-A Seazona
+A list of orders needs `ordered=<day>T00:00:00`, and a list of invoices or clients needs
+`lastModified=<date>T00:00:00`; without it Flow answers 400 and makes no call, because
+every Seazona error counts against the call guard that also protects the sync. A Seazona
+400 answers 400; a Seazona
 404 answers 404; a limit or a stopped client answers 429; any other failure
 answers 502. Each call logs one line with the resource and the person.
 
