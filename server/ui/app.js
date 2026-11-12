@@ -899,10 +899,25 @@ async function renderIntegration(main, id) {
     const modeLabel = mode?.choices?.find((c) => c.value === mode.value)?.label ?? mode?.value;
     const busy = progress && progress.steps.some((step) => step.state === 'running');
 
-    const primary = !canChange || hostOwned ? null : on
-      ? h('button', { class: 'fx-btn', type: 'button', onclick: () => save(false) }, 'Disconnect')
+    const primary = !canChange || hostOwned || on ? null
       : h('button', { class: 'fx-btn fx-btn--primary', type: 'button', disabled: busy, onclick: connect },
         busy ? h('span', { class: 'fx-spinner fx-spinner--sm', 'aria-hidden': 'true' }) : null, busy ? 'Connecting' : 'Connect');
+    // Disconnect sits at the end of the page, away from Sync, and asks first:
+    // a stray tap must not stop an integration.
+    const disconnect = !canChange || hostOwned || !on ? null
+      : h('div', { class: 'fx-int-section' }, h('div', { class: 'fx-row fx-row--end' },
+        h('button', {
+          class: 'fx-btn fx-btn--ghost fx-btn--danger', type: 'button',
+          onclick: async () => {
+            const ok = await dialog({
+              title: `Disconnect ${current.name}?`,
+              body: h('p', {}, `Flow stops reading and sending through ${current.name}. Your settings stay, and you can connect again.`),
+              confirm: 'Disconnect',
+              tone: 'danger',
+            });
+            if (ok) await save(false);
+          },
+        }, 'Disconnect')));
 
     host.replaceChildren(
       crumbs(['/integrations', 'Integrations'], current.name),
@@ -938,6 +953,7 @@ async function renderIntegration(main, id) {
               h('summary', {}, 'Advanced'),
               h('div', { class: 'fx-settings' }, advanced)) : null,
             canChange && on && inputs.size ? h('div', { class: 'fx-row fx-row--end' }, h('button', { class: 'fx-btn', type: 'button', onclick: () => save(undefined) }, 'Save changes')) : null) : null,
+          disconnect,
         ].filter(Boolean)),
         h('aside', { class: 'fx-int-page__meta' },
           h('dl', { class: 'fx-meta' }, ...[

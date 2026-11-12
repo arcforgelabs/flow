@@ -258,7 +258,8 @@ export function dialog({ title, body, confirm, tone = 'primary', choices = null 
     if (choices) element.addEventListener('click', (event) => { if (event.target === element) element.close(); });
     document.body.append(element);
     element.showModal();
-    element.querySelector(choices ? '.fx-sheet__choice' : 'input, select, button[value="ok"]')?.focus();
+    // A danger dialog starts on Cancel, so Enter alone does not confirm it.
+    element.querySelector(choices ? '.fx-sheet__choice' : tone === 'danger' ? 'input, select, button[value="cancel"]' : 'input, select, button[value="ok"]')?.focus();
   });
 }
 
