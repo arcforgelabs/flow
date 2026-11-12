@@ -101,8 +101,9 @@ export async function listReconcile(db, organisationId) {
     status: billingObligations.sourceStatus,
     sourceSystem: billingObligations.sourceSystem,
     sourceJobRef: billingObligations.sourceJobRef,
-    // An unclear accounting match: "Make invoice" settles it first.
-    unclear: sql`${billingObligations.accountingState} = 'ambiguous'`.mapWith(Boolean),
+    // An unclear accounting match, or a matched accounting invoice that was
+    // voided or deleted there: "Make invoice" settles it first.
+    unclear: sql`${billingObligations.accountingState} in ('ambiguous', 'voided', 'deleted') and ${billingObligations.invoiceId} is null`.mapWith(Boolean),
     possible: sql`(select count(*) from invoices i
       where i.organisation_id = ${billingObligations.organisationId} and i.contact_id = ${billingObligations.contactId}
         and i.status <> 'void' and i.total_cents = ${billingObligations.totalCents}
@@ -152,8 +153,9 @@ export async function jobMatchDetail(db, organisationId, obligationId, { referen
     lines: jobLines(o, codes),
     totalCents: o.totalCents,
     open: !o.invoiceId && !o.accountingRef,
-    // An unclear accounting match: "Make invoice" settles it first.
-    unclear: o.accountingState === 'ambiguous',
+    // An unclear accounting match, or a matched accounting invoice that was
+    // voided or deleted there: "Make invoice" settles it first.
+    unclear: !o.invoiceId && ['ambiguous', 'voided', 'deleted'].includes(o.accountingState),
   };
 
   const search = String(q ?? '').trim();

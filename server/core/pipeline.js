@@ -342,6 +342,10 @@ export function rankCandidates(obligation, invoices, { prior = null, rivals = []
 
 const amountsAgree = (obligation, invoice) => totalsFor(obligation).has(invoice.totalCents);
 const withoutReissue = (ref) => String(ref).replace(/R$/i, '');
+// A voided or deleted accounting invoice bills nothing: it never links a job
+// by itself. A lab that reissued work voids the first invoice, and that one
+// keeps the work system's number.
+const live = (invoice) => !['voided', 'deleted'].includes(invoice.state);
 
 async function saveSuggestions(db, organisationId, obligationId, system, ranked) {
   const keep = ranked.slice(0, 5);
@@ -392,14 +396,14 @@ export async function matchJob(db, organisationId, obligation, {
   });
   if (prior) {
     const [invoice] = await find({ invoiceIds: [prior.externalId] });
-    if (invoice && !rejected.has(invoice.id) && (prior.matchedBy === 'person' || amountsAgree(obligation, invoice))) {
+    if (invoice && live(invoice) && !rejected.has(invoice.id) && (prior.matchedBy === 'person' || amountsAgree(obligation, invoice))) {
       return exact(invoice, 'prior_link');
     }
   }
   if (obligation.sourceInvoiceRef) {
     const numbers = [obligation.sourceInvoiceRef, withoutReissue(obligation.sourceInvoiceRef)];
     const same = (await find({ numbers }))
-      .filter((i) => !rejected.has(i.id) && (!xeroContactId || i.contactId === xeroContactId));
+      .filter((i) => live(i) && !rejected.has(i.id) && (!xeroContactId || i.contactId === xeroContactId));
     if (same.length === 1) return exact(same[0], 'source_invoice_ref');
   }
   // Without the customer's accounting contact there is nothing to compare.
