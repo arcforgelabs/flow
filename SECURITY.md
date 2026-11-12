@@ -33,8 +33,8 @@ paste a credential, in full or in part.
   requests. It does not implement connector keys.
 - **AI assistant key.** Also off by default. When the host sets
   `FLOW_AGENT_KEY_SHA256` and `FLOW_AGENT_EMAIL`, one bearer key acts as one
-  Flow person, inside that person's role, on `/api/me`, `/api/invoicing/…` and
-  `GET /api/seazona/api/…` only (`docs/AGENT_ACCESS.md`, "AI assistant key").
+  Flow person, inside that person's role, on `/api/me`, `/api/invoicing/…`,
+  `/api/xero/…` (never connect or disconnect) and `GET /api/seazona/api/…` only (`docs/AGENT_ACCESS.md`, "AI assistant key").
   With the admin role that includes invoice writes: rules, void, delete draft
   and send to the accounting system. Flow stores only the key's SHA-256; the key
   stays with the assistant. Owner actions always refuse the key. Turning the

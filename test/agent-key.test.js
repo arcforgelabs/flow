@@ -10,6 +10,7 @@ import { createOrganisation } from '../server/core/directory.js';
 import { createRegistry } from '../server/integrations/port.js';
 import { SeazonaApiError } from '../server/integrations/seazona/client.js';
 import { createSeazonaRouter } from '../server/integrations/seazona/routes.js';
+import { createXeroRouter } from '../server/integrations/xero/routes.js';
 import { fakeClerk, request, TEST_PUBLISHABLE_KEY } from './support/clerk.js';
 import { freshDatabase, skipWithoutDatabase } from './support/db.js';
 
@@ -31,11 +32,12 @@ describe('the agent key against PostgreSQL', { skip: skipWithoutDatabase }, () =
   let owner;
   let agent;
   let personAuth;
+  let organisationId;
   const asAgent = (path, options = {}) => request(app, path, { token: KEY, ...options });
 
   before(async () => {
     handle = await freshDatabase();
-    await createOrganisation(handle.db, { name: 'Example Lab' });
+    ({ id: organisationId } = await createOrganisation(handle.db, { name: 'Example Lab' }));
     owner = await seedFirstOwner(handle.db, 'owner@example.test');
     agent = await invitePerson(handle.db, { email: 'assistant@example.test', role: 'admin', invitedBy: owner.id });
     const clerk = fakeClerk();
@@ -59,7 +61,19 @@ describe('the agent key against PostgreSQL', { skip: skipWithoutDatabase }, () =
     assert.equal(rules.status, 200, JSON.stringify(rules.body));
   });
 
-  test('the key opens only invoicing, the Seazona read and /api/me', async () => {
+  test('the key reaches the Xero matching routes, but never connects or disconnects Xero', async () => {
+    const xero = express().use('/api/xero', createXeroRouter({ db: handle.db, personAuth, runtime: { settings: { mode: 'demo' } }, log: quiet, buttonCooldowns: false }));
+    // Past sign-in and role: the route itself answers (here, that the id is bad).
+    const imported = await request(xero, '/api/xero/import?organisationId=not-an-id', { token: KEY });
+    assert.equal(imported.status, 400, JSON.stringify(imported.body));
+    assert.equal(imported.body.code, 'invalid');
+    await updatePerson(handle.db, { id: agent.id, actorId: owner.id, role: 'owner' });
+    const connect = await request(xero, '/api/xero/connect', { token: KEY, method: 'POST', body: { organisationId } });
+    assert.equal(connect.status, 403, JSON.stringify(connect.body));
+    await updatePerson(handle.db, { id: agent.id, actorId: owner.id, role: 'admin' });
+  });
+
+  test('the key opens only invoicing, Xero, the Seazona read and /api/me', async () => {
     const fields = await asAgent('/api/custom-fields');
     assert.equal(fields.status, 403);
     assert.equal(fields.body.code, 'role_required');

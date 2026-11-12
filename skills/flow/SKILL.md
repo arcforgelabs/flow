@@ -1,6 +1,6 @@
 ---
 name: flow
-description: Run the lab's Flow app and read Seazona through it - invoice tabs, send ready invoices, void or delete drafts, invoice rules, jobs, and Seazona orders, invoices and clients.
+description: Run the lab's Flow app and read Seazona through it - invoice tabs, send ready invoices, void or delete drafts, invoice rules, jobs, reconcile Seazona jobs with Flow and Xero, and Seazona orders, invoices and clients.
 metadata: { "openclaw": { "requires": { "bins": ["curl", "openssl", "sha256sum"] } } }
 ---
 
@@ -79,10 +79,48 @@ turned on "Hide patient details", patient, note, file and clinical fields are
 left out. Do not copy patient names outside this chat. 429: wait a
 minute and try once more.
 
+## Reconcile: Seazona jobs, Flow invoices, Xero
+
+When the person says "reconcile", "tidy up" or "why is this job not
+invoiced", work in this order. Read first, show the person what you found in
+short groups, then act on the group they confirm.
+
+1. **Jobs against Flow invoices.** `flow.sh get invoicing/reconcile` lists
+   jobs with no invoice and invoices with no job. For one row:
+   `flow.sh get invoicing/jobs/<job id>/reconcile` or
+   `flow.sh get invoicing/invoices/<id>/reconcile` (each lists the likely other
+   side; `best: true` is the top guess).
+   - Link a job to its invoice: `flow.sh post invoicing/jobs/<job id>/link '{"invoiceId":"<id>"}'`
+   - Job needs no invoice: `flow.sh post invoicing/jobs/<job id>/no-invoice`
+   - Make the invoice now: `flow.sh post invoicing/jobs/<job id>/draft`
+   - Read the job again from Seazona: `flow.sh post invoicing/jobs/<job id>/recheck`
+2. **Flow against Xero.** First get the lab id:
+   `flow.sh get invoicing/context` (`organisations[0].id`, below `<org>`).
+   - Refresh Flow's copy of Xero: `flow.sh post xero/mirror '{"organisationId":"<org>"}'`
+   - Xero invoices against Flow's: `flow.sh get 'xero/import?organisationId=<org>&show=check'`
+     (show: `check`, `linked`, `invoice_fits`, `job_fits`, `none`, `all`)
+   - Match them all again: `flow.sh post xero/import/match '{"organisationId":"<org>"}'`
+   - Link one Xero invoice to a Flow invoice: `flow.sh post xero/import/<xero invoice id>/link '{"organisationId":"<org>","invoiceId":"<id>"}'`
+   - Make the Flow invoice for one Xero invoice: `flow.sh post xero/import/<xero invoice id>/make '{"organisationId":"<org>","jobId":"<job id or null>"}'`
+   - Xero's state of some Flow invoices: `flow.sh post xero/invoices/status '{"organisationId":"<org>","invoiceIds":["<id>"]}'`
+   - Re-check one invoice after a fix in Xero: `flow.sh post xero/invoices/<id>/recheck '{"organisationId":"<org>"}'`
+   - Contacts: `flow.sh get 'xero/contacts/match?organisationId=<org>&contactId=<Flow contact id>'`; link to a Xero contact of another name: `flow.sh post xero/contacts/link '{"organisationId":"<org>","contactId":"<id>","xeroContactId":"<id>"}'`
+3. **Fix the cause with a rule.** If many jobs fail the same way, read
+   `invoicing/rule-fields`, propose one rule (`wait` or `skip`), and add it after
+   the person says yes. Line names that map to the wrong product:
+   `flow.sh get invoicing/line-mappings`, then change one with `put
+   invoicing/line-mappings/<id>`. Prices: `flow.sh get invoicing/price-list`.
+4. **Check Seazona itself** for one job with the Seazona read above (one order).
+
+Links, "no invoice", rules and mappings are Flow records only: say what you
+will change and do it after the person's yes. Mirror, match and recheck only
+read Xero. Sending to Xero still goes through `invoicing/invoices/send-ready`.
+
 ## Xero
 
-Xero has its own `xero` command on this Gateway. Flow's send uses Flow's own
-Xero connection, not yours.
+Xero has its own `xero` command on this Gateway, for anything Flow does not
+cover. Flow's send and the reconcile steps above use Flow's own Xero
+connection, not yours.
 
 ## Never
 
