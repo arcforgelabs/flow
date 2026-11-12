@@ -197,6 +197,13 @@
       "when": 1794454051454,
       "tag": "0027_high_doctor_strange",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1794456064675,
+      "tag": "0028_sharp_power_pack",
+      "breakpoints": true
     }
   ]
 }

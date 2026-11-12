@@ -7,6 +7,9 @@
 #   flow.sh put    <path> <json>     PUT    with a JSON body
 #   flow.sh delete <path>            DELETE
 #   flow.sh health                   GET <FLOW_URL>/health (public, no key sent)
+#   flow.sh link <kind> <id>         print a Flow page address to give a person:
+#                                    invoice <invoice id>, reconcile <job id>,
+#                                    contact <contact id>, job <case number>
 #   flow.sh update                   replace this skill with the copy the
 #                                    saved Flow serves (its own release)
 # The key stays in FLOW_AGENT_KEY_FILE (mode 600). It never goes on a command
@@ -41,6 +44,7 @@ setup() {
   fi
   chmod 600 "$KEY_FILE"
   echo "FLOW_AGENT_KEY_SHA256=$(tr -d '\n' < "$KEY_FILE" | sha256sum | cut -d' ' -f1)"
+  echo "(For a second assistant, the host sets this digest as FLOW_AGENT_KEY_SHA256_2.)"
 }
 
 call() {
@@ -78,6 +82,32 @@ update() {
   echo "Skill updated from $(flow_url)"
 }
 
+# A Flow page address for a person: the saved Flow address plus the page's
+# path. Ids are Flow's own (the `id` in an answer), never an invoice number.
+UUID_RE='^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+urlencode() {
+  local LC_ALL=C
+  local s="$1" out="" c i
+  for ((i = 0; i < ${#s}; i++)); do
+    c="${s:i:1}"
+    case "$c" in [A-Za-z0-9.~_-]) out+="$c" ;; *) out+="$(printf '%%%02X' "'$c")" ;; esac
+  done
+  printf '%s' "$out"
+}
+link() {
+  local kind="${1:-}" id="${2:-}" base
+  [[ -n "$id" && "$id" != null && "$id" != undefined ]] || die "give a kind and an id, for example: link invoice <invoice id>"
+  base="$(flow_url)"
+  case "$kind" in
+    invoice|reconcile|contact)
+      [[ "$id" =~ $UUID_RE ]] || die "$kind needs Flow's id (a UUID from the answer's \"id\"), not a number like INV-0123"
+      local page=invoices; [[ "$kind" == reconcile ]] && page=reconcile; [[ "$kind" == contact ]] && page=contacts
+      printf '%s/%s/%s\n' "$base" "$page" "$id" ;;
+    job) printf '%s/jobs?q=%s\n' "$base" "$(urlencode "$id")" ;;
+    *) die "link kinds: invoice, reconcile, contact, job" ;;
+  esac
+}
+
 case "${1:-}" in
   setup) setup "${2:-}" ;;
   get) call GET "${2:-}" ;;
@@ -86,5 +116,6 @@ case "${1:-}" in
   delete) call DELETE "${2:-}" ;;
   health) curl -sS -H 'Accept: application/json' -w '\nHTTP %{http_code}\n' "$(flow_url)/health" ;;
   update) update ;;
-  *) sed -n '2,12p' "$0"; exit 2 ;;
+  link) link "${2:-}" "${3:-}" ;;
+  *) sed -n '2,15p' "$0"; exit 2 ;;
 esac

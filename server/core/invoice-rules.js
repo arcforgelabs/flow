@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
-import { billingObligations, invoiceRuleExceptions, invoiceRules, invoicingSettings, priceItems } from '../db/schema.js';
+import { billingObligations, invoiceRuleExceptions, invoiceRules, invoicingSettings, obligationEvents, priceItems } from '../db/schema.js';
 import { FlowError, notFound } from './errors.js';
 import { getInvoice, updateDraftInvoice } from './invoices.js';
 
@@ -334,46 +334,92 @@ export async function listRules(db, organisationId) {
 // ── Exceptions ─────────────────────────────────────────────────────────────
 
 // A person says one job is fine although a rule matches it. The rule then
-// leaves the job alone. Each exception keeps who, when and why, and stays
-// listed on the rule.
+// leaves the job alone. Only a rule with an item to add takes one: its Skip.
+// Each exception keeps who, when and why, stays listed on the rule, and is
+// in the job's history. It holds while the rule's item and the job's lines
+// stay as they were; a change to either ends it, so a person looks again.
 export async function addRuleException(db, organisationId, ruleId, obligationId, { reason, actor }) {
   const why = typeof reason === 'string' ? reason.trim() : '';
   if (!why || why.length > 200) throw invalid('an exception needs a reason of 1 to 200 characters');
   if (!actor) throw invalid('actor is required');
-  await loadRule(db, organisationId, ruleId);
-  const [row] = await db.insert(invoiceRuleExceptions).values({ organisationId, ruleId, obligationId, reason: why, actor })
-    .onConflictDoUpdate({ target: [invoiceRuleExceptions.ruleId, invoiceRuleExceptions.obligationId], set: { reason: why, actor, createdAt: sql`now()` } })
-    .returning();
-  return row;
+  const rule = await loadRule(db, organisationId, ruleId);
+  if (rule.action?.kind !== 'pending' || !rule.action.addItem) throw invalid('only a pending rule with an item to add takes an exception; change or turn off the rule');
+  return db.transaction(async (tx) => {
+    const [job] = await tx.select({ id: billingObligations.id, lineFingerprint: billingObligations.lineFingerprint }).from(billingObligations)
+      .where(and(eq(billingObligations.organisationId, organisationId), eq(billingObligations.id, obligationId))).for('update');
+    if (!job) throw notFound('job');
+    const values = { reason: why, actor, itemCode: rule.action.addItem, lineFingerprint: job.lineFingerprint, createdAt: sql`now()` };
+    const [row] = await tx.insert(invoiceRuleExceptions).values({ organisationId, ruleId, obligationId, ...values })
+      .onConflictDoUpdate({ target: [invoiceRuleExceptions.ruleId, invoiceRuleExceptions.obligationId], set: values })
+      .returning();
+    await tx.insert(obligationEvents).values({ organisationId, obligationId, kind: 'rule_exception_added', actor,
+      evidence: { ruleId, rule: rule.name, item: rule.action.addItem, reason: why } });
+    return row;
+  });
 }
 
-// The rule ids each job has an exception for, by job.
+// The rule ids each job has a current exception for, by job.
 export async function ruleExceptionsFor(db, organisationId, obligationIds) {
   if (!obligationIds.length) return new Map();
   const rows = await db.select({ ruleId: invoiceRuleExceptions.ruleId, obligationId: invoiceRuleExceptions.obligationId }).from(invoiceRuleExceptions)
-    .where(and(eq(invoiceRuleExceptions.organisationId, organisationId), inArray(invoiceRuleExceptions.obligationId, obligationIds)));
+    .innerJoin(invoiceRules, eq(invoiceRules.id, invoiceRuleExceptions.ruleId))
+    .innerJoin(billingObligations, eq(billingObligations.id, invoiceRuleExceptions.obligationId))
+    .where(and(eq(invoiceRuleExceptions.organisationId, organisationId), inArray(invoiceRuleExceptions.obligationId, obligationIds), CURRENT));
   const out = new Map();
   for (const r of rows) out.set(r.obligationId, [...(out.get(r.obligationId) ?? []), r.ruleId]);
   return out;
 }
+const CURRENT = sql`(${invoiceRuleExceptions.itemCode} is not distinct from (${invoiceRules.action} ->> 'addItem')
+  and ${invoiceRuleExceptions.lineFingerprint} is not distinct from ${billingObligations.lineFingerprint})`;
 
-// One rule's exceptions, newest first.
+// One rule's exceptions, newest first. `current` is false when the rule's
+// item or the job's lines changed since: the rule applies to that job again.
 export async function listRuleExceptions(db, organisationId, ruleId) {
   await loadRule(db, organisationId, ruleId);
   return db.select({ id: invoiceRuleExceptions.id, obligationId: invoiceRuleExceptions.obligationId, reason: invoiceRuleExceptions.reason,
-    actor: invoiceRuleExceptions.actor, createdAt: invoiceRuleExceptions.createdAt }).from(invoiceRuleExceptions)
+    actor: invoiceRuleExceptions.actor, itemCode: invoiceRuleExceptions.itemCode, createdAt: invoiceRuleExceptions.createdAt, current: sql`${CURRENT}`.mapWith(Boolean) })
+    .from(invoiceRuleExceptions)
+    .innerJoin(invoiceRules, eq(invoiceRules.id, invoiceRuleExceptions.ruleId))
+    .innerJoin(billingObligations, eq(billingObligations.id, invoiceRuleExceptions.obligationId))
     .where(and(eq(invoiceRuleExceptions.organisationId, organisationId), eq(invoiceRuleExceptions.ruleId, ruleId)))
     .orderBy(desc(invoiceRuleExceptions.createdAt));
 }
 
+// One job's exceptions, for its invoice page.
+export async function jobRuleExceptions(db, organisationId, obligationId) {
+  return db.select({ id: invoiceRuleExceptions.id, ruleId: invoiceRuleExceptions.ruleId, rule: invoiceRules.name, reason: invoiceRuleExceptions.reason,
+    actor: invoiceRuleExceptions.actor, itemCode: invoiceRuleExceptions.itemCode, createdAt: invoiceRuleExceptions.createdAt, current: sql`${CURRENT}`.mapWith(Boolean) })
+    .from(invoiceRuleExceptions)
+    .innerJoin(invoiceRules, eq(invoiceRules.id, invoiceRuleExceptions.ruleId))
+    .innerJoin(billingObligations, eq(billingObligations.id, invoiceRuleExceptions.obligationId))
+    .where(and(eq(invoiceRuleExceptions.organisationId, organisationId), eq(invoiceRuleExceptions.obligationId, obligationId)))
+    .orderBy(desc(invoiceRuleExceptions.createdAt));
+}
+
 // Takes an exception back: the rule applies to the job again.
-export async function removeRuleException(db, organisationId, ruleId, exceptionId) {
-  await db.delete(invoiceRuleExceptions).where(and(eq(invoiceRuleExceptions.organisationId, organisationId),
-    eq(invoiceRuleExceptions.ruleId, ruleId), eq(invoiceRuleExceptions.id, exceptionId)));
+export async function removeRuleException(db, organisationId, ruleId, exceptionId, { actor = 'system' } = {}) {
+  return db.transaction(async (tx) => {
+    const [row] = await tx.delete(invoiceRuleExceptions).where(and(eq(invoiceRuleExceptions.organisationId, organisationId),
+      eq(invoiceRuleExceptions.ruleId, ruleId), eq(invoiceRuleExceptions.id, exceptionId))).returning();
+    if (!row) throw notFound('exception');
+    await tx.insert(obligationEvents).values({ organisationId, obligationId: row.obligationId, kind: 'rule_exception_removed', actor,
+      evidence: { ruleId, item: row.itemCode, reason: row.reason } });
+  });
+}
+
+// A rule's item must be on the price list, and not archived.
+async function checkRuleItem(db, organisationId, rule) {
+  const code = rule.action.addItem;
+  if (!code) return;
+  const [item] = await db.select({ archivedAt: priceItems.archivedAt }).from(priceItems)
+    .where(and(eq(priceItems.organisationId, organisationId), sql`upper(${priceItems.code}) = upper(${code})`));
+  if (!item) throw invalid(`the price list has no item ${code}`);
+  if (item.archivedAt) throw invalid(`price item ${code} is archived`);
 }
 
 export async function createRule(db, organisationId, raw, { personId = null } = {}) {
   const rule = readRule(raw);
+  await checkRuleItem(db, organisationId, rule);
   const existing = await listRules(db, organisationId);
   if (existing.length >= MAX_RULES) throw invalid(`an organisation can have ${MAX_RULES} rules at most`);
   const position = existing.length ? Math.max(...existing.map((r) => r.position)) + 1 : 0;
@@ -393,6 +439,7 @@ export async function updateRule(db, organisationId, ruleId, changes, { personId
   const row = await loadRule(db, organisationId, ruleId);
   if (!changes || typeof changes !== 'object' || Array.isArray(changes)) throw invalid('the change must be an object');
   const rule = readRule({ name: row.name, icon: row.icon, enabled: row.enabled, conditions: row.conditions, action: row.action, ...changes });
+  if (rule.action.addItem && rule.action.addItem !== row.action?.addItem) await checkRuleItem(db, organisationId, rule);
   const [saved] = await db.update(invoiceRules).set({ ...rule, updatedBy: personId, updatedAt: sql`now()` })
     .where(eq(invoiceRules.id, row.id)).returning();
   return shape(saved);
@@ -412,25 +459,29 @@ export async function deleteRule(db, organisationId, ruleId) {
 export async function addRuleItem(db, organisationId, invoiceId, ruleId) {
   const rule = await loadRule(db, organisationId, ruleId);
   const code = rule.action?.addItem;
-  if (!code) throw invalid('this rule has no item to add');
+  if (!code || rule.action.kind !== 'pending') throw invalid('this rule has no item to add');
+  if (!rule.enabled) throw invalid('this rule is off');
   const [item] = await db.select().from(priceItems)
     .where(and(eq(priceItems.organisationId, organisationId), sql`upper(${priceItems.code}) = upper(${code})`));
   if (!item) throw invalid(`the price list has no item ${code}`);
-  const invoice = await getInvoice(db, organisationId, invoiceId);
-  if (invoice.lines.some((l) => l.priceItemId === item.id)) return invoice;
-  const lines = invoice.lines.map(({ priceItemId, accountCode, description, quantity, unitAmountCents, taxCode }) => (
-    { priceItemId, accountCode, description, quantity, unitAmountCents, taxCode }));
-  return updateDraftInvoice(db, organisationId, invoiceId, { lines: [...lines, { priceItemId: item.id, quantity: 1 }] });
+  if (item.archivedAt) throw invalid(`price item ${code} is archived`);
+  // The lines are read under the draft's lock: a second press, or an edit at
+  // the same time, adds nothing twice and loses nothing.
+  await updateDraftInvoice(db, organisationId, invoiceId, {
+    lines: (current) => (current.some((l) => l.priceItemId === item.id) ? null : [
+      ...current.map(({ priceItemId, accountCode, description, quantity, unitAmountCents, taxCode }) => (
+        { priceItemId, accountCode, description, quantity, unitAmountCents, taxCode })),
+      { priceItemId: item.id, quantity: 1 },
+    ]),
+  });
+  return getInvoice(db, organisationId, invoiceId);
 }
 
 // "Skip" on a Pending draft: an exception for the draft's job, with a reason.
 // The same, before the job has a draft: the job board shows the job needs an
 // item, and the person knows it does not (picked up, for example).
 export async function exceptJob(db, organisationId, obligationId, ruleId, { reason, actor }) {
-  const [job] = await db.select({ id: billingObligations.id }).from(billingObligations)
-    .where(and(eq(billingObligations.organisationId, organisationId), eq(billingObligations.id, obligationId)));
-  if (!job) throw notFound('job');
-  return addRuleException(db, organisationId, ruleId, job.id, { reason, actor });
+  return addRuleException(db, organisationId, ruleId, obligationId, { reason, actor });
 }
 
 export async function exceptDraft(db, organisationId, invoiceId, ruleId, { reason, actor }) {

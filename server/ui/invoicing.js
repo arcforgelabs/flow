@@ -954,6 +954,15 @@ function sourceGapNotice(ui, invoice) {
     ui.h('a', { class: 'fx-btn fx-btn--sm fx-btn--ghost', href: invoice.job.link.url, target: '_blank', rel: 'noopener' }, `Open in ${system}`));
 }
 
+// The exceptions people gave this job: the rule, why, and whether it still
+// holds (it ends when the job's lines or the rule's item change).
+function exceptionsNotice(ui, invoice) {
+  const list = invoice?.ruleExceptions ?? [];
+  if (!list.length) return null;
+  const text = list.map((e) => `${e.rule}: ${e.reason}${e.current ? '' : ' (ended: the job changed)'}`).join('; ');
+  return ui.notice(text, 'info', list.length === 1 ? 'Exception.' : 'Exceptions.');
+}
+
 function draftView(invoice, ui, context, redraw) {
   const { h, flow, toast, go, notice, fieldError } = ui;
   const isNew = !invoice;
@@ -1367,6 +1376,7 @@ function draftView(invoice, ui, context, redraw) {
     nonChargeable ? ui.notice(brief(invoice.nonChargeable?.[0]?.message ?? 'Non-chargeable.')) : null,
     ...problems,
     sourceGapNotice(ui, invoice),
+    exceptionsNotice(ui, invoice),
     h('div', { class: 'fx-invoice__grid' },
       h('div', { class: 'fx-invoice__main' },
         h('section', { class: 'fx-card fx-invoice__head' },
@@ -1576,6 +1586,7 @@ function issuedView(invoice, ui, context, redraw) {
     header,
     problemRow,
     sourceGapNotice(ui, invoice),
+    exceptionsNotice(ui, invoice),
     h('div', { class: 'fx-invoice__grid' },
       h('div', { class: 'fx-invoice__main' },
         h('section', { class: 'fx-card fx-doc' },

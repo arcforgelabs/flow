@@ -726,6 +726,10 @@ export const invoiceRuleExceptions = pgTable('invoice_rule_exceptions', {
   obligationId: uuid('obligation_id').notNull().references(() => billingObligations.id),
   reason: text('reason').notNull(),
   actor: text('actor').notNull(),
+  // What the exception was given for: the rule's item and the job's lines
+  // then. A change to either ends it, so a person looks again.
+  itemCode: text('item_code'),
+  lineFingerprint: text('line_fingerprint'),
   createdAt: createdAt(),
 }, (t) => [
   uniqueIndex('invoice_rule_exceptions_rule_job').on(t.ruleId, t.obligationId),

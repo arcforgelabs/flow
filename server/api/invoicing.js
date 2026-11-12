@@ -11,7 +11,7 @@ import {
 } from '../core/invoices.js';
 import { listAutomations, saveAutomation, workStatuses } from '../core/automations.js';
 import {
-  ACTIONS, addRuleItem, createRule, deleteRule, exceptDraft, exceptJob, FIELDS, listRuleExceptions, listRules, removeRuleException, TESTS, updateRule,
+  ACTIONS, addRuleItem, createRule, deleteRule, exceptDraft, exceptJob, FIELDS, jobRuleExceptions, listRuleExceptions, listRules, removeRuleException, TESTS, updateRule,
 } from '../core/invoice-rules.js';
 import {
   createMapping, deleteMapping, listMappings, STEP_LABELS, STEPS, updateMapping,
@@ -387,10 +387,18 @@ async function invoiceDetail(db, organisationId, invoiceId, accounting = null, w
     // rule's added shipping, for example). Flow cannot write lines to the
     // work system, so the page shows the gap until the work system has them.
     sourceGap: await sourceGap(db, organisationId, invoice),
+    // The exceptions people gave this invoice's job, current or ended.
+    ruleExceptions: await exceptionsOfInvoice(db, organisationId, invoice),
     // The Linked card: each connected system, and this invoice's link there.
     linksTo: linkedSystems(work, accounting),
     versions: versions.map(({ version, issuedAt, issuedBy }) => ({ version, issuedAt, issuedBy })),
   };
+}
+
+async function exceptionsOfInvoice(db, organisationId, invoice) {
+  const [job] = await db.select({ id: billingObligations.id }).from(billingObligations)
+    .where(and(eq(billingObligations.organisationId, organisationId), eq(billingObligations.invoiceId, invoice.id)));
+  return job ? jobRuleExceptions(db, organisationId, job.id) : [];
 }
 
 async function sourceGap(db, organisationId, invoice) {
@@ -1046,7 +1054,7 @@ export function createInvoicingRouter({
     const ruleId = pathId(req.params.id, 'rule');
     const exceptionId = pathId(req.params.exceptionId, 'exception');
     const organisationId = await organisationOf(req);
-    await removeRuleException(db, organisationId, ruleId, exceptionId);
+    await removeRuleException(db, organisationId, ruleId, exceptionId, { actor: `person:${req.person.id}` });
     log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} removed exception ${exceptionId} from rule ${ruleId}`);
     res.json({ ok: true });
   }));

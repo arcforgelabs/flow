@@ -66,7 +66,8 @@ Rule actions: `wait` (hold the job), `skip` (never invoice it), `pending`
 (draft it, but hold it on Pending with a note) or `non_chargeable`. Take
 field, test and value only from `rule-fields`. A pending rule with `addItem`
 offers that item. Add it or skip it only when the person says so, and give
-the person's reason for a skip. The work system must get the item too: tell
+the person's reason for a skip. An exception ends when the job's lines change
+(`current: false` in the rule's exceptions list): ask the person again. The work system must get the item too: tell
 the person which jobs show "needs <item>" on the job board.
 
 Voids: the Void tab holds invoices voided in Flow **or voided or deleted in
@@ -76,6 +77,34 @@ confirm.
 
 Sending: Flow sends each invoice to Xero as a draft unless the "Approve and
 email" setting is on (`invoicing/settings`). Say which one applies before a send.
+
+## Share links
+
+When you name an invoice, a job or a contact to a person, give its Flow link.
+Never search GitHub or guess a path: `flow.sh link` prints the address.
+
+| Link to | Command | Id to use |
+| --- | --- | --- |
+| An invoice | `flow.sh link invoice <id>` | the invoice's `id`, or a job's `invoiceId`. Never the invoice number |
+| A job's Reconcile page | `flow.sh link reconcile <id>` | a job's `id` from `invoicing/jobs` only (never an invoice id) |
+| A job on the Jobs board | `flow.sh link job <case number>` | the job's `caseRef`; if it is empty, its `sourceJobRef` |
+| A contact | `flow.sh link contact <id>` | the contact's `id` |
+
+For a job that has an `invoiceId`, give the invoice link: it opens that one
+record. The Jobs link is a search, so it can also show other jobs whose text
+holds the same number. Use it only for a job with no invoice.
+
+Paste the command's output as a Markdown link with a short label, one per line.
+For example, the commands print addresses like these:
+
+```
+- [INV-0123](https://flow.example.com/invoices/3f6c2a1e-8b4d-4c2f-9a7e-1d2b3c4d5e6f)  $242.00, Pending: add shipping
+- [Case 3716](https://flow.example.com/jobs?q=3716)  shipped, no invoice yet
+```
+
+Never type or change an address yourself. If `flow.sh link` says the id is not
+a UUID, read the record first (`flow.sh get 'invoicing/invoices?q=<number>'`)
+and use its `id`.
 
 ## Prices and price codes
 
@@ -149,6 +178,32 @@ Answers are `{ "ok": true, "data": ... }`, as Seazona gives them. If the owner
 turned on "Hide patient details", patient, note, file and clinical fields are
 left out. Do not copy patient names outside this chat. 429: wait a
 minute and try once more.
+
+## Fix a problem Flow shows
+
+Flow's message is a flag, not the answer. Flow keeps three systems in line:
+Seazona (the jobs), Flow (its invoices) and Xero (the invoices and payments).
+No one system is always right. Find out what is true, then fix the wrong one.
+
+1. Read all three, through Flow:
+   - Flow: `flow.sh get invoicing/invoices/<id>` and
+     `flow.sh get invoicing/jobs/<job id>/reconcile`.
+   - Seazona: `flow.sh get seazona/api/orders/<order id>` (the job's
+     `sourceJobRef`, also its case number). Its invoice number is the job's
+     `sourceInvoiceRef`.
+   - Xero: `flow.sh post xero/invoices/status '{"organisationId":"<org>","invoiceIds":["<Flow invoice id>"]}'`.
+2. If they do not explain it, look deeper in the related records: history
+   import batches, older Seazona invoices, earlier Xero invoices for the same
+   client and reference, voids and credit notes. The cause is often one step
+   away from the job.
+3. Say what is true and show the evidence. If the evidence does not decide it,
+   ask the person. A field in one system can be wrong while the invoice is
+   right (for example a Seazona subtotal of 0 with a total that matches the
+   lines): say so, and do not change Flow to hide it.
+4. Fix the wrong system. Flow cannot write to Seazona: give the person the
+   exact fix and its link. Then read all three again to show they agree.
+
+Ask the person before any send, void or tax change.
 
 ## Reconcile: Seazona jobs, Flow invoices, Xero
 
