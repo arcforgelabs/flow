@@ -18,6 +18,7 @@ import { fieldGroup, fieldIdOf, filterCount, filterJobs, INVOICE_COLUMNS, invoic
 import { INVOICE_FILTER_FIELDS, INVOICE_FILTER_STATUSES, invoiceFilterKind, invoiceKindOf, invoiceValue, normaliseInvoicesView } from '/assets/ui/list-views.js';
 import { listPager, pager, PAGE_SIZES } from '/assets/ui/pager.js';
 import { savedViews } from '/assets/ui/saved-views.js';
+import { problemPrompt } from '/assets/ui/problem-prompt.js';
 import { xeroContactActions } from '/assets/ui/xero-contact.js';
 import { findBox, today, viewBar } from '/assets/ui/view-bar.js';
 
@@ -1288,6 +1289,9 @@ function draftView(invoice, ui, context, redraw) {
     ? notice([...new Set(otherProblems.map((p) => brief(p.message)))].join(' '), 'danger', 'Problem.', { short: shorts })
     : null;
   const organisationId = context.organisations[0]?.id;
+  // "Copy prompt": the full detail for a connected agent, built at the click.
+  const prompt = () => problemPrompt({ origin: location.origin, invoice, change: jobChange, organisationId });
+  const copyPrompt = () => ui.copyButton({ label: 'Copy prompt', text: prompt, copied: 'Prompt copied. Paste it to your agent.' });
   // Link or Create the Xero client, then the invoice is checked again.
   const clientActions = offer && context.canIssue && invoice?.contact?.id && organisationId
     ? xeroContactActions(ui, {
@@ -1339,10 +1343,10 @@ function draftView(invoice, ui, context, redraw) {
   const problems = [
     holdReview,
     // Accepting changes the draft for the business: owners and admins only.
-    jobChange ? jobChangeReview(ui, jobChange, { money: formatCents, canAccept: context.canIssue, unsaved: changed, done: redraw }) : null,
+    jobChange ? jobChangeReview(ui, jobChange, { money: formatCents, canAccept: context.canIssue, unsaved: changed, done: redraw, prompt }) : null,
     problemList.some(deferredJobReview) ? notice('The job also changed after this invoice was made. Resolve the source amount problem first. Select Recheck, then review the remaining job changes.', 'danger') : null,
     unavailable.length ? notice('The resolution view is unavailable. Ask an administrator to restore it, then reopen this invoice. It remains Pending.', 'danger', 'Cannot resolve.') : null,
-    problemNotice ? (clientActions.length || ruleActions.length ? h('div', { class: 'fx-offer' }, problemNotice, ...clientActions, ...ruleActions) : problemNotice) : null,
+    problemNotice ? h('div', { class: 'fx-offer' }, problemNotice, ...clientActions, ...ruleActions, jobChange ? null : copyPrompt()) : null,
   ];
   // A red field names the banner as its reason (for a screen reader).
   const banner = problemNotice;

@@ -1,9 +1,9 @@
-// Home: the page a person lands on. One job first: send the invoices that
-// are ready. The big number is the Ready tab's count, and Send sends them
-// all with the same step as the Invoices page (POST /invoices/send-ready).
-// Beside it, at most three things that need a person most days: invoices
-// that need a look, jobs and invoices to match (Reconcile), and form photos
-// to check (Capture). Each opens its page. No calls of its own to other
+// Home: the page a person lands on, a row of stat cards like an accounting
+// dashboard. Ready (with Send), Pending, To match and Forms each show their
+// count, and a total when it has one. A card with work has a thin edge in its
+// tone; a card at 0 is plain. No card says "done": the counts say it. Each card
+// opens its page. Send sends every ready invoice with the same step as the
+// Invoices page (POST /invoices/send-ready). No calls of its own to other
 // systems: every number is its page's own.
 import { formatCents, localDate } from '/assets/ui/invoicing.js';
 import { sendModeNote } from '/assets/ui/invoice-notes.js';
@@ -11,17 +11,10 @@ import { lucide } from '/assets/ui/custom-fields.js';
 
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 
-function greeting(person, now = new Date()) {
-  const hour = now.getHours();
-  const part = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
-  const first = String(person?.name ?? '').trim().split(/\s+/)[0];
-  return first ? `${part}, ${first}` : part;
-}
-
 export async function renderHome(main, ui) {
-  const { h, flow, toast, notice, pageHeader, dialog, go, me } = ui;
+  const { h, flow, toast, notice, pageHeader, dialog, go } = ui;
   const host = h('div', { class: 'fx-home' });
-  main.append(pageHeader(greeting(me?.person)), host);
+  main.append(pageHeader('Home'), host);
   const tabQuery = (tab) => `/api/invoicing/invoices?${new URLSearchParams({ status: tab, limit: '1' })}`;
 
   async function load() {
@@ -45,45 +38,43 @@ export async function renderHome(main, ui) {
     }
     if (!host.isConnected) return;
     draw(context, body, [
-      { href: '/invoices?tab=pending', icon: 'circle-alert', label: 'Need a look', tone: 'danger', count: pending.total, sum: pending.totalCents },
-      toMatch && { href: '/reconcile', icon: 'link', label: 'To match', tone: 'warn', count: (toMatch.jobs?.length ?? 0) + (toMatch.invoices?.length ?? 0) },
-      forms && { href: '/captures', icon: 'camera', label: 'Forms to check', tone: 'info', count: forms.captures.filter((c) => c.state === 'ready').length },
+      { key: 'pending', href: '/invoices?tab=pending', label: 'Pending', tone: 'danger', count: pending.total, sum: pending.totalCents },
+      { key: 'match', href: '/reconcile', label: 'Unmatched', tone: 'warn', count: toMatch ? (toMatch.jobs?.length ?? 0) + (toMatch.invoices?.length ?? 0) : null },
+      forms && { key: 'forms', href: '/captures', label: 'Forms', tone: 'info', count: forms.captures.filter((c) => c.state === 'ready').length },
     ].filter(Boolean));
+  }
+
+  // One stat card. The link covers the card; Send sits above it, so the card
+  // has no button inside a link. `count: null`: the page could not be read.
+  function card({ key, href, label, tone, count, sum = null }, extra = null) {
+    const unknown = count == null;
+    return h('article', { class: 'fx-stat', 'data-tone': count ? tone : 'none', 'aria-labelledby': `home-${key}` },
+      h('a', {
+        class: 'fx-stat__link', href, onclick: open, id: `home-${key}`, title: unknown ? 'Could not load' : null,
+        'aria-label': [label, unknown ? 'could not load' : String(count), count && sum != null ? formatCents(sum) : null].filter(Boolean).join(', '),
+      },
+        h('span', { class: 'fx-label' }, label),
+        h('span', { class: 'fx-stat__n' }, unknown ? '–' : String(count)),
+        h('span', { class: 'fx-stat__sum' }, count && sum != null ? formatCents(sum) : '')),
+      extra);
   }
 
   function draw(context, body, items) {
     const to = body.sendsTo;
-    const counts = body.counts ?? {};
-    const ready = counts.ready ?? 0;
+    const ready = body.counts?.ready ?? 0;
     const blocked = to && body.sendMode && (!body.sendMode.connected || !body.sendMode.writesAllowed);
     const canSend = context.canIssue && !blocked;
-
-    const hero = ready
-      ? h('section', { class: 'fx-home__send', 'aria-labelledby': 'home-ready' },
-        h('p', { class: 'fx-home__count', id: 'home-ready' }, String(ready),
-          h('span', {}, ready === 1 ? 'invoice ready' : 'invoices ready')),
-        h('p', { class: 'fx-home__sum' }, formatCents(body.totalCents)),
-        h('button', {
-          class: 'fx-btn fx-btn--primary fx-home__btn', type: 'button', disabled: !canSend,
-          onclick: (event) => send(to, ready, body.sendMode, event.currentTarget),
-        }, lucide(h, 'send'), h('span', {}, 'Send')),
-        context.canIssue ? null : h('p', { class: 'fx-home__note' }, 'An owner or admin sends.'),
-        blocked ? h('p', { class: 'fx-home__note' }, sendModeNote(to, body.sendMode)) : null)
-      : h('section', { class: 'fx-home__send', 'data-done': '', 'aria-labelledby': 'home-ready' },
-        h('span', { class: 'fx-home__done', 'aria-hidden': 'true' }, lucide(h, 'check')),
-        h('p', { class: 'fx-home__count', id: 'home-ready' }, h('span', {}, 'All caught up')),
-        h('p', { class: 'fx-home__sum' }, 'Nothing waits to be sent.'));
-
-    const needs = h('section', { class: 'fx-home__needs', 'aria-labelledby': 'home-needs' },
-      h('h2', { class: 'fx-label', id: 'home-needs' }, 'Needs you'),
-      h('ul', {}, items.map((item) => h('li', {},
-        h('a', { href: item.href, onclick: open, 'data-tone': item.count ? item.tone : 'clear' },
-          h('span', { class: 'fx-home__dot', 'aria-hidden': 'true' }, lucide(h, item.count ? item.icon : 'check')),
-          h('span', { class: 'fx-home__what' }, item.label,
-            item.count && item.sum ? h('small', {}, formatCents(item.sum)) : null),
-          h('span', { class: 'fx-home__n' }, String(item.count)))))));
-
-    host.replaceChildren(hero, needs);
+    // Send shows only to people who can send, and only while it can work.
+    const sendButton = ready && canSend ? h('div', { class: 'fx-stat__act' }, h('button', {
+      class: 'fx-btn fx-btn--primary', type: 'button',
+      onclick: (event) => send(to, ready, body.sendMode, event.currentTarget),
+    }, lucide(h, 'send'), h('span', {}, 'Send'))) : null;
+    host.replaceChildren(...[
+      // A broken accounting connection shows at any count, not only with Ready.
+      blocked ? notice(sendModeNote(to, body.sendMode), 'warn') : null,
+      h('section', { class: 'fx-stats', 'aria-label': 'Invoices and jobs' },
+        card({ key: 'ready', href: '/invoices?tab=ready', label: 'Ready', tone: 'accent', count: ready, sum: body.totalCents }, sendButton),
+        items.map((item) => card(item)))].filter(Boolean));
   }
 
   function open(event) {
