@@ -1,4 +1,4 @@
-import { and, asc, eq, gt, gte, inArray, isNull, like, lt, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, gte, inArray, isNotNull, isNull, like, lt, or, sql } from 'drizzle-orm';
 import {
   clientListSignature,
   invoiceListSignature,
@@ -492,6 +492,61 @@ async function readHighWater(db, laneStates, sync, nowMs) {
 
 // The sweep lane's run. `helpers` come from lanes.js: readOrder (issue #12
 // for each order read), isLaneLevel, describeReadFailure, emptyResponse and
+// Orders whose invoice Flow's copy does not hold. The invoice lane reads
+// invoices changed since its first run, so an invoice last changed before
+// that was never read, and its job took the order's products alone: no
+// Shipping/Handling or Rush, which are service lines on the invoice. Seazona
+// gives an order's invoice the order's own id. The sweep reads it and keeps it
+// when its number is the order's; the feed then gives the job the invoice's
+// lines and totals. An order Seazona answers 404 for, or with another number,
+// is noted (`no_invoice`) and not asked again.
+export const ORDER_INVOICE_KIND = 'no_invoice';
+async function readOrderInvoices(ctx, helpers, found) {
+  const { db, client, sync, at } = ctx;
+  const rows = await db.select({ id: seazonaOrders.id, invoiceNumber: seazonaOrders.invoiceNumber })
+    .from(seazonaOrders)
+    .leftJoin(seazonaInvoices, eq(seazonaInvoices.invoiceNumber, seazonaOrders.invoiceNumber))
+    .leftJoin(seazonaSweepFindings, and(
+      eq(seazonaSweepFindings.resource, 'orders'),
+      eq(seazonaSweepFindings.recordKey, seazonaOrders.id),
+      eq(seazonaSweepFindings.kind, ORDER_INVOICE_KIND),
+    ))
+    .where(and(
+      isNull(seazonaOrders.deletedInSourceAt),
+      isNotNull(seazonaOrders.invoiceNumber),
+      isNull(seazonaInvoices.invoiceNumber),
+      isNull(seazonaSweepFindings.recordKey),
+    ))
+    .orderBy(desc(seazonaOrders.lastChangedAt), seazonaOrders.id)
+    .limit(CONFIRM_BATCH);
+  for (const row of rows) {
+    if (!client.hasCall()) throw new SweepBudgetSpent();
+    let detail;
+    try {
+      detail = await client.get(`invoices/${encodeURIComponent(row.id)}`);
+    } catch (error) {
+      if (error instanceof SweepBudgetSpent || helpers.isLaneLevel(error)) throw error;
+      if (error?.statusCode === 404) {
+        await recordFinding(db, 'orders', row.id, ORDER_INVOICE_KIND, { at, detail: { status: 404 } });
+        continue;
+      }
+      // Any other failure: try again on a later run.
+      return;
+    }
+    const invoice = detail && typeof detail === 'object' && !Array.isArray(detail)
+      ? mapInvoice({}, detail, { keepPatientReference: sync.keepPatientReference }) : null;
+    if (!invoice || invoice.invoiceNumber !== row.invoiceNumber) {
+      await recordFinding(db, 'orders', row.id, ORDER_INVOICE_KIND, { at, detail: { otherNumber: Boolean(invoice?.invoiceNumber) } });
+      continue;
+    }
+    const summary = await upsertRecords(db, 'invoices', [invoice], { at });
+    if (summary.created) {
+      found.created += 1;
+      await recordFinding(db, 'invoices', invoice.invoiceNumber, 'created', { at, detail: { lastModified: invoice.lastModifiedText } });
+    }
+  }
+}
+
 // LaneError.
 export async function runSweep(ctx, helpers) {
   const { db, sync, at, state } = ctx;
@@ -506,6 +561,7 @@ export async function runSweep(ctx, helpers) {
   const save = () => ({ ...cursor, budget: { day: today, calls: spentToday + budget.spent } });
 
   try {
+    await readOrderInvoices(sweepCtx, helpers, found);
     for (const kind of SWEEP_KINDS) {
       if (budget.left <= 0) break;
       if (!isDue(cursor[kind], at, sync, kind)) continue;
@@ -557,7 +613,7 @@ export async function readSweepHealth(db, settings, { now = Date.now } = {}) {
     .groupBy(seazonaSweepFindings.resource, seazonaSweepFindings.kind);
   const foundLastWeek = {};
   for (const row of counts) {
-    if (row.kind === 'missing') continue;
+    if (row.kind === 'missing' || row.kind === ORDER_INVOICE_KIND) continue;
     foundLastWeek[row.resource] = { ...foundLastWeek[row.resource], [row.kind]: row.records };
   }
   const missingRows = await db.select({ resource: seazonaSweepFindings.resource, key: seazonaSweepFindings.recordKey })

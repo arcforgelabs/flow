@@ -7,6 +7,8 @@ import { runSeazonaSync } from '../server/integrations/seazona/lanes.js';
 import { seazonaClients, seazonaInvoices, seazonaOrders, seazonaSweepFindings } from '../server/integrations/seazona/schema.js';
 import { resolveSeazonaSettings } from '../server/integrations/seazona/settings.js';
 import { readSweepHealth } from '../server/integrations/seazona/sweep.js';
+import { mapOrder } from '../server/integrations/seazona/map.js';
+import { upsertRecords } from '../server/integrations/seazona/store.js';
 import { skipWithoutDatabase } from './support/db.js';
 import { fakeClock, freshSeazonaDatabase } from './support/seazona.js';
 
@@ -290,9 +292,42 @@ describe('Seazona sweep (issue #126)', { skip: skipWithoutDatabase }, () => {
     const result = await sweep(env);
     assert.equal(result.ok, true, JSON.stringify(result));
     assert.deepEqual(result.found, { changed: 0, created: 1, deleted: 0, missing: 0 });
-    assert.deepEqual((await findings()).map((row) => [row.resource, row.recordKey, row.kind]), [['invoices', '7004', 'created']]);
+    // Invoice 7002 is not in Seazona now: its orders are asked for it once.
+    assert.deepEqual((await findings()).map((row) => [row.resource, row.recordKey, row.kind]),
+      [['invoices', '7004', 'created'], ['orders', 'ORD-9002', 'no_invoice'], ['orders', 'ORD-9003', 'no_invoice']]);
     const [list] = seazona.calls.filter((call) => call.path === 'invoices/');
     assert.equal(list.query.lastModified, '2026-09-20T00:00:00.000Z', 'the sweep starts where the lane first read');
+  });
+
+  test('an order whose invoice the copy lacks gets it, with its service lines; one with none is asked once', async () => {
+    // The invoice was last changed before the invoice lane first read, so no
+    // list gives it. Seazona gives an order's invoice the order's own id.
+    state.invoices.push(invoice(5, {
+      id: 'ORD-9005', lastModified: '2026-08-01T10:00:00', subtotal: 115, tax: 10, total: 125,
+      productServiceItems: [
+        { type: 'product', name: 'Example crown', price: 100, taxable: true },
+        { type: 'service', name: 'Shipping/Handling', price: 15, taxable: false },
+      ],
+    }));
+    state.orders.push(order(5, 5), order(6, 6));
+    const at = new Date(clock.now());
+    await upsertRecords(db, 'orders', [order(5, 5), order(6, 6)].map((o) => ({ ...mapOrder({}, o), id: o.id })), { at });
+
+    const result = await sweep();
+    assert.equal(result.ok, true, JSON.stringify(result));
+    assert.equal(result.found.created, 1);
+    const [stored] = await db.select().from(seazonaInvoices).where(eq(seazonaInvoices.invoiceNumber, '7005'));
+    assert.deepEqual(stored.lines.map((l) => [l.kind, l.description, l.amountCents]), [['product', 'Example crown', 10000], ['service', 'Shipping/Handling', 1500]]);
+    const { items } = await readBillableWork(db, { limit: 1000 });
+    const job = items.find((item) => item.sourceId === 'ORD-9005');
+    assert.equal(job.linesFrom, 'invoice');
+    assert.deepEqual(job.ledgerJob.lines.map((l) => [l.description, l.unitAmountCents, l.taxCode]), [['Example crown', 10000, 'GST'], ['Shipping/Handling', 1500, 'GST_FREE']]);
+    assert.equal(job.ledgerJob.sourceTotals.totalCents, 12500);
+    assert.deepEqual((await findings()).filter((row) => row.kind === 'no_invoice').map((row) => row.recordKey), ['ORD-9006']);
+
+    const from = seazona.calls.length;
+    await sweep();
+    assert.ok(!sweepCalls(from).some((path) => path.startsWith('invoices/ORD-')), 'neither is asked again');
   });
 
   test('Seazona times ahead of Flow by more than the overlap are shown and reported once', async () => {
