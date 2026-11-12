@@ -130,8 +130,15 @@ function laneReadsFrom(state, sync) {
   return Number.isFinite(cursorMs) ? cursorMs - sync.cursorOverlapMs : null;
 }
 
-function isDue(progress, at, sync) {
+// What an orders cycle reads from each list row. 2: the remake flag
+// (Seazona's isRemake, migration 0008). A cycle that finished before Flow
+// kept the flag does not count, so the next run starts a new one and old
+// orders get their flag without waiting out SEAZONA_SWEEP_CYCLE_DAYS.
+export const ORDER_CYCLE_READS = 2;
+
+function isDue(progress, at, sync, kind) {
   if (progress?.cycleStartedAt) return true;
+  if (kind === 'orders' && (progress?.reads ?? 1) < ORDER_CYCLE_READS) return true;
   const finished = Date.parse(progress?.lastFinishedAt ?? '');
   return !Number.isFinite(finished) || at.getTime() - finished >= sync.sweepCycleMs;
 }
@@ -253,7 +260,7 @@ async function sweepOrders(ctx, cursor, helpers, found) {
     progress.days.shift();
     progress.checkedDays += 1;
   }
-  cursor.orders = { lastFinishedAt: at.toISOString(), checkedDays: progress.checkedDays };
+  cursor.orders = { lastFinishedAt: at.toISOString(), checkedDays: progress.checkedDays, reads: ORDER_CYCLE_READS };
 }
 
 // Clients and invoices: the whole list, then the held records it left out.
@@ -501,7 +508,7 @@ export async function runSweep(ctx, helpers) {
   try {
     for (const kind of SWEEP_KINDS) {
       if (budget.left <= 0) break;
-      if (!isDue(cursor[kind], at, sync)) continue;
+      if (!isDue(cursor[kind], at, sync, kind)) continue;
       if (kind === 'orders') await sweepOrders(sweepCtx, cursor, helpers, found);
       else await sweepWholeList(sweepCtx, kind, cursor, laneStates, helpers, found);
     }

@@ -241,6 +241,9 @@ reads whole lists again on a slow cycle and compares them with Flow's copy:
 - Each kind starts again at most once a cycle (7 days). The sweep makes at
   most 10 calls a run and 100 a UTC day, through the same rate governor and
   call guard as every lane, and keeps its place in the lane's cursor.
+- An orders cycle that finished before Flow kept the remake flag does not
+  count: the next run starts a new one, so old orders get their flag from the
+  list rows (one call a day, no detail reads) without waiting out the cycle.
 - An order or record whose read fails is recorded as in any lane, and is not
   read again in the same cycle.
 - What the sweep finds that the lanes missed (`changed`, `created`,
