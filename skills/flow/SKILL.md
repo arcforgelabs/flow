@@ -143,6 +143,8 @@ How to read `price-list`:
   (the linked Xero item has another code while another Xero item has the
   Flow code: check that the link is the right one).
 - `unlinked`: Xero items and Seazona products that no Flow code has yet.
+- `unread`: lists Flow could not read now. Their differences are not shown,
+  so say "not read", never "no differences", and read again later.
 
 How the three lists fit:
 

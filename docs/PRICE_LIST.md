@@ -76,6 +76,12 @@ products read.
 | `not_linked` | An accounting system has no record for this code. A send with it stops for a person. |
 | `code` | The linked accounting record has another code, and another record has the Flow code. Before this change Flow sent by code; check that the link is right before the next send. |
 
+A list Flow cannot read now (its copy is not there yet, or the read failed)
+is "not read". The check then keeps each alert that names it, and closes
+nothing for it; the list answer names it in `unread`, and the Price list
+page says "<system> list not read". So no difference never stands for not
+read.
+
 Each finding is an alert only. A person fixes the price in Flow, Xero or
 Seazona, or presses "Mark resolved". Mark resolved checks the one code again,
 then accepts what is still different. The same finding does not open again; a

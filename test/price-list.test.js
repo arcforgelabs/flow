@@ -126,6 +126,19 @@ describe('price list against PostgreSQL', { skip: skipWithoutDatabase }, () => {
     assert.deepEqual(list.unlinked.find((u) => u.system === 'accounts').records.map((r) => r.code), ['NEW']);
     assert.deepEqual(list.unlinked.find((u) => u.system === 'worksystem').records.map((r) => r.code), ['9001']);
 
+    // A list Flow cannot read says nothing: the alert stays, and the list says so.
+    const kept = accounts;
+    accounts = null;
+    const blind = await checkPrices(handle.db, lab.id, { catalogues: await catalogues() });
+    assert.equal(blind.closed, 0);
+    assert.deepEqual(blind.unread, ['accounts']);
+    assert.ok(blind.kept >= 1);
+    const blindList = await readPriceList(handle.db, lab.id, { catalogues: await catalogues() });
+    assert.deepEqual(blindList.unread, [{ id: 'accounts', name: 'Accounts' }]);
+    assert.deepEqual(blindList.systems.map((x) => x.id), ['worksystem']);
+    assert.equal((await handle.db.select().from(reviewItems).where(eq(reviewItems.flowId, fld.id)))[0].state, 'open');
+    accounts = kept;
+
     accounts[0].unitAmountCents = 30000;
     const agreed = await checkPrices(handle.db, lab.id, { catalogues: await catalogues() });
     assert.equal(agreed.closed, 1);
