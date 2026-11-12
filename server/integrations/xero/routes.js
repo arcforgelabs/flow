@@ -10,7 +10,7 @@ import { describePush, listPushes, MAX_BATCH, previewDrafts, pushDrafts } from '
 import { recordXeroEvidence, recordXeroPayments } from './ledger.js';
 import { IMPORT_STATES, importOverview, linkXeroInvoice, makeFlowInvoice, matchXero, saveImportSettings, useXeroInvoice } from './links.js';
 import { queueHistoryImport, resetImport } from './import.js';
-import { MIRROR_RESOURCES, mirrorStatus, mirrorXero } from './mirror.js';
+import { MIRROR_RESOURCES, mirrorStatus, mirrorXero, readInvoiceFromXero } from './mirror.js';
 import { accountingStatus, checkSentInvoices } from './reconcile.js';
 import { CUSTOM_CONNECTION, decryptToken, deleteConnection, describeConnection, readConnection, saveConnection } from './connections.js';
 import { authorizeUrl, clientCredentials, exchangeCode, fetchConnections, revokeToken, selectConnection } from './oauth.js';
@@ -75,6 +75,7 @@ export const XERO_ACTIONS = Object.freeze({
   obligationCheck: { cooldownMs: 30_000 },
   paymentsSync: { cooldownMs: 5 * 60_000 },
   mirror: { cooldownMs: 2 * 60_000 },
+  readInvoice: { cooldownMs: 5_000 },
 });
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -451,6 +452,15 @@ export function createXeroRouter({ db, personAuth, runtime, log = console, butto
     const organisationId = await requireOrganisation(db, req.body?.organisationId);
     const [invoiceId] = requireInvoiceIds([req.body?.invoiceId], 'invoiceId');
     res.json({ ok: true, ...(await linkXeroInvoice(db, organisationId, xeroId(req.params.xeroInvoiceId), { invoiceId, actor: `person:${req.person.id}` })) });
+  }));
+
+  // One invoice as Xero has it now (one Xero call), before a person or an
+  // agent repairs a sync: the copy can be out of date. Refreshes the copy.
+  router.post('/import/:xeroInvoiceId/read', ...manager, act('readInvoice', (req) => req.params.xeroInvoiceId), handle(log, async (req, res) => {
+    const organisationId = await requireOrganisation(db, req.body?.organisationId);
+    const found = await readInvoiceFromXero(db, runtime, organisationId, xeroId(req.params.xeroInvoiceId));
+    if (!found) throw Object.assign(new FlowError('not_found', 'Xero has no such invoice'), { status: 404 });
+    res.json({ ok: true, source: 'xero', ...found });
   }));
 
   router.post('/import/:xeroInvoiceId/make', ...manager, handle(log, async (req, res) => {

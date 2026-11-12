@@ -448,6 +448,16 @@ flowchart LR
   what Flow stores; `last_changed_at` moves only with it.
 - **References are kept.** References and line descriptions are the lab's own
   data and are kept, unless `XERO_KEEP_REFERENCE=off`.
+- **A change of that setting reads everything again.** A read copies only
+  changes, so rows read with the other setting would keep it. Each cursor
+  notes the setting it read with (`kept_reference`); when it differs, the next
+  read starts from the beginning, and only rows that differ are written. A
+  copy made before Flow noted the setting (and before `XERO_KEEP_REFERENCE`
+  was on by default, 2026.10) is read again once.
+- **One invoice from Xero itself.** `POST /api/xero/import/:xeroInvoiceId/read`
+  (owner or admin, one call) answers the invoice as Xero has it now and
+  writes the copy's row again if it differs. Read the source before a repair:
+  the copy is a lead, not proof.
 
 ### Webhooks and the daily check
 

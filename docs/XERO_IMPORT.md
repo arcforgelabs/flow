@@ -124,3 +124,4 @@ finds a Xero invoice through the Flow invoice the import linked to it.
 | PUT | `/api/xero/import/settings` | `organisationId`, `autoLink?`, `makeUnmatched?` |
 | POST | `/api/xero/import/:xeroInvoiceId/link` | `organisationId`, `invoiceId` |
 | POST | `/api/xero/import/:xeroInvoiceId/make` | `organisationId`, `jobId?` |
+| POST | `/api/xero/import/:xeroInvoiceId/read` (the invoice as Xero has it now; refreshes the copy) | `organisationId` |

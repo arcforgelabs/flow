@@ -236,4 +236,52 @@ describe('Xero mirror', { skip: skipWithoutDatabase }, () => {
   test('a bad resource list is refused', async () => {
     assert.equal((await mirror(adminToken, { resources: ['bills'] })).status, 400);
   });
+
+  // A copy read before Flow kept References (XERO_KEEP_REFERENCE was off by
+  // default until 2026.10) has none on old rows, and a read copies only
+  // changes. So a copy read with another setting is read again from the start.
+  test('a copy read without References is read again from the start, and its old rows get them', async () => {
+    await handle.db.execute(sql`update xero_invoices set reference = null, lines = '[]'::jsonb, record_hash = 'old' where xero_invoice_id = 'i1'`);
+    await handle.db.execute(sql`update xero_mirror_cursors set kept_reference = false where resource = 'invoices'`);
+    const { rows: [{ passes }] } = await handle.db.execute(sql`select passes from xero_mirror_cursors where resource = 'invoices'`);
+    const replay = xero.script([
+      page('invoices', 'Invoices', [invoice('i1', '2024-05-01T00:00:00Z', { Status: 'PAID', AmountDue: 0, AmountPaid: 220, FullyPaidOnDate: at('2024-05-01T00:00:00Z') })], { page: 1 }),
+    ]);
+    const res = await mirror(adminToken, { resources: ['invoices'] });
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    assert.equal(replay.calls[0].headers['If-Modified-Since'], undefined, 'from the start');
+    const { rows: [row] } = await handle.db.execute(sql`select reference, lines from xero_invoices where xero_invoice_id = 'i1'`);
+    assert.equal(row.reference, 'Example Dentist - Example Patient');
+    assert.equal(row.lines[0].description, 'Crown for Example Patient');
+    const cursor = res.body.cursors.find((c) => c.resource === 'invoices');
+    assert.equal(cursor.passes, passes + 1, 'the copy stays complete while it reads again');
+
+    // Once only: the next read copies changes again.
+    const next = xero.script([page('invoices', 'Invoices', [], { page: 1 })]);
+    assert.equal((await mirror(adminToken, { resources: ['invoices'] })).status, 200);
+    assert.ok(next.calls[0].headers['If-Modified-Since'], 'changes only');
+  });
+
+  test('one invoice is read from Xero itself, and the copy takes what changed', async () => {
+    const id = '0b6f1d1e-5a3c-4d2b-9c8e-1f2a3b4c5d6e';
+    const read = (token, which = id) => request(app, `/api/xero/import/${which}/read`, { token, method: 'POST', body: { organisationId: lab.organisation.id } });
+    const answer = (extra = {}) => xero.script([xeroAnswer('Invoices', { Invoices: [invoice(id, '2024-06-01T00:00:00Z', extra)] }, { query: { IDs: id, page: 1, pageSize: 100 } })]);
+    assert.equal((await read(lab.staffToken)).status, 403);
+    answer({ Reference: null });
+    assert.equal((await read(adminToken)).body.copy, 'inserted');
+
+    // Xero has a Reference the copy lacks: the read shows it and writes it.
+    answer();
+    const res = await read(adminToken);
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    assert.equal(res.body.source, 'xero');
+    assert.equal(res.body.copy, 'changed');
+    assert.equal(res.body.invoice.reference, 'Example Dentist - Example Patient');
+    const { rows: [row] } = await handle.db.execute(sql`select reference from xero_invoices where xero_invoice_id = ${id}`);
+    assert.equal(row.reference, 'Example Dentist - Example Patient');
+
+    const missing = '0b6f1d1e-5a3c-4d2b-9c8e-000000000000';
+    xero.script([xeroAnswer('Invoices', { Invoices: [] }, { query: { IDs: missing, page: 1, pageSize: 100 } })]);
+    assert.equal((await read(adminToken, missing)).status, 404);
+  });
 });
