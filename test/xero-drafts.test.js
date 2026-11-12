@@ -230,7 +230,7 @@ describe('Xero drafts from issued invoices', { skip: skipWithoutDatabase }, () =
     assert.equal(missing.state, 'blocked');
     assert.deepEqual(missing.problems.map((p) => [p.code, p.short]), [['xero_contact_missing', 'Payer not in Xero']]);
     assert.match(missing.problems[0].message, /billed to Lost Payer/);
-    await saveCustomerBilling(handle.db, org, member.id, { billToContactId: null });
+    for (const c of [member, orphan]) await saveCustomerBilling(handle.db, org, c.id, { billToContactId: null });
   });
 
   test('staff cannot send invoices to Xero', async () => {

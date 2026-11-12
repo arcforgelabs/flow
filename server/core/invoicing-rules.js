@@ -127,6 +127,19 @@ export async function readCustomerBilling(db, organisationId, contactId) {
 export async function saveCustomerBilling(db, organisationId, contactId, changes, { personId = null } = {}) {
   if (!changes || typeof changes !== 'object' || Array.isArray(changes)) throw invalid('the settings must be an object');
   await requireCustomer(db, organisationId, contactId);
+  // Bill to is checked and saved under one lock per organisation, so two
+  // saves at once never make a chain of payers.
+  if (Object.prototype.hasOwnProperty.call(changes, 'billToContactId')) {
+    return db.transaction(async (tx) => {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`bill_to:${organisationId}`}))`);
+      return saveBilling(tx, organisationId, contactId, changes, personId);
+    });
+  }
+  return saveBilling(db, organisationId, contactId, changes, personId);
+}
+
+async function saveBilling(db, organisationId, contactId, changes, personId) {
+  const before = (await readCustomerBilling(db, organisationId, contactId)).billToContactId;
   const fields = {};
   for (const [key, value] of Object.entries(changes)) {
     if (key === 'billable') fields[key] = flag(value, key);
@@ -143,6 +156,14 @@ export async function saveCustomerBilling(db, organisationId, contactId, changes
       target: [customerBillingSettings.organisationId, customerBillingSettings.contactId],
       set: { ...fields, updatedBy: personId, updatedAt: sql`now()` },
     });
+  // A new payer is a new place to look: the matcher checks this customer's
+  // unbilled jobs again on its next pass.
+  if ('billToContactId' in fields && fields.billToContactId !== before) {
+    await db.update(billingObligations).set({ accountingCheckedAt: null, updatedAt: sql`now()` }).where(and(
+      eq(billingObligations.organisationId, organisationId), eq(billingObligations.contactId, contactId),
+      isNull(billingObligations.accountingRef), isNull(billingObligations.invoiceId),
+    ));
+  }
   return readCustomerBilling(db, organisationId, contactId);
 }
 

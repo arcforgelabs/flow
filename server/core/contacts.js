@@ -147,6 +147,15 @@ export async function updateContact(db, organisationId, id, input) {
   const current = await getContact(db, organisationId, id);
   const patch = readContact(input, { partial: true });
   if (!Object.keys(patch).length) return current;
+  // Bill to joins customers only (docs/CONTACTS.md).
+  if (patch.kind && patch.kind !== current.kind) {
+    const [billing] = await db.select({ id: customerBillingSettings.contactId }).from(customerBillingSettings).where(and(
+      eq(customerBillingSettings.organisationId, organisationId),
+      or(and(eq(customerBillingSettings.contactId, id), isNotNull(customerBillingSettings.billToContactId)),
+        eq(customerBillingSettings.billToContactId, id)),
+    )).limit(1);
+    if (billing) throw invalid('this customer is in a Bill to; clear Bill to first');
+  }
   try {
     const [row] = await db.update(contacts)
       .set({ ...patch, updatedAt: sql`now()` })

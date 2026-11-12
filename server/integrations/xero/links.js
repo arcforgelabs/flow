@@ -74,8 +74,9 @@ async function classify(db, organisationId) {
   }
   // The identity-map link first, so a Xero contact of another name finds its
   // Flow customer, then the name.
-  const { rows: contactLinks } = await db.execute(sql`select external_id, flow_id from external_links
-    where organisation_id = ${organisationId} and system = 'xero' and entity = 'contact' and state = 'active'`);
+  const { rows: contactLinks } = await db.execute(sql`select l.external_id, l.flow_id from external_links l
+    join contacts c on c.organisation_id = l.organisation_id and c.id = l.flow_id and c.kind = 'customer'
+    where l.organisation_id = ${organisationId} and l.system = 'xero' and l.entity = 'contact' and l.state = 'active'`);
   const byLink = new Map(contactLinks.map((l) => [l.external_id, l.flow_id]));
   const { rows: flowInvoices } = await db.execute(sql`
     select i.id, i.number, i.contact_id, i.total_cents, i.subtotal_cents, i.reference, i.status, coalesce(i.issue_date, i.created_at::date) as date,
@@ -92,7 +93,8 @@ async function classify(db, organisationId) {
     where o.organisation_id = ${organisationId} and o.invoice_id is null`);
   // Bill to (docs/CONTACTS.md): a customer with a payer is billed under the
   // payer's Xero contact, so its jobs and invoices fit that contact's invoices.
-  const payerOf = await payersOf(db, organisationId, [...flowInvoices.map((i) => i.contact_id), ...jobs.map((j) => j.contact_id)]);
+  // A Xero row of a client's own Xero contact fits as that client's payer too.
+  const payerOf = await payersOf(db, organisationId, people.map((p) => p.id));
   const billedAs = (contactId) => (contactId ? payerOf.get(contactId) ?? contactId : null);
   const jobByRef = new Map(jobs.filter((j) => j.accounting_ref).map((j) => [j.accounting_ref, j]));
   // The work system's own invoice number, as Xero numbers it (a trailing R is
@@ -128,7 +130,8 @@ async function classify(db, organisationId) {
       return { ...row, state: 'linked' };
     }
     row.itemCodes = [...new Set((x.lines ?? []).map((l) => l.itemCode).filter(Boolean))];
-    const xeroFit = { id: x.xero_invoice_id, number: x.invoice_number, contactId, totalCents: row.totalCents, issuedOn: row.issuedOn,
+    const billedTo = billedAs(contactId);
+    const xeroFit = { id: x.xero_invoice_id, number: x.invoice_number, contactId: billedTo, totalCents: row.totalCents, issuedOn: row.issuedOn,
       itemCodes: (x.lines ?? []).map((l) => l.itemCode).filter(Boolean), reference: x.reference };
     row.invoices = open.map((i) => {
       const flowFit = { id: i.id, contactId: billedAs(i.contact_id), totalCents: num(i.total_cents), subtotalCents: num(i.subtotal_cents), date: day(i.date),
@@ -140,8 +143,8 @@ async function classify(db, organisationId) {
         : null;
     }).filter(Boolean);
     const tied = jobByRef.get(x.xero_invoice_id) ?? (x.invoice_number ? jobByNumber.get(workNumber(x.invoice_number)) : null) ?? null;
-    const fits = tied ? [tied] : contactId
-      ? jobs.filter((j) => !j.accounting_ref && billedAs(j.contact_id) === contactId && num(j.total_cents) === row.totalCents && near(day(j.job_date), row.issuedOn))
+    const fits = tied ? [tied] : billedTo
+      ? jobs.filter((j) => !j.accounting_ref && billedAs(j.contact_id) === billedTo && num(j.total_cents) === row.totalCents && near(day(j.job_date), row.issuedOn))
       : [];
     row.jobs = fits.map((j) => ({ id: j.id, jobDate: day(j.job_date), practitioner: j.practitioner, caseRef: j.case_ref, totalCents: num(j.total_cents), tied: j === tied,
       itemCodes: [...new Set((j.lines ?? []).map((l) => l.itemCode).filter(Boolean))] }));
@@ -262,8 +265,8 @@ export async function useXeroInvoice(db, organisationId, invoiceId, { xeroInvoic
     if (!invoice) throw new FlowError('not_found', 'Flow invoice not found');
     // A copy voided earlier, still holding its job, gives way the same way.
     if (!['issued', 'void'].includes(invoice.status)) throw new FlowError('invalid', 'only an approved or void Flow invoice can give way to a Xero invoice');
-    const [payer] = (await payersOf(tx, organisationId, [invoice.contact_id])).values();
-    if (row.contactId !== payer) throw new FlowError('invalid', 'the Xero invoice is for another client');
+    const payers = await payersOf(tx, organisationId, [invoice.contact_id, row.contactId]);
+    if (!row.contactId || payers.get(row.contactId) !== payers.get(invoice.contact_id)) throw new FlowError('invalid', 'the Xero invoice is for another client');
     const { rows: pushed } = await tx.execute(sql`select 1 from xero_invoice_pushes where organisation_id = ${organisationId} and invoice_id = ${invoiceId} and xero_invoice_id is not null limit 1`);
     if (pushed.length) throw new FlowError('invalid', 'Flow sent that invoice to Xero already');
     const jobs = await tx.select({ id: billingObligations.id }).from(billingObligations)
@@ -279,7 +282,8 @@ export async function useXeroInvoice(db, organisationId, invoiceId, { xeroInvoic
         evidence: { invoiceId, reason: 'used_xero_invoice', xeroInvoiceId, xeroNumber: row.number ?? null },
       });
     }
-    const made = await makeFrom(tx, organisationId, row, { jobId: jobs[0]?.id ?? null, actor });
+    // The new Flow invoice stays with the client of the one it replaces.
+    const made = await makeFrom(tx, organisationId, row, { jobId: jobs[0]?.id ?? null, contactId: invoice.contact_id, actor });
     return { voided: { id: invoiceId, number: invoice.number }, invoice: { id: made.invoice.id, number: made.invoice.number }, xeroInvoiceId, jobId: jobs[0]?.id ?? null };
   });
 }
@@ -293,7 +297,7 @@ export async function makeFlowInvoice(db, organisationId, xeroInvoiceId, { jobId
   return makeFrom(db, organisationId, await rowFor(db, organisationId, xeroInvoiceId), { jobId, actor });
 }
 
-async function makeFrom(db, organisationId, row, { jobId = null, actor }) {
+async function makeFrom(db, organisationId, row, { jobId = null, contactId: chosen = null, actor }) {
   const { xeroInvoiceId } = row;
   const { rows: [x] } = await db.execute(sql`select x.lines, x.due_on, c.email from xero_invoices x
     left join xero_contacts c on c.organisation_id = x.organisation_id and c.xero_contact_id = x.xero_contact_id
@@ -304,8 +308,9 @@ async function makeFrom(db, organisationId, row, { jobId = null, actor }) {
     // Flow invoice stays with the client the work was for.
     const { rows: [job] } = jobId ? await tx.execute(sql`select contact_id from billing_obligations
       where organisation_id = ${organisationId} and id = ${jobId}`) : { rows: [] };
-    const jobPayer = job?.contact_id ? (await payersOf(tx, organisationId, [job.contact_id])).get(job.contact_id) : null;
-    const contactId = (row.contactId && jobPayer === row.contactId ? job.contact_id : null)
+    const payers = await payersOf(tx, organisationId, [job?.contact_id, row.contactId]);
+    const samePayer = job?.contact_id && row.contactId && payers.get(job.contact_id) === payers.get(row.contactId);
+    const contactId = chosen ?? (samePayer ? job.contact_id : null)
       ?? row.contactId ?? (await createContact(tx, organisationId, { kind: 'customer', name: row.clientName, email: x.email ?? null })).id;
     const items = await tx.select({ id: priceItems.id, code: priceItems.code, name: priceItems.name }).from(priceItems)
       .where(eq(priceItems.organisationId, organisationId));

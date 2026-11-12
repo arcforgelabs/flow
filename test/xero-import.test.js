@@ -18,6 +18,7 @@ import { bootFlow, connectDirectly, scriptedXero, seedLab } from './support/xero
 
 const XC = '00000000-0000-4000-8000-0000000000c1';
 const XC2 = '00000000-0000-4000-8000-0000000000c2';
+const XC3 = '00000000-0000-4000-8000-0000000000c3';
 const xid = (n) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 
 describe('Xero import: Xero invoices against Flow invoices', { skip: skipWithoutDatabase }, () => {
@@ -154,6 +155,21 @@ describe('Xero import: Xero invoices against Flow invoices', { skip: skipWithout
     assert.equal(made.status, 200, JSON.stringify(made.body));
     const [invoice] = await handle.db.select().from(invoices).where(eq(invoices.id, made.body.invoice.id));
     assert.equal(invoice.contactId, member.id, 'the work was for the clinic; the payer is only who Xero bills');
+    // Use the Xero invoice for a client's own Flow invoice, with no job: the
+    // new Flow invoice stays with the client too.
+    const own = await createDraftInvoice(handle.db, org(), { contactId: member.id, lines: [{ priceItemId: crown.id }] });
+    const issuedOwn = await issueInvoice(handle.db, org(), own.id, { issuedBy: 'user:test', issueDate: '2026-09-04' });
+    const payerBill = await copy(20, { issuedOn: '2026-09-04' });
+    const used = await useXeroInvoice(handle.db, org(), issuedOwn.id, { xeroInvoiceId: payerBill, actor: 'person:test' });
+    const [replaced] = await handle.db.select().from(invoices).where(eq(invoices.id, used.invoice.id));
+    assert.equal(replaced.contactId, member.id);
+    // An invoice under the clinic's own Xero contact still fits its jobs.
+    await handle.db.execute(sql`insert into xero_contacts (organisation_id, xero_contact_id, name, status, is_customer, is_supplier, sales_tracking, synced_at)
+      values (${org()}, ${XC3}, 'Member Clinic', 'ACTIVE', true, false, '[]'::jsonb, now())`);
+    const later = await observeJob(handle.db, org(), { sourceSystem: 'worksystem', sourceJobRef: 'JOB-BT2', caseRef: 'CASE-BT2', contactId: member.id, shippedOn: '2026-09-08', jobDate: '2026-09-08', lines: [{ itemCode: 'CROWN' }] });
+    const ownBill = await copy(25, { contact: XC3, issuedOn: '2026-09-08' });
+    assert.deepEqual((await stateOf(ownBill)).jobs.map((j) => j.id), [later.id]);
+    await saveCustomerBilling(handle.db, org(), member.id, { billToContactId: null });
   });
 
   test('nothing fits: it stays in the copy, until the setting makes Flow invoices', async () => {

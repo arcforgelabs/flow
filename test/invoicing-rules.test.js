@@ -13,6 +13,7 @@ import { createRule, deleteRule, starterRules } from '../server/core/invoice-rul
 import { listAutomations, runAutomations, saveAutomation, statusMatches, workStatuses } from '../server/core/automations.js';
 import { explainObligation, observeJob, recordAccountingEvidence, setHold, setReady } from '../server/core/ledger.js';
 import { billingObligations, invoices } from '../server/db/schema.js';
+import { updateContact } from '../server/core/contacts.js';
 import { freshDatabase, skipWithoutDatabase } from './support/db.js';
 
 // The invoicing rules decide when Flow drafts a ready job's invoice by itself,
@@ -155,7 +156,16 @@ describe('drafts by rule', { skip: skipWithoutDatabase }, () => {
     // A payer bills to itself, and a member is never a payer.
     await assert.rejects(saveCustomerBilling(handle.db, lab.id, payer.id, { billToContactId: practice.id }), /other customers bill to this customer/);
     await assert.rejects(saveCustomerBilling(handle.db, lab.id, practice.id, { billToContactId: member.id }), /bills to another customer/);
+    // A new payer sends the customer's unbilled jobs back to the matcher.
+    const job = await cleared({ contact: member, ready: false, status: 'On hold' });
+    assert.ok((await reload(job)).accountingCheckedAt);
     assert.equal((await saveCustomerBilling(handle.db, lab.id, member.id, { billToContactId: null })).billToContactId, null);
+    assert.equal((await reload(job)).accountingCheckedAt, null);
+    // A customer in a Bill to stays a customer.
+    await saveCustomerBilling(handle.db, lab.id, member.id, { billToContactId: payer.id });
+    await assert.rejects(updateContact(handle.db, lab.id, payer.id, { kind: 'supplier' }), /clear Bill to first/);
+    await assert.rejects(updateContact(handle.db, lab.id, member.id, { kind: 'supplier' }), /clear Bill to first/);
+    await saveCustomerBilling(handle.db, lab.id, member.id, { billToContactId: null });
   });
 
   test('a cleared, ready job gets a draft in Flow with the customer\'s terms; the rest wait', async () => {

@@ -107,8 +107,13 @@ flowchart LR
   job's client.
 - Send gives the payer's accounting contact. When the payer has none, Send
   stops with "Payer not in Xero"; link the payer on its own page.
+- An invoice under the client's own accounting contact, from before Bill
+  to, still fits the client's jobs.
+- Setting or clearing Bill to sends the client's unbilled jobs back to the
+  matcher on its next pass.
 - One level only: a payer bills to itself, and a client that others bill to
-  names no payer. The payer must be a customer.
+  names no payer. The payer must be a customer, and a customer in a Bill to
+  cannot become a supplier until Bill to is cleared.
 - `billToContactId` on `PUT /api/invoicing/contacts/:id/billing`; null clears
   it. A payer is never hidden (Hidden contacts, above).
 
