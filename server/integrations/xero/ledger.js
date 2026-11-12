@@ -81,7 +81,7 @@ async function several(runtime, client, found, checkedAt) {
 
 // The Xero invoice for one obligation (a row of billing_obligations), looked
 // up live. Costs 1 to 4 Xero calls.
-export async function checkInvoice(db, runtime, client, organisationId, obligation) {
+export async function checkInvoice(db, runtime, client, organisationId, obligation, { reference: draftReference = null } = {}) {
   const checkedAt = new Date(runtime.now()).toISOString();
 
   // 1. The Xero invoice Flow made from the job's Flow invoice.
@@ -132,8 +132,8 @@ export async function checkInvoice(db, runtime, client, organisationId, obligati
 
   // 4. The reference Flow would give the job's invoice, for the same
   // customer. Not exact: it refuses a draft and goes to a person.
-  const reference = obligation.caseRef ?? obligation.sourceJobRef;
-  if (reference) {
+  const references = [...new Set([obligation.caseRef ?? obligation.sourceJobRef, draftReference].filter(Boolean))];
+  if (references.length) {
     let customer = null;
     if (obligation.contactId) {
       const [contact] = await db.select({ name: flowContacts.name }).from(flowContacts)
@@ -147,8 +147,13 @@ export async function checkInvoice(db, runtime, client, organisationId, obligati
       }
     }
     // Another customer's invoice with the same reference is not this job's.
-    const found = sales(await client.findInvoicesByReference(reference))
-      .filter((inv) => !customer || inv.Contact?.ContactID === customer);
+    const byId = new Map();
+    for (const reference of references) {
+      for (const inv of sales(await client.findInvoicesByReference(reference))) {
+        if (!customer || inv.Contact?.ContactID === customer) byId.set(inv.InvoiceID, inv);
+      }
+    }
+    const found = [...byId.values()];
     if (found.length === 1) return evidenceFor(runtime, client, found[0], 'reference', checkedAt);
     if (found.length > 1) return several(runtime, client, found, checkedAt);
   }
@@ -159,9 +164,9 @@ export async function checkInvoice(db, runtime, client, organisationId, obligati
 //   draftInvoiceForObligation(db, org, id, { liveCheck: xeroLiveCheck(db, runtime, org), actor })
 // A Xero error throws, and the ledger then refuses the draft.
 export function xeroLiveCheck(db, runtime, organisationId) {
-  return (obligation) => withXeroLane('reads', async () => {
+  return (obligation, options = {}) => withXeroLane('reads', async () => {
     const { client } = await runtime.clientFor(db, organisationId);
-    return checkInvoice(db, runtime, client, organisationId, obligation);
+    return checkInvoice(db, runtime, client, organisationId, obligation, options);
   });
 }
 

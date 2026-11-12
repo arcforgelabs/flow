@@ -76,4 +76,21 @@ describe('the draft check against the accounting copy', { skip: skipWithoutDatab
     copy.push({ id: 'ACC-MINE', number: '5001', state: 'authorised', contactId: 'XC-MINE' });
     assert.equal((await copyCheck(accounting, lab.id, { db })(job)).accountingRef, 'ACC-MINE');
   });
+
+  test('the same client and Reference in the accounting copy stops the draft, as Send would', async () => {
+    const { copyCheck } = await import('../server/core/invoicing-rules.js');
+    const copy = [];
+    const asked = [];
+    const accounting = { id: 'accounts', capabilities: { findInvoices: async (query) => { asked.push(query); return { complete: true, fresh: true, changedAt: null, invoices: copy }; } } };
+    // The practice is linked to XC-MINE by the test above.
+    const job = { contactId: practice.id, sourceInvoiceRef: null, jobDate: '2026-10-15', accountingState: 'not_found', accountingCheckedAt: new Date() };
+    const check = copyCheck(accounting, lab.id, { db });
+    assert.equal((await check(job, { reference: 'Dr Example - Pat Sample' })).state, 'not_found');
+    assert.deepEqual(asked.at(-1).references, ['Dr Example - Pat Sample']);
+    copy.push({ id: 'ACC-OTHER-CLIENT', number: 'INV-1', state: 'authorised', contactId: 'XC-OTHER', reference: 'Dr Example - Pat Sample', issuedOn: '2026-10-16' });
+    copy.push({ id: 'ACC-OLD', number: 'INV-2', state: 'paid', contactId: 'XC-MINE', reference: 'Dr Example - Pat Sample', issuedOn: '2026-01-02' });
+    assert.equal((await check(job, { reference: 'Dr Example - Pat Sample' })).state, 'not_found', 'another client, or older than the window');
+    copy.push({ id: 'ACC-SAME', number: 'INV-3', state: 'authorised', contactId: 'XC-MINE', reference: 'dr example - pat sample', issuedOn: '2026-10-16' });
+    assert.deepEqual(await check(job, { reference: 'Dr Example - Pat Sample' }), { state: 'ambiguous', accountingRef: 'ACC-SAME', matchedBy: 'reference' });
+  });
 });

@@ -1491,7 +1491,26 @@ function issuedView(invoice, ui, context, redraw) {
     target: '_blank',
     rel: 'noopener',
   }, 'Open in Xero') : null;
-  const problemRow = problemNotice ? (openXero ? h('div', { class: 'fx-offer' }, problemNotice, openXero) : problemNotice) : null;
+  // Send stopped it for a Xero invoice of the same client and Reference: that
+  // Xero invoice is the bill. One press voids this copy and gives the job the
+  // Xero invoice (POST /api/xero/invoices/:id/use-xero), never a bare void.
+  const useXero = matched?.code === 'xero_same_reference_different_amount' && invoice.status === 'issued' && context.canIssue && organisationId
+    ? h('button', {
+      class: 'fx-btn fx-btn--sm', type: 'button',
+      onclick: async (event) => {
+        event.currentTarget.disabled = true;
+        try {
+          const body = await ui.flow(`/api/xero/invoices/${invoice.id}/use-xero`, { method: 'POST', body: JSON.stringify({ organisationId, xeroInvoiceId: matched.xero.invoiceId }) });
+          ui.toast(`${invoice.number} is void. The job has ${matched.xero.number ?? 'the Xero invoice'}.`, 'success');
+          ui.go(`/invoices/${body.invoice.id}`);
+        } catch (error) {
+          event.currentTarget.disabled = false;
+          ui.toast(error.message, 'danger');
+        }
+      },
+    }, 'Use Xero invoice') : null;
+  const offers = [useXero, openXero].filter(Boolean);
+  const problemRow = problemNotice ? (offers.length ? h('div', { class: 'fx-offer' }, problemNotice, ...offers) : problemNotice) : null;
   const header = h('header', { class: 'fx-ph' },
     h('div', { class: 'fx-ph__text' },
       h('h1', { class: 'fx-title' }, invoice.number),

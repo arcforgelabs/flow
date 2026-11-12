@@ -78,13 +78,16 @@ describe('Xero answers the billing ledger', { skip: skipWithoutDatabase }, () =>
 
   test('with no invoice in Xero, the ledger records not found and makes the draft', async () => {
     const obligation = await job();
-    const replay = xero.script([invoicesAnswer([]), invoicesAnswer([])]);
+    const replay = xero.script([invoicesAnswer([]), invoicesAnswer([]), invoicesAnswer([])]);
     const checked = await recordXeroEvidence(handle.db, xero.runtime, org, obligation, { actor });
     assert.equal(checked.accountingState, 'not_found');
     const { invoice } = await draftInvoiceForObligation(handle.db, org, obligation.id, { liveCheck: xeroLiveCheck(handle.db, xero.runtime, org), actor, reference: REFERENCE });
     assert.equal(invoice.reference, REFERENCE);
-    assert.equal(replay.calls.length, 2);
+    assert.equal(replay.calls.length, 3);
     assert.match(replay.calls[0].query.where, new RegExp(`Reference=="${obligation.caseRef}"`));
+    // Before the draft, Flow also asks for the draft's own Reference: Send
+    // would stop the same client and Reference.
+    assert.match(replay.calls[2].query.where, new RegExp(`Reference=="${REFERENCE}"`));
   });
 
   test('a Xero invoice for the same customer and case reference refuses the draft and goes to a person', async () => {
@@ -146,9 +149,20 @@ describe('Xero answers the billing ledger', { skip: skipWithoutDatabase }, () =>
     );
   });
 
-  test('a job\'s Flow invoice sent to Xero is found by flow_invoice, and its payment marks the job paid', async () => {
+  test('a Xero invoice with the draft\'s own Reference for the same customer refuses the draft', async () => {
     const obligation = await job();
     xero.script([invoicesAnswer([]), invoicesAnswer([])]);
+    await recordXeroEvidence(handle.db, xero.runtime, org, obligation, { actor });
+    xero.script([invoicesAnswer([]), invoicesAnswer([xeroInvoice('hand-2', { reference: REFERENCE, status: 'AUTHORISED' })]), organisation]);
+    await assert.rejects(
+      draftInvoiceForObligation(handle.db, org, obligation.id, { liveCheck: xeroLiveCheck(handle.db, xero.runtime, org), actor, reference: REFERENCE }),
+      (error) => error.code === 'not_ready' && /reports authorised/.test(error.details.reasons.join(' ')),
+    );
+  });
+
+  test('a job\'s Flow invoice sent to Xero is found by flow_invoice, and its payment marks the job paid', async () => {
+    const obligation = await job();
+    xero.script([invoicesAnswer([]), invoicesAnswer([]), invoicesAnswer([])]);
     await recordXeroEvidence(handle.db, xero.runtime, org, obligation, { actor });
     const { invoice } = await draftInvoiceForObligation(handle.db, org, obligation.id, { liveCheck: xeroLiveCheck(handle.db, xero.runtime, org), actor, reference: REFERENCE });
     await issueInvoice(handle.db, org, invoice.id, { issuedBy: actor, issueDate: '2026-10-18' });

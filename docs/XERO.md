@@ -266,7 +266,18 @@ The rules:
   reference. One for the same contact and total is the same work: Flow records
   it (`existing`) and sends nothing. One for the same contact at another total
   dated within 90 days is held, unless the person sends again with that
-  invoice in `allowExistingReference`.
+  invoice in `allowExistingReference`. The held invoice offers **Use Xero
+  invoice** (`POST /api/xero/invoices/:id/use-xero` with `xeroInvoiceId`):
+  Flow reads Xero's changes, voids its own copy, makes its Flow invoice from
+  the Xero one and gives it to the job. The Xero invoice must be the same
+  client's, and the copy must bill one job. A copy voided by hand earlier
+  whose job still points at it is cleaned up the same way.
+- **Before the draft.** The same check runs before Flow makes a job's draft,
+  so a draft that Send would stop is never made. The live check asks Xero for
+  the draft's own Reference as well as the case reference; the automatic
+  draft asks Flow's copy for the same client and Reference within 90 days of
+  the job date. Either refuses the draft, and the job waits for a person on
+  Reconcile.
 - **Uncertain outcomes.** The request and its `Idempotency-Key` are stored in
   `xero_invoice_pushes` before they leave. If Xero refuses the first request,
   the record is dropped and the invoice can be sent again once fixed. If the

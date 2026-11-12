@@ -155,7 +155,7 @@ export function createXeroAdapter({ runtime: given = null } = {}) {
       pullPayments: ({ organisationId, since }) => readPayments(database, current(), organisationId, { since: new Date(since) }),
       // Xero's invoice for one billable job, looked up live (ledger.js): the
       // `liveCheck` for draftInvoiceForObligation.
-      checkInvoice: ({ organisationId, obligation }) => xeroLiveCheck(database, current(), organisationId)(obligation),
+      checkInvoice: ({ organisationId, obligation, reference = null }) => xeroLiveCheck(database, current(), organisationId)(obligation, { reference }),
       // Xero's latest changes into the copy just before Flow drafts by rule or
       // sends (webhooks.js); no call when the copy is current.
       readChanges: ({ organisationId }) => readChangesFirst(database, current(), organisationId),

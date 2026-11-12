@@ -162,6 +162,11 @@ short groups, then act on the group they confirm.
      draft by itself. It refuses a live Flow invoice: void that first, only
      after the person says yes to that invoice
      (`flow.sh post invoicing/invoices/<id>/void`).
+   - **Xero already bills the job** (Send stopped it: "same client and
+     reference", or its Flow copy was voided for that): after the person says
+     yes, `flow.sh post xero/invoices/<Flow invoice id>/use-xero '{"organisationId":"<org>","xeroInvoiceId":"<Xero InvoiceID>"}'`.
+     Flow voids its copy (if not void yet), makes its Flow invoice from the
+     Xero one and gives it to the job. Same client only; one job per copy.
    - **Held or in review:** `flow.sh get invoicing/jobs/<job id>/activity`
      shows why. Release it: `flow.sh post invoicing/jobs/<job id>/hold '{"state":"none","reason":"<why>"}'`;
      hold it: `'{"state":"held","reason":"<why>"}'` (or `"review"`).

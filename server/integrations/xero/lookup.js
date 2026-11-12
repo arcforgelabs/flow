@@ -90,6 +90,7 @@ function invoiceRow(r) {
     id: r.xero_invoice_id,
     number: r.invoice_number,
     contactId: r.xero_contact_id,
+    reference: r.reference ?? null,
     status: r.status,
     // The ledger's accounting state for this invoice.
     state: ledgerState({ Status: r.status, AmountPaid: Number(r.amount_paid_cents ?? 0), AmountCredited: Number(r.amount_credited_cents ?? 0) }),
@@ -109,10 +110,11 @@ function invoiceRow(r) {
 // Flow invoices Flow sent, or one customer within a date range. Answers the
 // mirror's state with them, and the latest change time it holds.
 export async function findInvoices(db, organisationId, query = {}) {
-  const { invoiceIds = [], numbers = [], flowInvoiceIds = [], contactId = null, from = null, to = null } = query;
+  const { invoiceIds = [], numbers = [], references = [], flowInvoiceIds = [], contactId = null, from = null, to = null } = query;
   const where = [];
   if (invoiceIds.length) where.push(sql`i.xero_invoice_id = any(${ids(invoiceIds)}::text[])`);
   if (numbers.length) where.push(sql`upper(i.invoice_number) = any(${sql.param([...new Set(numbers.map((n) => String(n).toUpperCase()))])}::text[])`);
+  if (references.length) where.push(sql`upper(i.reference) = any(${sql.param([...new Set(references.map((r) => String(r).toUpperCase()))])}::text[])`);
   if (flowInvoiceIds.length) where.push(sql`p.invoice_id = any(${ids(flowInvoiceIds)}::uuid[])`);
   if (contactId) {
     where.push(sql`(i.xero_contact_id = ${contactId}

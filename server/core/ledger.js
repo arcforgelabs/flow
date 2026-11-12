@@ -970,7 +970,9 @@ export async function draftInvoiceForObligation(db, organisationId, obligationId
     let live = null;
     if (!reasons.length && accounting) {
       try {
-        live = await liveCheck(obligation);
+        // The draft's own Reference too: Send stops the same client and
+        // Reference in Xero, so the draft must not be made either.
+        live = await liveCheck(obligation, { reference });
       } catch (error) {
         reasons.push(`the live accounting check failed: ${error.message}`);
       }

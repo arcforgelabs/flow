@@ -8,7 +8,7 @@ import { createCustomer, linkCustomer, matchCustomer } from './create-contact.js
 import { createXeroClient } from './client.js';
 import { describePush, listPushes, MAX_BATCH, previewDrafts, pushDrafts } from './drafts.js';
 import { recordXeroEvidence, recordXeroPayments } from './ledger.js';
-import { IMPORT_STATES, importOverview, linkXeroInvoice, makeFlowInvoice, matchXero, saveImportSettings } from './links.js';
+import { IMPORT_STATES, importOverview, linkXeroInvoice, makeFlowInvoice, matchXero, saveImportSettings, useXeroInvoice } from './links.js';
 import { queueHistoryImport, resetImport } from './import.js';
 import { MIRROR_RESOURCES, mirrorStatus, mirrorXero } from './mirror.js';
 import { accountingStatus, checkSentInvoices } from './reconcile.js';
@@ -43,6 +43,10 @@ import { messagePage as themedMessagePage } from '../../ui/page.js';
 //                                  status and any difference, from the copy
 //   POST /invoices/:invoiceId/recheck   owner or admin: reads Xero's changes,
 //                                  then checks that one invoice again (Mark resolved)
+//   POST /invoices/:invoiceId/use-xero  owner or admin: { xeroInvoiceId } Send
+//                                  stopped this invoice for a Xero invoice of the
+//                                  same client and reference: void the Flow copy
+//                                  and give its job the Xero invoice (links.js)
 //   POST /obligations/:obligationId/check   owner or admin: Xero's invoice for
 //                                  a billable job, recorded on the ledger
 //   POST /payments/sync            owner or admin: Xero payments to the ledger
@@ -65,6 +69,7 @@ import { messagePage as themedMessagePage } from '../../ui/page.js';
 export const XERO_ACTIONS = Object.freeze({
   sync: { cooldownMs: 5 * 60_000 },
   recheck: { cooldownMs: 30_000 },
+  useXero: { cooldownMs: 10_000 },
   push: { cooldownMs: 0, budget: false },
   createContact: { cooldownMs: 30_000 },
   obligationCheck: { cooldownMs: 30_000 },
@@ -353,6 +358,18 @@ export function createXeroRouter({ db, personAuth, runtime, log = console, butto
     const result = await checkSentInvoices(db, runtime, organisationId, { invoiceIds: [invoiceId] });
     const status = (await accountingStatus(db, runtime, organisationId, [invoiceId])).get(invoiceId) ?? null;
     res.json({ ok: true, resolved: !status?.finding, closed: result.closed, status });
+  }));
+
+  router.post('/invoices/:invoiceId/use-xero', ...manager, act('useXero', (req) => req.params.invoiceId), handle(log, async (req, res) => {
+    const organisationId = await requireOrganisation(db, req.body?.organisationId);
+    const [invoiceId] = requireInvoiceIds([req.params.invoiceId], 'invoiceId');
+    const xeroInvoiceId = typeof req.body?.xeroInvoiceId === 'string' && UUID.test(req.body.xeroInvoiceId) ? req.body.xeroInvoiceId : null;
+    if (!xeroInvoiceId) throw new FlowError('invalid', 'xeroInvoiceId must name a Xero invoice');
+    // The Xero invoice may be newer than Flow's copy: read Xero's changes first.
+    await mirrorXero(db, runtime, organisationId, { resources: ['invoices'] });
+    const result = await useXeroInvoice(db, organisationId, invoiceId, { xeroInvoiceId, actor: `person:${req.person.id}` });
+    log.info?.(`[xero] organisation ${organisationId}: person ${req.person.id} used Xero invoice ${xeroInvoiceId} for Flow invoice ${invoiceId}`);
+    res.json({ ok: true, ...result });
   }));
 
   router.post('/invoices/push', ...manager, act('push'), handle(log, async (req, res) => {
