@@ -223,6 +223,46 @@ export async function itemsByCode(db, organisationId, codes) {
   return new Map(rows.map((row) => [row.code, itemRow(row)]));
 }
 
+// The Xero item each Flow price code sends as. A Flow item linked to a Xero
+// item (the price list's link, by Xero's ItemID, so a code changed in Xero
+// still finds it) sends as that item, under Xero's own code. A link whose
+// Xero item has left Xero's list is `linkMissing`: never fall back to the
+// Flow code then. A Flow item with no link sends as the Xero item with the
+// same code. Codes with neither are absent from the map.
+export async function xeroItemsForCodes(db, organisationId, codes) {
+  const wanted = [...new Set(codes.filter(Boolean))];
+  if (!wanted.length) return new Map();
+  const { rows } = await db.execute(sql`
+    select p.code as flow_code, l.external_id as link_id, x.*
+    from unnest(${sql.param(wanted)}::text[]) as w(code)
+    left join price_items p on p.organisation_id = ${organisationId} and p.code = w.code
+    left join lateral (
+      select external_id from price_item_links pl
+      where pl.organisation_id = ${organisationId} and pl.price_item_id = p.id and pl.system = 'xero'
+      order by pl.created_at desc limit 1) l on true
+    left join xero_items x on x.organisation_id = ${organisationId}
+      and (case when l.external_id is not null then x.xero_item_id = l.external_id else x.code = w.code end)`);
+  const found = new Map();
+  for (const row of rows) {
+    const code = row.flow_code;
+    if (!code) continue;
+    if (row.link_id && !row.xero_item_id) found.set(code, { linkMissing: true, xeroItemId: row.link_id });
+    else if (row.xero_item_id) found.set(code, { ...itemRow(row), linked: Boolean(row.link_id) });
+  }
+  // A code with no Flow price item (an older document) still matches by code.
+  const rest = wanted.filter((c) => !found.has(c));
+  if (rest.length) for (const [code, item] of await itemsByCode(db, organisationId, rest)) found.set(code, item);
+  return found;
+}
+
+// The Flow codes that send as a Xero item that sells: the rule field "Every
+// item is in accounting" (invoice-rules.js) reads them. A gone link, a
+// missing item and an item not set to be sold do not count.
+export async function sellingCodes(db, organisationId, codes) {
+  const items = await xeroItemsForCodes(db, organisationId, codes);
+  return [...items].filter(([, item]) => !item.linkMissing && item.isSold !== false).map(([code]) => code);
+}
+
 // The Xero contact for a Flow contact name: exactly one active contact with
 // the same name, or why not. A missing name can be created from the Flow
 // contact when that setting is on (create-contact.js). A doubled name is

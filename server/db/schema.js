@@ -253,6 +253,9 @@ export const billingObligations = pgTable('billing_obligations', {
   // The work system's status for the job, as it reported it (for example
   // "Shipped"). The draft rules read it.
   sourceStatus: text('source_status'),
+  // The work system marks the job a remake (Seazona's remake flag): the
+  // invoice rule field `remake` reads it.
+  remake: boolean('remake').notNull().default(false),
   // Flow's own stage: the job is ready to invoice, since when and by whom (a
   // person, or an automation such as one that reads the work system status).
   readyAt: timestamp('ready_at', { withTimezone: true }),

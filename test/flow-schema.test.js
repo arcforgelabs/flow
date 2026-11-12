@@ -157,8 +157,9 @@ test('source totals upgrade preserves old rows and does not backfill them', { sk
     await migrateDatabase(handle.db);
     await migrateDatabase(handle.db);
     const { rows: [upgraded] } = await handle.pool.query('select to_jsonb(o) as data from billing_obligations o where id = $1', [old.data.id]);
-    const { source_totals, ...unchanged } = upgraded.data;
+    const { source_totals, remake, ...unchanged } = upgraded.data;
     assert.equal(source_totals, null);
+    assert.equal(remake, false, 'an old job is not a remake until its work system says so');
     assert.deepEqual(unchanged, old.data, 'the upgrade changes no existing value');
     const { rows: [column] } = await handle.pool.query(`select is_nullable, column_default from information_schema.columns
       where table_schema = 'flow' and table_name = 'billing_obligations' and column_name = 'source_totals'`);

@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import { billingObligations, contacts, invoiceLines, invoices, people, priceItems } from '../db/schema.js';
 import { FlowError } from './errors.js';
-import { listRules, ruleExceptionsFor, ruleNonChargeable, rulePending, ruleSkip } from './invoice-rules.js';
+import { accountingItemsFor, listRules, ruleExceptionsFor, ruleNonChargeable, rulePending, ruleSkip } from './invoice-rules.js';
 import { customerBillingByContact, effectiveSettings, readInvoicingSettings } from './invoicing-rules.js';
 import { issueInvoice } from './invoices.js';
 import { CHANGED_REASON, diffJobLines, sourceBillingProblems, STATUS_BACK_REASON } from './ledger.js';
@@ -118,6 +118,7 @@ async function checkDrafts(db, organisationId, drafts, accounting) {
       .innerJoin(priceItems, eq(priceItems.id, invoiceLines.priceItemId))
       .where(and(inArray(invoiceLines.invoiceId, jobs.map((j) => j.obligation.invoiceId)), sql`${invoiceLines.unitAmountCents} * ${invoiceLines.quantity} > 0`));
     const itemsOf = Map.groupBy(itemRows, (r) => r.invoiceId);
+    const items = await accountingItemsFor(accounting, organisationId, rules, jobs.map((j) => j.obligation));
     for (const { obligation, reference, customerName } of jobs) {
       const customer = { ...effectiveSettings(settings, customers.get(obligation.contactId)), name: customerName ?? null };
       const job = {
@@ -125,7 +126,7 @@ async function checkDrafts(db, organisationId, drafts, accounting) {
         ruleExceptions: exceptions.get(obligation.id) ?? [],
         draftItems: (itemsOf.get(obligation.invoiceId) ?? []).map((r) => r.code),
       };
-      const found = [...ruleNonChargeable(rules, job, { customer }), ...rulePending(rules, job, { customer }), ...ruleSkip(rules, job, { customer })];
+      const found = [...ruleNonChargeable(rules, job, { customer, items }), ...rulePending(rules, job, { customer, items }), ...ruleSkip(rules, job, { customer, items })];
       if (found.length) problems.set(obligation.invoiceId, [...(problems.get(obligation.invoiceId) ?? []), ...found]);
     }
   }

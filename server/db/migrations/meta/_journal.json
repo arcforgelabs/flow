@@ -204,6 +204,13 @@
       "when": 1794456064675,
       "tag": "0028_sharp_power_pack",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1794463202822,
+      "tag": "0029_job_remake",
+      "breakpoints": true
     }
   ]
 }

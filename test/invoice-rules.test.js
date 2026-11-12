@@ -3,7 +3,7 @@ import { after, before, describe, test } from 'node:test';
 import { eq } from 'drizzle-orm';
 import { createContact, createOrganisation, createPriceItem } from '../server/core/directory.js';
 import {
-  addRuleItem, createRule, deleteRule, exceptDraft, exceptJob, FIELDS, listRuleExceptions, listRules, readRule, removeRuleException, ruleNonChargeable, rulePending, ruleReasons, ruleSkip, starterRules, TESTS, updateRule,
+  accountingItemsFor, addRuleItem, createRule, deleteRule, exceptDraft, exceptJob, FIELDS, listRuleExceptions, listRules, readRule, removeRuleException, ruleNonChargeable, rulePending, ruleReasons, ruleSkip, starterRules, TESTS, updateRule,
 } from '../server/core/invoice-rules.js';
 import { deleteDraft, getInvoice } from '../server/core/invoices.js';
 import { autoDraftJobs, saveInvoicingSettings } from '../server/core/invoicing-rules.js';
@@ -129,6 +129,46 @@ describe('one rule against one job', () => {
     assert.deepEqual(rulePending(rules, job({ practitioner: 'Dr Ann Lee', reference: 'Dr Ann Lee - Ben Ng' }), { now: NOW }), []);
     assert.deepEqual(rulePending([{ ...rules[0], enabled: false }], odd, { now: NOW }), []);
     assert.throws(() => rulePending([{ ...rules[0], id: null }], odd, { now: NOW }), { code: 'warning_resolution_required' });
+  });
+
+  test('every item is in accounting: lines with a code must send as an accounting item, and the reason names the rest', async () => {
+    const missing = [{ field: 'accounting_item', test: 'is', value: false }];
+    const two = job({ lines: [{ itemCode: 'CROWN', lineAmountCents: 20000 }, { itemCode: 'POST', lineAmountCents: 0 }, { accountCode: '200', label: 'Freight', lineAmountCents: 1500 }] });
+    const run = (items) => ruleReasons([rule(missing, 'wait', 'No Xero item')], two, { now: NOW, items });
+    assert.deepEqual(run(new Set(['CROWN'])), ['rule "No Xero item": waits for a person (not in accounting: POST)']);
+    // A line booked to an account has no item, so it does not count.
+    assert.deepEqual(run(new Set(['CROWN', 'POST'])), []);
+    // No accounting system, or its list never read: the field has no value.
+    assert.deepEqual(run(null), []);
+    assert.deepEqual(ruleReasons([rule([{ field: 'accounting_item', test: 'is', value: true }])], two, { now: NOW }), []);
+    const pending = { ...rule(missing, 'pending', 'No Xero item'), id: 'r-x', action: { kind: 'pending', note: 'Link the item in Price list.' } };
+    assert.equal(rulePending([pending], two, { now: NOW, items: new Set() })[0].message, 'Link the item in Price list. (not in accounting: CROWN, POST)');
+
+    // One call for a run of jobs, and only when an enabled rule reads the field.
+    const asked = [];
+    const accounting = { capabilities: { itemMatches: async ({ codes }) => { asked.push(codes); return ['CROWN']; } } };
+    const saved = [{ ...rule(missing), id: 'r-1' }];
+    assert.deepEqual(await accountingItemsFor(accounting, 'org', saved, [two, job()]), new Set(['CROWN']));
+    assert.deepEqual(asked, [['CROWN', 'POST']]);
+    assert.equal(await accountingItemsFor(accounting, 'org', [{ ...saved[0], enabled: false }], [two]), null);
+    assert.equal(await accountingItemsFor(null, 'org', saved, [two]), null);
+    assert.equal(await accountingItemsFor({ capabilities: { itemMatches: async () => null } }, 'org', saved, [two]), null);
+  });
+
+  test('a remake goes to No charge: the remake field, and a non-chargeable rule wins over wait rules', () => {
+    const remakeRule = { ...rule([{ field: 'remake', test: 'is', value: true }], 'non_chargeable', 'Remake'), id: 'r-rm' };
+    const noAmount = { ...rule([{ field: 'job_total', test: 'at_most', value: 0 }], 'wait', 'No amount'), id: 'r-na' };
+    const late = { ...rule([{ field: 'job_total', test: 'at_most', value: 0 }], 'skip', 'Late skip'), id: 'r-ls' };
+    const remake = job({ remake: true, totalCents: 0 });
+    // Without the remake rule, "No amount" holds the $0 job.
+    assert.deepEqual(ruleReasons([noAmount], remake, { now: NOW }), ['rule "No amount": waits for a person']);
+    // With it, in any order, the job is not held, and its draft is non-chargeable.
+    assert.deepEqual(ruleReasons([noAmount, remakeRule, late], remake, { now: NOW }), []);
+    assert.equal(ruleNonChargeable([noAmount, remakeRule], remake, { now: NOW })[0].rule, 'r-rm');
+    // A skip rule above the non-chargeable rule still decides.
+    assert.deepEqual(ruleReasons([late, remakeRule], remake, { now: NOW }), ['rule "Late skip": not drafted by rule']);
+    // A job that is not a remake is held as before.
+    assert.deepEqual(ruleReasons([remakeRule, noAmount], job({ totalCents: 0 }), { now: NOW }), ['rule "No amount": waits for a person']);
   });
 
   test('a skip rule holds a matching draft; a wait rule does not', () => {

@@ -60,6 +60,7 @@ export function toLedgerJob(item) {
     jobDate: item.invoice?.invoiceDate ?? item.dueOn ?? item.orderedOn ?? null,
     // The draft rules bill only the statuses the lab chose (for example Shipped).
     sourceStatus: item.status ?? null,
+    remake: item.remake === true,
     lines,
     sourceTotals,
     observedAt: item.syncedAt,

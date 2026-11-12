@@ -119,14 +119,20 @@ export async function archivePriceItem(db, organisationId, id, { archived = true
 }
 
 // Each connected system's list, by system id: { id, name, kind, syncedAt,
-// items, byId }. A system that cannot answer is left out (it is off, or its
-// copy is not there yet).
+// items, byId }. A system that cannot answer (its copy is not there yet, or
+// the read failed) is `unread`: { id, name, unread: true }, with no items.
+// The check then leaves its findings and alerts as they were, and the list
+// says it was not read, so "no difference" never stands for "not read".
 export async function readCatalogues(organisationId, systems = [], { log = console } = {}) {
   const out = new Map();
+  const unread = (adapter) => out.set(adapter.id, { id: adapter.id, name: adapter.name, unread: true, items: [], byId: new Map() });
   for (const adapter of systems) {
     try {
       const answer = await adapter.capabilities.listPriceItems({ organisationId });
-      if (!answer || !Array.isArray(answer.items)) continue;
+      if (!answer || !Array.isArray(answer.items)) {
+        unread(adapter);
+        continue;
+      }
       const items = answer.items.filter((i) => i && i.id);
       out.set(adapter.id, {
         id: adapter.id,
@@ -138,10 +144,12 @@ export async function readCatalogues(organisationId, systems = [], { log = conso
       });
     } catch (error) {
       log.warn?.(`[price-list] ${adapter.id} price list could not be read: ${error.message}`);
+      unread(adapter);
     }
   }
   return out;
 }
+const readOnes = (catalogues) => [...catalogues.values()].filter((c) => !c.unread);
 
 async function readLinks(db, organisationId) {
   return db.select().from(priceItemLinks).where(eq(priceItemLinks.organisationId, organisationId))
@@ -177,13 +185,17 @@ export async function linkByCode(db, organisationId, catalogue, { items = null, 
 async function writeLink(db, organisationId, priceItemId, { system, externalId }, { catalogues, personId }) {
   const item = await loadItem(db, organisationId, priceItemId);
   const catalogue = catalogues.get(system);
-  if (!catalogue) throw new FlowError('conflict', `${system} is not connected, or its price list has not been read yet`);
+  if (!catalogue || catalogue.unread) throw new FlowError('conflict', `${system} is not connected, or its price list has not been read yet`);
   const record = catalogue.byId.get(String(externalId ?? ''));
   if (!record) throw notFound(`${catalogue.name} record`);
   return db.transaction(async (tx) => {
-    await tx.delete(priceItemLinks).where(and(
+    // The record's earlier link, if any. A link taken from another Flow item
+    // is named in the answer (`movedFrom`), so the caller can say which item
+    // lost it: that item no longer sends as this record.
+    const earlier = await tx.delete(priceItemLinks).where(and(
       eq(priceItemLinks.organisationId, organisationId), eq(priceItemLinks.system, system), eq(priceItemLinks.externalId, String(record.id)),
-    ));
+    )).returning({ priceItemId: priceItemLinks.priceItemId });
+    const movedFrom = earlier.find((l) => l.priceItemId !== item.id)?.priceItemId ?? null;
     if (catalogue.kind === 'accounting') {
       await tx.delete(priceItemLinks).where(and(
         eq(priceItemLinks.organisationId, organisationId), eq(priceItemLinks.system, system), eq(priceItemLinks.priceItemId, item.id),
@@ -192,7 +204,7 @@ async function writeLink(db, organisationId, priceItemId, { system, externalId }
     const [row] = await tx.insert(priceItemLinks).values({
       organisationId, priceItemId: item.id, system, externalId: String(record.id), externalCode: record.code ?? null, matchedBy: 'person', createdBy: personId,
     }).returning();
-    return row;
+    return movedFrom ? { ...row, movedFrom } : row;
   });
 }
 
@@ -234,7 +246,7 @@ export async function unlinkPriceItem(db, organisationId, linkId) {
 // caller passes the item, its links and the catalogues.
 export function findingsFor(item, links, catalogues) {
   const findings = [];
-  for (const catalogue of catalogues.values()) {
+  for (const catalogue of readOnes(catalogues)) {
     const mine = links.filter((l) => l.system === catalogue.id);
     if (!mine.length && catalogue.kind === 'accounting') {
       findings.push({ system: catalogue.id, kind: 'not_linked', code: item.code });
@@ -252,6 +264,13 @@ export function findingsFor(item, links, catalogues) {
       }
       if (record.taxCode && record.taxCode !== item.taxCode) {
         findings.push({ ...base, kind: 'tax', flow: item.taxCode, other: record.taxCode });
+      }
+      // Invoices send the linked accounting item. When another item there has
+      // the Flow code, the link decides which one (and its sales account): a
+      // person should confirm the link is the right one.
+      if (catalogue.kind === 'accounting' && record.code !== item.code
+        && catalogue.items.some((other) => other.code === item.code && String(other.id) !== String(link.externalId))) {
+        findings.push({ ...base, kind: 'code', flow: item.code, other: record.code });
       }
     }
   }
@@ -285,12 +304,20 @@ async function lastClosedSignatures(db, organisationId, ids) {
 export async function checkPrices(db, organisationId, { catalogues, only = null, actor = 'flow:price-check' }) {
   const items = await db.select().from(priceItems).where(eq(priceItems.organisationId, organisationId));
   let linked = 0;
-  for (const catalogue of catalogues.values()) linked += await linkByCode(db, organisationId, catalogue, { items });
+  for (const catalogue of readOnes(catalogues)) linked += await linkByCode(db, organisationId, catalogue, { items });
   const links = await readLinks(db, organisationId);
   const live = items.filter((i) => !i.archivedAt && (!only || i.id === only));
   const latest = await lastClosedSignatures(db, organisationId, live.map((i) => i.id));
-  const summary = { linked, checked: live.length, differing: 0, opened: 0, closed: 0, accepted: 0 };
+  const unread = new Set([...catalogues.values()].filter((c) => c.unread).map((c) => c.id));
+  const summary = { linked, checked: live.length, differing: 0, opened: 0, closed: 0, accepted: 0, ...(unread.size ? { unread: [...unread], kept: 0 } : {}) };
   for (const item of live) {
+    // A list not read says nothing: an item linked to it, or whose open alert
+    // names it, keeps its alert as it was until the list is read.
+    if (unread.size && (links.some((l) => l.priceItemId === item.id && unread.has(l.system))
+      || (latest.get(item.id)?.state === 'open' && latest.get(item.id).evidence?.findings?.some((f) => unread.has(f.system))))) {
+      summary.kept += 1;
+      continue;
+    }
     const findings = findingsFor(item, links.filter((l) => l.priceItemId === item.id), catalogues);
     const signature = findingsSignature(item, findings);
     const last = latest.get(item.id);
@@ -352,7 +379,9 @@ export async function readPriceList(db, organisationId, { catalogues }) {
   }
   const linked = new Set(links.map((l) => `${l.system}:${l.externalId}`));
   return {
-    systems: [...catalogues.values()].map((c) => ({ id: c.id, name: c.name, kind: c.kind, syncedAt: c.syncedAt, count: c.items.length })),
+    systems: readOnes(catalogues).map((c) => ({ id: c.id, name: c.name, kind: c.kind, syncedAt: c.syncedAt, count: c.items.length })),
+    // Systems whose list Flow could not read now: their differences are not shown.
+    unread: [...catalogues.values()].filter((c) => c.unread).map((c) => ({ id: c.id, name: c.name })),
     items: items.map((item) => {
       const mine = linksOf.get(item.id) ?? [];
       return {
@@ -365,7 +394,7 @@ export async function readPriceList(db, organisationId, { catalogues }) {
         }),
       };
     }),
-    unlinked: [...catalogues.values()].map((c) => ({
+    unlinked: readOnes(catalogues).map((c) => ({
       system: c.id,
       records: c.items.filter((r) => r.sold !== false && !linked.has(`${c.id}:${r.id}`)),
     })),

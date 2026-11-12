@@ -136,6 +136,8 @@ export function mapOrder(listItem = {}, detail = null, { keepPatientReference = 
     lines,
     subtotalCents: lines.length ? sumCents(lines) : null,
     patientReference: keepPatientReference ? textOrNull(merged.patient) : null,
+    // Seazona's own remake flag (the list and the order both carry it).
+    remake: merged.isRemake === true,
   };
 }
 

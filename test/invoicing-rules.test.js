@@ -6,11 +6,12 @@ import { createDraftInvoice, getInvoice } from '../server/core/invoices.js';
 import { invoiceViews, markNotReady } from '../server/core/sending.js';
 import {
   autoDraftJobs, effectiveSettings, INVOICING_DEFAULTS, readCustomerBilling, readInvoicingSettings, ruleBlockers,
-  saveCustomerBilling, saveInvoicingSettings, sendModeSummary,
+  saveCustomerBilling, saveInvoicingSettings, sendModeSummary, settleHistoryByRules,
 } from '../server/core/invoicing-rules.js';
-import { starterRules } from '../server/core/invoice-rules.js';
+import { HISTORY_ACTOR, HISTORY_HOLD_REASON } from '../server/core/history.js';
+import { createRule, deleteRule, starterRules } from '../server/core/invoice-rules.js';
 import { listAutomations, runAutomations, saveAutomation, statusMatches, workStatuses } from '../server/core/automations.js';
-import { explainObligation, observeJob, recordAccountingEvidence, setReady } from '../server/core/ledger.js';
+import { explainObligation, observeJob, recordAccountingEvidence, setHold, setReady } from '../server/core/ledger.js';
 import { billingObligations, invoices } from '../server/db/schema.js';
 import { freshDatabase, skipWithoutDatabase } from './support/db.js';
 
@@ -232,6 +233,56 @@ describe('drafts by rule', { skip: skipWithoutDatabase }, () => {
     assert.equal(after.accountingCheckedAt.getTime(), later.getTime(), 'the matcher checked the job again');
     assert.ok(after.invoiceId);
     copy.state.changedAt = new Date(NOW.getTime() - 60_000);
+  });
+
+  test('a rule on accounting items holds a job whose item the accounting system does not sell', async () => {
+    copy = { state: { complete: true, fresh: true, changedAt: new Date(NOW.getTime() - 60_000) }, invoices: [] };
+    const rule = await createRule(handle.db, lab.id, { name: 'No Xero item', conditions: [{ field: 'accounting_item', test: 'is', value: false }], action: { kind: 'wait' } });
+    let selling = [];
+    const items = { ...accounting, capabilities: { ...accounting.capabilities, itemMatches: async () => selling } };
+    const row = await cleared();
+    assert.equal((await autoDraftJobs(handle.db, lab.id, { accounting: items, now: NOW })).drafted, 0);
+    assert.equal((await reload(row)).invoiceId, null);
+    selling = ['CROWN'];
+    assert.equal((await autoDraftJobs(handle.db, lab.id, { accounting: items, now: NOW })).drafted, 1);
+    assert.ok((await reload(row)).invoiceId);
+    await deleteRule(handle.db, lab.id, rule.id);
+  });
+
+  test('a non-chargeable rule settles old held jobs with no accounting invoice; the rest stay for a person', async () => {
+    copy = { state: { complete: true, fresh: true, changedAt: new Date(NOW.getTime() - 60_000) }, invoices: [] };
+    const own = await createContact(handle.db, lab.id, { kind: 'customer', name: 'Own Branch' });
+    const rule = await createRule(handle.db, lab.id, { name: 'Own clinics', conditions: [{ field: 'customer', test: 'is', value: own.id }], action: { kind: 'non_chargeable' } });
+    const old = async ({ contact, state = 'not_found', remake = false }) => {
+      const row = await observeJob(handle.db, lab.id, {
+        sourceSystem: 'seazona', sourceJobRef: `old-${++counter}`, caseRef: `OLD-${counter}`, contactId: contact.id, sourceStatus: 'Closed',
+        jobDate: '2026-03-01', remake, lines: [{ itemCode: 'CROWN', description: 'Crown' }], observedAt: NOW,
+      });
+      await setHold(handle.db, lab.id, row.id, { holdState: 'held', reason: HISTORY_HOLD_REASON, actor: HISTORY_ACTOR });
+      if (state === 'not_found') await recordAccountingEvidence(handle.db, lab.id, row.id, { state: 'not_found', actor: 'test', checkedAt: NOW });
+      else await recordAccountingEvidence(handle.db, lab.id, row.id, { state, accountingRef: `X-${counter}`, matchedBy: 'source_invoice_ref', actor: 'test', checkedAt: NOW });
+      return row;
+    };
+    const free = await old({ contact: own });
+    const billed = await old({ contact: own, state: 'paid' });
+    const other = await old({ contact: practice });
+    const result = await settleHistoryByRules(handle.db, lab.id, { accounting, now: NOW });
+    assert.equal(result.released, 1);
+    const freed = await reload(free);
+    assert.equal(freed.holdState, 'none');
+    assert.ok(freed.readyAt);
+    assert.equal((await reload(billed)).holdState, 'held', 'an accounting invoice exists: a person decides');
+    assert.equal((await reload(other)).holdState, 'held', 'no rule matches');
+    // The draft run drafts it; its draft is non-chargeable, never sent.
+    const drafted = await autoDraftJobs(handle.db, lab.id, { accounting, now: NOW });
+    assert.ok(drafted.drafted >= 1);
+    const job = await reload(free);
+    assert.ok(job.invoiceId);
+    const views = await invoiceViews(handle.db, lab.id, { accounting: null });
+    assert.ok(views.nonChargeable.has(job.invoiceId));
+    // A remake flag is kept on the job for the Remake field.
+    assert.equal((await reload(await old({ contact: practice, remake: true }))).remake, true);
+    await deleteRule(handle.db, lab.id, rule.id);
   });
 
   test('the automations mark jobs ready from their status, then draft them; each is on or off', async () => {

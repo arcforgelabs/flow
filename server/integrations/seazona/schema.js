@@ -74,6 +74,8 @@ export const seazonaOrders = pgTable('seazona_orders', {
   lines: jsonb('lines').notNull().default([]),
   subtotalCents: cents('subtotal_cents'),
   patientReference: text('patient_reference'),
+  // Seazona's isRemake on the order: a remake of earlier work.
+  remake: boolean('remake').notNull().default(false),
   // Issue #12: Seazona answered 404. The row and its history stay; the order
   // reads as "Deleted in Seazona" and is out of billing. A later successful
   // read clears it.

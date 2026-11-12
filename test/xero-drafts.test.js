@@ -5,6 +5,7 @@ import { createContact, createPriceItem } from '../server/core/directory.js';
 import { createDraftInvoice, issueInvoice, listInvoiceVersions, reviseInvoice } from '../server/core/invoices.js';
 import { saveCustomerBilling } from '../server/core/invoicing-rules.js';
 import { draftInvoiceForObligation, observeJob, recordAccountingEvidence } from '../server/core/ledger.js';
+import { sellingCodes, xeroItemsForCodes } from '../server/integrations/xero/catalogue.js';
 import { buildDraft, differences, pushDrafts } from '../server/integrations/xero/drafts.js';
 import { createXeroRuntime } from '../server/integrations/xero/runtime.js';
 import { resolveXeroSettings } from '../server/integrations/xero/settings.js';
@@ -53,6 +54,29 @@ describe('the Xero draft for a document', () => {
         { Description: 'Courier', Quantity: 1, UnitAmount: 15, LineAmount: 15, TaxType: 'EXEMPTOUTPUT' },
       ],
     });
+  });
+
+  test('a linked Xero item sends under Xero\'s own code; a gone link or an item not sold stops the draft', () => {
+    const contact = { xeroContactId: XC, salesTracking: [] };
+    const linked = buildDraft(document, { settings, contact, items: new Map([['CROWN', { code: 'CRN-01', linked: true }]]) });
+    assert.deepEqual(linked.problems, []);
+    assert.equal(linked.draft.LineItems[0].ItemCode, 'CRN-01');
+    const gone = buildDraft(document, { settings, contact, items: new Map([['CROWN', { linkMissing: true }]]) });
+    assert.equal(gone.problems[0].code, 'xero_item_missing');
+    assert.match(gone.problems[0].message, /no longer in Xero/);
+    assert.equal(gone.draft.LineItems[0].ItemCode, undefined);
+    const unsold = buildDraft(document, { settings, contact, items: new Map([['CROWN', { code: 'CROWN', isSold: false }]]) });
+    assert.match(unsold.problems[0].message, /not set to be sold/);
+  });
+
+  test('XERO_LINE_TEXT=item gives each line with an item the Xero item\'s name', () => {
+    const contact = { xeroContactId: XC, salesTracking: [] };
+    const items = new Map([['CROWN', { code: 'CRN-01', name: 'Crown - full contour' }]]);
+    const flowText = buildDraft(document, { settings, contact, items }).draft.LineItems[0].Description;
+    assert.equal(flowText, document.lines[0].description);
+    const named = buildDraft(document, { settings: resolveXeroSettings({ XERO_MODE: 'replay', XERO_LINE_TEXT: 'item' }), contact, items });
+    assert.equal(named.draft.LineItems[0].Description, 'Crown - full contour');
+    assert.throws(() => resolveXeroSettings({ XERO_MODE: 'replay', XERO_LINE_TEXT: 'seazona' }), /XERO_LINE_TEXT/);
   });
 
   test('an item code Xero does not have stops the draft; tracking follows the contact, then the setting', () => {
@@ -126,6 +150,41 @@ describe('Xero drafts from issued invoices', { skip: skipWithoutDatabase }, () =
     token, method: 'POST', body: { organisationId: lab.organisation.id, invoiceIds: ids, ...extra },
   });
   const pushRow = async (invoiceId) => (await handle.db.execute(sql`select * from xero_invoice_pushes where invoice_id = ${invoiceId} order by version`)).rows;
+
+  test('Flow finds the Xero item by its link, by Xero\'s id, and never falls back when the link is gone', async () => {
+    const org = lab.organisation.id;
+    const bridge = await createPriceItem(handle.db, org, { code: 'BRIDGE', name: 'Bridge', unitAmountCents: 50000 });
+    const veneer = await createPriceItem(handle.db, org, { code: 'VENEER', name: 'Veneer', unitAmountCents: 40000 });
+    await handle.db.execute(sql`insert into xero_items (organisation_id, xero_item_id, code, name) values (${org}, 'i2', 'BR-X', 'Bridge unit'), (${org}, 'i3', 'VENEER', 'Veneer')`);
+    await handle.db.execute(sql`insert into price_item_links (organisation_id, price_item_id, system, external_id, external_code, matched_by)
+      values (${org}, ${bridge.id}, 'xero', 'i2', 'OLD-CODE', 'person'), (${org}, ${veneer.id}, 'xero', 'i-gone', 'VENEER', 'code')`);
+    const found = await xeroItemsForCodes(handle.db, org, ['CROWN', 'BRIDGE', 'VENEER', 'NONE']);
+    assert.equal(found.get('CROWN').code, 'CROWN', 'no link: same code');
+    assert.equal(found.get('BRIDGE').code, 'BR-X', 'linked: Xero\'s current code, not the saved one');
+    assert.equal(found.get('VENEER').linkMissing, true, 'the link wins over a same-code item');
+    assert.equal(found.has('NONE'), false);
+    // The rule field "Every item is in accounting" counts only items that sell.
+    await handle.db.execute(sql`insert into xero_items (organisation_id, xero_item_id, code, name, is_sold) values (${org}, 'i4', 'INLAY', 'Inlay', false)`);
+    assert.deepEqual((await sellingCodes(handle.db, org, ['CROWN', 'BRIDGE', 'VENEER', 'NONE', 'INLAY'])).sort(), ['BRIDGE', 'CROWN']);
+
+    // Through the Send preview route: the linked code sends as Xero's item,
+    // with Flow's own line text (XERO_LINE_TEXT is not set); a gone link stops it.
+    const make = async (item) => {
+      const draft = await createDraftInvoice(handle.db, org, { contactId: practice.id, reference: `CASE-${++counter}`, lines: [{ priceItemId: item.id }] });
+      return issueInvoice(handle.db, org, draft.id, { issuedBy: 'user:test', issueDate: '2026-10-18' });
+    };
+    const [linked, gone] = [await make(bridge), await make(veneer)];
+    const res = await request(app, '/api/xero/invoices/preview', {
+      token: lab.staffToken, method: 'POST', body: { organisationId: org, invoiceIds: [linked.id, gone.id] },
+    });
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    const [a, b] = res.body.invoices;
+    assert.deepEqual(a.problems, []);
+    assert.equal(a.draft.LineItems[0].ItemCode, 'BR-X');
+    assert.equal(a.draft.LineItems[0].Description, 'Bridge');
+    assert.equal(b.state, 'blocked');
+    assert.equal(b.problems[0].code, 'xero_item_missing');
+  });
 
   test('preview shows the draft and what stops it, without calling Xero', async () => {
     const replay = xero.script([]);

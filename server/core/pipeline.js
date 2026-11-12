@@ -426,13 +426,16 @@ export async function matchJob(db, organisationId, obligation, {
 
 async function holdIfStale(db, organisationId, obligation, { now, staleDays }) {
   if (!staleDays || !obligation.jobDate || obligation.holdState !== 'none') return false;
+  // A job with a Flow invoice, or one a rule released from the history hold
+  // (a non-chargeable job), is decided already.
+  if (obligation.invoiceId) return false;
   if (now - day(obligation.jobDate) <= staleDays * 86_400_000) return false;
   // Once only: a person who releases the job has decided.
   const [held] = await db.select({ id: obligationEvents.id }).from(obligationEvents).where(and(
     eq(obligationEvents.organisationId, organisationId),
     eq(obligationEvents.obligationId, obligation.id),
-    eq(obligationEvents.actor, ACTOR),
-    eq(obligationEvents.kind, 'held'),
+    sql`((${obligationEvents.actor} = ${ACTOR} and ${obligationEvents.kind} = 'held')
+      or (${obligationEvents.kind} = 'released' and ${obligationEvents.actor} like 'rule:%'))`,
   )).limit(1);
   if (held) return false;
   await setHold(db, organisationId, obligation.id, {

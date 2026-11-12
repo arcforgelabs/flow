@@ -197,6 +197,8 @@ export async function observeJob(db, organisationId, job) {
       practitioner: job.practitioner ?? null,
       jobDate: job.jobDate ?? null,
       sourceStatus: job.sourceStatus ?? null,
+      // Seazona's remake flag, for the invoice rule field `remake`.
+      remake: job.remake === true,
       lines,
       lineFingerprint: fingerprint(lines),
       sourceTotals,
@@ -237,7 +239,7 @@ export async function observeJob(db, organisationId, job) {
         : String(existing[key] ?? '') !== String(facts[key] ?? ''));
     if (!changed.length) {
       const row = await update(tx, existing, {
-        sourceSeenAt: seenAt, mappingComplete: facts.mappingComplete, lines, jobDate: facts.jobDate, sourceStatus: facts.sourceStatus,
+        sourceSeenAt: seenAt, mappingComplete: facts.mappingComplete, lines, jobDate: facts.jobDate, sourceStatus: facts.sourceStatus, remake: facts.remake,
       });
       await statusChanged(tx, organisationId, existing, row, actor);
       return recordSourceReview(tx, row, actor);
@@ -907,10 +909,16 @@ export async function linkJobToInvoice(db, organisationId, obligationId, { invoi
     if (!invoice) throw notFound('invoice');
     if (invoice.status === 'void') throw new FlowError('invalid', 'the invoice is void');
     const rejected = await rejectSuggestions(tx, obligation, { actor });
+    // A job that waited for a person (no invoice found, or more than one fit)
+    // is settled now: the matcher reads it again on its next pass and records
+    // the invoice's stage. A link made from an accounting invoice
+    // (`accountingRef`) is exact, so the matcher follows that invoice.
+    const settled = ['not_found', 'ambiguous'].includes(obligation.accountingState);
     const row = await update(tx, obligation, {
       invoiceId: invoice.id,
       draftBasis: basisOf(obligation),
-      ...(obligation.accountingState === 'ambiguous' ? { accountingState: 'unknown' } : {}),
+      ...(settled ? { accountingState: 'unknown', accountingCheckedAt: null } : {}),
+      ...(accountingRef && !obligation.accountingRef ? { accountingRef } : {}),
       ...(obligation.readyAt ? {} : { readyAt: sql`now()`, readyBy: actor }),
     });
     await addEvent(tx, row, 'invoice_linked', actor, { invoiceId: invoice.id, matchedBy: 'person', rejected });

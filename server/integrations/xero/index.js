@@ -7,6 +7,7 @@ import { deleteXeroInvoice } from './delete-invoice.js';
 import { createCustomer } from './create-contact.js';
 import { checkDrafts, documentFacts, pushInvoice, pushInvoices } from './drafts.js';
 import { readConnection } from './connections.js';
+import { lastSuccessfulSyncAt, sellingCodes } from './catalogue.js';
 import { createImportWorker } from './import.js';
 import { readPayments, xeroLiveCheck } from './ledger.js';
 import { findInvoices, listCustomers, listPriceItems, mirrorState } from './lookup.js';
@@ -166,6 +167,15 @@ export function createXeroAdapter({ runtime: given = null } = {}) {
       createCustomer: ({ organisationId, contactId, actor = null }) => createCustomer(database, current(), { organisationId, contactId, actor }),
       // Sales invoices from the mirror, with the mirror's state (lookup.js).
       findInvoices: ({ organisationId, ...query }) => findInvoices(database, organisationId, query),
+      // The Flow codes that send as a Xero item that sells (catalogue.js),
+      // for the invoice rule field "Every item is in accounting". Null while
+      // not connected or before the first item sync.
+      itemMatches: async ({ organisationId, codes = [] }) => {
+        const connection = await readConnection(database, organisationId);
+        if (!connection || connection.mode !== current().settings.mode) return null;
+        if (!(await lastSuccessfulSyncAt(database, organisationId))) return null;
+        return sellingCodes(database, organisationId, codes);
+      },
       // Xero items, from Flow's copy, for the price list (lookup.js).
       listPriceItems: ({ organisationId }) => listPriceItems(database, organisationId, { taxTypes: current().settings.taxTypes }),
     },

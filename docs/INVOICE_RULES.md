@@ -125,9 +125,22 @@ Approve never send it: `Not sent: Rule "<name>": non-chargeable. Flow keeps
 it and never sends it.` A draft made before the rule moves to the tab by
 itself. Turn the rule off, and its drafts are checked as usual again.
 
+A non-chargeable rule that matches a job wins over every wait rule, so a $0
+remake is not stopped by a "No amount" rule. It also wins over the skip rules
+below it in the list. A skip rule above it still stops the job.
+
 | Name | If | Then |
 | --- | --- | --- |
 | Own clinics | Customer contains `Example Group` | Non-chargeable |
+| Remake | Remake is yes | Non-chargeable |
+
+Old held jobs settle by rule too. The history import holds each job it adds
+(`history_import`). When the accounting matcher finds no invoice for such a
+job (`not_found`; with no accounting system connected, also `unknown`), and a
+non-chargeable rule matches it, the draft step releases it (actor
+`rule:<id>`) and drafts it on the Non-chargeable tab. A job that the
+accounting system has invoiced stays held. The step's run summary counts the
+released jobs (`settle_history`).
 
 ## Fields
 
@@ -139,9 +152,16 @@ itself. Turn the rule off, and its drafts are checked as usual again.
 | `practitioner` | text, with a menu of the practitioners on jobs | The job's practitioner, else the customer's default | is, is not, is one of, is not one of, contains, does not contain, starts with, does not start with, has a number, has a number beside words, is one word, is empty, is not empty |
 | `reference` | text | The draft's Reference. Pending rules only | the same tests as `practitioner` |
 | `customer` | menu of customers | The job's customer. Contains and does not contain read the customer's name | is, is not, is one of, is not one of, contains, does not contain, is empty |
+| `remake` | yes or no | The work system marks the job a remake (Seazona: the order's `isRemake`) | is |
 | `customer_billable` | yes or no | The customer's `billable` setting | is |
 | `line_item` | menu of price items | The item codes on the job's lines | has, does not have |
 | `line_share` | price item and percent | That item's lines as a share of the other lines, to within 1 cent | is, is not |
+| `accounting_item` | yes or no | Every line with a price item sends as an item the accounting system sells (Xero: the linked item, else the item with the same code). A line booked to an account does not count. No value while no accounting system is connected or its item list was never read, so no rule on it matches then. The reason names the codes that do not send | is |
+
+A lab that must never invoice an item its accounting system does not hold
+adds a rule "Every item is in accounting is no", Then wait (or Pending, with a
+note such as "Link the item in Price list"). The send check still refuses such
+a line; the rule stops the job before its draft.
 
 Text and menu values match in any case and with spaces trimmed. A value that
 Flow knows is picked from a menu, never typed: `GET /api/invoicing/rule-fields`

@@ -51,6 +51,13 @@ API: `server/api/invoicing.js`.
   "Add as new code" adds the record to the list, then links it.
 - An accounting system (Xero) has one record for each price item at most.
   A work system (Seazona) can link many products to one price item.
+- A send uses the accounting link: a Flow code linked to a Xero item sends
+  as that item, found by Xero's ItemID, under Xero's own code. So names and
+  codes can differ in each system. A link whose item left Xero, or an item
+  not set to be sold, stops the send. A code with no link sends as the Xero
+  item with the same code.
+- Linking a record that another code had moves it: the answer says
+  `movedFrom` (that code's id), so a person sees what changed.
 - Line mapping uses a work system link first: a Seazona line whose product
   code is linked takes that price item (`docs/LINE_MAPPING.md`, step
   `linked`).
@@ -67,6 +74,13 @@ products read.
 | `tax` | The linked record has another tax code. Xero `OUTPUT` reads as GST; Seazona taxable no reads as GST free. |
 | `missing` | The linked record is no longer in the system's list. |
 | `not_linked` | An accounting system has no record for this code. A send with it stops for a person. |
+| `code` | The linked accounting record has another code, and another record has the Flow code. Before this change Flow sent by code; check that the link is right before the next send. |
+
+A list Flow cannot read now (its copy is not there yet, or the read failed)
+is "not read". The check then keeps each alert that names it, and closes
+nothing for it; the list answer names it in `unread`, and the Price list
+page says "<system> list not read". So no difference never stands for not
+read.
 
 Each finding is an alert only. A person fixes the price in Flow, Xero or
 Seazona, or presses "Mark resolved". Mark resolved checks the one code again,

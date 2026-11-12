@@ -1,6 +1,6 @@
 import { and, eq, inArray, isNull } from 'drizzle-orm';
 import { contacts, invoices, priceItems, reviewItems } from '../db/schema.js';
-import { listRules, ruleExceptionsFor, rulePending, ruleWait } from './invoice-rules.js';
+import { accountingItemsFor, listRules, ruleExceptionsFor, rulePending, ruleWait } from './invoice-rules.js';
 import { customerBillingByContact, effectiveSettings, readInvoicingSettings, ruleBlockers } from './invoicing-rules.js';
 import { REVIEW_CHANGED, listObligations } from './ledger.js';
 import { isHistoryHeld } from './history.js';
@@ -47,6 +47,7 @@ export async function describeObligations(db, organisationId, listed, { accounti
   const settings = await readInvoicingSettings(db, organisationId);
   const customers = await customerBillingByContact(db, organisationId, contactIds);
   const rules = await listRules(db, organisationId);
+  const items = await accountingItemsFor(accounting, organisationId, rules, listed.filter((e) => !e.obligation.invoiceId).map((e) => e.obligation));
   // A rule with an item to add also checks the job as the work system has it,
   // from the first read: the lab prints from the work system, so it must be
   // right there, not only on Flow's invoice. The card says what to add.
@@ -71,7 +72,7 @@ export async function describeObligations(db, organisationId, listed, { accounti
   const waiting = (o, v) => {
     if (o.invoiceId || !['in_work', 'ready', 'pending', 'held'].includes(v)) return { waitingFor: [], waitingRules: [] };
     const customer = { ...effectiveSettings(settings, customers.get(o.contactId)), name: nameOf.get(o.contactId) ?? null };
-    const waitingRules = ruleWait(rules, o, { customer });
+    const waitingRules = ruleWait(rules, o, { customer, items });
     // Keep the existing text projection for API consumers; links use identity.
     return { waitingRules, waitingFor: [
       ...ruleBlockers(o, customer),

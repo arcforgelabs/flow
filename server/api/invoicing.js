@@ -1182,7 +1182,7 @@ export function createInvoicingRouter({
     if (!system || !externalId) throw invalid('system and externalId are required');
     const link = await linkPriceItem(db, organisationId, itemId, { system, externalId }, { catalogues: await catalogues(organisationId), personId: req.person.id });
     log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} linked price item ${itemId} to ${system}`);
-    res.status(201).json({ ok: true, link: { id: link.id, system: link.system, externalId: link.externalId, externalCode: link.externalCode, matchedBy: link.matchedBy } });
+    res.status(201).json({ ok: true, link: { id: link.id, system: link.system, externalId: link.externalId, externalCode: link.externalCode, matchedBy: link.matchedBy, ...(link.movedFrom ? { movedFrom: link.movedFrom } : {}) } });
   }));
 
   router.post('/price-links', ...manager, handle(log, async (req, res) => {
@@ -1197,7 +1197,10 @@ export function createInvoicingRouter({
     });
     const made = await linkPriceItems(db, organisationId, links, { catalogues: await catalogues(organisationId), personId: req.person.id });
     log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} made ${made.length} price links`);
-    res.status(201).json({ ok: true, linked: made.length });
+    // A link another code had moves; `moved` names each one, so the caller
+    // can say which code lost it.
+    const moved = made.filter((l) => l.movedFrom).map((l) => ({ priceItemId: l.priceItemId, system: l.system, externalId: l.externalId, movedFrom: l.movedFrom }));
+    res.status(201).json({ ok: true, linked: made.length, ...(moved.length ? { moved } : {}) });
   }));
 
   router.post('/price-items/:id/resolve', ...manager, handle(log, async (req, res) => {

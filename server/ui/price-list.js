@@ -245,8 +245,11 @@ export async function renderPriceList(main, ui) {
       type: 'button', role: 'tab', 'aria-selected': String(tab === id), onclick: () => { tab = id; draw(); },
     }, label, h('span', { class: 'fx-tabs__count' }, String(count)))));
 
+    // A list Flow could not read: its differences are not shown.
+    const unread = (data.unread ?? []).length
+      ? notice(`${data.unread.map((u) => u.name).join(' and ')} list not read, so its differences are not shown. Flow reads it again at its next sync, in a few minutes: reload this page then. If it stays, open Integrations.`, 'warn') : null;
     if (!shown.length) {
-      host.replaceChildren(h('p', { class: 'fx-empty' }, words || view.groups.length ? 'No code matches.' : tab === 'archived' ? 'No archived codes.' : 'No codes yet.'));
+      host.replaceChildren(...[unread, h('p', { class: 'fx-empty' }, words || view.groups.length ? 'No code matches.' : tab === 'archived' ? 'No archived codes.' : 'No codes yet.')].filter(Boolean));
     } else {
       const columns = view.columns.map((id) => ({ id, label: PRICE_COLUMNS[id], ...COLUMN_DEFS[id] }));
       const itemRow = (item) => h('tr', { class: 'fx-row-link', tabindex: '0', onclick: () => edit(item), onkeydown: (event) => { if (event.key === 'Enter') edit(item); } },
@@ -260,7 +263,7 @@ export async function renderPriceList(main, ui) {
         open: !folded.has(label), onFold: () => { if (folded.has(label)) folded.delete(label); else folded.add(label); draw(); },
         span: columns.length + 1,
       });
-      host.replaceChildren(heads.table({
+      host.replaceChildren(...[unread].filter(Boolean), heads.table({
         className: 'fx-table--rows fx-price__table', columns,
         rows: groups.map((g) => h('tbody', {}, g.label == null ? null : head(g), g.label != null && folded.has(g.label) ? null : g.jobs.map(itemRow))),
       }));

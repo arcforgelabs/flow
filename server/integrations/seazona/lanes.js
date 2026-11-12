@@ -28,6 +28,7 @@ import {
   recordOrderFailure,
   recordRecordFailure,
   selectActiveOrders,
+  syncRemakeFlags,
   touchSynced,
   upsertRecords,
   upsertReference,
@@ -507,6 +508,8 @@ const laneRuns = {
       else failures.push(result.failure);
     }
     await touchSynced(db, 'orders', unchanged, { at });
+    // The remake flag is on the list row: kept with no detail read.
+    await syncRemakeFlags(db, new Map(unchanged.map((id) => [id, byId.get(id)?.isRemake === true])), { at });
     summary.unchanged += unchanged.length;
     const failureDetails = judgeReads('recent order reads', detailReads, failures);
     const through = lastDone ?? (Number.isFinite(doneThrough) ? doneThrough : null);
