@@ -10,6 +10,7 @@ import { createOrganisation } from '../server/core/directory.js';
 import { createRegistry } from '../server/integrations/port.js';
 import { SeazonaApiError } from '../server/integrations/seazona/client.js';
 import { createSeazonaRouter } from '../server/integrations/seazona/routes.js';
+import { createXeroRouter } from '../server/integrations/xero/routes.js';
 import { fakeClerk, request, TEST_PUBLISHABLE_KEY } from './support/clerk.js';
 import { freshDatabase, skipWithoutDatabase } from './support/db.js';
 
@@ -31,11 +32,12 @@ describe('the agent key against PostgreSQL', { skip: skipWithoutDatabase }, () =
   let owner;
   let agent;
   let personAuth;
+  let organisationId;
   const asAgent = (path, options = {}) => request(app, path, { token: KEY, ...options });
 
   before(async () => {
     handle = await freshDatabase();
-    await createOrganisation(handle.db, { name: 'Example Lab' });
+    ({ id: organisationId } = await createOrganisation(handle.db, { name: 'Example Lab' }));
     owner = await seedFirstOwner(handle.db, 'owner@example.test');
     agent = await invitePerson(handle.db, { email: 'assistant@example.test', role: 'admin', invitedBy: owner.id });
     const clerk = fakeClerk();
@@ -72,7 +74,19 @@ describe('the agent key against PostgreSQL', { skip: skipWithoutDatabase }, () =
     assert.equal(mapping.status, 201, JSON.stringify(mapping.body));
   });
 
-  test('the key opens only invoicing, the Seazona read and /api/me', async () => {
+  test('the key reaches the Xero matching routes, but never connects or disconnects Xero', async () => {
+    const xero = express().use('/api/xero', createXeroRouter({ db: handle.db, personAuth, runtime: { settings: { mode: 'demo' } }, log: quiet, buttonCooldowns: false }));
+    // Past sign-in and role: the route itself answers (here, that the id is bad).
+    const imported = await request(xero, '/api/xero/import?organisationId=not-an-id', { token: KEY });
+    assert.equal(imported.status, 400, JSON.stringify(imported.body));
+    assert.equal(imported.body.code, 'invalid');
+    await updatePerson(handle.db, { id: agent.id, actorId: owner.id, role: 'owner' });
+    const connect = await request(xero, '/api/xero/connect', { token: KEY, method: 'POST', body: { organisationId } });
+    assert.equal(connect.status, 403, JSON.stringify(connect.body));
+    await updatePerson(handle.db, { id: agent.id, actorId: owner.id, role: 'admin' });
+  });
+
+  test('the key opens only invoicing, Xero, the Seazona read and /api/me', async () => {
     const fields = await asAgent('/api/custom-fields');
     assert.equal(fields.status, 403);
     assert.equal(fields.body.code, 'role_required');
@@ -102,7 +116,7 @@ describe('the agent key against PostgreSQL', { skip: skipWithoutDatabase }, () =
     };
     let hide = false;
     const seazona = express().use('/api/seazona', createSeazonaRouter({ db: handle.db, personAuth, read, hidePatientFields: () => hide, log: quiet }));
-    const full = await request(seazona, '/api/seazona/api/orders/', { token: KEY });
+    const full = await request(seazona, '/api/seazona/api/orders/?ordered=2026-11-10T00:00:00', { token: KEY });
     assert.equal(full.body.data.Patient, 'Ada Example');
     hide = true;
     const list = await request(seazona, '/api/seazona/api/orders/?ordered=2026-11-11T00:00:00&page=1&bad-key=x', { token: KEY });
@@ -110,6 +124,11 @@ describe('the agent key against PostgreSQL', { skip: skipWithoutDatabase }, () =
     assert.deepEqual(list.body.data, { path: 'orders/', lines: [{ code: 'ZR', qty: 1 }] });
     assert.doesNotMatch(JSON.stringify(list.body), /Ada Example|shade/);
     assert.deepEqual(calls[1], ['orders/', { ordered: '2026-11-11T00:00:00', page: '1' }]);
+    const bare = await request(seazona, '/api/seazona/api/orders/?page=1&pageSize=5', { token: KEY });
+    assert.equal(bare.status, 400);
+    assert.match(bare.body.error, /ordered=/);
+    const users = await request(seazona, '/api/seazona/api/users/', { token: KEY });
+    assert.equal(users.status, 200);
     const one = await request(seazona, '/api/seazona/api/clients/1234', { token: KEY });
     assert.equal(one.body.data.path, 'clients/1234');
     const missing = await request(seazona, '/api/seazona/api/orders/missing', { token: KEY });
@@ -118,7 +137,7 @@ describe('the agent key against PostgreSQL', { skip: skipWithoutDatabase }, () =
     assert.equal(other.status, 404);
     const write = await request(seazona, '/api/seazona/api/orders/', { token: KEY, method: 'POST', body: {} });
     assert.equal(write.status, 404);
-    assert.equal(calls.length, 4);
+    assert.equal(calls.length, 5);
   });
 
   test('turning the person off stops the key on the next request', async () => {

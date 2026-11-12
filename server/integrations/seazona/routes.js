@@ -79,6 +79,23 @@ export function withoutPrivateFields(value) {
     .filter(([key]) => !PRIVATE_FIELD.test(key))
     .map(([key, item]) => [key, withoutPrivateFields(item)]));
 }
+// A list read must carry the filter Flow's own sync uses. Seazona answers a
+// list without it with an error, and every error counts against the call
+// guard that also protects Flow's sync, so Flow refuses it before the call.
+const SEAZONA_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/;
+const LIST_FILTERS = {
+  orders: { key: 'ordered', hint: 'ordered=2026-11-11T00:00:00 (one day)' },
+  invoices: { key: 'lastModified', hint: 'lastModified=2026-11-01T00:00:00' },
+  clients: { key: 'lastModified', hint: 'lastModified=2026-11-01T00:00:00' },
+};
+export function listQueryProblem(resource, query) {
+  const filter = LIST_FILTERS[resource];
+  if (filter && !SEAZONA_TIME.test(query[filter.key] ?? '')) return `A ${resource} list needs ${filter.hint}.`;
+  for (const key of ['page', 'pageSize']) {
+    if (key in query && !/^[1-9]\d{0,2}$/.test(query[key])) return `${key} must be a whole number from 1 to 999.`;
+  }
+  return null;
+}
 const API_PATH = new RegExp(`^/api/(${API_RESOURCES.join('|')})(?:/([A-Za-z0-9-]{1,64}))?/?$`);
 
 export function createSeazonaRouter({ db, personAuth, settings, read = null, hidePatientFields = () => false, log = console }) {
@@ -105,13 +122,15 @@ export function createSeazonaRouter({ db, personAuth, settings, read = null, hid
     for (const [key, value] of Object.entries(req.query)) {
       if (typeof value === 'string' && /^[A-Za-z][A-Za-z0-9_]{0,40}$/.test(key)) query[key] = value.slice(0, 200);
     }
+    const problem = id ? null : listQueryProblem(resource, query);
+    if (problem) return res.status(400).json({ ok: false, code: 'invalid', error: problem });
     try {
       const data = await read(id ? `${resource}/${id}` : `${resource}/`, query);
       log.info?.(`[seazona] api read ${resource}${id ? '/:id' : ''} by ${actor(req)}`);
       res.json({ ok: true, data: hidePatientFields() ? withoutPrivateFields(data) : data });
     } catch (error) {
       if (error?.name !== 'SeazonaApiError' && error?.name !== 'SeazonaCallsStopped') throw error;
-      const status = error.statusCode === 404 ? 404 : error.name === 'SeazonaCallsStopped' || error.statusCode === 429 || error.kind === 'governor_timeout' ? 429 : 502;
+      const status = error.statusCode === 404 ? 404 : error.statusCode === 400 ? 400 : error.name === 'SeazonaCallsStopped' || error.statusCode === 429 || error.kind === 'governor_timeout' ? 429 : 502;
       res.status(status).json({ ok: false, code: 'seazona_read_failed', error: error.message });
     }
   }));

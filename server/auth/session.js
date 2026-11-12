@@ -158,8 +158,9 @@ export function createPersonAuth({
   function isAgentKey(token) {
     return token.length >= 32 && timingSafeEqual(createHash('sha256').update(token).digest(), agentDigest);
   }
-  // The key opens only these routes: invoicing, the Seazona read and /api/me.
-  const AGENT_PATHS = /^\/api\/(?:me$|invoicing\/|seazona\/api\/)/;
+  // The key opens only these routes: invoicing, Xero (owner routes refuse it
+  // below), the Seazona read and /api/me.
+  const AGENT_PATHS = /^\/api\/(?:me$|invoicing\/|xero\/|seazona\/api\/)/;
   async function agentSession(req, res, next) {
     if (!AGENT_PATHS.test(`${req.baseUrl}${req.path}`)) return deny(res, 'role_required');
     let person;
