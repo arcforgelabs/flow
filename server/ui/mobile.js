@@ -679,8 +679,7 @@ export const RULES = {
     "pageOverflow": "none",
     "screens": [
       "rules",
-      "integrations",
-      "home"
+      "integrations"
     ],
     "card": "Tiles"
   },
@@ -700,8 +699,7 @@ export const RULES = {
     "touch": 44,
     "pageOverflow": "none",
     "screens": [
-      "rules",
-      "home"
+      "rules"
     ],
     "card": "Tiles"
   },
