@@ -192,12 +192,18 @@ async function adoptCustomer(db, organisationId, { system, customer }) {
 // - Each pass shows a hidden contact that has become a client.
 // - One time for an organisation, it hides the contacts that are none. After
 //   that only a person hides or shows one, so a person's choice stays.
+// - It waits while the work system (`workSystem`) has no client linked yet,
+//   so a client known only there is not hidden.
+// - An accounting contact that is not in the list (archived there) is not
+//   known to be no customer, so its Flow contact stays.
 const HIDDEN_CURSOR = 'contacts:hidden';
-export async function hideNonClients(db, organisationId, { system, customers }) {
+export async function hideNonClients(db, organisationId, { system, customers, workSystem = null }) {
   const marked = customers.filter((c) => c.customer).map((c) => String(c.id));
+  const listed = customers.map((c) => String(c.id));
   const client = sql`(
     exists (select 1 from billing_obligations o where o.organisation_id = c.organisation_id and o.contact_id = c.id)
     or exists (select 1 from invoices i where i.organisation_id = c.organisation_id and i.contact_id = c.id)
+    or exists (select 1 from customer_billing_settings s where s.organisation_id = c.organisation_id and s.contact_id = c.id)
     or exists (select 1 from external_links l where l.organisation_id = c.organisation_id and l.entity = 'contact'
       and l.flow_id = c.id and l.state = 'active'
       and (l.system <> ${system} or l.external_id = any(${sql.param(marked)}::text[]))))`;
@@ -206,10 +212,16 @@ export async function hideNonClients(db, organisationId, { system, customers }) 
   const result = { shown: shown.length, hidden: 0 };
   // An empty list proves nothing: the accounting copy has no contacts yet.
   if (!customers.length || await readCursor(db, organisationId, HIDDEN_CURSOR)) return result;
+  if (workSystem) {
+    const { rows: [work] } = await db.execute(sql`select 1 as one from external_links where organisation_id = ${organisationId}
+      and system = ${workSystem} and entity = 'contact' and state = 'active' limit 1`);
+    if (!work) return result;
+  }
   const { rows: hidden } = await db.execute(sql`update contacts c set hidden = true
     where c.organisation_id = ${organisationId} and c.kind = 'customer' and not c.hidden
       and exists (select 1 from external_links l where l.organisation_id = c.organisation_id and l.entity = 'contact'
-        and l.flow_id = c.id and l.state = 'active' and l.system = ${system} and l.matched_by = 'imported')
+        and l.flow_id = c.id and l.state = 'active' and l.system = ${system} and l.matched_by = 'imported'
+        and l.external_id = any(${sql.param(listed)}::text[]))
       and not ${client} returning c.id`);
   await writeCursor(db, organisationId, HIDDEN_CURSOR, 'done');
   result.hidden = hidden.length;
@@ -647,7 +659,7 @@ export async function runPipelineOnce(db, integrations, { now = new Date() } = {
       const customers = await accounting.capabilities.listCustomers({ organisationId });
       summary.accountingCustomers = await linkCustomers(db, organisationId, { system: accounting.id, customers, adopt: Boolean(adding?.enabled) });
       // After the work system's clients are linked, so a real client stays.
-      summary.contacts = await hideNonClients(db, organisationId, { system: accounting.id, customers });
+      summary.contacts = await hideNonClients(db, organisationId, { system: accounting.id, customers, workSystem: work?.id ?? null });
     }
     const settings = await readInvoicingSettings(db, organisationId);
     summary.matching = await matchJobs(db, organisationId, { accounting, work: work ?? null, now, staleDays: settings.staleDays });

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { after, before, describe, test } from 'node:test';
 import { and, eq, sql } from 'drizzle-orm';
 import { createContact, createOrganisation, createPriceItem } from '../server/core/directory.js';
+import { saveCustomerBilling } from '../server/core/invoicing-rules.js';
 import { confirmNoInvoice, ledgerView, observeJob } from '../server/core/ledger.js';
 import { listContacts, updateContact } from '../server/core/contacts.js';
 import { externalIdFor } from '../server/core/links.js';
@@ -404,7 +405,10 @@ describe('contacts that are not clients', { skip: skipWithoutDatabase }, () => {
       { id: 'a4', name: 'Customer B', customer: false },
       { id: 'a5', name: 'Customer C', customer: false },
       { id: 'a6', name: 'Customer D', customer: false },
+      { id: 'a7', name: 'Customer F', customer: false },
+      { id: 'a8', name: 'Customer G', customer: false },
     ];
+    const listedNow = customers.filter((x) => x.id !== 'a8');
     // An earlier version made each of them a Flow customer.
     await linkCustomers(handle.db, organisationId, { system: 'xero', customers: customers.map((c) => ({ ...c, adoptable: true })), adopt: true });
     // Customer B is a client of the work system. Customer C has a job.
@@ -415,12 +419,18 @@ describe('contacts that are not clients', { skip: skipWithoutDatabase }, () => {
     const [d] = await listContacts(handle.db, organisationId, { q: 'Customer D' });
     await handle.db.execute(sql`update external_links set matched_by = 'exact_name' where flow_id = ${d.id}`);
     const person = await createContact(handle.db, organisationId, { kind: 'customer', name: 'Customer E' });
+    // Customer F has its own invoicing settings. Customer G is archived in
+    // the accounting system: the next lists leave it out.
+    const [f] = await listContacts(handle.db, organisationId, { q: 'Customer F' });
+    await saveCustomerBilling(handle.db, organisationId, f.id, { billable: false });
 
     // The accounting copy is empty: that proves nothing, and the one time is not used.
     assert.deepEqual(await hideNonClients(handle.db, organisationId, { system: 'xero', customers: [] }), { shown: 0, hidden: 0 });
-    assert.deepEqual(await hideNonClients(handle.db, organisationId, { system: 'xero', customers }), { shown: 0, hidden: 2 });
+    // A work system is connected but none of its clients is linked yet: wait.
+    assert.deepEqual(await hideNonClients(handle.db, organisationId, { system: 'xero', customers: listedNow, workSystem: 'other' }), { shown: 0, hidden: 0 });
+    assert.deepEqual(await hideNonClients(handle.db, organisationId, { system: 'xero', customers: listedNow, workSystem: 'seazona' }), { shown: 0, hidden: 2 });
     assert.deepEqual(await hidden(), ['Office Rent', 'Staff Member']);
-    assert.deepEqual(await shown(), ['Customer A', 'Customer B', 'Customer C', 'Customer D', 'Customer E']);
+    assert.deepEqual(await shown(), ['Customer A', 'Customer B', 'Customer C', 'Customer D', 'Customer E', 'Customer F', 'Customer G']);
     assert.ok(person.id);
 
     // A person shows one: the next passes leave it.
@@ -428,6 +438,8 @@ describe('contacts that are not clients', { skip: skipWithoutDatabase }, () => {
     await updateContact(handle.db, organisationId, rent.id, { hidden: false });
     assert.deepEqual(await hideNonClients(handle.db, organisationId, { system: 'xero', customers }), { shown: 0, hidden: 0 });
     assert.deepEqual(await hidden(), ['Staff Member']);
+    // New refuses the name of a hidden contact and says why.
+    await assert.rejects(createContact(handle.db, organisationId, { kind: 'customer', name: 'Staff Member' }), /hidden customer with this name/);
 
     // The accounting system marks the other one a customer later: Flow shows it.
     const marked = customers.map((x) => (x.id === 'a3' ? { ...x, customer: true } : x));

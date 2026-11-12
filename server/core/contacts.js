@@ -93,6 +93,16 @@ function duplicate(error, kind) {
   throw error;
 }
 
+// A hidden contact of that name (not a client, docs/CONTACTS.md) is the usual
+// reason when the lists do not show it: say so. Read before the write, so a
+// caller's transaction is never left aborted.
+async function refuseHiddenName(db, organisationId, { kind, name }) {
+  const [same] = await db.select({ id: contacts.id }).from(contacts).where(and(
+    eq(contacts.organisationId, organisationId), eq(contacts.kind, kind), eq(contacts.name, name), eq(contacts.hidden, true),
+  ));
+  if (same) throw new FlowError('conflict', `A hidden ${kind} with this name exists. Show it in Contacts, Hidden.`, { contactId: same.id });
+}
+
 export function presentContact(row) {
   return {
     id: row.id,
@@ -117,6 +127,7 @@ export function presentContact(row) {
 
 export async function createContact(db, organisationId, input) {
   const values = readContact(input);
+  await refuseHiddenName(db, organisationId, values);
   try {
     const [row] = await db.insert(contacts).values({ organisationId, ...values }).returning();
     return row;

@@ -68,14 +68,17 @@ flowchart LR
 ```
 
 - The pipeline hides them one time for an organisation, after the accounting
-  copy has contacts. After that, only a person hides or shows a contact
-  (`hidden` on `PATCH /api/invoicing/contacts/:id`), so a person's choice
-  stays.
+  copy has contacts and, when a work system is connected, after one of its
+  clients is linked. After that, only a person hides or shows a contact
+  (`hidden` on `PATCH /api/invoicing/contacts/:id`).
 - Each pass shows a hidden contact that became a client: the accounting
-  system now marks it a customer, a work system has it, or Flow has a job or
-  an invoice for it.
-- A contact a person made in Flow, and one that was in Flow before its
-  accounting link, is never hidden by the rule.
+  system now marks it a customer, a work system has it, or Flow has a job,
+  an invoice or the customer's own invoicing settings for it. This also
+  undoes a person's Hide of a contact that is a client.
+- A contact a person made in Flow, one that was in Flow before its
+  accounting link, and one whose accounting contact is archived there, is
+  never hidden by the rule.
+- New refuses a name that a hidden contact has, and says to show that one.
 - To take a real client out of the lists, use Active.
 
 Code: `hideNonClients` in `server/core/pipeline.js`. The accounting system's
