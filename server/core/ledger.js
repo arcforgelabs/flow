@@ -608,6 +608,11 @@ export async function recordAccountingEvidence(db, organisationId, obligationId,
   const checkedAt = evidence.checkedAt ? new Date(evidence.checkedAt) : new Date();
   return db.transaction(async (tx) => {
     const obligation = await loadObligation(tx, organisationId, obligationId, { lock: true });
+    // A check made on the job as it was (`seen`) is stale when a person linked
+    // or unlinked it since: drop it (answer null), and the next pass checks
+    // the job again.
+    const { seen } = evidence;
+    if (seen && (seen.invoiceId !== obligation.invoiceId || seen.accountingRef !== obligation.accountingRef)) return null;
     let next = state;
     let reason = null;
     if (state !== 'not_found' && !EXACT_MATCHES.includes(matchedBy)) {
