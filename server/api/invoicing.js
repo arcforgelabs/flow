@@ -11,7 +11,7 @@ import {
 } from '../core/invoices.js';
 import { listAutomations, saveAutomation, workStatuses } from '../core/automations.js';
 import {
-  ACTIONS, createRule, deleteRule, FIELDS, listRules, TESTS, updateRule,
+  ACTIONS, addRuleItem, createRule, deleteRule, exceptDraft, exceptJob, FIELDS, listRuleExceptions, listRules, removeRuleException, TESTS, updateRule,
 } from '../core/invoice-rules.js';
 import {
   createMapping, deleteMapping, listMappings, STEP_LABELS, STEPS, updateMapping,
@@ -383,10 +383,24 @@ async function invoiceDetail(db, organisationId, invoiceId, accounting = null, w
       : null,
     contact: contact ?? null,
     job: withLink(jobs.get(invoiceId) ?? null, work),
+    // Lines this invoice has and its job in the work system does not (a
+    // rule's added shipping, for example). Flow cannot write lines to the
+    // work system, so the page shows the gap until the work system has them.
+    sourceGap: await sourceGap(db, organisationId, invoice),
     // The Linked card: each connected system, and this invoice's link there.
     linksTo: linkedSystems(work, accounting),
     versions: versions.map(({ version, issuedAt, issuedBy }) => ({ version, issuedAt, issuedBy })),
   };
+}
+
+async function sourceGap(db, organisationId, invoice) {
+  if (invoice.status === 'void') return [];
+  const [job] = await db.select({ lines: billingObligations.lines }).from(billingObligations)
+    .where(and(eq(billingObligations.organisationId, organisationId), eq(billingObligations.invoiceId, invoice.id)));
+  if (!job) return [];
+  const inSource = new Set((job.lines ?? []).map((l) => l.priceItemId).filter(Boolean));
+  return invoice.lines.filter((l) => l.priceItemId && !inSource.has(l.priceItemId))
+    .map((l) => ({ description: l.description, quantity: l.quantity, unitAmountCents: l.unitAmountCents }));
 }
 
 // A person's Recheck reads a job from its work system at most once in this
@@ -1018,6 +1032,51 @@ export function createInvoicingRouter({
     await deleteRule(db, organisationId, ruleId);
     log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} deleted invoice rule ${ruleId}`);
     res.json({ ok: true });
+  }));
+
+  // Exceptions (docs/INVOICE_RULES.md): each job a person let through although
+  // the rule matched, with who, when and why.
+  router.get('/rules/:id/exceptions', ...signedIn, handle(log, async (req, res) => {
+    const ruleId = pathId(req.params.id, 'rule');
+    const organisationId = await organisationOf(req);
+    res.json({ ok: true, exceptions: await listRuleExceptions(db, organisationId, ruleId) });
+  }));
+
+  router.delete('/rules/:id/exceptions/:exceptionId', ...manager, handle(log, async (req, res) => {
+    const ruleId = pathId(req.params.id, 'rule');
+    const exceptionId = pathId(req.params.exceptionId, 'exception');
+    const organisationId = await organisationOf(req);
+    await removeRuleException(db, organisationId, ruleId, exceptionId);
+    log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} removed exception ${exceptionId} from rule ${ruleId}`);
+    res.json({ ok: true });
+  }));
+
+  // A Pending draft's rule fix: add the rule's item, or skip with a reason.
+  router.post('/invoices/:id/rules/:ruleId/add-item', ...manager, handle(log, async (req, res) => {
+    const invoiceId = pathId(req.params.id, 'invoice');
+    const ruleId = pathId(req.params.ruleId, 'rule');
+    const organisationId = await organisationOf(req);
+    await addRuleItem(db, organisationId, invoiceId, ruleId);
+    log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} added rule ${ruleId}'s item to invoice ${invoiceId}`);
+    res.json({ ok: true, invoice: await invoiceDetail(db, organisationId, invoiceId, accounting(), work()) });
+  }));
+
+  router.post('/invoices/:id/rules/:ruleId/exception', ...manager, handle(log, async (req, res) => {
+    const invoiceId = pathId(req.params.id, 'invoice');
+    const ruleId = pathId(req.params.ruleId, 'rule');
+    const organisationId = await organisationOf(req);
+    await exceptDraft(db, organisationId, invoiceId, ruleId, { reason: req.body?.reason, actor: `person:${req.person.id}` });
+    log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} made an exception to rule ${ruleId} for invoice ${invoiceId}`);
+    res.json({ ok: true, invoice: await invoiceDetail(db, organisationId, invoiceId, accounting(), work()) });
+  }));
+
+  router.post('/jobs/:id/rules/:ruleId/exception', ...manager, handle(log, async (req, res) => {
+    const obligationId = pathId(req.params.id, 'job');
+    const ruleId = pathId(req.params.ruleId, 'rule');
+    const organisationId = await organisationOf(req);
+    const exception = await exceptJob(db, organisationId, obligationId, ruleId, { reason: req.body?.reason, actor: `person:${req.person.id}` });
+    log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} made an exception to rule ${ruleId} for job ${obligationId}`);
+    res.json({ ok: true, exception });
   }));
 
   router.get('/line-mappings', ...signedIn, handle(log, async (req, res) => {

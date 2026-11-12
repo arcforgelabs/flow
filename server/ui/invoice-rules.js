@@ -41,7 +41,8 @@ export function ruleSummary(rule, meta) {
     return `${field.label} ${test} ${value}`;
   };
   const then = rule.action.kind === 'pending' ? `Pending: ${rule.action.note}` : ACTION_LABELS[rule.action.kind] ?? rule.action.kind;
-  return `${rule.conditions.map(part).join(' and ')} · ${then}`;
+  const excepted = rule.exceptions ? ` · ${rule.exceptions} ${rule.exceptions === 1 ? 'exception' : 'exceptions'}` : '';
+  return `${rule.conditions.map(part).join(' and ')} · ${then}${excepted}`;
 }
 
 export function rulesSection(ui, title = 'Rules') {
@@ -169,7 +170,13 @@ export function rulesSection(ui, title = 'Rules') {
       placeholder: 'Type a note',
     });
     const noteField = h('div', { class: 'fx-field' }, h('span', { class: 'fx-label' }, 'Note on the draft'), note);
-    const showNote = () => { noteField.hidden = action.value !== 'pending'; };
+    // Optional: a price list code the draft offers to add in one press.
+    const addItem = h('input', {
+      class: 'fx-input', maxlength: '40', value: draft?.action.addItem ?? '', 'aria-label': 'Item to add',
+      placeholder: 'Price list code',
+    });
+    const addField = h('div', { class: 'fx-field' }, h('span', { class: 'fx-label' }, 'Offer to add'), addItem);
+    const showNote = () => { noteField.hidden = action.value !== 'pending'; addField.hidden = action.value !== 'pending'; };
     action.addEventListener('change', showNote);
     showNote();
     let editors = [];
@@ -218,6 +225,7 @@ export function rulesSection(ui, title = 'Rules') {
         label('If all of these match', list, more),
         label('Then', action),
         noteField,
+        addField,
         remove),
       confirm: rule ? 'Save' : 'Add rule',
     });
@@ -231,7 +239,7 @@ export function rulesSection(ui, title = 'Rules') {
       name: name.value,
       icon: icon.value(),
       conditions: editors.map((e) => e.read()),
-      action: action.value === 'pending' ? { kind: 'pending', note: note.value } : { kind: action.value },
+      action: action.value === 'pending' ? { kind: 'pending', note: note.value, ...(addItem.value.trim() ? { addItem: addItem.value.trim() } : {}) } : { kind: action.value },
     };
     const body = rule
       ? await send(`/api/invoicing/rules/${rule.id}`, 'PUT', payload)

@@ -1021,6 +1021,7 @@ th:hover > .fx-th-grip::after { background: var(--t-brd-hi); }
    follows the pointer, the lane that takes it, and the "Waiting for
    Seazona" chip of a stage move the work system has not made yet. */
 .fx-job__wait { justify-self: start; margin-top: 8px; padding: 1px 8px; border: 1px dashed var(--t-accent); border-radius: 999px; color: var(--t-accent); font-size: 11.5px; font-weight: 600; }
+.fx-job__wait--warn { border-color: var(--t-warn-brd); background: var(--t-warn-bg); color: var(--t-warn); }
 .fx-job--lifted { opacity: .35; }
 .fx-job--ghost { position: fixed; top: 0; left: 0; z-index: 60; pointer-events: none; box-shadow: var(--t-shadow-lg, var(--t-shadow)); cursor: grabbing; }
 .fx-board--dragging, .fx-board--dragging .fx-job { cursor: grabbing; user-select: none; }

@@ -54,11 +54,20 @@ for sends, voids and deletes get the person's yes in the chat.
 | Add a rule | `flow.sh post invoicing/rules '{"name":"...","conditions":[{"field":"job_total","test":"at_most","value":0}],"action":{"kind":"wait"}}'` |
 | Change or turn off a rule | `flow.sh put invoicing/rules/<id> '{"enabled":false}'` |
 | Delete a rule | `flow.sh delete invoicing/rules/<id>` |
+| Rule that offers an item (shipping) | `flow.sh post invoicing/rules '{"name":"Shipping","conditions":[{"field":"line_item","test":"has_not","value":"S/H"}],"action":{"kind":"pending","note":"Add shipping, or skip with a reason.","addItem":"S/H"}}'` |
+| Add the rule's item to a draft | `flow.sh post invoicing/invoices/<id>/rules/<ruleId>/add-item '{}'` |
+| Skip a rule for one job | on its draft: `flow.sh post invoicing/invoices/<id>/rules/<ruleId>/exception '{"reason":"..."}'`; no draft yet: `flow.sh post invoicing/jobs/<jobId>/rules/<ruleId>/exception '{"reason":"..."}'` |
+| Jobs the work system must fix | `flow.sh get 'invoicing/jobs?limit=200'`: each job's `sourceNeeds` lists the items a rule wants that the work system's job lacks |
+| A rule's exceptions | `flow.sh get invoicing/rules/<id>/exceptions`; take one back: `flow.sh delete invoicing/rules/<id>/exceptions/<exceptionId>` |
 | Automations | `flow.sh get invoicing/automations` |
 | Flow settings | `flow.sh get invoicing/settings` |
 
-Rule actions: `wait` (hold the job) or `skip` (never invoice it). Take field,
-test and value only from `rule-fields`.
+Rule actions: `wait` (hold the job), `skip` (never invoice it), `pending`
+(draft it, but hold it on Pending with a note) or `non_chargeable`. Take
+field, test and value only from `rule-fields`. A pending rule with `addItem`
+offers that item. Add it or skip it only when the person says so, and give
+the person's reason for a skip. The work system must get the item too: tell
+the person which jobs show "needs <item>" on the job board.
 
 Voids: the Void tab holds invoices voided in Flow **or voided or deleted in
 Xero**. Before a clean-up, list the tab, group the rows (Flow void, Xero void,
