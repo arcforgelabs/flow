@@ -2,6 +2,8 @@ import { eq, sql } from 'drizzle-orm';
 import express from 'express';
 import { FlowError } from '../core/errors.js';
 import { deriveKey, openSecret, sealSecret } from '../core/secrets.js';
+import { startSyncNow, syncNowStatus } from '../core/sync-now.js';
+import { createActionGuard } from './call-guard.js';
 import { integrationSettingEvents, integrationSettings, organisations } from '../db/schema.js';
 
 // Integration setup in Settings (docs/INTEGRATIONS.md, "Set up in Flow"). An
@@ -183,8 +185,11 @@ export async function saveSettings(db, { adapter, secrets, actor, enabled, value
 
 // GET /api/integrations (owner): every adapter with settings, its state and
 // what is set. PUT /api/integrations/:id (owner): save and apply.
-export function createSetupRouter({ db, registry, personAuth, secrets, baseEnv = process.env, log = console }) {
+export function createSetupRouter({ db, registry, personAuth, secrets, baseEnv = process.env, log = console, buttonCooldowns = true }) {
   const router = express.Router();
+  // Sync now can call Xero at a press, so it is an action (docs/INTEGRATIONS.md,
+  // "Button presses"): one a minute.
+  const actions = createActionGuard({ integration: 'sync-now', actions: { syncNow: { cooldownMs: 60_000 } }, off: !buttonCooldowns });
   const owner = [personAuth.requireSession, personAuth.requireRole('owner')];
   // A change needs a verified owner sign-in, as connecting Xero does.
   const verifiedOwner = [personAuth.requireSession, personAuth.requireOwner];
@@ -202,6 +207,19 @@ export function createSetupRouter({ db, registry, personAuth, secrets, baseEnv =
     try {
       const labs = await db.select({ id: organisations.id, name: organisations.name }).from(organisations);
       res.json({ ok: true, secretsKey: secrets ? { source: secrets.source, id: secrets.id } : null, organisations: labs, integrations: await describeAll() });
+    } catch (error) { next(error); }
+  });
+
+  // Sync now (server/core/sync-now.js): what the button shows, and the
+  // press. Reads only; the reads stay inside each call guard.
+  router.get('/sync-now', ...owner, async (_req, res, next) => {
+    try {
+      res.json({ ok: true, integrations: await syncNowStatus(registry) });
+    } catch (error) { next(error); }
+  });
+  router.post('/sync-now', ...owner, actions.route('syncNow'), async (req, res, next) => {
+    try {
+      res.json({ ok: true, results: await startSyncNow(registry, { actor: req.person.id, log }) });
     } catch (error) { next(error); }
   });
 

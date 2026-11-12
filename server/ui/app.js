@@ -640,6 +640,47 @@ function integrationLogo(integration, size = '') {
     file ? h('img', { src: `/assets/ui/logos/${file}`, alt: '' }) : icon('plug'));
 }
 
+// Sync now (server/core/sync-now.js): reads each integration whose "Include
+// in Sync now" setting is on, now. Which ones, and when the last read
+// started, are on hover. While a read goes on, the button says so and asks
+// Flow again every 5 seconds (Flow's data only). Hidden while no integration
+// can sync.
+function syncNowButton() {
+  const button = h('button', { class: 'fx-btn', type: 'button', hidden: true, disabled: true }, 'Sync now');
+  const when = (at) => new Date(at).toLocaleString('en-AU', { dateStyle: 'medium', timeStyle: 'short' });
+  let timer = null;
+  const show = (list) => {
+    const included = list.filter((i) => i.included);
+    const running = included.some((i) => i.running);
+    const last = included.map((i) => i.lastAt).filter(Boolean).sort().pop();
+    button.hidden = !list.length;
+    button.disabled = running || !included.length;
+    button.replaceChildren(...(running ? [h('span', { class: 'fx-spinner fx-spinner--sm', 'aria-hidden': 'true' }), 'Syncing'] : ['Sync now']));
+    button.title = included.length
+      ? `Reads ${included.map((i) => i.name).join(' and ')}.${last ? ` Last read ${when(last)}.` : ''}`
+      : 'Turn on "Include in Sync now" in an integration\'s settings.';
+    clearTimeout(timer);
+    if (running) timer = setTimeout(() => { if (button.isConnected) load(); }, 5000);
+  };
+  const load = () => flow('/api/integrations/sync-now')
+    .then(({ integrations }) => show(integrations))
+    .catch(() => { button.hidden = true; });
+  button.addEventListener('click', async () => {
+    button.disabled = true;
+    try {
+      const { results } = await flow('/api/integrations/sync-now', { method: 'POST' });
+      for (const r of results.filter((r) => r.state === 'unavailable')) toast(`${r.name}: ${r.reason}`, 'danger');
+      const reading = results.filter((r) => ['started', 'running', 'read'].includes(r.state));
+      if (reading.length) toast(`Reading ${reading.map((r) => r.name).join(' and ')}.`, 'success');
+    } catch (error) {
+      toast(error.message, 'danger');
+    }
+    load();
+  });
+  load();
+  return button;
+}
+
 async function renderIntegrations(main) {
   const state = { tab: 'all', category: 'all', q: '' };
   const tabs = h('div', { class: 'fx-seg', role: 'tablist' });
@@ -649,7 +690,7 @@ async function renderIntegrations(main) {
   const notices = h('div', { class: 'fx-fields' });
   const content = h('div', { class: 'fx-int-sections' }, h('div', { class: 'fx-skeleton' }));
   main.append(
-    pageHeader('Integrations'),
+    pageHeader('Integrations', { actions: [syncNowButton()] }),
     alertStrip(ui(), 'integrations').element,
     h('div', { class: 'fx-int-bar' }, tabs, h('div', { class: 'fx-row' }, category, search)),
     notices, content);

@@ -346,6 +346,7 @@ The waits each adapter declares:
 | `POST /api/xero/invoices/push` (Send to Xero) | `push` | one at a time; backs off after a failure; no budget |
 | `POST /api/invoicing/invoices/send-ready`, `send-again` | `sendReady`, `sendAgain` | one at a time; backs off; no budget |
 | `POST /api/invoicing/jobs/:id/draft` | `draftJob` | 10 seconds per job; no budget |
+| `POST /api/integrations/sync-now` (Sync now) | `syncNow` | 1 minute |
 
 Check prices (`POST /api/invoicing/price-list/check`) reads Flow's copies
 only, so it has no action. The Seazona routes call nothing at a press (a backfill is paced by the rate
@@ -354,6 +355,27 @@ at a press declares an action. The state is in memory: one Flow process
 serves one lab, as for the request limit (`server/rate-limit.js`); the call
 guard still protects every process. `createApp({ buttonCooldowns: false })`
 turns the waits off for tests only (`test/action-guard.test.js` tests them).
+
+## Sync now
+
+The Integrations page has a **Sync now** button for an owner who wants Flow
+to read its systems again now, not at the next background run
+(`server/core/sync-now.js`). Each integration takes part only while its own
+setting **Include in Sync now** is on:
+
+| Integration | Setting | Default | What Sync now reads |
+|---|---|---|---|
+| Seazona | `SEAZONA_SYNC_NOW` | on | new and open orders, invoices and practices (the lanes `invoices`, `orders_recent`, `orders_active`, `clients`), in the background, inside the rate governor |
+| Xero | `XERO_SYNC_NOW` | off | changed invoices and credit notes, and waiting webhook events, for each connected organisation, even when the copy counts as current. About two calls |
+
+An adapter takes part through two capabilities: `syncNow` (start the read;
+answers `started`, `running`, `read`, `off` or `unavailable` with a reason)
+and `syncNowStatus` (`included`, `running`, `lastAt`, `ok`, from Flow's data
+only). `GET /api/integrations/sync-now` answers the status and
+`POST /api/integrations/sync-now` starts the reads; both need an owner. A
+Seazona read that is already going is not started again: the button says
+"Syncing" and checks every 5 seconds. The pipeline turns what the reads
+bring into jobs at its next run (every 2 minutes).
 
 ## Health
 

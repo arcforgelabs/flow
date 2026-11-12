@@ -85,14 +85,14 @@ export function createSeazonaScheduler({
     timer?.unref?.();
   }
 
-  async function tick() {
+  async function tick(options = {}) {
     timer = null;
     if (stopped) return;
     const startedAt = new Date(Number(now())).toISOString();
     const turn = { abandoned: false };
     const thisRun = (async () => {
       try {
-        const result = await run();
+        const result = await run(options);
         const failed = Object.entries(result.results).filter(([, lane]) => !lane.ok);
         last = { at: startedAt, ok: result.ok, lanes: Object.keys(result.results), failed: failed.map(([lane]) => lane) };
         report(result.results);
@@ -134,6 +134,17 @@ export function createSeazonaScheduler({
       timer = null;
       nextRunAt = null;
       await running;
+    },
+    // Sync now (server/core/sync-now.js): a person asks for a run now, with
+    // `options` (the lanes to read). While a run is going it starts nothing
+    // and answers 'running'. Otherwise the waiting run moves to now; the
+    // schedule goes on from its end as usual.
+    runNow(options = {}) {
+      if (stopped) return 'stopped';
+      if (running) return 'running';
+      if (timer) timers.clearTimeout(timer);
+      tick(options);
+      return 'started';
     },
     status() {
       return { running: Boolean(running), nextRunAt, lastRun: last, stuckSince };

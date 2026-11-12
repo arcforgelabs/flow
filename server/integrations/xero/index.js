@@ -48,6 +48,7 @@ export const XERO_SETUP = {
     { name: 'XERO_TENANT_NAME', label: 'Xero organisation name', help: 'Live mode connects only the organisation with this exact name.' },
     { name: 'XERO_ALLOW_LIVE_WRITES', label: 'Create draft invoices in live Xero', kind: 'onoff', help: 'Off: Flow only reads from Xero.' },
     { name: 'XERO_CREATE_CONTACTS', label: 'Create missing clients', kind: 'onoff', default: 'on', help: 'On: a pending invoice whose client is not in Xero offers Create. Off: add the client in Xero, then sync.' },
+    { name: 'XERO_SYNC_NOW', label: 'Include in Sync now', kind: 'onoff', help: 'On: Sync now on the Integrations page also reads Xero\'s changed invoices and credit notes. It uses a few of the day\'s Xero calls.' },
     { name: 'XERO_WEBHOOK_KEY', label: 'Webhook key', secret: true, help: 'From the Xero app\'s Webhooks page. Empty: Flow reads Xero\'s changes every 15 minutes instead.' },
   ],
   derivedKeys: ['XERO_TOKEN_KEY'],
@@ -160,6 +161,29 @@ export function createXeroAdapter({ runtime: given = null } = {}) {
       // Xero's latest changes into the copy just before Flow drafts by rule or
       // sends (webhooks.js); no call when the copy is current.
       readChanges: ({ organisationId }) => readChangesFirst(database, current(), organisationId),
+      // Sync now (server/core/sync-now.js): Xero's latest invoice and credit
+      // note changes into the copy now, for each connected organisation, even
+      // when the copy counts as current. Off while "Include in Sync now" is off.
+      syncNow: async () => {
+        const { settings } = current();
+        if (!settings.syncNow) return { state: 'off' };
+        const { rows } = await database.execute(sql`select organisation_id from xero_connections where mode = ${settings.mode}`);
+        if (!rows.length) return { state: 'unavailable', reason: 'Xero is not connected' };
+        let changed = 0;
+        for (const row of rows) {
+          const answer = await readChangesFirst(database, current(), row.organisation_id, { force: true });
+          if (answer.state === 'unavailable') return answer;
+          changed += answer.changed ?? 0;
+        }
+        return { state: 'read', changed };
+      },
+      syncNowStatus: async () => {
+        const { settings } = current();
+        const { rows: [row] } = await database.execute(sql`select max(c.last_read_at) as at from xero_mirror_cursors c
+          join xero_connections x on x.organisation_id = c.organisation_id and x.mode = ${settings.mode}
+          where c.resource = 'invoices'`);
+        return { included: settings.syncNow, running: false, lastAt: row?.at ? new Date(row.at).toISOString() : null, ok: null };
+      },
       // Active Xero contacts, from Flow's copy (lookup.js).
       listCustomers: ({ organisationId }) => listCustomers(database, organisationId),
       // Create the Xero contact for one Flow contact, when that setting is on
