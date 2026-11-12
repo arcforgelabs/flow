@@ -1287,6 +1287,25 @@ export async function renderJobs(main, ui) {
     const menuItems = [];
     if (choose && o?.id) menuItems.push({ icon: 'git-compare', text: 'Reconcile', run: () => { close(); ui.go(`/reconcile/${o.id}`); } });
     if (job.link?.url) menuItems.push({ icon: 'external-link', text: `Open in ${system}`, run: () => window.open(job.link.url, '_blank', 'noopener') });
+    // An owner or admin unlinks a wrong pair: nothing is voided, and the job
+    // waits on hold for its right invoice (docs/JOB_INVOICE_LINKS.md).
+    if (state.canDraft && o?.id && o.invoiceId) menuItems.push({ icon: 'unlink', text: 'Unlink', run: async () => {
+      const form = await ui.dialog({
+        title: 'Unlink this job from its invoice?',
+        body: h('label', { class: 'fx-field' }, h('span', {}, 'Why'),
+          h('input', { class: 'fx-input', name: 'reason', required: true, maxlength: 200, placeholder: 'The patient is on another invoice' })),
+        confirm: 'Unlink',
+      });
+      const reason = form?.get('reason')?.trim();
+      if (!reason) return;
+      try {
+        await ui.flow(`/api/invoicing/jobs/${o.id}/unlink`, { method: 'POST', body: JSON.stringify({ reason }) });
+        ui.toast('Unlinked. The invoice is on Reconcile; link the right one.', 'success');
+        await reopen();
+      } catch (error) {
+        ui.toast(error.message, 'danger');
+      }
+    } });
     const menu = menuItems.length ? rowMenu('More', menuItems, { className: 'fx-record__menu' }) : null;
     const bar = recordBar(h, {
       title: clientOf(job),

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { after, before, describe, test } from 'node:test';
 import { createContact, createOrganisation, createPriceItem } from '../server/core/directory.js';
-import { getInvoice } from '../server/core/invoices.js';
+import { getInvoice, issueInvoice } from '../server/core/invoices.js';
 import {
   draftInvoiceForObligation,
   explainObligation,
@@ -13,6 +13,8 @@ import {
   recordWritebackResult,
   setHold,
   setReady,
+  linkJobToInvoice,
+  unlinkJobInvoice,
 } from '../server/core/ledger.js';
 import { freshDatabase, skipWithoutDatabase } from './support/db.js';
 
@@ -146,6 +148,34 @@ describe('billing obligation ledger', { skip: skipWithoutDatabase }, () => {
       draftInvoiceForObligation(db, lab.id, numbered.id, { actor, liveCheck: async () => ({ state: 'authorised' }), noCharge: true }),
       { code: 'not_ready' },
     );
+  });
+
+  test('a person unlinks a wrong pair with no void; the job waits for its right invoice', async () => {
+    const billed = async (ref, state) => {
+      const o = await readyObligation();
+      const { invoice: draft } = await draftInvoiceForObligation(db, lab.id, o.id, { actor, liveCheck: notFound });
+      const invoice = await issueInvoice(db, lab.id, draft.id, { issuedBy: actor, issueDate: '2026-10-20' });
+      await recordAccountingEvidence(db, lab.id, o.id, { state, accountingRef: ref, matchedBy: 'accounting_ref', actor });
+      return { job: o, invoice };
+    };
+    // Twin jobs paired the wrong way round.
+    const one = await billed('ACC-TWIN-1', 'paid');
+    const two = await billed('ACC-TWIN-2', 'authorised');
+    const unlink = (id, reason = 'the patient is in the other Reference') => unlinkJobInvoice(db, lab.id, id, { actor, reason });
+    await assert.rejects(unlink(one.job.id, ' '), /say why/);
+    const freed = await unlink(one.job.id);
+    assert.deepEqual([freed.invoiceId, freed.accountingRef, freed.holdState], [null, null, 'held']);
+    await unlink(two.job.id);
+    await assert.rejects(unlink(two.job.id), /no invoice to unlink/);
+    const kept = await getInvoice(db, lab.id, one.invoice.id);
+    assert.deepEqual([kept.status, kept.number], ['issued', one.invoice.number], 'no invoice is voided or renumbered');
+    const explained = await explainObligation(db, lab.id, one.job.id);
+    assert.equal(explained.view, 'held', 'no new draft is made while it waits');
+    assert.equal(explained.events.at(-1).kind, 'invoice_unlinked');
+    // Each job takes the other's invoice, and the hold ends.
+    const linked = await linkJobToInvoice(db, lab.id, one.job.id, { invoiceId: two.invoice.id, actor });
+    assert.deepEqual([linked.invoiceId, linked.holdState], [two.invoice.id, 'none']);
+    assert.equal((await linkJobToInvoice(db, lab.id, two.job.id, { invoiceId: one.invoice.id, actor })).invoiceId, one.invoice.id);
   });
 
   test('a draft fails closed on any doubt, and the refusal is recorded', async () => {

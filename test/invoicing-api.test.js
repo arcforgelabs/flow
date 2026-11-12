@@ -404,6 +404,9 @@ describe('invoicing API', { skip: skipWithoutDatabase }, () => {
     assert.equal(again.status, 409);
     assert.equal(again.body.code, 'not_ready');
     assert.ok(again.body.details.reasons.includes('the job already has an invoice'));
+    // Unlink is for an owner or admin, with a reason (ledger.test.js has the rest).
+    assert.equal((await call(`/jobs/${job.id}/unlink`, { method: 'POST', token: staffToken, body: { reason: 'wrong pair' } })).status, 403);
+    assert.equal((await call(`/jobs/${job.id}/unlink`, { method: 'POST', body: {} })).status, 400);
   });
 
   test('the Jobs board lists the work system jobs by status, each with its invoice, and a job has its activity', async () => {
