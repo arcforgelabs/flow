@@ -126,6 +126,28 @@ describe('billing obligation ledger', { skip: skipWithoutDatabase }, () => {
     );
   });
 
+  test('a non-chargeable draft is not stopped by the same Reference, which Send never meets', async () => {
+    // The live check answers as the accounting copy does for a remake: the
+    // first job's invoice has the same client and Reference.
+    const sameReference = async (o, { reference } = {}) => ({ state: reference ? 'ambiguous' : 'not_found' });
+    const billed = await readyObligation();
+    await assert.rejects(
+      draftInvoiceForObligation(db, lab.id, billed.id, { actor, reference: 'Dr Example - Pat Sample', liveCheck: sameReference }),
+      (error) => /reports ambiguous/.test(error.details.reasons.join('; ')),
+    );
+    const remake = await readyObligation();
+    const { invoice } = await draftInvoiceForObligation(db, lab.id, remake.id, {
+      actor, reference: 'Dr Example - Pat Sample', liveCheck: sameReference, noCharge: true,
+    });
+    assert.equal((await getInvoice(db, lab.id, invoice.id)).reference, 'Dr Example - Pat Sample');
+    // The job's own invoice number still stops it.
+    const numbered = await readyObligation();
+    await assert.rejects(
+      draftInvoiceForObligation(db, lab.id, numbered.id, { actor, liveCheck: async () => ({ state: 'authorised' }), noCharge: true }),
+      { code: 'not_ready' },
+    );
+  });
+
   test('a draft fails closed on any doubt, and the refusal is recorded', async () => {
     const cases = [
       [async () => ({ state: 'authorised' }), /reports authorised/],

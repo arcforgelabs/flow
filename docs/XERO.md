@@ -280,7 +280,9 @@ The rules:
   the draft's own Reference as well as the case reference; the automatic
   draft asks Flow's copy for the same client and Reference within 90 days of
   the job date. Either refuses the draft, and the job waits for a person on
-  Reconcile.
+  Reconcile. A non-chargeable draft (an own clinic or a remake) is never
+  sent, so the Reference check does not stop it: a remake has its first
+  job's Reference. The job's own invoice number still stops it.
 - **Uncertain outcomes.** The request and its `Idempotency-Key` are stored in
   `xero_invoice_pushes` before they leave. If Xero refuses the first request,
   the record is dropped and the invoice can be sent again once fixed. If the
