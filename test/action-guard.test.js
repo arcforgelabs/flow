@@ -162,7 +162,7 @@ test('the rules', () => {
 });
 
 test('every button that calls Xero has a wait; Check prices calls nothing and has none', () => {
-  assert.deepEqual(Object.keys(XERO_ACTIONS).sort(), ['createContact', 'mirror', 'obligationCheck', 'paymentsSync', 'push', 'recheck', 'sync', 'useXero']);
+  assert.deepEqual(Object.keys(XERO_ACTIONS).sort(), ['createContact', 'mirror', 'obligationCheck', 'paymentsSync', 'push', 'readInvoice', 'recheck', 'sync', 'useXero']);
   assert.equal(XERO_ACTIONS.createContact.cooldownMs, 30_000, 'creating a Xero client waits, like a recheck');
   assert.ok(XERO_ACTIONS.sync.cooldownMs >= 60_000, 'a full copy of contacts and items waits minutes');
   assert.equal(INVOICING_ACTIONS.priceCheck, undefined);
