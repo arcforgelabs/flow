@@ -135,15 +135,20 @@ flowchart LR
 ```
 
 - Moves the jobs, Flow invoices, links to other systems, rule values
-  ("Customer is" tests) and Bill to rows. Each moved job notes the merge
-  (`contact_merged`, with who did it). An unbilled job goes back to the
-  matcher under the kept contact.
+  ("Customer is" tests), open review items and Bill to rows. Each moved job
+  notes the merge (`contact_merged`, with who did it). Every unbilled job of
+  the kept contact, and of its clients, goes back to the matcher.
+- Bill to: the kept contact bills to the payer either contact had. The merged
+  contact's own settings row names no payer after the merge.
 - The kept contact keeps the other's name as another name (`aliases`).
   Search finds it by that name, and a client of that name in another system
   links to it.
 - The merged contact stays, read only, out of every list, and points at the
-  kept one. Flow never deletes it. New refuses its name and names the kept
-  contact.
+  kept one. Flow never deletes it. Its name gets "(merged …)", so the kept
+  contact can take the old name. New refuses a name that is another name of a
+  contact, and names that contact. A rule cannot name a merged contact, and
+  the rule menu leaves it out. A contact merged earlier into the merged one
+  points at the kept one.
 - Refused when both contacts are linked in one system (keep one link first),
   when they are not the same kind, when one was already merged, or when the
   result would break Bill to's one level.

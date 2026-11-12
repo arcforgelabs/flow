@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
-import { billingObligations, invoiceRuleExceptions, invoiceRules, invoicingSettings, obligationEvents, priceItems } from '../db/schema.js';
+import { billingObligations, contacts, invoiceRuleExceptions, invoiceRules, invoicingSettings, obligationEvents, priceItems } from '../db/schema.js';
 import { FlowError, notFound } from './errors.js';
 import { getInvoice, updateDraftInvoice } from './invoices.js';
 
@@ -466,9 +466,21 @@ async function checkRuleItem(db, organisationId, rule) {
   if (item.archivedAt) throw invalid(`price item ${code} is archived`);
 }
 
+// A rule never names a merged contact: it could never match
+// (docs/CONTACTS.md, "Merge two contacts").
+async function checkRuleCustomers(db, organisationId, rule) {
+  const ids = rule.conditions.filter((c) => c.field === 'customer' && c.value != null && !['contains', 'does_not_contain'].includes(c.test))
+    .flatMap((c) => (Array.isArray(c.value) ? c.value : [c.value])).filter((id) => /^[0-9a-f-]{36}$/i.test(id));
+  if (!ids.length) return;
+  const [merged] = await db.select({ name: contacts.name }).from(contacts).where(and(eq(contacts.organisationId, organisationId),
+    inArray(contacts.id, ids), sql`${contacts.mergedIntoId} is not null`)).limit(1);
+  if (merged) throw invalid('a customer in this rule was merged into another; pick that one');
+}
+
 export async function createRule(db, organisationId, raw, { personId = null } = {}) {
   const rule = readRule(raw);
   await checkRuleItem(db, organisationId, rule);
+  await checkRuleCustomers(db, organisationId, rule);
   const existing = await listRules(db, organisationId);
   if (existing.length >= MAX_RULES) throw invalid(`an organisation can have ${MAX_RULES} rules at most`);
   const position = existing.length ? Math.max(...existing.map((r) => r.position)) + 1 : 0;
@@ -489,6 +501,7 @@ export async function updateRule(db, organisationId, ruleId, changes, { personId
   if (!changes || typeof changes !== 'object' || Array.isArray(changes)) throw invalid('the change must be an object');
   const rule = readRule({ name: row.name, icon: row.icon, enabled: row.enabled, conditions: row.conditions, action: row.action, ...changes });
   if (rule.action.addItem && rule.action.addItem !== row.action?.addItem) await checkRuleItem(db, organisationId, rule);
+  if (Object.prototype.hasOwnProperty.call(changes, 'conditions')) await checkRuleCustomers(db, organisationId, rule);
   const [saved] = await db.update(invoiceRules).set({ ...rule, updatedBy: personId, updatedAt: sql`now()` })
     .where(eq(invoiceRules.id, row.id)).returning();
   return shape(saved);

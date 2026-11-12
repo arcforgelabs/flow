@@ -193,6 +193,72 @@ describe('contacts against PostgreSQL', { skip: skipWithoutDatabase }, () => {
     assert.equal(byAlias.flow_id, keep.id);
   });
 
+  test('a merge keeps Bill to one level whichever contact has its own settings, and moves review items', async () => {
+    const make = async (name) => (await call('/contacts', { method: 'POST', body: { kind: 'customer', name } })).body.contact;
+    const billing = (id, body) => call(`/contacts/${id}/billing`, { method: 'PUT', body });
+    const [{ id: organisationId }] = (await handle.db.execute(sql`select id from organisations`)).rows;
+    const payer = await make('Bill Group');
+    const other = await make('Bill Other Group');
+
+    // Both have a row; the merged one bills to a payer: the kept one takes the payer.
+    const a = await make('Bill Clinic A');
+    const b = await make('Bill Clinic B');
+    assert.equal((await billing(a.id, { billable: true })).status, 200);
+    assert.equal((await billing(b.id, { billToContactId: payer.id })).status, 200);
+    const { rows: [job] } = await handle.db.execute(sql`insert into billing_obligations (organisation_id, source_system, source_job_ref, contact_id,
+        lines, line_fingerprint, subtotal_cents, tax_cents, total_cents, mapping_complete, source_seen_at, accounting_checked_at)
+      values (${organisationId}, 'work', 'merge-keep-1', ${a.id}, '[]'::jsonb, 'f', 100, 10, 110, true, now(), now()) returning id`);
+    const proposed = await linkRecord(handle.db, organisationId, { entity: 'contact', flowId: b.id, system: 'xero', externalId: 'x-bill-b', matchedBy: 'name' });
+    assert.equal(proposed.outcome, 'proposed');
+    assert.equal((await call(`/contacts/${a.id}/merge`, { method: 'POST', body: { fromId: b.id } })).status, 200);
+    assert.equal((await call(`/contacts/${a.id}/billing`)).body.billing.billToContactId, payer.id);
+    const { rows: [left] } = await handle.db.execute(sql`select bill_to_contact_id from customer_billing_settings where contact_id = ${b.id}`);
+    assert.equal(left.bill_to_contact_id, null, 'the merged row names no payer');
+    const { rows: [requeued] } = await handle.db.execute(sql`select accounting_checked_at from billing_obligations where id = ${job.id}`);
+    assert.equal(requeued.accounting_checked_at, null, "the kept contact's own job goes back to the matcher");
+    const { rows: items } = await handle.db.execute(sql`select flow_id from review_items where kind = 'link.proposed' and state = 'open' and evidence->>'linkId' = ${proposed.link.id}`);
+    assert.deepEqual(items.map((i) => i.flow_id), [a.id], 'the review item moved with its link');
+    // The kept contact can take the merged name; the merged row freed it.
+    assert.equal((await call(`/contacts/${a.id}`, { method: 'PATCH', body: { name: 'Bill Clinic B' } })).status, 200);
+
+    // The kept one pays for the merged one, both with rows: no payer is left on either.
+    const c = await make('Bill Clinic C');
+    const d = await make('Bill Clinic D');
+    assert.equal((await billing(c.id, { billable: true })).status, 200);
+    assert.equal((await billing(d.id, { billToContactId: c.id })).status, 200);
+    assert.equal((await call(`/contacts/${c.id}/merge`, { method: 'POST', body: { fromId: d.id } })).status, 200);
+    assert.equal((await call(`/contacts/${c.id}/billing`)).body.billing.billToContactId, null);
+    assert.equal((await billing(c.id, { billToContactId: other.id })).status, 200, 'the kept one is free to name a payer');
+
+    // Different payers, and a payer with clients, are refused.
+    const e = await make('Bill Clinic E');
+    const f = await make('Bill Clinic F');
+    assert.equal((await billing(e.id, { billToContactId: payer.id })).status, 200);
+    assert.equal((await billing(f.id, { billToContactId: other.id })).status, 200);
+    assert.equal((await call(`/contacts/${e.id}/merge`, { method: 'POST', body: { fromId: f.id } })).status, 409);
+    const g = await make('Bill Clinic G');
+    assert.equal((await billing(g.id, { billToContactId: other.id })).status, 200);
+    assert.equal((await call(`/contacts/${g.id}/merge`, { method: 'POST', body: { fromId: payer.id } })).status, 409, 'a payer with clients cannot move into a contact that bills to a payer');
+  });
+
+  test('a merged contact is out of the rule menu and cannot be named in a rule, and merges chain', async () => {
+    const make = async (name) => (await call('/contacts', { method: 'POST', body: { kind: 'customer', name } })).body.contact;
+    const x = await make('Chain X');
+    const y = await make('Chain Y');
+    const z = await make('Chain Z');
+    assert.equal((await call(`/contacts/${y.id}/merge`, { method: 'POST', body: { fromId: x.id } })).status, 200);
+    assert.equal((await call(`/contacts/${z.id}/merge`, { method: 'POST', body: { fromId: y.id } })).status, 200);
+    assert.equal((await call(`/contacts/${x.id}`)).body.contact.mergedIntoId, z.id, 'an earlier merge points at the last kept contact');
+    assert.deepEqual((await call(`/contacts/${z.id}`)).body.contact.aliases.sort(), ['Chain X', 'Chain Y']);
+    const fields = await call('/rule-fields');
+    assert.ok(!JSON.stringify(fields.body).includes(x.id));
+    const rule = await call('/rules', { method: 'POST', body: { name: 'Old client', conditions: [{ field: 'customer', test: 'is', value: y.id }], action: { kind: 'wait' } } });
+    assert.equal(rule.status, 400);
+    const named = await call('/contacts', { method: 'POST', body: { kind: 'customer', name: 'Chain X' } });
+    assert.equal(named.status, 409);
+    assert.equal(named.body.details.contactId, z.id);
+  });
+
   test('a merge is refused when both contacts are linked in one system', async () => {
     const make = async (name) => (await call('/contacts', { method: 'POST', body: { kind: 'customer', name } })).body.contact;
     const a = await make('Linked One');

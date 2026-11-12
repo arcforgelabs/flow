@@ -1004,7 +1004,7 @@ export function createInvoicingRouter({
     const [statuses, customers, items, practitioners] = await Promise.all([
       workStatuses(db, organisationId),
       db.select({ value: contacts.id, label: contacts.name }).from(contacts)
-        .where(and(eq(contacts.organisationId, organisationId), eq(contacts.kind, 'customer')))
+        .where(and(eq(contacts.organisationId, organisationId), eq(contacts.kind, 'customer'), isNull(contacts.mergedIntoId)))
         .orderBy(asc(contacts.name)).limit(1000),
       db.select({ value: priceItems.code, label: priceItems.name }).from(priceItems)
         .where(and(eq(priceItems.organisationId, organisationId), isNull(priceItems.archivedAt)))

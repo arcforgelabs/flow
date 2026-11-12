@@ -134,6 +134,8 @@ export async function saveCustomerBilling(db, organisationId, contactId, changes
   if (Object.prototype.hasOwnProperty.call(changes, 'billToContactId')) {
     return db.transaction(async (tx) => {
       await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`bill_to:${organisationId}`}))`);
+      // A merge takes the same lock: read again inside it.
+      if ((await requireCustomer(tx, organisationId, contactId)).mergedIntoId) throw invalid('this customer was merged into another; change that one');
       return saveBilling(tx, organisationId, contactId, changes, personId);
     });
   }

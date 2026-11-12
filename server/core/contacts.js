@@ -97,10 +97,15 @@ function duplicate(error, kind) {
 // reason when the lists do not show it: say so. Read before the write, so a
 // caller's transaction is never left aborted.
 async function refuseHiddenName(db, organisationId, { kind, name }) {
-  const [same] = await db.select({ id: contacts.id, mergedIntoId: contacts.mergedIntoId }).from(contacts).where(and(
+  // Another name of a contact (a merge kept it): that contact is the one.
+  const [alias] = await db.select({ id: contacts.id, name: contacts.name }).from(contacts).where(and(
+    eq(contacts.organisationId, organisationId), eq(contacts.kind, kind), isNull(contacts.mergedIntoId),
+    sql`${contacts.aliases} @> ${JSON.stringify([name])}::jsonb`,
+  )).limit(1);
+  if (alias) throw new FlowError('conflict', `${alias.name} has this name as another name. Use that one.`, { contactId: alias.id });
+  const [same] = await db.select({ id: contacts.id }).from(contacts).where(and(
     eq(contacts.organisationId, organisationId), eq(contacts.kind, kind), eq(contacts.name, name), eq(contacts.hidden, true),
   ));
-  if (same?.mergedIntoId) throw new FlowError('conflict', `A ${kind} with this name was merged into another. Use that one.`, { contactId: same.mergedIntoId });
   if (same) throw new FlowError('conflict', `A hidden ${kind} with this name exists. Show it in Contacts, Hidden.`, { contactId: same.id });
 }
 
