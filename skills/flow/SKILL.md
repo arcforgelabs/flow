@@ -148,6 +148,16 @@ short groups, then act on the group they confirm.
    - Job needs no invoice: `flow.sh post invoicing/jobs/<job id>/no-invoice`
    - Make the invoice now: `flow.sh post invoicing/jobs/<job id>/draft`
    - Read the job again from Seazona: `flow.sh post invoicing/jobs/<job id>/recheck`
+   - **Stuck on a void invoice** (the job shows "Invoice voided", or its Flow
+     invoice is void, and nothing drafts): `flow.sh post invoicing/jobs/<job id>/free '{"reason":"<why, in the person's words>"}'`.
+     The job lets go of the void invoice and goes on hold, so it does not
+     draft by itself. It refuses a live Flow invoice: void that first, only
+     after the person says yes to that invoice
+     (`flow.sh post invoicing/invoices/<id>/void`).
+   - **Held or in review:** `flow.sh get invoicing/jobs/<job id>/activity`
+     shows why. Release it: `flow.sh post invoicing/jobs/<job id>/hold '{"state":"none","reason":"<why>"}'`;
+     hold it: `'{"state":"held","reason":"<why>"}'` (or `"review"`).
+     A `history_import` hold is refused here: use the history import decisions.
 2. **Flow against Xero.** First get the lab id:
    `flow.sh get invoicing/context` (`organisations[0].id`, below `<org>`).
    - Refresh Flow's copy of Xero: `flow.sh post xero/mirror '{"organisationId":"<org>"}'`

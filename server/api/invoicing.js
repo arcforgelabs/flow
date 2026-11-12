@@ -99,6 +99,8 @@ import {
 //   PUT   /contacts/:id/billing       owner or admin: change them (null takes the organisation's)
 //   POST  /jobs/:id/ready             { ready }: mark a job ready to invoice, or back in work
 //   GET   /jobs/:id/activity          what happened to a job, newest first
+//   POST  /jobs/:id/hold              owner or admin: { state: none|held|review, reason }
+//   POST  /jobs/:id/free              owner or admin: { reason }: let go of a void invoice, then hold
 //   POST  /jobs/:id/draft             owner or admin: a job's draft invoice, after a live
 //                                     check that the accounting system holds none
 //
