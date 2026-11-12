@@ -505,6 +505,29 @@ flowchart LR
   Invoices, and Credit notes when Xero offers it. Paste the webhook key into Flow's Xero settings
   ("Webhook key"), save, then press "Send Intent to receive" in Xero.
 
+### Copy version
+
+A copy read by an older mapper can lack a field that a newer mapper copies.
+Flow's copy dropped the Reference on most invoices this way, and the matcher
+reads the Reference. So each cursor notes the mapper's version
+(`COPY_VERSION` in `mirror.js`, with the keep-free-text setting).
+
+- **A new field raises the version.** A change to a mapper that copies a new
+  field raises `COPY_VERSION` in the same pull request. The next sync then
+  reads each resource from the beginning. The rows stay; each is written again
+  only if it differs.
+- **An old copy.** A cursor with no version takes the current one, with no
+  read again.
+- **Read again.** An owner can ask for the whole copy to be read again: Xero
+  settings, "Read again" (`POST /api/xero/mirror/reread`). The next sync reads
+  it, so the button makes no Xero call. The cursor keeps who asked and when.
+  A pass that is running when the owner asks stops after its page and keeps
+  the start the owner set.
+- **Completeness.** `GET /api/xero/mirror` gives, for each of the last 12
+  months, the sales invoices in the copy and how many have a Reference and
+  line item codes. The Xero settings row shows the Reference share (not when
+  free text is off). A low share is a copy that missed it.
+
 ### Read before draft and send
 
 Just before an automatic draft pass, and before Send all ready, Flow reads
