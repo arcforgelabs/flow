@@ -23,6 +23,7 @@ import {
   caseNumber, FINAL_RANK, fixes, INVOICE_STAGES, invoiceStage, matches, NO_STATUS, orderStatuses, phoneLaneIndex, PHONE_HOLD_MS, problemSummary, statusRank,
 } from '/assets/ui/job-board.js';
 import { rowMenu } from '/assets/ui/kit.js';
+import { chooseNoCharge } from '/assets/ui/no-charge.js';
 import { isPhone } from '/assets/ui/mobile.js';
 import {
   COLUMNS, DEFAULT_VIEW, fieldGroup, fieldIdOf, fieldLanes, FILTER_FIELDS, filterJobs, groupJobs, GROUPS, KIND_OF_TYPE, keptStatuses, laneOf,
@@ -1306,6 +1307,18 @@ export async function renderJobs(main, ui) {
         ui.toast(error.message, 'danger');
       }
     } });
+    // An owner or admin says the work is not charged, and why, or changes
+    // the reason, or charges it again (no-charge.js). A sent invoice or an
+    // accounting invoice must be voided or unlinked first.
+    if (state.canDraft && o?.id && !o.accountingRef && (!o.invoiceId || ['ready', 'problem', 'non_chargeable'].includes(o.invoiceView))) {
+      menuItems.push({ icon: 'badge-percent', text: o.noChargeReason ? 'Change No Charge' : 'No Charge', run: async () => {
+        try {
+          if (await chooseNoCharge(ui, { jobId: o.id, current: o.noChargeReason ?? null })) await reopen();
+        } catch (error) {
+          ui.toast(error.message, 'danger');
+        }
+      } });
+    }
     const menu = menuItems.length ? rowMenu('More', menuItems, { className: 'fx-record__menu' }) : null;
     const bar = recordBar(h, {
       title: clientOf(job),

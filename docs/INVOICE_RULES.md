@@ -140,6 +140,10 @@ apply: a job that Xero already bills waits for a person.
 | Own clinics | Customer contains `Example Group` | Non-chargeable |
 | Remake | Remake is yes | Non-chargeable |
 
+A non-chargeable rule can give a reason, one of the lab's No Charge reasons
+(below): `{ kind: 'non_chargeable', reason: 'Remake' }`. The Non-chargeable tab
+shows it and filters by it, for the lab's reports.
+
 Old held jobs settle by rule too. The history import holds each job it adds
 (`history_import`). When the accounting matcher finds no invoice for such a
 job (`not_found`; with no accounting system connected, also `unknown`), and a
@@ -147,6 +151,48 @@ non-chargeable rule matches it, the draft step releases it (actor
 `rule:<id>`) and drafts it on the Non-chargeable tab. A job that the
 accounting system has invoiced stays held. The step's run summary counts the
 released jobs (`settle_history`).
+
+## No Charge
+
+No Charge is the lab's word for non-chargeable work. A rule marks a whole
+class of work; a person marks one job. Flow does not read the line notes in
+the work system to decide this: a note is free text, and it is not reliable
+enough to stop a bill.
+
+- **By rule.** A non-chargeable rule, with an optional reason (above).
+- **By a person.** An owner or admin presses **No Charge** on the job or on
+  its draft invoice and picks a reason. The same button changes the reason,
+  or **Charge it again** takes the No Charge off when it was a mistake. The
+  job's history records each change (`no_charge`, from and to).
+- **Made free in the work system.** The field `made_free` (below) is yes when
+  a priced item was set to $0 on the job, or a discount took the job to $0.
+  Use it in a pending rule, so a person looks and picks the reason. An item
+  that is $0 on the price list (a placeholder, such as Models) is not "made
+  free": the "No amount" rule holds it until the work system has the real
+  work.
+
+A person's No Charge wins over every wait, skip and pending rule. It releases a
+held job and marks it ready, so the draft step drafts it on the Non-chargeable
+tab. When no accounting check has run, or the check found no single bill, it
+records that no bill exists (`not_found`), because the person said so. It is
+refused when the job is billed in the accounting system (unlink it first) or
+its invoice was sent (void it first).
+
+The reasons are a list in Settings, Invoicing ("No Charge reasons"): 1 to 20
+different names of 40 characters at most. The first list is Promotion,
+Internal, Remake, Rework, Warranty and Goodwill. A rename
+(`POST /api/invoicing/no-charge-reasons/rename { from, to }`) changes the list,
+every job with that reason (each records a `no_charge` event with
+`renamed: true`) and every rule that gives it, in one step.
+
+| Route | Who | Does |
+| --- | --- | --- |
+| `POST /api/invoicing/jobs/:id/no-charge` | owner, admin | `{ reason }`: one of the lab's reasons, or `null` to charge the job again |
+| `POST /api/invoicing/no-charge-reasons/rename` | owner, admin | `{ from, to }`: rename a reason everywhere |
+
+The job keeps `no_charge_reason`, `no_charge_by` and `no_charge_at`
+(`billing_obligations`); the list is `invoicing_settings.no_charge_reasons`
+(migration `0033_no_charge_reason.sql`, add only).
 
 ## Fields
 
@@ -162,6 +208,7 @@ released jobs (`settle_history`).
 | `customer_billable` | yes or no | The customer's `billable` setting | is |
 | `line_item` | menu of price items | The item codes on the job's lines | has, does not have |
 | `line_share` | price item and percent | That item's lines as a share of the other lines, to within 1 cent | is, is not |
+| `made_free` | yes or no | A line whose item has a price on the price list is $0 on the job, or the job's discount lines take it to $0. The reason names the lines. Read only when an enabled rule uses it | is |
 | `accounting_item` | yes or no | Every line with a price item sends as an item the accounting system sells (Xero: the linked item, else the item with the same code). A line booked to an account does not count. No value while no accounting system is connected or its item list was never read, so no rule on it matches then. The reason names the codes that do not send | is |
 
 A lab that must never invoice an item its accounting system does not hold

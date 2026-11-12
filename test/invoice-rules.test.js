@@ -194,10 +194,39 @@ describe('one rule against one job', () => {
     assert.deepEqual(readRule({ name: 'Own branches', conditions: kept.conditions, action: { kind: 'non_chargeable' } }).action, { kind: 'non_chargeable' });
     assert.deepEqual(ruleReasons([kept], job(), opts), []);
     assert.deepEqual(ruleNonChargeable([kept], job(), opts), [{
-      code: 'non_chargeable', message: 'Rule "Own branches": non-chargeable. Flow keeps it and never sends it.', short: 'Own branches', rule: 'r-7',
+      code: 'non_chargeable', message: 'Rule "Own branches": non-chargeable. Flow keeps it and never sends it.', short: 'Own branches', rule: 'r-7', reason: null,
     }]);
     assert.deepEqual(ruleNonChargeable([kept], job(), { customer: { name: 'Harbour Smiles' }, now: NOW }), []);
     assert.deepEqual(ruleNonChargeable([{ ...kept, enabled: false }], job(), opts), []);
+  });
+
+  test('made free in the work system: a priced line at $0, or a discount to $0; a rule holds it for a person', () => {
+    const prices = new Map([['p-ng', 20000], ['p-models', 0], ['p-reline', 25000]]);
+    const hold = { ...rule([{ field: 'made_free', test: 'is', value: true }], 'wait', 'Free in the work system'), id: 'r-free' };
+    const opts = { now: NOW, prices };
+    // A promotion: the nightguard is $200 on the price list and $0 on the job.
+    const promo = job({ totalCents: 0, lines: [{ itemCode: 'NG', priceItemId: 'p-ng', unitAmountCents: 0 }] });
+    assert.deepEqual(ruleReasons([hold], promo, opts), ['rule "Free in the work system": waits for a person (made free: NG)']);
+    // Goodwill: a reline at its price and a discount line that takes it to $0.
+    const goodwill = job({ totalCents: 0, lines: [{ itemCode: 'RL', priceItemId: 'p-reline', unitAmountCents: 25000 }, { description: 'Discount', unitAmountCents: -25000 }] });
+    assert.deepEqual(ruleReasons([hold], goodwill, opts), ['rule "Free in the work system": waits for a person (made free: Discount)']);
+    // A $0 item on the price list (models) is not made free, nor is a charged job.
+    assert.deepEqual(ruleReasons([hold], job({ totalCents: 0, lines: [{ itemCode: 'MOD', priceItemId: 'p-models', unitAmountCents: 0 }] }), opts), []);
+    assert.deepEqual(ruleReasons([hold], job({ lines: [{ itemCode: 'NG', priceItemId: 'p-ng', unitAmountCents: 20000 }] }), opts), []);
+    // With no prices read, the field has no value and the rule does not match.
+    assert.deepEqual(ruleReasons([hold], promo, { now: NOW }), []);
+  });
+
+  test('No Charge has a reason: a non-chargeable rule gives one, and a person\'s No Charge wins over every rule', () => {
+    const remakeRule = { ...rule([{ field: 'remake', test: 'is', value: true }], 'non_chargeable', 'Remake'), id: 'r-rm', action: { kind: 'non_chargeable', reason: 'Remake' } };
+    assert.deepEqual(readRule({ name: 'Remake', conditions: remakeRule.conditions, action: { kind: 'non_chargeable', reason: ' Remake ' } }).action, { kind: 'non_chargeable', reason: 'Remake' });
+    assert.throws(() => readRule({ name: 'Remake', conditions: remakeRule.conditions, action: { kind: 'non_chargeable', reason: 'x'.repeat(41) } }), /40 characters/);
+    assert.equal(ruleNonChargeable([remakeRule], job({ remake: true }), { now: NOW })[0].reason, 'Remake');
+    const wait = { ...rule([{ field: 'job_total', test: 'at_most', value: 0 }], 'wait', 'No amount'), id: 'r-na' };
+    const skip = { ...rule([{ field: 'job_total', test: 'at_most', value: 0 }], 'skip', 'Never'), id: 'r-nv' };
+    const free = job({ totalCents: 0, noChargeReason: 'Promotion' });
+    assert.deepEqual(ruleReasons([skip, wait], free, { now: NOW }), []);
+    assert.deepEqual(ruleNonChargeable([remakeRule], { ...free, remake: true }, { now: NOW }).map((f) => [f.rule, f.reason]), [[null, 'Promotion'], ['r-rm', 'Remake']]);
   });
 
   test('the starter rules come from the earlier settings', () => {
@@ -410,7 +439,7 @@ describe('rules a lab keeps', { skip: skipWithoutDatabase }, () => {
     const views = await invoiceViews(handle.db, lab.id);
     const note = 'Rule "Own branches": non-chargeable. Flow keeps it and never sends it.';
     for (const id of [old, fresh]) {
-      assert.deepEqual(views.nonChargeable.get(id), [{ code: 'non_chargeable', message: note, short: 'Own branches', rule: made.id }]);
+      assert.deepEqual(views.nonChargeable.get(id), [{ code: 'non_chargeable', message: note, short: 'Own branches', rule: made.id, reason: null }]);
       assert.equal(views.problems.has(id), false);
       assert.equal(views.ready.includes(id), false);
     }

@@ -71,6 +71,10 @@ the person's reason for a skip. An exception ends when the job's lines change
 (`current: false` in the rule's exceptions list): ask the person again. The work system must get the item too: tell
 the person which jobs show "needs <item>" on the job board.
 
+No Charge on one job, when the person says so: `flow.sh post invoicing/jobs/<jobId>/no-charge '{"reason":"Promotion"}'`
+(a reason from `invoicing/settings` `noChargeReasons`; `{"reason":null}`
+charges it again). Never set it from a line note alone: ask the person.
+
 A matching `non_chargeable` rule wins over wait rules, and it releases old
 held history jobs that have no accounting invoice. Settle reconciliation work
 (remakes, own clinics) with rules, never with one-off clean-ups.

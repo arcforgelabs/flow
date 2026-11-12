@@ -917,6 +917,43 @@ export async function confirmNoInvoice(db, organisationId, obligationId, { actor
   });
 }
 
+// A person says a job's work is not charged, and why (docs/INVOICE_RULES.md,
+// "No Charge"): a free promotion, internal work, a rework. The reason is one
+// of the lab's No Charge reasons; the caller checks it. The job leaves any
+// hold, is ready, and its draft goes to the Non-chargeable tab, never sent.
+// A job whose accounting invoice was not settled (unknown, or unclear with no
+// link) has none: the person said so. A job billed in the accounting system,
+// or with a sent Flow invoice, is refused: unlink or void first. `reason`
+// null takes the No Charge away again; a new reason changes it. Each change
+// is an event with the earlier reason.
+export async function setNoCharge(db, organisationId, obligationId, { reason, actor }) {
+  requireActor(actor);
+  const next = reason?.trim() || null;
+  return db.transaction(async (tx) => {
+    const obligation = await loadObligation(tx, organisationId, obligationId, { lock: true });
+    if ((obligation.noChargeReason ?? null) === next) return obligation;
+    if (next && obligation.accountingRef) throw new FlowError('invalid', 'the job is billed in the accounting system: unlink it first');
+    if (obligation.invoiceId) {
+      const [invoice] = await tx.select({ status: invoices.status }).from(invoices)
+        .where(and(eq(invoices.organisationId, organisationId), eq(invoices.id, obligation.invoiceId)));
+      if (invoice?.status === 'issued') throw new FlowError('invalid', 'the job has a sent invoice: void it first');
+    }
+    const settle = next && !obligation.invoiceId && (obligation.accountingState === 'unknown' || unlinked(obligation));
+    const row = await update(tx, obligation, {
+      noChargeReason: next, noChargeBy: next ? actor : null, noChargeAt: next ? sql`now()` : null,
+      ...(next && obligation.holdState !== 'none' ? { holdState: 'none', holdReason: null } : {}),
+      ...(next && !obligation.readyAt ? { readyAt: sql`now()`, readyBy: actor } : {}),
+      ...(settle ? { accountingState: 'not_found', accountingCheckedAt: sql`now()` } : {}),
+    });
+    await addEvent(tx, row, 'no_charge', actor, {
+      from: obligation.noChargeReason ?? null, to: next,
+      ...(next && obligation.holdState !== 'none' ? { released: obligation.holdState, holdReason: obligation.holdReason } : {}),
+      ...(settle ? { accounting: { from: obligation.accountingState, to: 'not_found' } } : {}),
+    });
+    return row;
+  });
+}
+
 // A person links a job to a Flow invoice that already exists (Reconcile).
 // The job then has its invoice: Flow drafts no other. A job held on unclear
 // accounting evidence is settled by it; whether the Flow invoice matches one

@@ -25,6 +25,9 @@ export const INVOICE_FILTER_FIELDS = {
   case: { label: 'Case', kind: 'text', icon: 'briefcase' },
   practitioner: { label: 'Practitioner', kind: 'choice', icon: 'stethoscope' },
   shipped: { label: 'Shipped', kind: 'date', icon: 'calendar' },
+  // Why a Non-chargeable invoice is not charged: the person's No Charge
+  // reason, else the reason its rule gives.
+  reason: { label: 'Reason', kind: 'choice', icon: 'tag' },
 };
 
 // What the Status column shows. `sending` replaces the tab while an invoice
@@ -66,6 +69,7 @@ export function invoiceValue(invoice, field) {
     case 'case': return job ? caseNumber(job) : null;
     case 'practitioner': return job?.practitioner ?? null;
     case 'shipped': return job?.shippedOn ?? null;
+    case 'reason': return invoice.noChargeReason ?? null;
     default: {
       const id = fieldIdOf(field);
       if (!id) return null;

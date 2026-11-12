@@ -273,6 +273,12 @@ export const billingObligations = pgTable('billing_obligations', {
   // The work system marks the job a remake (Seazona's remake flag): the
   // invoice rule field `remake` reads it.
   remake: boolean('remake').notNull().default(false),
+  // A person said the work is not charged, and why (a reason from the lab's
+  // No Charge reasons): the job goes to the Non-chargeable tab, never sent.
+  // Null: Flow's rules decide (docs/INVOICE_RULES.md, "No Charge").
+  noChargeReason: text('no_charge_reason'),
+  noChargeBy: text('no_charge_by'),
+  noChargeAt: timestamp('no_charge_at', { withTimezone: true }),
   // Flow's own stage: the job is ready to invoice, since when and by whom (a
   // person, or an automation such as one that reads the work system status).
   readyAt: timestamp('ready_at', { withTimezone: true }),
@@ -671,6 +677,8 @@ export const invoicingSettings = pgTable('invoicing_settings', {
   rushPercent: integer('rush_percent').notNull().default(20),
   // The invoice Reference, from tokens (server/core/references.js).
   referenceTemplate: text('reference_template').notNull().default('{practitioner} - {patient}'),
+  // The reasons a person or a rule can give for No Charge, in menu order.
+  noChargeReasons: jsonb('no_charge_reasons').notNull().default(sql`'["Promotion","Internal","Remake","Rework","Warranty","Goodwill"]'::jsonb`),
   // The fixed checks above became invoice rules (invoice_rules). True once
   // this organisation's starter rules were made from them.
   rulesSeeded: boolean('rules_seeded').notNull().default(false),

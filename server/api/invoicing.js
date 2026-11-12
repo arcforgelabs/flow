@@ -17,7 +17,7 @@ import {
   createMapping, deleteMapping, listMappings, STEP_LABELS, STEPS, updateMapping,
 } from '../core/line-mapping.js';
 import {
-  effectiveSettings, INVOICING_DEFAULTS, readCustomerBilling, readInvoicingSettings,
+  effectiveSettings, INVOICING_DEFAULTS, readCustomerBilling, readInvoicingSettings, renameNoChargeReason,
   saveCustomerBilling, saveInvoicingSettings, sendModeFor, sendModeSummary,
 } from '../core/invoicing-rules.js';
 import { boardJobs, describeObligations } from '../core/job-board.js';
@@ -29,7 +29,7 @@ import {
 } from '../core/price-list.js';
 import {
   confirmNoInvoice, draftInvoiceForObligation, freeVoidedJob, setHold, explainObligation, jobChangeFor, linkJobToInvoice, listObligations, unlinkJobInvoice,
-  setReady, settleJobChange, useSourceLines,
+  setNoCharge, setReady, settleJobChange, useSourceLines,
 } from '../core/ledger.js';
 import { isHistoryHeld } from '../core/history.js';
 import { invoicePdfDocument, pdfFields, pdfFilename, renderInvoicePdf } from '../core/invoice-pdf.js';
@@ -103,6 +103,9 @@ import {
 //   GET   /jobs/:id/activity          what happened to a job, newest first
 //   POST  /jobs/:id/hold              owner or admin: { state: none|held|review, reason }
 //   POST  /jobs/:id/free              owner or admin: { reason }: let go of a void invoice, then hold
+//   POST  /jobs/:id/no-charge         owner or admin: { reason }: No Charge with one of the lab's
+//                                     reasons, a new reason, or null to charge it again
+//   POST  /no-charge-reasons/rename   owner or admin: { from, to }: rename a reason everywhere
 //   POST  /jobs/:id/draft             owner or admin: a job's draft invoice, after a live
 //                                     check that the accounting system holds none
 //
@@ -275,6 +278,7 @@ export async function resolveOrganisation(db, raw) {
 
 const jobOf = (o) => (o ? {
   id: o.id, sourceSystem: o.sourceSystem, sourceJobRef: o.sourceJobRef, sourceInvoiceRef: o.sourceInvoiceRef, caseRef: o.caseRef, practitioner: o.practitioner, shippedOn: o.shippedOn,
+  noChargeReason: o.noChargeReason ?? null, accountingRef: o.accountingRef ?? null,
 } : null);
 
 // A job with its work system's name and its link in that system's web app
@@ -339,7 +343,9 @@ async function invoiceTabs(db, organisationId, system) {
   for (const id of views.nonChargeable.keys()) tabOf.set(id, 'non_chargeable');
   const ids = Object.fromEntries(TABS.map((t) => [t, []]));
   for (const [id, tab] of tabOf) ids[tab].push(id);
-  return { tabOf, ids, problems: views.problems, sending: views.sending };
+  // Each Non-chargeable invoice's reason: the person's, else its rule's.
+  const reasonOf = new Map([...views.nonChargeable].map(([id, found]) => [id, found.find((f) => f.reason)?.reason ?? null]));
+  return { tabOf, ids, problems: views.problems, sending: views.sending, reasonOf };
 }
 
 function issuedTab(id, { views, stages, system }) {
@@ -517,6 +523,7 @@ export function createInvoicingRouter({
         problems: tabs.problems.get(row.id) ?? [],
         tab: tabs.tabOf.get(row.id) ?? null,
         sending: tabs.sending.has(row.id),
+        noChargeReason: tabs.reasonOf.get(row.id) ?? null,
         job,
         fields: job ? valuesOf.get(`${job.sourceSystem}\u0000${job.sourceJobRef}`) ?? {} : {},
       };
@@ -539,6 +546,7 @@ export function createInvoicingRouter({
         job: withLink(jobs.get(invoice.id) ?? null, systems),
         tab: tabs.tabOf.get(invoice.id) ?? null,
         sending: tabs.sending.has(invoice.id),
+        noChargeReason: tabs.reasonOf.get(invoice.id) ?? null,
         problems: tabs.problems.get(invoice.id) ?? [],
       })),
       counts: Object.fromEntries(TABS.map((t) => [t, tabs.ids[t].length])),
@@ -550,6 +558,7 @@ export function createInvoicingRouter({
       // The Filter chip's choices, from every row of the tab.
       clients: [...new Set(light.map((r) => r.contactName).filter(Boolean))].sort((a, b) => a.localeCompare(b)),
       practitioners: [...new Set(light.map((r) => r.job?.practitioner).filter(Boolean))].sort((a, b) => a.localeCompare(b)),
+      reasons: [...new Set(light.map((r) => r.noChargeReason).filter(Boolean))].sort((a, b) => a.localeCompare(b)),
       sendsTo: system?.name ?? null,
       sendMode: mode,
       // The Linked column: one icon for each connected system.
@@ -926,6 +935,26 @@ export function createInvoicingRouter({
     }
     const job = await setHold(db, organisationId, obligationId, { holdState: state, reason, actor: `person:${req.person.id}` });
     res.json({ ok: true, job: { id: job.id, holdState: job.holdState, holdReason: job.holdReason } });
+  }));
+
+  // A person says the job's work is not charged, and why (setNoCharge): the
+  // reason is one of the lab's No Charge reasons. Null charges it again.
+  router.post('/jobs/:id/no-charge', ...manager, handle(log, async (req, res) => {
+    const obligationId = pathId(req.params.id, 'job');
+    const organisationId = await organisationOf(req);
+    const raw = req.body?.reason ?? null;
+    if (raw !== null && typeof raw !== 'string') throw invalid('reason must be a No Charge reason or null');
+    const { noChargeReasons } = await readInvoicingSettings(db, organisationId);
+    const reason = raw === null || !raw.trim() ? null : noChargeReasons.find((r) => r.toLowerCase() === raw.trim().toLowerCase());
+    if (raw !== null && raw.trim() && !reason) throw invalid(`reason must be one of: ${noChargeReasons.join(', ')}`);
+    const job = await setNoCharge(db, organisationId, obligationId, { reason, actor: `person:${req.person.id}` });
+    res.json({ ok: true, job: { id: job.id, noChargeReason: job.noChargeReason, holdState: job.holdState, readyAt: job.readyAt } });
+  }));
+
+  router.post('/no-charge-reasons/rename', ...manager, handle(log, async (req, res) => {
+    const organisationId = await organisationOf(req);
+    const result = await renameNoChargeReason(db, organisationId, { from: req.body?.from, to: req.body?.to }, { personId: req.person.id });
+    res.json({ ok: true, ...result });
   }));
 
   // Frees a job stuck on a void Flow invoice, or on an accounting invoice that

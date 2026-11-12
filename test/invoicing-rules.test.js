@@ -2,17 +2,17 @@ import assert from 'node:assert/strict';
 import { after, before, describe, test } from 'node:test';
 import { eq } from 'drizzle-orm';
 import { createContact, createOrganisation, createPriceItem } from '../server/core/directory.js';
-import { createDraftInvoice, getInvoice } from '../server/core/invoices.js';
+import { createDraftInvoice, getInvoice, issueInvoice } from '../server/core/invoices.js';
 import { invoiceViews, markNotReady } from '../server/core/sending.js';
 import {
-  autoDraftJobs, effectiveSettings, INVOICING_DEFAULTS, readCustomerBilling, readInvoicingSettings, ruleBlockers,
+  autoDraftJobs, effectiveSettings, INVOICING_DEFAULTS, readCustomerBilling, readInvoicingSettings, renameNoChargeReason, ruleBlockers,
   saveCustomerBilling, saveInvoicingSettings, sendModeSummary, settleHistoryByRules,
 } from '../server/core/invoicing-rules.js';
 import { HISTORY_ACTOR, HISTORY_HOLD_REASON } from '../server/core/history.js';
 import { createRule, deleteRule, starterRules } from '../server/core/invoice-rules.js';
 import { listAutomations, runAutomations, saveAutomation, statusMatches, workStatuses } from '../server/core/automations.js';
-import { explainObligation, observeJob, recordAccountingEvidence, setHold, setReady } from '../server/core/ledger.js';
-import { billingObligations, invoices } from '../server/db/schema.js';
+import { explainObligation, observeJob, recordAccountingEvidence, setHold, setNoCharge, setReady } from '../server/core/ledger.js';
+import { billingObligations, invoiceRules, invoices, obligationEvents } from '../server/db/schema.js';
 import { updateContact } from '../server/core/contacts.js';
 import { freshDatabase, skipWithoutDatabase } from './support/db.js';
 
@@ -332,6 +332,66 @@ describe('drafts by rule', { skip: skipWithoutDatabase }, () => {
     assert.ok(job.invoiceId, 'never billed, so nothing stops its draft');
     assert.ok((await invoiceViews(handle.db, lab.id, { accounting: null })).nonChargeable.has(job.invoiceId));
     assert.equal((await reload(billed)).invoiceId, null, 'a billed job still needs its price items');
+    await deleteRule(handle.db, lab.id, rule.id);
+  });
+
+  test('a person sets No Charge with a reason, changes the reason, or charges the job again', async () => {
+    copy = { state: { complete: true, fresh: true, changedAt: new Date(NOW.getTime() - 60_000) }, invoices: [] };
+    const actor = 'person:test';
+    // An old job held for a person, never billed: No Charge releases it and
+    // its draft goes to Non-chargeable with the reason.
+    const row = await observeJob(handle.db, lab.id, {
+      sourceSystem: 'seazona', sourceJobRef: `nc-${++counter}`, caseRef: `NC-${counter}`, contactId: practice.id, sourceStatus: 'Shipped',
+      jobDate: '2026-08-01', lines: [{ itemCode: 'CROWN', description: 'Crown' }], observedAt: NOW,
+    });
+    await setHold(handle.db, lab.id, row.id, { holdState: 'held', reason: HISTORY_HOLD_REASON, actor: HISTORY_ACTOR });
+    const set = await setNoCharge(handle.db, lab.id, row.id, { reason: ' Promotion ', actor });
+    assert.equal(set.noChargeReason, 'Promotion');
+    assert.equal(set.noChargeBy, actor);
+    assert.equal(set.holdState, 'none');
+    assert.ok(set.readyAt);
+    assert.equal(set.accountingState, 'not_found', 'a person says it is not billed');
+    await autoDraftJobs(handle.db, lab.id, { accounting, now: NOW });
+    const drafted = await reload(row);
+    assert.ok(drafted.invoiceId);
+    const kept = async () => (await invoiceViews(handle.db, lab.id, { accounting: null })).nonChargeable.get(drafted.invoiceId);
+    assert.equal((await kept())?.[0]?.reason, 'Promotion');
+    // A new reason replaces the old one; null charges the job again.
+    await setNoCharge(handle.db, lab.id, row.id, { reason: 'Goodwill', actor });
+    assert.equal((await kept())?.[0]?.reason, 'Goodwill');
+    const charged = await setNoCharge(handle.db, lab.id, row.id, { reason: null, actor });
+    assert.equal(charged.noChargeReason, null);
+    assert.equal(charged.noChargeBy, null);
+    assert.equal(await kept(), undefined, 'the draft is checked like any job');
+    const events = await handle.db.select().from(obligationEvents).where(eq(obligationEvents.obligationId, row.id));
+    assert.deepEqual(events.filter((e) => e.kind === 'no_charge').map((e) => [e.evidence.from, e.evidence.to]),
+      [[null, 'Promotion'], ['Promotion', 'Goodwill'], ['Goodwill', null]]);
+    // A sent invoice, or a bill in the accounting system, refuses it.
+    await issueInvoice(handle.db, lab.id, drafted.invoiceId, { issuedBy: actor, issueDate: '2026-10-19' });
+    await assert.rejects(setNoCharge(handle.db, lab.id, row.id, { reason: 'Rework', actor }), /sent invoice/);
+    const billed = await cleared();
+    await recordAccountingEvidence(handle.db, lab.id, billed.id, { state: 'paid', accountingRef: `X-NC-${counter}`, matchedBy: 'source_invoice_ref', actor: 'test', checkedAt: NOW });
+    await assert.rejects(setNoCharge(handle.db, lab.id, billed.id, { reason: 'Rework', actor }), /accounting system/);
+  });
+
+  test('the No Charge reasons are a short list; a rename moves the jobs and the rules with it', async () => {
+    assert.deepEqual((await readInvoicingSettings(handle.db, lab.id)).noChargeReasons, ['Promotion', 'Internal', 'Remake', 'Rework', 'Warranty', 'Goodwill']);
+    await assert.rejects(saveInvoicingSettings(handle.db, lab.id, { noChargeReasons: [] }), /1 to 20 names/);
+    await assert.rejects(saveInvoicingSettings(handle.db, lab.id, { noChargeReasons: ['A', 'a'] }), /must be different/);
+    await assert.rejects(saveInvoicingSettings(handle.db, lab.id, { noChargeReasons: ['x'.repeat(41)] }), /40 characters/);
+    const row = await cleared();
+    await setNoCharge(handle.db, lab.id, row.id, { reason: 'Internal', actor: 'person:test' });
+    const own = await createContact(handle.db, lab.id, { kind: 'customer', name: 'Own Clinic Three' });
+    const rule = await createRule(handle.db, lab.id, {
+      name: 'Own clinics', conditions: [{ field: 'customer', test: 'is', value: own.id }], action: { kind: 'non_chargeable', reason: 'Internal' },
+    });
+    const result = await renameNoChargeReason(handle.db, lab.id, { from: 'internal', to: 'Own clinic' }, { personId: null });
+    assert.deepEqual(result.settings.noChargeReasons, ['Promotion', 'Own clinic', 'Remake', 'Rework', 'Warranty', 'Goodwill']);
+    assert.equal(result.jobs, 1);
+    assert.equal((await reload(row)).noChargeReason, 'Own clinic');
+    const [saved] = await handle.db.select().from(invoiceRules).where(eq(invoiceRules.id, rule.id));
+    assert.equal(saved.action.reason, 'Own clinic');
+    await assert.rejects(renameNoChargeReason(handle.db, lab.id, { from: 'Nope', to: 'X' }), /not one of/);
     await deleteRule(handle.db, lab.id, rule.id);
   });
 
