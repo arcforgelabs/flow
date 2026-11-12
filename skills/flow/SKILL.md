@@ -181,20 +181,29 @@ minute and try once more.
 
 ## Fix a problem Flow shows
 
-Flow's message is a flag, not the answer. Seazona (the jobs) and Xero (the
-invoices and payments) are the sources of truth. Before you fix or explain a
-problem, read each system the problem names, through Flow:
+Flow's message is a flag, not the answer. Flow keeps three systems in line:
+Seazona (the jobs), Flow (its invoices) and Xero (the invoices and payments).
+No one system is always right. Find out what is true, then fix the wrong one.
 
-1. Flow's record: `flow.sh get invoicing/invoices/<id>` or
-   `flow.sh get invoicing/jobs/<job id>/reconcile`.
-2. Seazona's record: `flow.sh get seazona/api/invoices/<Seazona invoice id>`
-   or `flow.sh get seazona/api/orders/<order id>`.
-3. Xero's record: `flow.sh post xero/invoices/status '{"organisationId":"<org>","invoiceIds":["<Flow invoice id>"]}'`.
+1. Read all three, through Flow:
+   - Flow: `flow.sh get invoicing/invoices/<id>` and
+     `flow.sh get invoicing/jobs/<job id>/reconcile`.
+   - Seazona: `flow.sh get seazona/api/orders/<order id>` (the job's
+     `sourceJobRef`, also its case number). Its invoice number is the job's
+     `sourceInvoiceRef`.
+   - Xero: `flow.sh post xero/invoices/status '{"organisationId":"<org>","invoiceIds":["<Flow invoice id>"]}'`.
+2. If they do not explain it, look deeper in the related records: history
+   import batches, older Seazona invoices, earlier Xero invoices for the same
+   client and reference, voids and credit notes. The cause is often one step
+   away from the job.
+3. Say what is true and show the evidence. If the evidence does not decide it,
+   ask the person. A field in one system can be wrong while the invoice is
+   right (for example a Seazona subtotal of 0 with a total that matches the
+   lines): say so, and do not change Flow to hide it.
+4. Fix the wrong system. Flow cannot write to Seazona: give the person the
+   exact fix and its link. Then read all three again to show they agree.
 
-Compare the three. Say which system is wrong, and why, before you change
-anything. If Seazona's own fields disagree (for example its subtotal is 0 but
-its total matches the lines), say so: Flow's check may be a false alarm. Do not
-change Flow to hide it. Ask the person before any send, void or tax change.
+Ask the person before any send, void or tax change.
 
 ## Reconcile: Seazona jobs, Flow invoices, Xero
 
