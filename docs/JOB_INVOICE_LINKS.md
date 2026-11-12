@@ -56,8 +56,14 @@ when the Xero copy changed. Only exact evidence links a job by itself.
 | --- | --- | --- |
 | 1 | The job is linked already | Flow follows the invoice: void, delete and paid change the job |
 | 2 | Flow sent the job's invoice to Xero | Linked, `flow_invoice` |
-| 3 | The earlier installation linked the order (`prior_links`), and the invoice is in the copy with an amount that fits, or a person made that link | Linked, `prior_link` |
-| 4 | One Xero invoice of the customer has the Seazona invoice number (a trailing R does not count) | Linked, `source_invoice_ref` |
+| 3 | The earlier installation linked the order (`prior_links`), and the invoice is in the copy, not voided or deleted, with an amount that fits, or a person made that link | Linked, `prior_link` |
+| 4 | One Xero invoice of the customer has the Seazona invoice number (a trailing R does not count), and it is not voided or deleted | Linked, `source_invoice_ref` |
+
+A voided or deleted Xero invoice bills nothing, so it never links a job by
+itself. When a lab reissues work, the first invoice is voided and keeps the
+Seazona number; the job goes on to step 5. The live check before a draft
+looks for the reissue number (with an R) too, so Make invoice never drafts
+work that a reissue already bills.
 | 5 | The customer's invoices from 7 days before to 45 days after the job date | Scored |
 
 The job date is the Seazona invoice date. When there is none, it is the
@@ -102,11 +108,13 @@ invoice whose whole total is taken is not a candidate for another job.
 
 A job with no invoice whose evidence is `ambiguous` shows a warning icon and
 "Needs invoice" on its panel, one line, "This job has no invoice.", and two
-buttons.
+buttons. A job with no Flow invoice whose linked Xero invoice was voided or
+deleted in Xero shows the same two buttons, with "The invoice for this job
+was voided." (or deleted).
 
 | Button | What Flow does |
 | --- | --- |
-| Make invoice | Rejects every open suggestion, records the job as `not_found` (by a person), then drafts its invoice. The live check before the draft still runs. |
+| Make invoice | Rejects every open suggestion, records the job as `not_found` (by a person), then drafts its invoice. For a voided or deleted link, it also lets go of that Xero invoice and records it as "not this one", so the matcher never links it again. The live check before the draft still runs. |
 | Reconcile | Opens the Reconcile page at this job. |
 
 ### Reconcile

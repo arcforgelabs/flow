@@ -110,7 +110,7 @@ describe('Xero answers the billing ledger', { skip: skipWithoutDatabase }, () =>
   test('the work system\'s own invoice number is an exact match, with a link into Xero', async () => {
     const obligation = await job({ sourceInvoiceRef: 'WS-INV-5' });
     const replay = xero.script([
-      invoicesAnswer([xeroInvoice('x-ws', { status: 'AUTHORISED', number: 'WS-INV-5' })], { InvoiceNumbers: 'WS-INV-5' }),
+      invoicesAnswer([xeroInvoice('x-ws', { status: 'AUTHORISED', number: 'WS-INV-5' })], { InvoiceNumbers: 'WS-INV-5,WS-INV-5R' }),
       invoicesAnswer([]),
       organisation,
     ]);
@@ -120,7 +120,19 @@ describe('Xero answers the billing ledger', { skip: skipWithoutDatabase }, () =>
     assert.equal(recorded.accountingMatchedBy, 'source_invoice_ref');
     assert.match(recorded.accountingUrl, /^https:\/\/go\.xero\.com\/organisationlogin\/default\.aspx\?shortcode=!Ex4mp&redirecturl=/);
     assert.match(decodeURIComponent(recorded.accountingUrl), /InvoiceID=x-ws/);
-    assert.equal(replay.calls[0].query.InvoiceNumbers, 'WS-INV-5');
+    assert.equal(replay.calls[0].query.InvoiceNumbers, 'WS-INV-5,WS-INV-5R');
+  });
+
+  test('a reissue (trailing R) of a voided invoice is the job\'s invoice, so no second draft', async () => {
+    const obligation = await job({ sourceInvoiceRef: '5001' });
+    const replay = xero.script([
+      invoicesAnswer([xeroInvoice('x-old', { status: 'VOIDED', number: '5001' }), xeroInvoice('x-new', { status: 'AUTHORISED', number: '5001R' })]),
+      invoicesAnswer([]),
+      organisation,
+    ]);
+    const recorded = await recordXeroEvidence(handle.db, xero.runtime, org, obligation, { actor });
+    assert.equal(replay.calls[0].query.InvoiceNumbers, '5001,5001R', 'the live check asks Xero for the reissue too');
+    assert.deepEqual([recorded.accountingState, recorded.accountingRef, recorded.accountingMatchedBy], ['authorised', 'x-new', 'source_invoice_ref']);
   });
 
   test('a Xero error refuses the draft instead of guessing', async () => {

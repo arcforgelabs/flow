@@ -81,7 +81,7 @@ const sentence = (text) => capital(String(text).trim().replace(/\.?$/, '.'));
 // wrong, what to do, and where to go to do it (`go`, see GO). A job's fix
 // speaks of Flow's own invoice only. How that invoice stands in an
 // accounting system is the invoice's business, on the invoice page.
-function reasonFix(reason) {
+function reasonFix(reason, o = {}) {
   const fix = (label, todo, go = null) => ({ label, text: sentence(reason), todo, go });
   if (reason === 'the accounting system was not checked') {
     return { label: 'Not checked yet', text: 'Flow did not check for an invoice for this job yet.', todo: 'Wait for the next check, a few minutes. If it stays, check Settings, Integrations.', go: 'integrations' };
@@ -111,7 +111,12 @@ function reasonFix(reason) {
   }
   if (/^invoice .* was (voided|deleted)$/.test(reason)) {
     const voided = /voided$/.test(reason);
-    return { label: `Invoice ${voided ? 'voided' : 'deleted'}`, text: `The invoice for this job was ${voided ? 'voided' : 'deleted'}.`, todo: 'Make a new invoice, or close the job.', go: 'invoice' };
+    const label = `Invoice ${voided ? 'voided' : 'deleted'}`;
+    const text = `The invoice for this job was ${voided ? 'voided' : 'deleted'}.`;
+    // No Flow invoice: the voided one is in the accounting system only, so
+    // the job's own buttons make its new invoice (jobs.js).
+    if (!o.invoiceId) return { label, text, todo: null, go: 'choose' };
+    return { label, text, todo: 'Make a new invoice, or close the job.', go: 'invoice' };
   }
   if (/^the accounting system reports /.test(reason)) {
     return { label: 'May be invoiced', text: 'Flow found an invoice that may be for this job.', todo: 'Check the invoice number on the job in the work system.', go: 'work' };
@@ -160,7 +165,7 @@ export const GO = ['invoice', 'work', 'price-list', 'rule', 'integrations', 'rev
 export function fixes(o) {
   if (invoiceStage(o) !== 'problem') return [];
   const found = [];
-  if (PROBLEM_VIEWS.includes(o.view)) found.push(...(o.reasons ?? []).map((r) => reasonFix(r)));
+  if (PROBLEM_VIEWS.includes(o.view)) found.push(...(o.reasons ?? []).map((r) => reasonFix(r, o)));
   found.push(...(o.waitingRules ?? []).map(ruleFix));
   if (o.invoiceStatus === 'void') {
     found.push({ label: 'Invoice void', text: 'The invoice for this job is void.', todo: 'Make a new invoice, or close the job.', go: 'invoice' });

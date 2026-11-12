@@ -27,7 +27,7 @@ import {
   acceptFindings, archivePriceItem, checkPrices, createPriceItem, linkPriceItem, linkPriceItems, MAX_LINKS_AT_ONCE, readCatalogues, readPriceList, unlinkPriceItem, updatePriceItem,
 } from '../core/price-list.js';
 import {
-  confirmNoInvoice, draftInvoiceForObligation, explainObligation, jobChangeFor, linkJobToInvoice, listObligations,
+  confirmNoInvoice, draftInvoiceForObligation, freeVoidedJob, setHold, explainObligation, jobChangeFor, linkJobToInvoice, listObligations,
   setReady, settleJobChange, useSourceLines,
 } from '../core/ledger.js';
 import { isHistoryHeld } from '../core/history.js';
@@ -99,6 +99,8 @@ import {
 //   PUT   /contacts/:id/billing       owner or admin: change them (null takes the organisation's)
 //   POST  /jobs/:id/ready             { ready }: mark a job ready to invoice, or back in work
 //   GET   /jobs/:id/activity          what happened to a job, newest first
+//   POST  /jobs/:id/hold              owner or admin: { state: none|held|review, reason }
+//   POST  /jobs/:id/free              owner or admin: { reason }: let go of a void invoice, then hold
 //   POST  /jobs/:id/draft             owner or admin: a job's draft invoice, after a live
 //                                     check that the accounting system holds none
 //
@@ -848,8 +850,37 @@ export function createInvoicingRouter({
   router.post('/jobs/:id/no-invoice', ...manager, handle(log, async (req, res) => {
     const obligationId = pathId(req.params.id, 'job');
     const organisationId = await organisationOf(req);
-    const job = await confirmNoInvoice(db, organisationId, obligationId, { actor: `person:${req.person.id}` });
+    const job = await confirmNoInvoice(db, organisationId, obligationId, { actor: `person:${req.person.id}`, system: accounting()?.id ?? null });
     res.json({ ok: true, job: { id: job.id, accountingState: job.accountingState } });
+  }));
+
+  // Holds a job, sends it to review, or releases it (state "none"). Every
+  // change needs a reason, kept in the job's activity.
+  router.post('/jobs/:id/hold', ...manager, handle(log, async (req, res) => {
+    const obligationId = pathId(req.params.id, 'job');
+    const organisationId = await organisationOf(req);
+    const state = text(req.body?.state);
+    const reason = text(req.body?.reason);
+    if (!['none', 'held', 'review'].includes(state)) throw invalid('state must be none, held or review');
+    if (!reason) throw invalid('a reason is required');
+    const [current] = await db.select({ holdState: billingObligations.holdState, holdReason: billingObligations.holdReason }).from(billingObligations)
+      .where(and(eq(billingObligations.organisationId, organisationId), eq(billingObligations.id, obligationId)));
+    if (state === 'none' && isHistoryHeld(current)) {
+      throw invalid('this is a history-import hold: settle it with the history import decisions');
+    }
+    const job = await setHold(db, organisationId, obligationId, { holdState: state, reason, actor: `person:${req.person.id}` });
+    res.json({ ok: true, job: { id: job.id, holdState: job.holdState, holdReason: job.holdReason } });
+  }));
+
+  // Frees a job stuck on a void Flow invoice, or on an accounting invoice that
+  // was voided or deleted there. The job goes on hold until a person releases it.
+  router.post('/jobs/:id/free', ...manager, handle(log, async (req, res) => {
+    const obligationId = pathId(req.params.id, 'job');
+    const organisationId = await organisationOf(req);
+    const reason = text(req.body?.reason);
+    if (!reason) throw invalid('a reason is required');
+    const job = await freeVoidedJob(db, organisationId, obligationId, { actor: `person:${req.person.id}`, reason, system: accounting()?.id ?? null });
+    res.json({ ok: true, job: { id: job.id, invoiceId: job.invoiceId, accountingState: job.accountingState, holdState: job.holdState, holdReason: job.holdReason } });
   }));
 
   // Links a job to a Flow invoice that already exists.

@@ -119,7 +119,11 @@ export async function checkInvoice(db, runtime, client, organisationId, obligati
   // 3. The work system's own invoice number, as Xero's number or reference.
   if (obligation.sourceInvoiceRef) {
     const byId = new Map();
-    for (const inv of sales(await client.findInvoicesByNumber(obligation.sourceInvoiceRef))) byId.set(inv.InvoiceID, inv);
+    // Its reissue too (a trailing R): a lab that reissued the work voided the
+    // first invoice and bills the R one. One call: Xero takes a list.
+    const base = obligation.sourceInvoiceRef.replace(/R$/i, '');
+    const numbers = [...new Set([obligation.sourceInvoiceRef, base, `${base}R`])].join(',');
+    for (const inv of sales(await client.findInvoicesByNumber(numbers))) byId.set(inv.InvoiceID, inv);
     for (const inv of sales(await client.findInvoicesByReference(obligation.sourceInvoiceRef))) byId.set(inv.InvoiceID, inv);
     const found = [...byId.values()];
     if (found.length === 1) return evidenceFor(runtime, client, found[0], 'source_invoice_ref', checkedAt);
