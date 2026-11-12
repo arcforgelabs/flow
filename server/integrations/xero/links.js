@@ -1,5 +1,5 @@
 import { and, eq, sql } from 'drizzle-orm';
-import { contacts, priceItems } from '../../db/schema.js';
+import { billingObligations, contacts, invoices, obligationEvents, priceItems } from '../../db/schema.js';
 import { createContact } from '../../core/directory.js';
 import { FlowError } from '../../core/errors.js';
 import { createDraftInvoice, issueInvoice } from '../../core/invoices.js';
@@ -232,6 +232,44 @@ export async function linkXeroInvoice(db, organisationId, xeroInvoiceId, { invoi
   if (pushed.length) throw new FlowError('invalid', 'Flow sent that invoice to Xero already');
   await insertLink(db, organisationId, { xeroInvoiceId, invoiceId, matchedBy: 'person', actor });
   return { xeroInvoiceId, invoiceId };
+}
+
+// "Use the Xero invoice": Send stopped a Flow invoice because Xero already
+// bills the same client and reference at another amount. The Xero invoice is
+// the real bill. In one step Flow voids its own copy (never sent to Xero),
+// makes its Flow invoice from the Xero one, and gives that to the job. A copy
+// a person voided earlier, whose job still points at it, is cleaned up the
+// same way. The
+// Flow copy's job is the job; an invoice billing more than one job is linked
+// by hand. The Xero invoice must be the same client's.
+export async function useXeroInvoice(db, organisationId, invoiceId, { xeroInvoiceId, actor }) {
+  if (!actor) throw new FlowError('invalid', 'actor is required');
+  const row = await rowFor(db, organisationId, xeroInvoiceId);
+  return db.transaction(async (tx) => {
+    const { rows: [invoice] } = await tx.execute(sql`select id, number, status, contact_id from invoices
+      where organisation_id = ${organisationId} and id = ${invoiceId} for update`);
+    if (!invoice) throw new FlowError('not_found', 'Flow invoice not found');
+    // A copy voided earlier, still holding its job, gives way the same way.
+    if (!['issued', 'void'].includes(invoice.status)) throw new FlowError('invalid', 'only an approved or void Flow invoice can give way to a Xero invoice');
+    if (row.contactId !== invoice.contact_id) throw new FlowError('invalid', 'the Xero invoice is for another client');
+    const { rows: pushed } = await tx.execute(sql`select 1 from xero_invoice_pushes where organisation_id = ${organisationId} and invoice_id = ${invoiceId} and xero_invoice_id is not null limit 1`);
+    if (pushed.length) throw new FlowError('invalid', 'Flow sent that invoice to Xero already');
+    const jobs = await tx.select({ id: billingObligations.id }).from(billingObligations)
+      .where(and(eq(billingObligations.organisationId, organisationId), eq(billingObligations.invoiceId, invoiceId)))
+      .for('update');
+    if (jobs.length > 1) throw new FlowError('invalid', 'the Flow invoice bills more than one job; link each by hand');
+    if (invoice.status === 'issued') await tx.update(invoices).set({ status: 'void', updatedAt: sql`now()` }).where(eq(invoices.id, invoiceId));
+    else if (!jobs.length) throw new FlowError('invalid', 'the void Flow invoice holds no job');
+    for (const job of jobs) {
+      await tx.update(billingObligations).set({ invoiceId: null, draftBasis: null, updatedAt: sql`now()` }).where(eq(billingObligations.id, job.id));
+      await tx.insert(obligationEvents).values({
+        createdAt: sql`clock_timestamp()`, organisationId, obligationId: job.id, kind: 'draft_deleted', actor,
+        evidence: { invoiceId, reason: 'used_xero_invoice', xeroInvoiceId, xeroNumber: row.number ?? null },
+      });
+    }
+    const made = await makeFrom(tx, organisationId, row, { jobId: jobs[0]?.id ?? null, actor });
+    return { voided: { id: invoiceId, number: invoice.number }, invoice: { id: made.invoice.id, number: made.invoice.number }, xeroInvoiceId, jobId: jobs[0]?.id ?? null };
+  });
 }
 
 // Makes Flow's own invoice from a Xero invoice in the copy, finalised on the

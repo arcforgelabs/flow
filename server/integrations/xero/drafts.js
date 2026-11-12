@@ -532,7 +532,7 @@ async function pushOne(db, runtime, client, organisationId, invoiceId, { pushedB
     });
     if (recent) {
       throw xeroError('xero_same_reference_different_amount',
-        `Xero ${recent.InvoiceNumber || 'invoice'} has the same client and reference at ${(cents(recent.Total) / 100).toFixed(2)}. Nothing was sent. Void the extra one in Xero or in Flow.`,
+        `Xero ${recent.InvoiceNumber || 'invoice'} has the same client and reference at ${(cents(recent.Total) / 100).toFixed(2)}. Nothing was sent. If that Xero invoice bills this job, press Use Xero invoice.`,
         { status: 409, details: { xero: shownXero(recent) } });
     }
   }

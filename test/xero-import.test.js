@@ -3,9 +3,9 @@ import { after, before, describe, test } from 'node:test';
 import { and, eq, sql } from 'drizzle-orm';
 import { createContact, createPriceItem } from '../server/core/directory.js';
 import { createDraftInvoice, issueInvoice } from '../server/core/invoices.js';
-import { observeJob, recordAccountingEvidence, setReady } from '../server/core/ledger.js';
+import { linkJobToInvoice, observeJob, recordAccountingEvidence, setReady } from '../server/core/ledger.js';
 import { billingObligations, invoices } from '../server/db/schema.js';
-import { importOverview, matchXero } from '../server/integrations/xero/links.js';
+import { importOverview, matchXero, useXeroInvoice } from '../server/integrations/xero/links.js';
 import { request } from './support/clerk.js';
 import { freshDatabase, skipWithoutDatabase } from './support/db.js';
 import { bootFlow, connectDirectly, scriptedXero, seedLab } from './support/xero.js';
@@ -161,5 +161,36 @@ describe('Xero import: Xero invoices against Flow invoices', { skip: skipWithout
     assert.equal(res.status, 403);
     const read = await request(app, `/api/xero/import?organisationId=${org()}`, { token: lab.staffToken });
     assert.equal(read.status, 200);
+  });
+
+  test('Use the Xero invoice: the Flow copy Send stopped is voided and the job gets the Xero bill', async () => {
+    const job = await observeJob(handle.db, org(), { sourceSystem: 'worksystem', sourceJobRef: 'JOB-U', caseRef: 'CASE-U', contactId: practice.id, shippedOn: '2026-10-20', jobDate: '2026-10-20', lines: [{ itemCode: 'CROWN' }] });
+    const flowCopy = await flowInvoice('2026-10-20');
+    await linkJobToInvoice(handle.db, org(), job.id, { invoiceId: flowCopy.id, actor: 'person:test' });
+    // Xero already bills the job with a 15.00 line more: 290.00.
+    const id = await copy(21, { issuedOn: '2026-10-20', total: 29000 });
+    const other = await copy(22, { contact: XC2, issuedOn: '2026-10-20', total: 29000 });
+    await assert.rejects(useXeroInvoice(handle.db, org(), flowCopy.id, { xeroInvoiceId: other, actor: 'person:test' }), /another client/);
+    const used = await useXeroInvoice(handle.db, org(), flowCopy.id, { xeroInvoiceId: id, actor: 'person:test' });
+    assert.equal(used.voided.id, flowCopy.id);
+    assert.equal(used.jobId, job.id);
+    const [voided] = await handle.db.select().from(invoices).where(eq(invoices.id, flowCopy.id));
+    assert.equal(voided.status, 'void');
+    const [made] = await handle.db.select().from(invoices).where(eq(invoices.id, used.invoice.id));
+    assert.equal(made.subtotalCents, 26500, 'the Xero bill, with its extra line');
+    const [linkedJob] = await handle.db.select().from(billingObligations).where(eq(billingObligations.id, job.id));
+    assert.equal(linkedJob.invoiceId, made.id);
+    assert.equal((await stateOf(id)).link.matchedBy, 'made');
+    // A copy voided by hand earlier, still holding its job, is cleaned up the same way.
+    const job2 = await observeJob(handle.db, org(), { sourceSystem: 'worksystem', sourceJobRef: 'JOB-V', caseRef: 'CASE-V', contactId: practice.id, shippedOn: '2026-10-21', jobDate: '2026-10-21', lines: [{ itemCode: 'CROWN' }] });
+    const voidedEarlier = await flowInvoice('2026-10-21');
+    await linkJobToInvoice(handle.db, org(), job2.id, { invoiceId: voidedEarlier.id, actor: 'person:test' });
+    await handle.db.update(invoices).set({ status: 'void' }).where(eq(invoices.id, voidedEarlier.id));
+    const id2 = await copy(23, { issuedOn: '2026-10-21', total: 29000 });
+    const second = await useXeroInvoice(handle.db, org(), voidedEarlier.id, { xeroInvoiceId: id2, actor: 'person:test' });
+    assert.equal(second.jobId, job2.id);
+    // Once it holds no job, it cannot give way again.
+    const id3 = await copy(24, { issuedOn: '2026-10-21', total: 29000 });
+    await assert.rejects(useXeroInvoice(handle.db, org(), voidedEarlier.id, { xeroInvoiceId: id3, actor: 'person:test' }), /holds no job/);
   });
 });

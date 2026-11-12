@@ -217,6 +217,9 @@ const isoDay = (at) => `${at.getFullYear()}-${String(at.getMonth() + 1).padStart
 // no invoice with the job's own invoice number. Another customer's invoice
 // with the same number is not this job's: when the job's customer is linked to
 // an accounting contact (`db` given), only that contact's invoices count.
+// Send's window for the same client and Reference (xero/drafts.js).
+const SAME_REFERENCE_DAYS = 90;
+
 export function copyCheck(accounting, organisationId, { db = null } = {}) {
   const contactOf = async (contactId) => {
     if (!db || !contactId) return null;
@@ -226,10 +229,11 @@ export function copyCheck(accounting, organisationId, { db = null } = {}) {
     ));
     return link?.externalId ?? null;
   };
-  return async (obligation) => {
+  return async (obligation, { reference = null } = {}) => {
     const { complete, fresh, changedAt, invoices } = await accounting.capabilities.findInvoices({
       organisationId,
       numbers: obligation.sourceInvoiceRef ? [obligation.sourceInvoiceRef] : [],
+      references: reference ? [reference] : [],
     });
     if (!complete || !fresh) throw new Error('the accounting copy is not complete or not fresh');
     if (obligation.accountingState !== 'not_found') return { state: obligation.accountingState, matchedBy: 'copy' };
@@ -237,8 +241,18 @@ export function copyCheck(accounting, organisationId, { db = null } = {}) {
       throw new Error('the accounting copy changed after the job was last matched');
     }
     const xeroContactId = await contactOf(obligation.contactId);
-    const sales = invoices.filter((i) => !['voided', 'deleted'].includes(i.state) && (!xeroContactId || i.contactId === xeroContactId));
+    const live = invoices.filter((i) => !['voided', 'deleted'].includes(i.state));
+    const sameNumber = (i) => obligation.sourceInvoiceRef && String(i.number ?? '').toUpperCase() === obligation.sourceInvoiceRef.toUpperCase();
+    const sales = live.filter((i) => sameNumber(i) && (!xeroContactId || i.contactId === xeroContactId));
     if (sales.length) return { state: sales[0].state, accountingRef: sales[0].id, matchedBy: 'copy' };
+    // The same client and Reference as this draft, within Send's window: Send
+    // would stop it (xero/drafts.js), so the draft is not made. A person
+    // links the job to that invoice, or says it is another job.
+    const day = obligation.jobDate ? Date.parse(`${String(obligation.jobDate).slice(0, 10)}T00:00:00Z`) : Date.now();
+    const sameReference = reference && xeroContactId ? live.filter((i) => i.contactId === xeroContactId
+      && String(i.reference ?? '').toUpperCase() === reference.toUpperCase()
+      && (!i.issuedOn || Math.abs(Date.parse(`${String(i.issuedOn).slice(0, 10)}T00:00:00Z`) - day) <= SAME_REFERENCE_DAYS * 86_400_000)) : [];
+    if (sameReference.length) return { state: 'ambiguous', accountingRef: sameReference[0].id, matchedBy: 'reference' };
     return { state: 'not_found', matchedBy: 'copy' };
   };
 }

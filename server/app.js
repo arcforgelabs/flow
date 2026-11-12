@@ -154,7 +154,7 @@ export function createApp({
   if (database && auth?.personAuth) {
     const liveCheckFor = (organisationId) => {
       const [adapter] = integrations?.with('checkInvoice') ?? [];
-      return adapter ? (obligation) => adapter.capabilities.checkInvoice({ organisationId, obligation }) : null;
+      return adapter ? (obligation, { reference = null } = {}) => adapter.capabilities.checkInvoice({ organisationId, obligation, reference }) : null;
     };
     // Send all ready (server/core/sending.js): the first enabled integration
     // that sends invoices (Xero).
