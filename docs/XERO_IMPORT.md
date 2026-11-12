@@ -116,6 +116,21 @@ the Flow invoice the import linked to it.
 - A linked Flow invoice shows its Xero status and payments, as a sent one does.
 - Only an owner or admin links, makes, matches or changes the setting.
 
+## Release a wrong pair
+
+A pair can be wrong: a Flow invoice was made from a Xero invoice that bills
+another job. To repair it:
+
+1. Void the Flow invoice, and free its job (`POST /api/invoicing/jobs/:id/free`).
+2. Release the Xero invoice (`POST /api/xero/import/:xeroInvoiceId/release`,
+   with a reason).
+
+Release frees the Xero invoice, so it can link to its own job. Each job that
+points at it, with no Flow invoice, lets go of it: the job is unchecked
+again, and the matcher never pairs the two again. The link row stays, with
+who released it and when, until a new link takes its place. A Flow invoice
+that is not void keeps its link.
+
 ## API
 
 | Method | Path | Body |
@@ -125,4 +140,5 @@ the Flow invoice the import linked to it.
 | PUT | `/api/xero/import/settings` | `organisationId`, `autoLink?`, `makeUnmatched?` |
 | POST | `/api/xero/import/:xeroInvoiceId/link` | `organisationId`, `invoiceId` |
 | POST | `/api/xero/import/:xeroInvoiceId/make` | `organisationId`, `jobId?` |
+| POST | `/api/xero/import/:xeroInvoiceId/release` (a wrong pair; the Flow invoice is void) | `organisationId`, `reason` |
 | POST | `/api/xero/import/:xeroInvoiceId/read` (the invoice as Xero has it now; refreshes the copy) | `organisationId` |

@@ -4,7 +4,7 @@ import { payersOf } from '../../core/contacts.js';
 import { createContact } from '../../core/directory.js';
 import { FlowError } from '../../core/errors.js';
 import { createDraftInvoice, issueInvoice } from '../../core/invoices.js';
-import { linkJobToInvoice, recordAccountingEvidence } from '../../core/ledger.js';
+import { linkJobToInvoice, recordAccountingEvidence, releaseAccountingRef } from '../../core/ledger.js';
 import { normaliseName } from './catalogue.js';
 import { findInvoices } from './lookup.js';
 import { canFit, markRivals, scoreFit, sureFits } from './fit.js';
@@ -56,7 +56,7 @@ async function classify(db, organisationId) {
     select xero_invoice_id, invoice_id, 'sent' as matched_by from xero_invoice_pushes
       where organisation_id = ${organisationId} and xero_invoice_id is not null
     union all
-    select xero_invoice_id, invoice_id, matched_by from xero_invoice_links where organisation_id = ${organisationId}`);
+    select xero_invoice_id, invoice_id, matched_by from xero_invoice_links where organisation_id = ${organisationId} and released_at is null`);
   const linkOf = new Map();
   const linkedInvoices = new Set();
   for (const r of linkRows) {
@@ -222,9 +222,16 @@ export async function saveImportSettings(db, organisationId, { autoLink, makeUnm
 }
 
 async function insertLink(db, organisationId, { xeroInvoiceId, invoiceId, matchedBy, actor }) {
+  // A released link (releaseXeroLink) gives its row to the new one.
+  const { rows: held } = await db.execute(sql`select 1 from xero_invoice_links where organisation_id = ${organisationId}
+    and invoice_id = ${invoiceId} and xero_invoice_id <> ${xeroInvoiceId} limit 1`);
+  if (held.length) throw new FlowError('invalid', 'the Xero invoice or the Flow invoice is linked already');
   const { rows } = await db.execute(sql`insert into xero_invoice_links (organisation_id, xero_invoice_id, invoice_id, matched_by, linked_by)
     values (${organisationId}, ${xeroInvoiceId}, ${invoiceId}, ${matchedBy}, ${actor})
-    on conflict do nothing returning xero_invoice_id`);
+    on conflict (organisation_id, xero_invoice_id) do update set invoice_id = excluded.invoice_id, matched_by = excluded.matched_by,
+      linked_by = excluded.linked_by, created_at = now(), released_by = null, released_at = null, deleted_by = null, deleted_at = null
+      where xero_invoice_links.released_at is not null
+    returning xero_invoice_id`);
   if (!rows.length) throw new FlowError('invalid', 'the Xero invoice or the Flow invoice is linked already');
 }
 
@@ -360,4 +367,28 @@ export async function matchXero(db, organisationId, { actor = 'automation:xero-i
     }
   }
   return result;
+}
+
+// A person releases a wrong pair: the Xero invoice is linked to a Flow invoice
+// that was voided, and is another job's bill. The link stays as a record
+// (released_by, released_at) and the Xero invoice can link again. Each job
+// that points at the Xero invoice and no longer holds a Flow invoice lets go
+// of it, and the matcher never pairs them again. A live Flow invoice keeps
+// its link: void it first.
+export async function releaseXeroLink(db, organisationId, xeroInvoiceId, { actor, reason }) {
+  if (!actor) throw new FlowError('invalid', 'actor is required');
+  if (!reason?.trim()) throw new FlowError('invalid', 'say why the link is released');
+  return db.transaction(async (tx) => {
+    const { rows: [link] } = await tx.execute(sql`select l.invoice_id, i.number, i.status from xero_invoice_links l
+      join invoices i on i.organisation_id = l.organisation_id and i.id = l.invoice_id
+      where l.organisation_id = ${organisationId} and l.xero_invoice_id = ${xeroInvoiceId} and l.released_at is null for update of l`);
+    if (!link) throw new FlowError('not_found', 'the Xero invoice has no link to release');
+    if (link.status !== 'void') throw new FlowError('invalid', `Flow invoice ${link.number ?? link.invoice_id} is ${link.status}: void it first`);
+    await tx.execute(sql`update xero_invoice_links set released_by = ${actor}, released_at = now()
+      where organisation_id = ${organisationId} and xero_invoice_id = ${xeroInvoiceId}`);
+    const { rows: jobs } = await tx.execute(sql`select id from billing_obligations
+      where organisation_id = ${organisationId} and accounting_ref = ${xeroInvoiceId} and invoice_id is null`);
+    for (const job of jobs) await releaseAccountingRef(tx, organisationId, job.id, { accountingRef: xeroInvoiceId, system: 'xero', actor, reason });
+    return { xeroInvoiceId, invoice: { id: link.invoice_id, number: link.number }, jobs: jobs.map((j) => j.id) };
+  });
 }

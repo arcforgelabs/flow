@@ -828,6 +828,26 @@ export async function freeVoidedJob(db, organisationId, obligationId, { actor, r
   });
 }
 
+// A person found that the accounting invoice a job points at is not its bill
+// (a wrong pair). The job lets go of it: it is unchecked again, and the
+// matcher never pairs the two again. Nothing else on the job changes. A job
+// that still holds a Flow invoice keeps it; free that first.
+export async function releaseAccountingRef(db, organisationId, obligationId, { accountingRef, system, actor, reason }) {
+  requireActor(actor);
+  if (!reason?.trim()) throw new FlowError('invalid', 'say why the accounting invoice is released');
+  return db.transaction(async (tx) => {
+    const obligation = await loadObligation(tx, organisationId, obligationId, { lock: true });
+    if (obligation.accountingRef !== accountingRef) return obligation;
+    if (obligation.invoiceId) throw new FlowError('invalid', 'the job still holds a Flow invoice: free it first');
+    const row = await update(tx, obligation, {
+      accountingState: 'unknown', accountingRef: null, accountingUrl: null, accountingMatchedBy: null, accountingCheckedAt: null,
+    });
+    await tx.insert(linkRejections).values({ organisationId, obligationId: obligation.id, system, externalId: accountingRef, actor }).onConflictDoNothing();
+    await addEvent(tx, row, 'accounting_released', actor, { released: accountingRef, reason: reason.trim(), from: obligation.accountingState });
+    return row;
+  });
+}
+
 // A job with no invoice of its own whose accounting evidence is ambiguous:
 // the matcher found accounting invoices that may be this job's, but none
 // exactly. Or the accounting invoice the matcher linked was voided or deleted

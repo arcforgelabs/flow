@@ -8,7 +8,7 @@ import { createCustomer, linkCustomer, matchCustomer } from './create-contact.js
 import { createXeroClient } from './client.js';
 import { describePush, listPushes, MAX_BATCH, previewDrafts, pushDrafts } from './drafts.js';
 import { recordXeroEvidence, recordXeroPayments } from './ledger.js';
-import { IMPORT_STATES, importOverview, linkXeroInvoice, makeFlowInvoice, matchXero, saveImportSettings, useXeroInvoice } from './links.js';
+import { IMPORT_STATES, importOverview, linkXeroInvoice, makeFlowInvoice, matchXero, releaseXeroLink, saveImportSettings, useXeroInvoice } from './links.js';
 import { queueHistoryImport, resetImport } from './import.js';
 import { MIRROR_RESOURCES, mirrorStatus, mirrorXero, readInvoiceFromXero } from './mirror.js';
 import { accountingStatus, checkSentInvoices } from './reconcile.js';
@@ -461,6 +461,14 @@ export function createXeroRouter({ db, personAuth, runtime, log = console, butto
     const found = await readInvoiceFromXero(db, runtime, organisationId, xeroId(req.params.xeroInvoiceId));
     if (!found) throw Object.assign(new FlowError('not_found', 'Xero has no such invoice'), { status: 404 });
     res.json({ ok: true, source: 'xero', ...found });
+  }));
+
+  // A wrong pair: the Xero invoice's Flow invoice is void and the Xero invoice
+  // is another job's bill. Frees the Xero invoice and the jobs that point at it.
+  router.post('/import/:xeroInvoiceId/release', ...manager, handle(log, async (req, res) => {
+    const organisationId = await requireOrganisation(db, req.body?.organisationId);
+    const reason = typeof req.body?.reason === 'string' ? req.body.reason : null;
+    res.json({ ok: true, ...(await releaseXeroLink(db, organisationId, xeroId(req.params.xeroInvoiceId), { actor: `person:${req.person.id}`, reason })) });
   }));
 
   router.post('/import/:xeroInvoiceId/make', ...manager, handle(log, async (req, res) => {

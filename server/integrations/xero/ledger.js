@@ -234,7 +234,7 @@ export async function recordXeroPayments(db, runtime, organisationId, { actor, s
       const { rows } = await db.execute(sql`select xero_invoice_id, invoice_id from xero_invoice_pushes
         where organisation_id = ${organisationId} and xero_invoice_id = any(${sql.param(xeroIds)}::text[])
         union all select xero_invoice_id, invoice_id from xero_invoice_links
-        where organisation_id = ${organisationId} and xero_invoice_id = any(${sql.param(xeroIds)}::text[])`);
+        where organisation_id = ${organisationId} and xero_invoice_id = any(${sql.param(xeroIds)}::text[]) and released_at is null`);
       for (const row of rows) byFlowInvoice.set(row.xero_invoice_id, row.invoice_id);
     }
     const flowInvoiceIds = [...new Set(byFlowInvoice.values())];

@@ -2,9 +2,9 @@ import assert from 'node:assert/strict';
 import { after, before, describe, test } from 'node:test';
 import { and, eq, sql } from 'drizzle-orm';
 import { createContact, createPriceItem } from '../server/core/directory.js';
-import { createDraftInvoice, issueInvoice } from '../server/core/invoices.js';
+import { createDraftInvoice, issueInvoice, voidInvoice } from '../server/core/invoices.js';
 import { saveCustomerBilling } from '../server/core/invoicing-rules.js';
-import { linkJobToInvoice, observeJob, recordAccountingEvidence, setReady } from '../server/core/ledger.js';
+import { freeVoidedJob, linkJobToInvoice, observeJob, recordAccountingEvidence, setReady } from '../server/core/ledger.js';
 import { billingObligations, invoices } from '../server/db/schema.js';
 import { importOverview, matchXero, useXeroInvoice } from '../server/integrations/xero/links.js';
 import { findInvoices } from '../server/integrations/xero/lookup.js';
@@ -170,6 +170,41 @@ describe('Xero import: Xero invoices against Flow invoices', { skip: skipWithout
     const ownBill = await copy(25, { contact: XC3, issuedOn: '2026-09-08' });
     assert.deepEqual((await stateOf(ownBill)).jobs.map((j) => j.id), [later.id]);
     await saveCustomerBilling(handle.db, org(), member.id, { billToContactId: null });
+  });
+
+  test('a wrong pair is released: the void Flow invoice lets go of the Xero invoice, and both jobs can be paired again', async () => {
+    const job = (ref, day) => observeJob(handle.db, org(), { sourceSystem: 'worksystem', sourceJobRef: ref, caseRef: ref, contactId: practice.id, shippedOn: day, jobDate: day, lines: [{ itemCode: 'CROWN' }] });
+    const wrong = await job('JOB-W1', '2026-09-17');
+    const right = await job('JOB-W2', '2026-09-18');
+    const theirs = await copy(30, { issuedOn: '2026-09-18' });
+    const own = await copy(31, { issuedOn: '2026-09-17' });
+    // The pair made by mistake: the wrong job got the other job's bill.
+    const made = await call(`/import/${theirs}/make`, { method: 'POST', body: { organisationId: org(), jobId: wrong.id } });
+    assert.equal(made.status, 200, JSON.stringify(made.body));
+    const release = (body) => call(`/import/${theirs}/release`, { method: 'POST', body: { organisationId: org(), reason: 'wrong pair: another job', ...body } });
+    assert.match((await release()).body.error, /void it first/);
+    await voidInvoice(handle.db, org(), made.body.invoice.id);
+    await freeVoidedJob(handle.db, org(), wrong.id, { actor: 'person:test', reason: 'wrong pair' });
+    const refused = await call(`/import/${own}/make`, { method: 'POST', body: { organisationId: org(), jobId: wrong.id } });
+    assert.match(refused.body.error, /linked to an accounting invoice already/, 'before the release, the job still points at the other bill');
+    assert.equal((await release({ reason: '' })).status, 400);
+    const released = await release();
+    assert.equal(released.status, 200, JSON.stringify(released.body));
+    assert.deepEqual(released.body.jobs, [wrong.id]);
+    const [freed] = await handle.db.select().from(billingObligations).where(eq(billingObligations.id, wrong.id));
+    assert.deepEqual([freed.accountingRef, freed.accountingState], [null, 'unknown']);
+    const { rows: rejected } = await handle.db.execute(sql`select external_id from link_rejections where obligation_id = ${wrong.id}`);
+    assert.deepEqual(rejected.map((r) => r.external_id), [theirs], 'the matcher never pairs the two again');
+    assert.notEqual((await stateOf(theirs)).state, 'linked');
+    // Each job now gets its own bill.
+    for (const [id, jobId] of [[theirs, right.id], [own, wrong.id]]) {
+      const res = await call(`/import/${id}/make`, { method: 'POST', body: { organisationId: org(), jobId } });
+      assert.equal(res.status, 200, JSON.stringify(res.body));
+      assert.equal((await stateOf(id)).link.matchedBy, 'made');
+    }
+    const { rows: history } = await handle.db.execute(sql`select released_by from xero_invoice_links where xero_invoice_id = ${theirs}`);
+    assert.deepEqual(history.map((r) => r.released_by), [null], 'one row: the new link took the released one\'s place');
+    assert.equal((await release()).status, 400, 'a live Flow invoice keeps its link');
   });
 
   test('nothing fits: it stays in the copy, until the setting makes Flow invoices', async () => {
