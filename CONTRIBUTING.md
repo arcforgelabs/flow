@@ -87,8 +87,10 @@ the paths a pull request changes and runs only the lanes those paths need
 (`.github/scripts/ci-scope.py`). A change to `docs/`, `.agents/`, the agent
 notes, `README.md` or the phone suite's saved images skips `test`,
 `docker-build` and `package`; a change to `docs/` runs `check-docs`. Any
-other path, and any pull request to a branch other than `main`, runs every
-app lane. The gate passes
+other path runs every app lane. The diff is against `main`, so a pull request
+retargeted to `main` was already judged against it. Lane selection stays off
+(every lane runs) until the repository variable `FLOW_CI_SCOPE` is `on`, which
+is set in the same step that makes the main ruleset require `flow/ci-gate`. The gate passes
 when every lane it selected passed. A push to `main`, a manual run, a release
 check and a change to CI run every lane. A release commit still needs the
 `test` lane itself (`scripts/deploy-checks.js`). The ruleset in `.github/rulesets/release-tags.json` stops

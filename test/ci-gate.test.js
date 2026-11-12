@@ -44,7 +44,7 @@ test("every lane runs only when preflight turns it on", () => {
   }
 });
 
-function select(files, env = {}) {
+function select(files, env = {}, between = []) {
   const dir = mkdtempSync(join(tmpdir(), "flow-ci-scope-"));
   try {
     const git = (...args) => execFileSync("git", ["-C", dir, "-c", "user.name=t", "-c", "user.email=t@t", ...args], { encoding: "utf8" }).trim();
@@ -53,6 +53,14 @@ function select(files, env = {}) {
     git("add", ".");
     git("commit", "-qm", "base");
     const base = git("rev-parse", "HEAD");
+    for (const file of between) {
+      mkdirSync(dirname(join(dir, file)), { recursive: true });
+      writeFileSync(join(dir, file), "y");
+    }
+    if (between.length) {
+      git("add", "-A");
+      git("commit", "-qm", "branch");
+    }
     for (const file of files) {
       mkdirSync(dirname(join(dir, file)), { recursive: true });
       writeFileSync(join(dir, file), "x");
@@ -63,7 +71,7 @@ function select(files, env = {}) {
     const out = execFileSync("python3", ["-I", SCOPE], {
       cwd: dir,
       encoding: "utf8",
-      env: { PATH: process.env.PATH, EVENT: "pull_request", BASE: base, HEAD: head, BASE_REF: "main", DEFAULT_BRANCH: "main", SCOPES: JSON.stringify(scopes()), ...env },
+      env: { PATH: process.env.PATH, EVENT: "pull_request", BASE: base, HEAD: head, SWITCH: "on", SCOPES: JSON.stringify(scopes()), ...env },
     });
     return Object.fromEntries(out.trim().split("\n").map((l) => l.split("=")).map(([k, v]) => [k, v === "true"]));
   } finally {
@@ -95,8 +103,14 @@ test("CI itself, an empty diff and every run that is not a pull request select e
   assert.deepEqual(select(["docs/XERO.md"], { REF: "abc123" }), { app: true, check_docs: true });
 });
 
-test("a pull request to another branch runs every lane, so a later retarget to main cannot skip a lane", () => {
-  assert.deepEqual(select(["docs/XERO.md"], { BASE_REF: "feature-a" }), { app: true, check_docs: true });
+test("while the switch is off, every pull request runs every lane", () => {
+  assert.deepEqual(select(["docs/XERO.md"], { SWITCH: "" }), { app: true, check_docs: true });
+  assert.deepEqual(select(["docs/XERO.md"], { SWITCH: "off" }), { app: true, check_docs: true });
+});
+
+test("lanes come from the diff against main, so a stacked pull request retargeted to main cannot skip a lane", () => {
+  // Main, then a branch with a code change, then a docs-only pull request on that branch.
+  assert.deepEqual(select(["docs/XERO.md"], {}, ["server/index.js"]), { app: true, check_docs: true });
 });
 
 test("npm test imports test/mobile files, so only the phone suite's saved images skip the app lanes", () => {

@@ -67,9 +67,14 @@ jobs:
         env:
           EVENT: ${{ github.event_name }}
           REF: ${{ inputs.ref }}
-          BASE_REF: ${{ github.event.pull_request.base.ref }}
-          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
-          BASE: ${{ github.event.pull_request.base.sha }}
+          # Lane selection is off until the main ruleset requires
+          # flow/ci-gate (repository variable FLOW_CI_SCOPE=on). Off, every
+          # lane runs, so a skipped `test` can never stand in for the gate.
+          SWITCH: ${{ vars.FLOW_CI_SCOPE }}
+          # The diff is against the default branch, not the pull request's
+          # base, so a pull request retargeted to main later (which starts
+          # no new run) was already judged against main.
+          BASE: origin/${{ github.event.repository.default_branch }}
           HEAD: ${{ github.event.pull_request.head.sha }}
           SCOPES: >-
             {"app": ["**", "!docs/**", "!.agents/**", "!test/mobile/__screenshots__/**",

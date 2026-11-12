@@ -4,10 +4,12 @@ Copied from arcforgelabs/platform .github/scripts/ci-scope.py, with one
 addition: a glob that starts with "!" removes paths from a lane.
 
 SCOPES is a JSON map of lane -> path globs. A pull request turns a lane on when
-a changed path matches one of its globs and none of its "!" globs. A push, a
-manual run, a release check (a workflow_call with a ref), a pull request to a
-branch other than the default branch (it can be retargeted to main later
-without a new run), or a change to CI itself turns every lane on. Prints one `lane=true|false` line per lane for
+a changed path matches one of its globs and none of its "!" globs. The diff is
+against the default branch (BASE), whatever the pull request's base is: a
+retarget starts no new run. Every lane turns on for a push, a manual run, a
+release check (a workflow_call with a ref), a change to CI itself, an empty
+diff, or while the switch (SWITCH, repository variable FLOW_CI_SCOPE) is not
+"on". Prints one `lane=true|false` line per lane for
 $GITHUB_OUTPUT.
 """
 import json
@@ -36,9 +38,9 @@ def regex(glob):
 
 def changed_paths():
     """The changed paths of a pull request, or None for every other run."""
-    if os.environ.get("EVENT") != "pull_request" or os.environ.get("REF"):
+    if os.environ.get("SWITCH") != "on":
         return None
-    if os.environ.get("BASE_REF") != os.environ.get("DEFAULT_BRANCH"):
+    if os.environ.get("EVENT") != "pull_request" or os.environ.get("REF"):
         return None
     # --no-renames: a rename lists both its old and its new path.
     return subprocess.run(
