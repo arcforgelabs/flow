@@ -5,7 +5,7 @@ import { getInvoice, listInvoiceVersions } from '../../core/invoices.js';
 import { sendModeFor } from '../../core/invoicing-rules.js';
 import { contacts as flowContacts, invoices as flowInvoices, priceItems } from '../../db/schema.js';
 import { readConnection } from './connections.js';
-import { itemsByCode, lastSuccessfulSyncAt, matchContactFor, normaliseName } from './catalogue.js';
+import { lastSuccessfulSyncAt, xeroItemsForCodes, matchContactFor, normaliseName } from './catalogue.js';
 import { writesAllowed } from './settings.js';
 import { xeroError } from './client.js';
 import { withXeroLane } from './governor.js';
@@ -162,8 +162,19 @@ export function buildDraft(document, { settings, contact, items, sendMode = 'acc
       TaxType: settings.taxTypes[line.taxCode],
     };
     if (line.itemCode) {
-      if (items.has(line.itemCode)) out.ItemCode = line.itemCode;
-      else problems.push(problem('xero_item_missing', `Line ${line.position}: item ${line.itemCode} is not in Xero. Add it in Xero, then sync.`, { itemCode: line.itemCode, short: `${line.itemCode} not in Xero` }));
+      // The Xero item this Flow code sends as (catalogue.js, xeroItemsForCodes):
+      // the linked item under Xero's own code, else the same code.
+      const item = items.get(line.itemCode);
+      if (item?.linkMissing) {
+        problems.push(problem('xero_item_missing', `Line ${line.position}: item ${line.itemCode} is linked to a Xero item that is no longer in Xero. Link it again in Price list, then sync.`, { itemCode: line.itemCode, short: `${line.itemCode} link gone` }));
+      } else if (!item) {
+        problems.push(problem('xero_item_missing', `Line ${line.position}: item ${line.itemCode} is not in Xero. Add it in Xero, then sync.`, { itemCode: line.itemCode, short: `${line.itemCode} not in Xero` }));
+      } else if (item.isSold === false) {
+        problems.push(problem('xero_item_missing', `Line ${line.position}: Xero item ${item.code || line.itemCode} is not set to be sold. Turn on "I sell this item" in Xero, then sync.`, { itemCode: line.itemCode, short: `${item.code || line.itemCode} not sold in Xero` }));
+      } else {
+        out.ItemCode = item.code || line.itemCode;
+        if (settings.lineText === 'item' && item.name) out.Description = item.name;
+      }
     } else if (line.accountCode) {
       // A line with no item books to its own account, such as a surcharge.
       out.AccountCode = line.accountCode;
@@ -324,7 +335,7 @@ async function previewOne(db, runtime, organisationId, invoiceId) {
   const offerCreate = match.state === 'missing' && runtime.settings.createContacts && writesAllowed(runtime.settings);
   if (match.state === 'missing') problems.push(missingContact(document.contact.name, { offerCreate }));
   if (match.state === 'ambiguous') problems.push(twiceContact(document.contact.name));
-  const items = await itemsByCode(db, organisationId, document.lines.map((l) => l.itemCode));
+  const items = await xeroItemsForCodes(db, organisationId, document.lines.map((l) => l.itemCode));
   const sendMode = await sendModeFor(db, organisationId, invoice.contactId);
   const { draft, problems: lineProblems } = buildDraft(document, { settings: runtime.settings, contact: match.contact, items, sendMode });
   problems.push(...lineProblems);
@@ -509,7 +520,7 @@ async function pushOne(db, runtime, client, organisationId, invoiceId, { pushedB
     const found = match.state === 'missing' ? missingContact(document.contact.name, { offerCreate }) : twiceContact(document.contact.name);
     throw xeroError(found.code, found.message, { status: 409, short: found.short });
   }
-  const items = await itemsByCode(db, organisationId, document.lines.map((l) => l.itemCode));
+  const items = await xeroItemsForCodes(db, organisationId, document.lines.map((l) => l.itemCode));
   const sendMode = await sendModeFor(db, organisationId, invoice.contactId);
   const { draft, problems } = buildDraft(document, { settings: runtime.settings, contact: match.contact, items, sendMode });
   if (problems.length) throw xeroError(problems[0].code, problems.map((p) => p.message).join(' '), { status: 409, short: problems[0].short });

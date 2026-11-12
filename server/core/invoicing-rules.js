@@ -3,7 +3,7 @@ import {
   billingObligations, contacts, customerBillingSettings, externalLinks, invoicingSettings, SEND_MODES,
 } from '../db/schema.js';
 import { FlowError, notFound } from './errors.js';
-import { listRules, ruleReasons } from './invoice-rules.js';
+import { accountingItemsFor, listRules, ruleReasons } from './invoice-rules.js';
 import { draftInvoiceForObligation } from './ledger.js';
 import { needsRead, readAccountingFirst, readBeforeAct, READS_PER_PASS } from './read-before-act.js';
 import { checkReferenceTemplate, DEFAULT_REFERENCE, jobReference } from './references.js';
@@ -197,10 +197,10 @@ export async function sendModeSummary(db, organisationId) {
 // read: Flow's own ready stage, then the lab's invoice rules (invoice-rules.js)
 // in their order. An empty list means the job may be drafted. `rules` is the
 // organisation's rules, read once per run with listRules.
-export function ruleBlockers(obligation, effective, { now = new Date(), rules = [] } = {}) {
+export function ruleBlockers(obligation, effective, { now = new Date(), rules = [], items = null } = {}) {
   const reasons = [];
   if (!obligation.readyAt) reasons.push('the job is not marked ready to invoice');
-  return [...reasons, ...ruleReasons(rules, obligation, { customer: effective, now })];
+  return [...reasons, ...ruleReasons(rules, obligation, { customer: effective, now, items })];
 }
 
 function addDays(date, days) {
@@ -297,6 +297,8 @@ export async function autoDraftJobs(db, organisationId, { accounting = null, wor
   const liveCheck = accounting ? copyCheck(accounting, organisationId, { db }) : null;
   const invoiceDate = isoDay(now);
   let accountingRead = null;
+  // The codes that send as accounting items, for a rule that reads them.
+  const items = await accountingItemsFor(accounting, organisationId, rules, candidates);
 
   for (const candidate of candidates) {
     let effective = named(candidate.contactId);
@@ -304,7 +306,7 @@ export async function autoDraftJobs(db, organisationId, { accounting = null, wor
       result.off += 1;
       continue;
     }
-    if (ruleBlockers(candidate, effective, { now, rules }).length) {
+    if (ruleBlockers(candidate, effective, { now, rules, items }).length) {
       result.waiting += 1;
       continue;
     }
@@ -345,7 +347,10 @@ export async function autoDraftJobs(db, organisationId, { accounting = null, wor
         for (const [id, name] of extra) names.set(id, name);
       }
       effective = named(obligation.contactId);
-      if (!effective.autoDraft || ruleBlockers(obligation, effective, { now, rules }).length) {
+      // The job read again may have new codes: read their accounting items too.
+      const itemsNow = items && (obligation.lines ?? []).some((l) => l.itemCode && !items.has(l.itemCode))
+        ? await accountingItemsFor(accounting, organisationId, rules, [obligation]) : items;
+      if (!effective.autoDraft || ruleBlockers(obligation, effective, { now, rules, items: itemsNow }).length) {
         result.waiting += 1;
         continue;
       }

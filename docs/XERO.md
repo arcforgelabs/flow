@@ -66,6 +66,7 @@ credentials. Tests use replay only and never call the real Xero API.
 | `XERO_TAX_TYPE_GST` / `XERO_TAX_TYPE_GST_FREE` | configuration | Xero tax types for Flow's tax codes. Default `OUTPUT` and `EXEMPTOUTPUT` (Australian Xero). |
 | `XERO_DEFAULT_DUE_DAYS` | configuration | Days from the invoice date to the due date when a Flow invoice has none. Default 30. |
 | `XERO_INVOICE_NUMBER` | configuration | `xero` (default): Xero numbers the invoice. `flow`: Xero gets Flow's invoice number. |
+| `XERO_LINE_TEXT` | configuration | `flow` (default): each Xero line has the Flow line's text. `item`: a line with an item has the Xero item's name, the same text each time; a line booked to an account keeps Flow's text. Only invoices sent after the change. |
 | `XERO_REPLAY_FIXTURES` | configuration | Replay mode only: a fixture file in place of the bundled one. |
 | `XERO_KEEP_REFERENCE` | configuration | `on` (the default) keeps free text from Xero records in the copy: invoice and payment references and line descriptions. The Import matches on them. `off` stores those fields empty. |
 | `XERO_MIRROR_PAGE_SIZE` | configuration | Records per mirror call. Default 200, at most 1000. |

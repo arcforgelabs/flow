@@ -181,9 +181,13 @@ async function writeLink(db, organisationId, priceItemId, { system, externalId }
   const record = catalogue.byId.get(String(externalId ?? ''));
   if (!record) throw notFound(`${catalogue.name} record`);
   return db.transaction(async (tx) => {
-    await tx.delete(priceItemLinks).where(and(
+    // The record's earlier link, if any. A link taken from another Flow item
+    // is named in the answer (`movedFrom`), so the caller can say which item
+    // lost it: that item no longer sends as this record.
+    const earlier = await tx.delete(priceItemLinks).where(and(
       eq(priceItemLinks.organisationId, organisationId), eq(priceItemLinks.system, system), eq(priceItemLinks.externalId, String(record.id)),
-    ));
+    )).returning({ priceItemId: priceItemLinks.priceItemId });
+    const movedFrom = earlier.find((l) => l.priceItemId !== item.id)?.priceItemId ?? null;
     if (catalogue.kind === 'accounting') {
       await tx.delete(priceItemLinks).where(and(
         eq(priceItemLinks.organisationId, organisationId), eq(priceItemLinks.system, system), eq(priceItemLinks.priceItemId, item.id),
@@ -192,7 +196,7 @@ async function writeLink(db, organisationId, priceItemId, { system, externalId }
     const [row] = await tx.insert(priceItemLinks).values({
       organisationId, priceItemId: item.id, system, externalId: String(record.id), externalCode: record.code ?? null, matchedBy: 'person', createdBy: personId,
     }).returning();
-    return row;
+    return movedFrom ? { ...row, movedFrom } : row;
   });
 }
 
@@ -252,6 +256,13 @@ export function findingsFor(item, links, catalogues) {
       }
       if (record.taxCode && record.taxCode !== item.taxCode) {
         findings.push({ ...base, kind: 'tax', flow: item.taxCode, other: record.taxCode });
+      }
+      // Invoices send the linked accounting item. When another item there has
+      // the Flow code, the link decides which one (and its sales account): a
+      // person should confirm the link is the right one.
+      if (catalogue.kind === 'accounting' && record.code !== item.code
+        && catalogue.items.some((other) => other.code === item.code && String(other.id) !== String(link.externalId))) {
+        findings.push({ ...base, kind: 'code', flow: item.code, other: record.code });
       }
     }
   }

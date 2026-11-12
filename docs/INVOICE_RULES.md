@@ -142,6 +142,12 @@ itself. Turn the rule off, and its drafts are checked as usual again.
 | `customer_billable` | yes or no | The customer's `billable` setting | is |
 | `line_item` | menu of price items | The item codes on the job's lines | has, does not have |
 | `line_share` | price item and percent | That item's lines as a share of the other lines, to within 1 cent | is, is not |
+| `accounting_item` | yes or no | Every line with a price item sends as an item the accounting system sells (Xero: the linked item, else the item with the same code). A line booked to an account does not count. No value while no accounting system is connected or its item list was never read, so no rule on it matches then. The reason names the codes that do not send | is |
+
+A lab that must never invoice an item its accounting system does not hold
+adds a rule "Every item is in accounting is no", Then wait (or Pending, with a
+note such as "Link the item in Price list"). The send check still refuses such
+a line; the rule stops the job before its draft.
 
 Text and menu values match in any case and with spaces trimmed. A value that
 Flow knows is picked from a menu, never typed: `GET /api/invoicing/rule-fields`

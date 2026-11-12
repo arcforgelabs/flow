@@ -31,14 +31,17 @@ export const exampleAdapter = {
 
 The capabilities are `pullWorkItems`, `pullHistoryJobs`, `pushInvoice`, `pushBill`,
 `pullPayments`, `checkInvoice`, `listCustomers`, `createCustomer`, `findInvoices`, `listWork`,
-`billableJobs`, `workJobPresence`, `listPriceItems`, `jobIssues`, `moveWork`, `cancelMove`, `personSettings`,
+`billableJobs`, `workJobPresence`, `listPriceItems`, `itemMatches`, `jobIssues`, `moveWork`, `cancelMove`, `personSettings`,
 `setPersonSetting`, `captureError`, `browserMonitoring`, `traceSpan`, `traceRequest`, `alerts` and
 `health`. `alerts({ organisationId })` answers what only a person can clear,
 for the quiet alert on the Integrations page (docs/ALERTS.md).
 `listPriceItems({ organisationId })` answers the system's own price list from
 the adapter's copy, never a live call: `{ kind, syncedAt, items }`, `kind`
 `accounting` or `work`, each item `{ id, code, name, unitAmountCents,
-taxCode, sold }` (`docs/PRICE_LIST.md`). `listWork({ organisationId })`
+taxCode, sold }` (`docs/PRICE_LIST.md`). `itemMatches({ organisationId,
+codes })` answers the Flow price codes that send as an item the system sells,
+from its copy, or null while it is not connected or its items were never read
+(the rule field `accounting_item`, `docs/INVOICE_RULES.md`). `listWork({ organisationId })`
 answers the work system's jobs for the Jobs board from the adapter's own copy,
 never a live call: `{ items, statuses }`, each item with its `sourceSystem`,
 `sourceJobRef`, `status`, `clientName`, `practitioner`, dates, lines and

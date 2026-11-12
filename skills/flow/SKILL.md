@@ -139,8 +139,31 @@ How to read `price-list`:
 - `items`: each Flow code with its `links` (the linked Xero item or Seazona
   product, as `record`) and `findings`. A finding `kind` is `price` (Flow and
   the other system differ: `flow` and `other` in cents), `tax`, `missing` (the
-  linked record is gone) or `not_linked` (no Xero item for this code).
+  linked record is gone), `not_linked` (no Xero item for this code) or `code`
+  (the linked Xero item has another code while another Xero item has the
+  Flow code: check that the link is the right one).
 - `unlinked`: Xero items and Seazona products that no Flow code has yet.
+
+How the three lists fit:
+
+- Each system keeps its own names and codes. Flow joins them by links, never
+  by renaming. Do not ask the person to rename a record only to match.
+- Many Seazona products can link to one Flow code (two names, one price).
+  One Flow code has one Xero item at most.
+- A send uses the Xero link (by Xero's id), so a Flow code can send as a
+  Xero item with another code. With no link, it sends as the same code.
+- A link to a record that another code had moves it. The answer has `moved`
+  (`price-links`) or `movedFrom` (one link): tell the person which code
+  lost it.
+- The rule field `accounting_item` ("Every item is in accounting") holds a job
+  with a line whose code does not send as a Xero item that sells. The reason
+  names the codes. A lab that must never invoice an item Xero does not have
+  keeps one such rule (Then wait, or pending with a note).
+
+Before you call a difference a new price or a new product, check the mapping:
+a wrong line mapping, a wrong link or a rule is the usual cause. Prices and
+products change seldom. Read the line's `line-labels` row, its mapping and
+the code's links first, and say which one is wrong.
 
 Reconcile steps:
 

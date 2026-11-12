@@ -8,7 +8,7 @@ import {
   autoDraftJobs, effectiveSettings, INVOICING_DEFAULTS, readCustomerBilling, readInvoicingSettings, ruleBlockers,
   saveCustomerBilling, saveInvoicingSettings, sendModeSummary,
 } from '../server/core/invoicing-rules.js';
-import { starterRules } from '../server/core/invoice-rules.js';
+import { createRule, deleteRule, starterRules } from '../server/core/invoice-rules.js';
 import { listAutomations, runAutomations, saveAutomation, statusMatches, workStatuses } from '../server/core/automations.js';
 import { explainObligation, observeJob, recordAccountingEvidence, setReady } from '../server/core/ledger.js';
 import { billingObligations, invoices } from '../server/db/schema.js';
@@ -232,6 +232,20 @@ describe('drafts by rule', { skip: skipWithoutDatabase }, () => {
     assert.equal(after.accountingCheckedAt.getTime(), later.getTime(), 'the matcher checked the job again');
     assert.ok(after.invoiceId);
     copy.state.changedAt = new Date(NOW.getTime() - 60_000);
+  });
+
+  test('a rule on accounting items holds a job whose item the accounting system does not sell', async () => {
+    copy = { state: { complete: true, fresh: true, changedAt: new Date(NOW.getTime() - 60_000) }, invoices: [] };
+    const rule = await createRule(handle.db, lab.id, { name: 'No Xero item', conditions: [{ field: 'accounting_item', test: 'is', value: false }], action: { kind: 'wait' } });
+    let selling = [];
+    const items = { ...accounting, capabilities: { ...accounting.capabilities, itemMatches: async () => selling } };
+    const row = await cleared();
+    assert.equal((await autoDraftJobs(handle.db, lab.id, { accounting: items, now: NOW })).drafted, 0);
+    assert.equal((await reload(row)).invoiceId, null);
+    selling = ['CROWN'];
+    assert.equal((await autoDraftJobs(handle.db, lab.id, { accounting: items, now: NOW })).drafted, 1);
+    assert.ok((await reload(row)).invoiceId);
+    await deleteRule(handle.db, lab.id, rule.id);
   });
 
   test('the automations mark jobs ready from their status, then draft them; each is on or off', async () => {

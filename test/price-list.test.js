@@ -167,6 +167,16 @@ describe('price list against PostgreSQL', { skip: skipWithoutDatabase }, () => {
       [['FLD', 'x-new'], ['SPT', 'x-spt']]);
   });
 
+  test('taking a record another Flow item holds says which item lost it', async () => {
+    const list = await readPriceList(handle.db, lab.id, { catalogues: await catalogues() });
+    const fldId = list.items.find((i) => i.code === 'FLD').id;
+    const sptId = list.items.find((i) => i.code === 'SPT').id;
+    const moved = await linkPriceItem(handle.db, lab.id, fldId, { system: 'accounts', externalId: 'x-spt' }, { catalogues: await catalogues() });
+    assert.equal(moved.movedFrom, sptId);
+    const again = await linkPriceItem(handle.db, lab.id, fldId, { system: 'accounts', externalId: 'x-spt' }, { catalogues: await catalogues() });
+    assert.equal(again.movedFrom, undefined);
+  });
+
   test('the API: anyone reads the list, an owner or admin changes it', async () => {
     const read = await call('/price-list');
     assert.equal(read.status, 200);
@@ -204,5 +214,16 @@ describe('price list against PostgreSQL', { skip: skipWithoutDatabase }, () => {
     const left = list.unlinked.find((u) => u.system === 'worksystem').records.map((r) => r.id);
     assert.ok(!left.includes('p-20') && !left.includes('p-21'));
     assert.deepEqual(list.items.find((i) => i.code === 'NG').links.map((l) => [l.externalId, l.matchedBy]), [['p-20', 'person']]);
+    // A product another code had moves, and the answer says from where.
+    const moved = await call('/price-links', { method: 'POST', body: { links: [{ priceItemId: sport.id, system: 'worksystem', externalId: 'p-20' }] } });
+    assert.deepEqual(moved.body.moved, [{ priceItemId: sport.id, system: 'worksystem', externalId: 'p-20', movedFrom: guard.id }]);
   });
+});
+
+test('a link to another accounting item while one has the Flow code is a code finding', () => {
+  const item = { code: 'CRN', unitAmountCents: 100, taxCode: 'GST' };
+  const items = [{ id: 'x1', code: 'CRN', unitAmountCents: 100, taxCode: 'GST' }, { id: 'x2', code: 'CRN-B', unitAmountCents: 100, taxCode: 'GST' }];
+  const catalogues = new Map([['xero', { id: 'xero', kind: 'accounting', items, byId: new Map(items.map((i) => [i.id, i])) }]]);
+  assert.deepEqual(findingsFor(item, [{ system: 'xero', externalId: 'x2' }], catalogues).map((f) => [f.kind, f.other]), [['code', 'CRN-B']]);
+  assert.deepEqual(findingsFor(item, [{ system: 'xero', externalId: 'x1' }], catalogues), []);
 });

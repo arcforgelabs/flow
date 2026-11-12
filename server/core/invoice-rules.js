@@ -69,7 +69,42 @@ export const FIELDS = Object.freeze({
   customer_billable: { label: 'Customer is billable', kind: 'boolean', read: (j, { customer }) => customer.billable !== false },
   line_item: { label: 'Line item', kind: 'items', options: 'items', read: (j) => (j.lines ?? []).flatMap((l) => [norm(l.itemCode), norm(l.label)].filter(Boolean)) },
   line_share: { label: 'Line share of other lines (%)', kind: 'share', options: 'items', read: (j) => j.lines ?? [] },
+  // Each line with a price item sends as an item of the accounting system
+  // (Xero: a linked item that sells, else the item with the same code). A
+  // line booked to an account has no item, so it does not count. `items` is
+  // the Flow codes that send (accountingItemsFor). It is null when no
+  // accounting system is on or its list was never read: then the field has
+  // no value and no rule on it matches.
+  accounting_item: {
+    label: 'Every item is in accounting', kind: 'boolean', accounting: true,
+    read: (j, { items }) => (items ? !missingItems(j, items).length : null),
+    detail: (j, { items }) => (items && missingItems(j, items).length ? `not in accounting: ${missingItems(j, items).join(', ')}` : null),
+  },
 });
+
+// The codes on a job's lines that do not send as an accounting item.
+function missingItems(job, items) {
+  return [...new Set((job.lines ?? []).map((l) => l.itemCode).filter((c) => c && !items.has(c)))];
+}
+
+// The Flow codes that send as an item in the accounting system, for the rules
+// that read `accounting_item`. Null when no enabled rule reads it, or when no
+// accounting system answers (not connected, or its list was never read).
+// `jobs` are the jobs the rules will read, so one call serves a whole run.
+export async function accountingItemsFor(accounting, organisationId, rules, jobs) {
+  if (typeof accounting?.capabilities?.itemMatches !== 'function') return null;
+  if (!rules.some((r) => r.enabled && r.conditions.some((c) => FIELDS[c.field]?.accounting))) return null;
+  const codes = [...new Set(jobs.flatMap((j) => (j.lines ?? []).map((l) => l.itemCode).filter(Boolean)))];
+  const matched = await accounting.capabilities.itemMatches({ organisationId, codes });
+  return matched ? new Set(matched) : null;
+}
+
+// What a matched rule's fields say about this job, such as the codes not in
+// accounting, so the note names the line to fix.
+function detailOf(rule, job, context) {
+  const parts = [...new Set(rule.conditions.map((c) => FIELDS[c.field].detail?.(job, context)).filter(Boolean))];
+  return parts.length ? ` (${parts.join('; ')})` : '';
+}
 
 export const TESTS = Object.freeze({
   number: ['more_than', 'at_most', 'is', 'is_not', 'is_empty'],
@@ -206,22 +241,26 @@ function matches(condition, job, context) {
 // The reasons the enabled rules give for one job, in rule order. An empty list
 // means no rule stops its draft. `customer` is the customer's own billing
 // settings (invoicing-rules.js).
-const waitingRules = (rules, job, { customer = {}, now = new Date() } = {}) => rules
+// `items`: the Flow codes that send as accounting items (accountingItemsFor).
+const contextOf = ({ customer = {}, now = new Date(), items = null } = {}) => ({ customer, now, items });
+const waitingRules = (rules, job, context) => rules
   .filter((rule) => rule.enabled && rule.trigger === 'job_ready' && !['pending', 'non_chargeable'].includes(rule.action.kind))
-  .filter((rule) => rule.conditions.every((c) => matches(c, job, { customer, now })));
-const waitMessage = (rule) => rule.action.kind === 'skip'
-  ? `rule "${rule.name}": not drafted by rule` : `rule "${rule.name}": waits for a person`;
+  .filter((rule) => rule.conditions.every((c) => matches(c, job, context)));
+const waitMessage = (rule, job, context) => (rule.action.kind === 'skip'
+  ? `rule "${rule.name}": not drafted by rule` : `rule "${rule.name}": waits for a person`) + detailOf(rule, job, context);
 
 // Keep the text-only reason API for draft checks, including evaluation of
 // starter rules before they are saved. Selection/text have one owner here.
 export function ruleReasons(rules, job, options) {
-  return waitingRules(rules, job, options).map(waitMessage);
+  const context = contextOf(options);
+  return waitingRules(rules, job, context).map((rule) => waitMessage(rule, job, context));
 }
 
 // Pending work needs the saved rule identity, just as a Pending invoice does.
 export function ruleWait(rules, job, options) {
-  return waitingRules(rules, job, options).map((rule) => ({ code: 'rule',
-    message: waitMessage(rule), short: rule.name.slice(0, 40), rule: rule.id,
+  const context = contextOf(options);
+  return waitingRules(rules, job, context).map((rule) => ({ code: 'rule',
+    message: waitMessage(rule, job, context), short: rule.name.slice(0, 40), rule: rule.id,
     resolution: ruleResolution(rule),
   }));
 }
@@ -239,8 +278,8 @@ const ruleResolution = (rule) => {
 // A rule leaves a job alone when a person made an exception for it
 // (`job.ruleExceptions`, rule ids), or, for a rule with `addItem`, when the
 // draft already has that item (`job.draftItems`, codes): the fix was taken.
-export function rulePending(rules, job, { customer = {}, now = new Date() } = {}) {
-  const context = { customer, now };
+export function rulePending(rules, job, options) {
+  const context = contextOf(options);
   const excepted = new Set(job.ruleExceptions ?? []);
   const onDraft = new Set((job.draftItems ?? []).map(norm));
   return rules
@@ -248,7 +287,7 @@ export function rulePending(rules, job, { customer = {}, now = new Date() } = {}
     .filter((r) => !excepted.has(r.id) && !(r.action.addItem && onDraft.has(norm(r.action.addItem))))
     .filter((r) => r.conditions.every((c) => matches(c, job, context)))
     .map((r) => ({
-      code: 'rule', message: r.action.note, short: r.name.slice(0, 40), rule: r.id ?? null, fields: [...new Set(r.conditions.map((c) => c.field))],
+      code: 'rule', message: r.action.note + detailOf(r, job, context), short: r.name.slice(0, 40), rule: r.id ?? null, fields: [...new Set(r.conditions.map((c) => c.field))],
       resolution: ruleResolution(r), ...(r.action.addItem ? { addItem: r.action.addItem } : {}),
     }));
 }
@@ -257,8 +296,8 @@ export function rulePending(rules, job, { customer = {}, now = new Date() } = {}
 // A person drafted the job by hand, or the rule was made after the draft.
 // The list shows the rule's name. The note says to void the draft or change
 // the rule. A wait rule does not hold a draft: a person may still send one.
-export function ruleSkip(rules, job, { customer = {}, now = new Date() } = {}) {
-  const context = { customer, now };
+export function ruleSkip(rules, job, options) {
+  const context = contextOf(options);
   return rules
     .filter((r) => r.enabled && r.trigger === 'job_ready' && r.action.kind === 'skip')
     .filter((r) => r.conditions.every((c) => matches(c, job, context)))
@@ -275,8 +314,8 @@ export function ruleSkip(rules, job, { customer = {}, now = new Date() } = {}) {
 // The enabled non-chargeable rules that match one draft's job (sending.js):
 // the draft is on the Non-chargeable tab, never on Pending or Ready, and
 // Send never sends it.
-export function ruleNonChargeable(rules, job, { customer = {}, now = new Date() } = {}) {
-  const context = { customer, now };
+export function ruleNonChargeable(rules, job, options) {
+  const context = contextOf(options);
   return rules
     .filter((r) => r.enabled && r.trigger === 'job_ready' && r.action.kind === 'non_chargeable')
     .filter((r) => r.conditions.every((c) => matches(c, job, context)))

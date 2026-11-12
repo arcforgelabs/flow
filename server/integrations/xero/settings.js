@@ -163,6 +163,8 @@ export function resolveXeroSettings(env = process.env) {
 
   const invoiceNumber = (readEnv(env, 'XERO_INVOICE_NUMBER') || 'xero').toLowerCase();
   if (!['xero', 'flow'].includes(invoiceNumber)) throw new Error('XERO_INVOICE_NUMBER must be "xero", "flow" or unset');
+  const lineText = (readEnv(env, 'XERO_LINE_TEXT') || 'flow').toLowerCase();
+  if (!['flow', 'item'].includes(lineText)) throw new Error('XERO_LINE_TEXT must be "flow", "item" or unset');
 
   return {
     mode,
@@ -184,6 +186,9 @@ export function resolveXeroSettings(env = process.env) {
     tracking: resolveTracking(env),
     defaultDueDays: readPositiveInteger(env, 'XERO_DEFAULT_DUE_DAYS', DEFAULT_DUE_DAYS),
     invoiceNumber,
+    // The text on each Xero line with an item: `flow` (default) the Flow
+    // line's own text; `item` the Xero item's name.
+    lineText,
     replayFixtures: readEnv(env, 'XERO_REPLAY_FIXTURES') || null,
     // Free text on Xero records (references, line descriptions) is the lab's
     // own data, and the Import matches on it. On unless the lab turns it off.

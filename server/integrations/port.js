@@ -37,6 +37,7 @@ export const CAPABILITIES = Object.freeze([
   'createCustomer', // { organisationId, contactId, actor }: create the system's customer from the Flow contact. Answers { outcome, contact }. Xero, when Create missing clients is on.
   'findInvoices', // sales invoices in the accounting system's copy, for the matcher; never a live call
   'readChanges', // { state: fresh | read | unavailable }: the accounting system's latest changes into its copy now, just before Flow drafts or sends (read before act)
+  'itemMatches', // { organisationId, codes } -> the Flow price codes that send as an item the system sells (Xero: linked item, else same code), from its copy; null while not connected or its item list was never read; never a live call
   'listPriceItems', // the system's own price list from its copy in Flow, for the price list's links and check; never a live call
   'health', // connection state for Settings
   'alerts', // what only a person can clear (a refused sign-in, stopped calls), for the Integrations page; reads Flow's data only
