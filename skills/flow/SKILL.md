@@ -78,6 +78,34 @@ confirm.
 Sending: Flow sends each invoice to Xero as a draft unless the "Approve and
 email" setting is on (`invoicing/settings`). Say which one applies before a send.
 
+## Share links
+
+When you name an invoice, a job or a contact to a person, give its Flow link.
+Never search GitHub or guess a path: `flow.sh link` prints the address.
+
+| Link to | Command | Id to use |
+| --- | --- | --- |
+| An invoice | `flow.sh link invoice <id>` | the invoice's `id`, or a job's `invoiceId`. Never the invoice number |
+| A job's Reconcile page | `flow.sh link reconcile <id>` | a job's `id` from `invoicing/jobs` only (never an invoice id) |
+| A job on the Jobs board | `flow.sh link job <case number>` | the job's `caseRef`; if it is empty, its `sourceJobRef` |
+| A contact | `flow.sh link contact <id>` | the contact's `id` |
+
+For a job that has an `invoiceId`, give the invoice link: it opens that one
+record. The Jobs link is a search, so it can also show other jobs whose text
+holds the same number. Use it only for a job with no invoice.
+
+Paste the command's output as a Markdown link with a short label, one per line.
+For example, the commands print addresses like these:
+
+```
+- [INV-0123](https://flow.example.com/invoices/3f6c2a1e-8b4d-4c2f-9a7e-1d2b3c4d5e6f)  $242.00, Pending: add shipping
+- [Case 3716](https://flow.example.com/jobs?q=3716)  shipped, no invoice yet
+```
+
+Never type or change an address yourself. If `flow.sh link` says the id is not
+a UUID, read the record first (`flow.sh get 'invoicing/invoices?q=<number>'`)
+and use its `id`.
+
 ## Prices and price codes
 
 Flow's price list is the lab's own list of codes and prices
@@ -150,6 +178,23 @@ Answers are `{ "ok": true, "data": ... }`, as Seazona gives them. If the owner
 turned on "Hide patient details", patient, note, file and clinical fields are
 left out. Do not copy patient names outside this chat. 429: wait a
 minute and try once more.
+
+## Fix a problem Flow shows
+
+Flow's message is a flag, not the answer. Seazona (the jobs) and Xero (the
+invoices and payments) are the sources of truth. Before you fix or explain a
+problem, read each system the problem names, through Flow:
+
+1. Flow's record: `flow.sh get invoicing/invoices/<id>` or
+   `flow.sh get invoicing/jobs/<job id>/reconcile`.
+2. Seazona's record: `flow.sh get seazona/api/invoices/<Seazona invoice id>`
+   or `flow.sh get seazona/api/orders/<order id>`.
+3. Xero's record: `flow.sh post xero/invoices/status '{"organisationId":"<org>","invoiceIds":["<Flow invoice id>"]}'`.
+
+Compare the three. Say which system is wrong, and why, before you change
+anything. If Seazona's own fields disagree (for example its subtotal is 0 but
+its total matches the lines), say so: Flow's check may be a false alarm. Do not
+change Flow to hide it. Ask the person before any send, void or tax change.
 
 ## Reconcile: Seazona jobs, Flow invoices, Xero
 
