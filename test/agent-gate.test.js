@@ -76,7 +76,7 @@ describe('agent gate lifecycle and host share',{skip:skipWithoutDatabase},()=>{
       return c;
     }};
     const a=express(),gate=createAgentGate({pool:slowAudit,resource,verify,log:quiet});
-    a.post('/',gate.handle(async(_req,res)=>res.json({ok:true})));
+    a.post('/',rateLimit({limit:120,windowMs:60000}),gate.handle(async(_req,res)=>res.json({ok:true})));
     for(let n=0;n<6;n++){const res=await call(a);assert.equal(res.statusCode,200,res.body);}
     await reset();
   });
