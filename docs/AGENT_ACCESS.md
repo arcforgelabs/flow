@@ -28,6 +28,11 @@ Flow for the lab. It is separate from the MCP door below and is off by default.
 3. The host sets two settings and restarts Flow:
    `FLOW_AGENT_KEY_SHA256=<that digest>` and `FLOW_AGENT_EMAIL=<that person>`.
    Flow holds only the digest. The key never leaves the assistant's machine.
+4. A second assistant gets its own key and its own Flow person: set
+   `FLOW_AGENT_KEY_SHA256_2` and `FLOW_AGENT_EMAIL_2` the same way. The two
+   digests and the two people must differ. Each key acts only as its own
+   person, inside that person's role, and turning one person off stops only
+   that key. Two pairs are the most.
 
 A request with `Authorization: Bearer <key>` then acts as that person, inside
 the person's role, on `/api/me`, `/api/invoicing/…`, `/api/xero/…`,

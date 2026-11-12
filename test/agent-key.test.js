@@ -5,7 +5,7 @@ import express from 'express';
 import { createApp } from '../server/app.js';
 import { invitePerson, seedFirstOwner, updatePerson } from '../server/auth/people.js';
 import { createPersonAuth } from '../server/auth/session.js';
-import { resolveAgentKey } from '../server/auth/settings.js';
+import { resolveAgentKey, resolveAgentKeys } from '../server/auth/settings.js';
 import { createOrganisation } from '../server/core/directory.js';
 import { openReview } from '../server/core/review.js';
 import { createRegistry } from '../server/integrations/port.js';
@@ -26,6 +26,60 @@ test('the agent key needs both settings, a SHA-256 digest and a plain email', ()
   assert.throws(() => resolveAgentKey({ FLOW_AGENT_KEY_SHA256: DIGEST }), /set together/);
   assert.throws(() => resolveAgentKey({ FLOW_AGENT_EMAIL: 'assistant@example.test' }), /set together/);
   assert.throws(() => resolveAgentKey({ FLOW_AGENT_KEY_SHA256: KEY, FLOW_AGENT_EMAIL: 'assistant@example.test' }), /64 hex/);
+});
+
+test('a second agent key needs its own digest and its own person', () => {
+  const OTHER = createHash('sha256').update('second-agent-key-0123456789abcdef').digest('hex');
+  const first = { FLOW_AGENT_KEY_SHA256: DIGEST, FLOW_AGENT_EMAIL: 'assistant@example.test' };
+  assert.deepEqual(resolveAgentKeys({}), []);
+  assert.deepEqual(resolveAgentKeys(first), [{ digest: DIGEST, email: 'assistant@example.test' }]);
+  assert.deepEqual(resolveAgentKeys({ ...first, FLOW_AGENT_KEY_SHA256_2: OTHER, FLOW_AGENT_EMAIL_2: 'claude@example.test' }).map((k) => k.email), ['assistant@example.test', 'claude@example.test']);
+  assert.throws(() => resolveAgentKeys({ ...first, FLOW_AGENT_KEY_SHA256_2: OTHER }), /FLOW_AGENT_KEY_SHA256_2 and FLOW_AGENT_EMAIL_2 must be set together/);
+  assert.throws(() => resolveAgentKeys({ ...first, FLOW_AGENT_KEY_SHA256_2: DIGEST, FLOW_AGENT_EMAIL_2: 'claude@example.test' }), /must differ/);
+  assert.throws(() => resolveAgentKeys({ ...first, FLOW_AGENT_KEY_SHA256_2: OTHER, FLOW_AGENT_EMAIL_2: 'assistant@example.test' }), /must differ/);
+});
+
+describe('two agent keys against PostgreSQL', { skip: skipWithoutDatabase }, () => {
+  const SECOND = 'second-agent-key-0123456789abcdef';
+  let handle;
+  let app;
+  let second;
+  let owner;
+  before(async () => {
+    handle = await freshSeazonaDatabase();
+    await createOrganisation(handle.db, { name: 'Example Lab' });
+    owner = await seedFirstOwner(handle.db, 'owner@example.test');
+    await invitePerson(handle.db, { email: 'assistant@example.test', role: 'admin', invitedBy: owner.id });
+    second = await invitePerson(handle.db, { email: 'claude@example.test', role: 'staff', invitedBy: owner.id });
+    const clerk = fakeClerk();
+    const settings = { mode: 'clerk', keys: { publishableKey: TEST_PUBLISHABLE_KEY, proxyUrl: null } };
+    const personAuth = createPersonAuth({
+      db: handle.db, clerk, ownerGoogleDomains: ['example.test'], log: quiet,
+      agentKeys: [
+        { digest: DIGEST, email: 'assistant@example.test' },
+        { digest: createHash('sha256').update(SECOND).digest('hex'), email: 'claude@example.test' },
+      ],
+    });
+    app = createApp({ database: handle, auth: { settings, clerk, personAuth }, integrations: createRegistry({ log: quiet, env: {} }), log: quiet });
+  });
+  after(async () => handle?.close());
+
+  test('each key acts as its own person, inside that person\'s role', async () => {
+    const first = await request(app, '/api/me', { token: KEY });
+    assert.equal(first.body.person.email, 'assistant@example.test');
+    const me = await request(app, '/api/me', { token: SECOND });
+    assert.equal(me.status, 200, JSON.stringify(me.body));
+    assert.equal(me.body.person.email, 'claude@example.test');
+    const rule = { name: 'Staff cannot add rules', conditions: [{ field: 'job_total', test: 'at_most', value: 0 }], action: { kind: 'wait' } };
+    assert.equal((await request(app, '/api/invoicing/rules', { token: SECOND, method: 'POST', body: rule })).status, 403);
+    assert.equal((await request(app, '/api/invoicing/rules', { token: KEY, method: 'POST', body: rule })).status, 201);
+  });
+
+  test('turning one person off stops only that key', async () => {
+    await updatePerson(handle.db, { id: second.id, actorId: owner.id, status: 'disabled' });
+    assert.equal((await request(app, '/api/me', { token: SECOND })).body.code, 'access_disabled');
+    assert.equal((await request(app, '/api/me', { token: KEY })).status, 200);
+  });
 });
 
 describe('the agent key against PostgreSQL', { skip: skipWithoutDatabase }, () => {
