@@ -247,7 +247,7 @@ export async function renderPriceList(main, ui) {
 
     // A list Flow could not read: its differences are not shown.
     const unread = (data.unread ?? []).length
-      ? notice(`${data.unread.map((u) => u.name).join(' and ')} list not read. Its differences are not shown.`, 'warn') : null;
+      ? notice(`${data.unread.map((u) => u.name).join(' and ')} list not read, so its differences are not shown. Flow reads it again at its next sync, in a few minutes: reload this page then. If it stays, open Integrations.`, 'warn') : null;
     if (!shown.length) {
       host.replaceChildren(...[unread, h('p', { class: 'fx-empty' }, words || view.groups.length ? 'No code matches.' : tab === 'archived' ? 'No archived codes.' : 'No codes yet.')].filter(Boolean));
     } else {

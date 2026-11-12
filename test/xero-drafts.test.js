@@ -166,6 +166,24 @@ describe('Xero drafts from issued invoices', { skip: skipWithoutDatabase }, () =
     // The rule field "Every item is in accounting" counts only items that sell.
     await handle.db.execute(sql`insert into xero_items (organisation_id, xero_item_id, code, name, is_sold) values (${org}, 'i4', 'INLAY', 'Inlay', false)`);
     assert.deepEqual((await sellingCodes(handle.db, org, ['CROWN', 'BRIDGE', 'VENEER', 'NONE', 'INLAY'])).sort(), ['BRIDGE', 'CROWN']);
+
+    // Through the Send preview route: the linked code sends as Xero's item,
+    // with Flow's own line text (XERO_LINE_TEXT is not set); a gone link stops it.
+    const make = async (item) => {
+      const draft = await createDraftInvoice(handle.db, org, { contactId: practice.id, reference: `CASE-${++counter}`, lines: [{ priceItemId: item.id }] });
+      return issueInvoice(handle.db, org, draft.id, { issuedBy: 'user:test', issueDate: '2026-10-18' });
+    };
+    const [linked, gone] = [await make(bridge), await make(veneer)];
+    const res = await request(app, '/api/xero/invoices/preview', {
+      token: lab.staffToken, method: 'POST', body: { organisationId: org, invoiceIds: [linked.id, gone.id] },
+    });
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    const [a, b] = res.body.invoices;
+    assert.deepEqual(a.problems, []);
+    assert.equal(a.draft.LineItems[0].ItemCode, 'BR-X');
+    assert.equal(a.draft.LineItems[0].Description, 'Bridge');
+    assert.equal(b.state, 'blocked');
+    assert.equal(b.problems[0].code, 'xero_item_missing');
   });
 
   test('preview shows the draft and what stops it, without calling Xero', async () => {
