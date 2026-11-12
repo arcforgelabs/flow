@@ -217,12 +217,9 @@ const isoDay = (at) => `${at.getFullYear()}-${String(at.getMonth() + 1).padStart
 // no invoice with the job's own invoice number. Another customer's invoice
 // with the same number is not this job's: when the job's customer is linked to
 // an accounting contact (`db` given), only that contact's invoices count.
-<<<<<<< HEAD
 // Send's window for the same client and Reference (xero/drafts.js).
 const SAME_REFERENCE_DAYS = 90;
 
-=======
->>>>>>> origin/claude/project-thread-whtsjv
 export function copyCheck(accounting, organisationId, { db = null } = {}) {
   const contactOf = async (contactId) => {
     if (!db || !contactId) return null;
@@ -232,11 +229,7 @@ export function copyCheck(accounting, organisationId, { db = null } = {}) {
     ));
     return link?.externalId ?? null;
   };
-<<<<<<< HEAD
   return async (obligation, { reference = null } = {}) => {
-=======
-  return async (obligation) => {
->>>>>>> origin/claude/project-thread-whtsjv
     const { complete, fresh, changedAt, invoices } = await accounting.capabilities.findInvoices({
       organisationId,
       numbers: obligation.sourceInvoiceRef ? [obligation.sourceInvoiceRef] : [],
@@ -248,13 +241,9 @@ export function copyCheck(accounting, organisationId, { db = null } = {}) {
       throw new Error('the accounting copy changed after the job was last matched');
     }
     const xeroContactId = await contactOf(obligation.contactId);
-<<<<<<< HEAD
     const live = invoices.filter((i) => !['voided', 'deleted'].includes(i.state));
     const sameNumber = (i) => obligation.sourceInvoiceRef && String(i.number ?? '').toUpperCase() === obligation.sourceInvoiceRef.toUpperCase();
     const sales = live.filter((i) => sameNumber(i) && (!xeroContactId || i.contactId === xeroContactId));
-=======
-    const sales = invoices.filter((i) => !['voided', 'deleted'].includes(i.state) && (!xeroContactId || i.contactId === xeroContactId));
->>>>>>> origin/claude/project-thread-whtsjv
     if (sales.length) return { state: sales[0].state, accountingRef: sales[0].id, matchedBy: 'copy' };
     // The same client and Reference as this draft, within Send's window: Send
     // would stop it (xero/drafts.js), so the draft is not made. A person
