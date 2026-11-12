@@ -221,6 +221,23 @@ describe('the agent key against PostgreSQL', { skip: skipWithoutDatabase }, () =
     assert.equal(calls.length, 5);
   });
 
+  test('Seazona reads through Flow take a share of the minute and leave the rest to the sync', async () => {
+    let clock = Date.parse('2026-11-12T22:00:00Z');
+    let calls = 0;
+    const read = async (path) => { calls += 1; return { path }; };
+    const seazona = express().use('/api/seazona', createSeazonaRouter({ db: handle.db, personAuth, read, apiReadsPerMinute: 2, now: () => clock, log: quiet }));
+    const get = (id) => request(seazona, `/api/seazona/api/clients/${id}`, { token: KEY });
+    assert.equal((await get(1)).status, 200);
+    clock += 20_000;
+    assert.equal((await get(2)).status, 200);
+    const third = await get(3);
+    assert.equal(third.status, 429);
+    assert.match(third.body.error, /in 40 s/);
+    assert.equal(calls, 2, 'a refused read never reaches Seazona');
+    clock += 40_000;
+    assert.equal((await get(4)).status, 200);
+  });
+
   test('the key gets its skill from this Flow, and only the skill files', async () => {
     const { readFile } = await import('node:fs/promises');
     for (const file of ['SKILL.md', 'flow.sh']) {
