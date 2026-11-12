@@ -1,0 +1,6 @@
+<!-- @dsCard group="Actions" height=90 -->
+<div class="fds-row" id="root"></div>
+<script>
+const { copyButton } = window.FlowDesignSystem;
+document.getElementById('root').append(copyButton({ label: 'Copy prompt', text: () => 'A Flow invoice has a problem.', copied: 'Prompt copied.' }));
+</script>

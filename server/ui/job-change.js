@@ -46,7 +46,7 @@ export function changeRows(change, money) {
 // The sentence after "Problem." One fact per sentence.
 export function changeSummary(change, rowCount) {
   const system = change.systemName ?? 'the work system';
-  if (change.sourceReview) return 'Check the source invoice amounts.';
+  if (change.sourceReview) return `${system} invoice amounts differ from Flow's.`;
   const count = `${rowCount} ${rowCount === 1 ? 'change' : 'changes'}.`;
   if (change.canAdopt) return `Changed in ${system}. ${count}`;
   if (change.sent) return `Changed in ${system} after sending. ${count}`;
@@ -55,7 +55,9 @@ export function changeSummary(change, rowCount) {
 
 // The banner. `onAccept` runs "Accept change"; it is shown while the draft
 // is not sent (ledger.js, canAccept). `onRecheck` reads the job again.
-export function jobChangeBanner(ui, change, { money, onAccept = null, onRecheck = null }) {
+// `prompt()`, when given, adds the "Copy prompt" icon button
+// (problem-prompt.js): the full detail for a connected agent.
+export function jobChangeBanner(ui, change, { money, onAccept = null, onRecheck = null, prompt = null }) {
   const { h } = ui;
   const system = change.systemName ?? 'the work system';
   const rows = changeRows(change, money);
@@ -82,6 +84,7 @@ export function jobChangeBanner(ui, change, { money, onAccept = null, onRecheck 
       },
     }, source ? 'Recheck' : h('span', { class: 'fx-lucide', style: '--icon: url(/assets/icons/refresh-cw.svg)', 'aria-hidden': 'true' }))
     : null;
+  const copy = prompt && ui.copyButton ? ui.copyButton({ label: 'Copy prompt', text: prompt, copied: 'Prompt copied. Paste it to your agent.' }) : null;
   const body = h('tbody', {});
   const cell = (area, label, value, num) => h('td', {
     class: num ? 'fx-num' : '', ...(source ? { 'data-area': area, 'data-label': label } : {}),
@@ -103,7 +106,6 @@ export function jobChangeBanner(ui, change, { money, onAccept = null, onRecheck 
     h('p', { class: 'fx-change__note' }, `Source invoice: ${change.sourceInvoiceRef ?? 'Not supplied'}.${change.caseRef ? ` Case: ${change.caseRef}.` : ''}`),
     h('p', {}, 'Flow cannot tell which amount is wrong.'),
     h('p', { class: 'fx-change__note' }, 'Difference = Flow job lines minus source invoice. Do not divide a source invoice total between jobs.'),
-    source.unknownTaxLines.length ? h('p', {}, `Tax is unknown on ${source.unknownTaxLines.map((line) => `line ${line.position}${line.description ? ` (${line.description})` : ''}`).join(', ')}. Flow cannot calculate GST or the total.`) : null,
     h('ol', {},
       h('li', {}, change.link?.exact ? `Open the job in ${system}, then check its linked invoice.` : `Open ${system}${change.link ? ' with its link' : ' separately'}. Find ${change.caseRef ? `case ${change.caseRef}` : order ?? 'the linked job'}, then check the source invoice.`),
       h('li', {}, 'Check each price, quantity, discount and tax value against the source facts.'),
@@ -111,7 +113,6 @@ export function jobChangeBanner(ui, change, { money, onAccept = null, onRecheck 
       h('li', {}, 'If a Flow mapping is wrong, correct it in Price codes or Price list.'),
       h('li', {}, change.canRecheck === false ? 'Ask an administrator to restore the source connection, then return here.' : 'Return here and select Recheck. Flow reads the source again. It does not send this invoice.')),
     h('div', { class: 'fx-change__acts' }, inFlow('/invoicing-settings/price-codes', 'Price codes'), inFlow('/price-list', 'Price list')),
-    change.canRecheck === false ? h('p', {}, `Flow cannot read this job from ${system}.`) : null,
     h('details', {}, h('summary', {}, 'Saved invoice'),
       h('p', {}, 'These saved Flow amounts do not change when you recheck.'),
       h('dl', { class: 'fx-facts' }, [['Subtotal', 'subtotalCents'], ['GST', 'taxCents'], ['Total', 'totalCents']].flatMap(([label, key]) => [h('dt', {}, label), h('dd', {}, money(source.savedInvoice[key]))])),
@@ -122,22 +123,27 @@ export function jobChangeBanner(ui, change, { money, onAccept = null, onRecheck 
   return applyPhoneRule(h('section', { class: 'fx-change', role: 'alert', 'aria-label': source ? 'Source invoice comparison' : 'Job comparison' },
     h('div', { class: 'fx-change__head' },
       h('p', {}, h('strong', {}, 'Problem.'), ' ', changeSummary(change, rows.filter((row) => row.field !== 'Total').length)),
-      h('div', { class: 'fx-change__acts' }, link, accept, recheck)),
+      h('div', { class: 'fx-change__acts' }, link, accept, recheck, copy)),
     !source && !change.link && order ? h('p', { class: 'fx-change__note' }, `Find ${order} in ${system} to fix it there.`) : null,
-    rows.length ? h('div', { class: 'fx-change__scroll' }, table) : null,
-    sourceSteps,
-    more), 'jobChangeBanner');
+    // Facts a person must see stay outside Details.
+    source?.unknownTaxLines.length ? h('p', {}, `Tax is unknown on ${source.unknownTaxLines.map((line) => `line ${line.position}${line.description ? ` (${line.description})` : ''}`).join(', ')}. Flow cannot calculate GST or the total.`) : null,
+    source && change.canRecheck === false ? h('p', {}, `Flow cannot read this job from ${system}.`) : null,
+    // The source comparison is long: it folds away, and Copy prompt carries it.
+    source ? h('details', { class: 'fx-change__details' }, h('summary', {}, 'Details'),
+      rows.length ? h('div', { class: 'fx-change__scroll' }, table) : null, sourceSteps)
+      : [rows.length ? h('div', { class: 'fx-change__scroll' }, table) : null, more]), 'jobChangeBanner');
 }
 
 // The banner with Accept change and the recheck wired, for the invoice page
 // and a job's Review sidecar (jobs.js). `canAccept`: the person may change
 // drafts (owners and admins). `unsaved()`: edits on the page that Accept
 // would lose. `done(invoice)` hears the invoice after Accept or a recheck.
-export function jobChangeReview(ui, change, { money, canAccept = false, unsaved = () => false, done = () => {} }) {
+export function jobChangeReview(ui, change, { money, canAccept = false, unsaved = () => false, done = () => {}, prompt = null }) {
   const { h, flow, toast } = ui;
   const system = change.systemName;
   return jobChangeBanner(ui, change, {
     money,
+    prompt,
     onAccept: !canAccept ? null : async () => {
       const lost = [change.outcome === 'conflict' ? 'Your own line changes here are replaced.' : null, unsaved() ? 'Unsaved changes are lost.' : null].filter(Boolean);
       if (lost.length) {

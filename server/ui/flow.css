@@ -237,6 +237,7 @@ body:is([data-state="off"], [data-state="error"], [data-state="no-access"]) .fx-
 .fx-change__head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; }
 .fx-change__acts { display: flex; flex-wrap: wrap; gap: 8px; }
 .fx-change__note { font-size: 13px; color: var(--t-dim); }
+.fx-copy__text { width: 100%; min-height: 200px; padding: 8px 10px; font-family: ui-monospace, monospace; font-size: 12px; resize: vertical; }
 .fx-change__recheck { width: 30px; }
 .fx-change__recheck .fx-lucide { width: 14px; height: 14px; }
 .fx-change__recheck.is-busy .fx-lucide { animation: fx-spin 1s linear infinite; }

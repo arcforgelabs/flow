@@ -149,7 +149,14 @@ export function sourceBillingProblems(obligation) {
   const lines = obligation.lines ?? [];
   if (lines.some((line) => line.taxCode === null)) reasons.push('a source line has unknown tax treatment');
   const calculated = invoiceTotals(lines);
-  if (SOURCE_TOTAL_FIELDS.some((field) => obligation.sourceTotals?.[field] != null && obligation.sourceTotals[field] !== calculated[field])) {
+  const source = obligation.sourceTotals ?? {};
+  // When the source total and GST both match Flow's lines, Flow's subtotal is
+  // their difference, so a different source subtotal (Seazona can send 0) is a
+  // fault in that one source field, not a wrong invoice. It stays in evidence.
+  const totalAndTaxMatch = source.totalCents != null && source.taxCents != null
+    && source.totalCents === calculated.totalCents && source.taxCents === calculated.taxCents;
+  const compared = totalAndTaxMatch ? ['taxCents', 'totalCents'] : SOURCE_TOTAL_FIELDS;
+  if (compared.some((field) => source[field] != null && source[field] !== calculated[field])) {
     reasons.push('the source invoice totals differ from the reconstructed lines');
   }
   return reasons;

@@ -181,6 +181,14 @@ test('source comparison rechecks honestly and preserves unsaved edits', { timeou
     assert.equal(await comparison.getByText('+$10.00', { exact: true }).count(), 2);
     assert.equal(await page.getByText(/The resolution view is unavailable/).count(), 0);
     await page.getByText('The job also changed after this invoice was made. Resolve the source amount problem first. Select Recheck, then review the remaining job changes.', { exact: true }).waitFor();
+    // A refused clipboard shows the prompt to copy by hand.
+    await page.evaluate(() => Object.defineProperty(navigator, 'clipboard', { value: { writeText: () => Promise.reject(new Error('denied')) } }));
+    await comparison.getByRole('button', { name: 'Copy prompt', exact: true }).click();
+    const byHand = page.getByRole('textbox', { name: 'Copy prompt' });
+    assert.match(await byHand.inputValue(), /^A Flow invoice has a problem\./);
+    assert.match(await byHand.inputValue(), /No one system is always right/);
+    await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await comparison.getByText('Details', { exact: true }).click();
     await comparison.getByText('Saved invoice', { exact: true }).click();
     assert.equal(await comparison.locator('dl dt').count(), 3, 'saved amounts are real DOM nodes');
     assert.equal(await comparison.locator('dl dd').last().textContent(), '$110.00');
@@ -275,6 +283,8 @@ test('no access, unavailable comparison, unknown resolver and read failure never
       if (['missing', 'unknown'].includes(scenario)) await page.getByText(/The resolution view is unavailable/).waitFor();
       if (scenario === 'offline') {
         assert.equal(await page.getByRole('button', { name: 'Recheck', exact: true }).count(), 0);
+        await page.getByText(/Flow cannot read this job from Seazona/).waitFor();
+        await page.getByText('Details', { exact: true }).click();
         assert.equal(await page.getByRole('link', { name: 'Price list', exact: true }).getAttribute('href'), '/price-list');
         await page.getByText(/Ask an administrator to restore the source connection/).waitFor();
       }
