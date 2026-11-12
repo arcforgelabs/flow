@@ -66,6 +66,20 @@ describe('agent gate lifecycle and host share',{skip:skipWithoutDatabase},()=>{
     for(const c of humans) {assert.equal((await c.query('SELECT 1 AS n')).rows[0].n,1);c.release();}
     release();await Promise.all([first,second,third]);await reset();
   });
+  test('back-to-back calls are not refused while the last call still writes its audit',async()=>{
+    // The audit runs after the response. Slow it, so each next call comes while
+    // the last one still holds its connection.
+    const slowAudit={options:pool.options,async connect(){
+      const c=await pool.connect(),query=c.query,release=c.release;
+      c.query=(text,...rest)=>typeof text==='string'&&text.startsWith('INSERT INTO agent_audit')?sleep(100).then(()=>query.call(c,text,...rest)):query.call(c,text,...rest);
+      c.release=(...args)=>{c.query=query;c.release=release;return release.apply(c,args);};
+      return c;
+    }};
+    const a=express(),gate=createAgentGate({pool:slowAudit,resource,verify,log:quiet});
+    a.post('/',rateLimit({limit:120,windowMs:60000}),gate.handle(async(_req,res)=>res.json({ok:true})));
+    for(let n=0;n<6;n++){const res=await call(a);assert.equal(res.statusCode,200,res.body);}
+    await reset();
+  });
   test('15-second verification deadline frees admission and never admits a late identity',async()=>{
     let resolveLate,entered=0;
     const a=app(async(_req,res)=>{entered++;res.json({ok:true});},{},token=>token==='slow'?new Promise(r=>resolveLate=r):verify(token));
