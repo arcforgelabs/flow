@@ -56,8 +56,8 @@ test('History uses Layers, retains totals on reload and stops polling when inact
     assert.ok(box.width >= 44 && box.height >= 44);
     if (process.env.SYNC_SCREENSHOTS) await page.screenshot({ path: `${process.env.SYNC_SCREENSHOTS}/history-375.png` });
     await page.reload();
-    await page.locator('.fx-sync').waitFor();
-    assert.match(await page.locator('.fx-sync').innerText(), /412 jobs/);
+    // The panel reads "Checking…" until the history read answers.
+    await page.locator('.fx-sync').getByText(/412 jobs/).waitFor();
     assert.match(await page.locator('.fx-sync__clock').innerText(), /2:[12]\d/);
     totalCount = 0;
     await page.clock.runFor(5100);
