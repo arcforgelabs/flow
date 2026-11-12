@@ -1,4 +1,4 @@
-import { and, asc, eq, ilike, inArray, isNotNull, or, sql } from 'drizzle-orm';
+import { and, asc, eq, ilike, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import { contacts, CONTACT_KINDS, customerBillingSettings } from '../db/schema.js';
 import { FlowError, notFound } from './errors.js';
 
@@ -97,6 +97,12 @@ function duplicate(error, kind) {
 // reason when the lists do not show it: say so. Read before the write, so a
 // caller's transaction is never left aborted.
 async function refuseHiddenName(db, organisationId, { kind, name }) {
+  // Another name of a contact (a merge kept it): that contact is the one.
+  const [alias] = await db.select({ id: contacts.id, name: contacts.name }).from(contacts).where(and(
+    eq(contacts.organisationId, organisationId), eq(contacts.kind, kind), isNull(contacts.mergedIntoId),
+    sql`${contacts.aliases} @> ${JSON.stringify([name])}::jsonb`,
+  )).limit(1);
+  if (alias) throw new FlowError('conflict', `${alias.name} has this name as another name. Use that one.`, { contactId: alias.id });
   const [same] = await db.select({ id: contacts.id }).from(contacts).where(and(
     eq(contacts.organisationId, organisationId), eq(contacts.kind, kind), eq(contacts.name, name), eq(contacts.hidden, true),
   ));
@@ -120,6 +126,8 @@ export function presentContact(row) {
     practitioners: row.practitioners ?? [],
     active: row.active !== false,
     hidden: row.hidden === true,
+    aliases: row.aliases ?? [],
+    mergedIntoId: row.mergedIntoId ?? null,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -147,6 +155,7 @@ export async function updateContact(db, organisationId, id, input) {
   const current = await getContact(db, organisationId, id);
   const patch = readContact(input, { partial: true });
   if (!Object.keys(patch).length) return current;
+  if (current.mergedIntoId) throw invalid('this contact was merged into another; change that one');
   // Bill to joins customers only (docs/CONTACTS.md).
   if (patch.kind && patch.kind !== current.kind) {
     const [billing] = await db.select({ id: customerBillingSettings.contactId }).from(customerBillingSettings).where(and(
@@ -171,7 +180,8 @@ export async function updateContact(db, organisationId, id, input) {
 // `hidden` false (the default) leaves out the contacts that are not clients
 // (docs/CONTACTS.md, "Hidden contacts"); true lists only those; null, both.
 export async function listContacts(db, organisationId, { q = '', kind = 'customer', active = true, hidden = false, limit = 200, offset = 0 } = {}) {
-  const where = [eq(contacts.organisationId, organisationId)];
+  // A merged contact is in no list (docs/CONTACTS.md, "Merge two contacts").
+  const where = [eq(contacts.organisationId, organisationId), isNull(contacts.mergedIntoId)];
   if (kind) where.push(eq(contacts.kind, kind));
   if (active === true) where.push(eq(contacts.active, true));
   if (active === false) where.push(eq(contacts.active, false));
@@ -180,7 +190,8 @@ export async function listContacts(db, organisationId, { q = '', kind = 'custome
   const needle = String(q ?? '').trim().replace(/[\\%_]/g, (c) => `\\${c}`);
   if (needle) {
     const like = `%${needle}%`;
-    where.push(or(ilike(contacts.name, like), ilike(contacts.email, like), ilike(contacts.accountNumber, like)));
+    where.push(or(ilike(contacts.name, like), ilike(contacts.email, like), ilike(contacts.accountNumber, like),
+      sql`${contacts.aliases}::text ilike ${like}`));
   }
   const rows = await db.select().from(contacts).where(and(...where))
     .orderBy(asc(contacts.name), asc(contacts.id))

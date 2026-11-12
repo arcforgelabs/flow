@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import {
   billingObligations, contacts, externalLinks, linkRejections, linkSuggestions, obligationEvents, organisations, pipelineCursors,
 } from '../db/schema.js';
@@ -111,7 +111,10 @@ function byName(records) {
   for (const record of records) {
     const key = normaliseName(record.name);
     if (!key) continue;
-    map.set(key, [...(map.get(key) ?? []), record]);
+    const same = map.get(key) ?? [];
+    // A name and an alias of one contact are one record.
+    if (same.some((r) => r.id === record.id)) continue;
+    map.set(key, [...same, record]);
   }
   return map;
 }
@@ -122,8 +125,11 @@ function byName(records) {
 // contact, linked to it (`imported`), so its jobs find their customer
 // (docs/CONTACTS.md). Two customers of one name stay for a person.
 export async function linkCustomers(db, organisationId, { system, customers, adopt = false }) {
-  const flow = await db.select({ id: contacts.id, name: contacts.name }).from(contacts)
-    .where(and(eq(contacts.organisationId, organisationId), eq(contacts.kind, 'customer')));
+  // A merged contact is gone from the names; the kept one answers to its
+  // aliases too (docs/CONTACTS.md, "Merge two contacts").
+  const flow = (await db.select({ id: contacts.id, name: contacts.name, aliases: contacts.aliases }).from(contacts)
+    .where(and(eq(contacts.organisationId, organisationId), eq(contacts.kind, 'customer'), isNull(contacts.mergedIntoId))))
+    .flatMap((c) => [{ id: c.id, name: c.name }, ...(c.aliases ?? []).map((name) => ({ id: c.id, name }))]);
   const links = await activeLinks(db, organisationId, { system, entity: 'contact' });
   const linkedFlow = new Set(links.map((l) => l.flowId));
   const linkedExternal = new Set(links.map((l) => l.externalId));
@@ -209,7 +215,7 @@ export async function hideNonClients(db, organisationId, { system, customers, wo
       and l.flow_id = c.id and l.state = 'active'
       and (l.system <> ${system} or l.external_id = any(${sql.param(marked)}::text[]))))`;
   const { rows: shown } = await db.execute(sql`update contacts c set hidden = false
-    where c.organisation_id = ${organisationId} and c.hidden and ${client} returning c.id`);
+    where c.organisation_id = ${organisationId} and c.hidden and c.merged_into_id is null and ${client} returning c.id`);
   const result = { shown: shown.length, hidden: 0 };
   // An empty list proves nothing: the accounting copy has no contacts yet.
   if (!customers.length || await readCursor(db, organisationId, HIDDEN_CURSOR)) return result;

@@ -81,6 +81,7 @@ export async function createDraftInvoice(db, organisationId, { contactId, refere
       .where(and(eq(contacts.organisationId, organisationId), eq(contacts.id, contactId)));
     if (!contact) throw new FlowError('invalid', 'contact not found');
     if (contact.kind !== 'customer') throw new FlowError('invalid', 'an invoice goes to a customer contact');
+    if (contact.mergedIntoId) throw new FlowError('invalid', 'this contact was merged into another; pick that one');
     const resolved = await resolveLines(tx, organisationId, lines);
     const [invoice] = await tx.insert(invoices)
       .values({ organisationId, contactId, reference, dueDate })
@@ -99,6 +100,7 @@ export async function updateDraftInvoice(db, organisationId, invoiceId, changes)
         .where(and(eq(contacts.organisationId, organisationId), eq(contacts.id, changes.contactId)));
       if (!contact) throw new FlowError('invalid', 'contact not found');
       if (contact.kind !== 'customer') throw new FlowError('invalid', 'an invoice goes to a customer contact');
+      if (contact.mergedIntoId) throw new FlowError('invalid', 'this contact was merged into another; pick that one');
       fields.contactId = changes.contactId;
     }
     if ('reference' in changes) fields.reference = changes.reference;

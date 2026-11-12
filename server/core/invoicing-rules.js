@@ -110,10 +110,11 @@ export async function saveInvoicingSettings(db, organisationId, changes, { perso
 }
 
 async function requireCustomer(db, organisationId, contactId) {
-  const [contact] = await db.select({ id: contacts.id, kind: contacts.kind }).from(contacts)
+  const [contact] = await db.select({ id: contacts.id, kind: contacts.kind, mergedIntoId: contacts.mergedIntoId }).from(contacts)
     .where(and(eq(contacts.organisationId, organisationId), eq(contacts.id, contactId)));
   if (!contact) throw notFound('customer');
   if (contact.kind !== 'customer') throw invalid('invoicing settings are for a customer contact');
+  return contact;
 }
 
 // One customer's own settings. A null value takes the organisation's setting.
@@ -126,12 +127,15 @@ export async function readCustomerBilling(db, organisationId, contactId) {
 
 export async function saveCustomerBilling(db, organisationId, contactId, changes, { personId = null } = {}) {
   if (!changes || typeof changes !== 'object' || Array.isArray(changes)) throw invalid('the settings must be an object');
-  await requireCustomer(db, organisationId, contactId);
+  const customer = await requireCustomer(db, organisationId, contactId);
+  if (customer.mergedIntoId) throw invalid('this customer was merged into another; change that one');
   // Bill to is checked and saved under one lock per organisation, so two
   // saves at once never make a chain of payers.
   if (Object.prototype.hasOwnProperty.call(changes, 'billToContactId')) {
     return db.transaction(async (tx) => {
       await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`bill_to:${organisationId}`}))`);
+      // A merge takes the same lock: read again inside it.
+      if ((await requireCustomer(tx, organisationId, contactId)).mergedIntoId) throw invalid('this customer was merged into another; change that one');
       return saveBilling(tx, organisationId, contactId, changes, personId);
     });
   }
@@ -174,10 +178,11 @@ async function billTo(db, organisationId, contactId, value) {
   if (value === null) return null;
   if (typeof value !== 'string' || !UUID.test(value)) throw invalid('billToContactId must name a customer');
   if (value === contactId) throw invalid('a customer cannot bill to itself; clear Bill to instead');
-  const [payer] = await db.select({ id: contacts.id, kind: contacts.kind, name: contacts.name }).from(contacts)
+  const [payer] = await db.select({ id: contacts.id, kind: contacts.kind, name: contacts.name, mergedIntoId: contacts.mergedIntoId }).from(contacts)
     .where(and(eq(contacts.organisationId, organisationId), eq(contacts.id, value)));
   if (!payer) throw notFound('customer');
   if (payer.kind !== 'customer') throw invalid('the payer must be a customer');
+  if (payer.mergedIntoId) throw invalid(`${payer.name} was merged into another customer; pick that one`);
   const [payerOwn] = await db.select({ billTo: customerBillingSettings.billToContactId }).from(customerBillingSettings)
     .where(and(eq(customerBillingSettings.organisationId, organisationId), eq(customerBillingSettings.contactId, value)));
   if (payerOwn?.billTo) throw invalid(`${payer.name} bills to another customer; pick that one`);

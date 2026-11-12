@@ -119,6 +119,45 @@ flowchart LR
 
 Code: `payersOf`, `billedBy` and `billedContact` in `server/core/contacts.js`.
 
+## Merge two contacts
+
+One client is sometimes two Flow contacts: the work system's name and the
+accounting system's longer name. **Merge** on a contact's page picks the
+other contact. The page's contact stays; the other moves into it.
+
+```mermaid
+flowchart LR
+  from[Contact to merge] -- jobs, invoices --> keep[Kept contact]
+  from -- links in each system --> keep
+  from -- rule values, Bill to --> keep
+  from -- name --> alias[Kept contact's other names]
+  from --> stays[Row stays: merged, out of every list]
+```
+
+- Moves the jobs, Flow invoices, links to other systems, rule values
+  ("Customer is" tests), open review items and Bill to rows. Each moved job
+  notes the merge (`contact_merged`, with who did it). Every unbilled job of
+  the kept contact, and of its clients, goes back to the matcher.
+- Bill to: the kept contact bills to the payer either contact had. The merged
+  contact's own settings row names no payer after the merge.
+- The kept contact keeps the other's name as another name (`aliases`).
+  Search finds it by that name, and a client of that name in another system
+  links to it.
+- The merged contact stays, read only, out of every list, and points at the
+  kept one. Flow never deletes it. Its name gets "(merged …)", so the kept
+  contact can take the old name. New refuses a name that is another name of a
+  contact, and names that contact. A rule cannot name a merged contact, and
+  the rule menu leaves it out. A contact merged earlier into the merged one
+  points at the kept one.
+- Refused when both contacts are linked in one system (keep one link first),
+  when they are not the same kind, when one was already merged, or when the
+  result would break Bill to's one level.
+- Flow never merges by itself.
+- `POST /api/invoicing/contacts/:id/merge {fromId}`, owner or admin. `:id`
+  stays.
+
+Code: `mergeContacts` in `server/core/merge-contacts.js`.
+
 ## Two-way edits
 
 With **Two-way edits** on (`sync_contact_edits`, off by default, on the Xero

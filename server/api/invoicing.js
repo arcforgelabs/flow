@@ -35,6 +35,7 @@ import { isHistoryHeld } from '../core/history.js';
 import { invoicePdfDocument, pdfFields, pdfFilename, renderInvoicePdf } from '../core/invoice-pdf.js';
 import { invoiceView, invoiceViews, markNotReady, markReady, sendAgain, sendAllReady } from '../core/sending.js';
 import { createContact, getContact, listContacts, presentContact, updateContact } from '../core/contacts.js';
+import { mergeContacts } from '../core/merge-contacts.js';
 import {
   billingObligations, contacts, invoices, INVOICE_STATUSES, organisations, priceItems, TAX_CODES,
 } from '../db/schema.js';
@@ -727,6 +728,18 @@ export function createInvoicingRouter({
     res.json({ ok: true, contact });
   }));
 
+  // Merge two contacts: this one stays; `fromId` moves into it
+  // (docs/CONTACTS.md, "Merge two contacts").
+  router.post('/contacts/:id/merge', ...manager, handle(log, async (req, res) => {
+    const organisationId = await organisationOf(req);
+    const keepId = pathId(req.params.id, 'contact');
+    const fromId = text(req.body?.fromId);
+    if (!UUID.test(fromId)) throw invalid('fromId must name the contact to merge');
+    const result = await mergeContacts(db, organisationId, { keepId, fromId, actor: `person:${req.person.id}` });
+    log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} merged contact ${fromId} into ${keepId}`);
+    res.json({ ok: true, ...result, contact: presentContact(await getContact(db, organisationId, keepId)) });
+  }));
+
   router.get('/price-items', ...signedIn, handle(log, async (req, res) => {
     const organisationId = await organisationOf(req);
     const q = text(req.query.q);
@@ -991,7 +1004,7 @@ export function createInvoicingRouter({
     const [statuses, customers, items, practitioners] = await Promise.all([
       workStatuses(db, organisationId),
       db.select({ value: contacts.id, label: contacts.name }).from(contacts)
-        .where(and(eq(contacts.organisationId, organisationId), eq(contacts.kind, 'customer')))
+        .where(and(eq(contacts.organisationId, organisationId), eq(contacts.kind, 'customer'), isNull(contacts.mergedIntoId)))
         .orderBy(asc(contacts.name)).limit(1000),
       db.select({ value: priceItems.code, label: priceItems.name }).from(priceItems)
         .where(and(eq(priceItems.organisationId, organisationId), isNull(priceItems.archivedAt)))

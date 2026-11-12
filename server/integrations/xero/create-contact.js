@@ -109,6 +109,7 @@ export async function createCustomer(db, runtime, { organisationId, contactId, a
   }
   runtime.assertWritesAllowed();
   const flowContact = await getContact(db, organisationId, contactId);
+  if (flowContact.mergedIntoId) throw xeroError('contact_merged', 'This contact was merged into another. Use that one.', { status: 409 });
   const known = await matchContactFor(db, organisationId, { contactId, name: flowContact.name });
   if (known.state === 'ambiguous') {
     throw xeroError('xero_contact_ambiguous', `More than one Xero contact is named "${flowContact.name}". Merge or rename them in Xero, then sync.`, { status: 409 });
@@ -152,6 +153,7 @@ export async function linkCustomer(db, runtime, { organisationId, contactId, xer
     throw xeroError('xero_not_connected', 'Connect Xero first.', { status: 409 });
   }
   const flowContact = await getContact(db, organisationId, contactId);
+  if (flowContact.mergedIntoId) throw xeroError('contact_merged', 'This contact was merged into another. Use that one.', { status: 409 });
   const { rows: [row] } = await db.execute(sql`select xero_contact_id, name, status from xero_contacts
     where organisation_id = ${organisationId} and xero_contact_id = ${xeroContactId}`);
   if (!row) throw xeroError('xero_contact_unknown', 'Flow has no copy of that Xero contact. Sync, then try again.', { status: 404 });
