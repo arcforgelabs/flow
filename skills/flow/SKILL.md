@@ -24,6 +24,14 @@ run `setup`, and give the new digest to Flow.
 
 Then check: `{baseDir}/flow.sh get me` must answer `HTTP 200`.
 
+## Keep the skill current
+
+Run `{baseDir}/flow.sh update` after Flow gets a new release, and when a call
+answers 404 for a route this skill lists. It gets this skill from the Flow it
+talks to, so the skill always matches the release that Flow runs. It changes
+nothing if the answer is not a good skill. Install the skill from GitHub only
+the first time.
+
 ## Calls
 
 Every answer ends with a line `HTTP <code>`. 401 or 403: the key is not set up

@@ -20,6 +20,7 @@
   },
   "files": [
     "server/",
+    "skills/",
     "SECURITY.md",
     "VISION.md",
     "npm-shrinkwrap.json"

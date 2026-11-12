@@ -127,6 +127,18 @@ describe('the agent key against PostgreSQL', { skip: skipWithoutDatabase }, () =
     assert.equal(calls.length, 5);
   });
 
+  test('the key gets its skill from this Flow, and only the skill files', async () => {
+    const { readFile } = await import('node:fs/promises');
+    for (const file of ['SKILL.md', 'flow.sh']) {
+      const served = await asAgent(`/api/agent-skill/flow/${file}`);
+      assert.equal(served.status, 200, served.text);
+      assert.equal(served.text, await readFile(new URL(`../skills/flow/${file}`, import.meta.url), 'utf8'));
+    }
+    assert.equal((await asAgent('/api/agent-skill/flow/..%2F..%2Fpackage.json')).status, 404);
+    assert.equal((await asAgent('/api/agent-skill/flow/README.md')).status, 404);
+    assert.equal((await request(app, '/api/agent-skill/flow/SKILL.md')).status, 401);
+  });
+
   test('turning the person off stops the key on the next request', async () => {
     await updatePerson(handle.db, { id: agent.id, actorId: owner.id, status: 'disabled' });
     const off = await asAgent('/api/invoicing/rules');
