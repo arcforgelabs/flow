@@ -4,6 +4,7 @@ import { invoiceKindOf, invoicePage, INVOICE_SORTS, normaliseInvoicesView } from
 import { fieldIdOf, filterRows } from '../ui/job-view.js';
 import { listFields, listJobFieldValues } from '../core/custom-fields.js';
 import { FlowError } from '../core/errors.js';
+import { listReview } from '../core/review.js';
 import { createActionGuard } from '../integrations/call-guard.js';
 import {
   createDraftInvoice, deleteDraft, getInvoice, issueInvoice, listInvoiceVersions, reviseInvoice, updateDraftInvoice, voidInvoice,
@@ -823,6 +824,23 @@ export function createInvoicingRouter({
   router.get('/reconcile', ...signedIn, handle(log, async (req, res) => {
     const organisationId = await organisationOf(req);
     res.json({ ok: true, ...await listReconcile(db, organisationId) });
+  }));
+
+  // The open review queue (core/review.js): daily reconcile days, job
+  // changes, links Flow could not prove, failed writes. Read only: each item
+  // closes when its cause is fixed (or by the screen that owns it).
+  router.get('/review', ...signedIn, handle(log, async (req, res) => {
+    const organisationId = await organisationOf(req);
+    const state = text(req.query.state) || 'open';
+    if (!['open', 'resolved', 'dismissed'].includes(state)) throw new FlowError('invalid', 'state must be open, resolved or dismissed');
+    const kind = text(req.query.kind) || undefined;
+    const limit = Math.min(Math.max(Number.parseInt(text(req.query.limit) || '100', 10) || 100, 1), 500);
+    const items = await listReview(db, organisationId, { state, kind, limit });
+    res.json({ ok: true, items: items.map((r) => ({
+      id: r.id, kind: r.kind, entity: r.entity, flowId: r.flowId, systems: r.systems, evidence: r.evidence,
+      moneyAtRiskCents: r.moneyAtRiskCents, seenCount: r.seenCount, state: r.state, resolution: r.resolution,
+      createdAt: r.createdAt, updatedAt: r.updatedAt,
+    })) });
   }));
 
   router.get('/jobs/:id/reconcile', ...signedIn, handle(log, async (req, res) => {
