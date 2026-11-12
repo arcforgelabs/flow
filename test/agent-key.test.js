@@ -61,6 +61,19 @@ describe('the agent key against PostgreSQL', { skip: skipWithoutDatabase }, () =
     assert.equal(rules.status, 200, JSON.stringify(rules.body));
   });
 
+  test('the key runs the skill price steps: read, change a code, give a line its code', async () => {
+    const made = await asAgent('/api/invoicing/price-items', { method: 'POST', body: { code: 'SET12', name: 'Set up 1-2 Teeth', unitAmountCents: 13000, taxCode: 'GST' } });
+    assert.equal(made.status, 201, JSON.stringify(made.body));
+    const changed = await asAgent(`/api/invoicing/price-items/${made.body.item.id}`, { method: 'PUT', body: { unitAmountCents: 13500 } });
+    assert.equal(changed.status, 200, JSON.stringify(changed.body));
+    const list = await asAgent('/api/invoicing/price-list');
+    assert.equal(list.status, 200, JSON.stringify(list.body));
+    assert.equal(list.body.items.find((i) => i.code === 'SET12').unitAmountCents, 13500);
+    assert.equal((await asAgent('/api/invoicing/line-labels')).status, 200);
+    const mapping = await asAgent('/api/invoicing/line-mappings', { method: 'POST', body: { kind: 'saved', label: 'Set up 1-2 Teeth', unitAmountCents: 13500, itemCode: 'SET12' } });
+    assert.equal(mapping.status, 201, JSON.stringify(mapping.body));
+  });
+
   test('the key reaches the Xero matching routes, but never connects or disconnects Xero', async () => {
     const xero = express().use('/api/xero', createXeroRouter({ db: handle.db, personAuth, runtime: { settings: { mode: 'demo' } }, log: quiet, buttonCooldowns: false }));
     // Past sign-in and role: the route itself answers (here, that the id is bad).
