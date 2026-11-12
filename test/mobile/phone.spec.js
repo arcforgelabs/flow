@@ -187,3 +187,27 @@ test('board surface stays continuous without stretching lanes', async ({ page },
     await expect.poll(async () => { const end = await boardSurface(page); return end.lastRight - end.right; }).toBeLessThanOrEqual(1);
   }
 });
+
+// Disconnect asks first: a stray tap must not stop an integration. The
+// phone server turns Sentry off, so the answer here shows it connected.
+test('disconnect asks before it stops an integration', async ({ page }, info) => {
+  const puts = [];
+  await page.route('**/api/integrations', async (route) => {
+    const body = await (await route.fetch()).json();
+    for (const one of body.integrations ?? []) if (one.id === 'sentry') Object.assign(one, { enabled: true, state: 'ready', enabledBy: 'settings' });
+    await route.fulfill({ json: body });
+  });
+  await page.route('**/api/integrations/sentry', (route) => { puts.push(route.request().method()); return route.abort(); });
+  await open(page, info.project, { path: '/integrations/sentry', ready: '.fx-int-hero__actions' });
+  // Not in the header beside Sync: it sits at the end of the page.
+  await expect(page.locator('.fx-int-hero').getByRole('button', { name: 'Disconnect' })).toHaveCount(0);
+  const disconnect = page.locator('.fx-int-page__main').getByRole('button', { name: 'Disconnect' });
+  await disconnect.click();
+  const ask = page.getByRole('dialog', { name: 'Disconnect Sentry?' });
+  await expect(ask).toBeVisible();
+  await expect(ask.getByRole('button', { name: 'Cancel' })).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(ask).toBeHidden();
+  await expect(disconnect).toBeVisible();
+  expect(puts).toEqual([]);
+});

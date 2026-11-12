@@ -892,6 +892,18 @@ async function renderIntegration(main, id) {
       }
     };
 
+    // A disconnect stops the integration, so it asks first: one stray click
+    // must not stop a lab's sync.
+    const disconnect = async () => {
+      const ok = await dialog({
+        title: `Disconnect ${current.name}?`,
+        body: h('p', {}, `Flow stops working with ${current.name} until someone connects it again. Its settings and Flow's records stay.`),
+        confirm: 'Disconnect',
+        tone: 'danger',
+      });
+      if (ok) await save(false);
+    };
+
     const on = current.enabled;
     const guide = current.guide;
     const hostOwned = current.enabledBy === 'host';
@@ -902,22 +914,10 @@ async function renderIntegration(main, id) {
     const primary = !canChange || hostOwned || on ? null
       : h('button', { class: 'fx-btn fx-btn--primary', type: 'button', disabled: busy, onclick: connect },
         busy ? h('span', { class: 'fx-spinner fx-spinner--sm', 'aria-hidden': 'true' }) : null, busy ? 'Connecting' : 'Connect');
-    // Disconnect sits at the end of the page, away from Sync, and asks first:
-    // a stray tap must not stop an integration.
-    const disconnect = !canChange || hostOwned || !on ? null
+    // Disconnect sits at the end of the page, away from Sync.
+    const disconnectRow = !canChange || hostOwned || !on ? null
       : h('div', { class: 'fx-int-section' }, h('div', { class: 'fx-row fx-row--end' },
-        h('button', {
-          class: 'fx-btn fx-btn--ghost fx-btn--danger', type: 'button',
-          onclick: async () => {
-            const ok = await dialog({
-              title: `Disconnect ${current.name}?`,
-              body: h('p', {}, `Flow stops reading and sending through ${current.name}. Your settings stay, and you can connect again.`),
-              confirm: 'Disconnect',
-              tone: 'danger',
-            });
-            if (ok) await save(false);
-          },
-        }, 'Disconnect')));
+        h('button', { class: 'fx-btn fx-btn--ghost fx-btn--danger', type: 'button', onclick: disconnect }, 'Disconnect')));
 
     host.replaceChildren(
       crumbs(['/integrations', 'Integrations'], current.name),
@@ -953,7 +953,7 @@ async function renderIntegration(main, id) {
               h('summary', {}, 'Advanced'),
               h('div', { class: 'fx-settings' }, advanced)) : null,
             canChange && on && inputs.size ? h('div', { class: 'fx-row fx-row--end' }, h('button', { class: 'fx-btn', type: 'button', onclick: () => save(undefined) }, 'Save changes')) : null) : null,
-          disconnect,
+          disconnectRow,
         ].filter(Boolean)),
         h('aside', { class: 'fx-int-page__meta' },
           h('dl', { class: 'fx-meta' }, ...[
