@@ -15,13 +15,15 @@
   "pageOverflow": "none",
   "screens": [
     "rules",
-    "integrations"
+    "integrations",
+    "home"
   ],
   "also": [
     {
       "component": "tileSection",
       "screens": [
-        "rules"
+        "rules",
+        "home"
       ]
     }
   ]

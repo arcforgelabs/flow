@@ -1567,6 +1567,7 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
   /* Tiles: every card is one 56px row, as a list row: the mark, the name,
      the status and ›. The blurb and the button stay on the page it opens. */
   .fx-int-grid, .fx-tiles__grid { gap: 8px; }
+  .fx-tiles__more { min-height: 44px; }
   :is(.fx-int-card, .fx-tile)[data-phone-layout="one-line"] {
     display: flex; align-items: center; gap: 12px; box-sizing: border-box;
     height: 56px; padding: 0 8px 0 12px;
