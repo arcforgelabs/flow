@@ -91,7 +91,12 @@ A person links the rest on Review (`matched_by = 'person'`).
 "Make Flow invoice" works in one transaction. It makes the contact if it is
 missing, maps each line (price item by code, quantity, GST by tax amount),
 issues the Flow invoice on the Xero issue date, links it
-(`matched_by = 'made'`), and links the job when one fits.
+(`matched_by = 'made'`), and links the job when one fits. The Flow invoice
+takes the next Flow invoice number; the Xero invoice keeps its own. A linked
+job that waited for a person (no invoice found, or more than one fit) no
+longer does: it takes the Xero invoice as its accounting invoice, and the
+matcher reads its stage (paid, approved) on its next pass. The matcher also
+finds a Xero invoice through the Flow invoice the import linked to it.
 
 ## Settings
 

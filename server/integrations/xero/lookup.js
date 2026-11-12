@@ -107,7 +107,8 @@ function invoiceRow(r) {
 }
 
 // Sales invoices from the mirror, by any of: Xero ids, invoice numbers, the
-// Flow invoices Flow sent, or one customer within a date range. Answers the
+// Flow invoices Flow sent or the Xero import linked, or one customer within a
+// date range. Answers the
 // mirror's state with them, and the latest change time it holds.
 export async function findInvoices(db, organisationId, query = {}) {
   const { invoiceIds = [], numbers = [], references = [], flowInvoiceIds = [], contactId = null, from = null, to = null } = query;
@@ -127,9 +128,15 @@ export async function findInvoices(db, organisationId, query = {}) {
     select i.*, p.invoice_id as flow_invoice_id
     from xero_invoices i
     left join lateral (
-      select invoice_id from xero_invoice_pushes
-      where organisation_id = i.organisation_id and xero_invoice_id = i.xero_invoice_id
-      order by version desc limit 1
+      -- The Flow invoice this Xero invoice is: the one Flow sent it from,
+      -- else the one the Xero import linked or made from it.
+      select invoice_id from (
+        select invoice_id, 0 as pick, version from xero_invoice_pushes
+        where organisation_id = i.organisation_id and xero_invoice_id = i.xero_invoice_id
+        union all
+        select invoice_id, 1, 0 from xero_invoice_links
+        where organisation_id = i.organisation_id and xero_invoice_id = i.xero_invoice_id
+      ) f order by pick, version desc limit 1
     ) p on true
     where i.organisation_id = ${organisationId} and i.type = 'ACCREC'
       and (${sql.join(where, sql` or `)})

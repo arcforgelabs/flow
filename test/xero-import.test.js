@@ -6,6 +6,7 @@ import { createDraftInvoice, issueInvoice } from '../server/core/invoices.js';
 import { linkJobToInvoice, observeJob, recordAccountingEvidence, setReady } from '../server/core/ledger.js';
 import { billingObligations, invoices } from '../server/db/schema.js';
 import { importOverview, matchXero, useXeroInvoice } from '../server/integrations/xero/links.js';
+import { findInvoices } from '../server/integrations/xero/lookup.js';
 import { request } from './support/clerk.js';
 import { freshDatabase, skipWithoutDatabase } from './support/db.js';
 import { bootFlow, connectDirectly, scriptedXero, seedLab } from './support/xero.js';
@@ -110,6 +111,22 @@ describe('Xero import: Xero invoices against Flow invoices', { skip: skipWithout
     const [linkedJob] = await handle.db.select().from(billingObligations).where(and(eq(billingObligations.organisationId, org()), eq(billingObligations.id, job.id)));
     assert.equal(linkedJob.invoiceId, invoice.id);
     assert.equal((await stateOf(id)).link.matchedBy, 'made');
+  });
+
+  test('a history job with no invoice found that a person pairs with a Xero invoice no longer needs a person', async () => {
+    const job = await observeJob(handle.db, org(), { sourceSystem: 'worksystem', sourceJobRef: 'JOB-NF', caseRef: 'CASE-NF', contactId: practice.id, shippedOn: '2026-08-12', jobDate: '2026-08-12', lines: [{ itemCode: 'CROWN' }] });
+    await recordAccountingEvidence(handle.db, org(), job.id, { state: 'not_found', actor: 'test' });
+    const id = await copy(17, { issuedOn: '2026-08-12', status: 'PAID' });
+    const made = await call(`/import/${id}/make`, { method: 'POST', body: { organisationId: org(), jobId: job.id } });
+    assert.equal(made.status, 200, JSON.stringify(made.body));
+    const [row] = await handle.db.select().from(billingObligations).where(and(eq(billingObligations.organisationId, org()), eq(billingObligations.id, job.id)));
+    assert.equal(row.accountingState, 'unknown', 'not counted as needing a person');
+    assert.equal(row.accountingRef, id, 'the matcher follows the paired invoice');
+    assert.equal(row.accountingCheckedAt, null, 'read again on the next pass');
+    // A job linked before this change (no accountingRef) is found through its
+    // Flow invoice, so the matcher settles it too.
+    const { invoices: byFlow } = await findInvoices(handle.db, org(), { flowInvoiceIds: [made.body.invoice.id] });
+    assert.deepEqual(byFlow.map((i) => [i.id, i.flowInvoiceId]), [[id, made.body.invoice.id]]);
   });
 
   test('nothing fits: it stays in the copy, until the setting makes Flow invoices', async () => {
