@@ -111,8 +111,9 @@ decision is deleted after 7 days.
 
 `contacts` is Flow's own customer or supplier (`docs/CONTACTS.md`): name,
 first and last name, email, phone, mobile, account number, tax number, tax
-rate, address, practitioners (people at the practice, up to 30) and whether
-the contact is active. One name per kind in an organisation. An
+rate, address, practitioners (people at the practice, up to 30), whether
+the contact is active, and whether it is hidden (not a client). One name per
+kind in an organisation. An
 integration's copy of the same person stays in that integration's tables
 and links through `external_links`.
 
@@ -186,7 +187,7 @@ while the installation has exactly one. Money is integer cents. Answers are
 | `POST /invoices/:id/revise` | owner or admin | An issued invoice back to a draft; the number stays |
 | `POST /invoices/:id/void` | owner or admin | Voids an invoice that was issued |
 | `DELETE /invoices/:id` | owner or admin | Deletes a draft that was never issued, and frees its job. An issued invoice whose accounting copy is a draft is voided only after that draft is deleted there. With no accounting system, it answers `accounting_unavailable` (`docs/INVOICE_SENDING.md`) |
-| `GET /contacts?q=&kind=&active=&limit=&offset=` | anyone | Customers by default (`kind=customer`, `active=true`). `kind=all` and `active=all` list both. `q` matches name, email or account number |
+| `GET /contacts?q=&kind=&active=&hidden=&limit=&offset=` | anyone | Customers by default (`kind=customer`, `active=true`, `hidden=false`). `kind=all` and `active=all` list both. `hidden=true` lists only the contacts that are not clients; `hidden=all` lists both. `q` matches name, email or account number |
 | `POST /contacts` | owner or admin | Creates one contact (201). A duplicate name for that kind is 409 |
 | `GET /contacts/:id` | anyone | One contact |
 | `PATCH /contacts/:id` | owner or admin | Changes the fields that were sent |

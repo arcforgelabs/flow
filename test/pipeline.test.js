@@ -2,11 +2,11 @@ import assert from 'node:assert/strict';
 import { after, before, describe, test } from 'node:test';
 import { and, eq, sql } from 'drizzle-orm';
 import { createContact, createOrganisation, createPriceItem } from '../server/core/directory.js';
-import { confirmNoInvoice, ledgerView } from '../server/core/ledger.js';
-import { listContacts } from '../server/core/contacts.js';
+import { confirmNoInvoice, ledgerView, observeJob } from '../server/core/ledger.js';
+import { listContacts, updateContact } from '../server/core/contacts.js';
 import { externalIdFor } from '../server/core/links.js';
 import {
-  linkCustomers, normaliseName, rankCandidates, referenceNamesPatient, runPipelineOnce, scoreCandidate,
+  hideNonClients, linkCustomers, normaliseName, rankCandidates, referenceNamesPatient, runPipelineOnce, scoreCandidate,
 } from '../server/core/pipeline.js';
 import { billingObligations, linkRejections, linkSuggestions, priorLinks } from '../server/db/schema.js';
 import { findInvoices, listCustomers, mirrorState } from '../server/integrations/xero/lookup.js';
@@ -380,5 +380,58 @@ describe('the Xero copy the matcher reads', { skip: skipWithoutDatabase }, () =>
     assert.deepEqual((await listCustomers(handle.db, organisationId)).map((c) => c.id).sort(), ['x1', 'x3']);
     // Read today: no second call (the script has none left to answer).
     await refreshStaleCatalogues(handle.db, xero.runtime, { log: { info() {}, error: (line) => assert.fail(line) } });
+  });
+});
+
+describe('contacts that are not clients', { skip: skipWithoutDatabase }, () => {
+  let handle;
+  let organisationId;
+  before(async () => {
+    handle = await freshDatabase();
+    organisationId = (await createOrganisation(handle.db, { name: 'Example Lab' })).id;
+  });
+  after(async () => { await handle?.close(); });
+
+  const shown = async () => (await listContacts(handle.db, organisationId)).map((c) => c.name);
+  const hidden = async () => (await listContacts(handle.db, organisationId, { hidden: true })).map((c) => c.name);
+
+  test('a contact made from an accounting contact that is no customer is hidden one time; a client is not', async () => {
+    // The accounting system's list: `customer` is its own mark.
+    const customers = [
+      { id: 'a1', name: 'Customer A', customer: true },
+      { id: 'a2', name: 'Office Rent', customer: false },
+      { id: 'a3', name: 'Staff Member', customer: false },
+      { id: 'a4', name: 'Customer B', customer: false },
+      { id: 'a5', name: 'Customer C', customer: false },
+      { id: 'a6', name: 'Customer D', customer: false },
+    ];
+    // An earlier version made each of them a Flow customer.
+    await linkCustomers(handle.db, organisationId, { system: 'xero', customers: customers.map((c) => ({ ...c, adoptable: true })), adopt: true });
+    // Customer B is a client of the work system. Customer C has a job.
+    // Customer D was in Flow first, so its link is by name, not `imported`.
+    await linkCustomers(handle.db, organisationId, { system: 'seazona', customers: [{ id: 's4', name: 'Customer B' }] });
+    const [c] = await listContacts(handle.db, organisationId, { q: 'Customer C' });
+    await observeJob(handle.db, organisationId, { sourceSystem: 'seazona', sourceJobRef: 'J-1', contactId: c.id, lines: [{ description: 'Crown', quantity: 1, unitAmountCents: 20000, taxCode: 'GST' }] });
+    const [d] = await listContacts(handle.db, organisationId, { q: 'Customer D' });
+    await handle.db.execute(sql`update external_links set matched_by = 'exact_name' where flow_id = ${d.id}`);
+    const person = await createContact(handle.db, organisationId, { kind: 'customer', name: 'Customer E' });
+
+    // The accounting copy is empty: that proves nothing, and the one time is not used.
+    assert.deepEqual(await hideNonClients(handle.db, organisationId, { system: 'xero', customers: [] }), { shown: 0, hidden: 0 });
+    assert.deepEqual(await hideNonClients(handle.db, organisationId, { system: 'xero', customers }), { shown: 0, hidden: 2 });
+    assert.deepEqual(await hidden(), ['Office Rent', 'Staff Member']);
+    assert.deepEqual(await shown(), ['Customer A', 'Customer B', 'Customer C', 'Customer D', 'Customer E']);
+    assert.ok(person.id);
+
+    // A person shows one: the next passes leave it.
+    const [rent] = await listContacts(handle.db, organisationId, { q: 'Office Rent', hidden: true });
+    await updateContact(handle.db, organisationId, rent.id, { hidden: false });
+    assert.deepEqual(await hideNonClients(handle.db, organisationId, { system: 'xero', customers }), { shown: 0, hidden: 0 });
+    assert.deepEqual(await hidden(), ['Staff Member']);
+
+    // The accounting system marks the other one a customer later: Flow shows it.
+    const marked = customers.map((x) => (x.id === 'a3' ? { ...x, customer: true } : x));
+    assert.deepEqual(await hideNonClients(handle.db, organisationId, { system: 'xero', customers: marked }), { shown: 1, hidden: 0 });
+    assert.deepEqual(await hidden(), []);
   });
 });

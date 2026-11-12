@@ -23,7 +23,9 @@ async function renderContactList(main, ui) {
   const search = input(h, { type: 'search', 'aria-label': 'Search', placeholder: 'Search', class: 'fx-input fx-contacts__search' });
   const kind = h('select', { class: 'fx-select', 'aria-label': 'Kind' },
     h('option', { value: 'all', selected: true }, 'All'),
-    ...KINDS.map(([value, label]) => h('option', { value }, `${label}s`)));
+    ...KINDS.map(([value, label]) => h('option', { value }, `${label}s`)),
+    // Contacts that are not clients (docs/CONTACTS.md, "Hidden contacts").
+    h('option', { value: 'hidden' }, 'Hidden'));
   const page = h('div', { class: 'fx-contacts' });
   const add = h('button', { class: 'fx-btn fx-btn--primary', type: 'button', hidden: !canEdit, onclick: () => createContact() }, 'New');
   page.append(
@@ -36,7 +38,7 @@ async function renderContactList(main, ui) {
   const draw = () => {
     const needle = search.value.trim().toLowerCase();
     const shown = rows.filter((contact) => {
-      if (kind.value !== 'all' && contact.kind !== kind.value) return false;
+      if (!['all', 'hidden'].includes(kind.value) && contact.kind !== kind.value) return false;
       if (!needle) return true;
       return [contact.name, contact.email, contact.accountNumber].some((value) => String(value ?? '').toLowerCase().includes(needle));
     });
@@ -47,7 +49,9 @@ async function renderContactList(main, ui) {
           h('td', {}, h('a', { class: 'fx-person', href: `/contacts/${contact.id}`, onclick: go },
             h('span', { class: 'fx-avatar', 'aria-hidden': 'true' }, initialsOf(contact.name)),
             h('span', { class: 'fx-person__text' },
-              h('span', { class: 'fx-person__name' }, contact.name, contact.active ? null : h('span', { class: 'fx-tag' }, 'Inactive')),
+              h('span', { class: 'fx-person__name' }, contact.name,
+                contact.active ? null : h('span', { class: 'fx-tag' }, 'Inactive'),
+                contact.hidden ? h('span', { class: 'fx-tag' }, 'Hidden') : null),
               contact.email ? h('span', { class: 'fx-person__email' }, contact.email) : null))),
           h('td', {}, KINDS.find(([value]) => value === contact.kind)?.[1] ?? contact.kind),
           h('td', {}, contact.accountNumber ?? '')))))
@@ -58,8 +62,23 @@ async function renderContactList(main, ui) {
     );
   };
 
+  // The hidden contacts are their own list: the server leaves them out of
+  // every other one.
+  let listed = null;
+  async function load() {
+    const hidden = kind.value === 'hidden' ? 'true' : 'false';
+    if (hidden === listed) return draw();
+    try {
+      ({ contacts: rows } = await flow(`/api/invoicing/contacts?kind=all&active=all&hidden=${hidden}&limit=500`));
+      listed = hidden;
+      draw();
+    } catch (error) {
+      host.replaceChildren(notice(error.message, 'danger'));
+    }
+  }
+
   search.addEventListener('input', draw);
-  kind.addEventListener('change', draw);
+  kind.addEventListener('change', load);
 
   async function createContact() {
     const name = input(h, { name: 'name', required: true, 'aria-label': 'Name' });
@@ -90,12 +109,7 @@ async function renderContactList(main, ui) {
     }
   }
 
-  try {
-    ({ contacts: rows } = await flow('/api/invoicing/contacts?kind=all&active=all&limit=200'));
-    draw();
-  } catch (error) {
-    host.replaceChildren(notice(error.message, 'danger'));
-  }
+  await load();
 }
 
 async function renderContact(main, ui, id) {
@@ -177,9 +191,32 @@ async function renderContact(main, ui, id) {
   }, 'Save');
 
   const xero = h('div');
+  // A contact that is not a client (docs/CONTACTS.md, "Hidden contacts").
+  const hiddenNote = h('div');
+  const drawHidden = () => {
+    if (!contact.hidden) return hiddenNote.replaceChildren();
+    const show = canEdit ? h('button', {
+      class: 'fx-btn', type: 'button', title: 'Show this contact in the lists',
+      onclick: async () => {
+        show.disabled = true;
+        try {
+          ({ contact } = await flow(`/api/invoicing/contacts/${id}`, { method: 'PATCH', body: JSON.stringify({ hidden: false }) }));
+          toast('Shown.', 'success');
+          drawHidden();
+        } catch (error) {
+          toast(error.message, 'danger');
+          show.disabled = false;
+        }
+      },
+    }, 'Show') : null;
+    hiddenNote.replaceChildren(h('section', { class: 'fx-card fx-offer' },
+      notice('Not a client: no job and no invoice.', 'info', 'Hidden.'), show));
+  };
+  drawHidden();
   page.replaceChildren(
     crumbs(['/contacts', 'Contacts'], contact.name),
     pageHeader(contact.name, { actions: [save] }),
+    hiddenNote,
     h('section', { class: 'fx-card' },
       h('div', { class: 'fx-contacts__grid' },
         field(h, 'Name', values.name),

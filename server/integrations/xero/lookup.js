@@ -15,8 +15,10 @@ export const MIRROR_FRESH_MS = 24 * 60 * 60 * 1000;
 export const PROOF_RESOURCES = Object.freeze(['invoices', 'credit_notes']);
 
 // `contact` is the Flow contact a new client becomes (docs/CONTACTS.md,
-// "Add Xero clients"). A contact Xero marks a supplier only still links by
-// name, but never becomes a Flow customer (`adoptable` false).
+// "Add Xero clients"). Only a contact Xero marks a customer (it has a sales
+// invoice there) becomes one (`adoptable`). The others (suppliers, staff,
+// names from bank lines) still link by name. `customer` is Xero's mark: the
+// core hides a Flow contact made from one that has none ("Hidden contacts").
 export async function listCustomers(db, organisationId) {
   const { rows } = await db.execute(sql`
     select xero_contact_id, name, first_name, last_name, email, phone, mobile, account_number, tax_number, address,
@@ -27,7 +29,8 @@ export async function listCustomers(db, organisationId) {
   return rows.map((r) => ({
     id: r.xero_contact_id,
     name: r.name,
-    adoptable: Boolean(r.is_customer || !r.is_supplier),
+    adoptable: Boolean(r.is_customer),
+    customer: Boolean(r.is_customer),
     contact: {
       kind: 'customer', name: r.name, firstName: r.first_name, lastName: r.last_name, email: r.email, phone: r.phone,
       mobile: r.mobile, accountNumber: r.account_number, taxNumber: r.tax_number, address: r.address,

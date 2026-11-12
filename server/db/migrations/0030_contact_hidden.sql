@@ -1,0 +1,1 @@
+ALTER TABLE "contacts" ADD COLUMN IF NOT EXISTS "hidden" boolean DEFAULT false NOT NULL;
