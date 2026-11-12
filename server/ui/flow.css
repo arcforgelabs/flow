@@ -1888,7 +1888,8 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
   content: ''; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px;
   border-radius: 50%; background: var(--t-paper); transition: transform 0.15s;
 }
-.fx-switch[aria-checked="true"] { background: var(--t-primary); }
+/* background-color only: the shorthand would reset background-clip and fill the touch border. */
+.fx-switch[aria-checked="true"] { background-color: var(--t-primary); }
 .fx-switch[aria-checked="true"]::after { transform: translateX(18px); }
 .fx-switch:focus-visible { outline: none; box-shadow: var(--fx-focus); }
 .fx-switch:disabled { cursor: default; opacity: 0.6; }
