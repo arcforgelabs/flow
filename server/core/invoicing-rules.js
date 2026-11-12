@@ -20,7 +20,8 @@ import { checkReferenceTemplate, DEFAULT_REFERENCE, jobReference } from './refer
 // The ledger's own checks (ledger.js, draftBlockers) still guard every draft:
 // the job is not held, every line maps to a price item, it has a customer, the
 // accounting copy holds no invoice for it, and the work system's report is
-// recent. The lab's own checks are invoice rules it builds (invoice-rules.js);
+// recent. A job a non-chargeable rule matches needs only the hold, the customer
+// and the accounting checks: it is never sent. The lab's own checks are invoice rules it builds (invoice-rules.js);
 // the old job limit, practitioner and rush settings here only seed them.
 
 export const ACTOR = 'system:rules';
@@ -325,7 +326,6 @@ export async function autoDraftJobs(db, organisationId, { accounting = null, wor
     accounting
       ? eq(billingObligations.accountingState, 'not_found')
       : inArray(billingObligations.accountingState, ['not_found', 'unknown']),
-    eq(billingObligations.mappingComplete, true),
     sql`${billingObligations.contactId} is not null`,
     // Newest first: a backlog of jobs that wait on a rule never hides new work.
   )).orderBy(sql`${billingObligations.jobDate} desc nulls last`, billingObligations.id).limit(limit);
@@ -349,13 +349,23 @@ export async function autoDraftJobs(db, organisationId, { accounting = null, wor
       result.waiting += 1;
       continue;
     }
-    // Issue #141: an old report is read again first. The rules then check
-    // what the work system says now; the ledger checks the rest.
-    if (result.readFirst >= READS_PER_PASS && needsRead(candidate, { work, now })) {
+    // A job a non-chargeable rule matches (own clinics, remakes) is never
+    // billed: its draft goes to the Non-chargeable tab whatever its price
+    // items, tax or report age say. Any other job needs every line mapped.
+    const noCharge = ruleNonChargeable(rules, candidate, { customer: effective, now }).length > 0;
+    if (!noCharge && !candidate.mappingComplete) {
       result.waiting += 1;
       continue;
     }
-    let { outcome, obligation } = (await readBeforeAct(db, organisationId, [candidate], { work, now, actor })).get(candidate.id);
+    // Issue #141: an old report is read again first. The rules then check
+    // what the work system says now; the ledger checks the rest.
+    if (!noCharge && result.readFirst >= READS_PER_PASS && needsRead(candidate, { work, now })) {
+      result.waiting += 1;
+      continue;
+    }
+    let { outcome, obligation } = noCharge
+      ? { outcome: 'fresh', obligation: candidate }
+      : (await readBeforeAct(db, organisationId, [candidate], { work, now, actor })).get(candidate.id);
     if (outcome !== 'fresh') result.readFirst += 1;
     if (outcome === 'waiting' || outcome === 'review') {
       result.waiting += 1;
@@ -401,6 +411,7 @@ export async function autoDraftJobs(db, organisationId, { accounting = null, wor
         now,
         reference: await jobReference(db, organisationId, obligation, { template: settings.referenceTemplate, work }),
         dueDate: addDays(invoiceDate, effective.paymentTermsDays),
+        noCharge,
       });
       result.drafted += 1;
     } catch (error) {

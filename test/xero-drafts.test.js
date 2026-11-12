@@ -492,7 +492,7 @@ describe('Xero drafts from issued invoices', { skip: skipWithoutDatabase }, () =
     });
   });
 
-  test('an invoice drafted from a job that Flow\'s fresh copy of Xero cleared needs no live duplicate check', async () => {
+  test('an invoice drafted from a job that Flow\'s fresh copy of Xero cleared still gets the live duplicate check', async () => {
     const org = lab.organisation.id;
     const now = new Date(xero.clock.at);
     for (const resource of ['invoices', 'credit_notes', 'payments']) {
@@ -506,9 +506,9 @@ describe('Xero drafts from issued invoices', { skip: skipWithoutDatabase }, () =
     await recordAccountingEvidence(handle.db, org, job.id, { state: 'not_found', actor: 'test', checkedAt: now });
     const { invoice } = await draftInvoiceForObligation(handle.db, org, job.id, { liveCheck: async () => ({ state: 'not_found' }), actor: 'test', now, reference: 'Dr Copy - Pat Copy' });
     await issueInvoice(handle.db, org, invoice.id, { issuedBy: 'user:test', issueDate: '2026-10-18' });
-    const replay = xero.script([created('c1'), readBack('c1', { reference: 'Dr Copy - Pat Copy' })]);
+    const replay = xero.script([byReference([]), created('c1'), readBack('c1', { reference: 'Dr Copy - Pat Copy' })]);
     const res = await push([invoice.id]);
     assert.equal(res.body.invoices[0].outcome, 'created', JSON.stringify(res.body));
-    assert.equal(replay.calls.filter((c) => c.method === 'GET' && c.path.endsWith('/Invoices')).length, 0);
+    assert.equal(replay.calls.filter((c) => c.method === 'GET' && c.path.endsWith('/Invoices')).length, 1);
   });
 });

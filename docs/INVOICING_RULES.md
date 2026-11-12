@@ -108,9 +108,9 @@ the pipeline does not run, and a person drafts from the Jobs board.
 The earlier app asked Xero for each job before it drafted. Flow does not. It
 drafts only when its own copy of Xero is complete, was read in the last day,
 and changed no later than the matcher's last check of the job, and holds no
-invoice with the job's own invoice number. When Flow sends an invoice it
-drafted that way, it skips Xero's live reference check too. An invoice a
-person made by hand in Flow still gets the live check.
+invoice with the job's own invoice number. When Flow sends any invoice, it
+still asks Xero itself for invoices with the same Reference first: the copy is
+a lead, not proof.
 
 ## Send modes
 

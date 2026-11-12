@@ -954,17 +954,20 @@ export function ledgerView(obligation, { now = new Date(), sourceMaxAgeMs = SOUR
   return reasons.length ? { view: 'pending', reasons } : { view: 'ready', reasons: ['all checks pass'] };
 }
 
-function draftBlockers(o, { now, sourceMaxAgeMs, accounting = true }) {
-  const reasons = sourceBillingProblems(o);
+// `noCharge`: a non-chargeable rule matches the job (invoicing-rules.js). Its
+// draft is never sent, so its price items, its tax and the age of its report
+// do not stop it; the hold, the customer and the accounting evidence still do.
+function draftBlockers(o, { now, sourceMaxAgeMs, accounting = true, noCharge = false }) {
+  const reasons = noCharge ? [] : sourceBillingProblems(o);
   if (o.holdState !== 'none') reasons.push(`the job is ${o.holdState}`);
   if (o.invoiceId) reasons.push('the job already has an invoice');
   if (o.accountingState === 'unknown') {
     if (accounting) reasons.push('the accounting system was not checked');
   }
   else if (o.accountingState !== 'not_found') reasons.push(`the accounting system reports ${o.accountingState}`);
-  if (!o.mappingComplete) reasons.push('a line does not map to a price item');
+  if (!o.mappingComplete && !noCharge) reasons.push('a line does not map to a price item');
   if (!o.contactId) reasons.push('the job has no customer contact');
-  if (now - new Date(o.sourceSeenAt) > sourceMaxAgeMs) reasons.push('the work system report is out of date');
+  if (now - new Date(o.sourceSeenAt) > sourceMaxAgeMs && !noCharge) reasons.push('the work system report is out of date');
   return reasons;
 }
 
@@ -973,7 +976,7 @@ function draftBlockers(o, { now, sourceMaxAgeMs, accounting = true }) {
 // the write, finds no invoice for the job. Any doubt refuses the draft, and
 // the refusal is recorded.
 export async function draftInvoiceForObligation(db, organisationId, obligationId, {
-  liveCheck, actor, now = new Date(), sourceMaxAgeMs = SOURCE_MAX_AGE_MS, dueDate = null, reference = null,
+  liveCheck, actor, now = new Date(), sourceMaxAgeMs = SOURCE_MAX_AGE_MS, dueDate = null, reference = null, noCharge = false,
 }) {
   requireActor(actor);
   // A null liveCheck says no accounting system is connected (ledgerView).
@@ -981,7 +984,7 @@ export async function draftInvoiceForObligation(db, organisationId, obligationId
   const accounting = liveCheck !== null;
   const outcome = await db.transaction(async (tx) => {
     const obligation = await loadObligation(tx, organisationId, obligationId, { lock: true });
-    const reasons = draftBlockers(obligation, { now, sourceMaxAgeMs, accounting });
+    const reasons = draftBlockers(obligation, { now, sourceMaxAgeMs, accounting, noCharge });
     let live = null;
     if (!reasons.length && accounting) {
       try {

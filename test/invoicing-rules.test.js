@@ -285,6 +285,31 @@ describe('drafts by rule', { skip: skipWithoutDatabase }, () => {
     await deleteRule(handle.db, lab.id, rule.id);
   });
 
+  test('a job a non-chargeable rule matches drafts to Non-chargeable whatever its price items, tax or report age', async () => {
+    copy = { state: { complete: true, fresh: true, changedAt: new Date(NOW.getTime() - 60_000) }, invoices: [] };
+    const own = await createContact(handle.db, lab.id, { kind: 'customer', name: 'Own Clinic Two' });
+    const rule = await createRule(handle.db, lab.id, { name: 'Own clinics', conditions: [{ field: 'customer', test: 'is', value: own.id }], action: { kind: 'non_chargeable' } });
+    const odd = async (contact) => {
+      const row = await observeJob(handle.db, lab.id, {
+        sourceSystem: 'seazona', sourceJobRef: `odd-${++counter}`, caseRef: `ODD-${counter}`, contactId: contact.id, sourceStatus: 'Shipped',
+        jobDate: '2026-10-15', observedAt: new Date(NOW.getTime() - 3 * 86_400_000),
+        lines: [{ itemCode: 'NOT-A-PRICE-ITEM', description: 'Special', quantity: 1, unitAmountCents: 5000, taxCode: null }],
+      });
+      await setReady(handle.db, lab.id, row.id, { actor: 'person:test' });
+      await recordAccountingEvidence(handle.db, lab.id, row.id, { state: 'not_found', actor: 'test', checkedAt: NOW });
+      return row;
+    };
+    const free = await odd(own);
+    const billed = await odd(practice);
+    assert.equal(free.mappingComplete, false);
+    await autoDraftJobs(handle.db, lab.id, { accounting, now: NOW });
+    const job = await reload(free);
+    assert.ok(job.invoiceId, 'never billed, so nothing stops its draft');
+    assert.ok((await invoiceViews(handle.db, lab.id, { accounting: null })).nonChargeable.has(job.invoiceId));
+    assert.equal((await reload(billed)).invoiceId, null, 'a billed job still needs its price items');
+    await deleteRule(handle.db, lab.id, rule.id);
+  });
+
   test('the automations mark jobs ready from their status, then draft them; each is on or off', async () => {
     copy = { state: { complete: true, fresh: true, changedAt: new Date(NOW.getTime() - 60_000) }, invoices: [] };
     const list = await listAutomations(handle.db, lab.id);
