@@ -219,7 +219,7 @@ async function readCursor(db, organisationId, resource, { keepReference }) {
     where organisation_id = ${organisationId} and resource = ${resource} and copy_version is null`);
   const { rows: [row] } = await db.execute(sql`select * from xero_mirror_cursors
     where organisation_id = ${organisationId} and resource = ${resource}`);
-  return { modifiedSince: row.modified_since ? new Date(row.modified_since) : null, page: row.page };
+  return { modifiedSince: row.modified_since ? new Date(row.modified_since) : null, page: row.page, rereadAt: row.reread_at ?? null };
 }
 
 // Where the next page starts, from the page just read. A full page moves the
@@ -266,18 +266,29 @@ export async function mirrorResource(db, runtime, organisationId, resource, { ma
       }
       const rows = mapRecords(resource, raw, settings);
       const next = nextPosition(position, rows, pageSize);
-      await db.transaction(async (tx) => {
+      const asked = await db.transaction(async (tx) => {
         await storeRows(tx, organisationId, resource, rows, counts);
+        // An owner asked for a read again while this pass ran: keep the
+        // cursor at the start they set, and stop.
+        const { rows: [cursor] } = await tx.execute(sql`select reread_at from xero_mirror_cursors
+          where organisation_id = ${organisationId} and resource = ${resource} for update`);
+        if (String(cursor?.reread_at ?? '') !== String(position.rereadAt ?? '')) {
+          await tx.execute(sql`update xero_mirror_cursors set rows_read = rows_read + ${raw.length}, last_read_at = now(), last_error = null
+            where organisation_id = ${organisationId} and resource = ${resource}`);
+          return true;
+        }
         await tx.execute(sql`update xero_mirror_cursors set
           modified_since = ${next.modifiedSince}, page = ${next.page}, rows_read = rows_read + ${raw.length},
           last_read_at = now(), last_error = null,
           passes = passes + ${next.done ? 1 : 0},
           last_pass_finished_at = case when ${next.done} then now() else last_pass_finished_at end
           where organisation_id = ${organisationId} and resource = ${resource}`);
+        return false;
       });
       counts.pages += 1;
       counts.read += raw.length;
-      position = next;
+      if (asked) return { resource, ...counts, stopped: 'reread' };
+      position = { ...next, rereadAt: position.rereadAt };
       if (next.done) return { resource, ...counts, stopped: 'done' };
     }
   });
@@ -342,7 +353,8 @@ async function completeness(db, organisationId) {
   const { rows } = await db.execute(sql`select to_char(date_trunc('month', issued_on), 'YYYY-MM') as month,
       count(*)::int as invoices,
       count(*) filter (where coalesce(trim(reference), '') <> '')::int as with_reference,
-      count(*) filter (where exists (select 1 from jsonb_array_elements(lines) l where coalesce(l->>'itemCode', '') <> ''))::int as with_item_codes
+      count(*) filter (where jsonb_typeof(lines) = 'array'
+        and exists (select 1 from jsonb_array_elements(lines) l where coalesce(l->>'itemCode', '') <> ''))::int as with_item_codes
     from xero_invoices
     where organisation_id = ${organisationId} and type = 'ACCREC' and status not in ('DELETED', 'VOIDED')
       and issued_on >= date_trunc('month', now()) - interval '11 months'
@@ -353,7 +365,7 @@ async function completeness(db, organisationId) {
 // What the copy holds, and where each cursor stands. No Xero calls.
 export async function mirrorStatus(db, organisationId) {
   const { rows: cursors } = await db.execute(sql`select resource, modified_since, page, passes, rows_read,
-    last_read_at, last_pass_finished_at, last_error, copy_version, reread_by, reread_at from xero_mirror_cursors where organisation_id = ${organisationId}
+    last_read_at, last_pass_finished_at, last_error, copy_version, kept_reference, reread_by, reread_at from xero_mirror_cursors where organisation_id = ${organisationId}
     order by resource`);
   const { rows: [counts] } = await db.execute(sql`select
     (select count(*)::int from xero_invoices where organisation_id = ${organisationId}) as invoices,
@@ -371,6 +383,7 @@ export async function mirrorStatus(db, organisationId) {
       lastPassFinishedAt: c.last_pass_finished_at,
       lastError: c.last_error,
       copyVersion: c.copy_version ?? null,
+      keptReference: c.kept_reference ?? null,
       rereadAt: c.reread_at ?? null,
     })),
     completeness: await completeness(db, organisationId),

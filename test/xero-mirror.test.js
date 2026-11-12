@@ -3,7 +3,7 @@ import { after, before, describe, test } from 'node:test';
 import { sql } from 'drizzle-orm';
 import { invitePerson } from '../server/auth/people.js';
 import { IMPORT_KIND, keepReadsQueued, organisationsToImport, queueHistoryImport, REFRESH_MS, reportStaleCopies, resetImport, runImportOnce } from '../server/integrations/xero/import.js';
-import { COPY_VERSION, mapInvoice, mapPayment, mirrorResource, nextPosition, toCents } from '../server/integrations/xero/mirror.js';
+import { COPY_VERSION, mapInvoice, mapPayment, mirrorResource, nextPosition, rereadCopy, toCents } from '../server/integrations/xero/mirror.js';
 import { request } from './support/clerk.js';
 import { freshDatabase, skipWithoutDatabase } from './support/db.js';
 import { bootFlow, connectDirectly, scriptedXero, seedLab, xeroAnswer } from './support/xero.js';
@@ -270,15 +270,22 @@ describe('Xero mirror', { skip: skipWithoutDatabase }, () => {
     await handle.db.execute(sql`update xero_mirror_cursors set copy_version = null where resource = 'invoices'`);
     const quiet = xero.script([page('invoices', 'Invoices', [], { page: 1 })]);
     assert.equal((await mirror(adminToken, { resources: ['invoices'] })).status, 200);
-    assert.ok(quiet.calls[0].headers['If-Modified-Since'], 'no version yet: changes only, and the version is noted');
+    assert.ok(quiet.calls[0].headers['If-Modified-Since'], 'no version yet: changes only');
+    const { rows: [noted] } = await handle.db.execute(sql`select copy_version from xero_mirror_cursors where resource = 'invoices'`);
+    assert.equal(noted.copy_version, `${COPY_VERSION}:text`, 'and the version is noted');
     await handle.db.execute(sql`update xero_mirror_cursors set copy_version = '0:text' where resource = 'invoices'`);
     const again = xero.script([page('invoices', 'Invoices', [], { page: 1 })]);
     assert.equal((await mirror(adminToken, { resources: ['invoices'] })).status, 200);
     assert.equal(again.calls[0].headers['If-Modified-Since'], undefined, 'another version: from the start');
+    await handle.db.execute(sql`update xero_mirror_cursors set modified_since = now() where resource = 'invoices'`);
+    const after = xero.script([page('invoices', 'Invoices', [], { page: 1 })]);
+    assert.equal((await mirror(adminToken, { resources: ['invoices'] })).status, 200);
+    assert.ok(after.calls[0].headers['If-Modified-Since'], 'the same version again: changes only, no loop');
   });
 
   test('an owner asks for the whole copy to be read again; the next read starts from the beginning', async () => {
     const reread = (token) => request(app, '/api/xero/mirror/reread', { token, method: 'POST', body: { organisationId: lab.organisation.id, resources: ['invoices'] } });
+    await handle.db.execute(sql`update xero_mirror_cursors set modified_since = now() where resource = 'invoices'`);
     assert.equal((await reread(lab.staffToken)).status, 403);
     assert.equal((await reread(adminToken)).status, 403, 'owners only');
     const res = await reread(lab.ownerToken);
@@ -286,7 +293,34 @@ describe('Xero mirror', { skip: skipWithoutDatabase }, () => {
     assert.ok(res.body.cursors.find((c) => c.resource === 'invoices').rereadAt);
     const replay = xero.script([page('invoices', 'Invoices', [], { page: 1 })]);
     assert.equal((await mirror(adminToken, { resources: ['invoices'] })).status, 200);
-    assert.equal(replay.calls[0].headers['If-Modified-Since'], undefined);
+    assert.equal(replay.calls[0].headers['If-Modified-Since'], undefined, 'the owner\'s read again starts from the beginning');
+  });
+
+  test('a read again asked for during a pass is kept: the pass stops, and the next one starts from the beginning', async () => {
+    const { runtime } = xero;
+    const clientFor = runtime.clientFor;
+    runtime.clientFor = async (...args) => {
+      const found = await clientFor.apply(runtime, args);
+      const client = Object.create(found.client);
+      client.listChangedPage = async (...call) => {
+        const answer = await found.client.listChangedPage(...call);
+        await rereadCopy(handle.db, lab.organisation.id, { resources: ['invoices'], actor: 'person:test' });
+        return answer;
+      };
+      return { ...found, client };
+    };
+    try {
+      xero.script([page('invoices', 'Invoices', [invoice('r1', '2025-01-01T00:00:00Z'), invoice('r2', '2025-01-02T00:00:00Z')], { page: 1 })]);
+      const result = await mirrorResource(handle.db, runtime, lab.organisation.id, 'invoices');
+      assert.equal(result.stopped, 'reread');
+      assert.equal(result.pages, 1, 'a full page, then no second page');
+    } finally {
+      runtime.clientFor = clientFor;
+    }
+    const { rows: [cursor] } = await handle.db.execute(sql`select modified_since, page from xero_mirror_cursors
+      where organisation_id = ${lab.organisation.id} and resource = 'invoices'`);
+    assert.equal(cursor.modified_since, null, 'the start the owner set is kept');
+    assert.equal(cursor.page, 1);
   });
 
   test('the status shows, for each recent month, how many invoices have a Reference and item codes', async () => {

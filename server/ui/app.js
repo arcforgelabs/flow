@@ -1143,6 +1143,8 @@ function seazonaHistorySection() {
 // How much of the last 12 months of the copy has a Reference: a low share
 // is a copy that missed it (docs/XERO.md, "Copy version").
 function copyFill(mirror) {
+  // With free text off the copy keeps no Reference: that is the setting.
+  if (mirror.cursors?.find((c) => c.resource === 'invoices')?.keptReference === false) return '';
   const months = mirror.completeness ?? [];
   const invoices = months.reduce((sum, m) => sum + m.invoices, 0);
   if (!invoices) return '';
@@ -1200,10 +1202,13 @@ function xeroConnection(organisations, canChange) {
           // that missed a field). The next sync reads it; no call now.
           if (mirror && me?.person.role === 'owner') {
             const reread = h('button', { class: 'fx-btn fx-btn--sm', type: 'button', title: 'Read every Xero invoice again on the next sync', onclick: async () => {
+              // One press is enough: each press starts the read again.
+              reread.disabled = true;
               try {
                 await flow('/api/xero/mirror/reread', { method: 'POST', body: JSON.stringify({ organisationId: organisation.id }) });
                 toast('Flow reads the copy again on the next sync.');
               } catch (error) {
+                reread.disabled = false;
                 toast(error.message, 'danger');
               }
             } }, 'Read again');

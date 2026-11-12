@@ -521,10 +521,12 @@ reads the Reference. So each cursor notes the mapper's version
 - **Read again.** An owner can ask for the whole copy to be read again: Xero
   settings, "Read again" (`POST /api/xero/mirror/reread`). The next sync reads
   it, so the button makes no Xero call. The cursor keeps who asked and when.
+  A pass that is running when the owner asks stops after its page and keeps
+  the start the owner set.
 - **Completeness.** `GET /api/xero/mirror` gives, for each of the last 12
   months, the sales invoices in the copy and how many have a Reference and
-  line item codes. The Xero settings row shows the Reference share. A low
-  share is a copy that missed it.
+  line item codes. The Xero settings row shows the Reference share (not when
+  free text is off). A low share is a copy that missed it.
 
 ### Read before draft and send
 
