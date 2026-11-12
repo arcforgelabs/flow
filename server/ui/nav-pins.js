@@ -1,9 +1,10 @@
 // Which sidebar pages a person has pinned. Stored with the account in
 // people.views.nav (PUT /api/me/views/nav). No table of its own.
-// Jobs and Invoices stay pinned: a request that leaves them out is saved
+// Home, Jobs and Invoices stay pinned: a request that leaves them out is saved
 // with them put back. A page Flow does not know is dropped.
 
 export const NAV_PAGES = Object.freeze([
+  'home',
   'jobs',
   'captures',
   'invoices',
@@ -16,12 +17,13 @@ export const NAV_PAGES = Object.freeze([
   'integrations',
 ]);
 
-export const NAV_LOCKED = Object.freeze(['jobs', 'invoices']);
+export const NAV_LOCKED = Object.freeze(['home', 'jobs', 'invoices']);
 
-// Today's sidebar, before a person has chosen: daily work (Jobs, Capture,
+// Today's sidebar, before a person has chosen: Home, daily work (Jobs, Capture,
 // Invoices, Contacts, Reconcile), Price list and Rules. Automations, Custom fields
 // and Integrations start in More.
 export const NAV_DEFAULT = Object.freeze([
+  'home',
   'jobs',
   'captures',
   'invoices',

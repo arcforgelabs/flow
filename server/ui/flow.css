@@ -359,6 +359,22 @@ a.fx-link:hover, a.fx-link:focus-visible { border-color: var(--t-strong); }
   background: #fff; box-shadow: inset 0 0 0 1px var(--fx-line);
 }
 .fx-logo--icon { background: var(--t-accent-bg); color: var(--t-accent); box-shadow: none; }
+/* Home: the invoices ready to send, one big Send, then where sent ones are. */
+.fx-home { display: grid; gap: 24px; max-width: 960px; }
+.fx-home__send {
+  display: grid; justify-items: start; gap: 8px; padding: 28px;
+  border: 1px solid var(--fx-line); border-radius: var(--t-radius-lg); background: var(--t-paper);
+}
+.fx-home__count { color: var(--t-strong); font: 700 64px/1 var(--t-body); font-variant-numeric: tabular-nums; }
+.fx-home__sum { color: var(--t-dim); font-size: 15px; }
+.fx-home__btn { min-height: 56px; margin-top: 8px; padding: 0 28px; font-size: 17px; }
+.fx-home__btn .fx-lucide { width: 20px; height: 20px; }
+.fx-home__note { max-width: 60ch; color: var(--t-dim); font-size: 13.5px; }
+@media (max-width: 639px) {
+  .fx-home__send { padding: 20px; }
+  .fx-home__btn { width: 100%; }
+}
+
 .fx-tiles { display: grid; gap: 12px; }
 .fx-tiles + .fx-tiles { margin-top: 16px; }
 .fx-tiles__head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }

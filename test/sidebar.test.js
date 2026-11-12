@@ -51,9 +51,9 @@ test('Account is not in the sidebar; its page stays, with one visible heading', 
   assert.match(app, /main\.append\(h\('h1', \{ class: 'fx-sr' \}, 'Account'\), host\);/);
 });
 
-test('a person lands on Invoices, Ready tab, after sign-in and at / or an unknown path', () => {
+test('a person lands on Home after sign-in and at / or an unknown path; Invoices opens on Ready', () => {
   const app = read('../server/ui/app.js');
-  assert.match(app, /const START_VIEW = 'invoices';/);
+  assert.match(app, /const START_VIEW = 'home';/);
   assert.match(app, /return \[START_VIEW, null\];/);
   assert.doesNotMatch(app, /return \['jobs', null\];/);
   // A new browser tab has no saved tab, so the list opens on Ready.
@@ -71,9 +71,9 @@ test('folded, a click on the sidebar empty space opens it; a click on a page, th
 test('the sidebar shows pinned pages, then More; People and Appearance are in the account menu', () => {
   const app = read('../server/ui/app.js');
   const views = app.match(/const VIEWS = \{([\s\S]*?)\n\};/)[1];
-  // The sidebar order: daily work first, then Price list and Rules.
+  // The sidebar order: Home, daily work, then Price list and Rules.
   const order = [...views.matchAll(/^  '?([a-z-]+)'?: \{/gm)].map((m) => m[1]);
-  assert.deepEqual(order.slice(0, 7), ['jobs', 'captures', 'invoices', 'contacts', 'reconcile', 'price-list', 'invoicing-settings']);
+  assert.deepEqual(order.slice(0, 8), ['home', 'jobs', 'captures', 'invoices', 'contacts', 'reconcile', 'price-list', 'invoicing-settings']);
   for (const name of ['automations', 'custom-fields', 'integrations']) assert.match(views, new RegExp(`'?${name}'?: \\{[^\\n]*place: 'more'`));
   for (const name of ['people', 'appearance']) assert.match(views, new RegExp(`${name}: \\{[^\\n]*place: 'account'`));
   const lineOf = (name) => views.match(new RegExp(`'?${name}'?: \\{[^\\n]*`))[0];
@@ -81,7 +81,7 @@ test('the sidebar shows pinned pages, then More; People and Appearance are in th
   assert.deepEqual(sidebar, [...NAV_PAGES], 'a new sidebar page is added to the pin allow-list');
   const defaults = sidebar.filter((name) => !lineOf(name).includes("place: 'more'"));
   assert.deepEqual(defaults, [...NAV_DEFAULT]);
-  assert.deepEqual([...NAV_LOCKED], ['jobs', 'invoices']);
+  assert.deepEqual([...NAV_LOCKED], ['home', 'jobs', 'invoices']);
   // No group headings in the sidebar.
   assert.doesNotMatch(app, /fx-nav__group/);
   // More is the shared row menu, floating to the right of the row, listing

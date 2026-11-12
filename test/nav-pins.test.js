@@ -17,17 +17,17 @@ test('with no pins saved, the sidebar is the one Flow ships', () => {
   assert.equal(normaliseViews({ jobs: { group: 'stage' } }).nav, undefined);
 });
 
-test('Jobs and Invoices cannot be unpinned, and unknown pages are dropped', () => {
+test('Home, Jobs and Invoices cannot be unpinned, and unknown pages are dropped', () => {
   assert.deepEqual(normaliseNavPins({ pinned: [] }).pinned, [...NAV_LOCKED]);
-  assert.deepEqual(normaliseNavPins({ pinned: ['automations'] }).pinned, ['jobs', 'invoices', 'automations']);
+  assert.deepEqual(normaliseNavPins({ pinned: ['automations'] }).pinned, ['home', 'jobs', 'invoices', 'automations']);
   assert.deepEqual(
     normaliseNavPins({ pinned: ['integrations', 'constructor', 'nope', 'rules', 'invoices'] }).pinned,
-    ['jobs', 'invoices', 'integrations'],
+    ['home', 'jobs', 'invoices', 'integrations'],
   );
   assert.deepEqual(normaliseNavPins({ pinned: 'jobs' }).pinned, [...NAV_LOCKED]);
   assert.deepEqual(normaliseNavPins(null).pinned, [...NAV_LOCKED]);
   // A saved choice is what was saved, plus the pages that stay pinned.
-  assert.deepEqual(navPinsFromViews({ nav: { pinned: ['custom-fields'] } }).pinned, ['jobs', 'invoices', 'custom-fields']);
+  assert.deepEqual(navPinsFromViews({ nav: { pinned: ['custom-fields'] } }).pinned, ['home', 'jobs', 'invoices', 'custom-fields']);
 });
 
 describe('pin save and load follows the account', { skip: skipWithoutDatabase, concurrency: 1 }, () => {
@@ -71,10 +71,10 @@ describe('pin save and load follows the account', { skip: skipWithoutDatabase, c
       token, method: 'PUT', body: { pinned: ['automations', 'custom-fields', 'nope', 'constructor'] },
     });
     assert.equal(saved.status, 200);
-    assert.deepEqual(saved.body.view.pinned, ['jobs', 'invoices', 'automations', 'custom-fields']);
+    assert.deepEqual(saved.body.view.pinned, ['home', 'jobs', 'invoices', 'automations', 'custom-fields']);
 
     const loaded = await request(app, '/api/me', { token });
-    assert.deepEqual(loaded.body.views.nav.pinned, ['jobs', 'invoices', 'automations', 'custom-fields']);
+    assert.deepEqual(loaded.body.views.nav.pinned, ['home', 'jobs', 'invoices', 'automations', 'custom-fields']);
   });
 
   test('a request to unpin Jobs or Invoices is ignored, and another page\'s view stays', async () => {
@@ -83,14 +83,14 @@ describe('pin save and load follows the account', { skip: skipWithoutDatabase, c
     const saved = await request(app, '/api/me/views/nav', {
       token, method: 'PUT', body: { pinned: ['reconcile', 'price-list'] },
     });
-    assert.deepEqual(saved.body.view.pinned, ['jobs', 'invoices', 'reconcile', 'price-list']);
+    assert.deepEqual(saved.body.view.pinned, ['home', 'jobs', 'invoices', 'reconcile', 'price-list']);
 
     const views = normaliseViews((await findPersonById(handle.db, id)).views);
     assert.equal(views.jobs.group, 'client');
-    assert.deepEqual(views.nav.pinned, ['jobs', 'invoices', 'reconcile', 'price-list']);
+    assert.deepEqual(views.nav.pinned, ['home', 'jobs', 'invoices', 'reconcile', 'price-list']);
     const loaded = await request(app, '/api/me', { token });
     assert.equal(loaded.body.views.jobs.group, 'client');
-    assert.deepEqual(loaded.body.views.nav.pinned, ['jobs', 'invoices', 'reconcile', 'price-list']);
+    assert.deepEqual(loaded.body.views.nav.pinned, ['home', 'jobs', 'invoices', 'reconcile', 'price-list']);
 
     assert.equal((await request(app, '/api/me/views/nav', { method: 'PUT', body: { pinned: [] } })).status, 401);
   });

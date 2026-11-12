@@ -29,6 +29,18 @@ Xero calls). An invoice in that copy from before the `sent_to_contact` column
 (Xero migration 0009) shows as Approved until Xero changes it and Flow reads
 it again.
 
+## Home
+
+Home is the page a person lands on (`server/ui/home.js`). It shows the
+number of Ready invoices and their total, and one Send button. Send sends
+every Ready invoice with the same step as the Invoices page (`POST
+/invoices/send-ready`, up to 100 a press). A note under the button says what
+the send mode does: a Xero draft that a person approves and sends in Xero,
+or an approved invoice that Xero emails at once. Under it, cards count
+Pending ("Needs a look"), Draft, Approved and Sent; each opens that tab
+(`/invoices?tab=<tab>`). With no accounting system, only Needs a look and
+Approved show. An owner or admin can send; other people see the counts only.
+
 ## Ready
 
 A draft with no problem is in Ready. A saved change keeps it there while the

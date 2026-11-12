@@ -111,7 +111,7 @@ function toCents(text) {
 
 const fromCents = (cents) => (cents == null ? '' : (cents / 100).toFixed(2));
 
-function localDate(date = new Date()) {
+export function localDate(date = new Date()) {
   const pad = (n) => String(n).padStart(2, '0');
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
@@ -146,6 +146,13 @@ function readFilters() {
 
 export async function renderInvoiceList(main, ui) {
   const { h, flow, listHead, listFrame, notice, go, toast } = ui;
+  // A link may name the tab (/invoices?tab=draft, from Home). It is kept as
+  // the open tab, and the address goes back to /invoices.
+  const linked = new URLSearchParams(globalThis.location?.search ?? '').get('tab');
+  if (linked) {
+    sessionStorage.setItem('flow_invoice_tab', linked);
+    history.replaceState(null, '', location.pathname);
+  }
   const saved = OLD_TAB[sessionStorage.getItem('flow_invoice_tab')] ?? sessionStorage.getItem('flow_invoice_tab');
   // Back from an invoice comes here with the tab, search and scroll it left.
   const back = readNav();
