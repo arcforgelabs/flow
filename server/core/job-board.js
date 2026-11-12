@@ -55,7 +55,10 @@ export async function describeObligations(db, organisationId, listed, { accounti
   const sourceNeeds = (o) => {
     if (!addRules.length) return [];
     const customer = { ...effectiveSettings(settings, customers.get(o.contactId)), name: nameOf.get(o.contactId) ?? null };
-    return rulePending(addRules, { ...o, ruleExceptions: excepted.get(o.id) ?? [] }, { customer })
+    // The work system's own lines count as having the item, whatever the
+    // rule's conditions say, so the badge shows only while the item is missing there.
+    const inSource = (o.lines ?? []).flatMap((l) => [l.itemCode, l.label].filter(Boolean));
+    return rulePending(addRules, { ...o, ruleExceptions: excepted.get(o.id) ?? [], draftItems: inSource }, { customer })
       .map((p) => ({ rule: p.rule, item: p.addItem, note: p.message, short: p.short }));
   };
   const ready = new Set(views?.ready ?? []);

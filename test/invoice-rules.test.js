@@ -10,7 +10,7 @@ import { autoDraftJobs, saveInvoicingSettings } from '../server/core/invoicing-r
 import { describeObligations } from '../server/core/job-board.js';
 import { draftInvoiceForObligation, explainObligation, observeJob, setReady } from '../server/core/ledger.js';
 import { invoiceView, invoiceViews, markReady, sendAllReady } from '../server/core/sending.js';
-import { billingObligations, invoices } from '../server/db/schema.js';
+import { billingObligations, invoices, obligationEvents } from '../server/db/schema.js';
 import { freshDatabase, skipWithoutDatabase } from './support/db.js';
 
 // Invoice rules a lab builds: When a job is ready, If every condition
@@ -468,11 +468,55 @@ describe('rules a lab keeps', { skip: skipWithoutDatabase }, () => {
     await exceptJob(handle.db, lab.id, third.id, rule.id, { reason: 'Picked up', actor: 'person:test' });
     assert.deepEqual(await needs(third), []);
     const otherLab = await createOrganisation(handle.db, { name: 'Other Lab' });
-    await assert.rejects(exceptJob(handle.db, otherLab.id, third.id, rule.id, { reason: 'x', actor: 'person:test' }), /job/);
+    await assert.rejects(exceptJob(handle.db, otherLab.id, third.id, rule.id, { reason: 'x', actor: 'person:test' }), /not found/);
     assert.equal((await listRules(handle.db, lab.id)).find((r) => r.id === rule.id).exceptions, 2);
-    // Taken back, the rule applies again.
-    await removeRuleException(handle.db, lab.id, rule.id, listed[0].id);
+    // The job's history keeps it.
+    const events = await handle.db.select().from(obligationEvents).where(eq(obligationEvents.obligationId, second.id));
+    assert.ok(events.some((e) => e.kind === 'rule_exception_added' && e.evidence.reason === 'Picked up by the clinic'));
+    // An exception ends when the job's lines change: a person looks again.
+    await observeJob(handle.db, lab.id, {
+      sourceSystem: 'seazona', sourceJobRef: third.sourceJobRef, caseRef: third.caseRef, contactId: practice.id,
+      sourceStatus: 'Shipped', jobDate: '2026-10-15', lines: [{ itemCode: 'CROWN', description: 'Crown' }, { itemCode: 'CROWN', description: 'Crown' }], observedAt: NOW,
+    });
+    const [changed] = await handle.db.select().from(billingObligations).where(eq(billingObligations.id, third.id));
+    assert.deepEqual((await needs(changed)).map((n) => n.item), ['S/H']);
+    assert.equal((await listRuleExceptions(handle.db, lab.id, rule.id)).find((e) => e.obligationId === third.id).current, false);
+    // A job whose work system has the item needs nothing, whatever the rule says.
+    assert.deepEqual(await needs({ ...changed, lines: [...changed.lines, { itemCode: 'S/H' }] }), []);
+    // Taken back, the rule applies again; an unknown exception is not found.
+    await removeRuleException(handle.db, lab.id, rule.id, listed[0].id, { actor: 'person:test' });
     assert.ok(await ruleProblem(second.invoiceId));
+    await assert.rejects(removeRuleException(handle.db, lab.id, rule.id, listed[0].id), /not found/);
+    assert.ok((await handle.db.select().from(obligationEvents).where(eq(obligationEvents.obligationId, second.id))).some((e) => e.kind === 'rule_exception_removed'));
+    await deleteRule(handle.db, lab.id, rule.id);
+  });
+
+  test('only a rule with an item takes an exception; the item must be on the price list; a $0 item does not satisfy it', async () => {
+    const plain = await createRule(handle.db, lab.id, { name: 'Plain', conditions: [{ field: 'job_total', test: 'more_than', value: 0 }], action: { kind: 'pending', note: 'Check it.' } });
+    const job = await observeJob(handle.db, lab.id, {
+      sourceSystem: 'seazona', sourceJobRef: `job-${++counter}`, caseRef: `CASE-${counter}`, contactId: practice.id,
+      sourceStatus: 'Shipped', jobDate: '2026-10-15', lines: [{ itemCode: 'CROWN', description: 'Crown' }], observedAt: NOW,
+    });
+    await assert.rejects(exceptJob(handle.db, lab.id, job.id, plain.id, { reason: 'No', actor: 'person:test' }), /only a pending rule with an item/);
+    await deleteRule(handle.db, lab.id, plain.id);
+    await assert.rejects(createRule(handle.db, lab.id, {
+      name: 'Missing item', conditions: [{ field: 'line_item', test: 'has_not', value: 'NOPE' }], action: { kind: 'pending', note: 'Add it.', addItem: 'NOPE' },
+    }), /no item NOPE/);
+    const rule = await createRule(handle.db, lab.id, {
+      name: 'Shipping', conditions: [{ field: 'line_item', test: 'has_not', value: 'S/H' }], action: { kind: 'pending', note: 'Add shipping.', addItem: 'S/H' },
+    });
+    await setReady(handle.db, lab.id, job.id, { actor: 'person:test' });
+    await autoDraftJobs(handle.db, lab.id, { now: NOW });
+    const [drafted] = await handle.db.select().from(billingObligations).where(eq(billingObligations.id, job.id));
+    const ruleProblem = async () => ((await invoiceViews(handle.db, lab.id)).problems.get(drafted.invoiceId) ?? []).find((p) => p.rule === rule.id);
+    const added = await addRuleItem(handle.db, lab.id, drafted.invoiceId, rule.id);
+    assert.equal(await ruleProblem(), undefined);
+    // Edited to $0, the line no longer counts.
+    const { updateDraftInvoice } = await import('../server/core/invoices.js');
+    await updateDraftInvoice(handle.db, lab.id, drafted.invoiceId, {
+      lines: added.lines.map(({ priceItemId, description, quantity, unitAmountCents, taxCode }, i) => ({ priceItemId, description, quantity, taxCode, unitAmountCents: i === 1 ? 0 : unitAmountCents })),
+    });
+    assert.ok(await ruleProblem());
     await deleteRule(handle.db, lab.id, rule.id);
   });
 

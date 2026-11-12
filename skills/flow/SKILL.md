@@ -66,7 +66,8 @@ Rule actions: `wait` (hold the job), `skip` (never invoice it), `pending`
 (draft it, but hold it on Pending with a note) or `non_chargeable`. Take
 field, test and value only from `rule-fields`. A pending rule with `addItem`
 offers that item. Add it or skip it only when the person says so, and give
-the person's reason for a skip. The work system must get the item too: tell
+the person's reason for a skip. An exception ends when the job's lines change
+(`current: false` in the rule's exceptions list): ask the person again. The work system must get the item too: tell
 the person which jobs show "needs <item>" on the job board.
 
 Voids: the Void tab holds invoices voided in Flow **or voided or deleted in

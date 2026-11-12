@@ -111,7 +111,15 @@ export async function updateDraftInvoice(db, organisationId, invoiceId, changes)
         .where(eq(invoices.id, invoice.id)).returning();
     }
     if ('lines' in changes) {
-      row = await writeLines(tx, row, await resolveLines(tx, organisationId, changes.lines));
+      // `lines` may be a function of the draft's current lines, read under
+      // the lock, so a change made at the same time is not lost.
+      let lines = changes.lines;
+      if (typeof lines === 'function') {
+        const current = await tx.select().from(invoiceLines).where(eq(invoiceLines.invoiceId, invoice.id)).orderBy(asc(invoiceLines.position));
+        lines = lines(current);
+        if (lines === null) return row;
+      }
+      row = await writeLines(tx, row, await resolveLines(tx, organisationId, lines));
     }
     return row;
   });

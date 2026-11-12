@@ -87,11 +87,22 @@ condition is `line_item` `has_not` `S/H`.
   of that item on the draft, at the price list's price. A second press adds
   nothing. The rule then matches no more.
 - **Skip** asks for a reason (1 to 200 characters) and records an exception:
-  this rule leaves this job alone. The rule's summary counts its exceptions,
-  and `GET /api/invoicing/rules/:id/exceptions` lists them with the reason,
-  who and when. Delete an exception and the rule applies again.
-- A job with no draft yet can have its exception too, from the job's
-  "needs" line: the person knows the job needs no shipping.
+  this rule leaves this job alone. Only a pending rule with an item takes an
+  exception. The rule's summary counts its exceptions, and
+  `GET /api/invoicing/rules/:id/exceptions` lists them with the reason, who,
+  when, and `current`. The job's history records each one given or taken
+  back, and the invoice page lists them. Delete an exception and the rule
+  applies again.
+- An exception holds while the job's lines and the rule's item stay as they
+  were. When the work system changes the job, or the rule names another
+  item, the exception ends (`current: false`) and a person looks again.
+- The item counts only on a charged line. A rule line edited to $0 does not
+  satisfy the rule: use Skip, with a reason.
+- A job with no draft yet can have its exception too, through the API
+  (`POST /api/invoicing/jobs/:id/rules/:ruleId/exception`).
+- The rule's item must be on the price list and not archived, when the rule
+  is saved and when Add runs. Add reads the draft's lines under its lock, so
+  two presses, or an edit at the same time, add one line and lose nothing.
 - The work system must have the item too, because the lab prints from it.
   Flow cannot write lines there. So a job card shows a yellow
   "<system> needs S/H" while the job in the work system lacks it and has no
@@ -99,7 +110,7 @@ condition is `line_item` `has_not` `S/H`.
   are on Flow's invoice only, and a link to the job there.
 
 Exceptions are in `invoice_rule_exceptions` (migration
-`0027_high_doctor_strange.sql`, add only), one for each rule and job.
+`0027_high_doctor_strange.sql`, and `0028_sharp_power_pack.sql` for the item and the job's lines it was given for; add only), one for each rule and job.
 
 ## Non-chargeable rules
 

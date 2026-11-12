@@ -112,9 +112,11 @@ async function checkDrafts(db, organisationId, drafts, accounting) {
     const settings = await readInvoicingSettings(db, organisationId);
     const customers = await customerBillingByContact(db, organisationId, jobs.map((j) => j.obligation.contactId));
     const exceptions = await ruleExceptionsFor(db, organisationId, jobs.map((j) => j.obligation.id));
+    // A rule's item counts only on a charged line: an item edited to $0
+    // does not satisfy the rule; Skip, with a reason, is the way to say so.
     const itemRows = await db.select({ invoiceId: invoiceLines.invoiceId, code: priceItems.code }).from(invoiceLines)
       .innerJoin(priceItems, eq(priceItems.id, invoiceLines.priceItemId))
-      .where(inArray(invoiceLines.invoiceId, jobs.map((j) => j.obligation.invoiceId)));
+      .where(and(inArray(invoiceLines.invoiceId, jobs.map((j) => j.obligation.invoiceId)), sql`${invoiceLines.unitAmountCents} * ${invoiceLines.quantity} > 0`));
     const itemsOf = Map.groupBy(itemRows, (r) => r.invoiceId);
     for (const { obligation, reference, customerName } of jobs) {
       const customer = { ...effectiveSettings(settings, customers.get(obligation.contactId)), name: customerName ?? null };
