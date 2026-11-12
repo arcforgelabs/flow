@@ -77,6 +77,7 @@ function toFeedEntry({ order, invoice, client, invoiceOrderCount }) {
     lines: order.lines,
     subtotalCents: order.subtotalCents,
     patientReference: order.patientReference,
+    remake: order.remake === true,
     syncedAt: order.lastSyncedAt.toISOString(),
     invoice: invoice ? {
       invoiceNumber: invoice.invoiceNumber,

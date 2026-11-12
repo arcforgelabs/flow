@@ -17,6 +17,7 @@ import {
   readOrderFailures,
   readQuarantinedRecords,
   recordRecordFailure,
+  syncRemakeFlags,
   touchSynced,
   upsertRecords,
 } from './store.js';
@@ -216,6 +217,8 @@ async function sweepOrderDay(ctx, day, progress, helpers, found) {
     }
   }
   await touchSynced(db, 'orders', unchanged, { at });
+  // The remake flag is on the list row: kept with no detail read.
+  await syncRemakeFlags(db, new Map(unchanged.map((id) => [id, listed.get(id)?.isRemake === true])), { at });
 
   // Held for this day, left out of the list, and not seen this cycle.
   for (const row of held) {

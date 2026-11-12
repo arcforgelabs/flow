@@ -3,8 +3,9 @@ import {
   billingObligations, contacts, customerBillingSettings, externalLinks, invoicingSettings, SEND_MODES,
 } from '../db/schema.js';
 import { FlowError, notFound } from './errors.js';
-import { accountingItemsFor, listRules, ruleReasons } from './invoice-rules.js';
-import { draftInvoiceForObligation } from './ledger.js';
+import { HISTORY_HOLD_REASON } from './history.js';
+import { accountingItemsFor, listRules, ruleNonChargeable, ruleReasons } from './invoice-rules.js';
+import { draftInvoiceForObligation, setHold, setReady } from './ledger.js';
 import { needsRead, readAccountingFirst, readBeforeAct, READS_PER_PASS } from './read-before-act.js';
 import { checkReferenceTemplate, DEFAULT_REFERENCE, jobReference } from './references.js';
 
@@ -201,6 +202,44 @@ export function ruleBlockers(obligation, effective, { now = new Date(), rules = 
   const reasons = [];
   if (!obligation.readyAt) reasons.push('the job is not marked ready to invoice');
   return [...reasons, ...ruleReasons(rules, obligation, { customer: effective, now, items })];
+}
+
+// Old jobs from the history import wait on hold, out of the rules' sight. A
+// job that a non-chargeable rule matches (own clinics, remakes) needs no
+// person: it is never billed. When no accounting invoice was found for it,
+// the rule releases it and marks it ready, and the next draft run puts its
+// draft on the Non-chargeable tab, never sent. A job with an accounting
+// invoice, or one that is unclear, stays for a person. Answers counts.
+export async function settleHistoryByRules(db, organisationId, { accounting = null, now = new Date(), limit = DRAFT_BATCH } = {}) {
+  const result = { checked: 0, released: 0 };
+  const rules = (await listRules(db, organisationId)).filter((r) => r.enabled && r.trigger === 'job_ready' && r.action.kind === 'non_chargeable');
+  if (!rules.length) return result;
+  const jobs = await db.select().from(billingObligations).where(and(
+    eq(billingObligations.organisationId, organisationId),
+    eq(billingObligations.holdState, 'held'),
+    eq(billingObligations.holdReason, HISTORY_HOLD_REASON),
+    isNull(billingObligations.invoiceId),
+    sql`${billingObligations.contactId} is not null`,
+    accounting
+      ? eq(billingObligations.accountingState, 'not_found')
+      : inArray(billingObligations.accountingState, ['not_found', 'unknown']),
+  )).orderBy(sql`${billingObligations.jobDate} desc nulls last`, billingObligations.id).limit(limit);
+  if (!jobs.length) return result;
+  const settings = await readInvoicingSettings(db, organisationId);
+  const contactIds = [...new Set(jobs.map((j) => j.contactId))];
+  const customers = await customerBillingByContact(db, organisationId, contactIds);
+  const names = await customerNames(db, organisationId, contactIds);
+  for (const job of jobs) {
+    result.checked += 1;
+    const customer = { ...effectiveSettings(settings, customers.get(job.contactId)), name: names.get(job.contactId) ?? null };
+    const [rule] = ruleNonChargeable(rules, job, { customer, now });
+    if (!rule) continue;
+    const actor = `rule:${rule.rule}`;
+    await setHold(db, organisationId, job.id, { holdState: 'none', reason: `${rule.short}: non-chargeable`, actor });
+    await setReady(db, organisationId, job.id, { actor });
+    result.released += 1;
+  }
+  return result;
 }
 
 function addDays(date, days) {

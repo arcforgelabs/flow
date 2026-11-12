@@ -54,6 +54,7 @@ for sends, voids and deletes get the person's yes in the chat.
 | Add a rule | `flow.sh post invoicing/rules '{"name":"...","conditions":[{"field":"job_total","test":"at_most","value":0}],"action":{"kind":"wait"}}'` |
 | Change or turn off a rule | `flow.sh put invoicing/rules/<id> '{"enabled":false}'` |
 | Delete a rule | `flow.sh delete invoicing/rules/<id>` |
+| Remakes are never billed | `flow.sh post invoicing/rules '{"name":"Remake","conditions":[{"field":"remake","test":"is","value":true}],"action":{"kind":"non_chargeable"}}'` |
 | Rule that offers an item (shipping) | `flow.sh post invoicing/rules '{"name":"Shipping","conditions":[{"field":"line_item","test":"has_not","value":"S/H"}],"action":{"kind":"pending","note":"Add shipping, or skip with a reason.","addItem":"S/H"}}'` |
 | Add the rule's item to a draft | `flow.sh post invoicing/invoices/<id>/rules/<ruleId>/add-item '{}'` |
 | Skip a rule for one job | on its draft: `flow.sh post invoicing/invoices/<id>/rules/<ruleId>/exception '{"reason":"..."}'`; no draft yet: `flow.sh post invoicing/jobs/<jobId>/rules/<ruleId>/exception '{"reason":"..."}'` |
@@ -69,6 +70,10 @@ offers that item. Add it or skip it only when the person says so, and give
 the person's reason for a skip. An exception ends when the job's lines change
 (`current: false` in the rule's exceptions list): ask the person again. The work system must get the item too: tell
 the person which jobs show "needs <item>" on the job board.
+
+A matching `non_chargeable` rule wins over wait rules, and it releases old
+held history jobs that have no accounting invoice. Settle reconciliation work
+(remakes, own clinics) with rules, never with one-off clean-ups.
 
 Keep the rules few and clear. When you work with rules, read all of them
 (`flow.sh get invoicing/rules`) and look for rules that do the same job, that

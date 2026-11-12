@@ -495,12 +495,13 @@ export async function readHistoryWork(db, { cursor = null, limit = 200 } = {}) {
   }
   const pageSize = Math.max(1, Math.min(1000, limit));
   const changedAt = sql`to_char(${seazonaHistoryJobs.lastChangedAt} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`;
-  const rows = await db.select({ job: seazonaHistoryJobs, changedAt })
+  const rows = await db.select({ job: seazonaHistoryJobs, changedAt, remake: seazonaOrders.remake })
     .from(seazonaHistoryJobs)
+    .leftJoin(seazonaOrders, eq(seazonaOrders.id, seazonaHistoryJobs.mirrorOrderId))
     .where(after ? sql`(${seazonaHistoryJobs.lastChangedAt}, ${seazonaHistoryJobs.jobKey}) > (${after.at}::timestamptz, ${after.key})` : undefined)
     .orderBy(seazonaHistoryJobs.lastChangedAt, seazonaHistoryJobs.jobKey)
     .limit(pageSize);
-  const items = rows.map(({ job }) => {
+  const items = rows.map(({ job, remake }) => {
     const sourceJobRef = job.mirrorOrderId ?? job.caseRef ?? `history:${job.jobKey}`;
     return {
       source: 'seazona',
@@ -518,6 +519,8 @@ export async function readHistoryWork(db, { cursor = null, limit = 200 } = {}) {
         shippedOn: job.shippedDate,
         jobDate: job.jobDate ?? job.dueDate ?? job.shippedDate,
         sourceStatus: job.status,
+        // The order's remake flag, from Flow's copy of the order.
+        remake: remake === true,
         lines: (job.lines ?? []).map(ledgerLine),
         // The CSV reports a total, but no invoice tax allocation.
         sourceTotals: job.totalCents == null ? null : { totalCents: job.totalCents },

@@ -81,6 +81,20 @@ export async function touchSynced(db, mirror, keys, { at }) {
   await db.update(table).set({ lastSyncedAt: at }).where(inArray(table[key], keys));
 }
 
+// The remake flag of orders whose other list fields did not change, from the
+// list rows (`flags`, Map(id -> boolean)): no detail read is needed. A change
+// counts as a change of the order, so the billing feed reads it again.
+export async function syncRemakeFlags(db, flags, { at }) {
+  const ids = [...flags.keys()];
+  if (!ids.length) return 0;
+  const values = ids.map((id) => flags.get(id) === true);
+  const { rowCount } = await db.execute(sql`
+    update seazona_orders o set remake = f.remake, last_changed_at = ${at}
+    from unnest(${sql.param(ids)}::text[], ${sql.param(values)}::boolean[]) as f(id, remake)
+    where o.id = f.id and o.remake is distinct from f.remake`);
+  return rowCount ?? 0;
+}
+
 // Issue #12: Seazona answered 404. Keep the row and its history, mark it, and
 // refresh its sync time so it never comes first in the rotation again. An
 // order seen in a list but never stored is kept from that list row.

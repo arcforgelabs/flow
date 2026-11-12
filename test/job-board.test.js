@@ -153,7 +153,10 @@ test('a phone swipe names the lane that is more than halfway across', () => {
 test('wait and skip rules preserve their identity through Pending work fixes', () => {
   const rule = (id, kind) => ({ id, name: 'Check this job', enabled: true, trigger: 'job_ready',
     conditions: [{ field: 'job_total', test: 'is', value: 0 }], action: { kind } });
-  const rules = [rule('wait-rule', 'wait'), rule('skip-rule', 'skip'), rule('not-pending', 'non_chargeable')];
+  // A matching non-chargeable rule wins over wait rules (invoice-rules
+  // tests); this one does not match, so the wait and skip rules show.
+  const rules = [rule('wait-rule', 'wait'), rule('skip-rule', 'skip'),
+    { ...rule('not-pending', 'non_chargeable'), conditions: [{ field: 'job_total', test: 'is', value: 5 }] }];
   const waitingRules = ruleWait(rules, { totalCents: 0 });
   assert.deepEqual(waitingRules, [
     { code: 'rule', short: 'Check this job', message: 'rule "Check this job": waits for a person', rule: 'wait-rule', resolution: { kind: 'rule_review' } },

@@ -543,6 +543,14 @@ number, else `history:<job key>`. `health()` shows `history`: jobs held,
 how many the API copy also has, the first and last job date, and open
 batches.
 
+### Remakes
+
+Seazona's order lists and order reads carry `isRemake`. Flow keeps it as
+`seazona_orders.remake` and the job's `remake`, for the rule field Remake. A
+list read that changes only the flag updates it with no detail read and
+counts as a change of the order, so the billing feed reads it again. A history
+job takes the flag from the copy of its order, when Flow has one.
+
 ### History jobs in the ledger
 
 The pipeline reads `pullHistoryJobs` after the live feed
@@ -560,7 +568,9 @@ state. `GET /api/seazona/history/ledger` lists the held history jobs by that
 state; `?state=needs_person` gives `not_found`, `ambiguous` and `conflict`.
 A matched job stays held: it is history and already invoiced. Only a
 person's release (`POST /api/seazona/history/ledger/:obligationId/release`)
-moves a job into drafting. The Jobs board and `GET /api/invoicing/jobs`
+moves a job into drafting, or a non-chargeable rule when the accounting
+system has no invoice for the job ([invoice rules](INVOICE_RULES.md#non-chargeable-rules)).
+The Jobs board and `GET /api/invoicing/jobs`
 leave held history jobs out; `/jobs?history=include` shows them, and its
 `counts.history` gives how many there are.
 

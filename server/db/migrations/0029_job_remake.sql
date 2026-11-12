@@ -1,0 +1,1 @@
+ALTER TABLE "billing_obligations" ADD COLUMN IF NOT EXISTS "remake" boolean DEFAULT false NOT NULL;

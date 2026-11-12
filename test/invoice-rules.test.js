@@ -155,6 +155,22 @@ describe('one rule against one job', () => {
     assert.equal(await accountingItemsFor({ capabilities: { itemMatches: async () => null } }, 'org', saved, [two]), null);
   });
 
+  test('a remake goes to No charge: the remake field, and a non-chargeable rule wins over wait rules', () => {
+    const remakeRule = { ...rule([{ field: 'remake', test: 'is', value: true }], 'non_chargeable', 'Remake'), id: 'r-rm' };
+    const noAmount = { ...rule([{ field: 'job_total', test: 'at_most', value: 0 }], 'wait', 'No amount'), id: 'r-na' };
+    const late = { ...rule([{ field: 'job_total', test: 'at_most', value: 0 }], 'skip', 'Late skip'), id: 'r-ls' };
+    const remake = job({ remake: true, totalCents: 0 });
+    // Without the remake rule, "No amount" holds the $0 job.
+    assert.deepEqual(ruleReasons([noAmount], remake, { now: NOW }), ['rule "No amount": waits for a person']);
+    // With it, in any order, the job is not held, and its draft is non-chargeable.
+    assert.deepEqual(ruleReasons([noAmount, remakeRule, late], remake, { now: NOW }), []);
+    assert.equal(ruleNonChargeable([noAmount, remakeRule], remake, { now: NOW })[0].rule, 'r-rm');
+    // A skip rule above the non-chargeable rule still decides.
+    assert.deepEqual(ruleReasons([late, remakeRule], remake, { now: NOW }), ['rule "Late skip": not drafted by rule']);
+    // A job that is not a remake is held as before.
+    assert.deepEqual(ruleReasons([remakeRule, noAmount], job({ totalCents: 0 }), { now: NOW }), ['rule "No amount": waits for a person']);
+  });
+
   test('a skip rule holds a matching draft; a wait rule does not', () => {
     const skip = { ...rule([{ field: 'customer', test: 'contains', value: 'example' }], 'skip', 'Own branches'), id: 'r-9', trigger: 'job_ready' };
     const wait = { ...rule([{ field: 'customer', test: 'contains', value: 'example' }], 'wait', 'Hold branches'), id: 'r-8', trigger: 'job_ready' };

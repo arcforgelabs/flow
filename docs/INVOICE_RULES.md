@@ -125,9 +125,22 @@ Approve never send it: `Not sent: Rule "<name>": non-chargeable. Flow keeps
 it and never sends it.` A draft made before the rule moves to the tab by
 itself. Turn the rule off, and its drafts are checked as usual again.
 
+A non-chargeable rule that matches a job wins over every wait rule, so a $0
+remake is not stopped by a "No amount" rule. It also wins over the skip rules
+below it in the list. A skip rule above it still stops the job.
+
 | Name | If | Then |
 | --- | --- | --- |
 | Own clinics | Customer contains `Example Group` | Non-chargeable |
+| Remake | Remake is yes | Non-chargeable |
+
+Old held jobs settle by rule too. The history import holds each job it adds
+(`history_import`). When the accounting matcher finds no invoice for such a
+job (`not_found`; with no accounting system connected, also `unknown`), and a
+non-chargeable rule matches it, the draft step releases it (actor
+`rule:<id>`) and drafts it on the Non-chargeable tab. A job that the
+accounting system has invoiced stays held. The step's run summary counts the
+released jobs (`settle_history`).
 
 ## Fields
 
@@ -139,6 +152,7 @@ itself. Turn the rule off, and its drafts are checked as usual again.
 | `practitioner` | text, with a menu of the practitioners on jobs | The job's practitioner, else the customer's default | is, is not, is one of, is not one of, contains, does not contain, starts with, does not start with, has a number, has a number beside words, is one word, is empty, is not empty |
 | `reference` | text | The draft's Reference. Pending rules only | the same tests as `practitioner` |
 | `customer` | menu of customers | The job's customer. Contains and does not contain read the customer's name | is, is not, is one of, is not one of, contains, does not contain, is empty |
+| `remake` | yes or no | The work system marks the job a remake (Seazona: the order's `isRemake`) | is |
 | `customer_billable` | yes or no | The customer's `billable` setting | is |
 | `line_item` | menu of price items | The item codes on the job's lines | has, does not have |
 | `line_share` | price item and percent | That item's lines as a share of the other lines, to within 1 cent | is, is not |

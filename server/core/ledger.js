@@ -197,6 +197,8 @@ export async function observeJob(db, organisationId, job) {
       practitioner: job.practitioner ?? null,
       jobDate: job.jobDate ?? null,
       sourceStatus: job.sourceStatus ?? null,
+      // Seazona's remake flag, for the invoice rule field `remake`.
+      remake: job.remake === true,
       lines,
       lineFingerprint: fingerprint(lines),
       sourceTotals,
@@ -237,7 +239,7 @@ export async function observeJob(db, organisationId, job) {
         : String(existing[key] ?? '') !== String(facts[key] ?? ''));
     if (!changed.length) {
       const row = await update(tx, existing, {
-        sourceSeenAt: seenAt, mappingComplete: facts.mappingComplete, lines, jobDate: facts.jobDate, sourceStatus: facts.sourceStatus,
+        sourceSeenAt: seenAt, mappingComplete: facts.mappingComplete, lines, jobDate: facts.jobDate, sourceStatus: facts.sourceStatus, remake: facts.remake,
       });
       await statusChanged(tx, organisationId, existing, row, actor);
       return recordSourceReview(tx, row, actor);

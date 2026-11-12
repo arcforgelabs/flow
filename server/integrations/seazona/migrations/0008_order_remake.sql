@@ -1,0 +1,1 @@
+ALTER TABLE "seazona_orders" ADD COLUMN IF NOT EXISTS "remake" boolean DEFAULT false NOT NULL;

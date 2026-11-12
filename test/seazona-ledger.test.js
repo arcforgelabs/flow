@@ -35,6 +35,8 @@ test('an invoice that carries several orders is never split: each job keeps its 
   assert.equal(unknown.unitAmountCents, undefined, 'an unknown amount is left for the price list');
   assert.equal(unknown.taxCode, null, 'an unknown tax treatment stays explicit until a price item supplies it');
   assert.equal(toLedgerJob(item).sourceTotals, null, 'shared invoice totals never become one order total');
+  assert.equal(toLedgerJob(item).remake, false);
+  assert.equal(toLedgerJob({ ...item, remake: true }).remake, true, "Seazona's remake flag reaches the job");
 });
 
 describe('Seazona work in the billing ledger', { skip: skipWithoutDatabase }, () => {
@@ -81,6 +83,30 @@ describe('Seazona work in the billing ledger', { skip: skipWithoutDatabase }, ()
     const again = await observeJob(db, lab.id, { ...crown.ledgerJob, contactId: null });
     assert.equal(again.id, obligation.id);
     assert.equal((await explainObligation(db, lab.id, obligation.id)).events.length, 1);
+  });
+
+  test("Seazona's remake flag reaches the job from the list row, with no detail read", async () => {
+    clock.advance(5 * 60_000);
+    // The same lists again, but order 1001 is now a remake. No order detail
+    // answers are given: a detail read would fail this sync.
+    const responses = loadReplay(BILLING_REPLAY).responses
+      .filter((r) => !/^orders\/ORD-/.test(r.path))
+      .map((r) => (r.path === 'orders/' ? { ...r, body: r.body.map((o) => (o.id === 'ORD-1001' ? { ...o, isRemake: true } : o)) } : r));
+    const [before] = await db.select().from(seazonaOrders).where(eq(seazonaOrders.id, 'ORD-1001'));
+    assert.equal(before.remake, false);
+    await sync(responses, ['orders_recent']);
+    const [order] = await db.select().from(seazonaOrders).where(eq(seazonaOrders.id, 'ORD-1001'));
+    assert.equal(order.remake, true);
+    assert.ok(order.lastChangedAt > before.lastChangedAt, 'a new flag is a change of the order');
+    const crown = (await readBillableWork(db)).items.find((item) => item.sourceId === 'ORD-1001');
+    assert.equal(crown.remake, true);
+    const obligation = await observeJob(db, lab.id, { ...crown.ledgerJob, contactId: null });
+    assert.equal(obligation.remake, true);
+    // The same flag again changes nothing.
+    clock.advance(60_000);
+    await sync(responses, ['orders_recent']);
+    const [same] = await db.select().from(seazonaOrders).where(eq(seazonaOrders.id, 'ORD-1001'));
+    assert.equal(same.lastChangedAt.toISOString(), order.lastChangedAt.toISOString());
   });
 
   test('an order deleted in Seazona sends its obligation to review', async () => {

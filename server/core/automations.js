@@ -1,7 +1,7 @@
 import { and, asc, eq, sql } from 'drizzle-orm';
 import { automations, billingObligations, invoices } from '../db/schema.js';
 import { FlowError, notFound } from './errors.js';
-import { autoDraftJobs, readInvoicingSettings } from './invoicing-rules.js';
+import { autoDraftJobs, readInvoicingSettings, settleHistoryByRules } from './invoicing-rules.js';
 import { MAPPING_DEFAULTS, readMappingConfig, remapJobs } from './line-mapping.js';
 import { setReady } from './ledger.js';
 import { refreshReferences } from './references.js';
@@ -226,6 +226,9 @@ export async function runAutomations(db, organisationId, { accounting = null, wo
     if (automation.key === 'mark_ready_from_work_status') {
       summary[automation.key] = await markReadyFromWorkStatus(db, organisationId, automation.config);
     } else if (automation.key === 'draft_when_ready') {
+      // Old held jobs a non-chargeable rule matches join this run's drafts.
+      const settled = await settleHistoryByRules(db, organisationId, { accounting, now });
+      if (settled.released) summary.settle_history = settled;
       summary[automation.key] = await autoDraftJobs(db, organisationId, { accounting, work, now, actor: actorOf(automation.key) });
     } else if (automation.key === 'ready_when_drafted') {
       summary[automation.key] = await readyWhenDrafted(db, organisationId);

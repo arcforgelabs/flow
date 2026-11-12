@@ -67,6 +67,8 @@ export const FIELDS = Object.freeze({
     read: (j) => j.contactId,
   },
   customer_billable: { label: 'Customer is billable', kind: 'boolean', read: (j, { customer }) => customer.billable !== false },
+  // The work system marks the job a remake (Seazona's remake flag).
+  remake: { label: 'Remake', kind: 'boolean', read: (j) => j.remake === true },
   line_item: { label: 'Line item', kind: 'items', options: 'items', read: (j) => (j.lines ?? []).flatMap((l) => [norm(l.itemCode), norm(l.label)].filter(Boolean)) },
   line_share: { label: 'Line share of other lines (%)', kind: 'share', options: 'items', read: (j) => j.lines ?? [] },
   // Each line with a price item sends as an item of the accounting system
@@ -243,9 +245,17 @@ function matches(condition, job, context) {
 // settings (invoicing-rules.js).
 // `items`: the Flow codes that send as accounting items (accountingItemsFor).
 const contextOf = ({ customer = {}, now = new Date(), items = null } = {}) => ({ customer, now, items });
-const waitingRules = (rules, job, context) => rules
-  .filter((rule) => rule.enabled && rule.trigger === 'job_ready' && !['pending', 'non_chargeable'].includes(rule.action.kind))
-  .filter((rule) => rule.conditions.every((c) => matches(c, job, context)));
+// A non-chargeable rule that matches wins over the wait rules (a $0 remake
+// is never billed, so "No amount" must not hold it), and over the skip rules
+// below it in the list. Rules are in the lab's order.
+const waitingRules = (rules, job, context) => {
+  const live = rules.filter((rule) => rule.enabled && rule.trigger === 'job_ready');
+  const hit = (rule) => rule.conditions.every((c) => matches(c, job, context));
+  const free = live.findIndex((rule) => rule.action.kind === 'non_chargeable' && hit(rule));
+  return live
+    .filter((rule, at) => (free < 0 ? ['wait', 'skip'].includes(rule.action.kind) : rule.action.kind === 'skip' && at < free))
+    .filter(hit);
+};
 const waitMessage = (rule, job, context) => (rule.action.kind === 'skip'
   ? `rule "${rule.name}": not drafted by rule` : `rule "${rule.name}": waits for a person`) + detailOf(rule, job, context);
 
