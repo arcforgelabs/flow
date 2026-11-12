@@ -97,4 +97,22 @@ describe('contacts against PostgreSQL', { skip: skipWithoutDatabase }, () => {
     const found = await call('/contacts?kind=all&active=all&q=harbour');
     assert.equal(found.body.contacts.length, 2);
   });
+
+  test('a hidden contact is out of every list but its own, and a person shows it again', async () => {
+    const made = await call('/contacts', { method: 'POST', body: { kind: 'customer', name: 'Office Rent' } });
+    assert.equal(made.body.contact.hidden, false);
+    const id = made.body.contact.id;
+    assert.equal((await call(`/contacts/${id}`, { method: 'PATCH', body: { hidden: 'yes' } })).status, 400);
+    const hid = await call(`/contacts/${id}`, { method: 'PATCH', body: { hidden: true } });
+    assert.equal(hid.body.contact.hidden, true);
+    assert.deepEqual((await call('/contacts')).body.contacts.map((c) => c.name), []);
+    assert.deepEqual((await call('/contacts?hidden=true')).body.contacts.map((c) => c.name), ['Office Rent']);
+    assert.ok((await call('/contacts?kind=all&active=all&hidden=all')).body.contacts.some((c) => c.name === 'Office Rent'));
+    assert.equal((await call('/contacts?hidden=maybe')).status, 400);
+    // Saving the record's other fields leaves it hidden.
+    assert.equal((await call(`/contacts/${id}`, { method: 'PATCH', body: { email: 'rent@example.test' } })).body.contact.hidden, true);
+    const back = await call(`/contacts/${id}`, { method: 'PATCH', body: { hidden: false } });
+    assert.equal(back.body.contact.hidden, false);
+    assert.deepEqual((await call('/contacts')).body.contacts.map((c) => c.name), ['Office Rent']);
+  });
 });

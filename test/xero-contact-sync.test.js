@@ -85,13 +85,18 @@ describe('contacts with Xero', { skip: skipWithoutDatabase }, () => {
     const supplier = xeroId();
     await copy(harbour, 'Bay Dental', { email: 'accounts@bay.example', accountNumber: 'BD-1', address: { city: 'Hobart' } });
     await copy(supplier, 'Plaster Supplies', { isCustomer: false, isSupplier: true });
+    // Neither a customer nor a supplier in Xero (a name from a bank line).
+    await copy(xeroId(), 'Office Rent', { isCustomer: false, isSupplier: false });
     const customers = await listCustomers(handle.db, org);
+    assert.deepEqual(customers.filter((c) => ['Bay Dental', 'Plaster Supplies', 'Office Rent'].includes(c.name)).map((c) => [c.name, c.adoptable, c.customer]),
+      [['Bay Dental', true, true], ['Office Rent', false, false], ['Plaster Supplies', false, false]]);
     const result = await linkCustomers(handle.db, org, { system: 'xero', customers, adopt: true });
     assert.ok(result.added >= 1);
     const [bay] = await listContacts(handle.db, org, { q: 'Bay Dental' });
     assert.deepEqual([bay.email, bay.accountNumber, bay.address], ['accounts@bay.example', 'BD-1', { city: 'Hobart' }]);
     assert.equal(await externalIdFor(handle.db, org, { system: 'xero', entity: 'contact', flowId: bay.id }), harbour);
-    assert.deepEqual(await listContacts(handle.db, org, { q: 'Plaster', kind: null }), []);
+    assert.deepEqual(await listContacts(handle.db, org, { q: 'Plaster', kind: null, hidden: null }), []);
+    assert.deepEqual(await listContacts(handle.db, org, { q: 'Office Rent', kind: null, hidden: null }), []);
   });
 
   test('a Xero edit reaches Flow with no Xero call, and a later Flow edit reaches Xero', async () => {

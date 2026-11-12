@@ -64,7 +64,7 @@ import {
 //   POST  /invoices/:id/void          owner or admin
 //   DELETE /invoices/:id              owner or admin: a draft that was never issued.
 //                                     Frees its job, and the lab's rules then decide.
-//   GET   /contacts?q=&limit=         customers, by name
+//   GET   /contacts?q=&limit=         customers, by name (hidden=true: the contacts that are not clients)
 //   GET   /price-items?q=             the price list, by code
 //   GET   /jobs?view=&limit=          billable jobs (the obligation ledger), with counts by view;
 //                                     a job with no invoice lists the invoicing rules it waits on;
@@ -695,10 +695,13 @@ export function createInvoicingRouter({
     if (kind && !['customer', 'supplier', 'all'].includes(kind)) throw invalid('kind must be customer, supplier or all');
     const active = text(req.query.active);
     if (active && !['true', 'false', 'all'].includes(active)) throw invalid('active must be true, false or all');
+    const hidden = text(req.query.hidden);
+    if (hidden && !['true', 'false', 'all'].includes(hidden)) throw invalid('hidden must be true, false or all');
     const rows = await listContacts(db, organisationId, {
       q: text(req.query.q),
       kind: kind === 'all' ? null : (kind || 'customer'),
       active: active === 'all' ? null : active === 'false' ? false : true,
+      hidden: hidden === 'all' ? null : hidden === 'true',
       limit: limitOf(req.query.limit, 50, 500),
       offset: offsetOf(req.query.offset),
     });

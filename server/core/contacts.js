@@ -79,6 +79,11 @@ export function readContact(input, { partial = false } = {}) {
     if (input.active != null && typeof input.active !== 'boolean') throw invalid('active must be true or false');
     out.active = input.active !== false;
   }
+  // Only when sent: a new contact is never hidden by default.
+  if (has('hidden')) {
+    if (typeof input.hidden !== 'boolean') throw invalid('hidden must be true or false');
+    out.hidden = input.hidden;
+  }
   return out;
 }
 
@@ -86,6 +91,16 @@ function duplicate(error, kind) {
   const code = error?.code ?? error?.cause?.code;
   if (code === '23505') throw new FlowError('conflict', `A ${kind ?? 'contact'} with this name already exists.`);
   throw error;
+}
+
+// A hidden contact of that name (not a client, docs/CONTACTS.md) is the usual
+// reason when the lists do not show it: say so. Read before the write, so a
+// caller's transaction is never left aborted.
+async function refuseHiddenName(db, organisationId, { kind, name }) {
+  const [same] = await db.select({ id: contacts.id }).from(contacts).where(and(
+    eq(contacts.organisationId, organisationId), eq(contacts.kind, kind), eq(contacts.name, name), eq(contacts.hidden, true),
+  ));
+  if (same) throw new FlowError('conflict', `A hidden ${kind} with this name exists. Show it in Contacts, Hidden.`, { contactId: same.id });
 }
 
 export function presentContact(row) {
@@ -104,6 +119,7 @@ export function presentContact(row) {
     address: row.address ?? null,
     practitioners: row.practitioners ?? [],
     active: row.active !== false,
+    hidden: row.hidden === true,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -111,6 +127,7 @@ export function presentContact(row) {
 
 export async function createContact(db, organisationId, input) {
   const values = readContact(input);
+  await refuseHiddenName(db, organisationId, values);
   try {
     const [row] = await db.insert(contacts).values({ organisationId, ...values }).returning();
     return row;
@@ -142,11 +159,15 @@ export async function updateContact(db, organisationId, id, input) {
 }
 
 // `kind` null lists customers and suppliers. `active` null lists both.
-export async function listContacts(db, organisationId, { q = '', kind = 'customer', active = true, limit = 200, offset = 0 } = {}) {
+// `hidden` false (the default) leaves out the contacts that are not clients
+// (docs/CONTACTS.md, "Hidden contacts"); true lists only those; null, both.
+export async function listContacts(db, organisationId, { q = '', kind = 'customer', active = true, hidden = false, limit = 200, offset = 0 } = {}) {
   const where = [eq(contacts.organisationId, organisationId)];
   if (kind) where.push(eq(contacts.kind, kind));
   if (active === true) where.push(eq(contacts.active, true));
   if (active === false) where.push(eq(contacts.active, false));
+  if (hidden === true) where.push(eq(contacts.hidden, true));
+  if (hidden === false) where.push(eq(contacts.hidden, false));
   const needle = String(q ?? '').trim().replace(/[\\%_]/g, (c) => `\\${c}`);
   if (needle) {
     const like = `%${needle}%`;

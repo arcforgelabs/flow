@@ -120,13 +120,26 @@ describe('Xero import: Xero invoices against Flow invoices', { skip: skipWithout
     const made = await call(`/import/${id}/make`, { method: 'POST', body: { organisationId: org(), jobId: job.id } });
     assert.equal(made.status, 200, JSON.stringify(made.body));
     const [row] = await handle.db.select().from(billingObligations).where(and(eq(billingObligations.organisationId, org()), eq(billingObligations.id, job.id)));
-    assert.equal(row.accountingState, 'unknown', 'not counted as needing a person');
+    // The job's accounting state is written in the same step, from the copy.
+    assert.equal(row.accountingState, 'paid', 'billed and paid at once, not after the next pass');
     assert.equal(row.accountingRef, id, 'the matcher follows the paired invoice');
-    assert.equal(row.accountingCheckedAt, null, 'read again on the next pass');
+    assert.equal(row.accountingMatchedBy, 'accounting_ref');
     // A job linked before this change (no accountingRef) is found through its
     // Flow invoice, so the matcher settles it too.
     const { invoices: byFlow } = await findInvoices(handle.db, org(), { flowInvoiceIds: [made.body.invoice.id] });
     assert.deepEqual(byFlow.map((i) => [i.id, i.flowInvoiceId]), [[id, made.body.invoice.id]]);
+  });
+
+  test('a job with no accounting contact, checked already, is settled by the pair in the same step', async () => {
+    // No Xero contact for its client: the matcher checked it and left it
+    // `unknown`. It would not be read again until the copy changed.
+    const job = await observeJob(handle.db, org(), { sourceSystem: 'worksystem', sourceJobRef: 'JOB-NC', caseRef: 'CASE-NC', contactId: practice.id, shippedOn: '2026-08-14', jobDate: '2026-08-14', lines: [{ itemCode: 'CROWN' }] });
+    await handle.db.update(billingObligations).set({ accountingCheckedAt: new Date() }).where(eq(billingObligations.id, job.id));
+    const id = await copy(18, { issuedOn: '2026-08-14' });
+    const made = await call(`/import/${id}/make`, { method: 'POST', body: { organisationId: org(), jobId: job.id } });
+    assert.equal(made.status, 200, JSON.stringify(made.body));
+    const [row] = await handle.db.select().from(billingObligations).where(and(eq(billingObligations.organisationId, org()), eq(billingObligations.id, job.id)));
+    assert.deepEqual([row.accountingState, row.accountingRef, row.invoiceId], ['authorised', id, made.body.invoice.id]);
   });
 
   test('nothing fits: it stays in the copy, until the setting makes Flow invoices', async () => {

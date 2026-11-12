@@ -26,6 +26,7 @@ A contact is a customer or a supplier. One name per kind in an organisation.
 | Address | One address: line 1, line 2, city, region, postal code, country. Xero gets it as both the postal and the street address. |
 | Practitioners | People at the practice. Up to 30. The first five go to Xero as contact persons. Flow stores no patient. |
 | Active | On by default. An inactive contact stays in Flow and drops out of the invoice client list. |
+| Hidden | Off by default. A contact that is not a client ("Hidden contacts" below). |
 
 ## New clients
 
@@ -46,7 +47,42 @@ Xero page under Contacts), each active Xero contact that no Flow contact is
 named like becomes a Flow customer, linked to it (`imported`). It takes the
 name, person, email, phone, mobile, account, tax number and address from
 Flow's copy of Xero. Names compare as for new clients above, so an existing
-contact links instead. A contact Xero marks a supplier only stays out.
+contact links instead. Only a contact that Xero marks a customer (it has a
+sales invoice in Xero) becomes one. A supplier, a staff member or a name from
+a bank line stays out; it still links by name to a contact Flow has.
+
+## Hidden contacts
+
+Earlier versions made a Flow customer from every Xero contact that was not a
+supplier only. Most of those are not clients. Flow keeps them and hides them:
+a hidden contact is in no list but its own, and Flow never deletes one.
+
+```mermaid
+flowchart LR
+  c[Customer made from an accounting contact] --> q{A client?}
+  q -- "The accounting system marks it a customer" --> show[Shown]
+  q -- "A work system has the client" --> show
+  q -- "Flow has a job or an invoice for it" --> show
+  q -- None of these --> hide[Hidden]
+  hide -- "One of these becomes true, or a person presses Show" --> show
+```
+
+- The pipeline hides them one time for an organisation, after the accounting
+  copy has contacts and, when a work system is connected, after one of its
+  clients is linked. After that, only a person hides or shows a contact
+  (`hidden` on `PATCH /api/invoicing/contacts/:id`).
+- Each pass shows a hidden contact that became a client: the accounting
+  system now marks it a customer, a work system has it, or Flow has a job,
+  an invoice or the customer's own invoicing settings for it. This also
+  undoes a person's Hide of a contact that is a client.
+- A contact a person made in Flow, one that was in Flow before its
+  accounting link, and one whose accounting contact is archived there, is
+  never hidden by the rule.
+- New refuses a name that a hidden contact has, and says to show that one.
+- To take a real client out of the lists, use Active.
+
+Code: `hideNonClients` in `server/core/pipeline.js`. The accounting system's
+mark is `customer` on `listCustomers` (`server/integrations/xero/lookup.js`).
 
 ## Two-way edits
 
@@ -83,8 +119,10 @@ flowchart LR
 
 Contacts sits with daily work. New asks for the name, the kind and the
 email, then opens the record. The record holds the rest. Search matches
-the name, email or account. The kind filter is All, Customers or
-Suppliers. Everyone signed in can read. An owner or admin saves.
+the name, email or account. The kind filter is All, Customers, Suppliers or
+Hidden. Hidden lists the contacts that are not clients; the record of one
+says so and offers Show. Everyone signed in can read. An owner or admin
+saves.
 
 ## Xero
 

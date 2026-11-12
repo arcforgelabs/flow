@@ -3,8 +3,9 @@ import { billingObligations, contacts, invoices, obligationEvents, priceItems } 
 import { createContact } from '../../core/directory.js';
 import { FlowError } from '../../core/errors.js';
 import { createDraftInvoice, issueInvoice } from '../../core/invoices.js';
-import { linkJobToInvoice } from '../../core/ledger.js';
+import { linkJobToInvoice, recordAccountingEvidence } from '../../core/ledger.js';
 import { normaliseName } from './catalogue.js';
+import { findInvoices } from './lookup.js';
 import { canFit, markRivals, scoreFit, sureFits } from './fit.js';
 
 // The Import page (docs/XERO_IMPORT.md): each sales invoice in Flow's copy of
@@ -308,7 +309,16 @@ async function makeFrom(db, organisationId, row, { jobId = null, actor }) {
     const draft = await createDraftInvoice(tx, organisationId, { contactId, reference: row.reference ?? null, dueDate: day(x.due_on), lines });
     const invoice = await issueInvoice(tx, organisationId, draft.id, { issuedBy: actor, issueDate: row.issuedOn ?? new Date().toISOString().slice(0, 10) });
     await insertLink(tx, organisationId, { xeroInvoiceId, invoiceId: invoice.id, matchedBy: 'made', actor });
-    if (jobId) await linkJobToInvoice(tx, organisationId, jobId, { invoiceId: invoice.id, accountingRef: xeroInvoiceId, actor });
+    if (jobId) {
+      await linkJobToInvoice(tx, organisationId, jobId, { invoiceId: invoice.id, accountingRef: xeroInvoiceId, actor });
+      // The job's accounting state in the same step, from the copy the
+      // invoice was made from: the ledger says billed or paid at once, not
+      // after the matcher's next pass.
+      const { invoices: [copy] } = await findInvoices(tx, organisationId, { invoiceIds: [xeroInvoiceId] });
+      if (copy?.state) {
+        await recordAccountingEvidence(tx, organisationId, jobId, { state: copy.state, accountingRef: xeroInvoiceId, matchedBy: 'accounting_ref', actor });
+      }
+    }
     return { xeroInvoiceId, invoice };
   });
 }

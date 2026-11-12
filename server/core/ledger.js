@@ -912,13 +912,16 @@ export async function linkJobToInvoice(db, organisationId, obligationId, { invoi
     // A job that waited for a person (no invoice found, or more than one fit)
     // is settled now: the matcher reads it again on its next pass and records
     // the invoice's stage. A link made from an accounting invoice
-    // (`accountingRef`) is exact, so the matcher follows that invoice.
+    // (`accountingRef`) is exact, so the matcher follows that invoice: the
+    // job is due on its next pass, whatever state it was in (a job with no
+    // accounting contact was `unknown`, checked, and would wait for the copy
+    // to change).
     const settled = ['not_found', 'ambiguous'].includes(obligation.accountingState);
     const row = await update(tx, obligation, {
       invoiceId: invoice.id,
       draftBasis: basisOf(obligation),
       ...(settled ? { accountingState: 'unknown', accountingCheckedAt: null } : {}),
-      ...(accountingRef && !obligation.accountingRef ? { accountingRef } : {}),
+      ...(accountingRef && !obligation.accountingRef ? { accountingRef, accountingCheckedAt: null } : {}),
       ...(obligation.readyAt ? {} : { readyAt: sql`now()`, readyBy: actor }),
     });
     await addEvent(tx, row, 'invoice_linked', actor, { invoiceId: invoice.id, matchedBy: 'person', rejected });

@@ -61,6 +61,10 @@ export const contacts = pgTable('contacts', {
   address: jsonb('address'),
   practitioners: jsonb('practitioners').notNull().default([]),
   active: boolean('active').notNull().default(true),
+  // Not a client: Flow made the contact from an accounting contact that the
+  // accounting system does not mark a customer, and nothing in Flow makes it
+  // one. It stays, out of the lists (docs/CONTACTS.md, "Hidden contacts").
+  hidden: boolean('hidden').notNull().default(false),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 }, (t) => [
