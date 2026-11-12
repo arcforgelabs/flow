@@ -34,7 +34,9 @@ the person's role, on `/api/me`, `/api/invoicing/…`, `/api/xero/…` and
 `/api/seazona/api/…` only. Every other route refuses the key. With **admin** it
 can read invoices and jobs, change invoice rules, void, delete drafts, send
 ready invoices and reconcile: link jobs and invoices, match Flow against
-Flow's copy of Xero and refresh that copy. Owner
+Flow's copy of Xero and refresh that copy. It can also compare and fix the price list: Flow codes,
+links to Xero items and Seazona products, and the price codes that hold job
+lines (`docs/PRICE_LIST.md`). Owner
 actions (People, Integrations, updates) always refuse the key: an agent request
 is never a verified owner sign-in. Turning the person off in People stops the
 key on the next request, and a send it queued fails as `requester_disabled`
