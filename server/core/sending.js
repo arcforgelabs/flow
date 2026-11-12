@@ -311,7 +311,7 @@ export async function sendAllReady(db, organisationId, { accounting = null, work
   // Issue #45: the accounting copy reads its latest changes first, so the
   // draft checks below see an invoice someone made there meanwhile.
   let views = await invoiceViews(db, organisationId, { accounting });
-  const accountingRead = views.ready.length ? await readAccountingFirst(db, organisationId, { accounting, now }) : { outcome: 'fresh' };
+  const accountingRead = views.ready.length ? await readAccountingFirst(db, organisationId, { accounting, work, now }) : { outcome: 'fresh' };
   if (accountingRead.changed) views = await invoiceViews(db, organisationId, { accounting });
   // Every check runs again at the press, as a gate: a ticked draft that
   // fails one now (someone edited it, its job changed, a rule matches) is not

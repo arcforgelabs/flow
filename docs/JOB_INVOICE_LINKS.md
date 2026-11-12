@@ -64,7 +64,21 @@ itself. When a lab reissues work, the first invoice is voided and keeps the
 Seazona number; the job goes on to step 5. The live check before a draft
 looks for the reissue number (with an R) too, so Make invoice never drafts
 work that a reissue already bills.
-| 5 | The customer's invoices from 7 days before to 45 days after the job date | Scored |
+
+| Step | Evidence | Outcome |
+| --- | --- | --- |
+| 5 | Of the customer's live invoices from 7 days before to 45 days after the job date, exactly one has the job's patient name in its Reference, and its amount fits | Linked, `patient_reference` |
+| 6 | The customer's invoices from 7 days before to 45 days after the job date | Scored |
+
+Step 5 needs the patient name from the work system: Seazona gives it only
+when the installation keeps patient names (`SEAZONA_KEEP_PATIENT_REFERENCE`).
+The Reference matches when one part of it (split at a spaced dash, a slash, a
+comma or a bar) has the whole name, word for word, with case, accents and
+punctuation ignored, as in "<practitioner> - <patient>". So two jobs of the
+same customer at the same price, for different patients, each link to the
+invoice with their own patient. A pass asks Seazona for at most 10
+names it has not read yet; the others come from Flow's copy. Flow logs no
+name, and a signal keeps only its name.
 
 The job date is the Seazona invoice date. When there is none, it is the
 order's due date, then its order date.
@@ -80,10 +94,12 @@ order's due date, then its order date.
 | `date_close` | 2 | The dates are 3 days apart or less |
 | `date_near` | 1 | The dates are 14 days apart or less |
 | `prior_link` | 4 | The earlier installation linked this pair, at another amount |
+| `patient` | 6 | The Reference has the job's patient name (step 5) |
+| `other_patient` | -6 | Flow knows the job's patient, and the Reference names someone else after "<practitioner> - " |
 | `not_live` | -3 | The invoice is voided or deleted |
 | `closer_job` | -4 | Another unlinked job of the customer, at an amount that fits, is closer in date |
 
-A candidate counts only with a total signal or `prior_link`. An invoice for
+A candidate counts only with a total signal, `prior_link` or `patient`. An invoice for
 the same customer at another amount is other work.
 
 | Result | Rule | The job |

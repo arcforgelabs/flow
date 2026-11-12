@@ -48,6 +48,34 @@ const AFTER_DAYS = 45;
 // A suggestion needs this score and this lead over the next candidate.
 export const SUGGEST_SCORE = 8;
 export const SUGGEST_LEAD = 3;
+// How many jobs one matcher pass may ask the work system for a patient name
+// it has not read yet (server/core/references.js, jobReferenceFields).
+const PATIENT_READS = 10;
+
+// The words of a name: lower case, without accents and punctuation.
+const nameWords = (text) => String(text ?? '').toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
+  .split(/[^a-z0-9]+/).filter(Boolean);
+
+// True when the Reference has a part after "<practitioner> - ": the place
+// the Reference rule puts the patient.
+const namesSomeone = (reference) => String(reference ?? '').split(/\s[-\u2013\u2014]\s/).slice(1).some((part) => nameWords(part).length);
+
+// True when one part of the accounting invoice's Reference has the patient's
+// whole name, word for word, as "<practitioner> - <patient>" does. The parts
+// split at a spaced dash, a slash, a comma or a bar, so a practitioner's name
+// and a patient's name never run together. Neither is logged or kept: a
+// signal carries only its name.
+export function referenceNamesPatient(reference, patient) {
+  const want = nameWords(patient);
+  if (!want.length) return false;
+  return String(reference ?? '').split(/\s[-\u2013\u2014]\s|[/,|]/).some((part) => {
+    const have = nameWords(part);
+    for (let at = 0; at + want.length <= have.length; at += 1) {
+      if (want.every((word, i) => have[at + i] === word)) return true;
+    }
+    return false;
+  });
+}
 
 // A name with case, spacing, punctuation and a company suffix evened out, so
 // "Example Dental Pty. Ltd." and "example dental" compare equal.
@@ -296,8 +324,10 @@ function totalsFor(obligation) {
 // signal that agreed, so a person can see why.
 // `rivals` are the customer's other unlinked jobs: an invoice dated closer to
 // one of them, at an amount that fits it, more likely bills that job.
-export function scoreCandidate(obligation, invoice, { prior = null, rivals = [] } = {}) {
+export function scoreCandidate(obligation, invoice, { prior = null, rivals = [], patient = null } = {}) {
   const signals = [];
+  if (patient && referenceNamesPatient(invoice.reference, patient)) signals.push({ signal: 'patient', weight: 6 });
+  else if (patient && namesSomeone(invoice.reference)) signals.push({ signal: 'other_patient', weight: -6 });
   if (invoice.totalCents === obligation.totalCents) signals.push({ signal: 'total', weight: 6 });
   else if (totalsFor(obligation).has(invoice.totalCents)) signals.push({ signal: 'total_gst', weight: 5 });
   const codes = new Set((obligation.lines ?? []).map((l) => l.itemCode).filter(Boolean));
@@ -325,13 +355,14 @@ export function scoreCandidate(obligation, invoice, { prior = null, rivals = [] 
 
 // A candidate counts only when its total or an earlier link ties it to the
 // job; an invoice for the same customer at another amount is other work.
-const relevant = (scored) => scored.signals.some((s) => ['total', 'total_gst', 'prior_link'].includes(s.signal));
+// The patient's name in the Reference ties it too, at any amount.
+const relevant = (scored) => scored.signals.some((s) => ['total', 'total_gst', 'prior_link', 'patient'].includes(s.signal));
 
 // Ranks the candidates and decides: `suggested` (one clear leader), `unsure`
 // (several, or a weak one) or `none`.
-export function rankCandidates(obligation, invoices, { prior = null, rivals = [] } = {}) {
+export function rankCandidates(obligation, invoices, { prior = null, rivals = [], patient = null } = {}) {
   const ranked = invoices
-    .map((invoice) => ({ invoice, ...scoreCandidate(obligation, invoice, { prior, rivals }) }))
+    .map((invoice) => ({ invoice, ...scoreCandidate(obligation, invoice, { prior, rivals, patient }) }))
     .filter(relevant)
     .sort((a, b) => b.score - a.score || String(a.invoice.issuedOn).localeCompare(String(b.invoice.issuedOn)));
   if (!ranked.length) return { decision: 'none', ranked };
@@ -377,7 +408,7 @@ async function saveSuggestions(db, organisationId, obligationId, system, ranked)
 // in the ledger's evidence shape (or null to change nothing), and the
 // candidates to keep as suggestions.
 export async function matchJob(db, organisationId, obligation, {
-  accounting, xeroContactId, mirror, rejected = new Set(), taken = new Map(), rivals = [],
+  accounting, xeroContactId, mirror, rejected = new Set(), taken = new Map(), rivals = [], patientOf = null,
 }) {
   const find = async (query) => (await accounting.capabilities.findInvoices({ organisationId, ...query })).invoices;
   const exact = (invoice, matchedBy) => ({ evidence: { state: invoice.state, accountingRef: invoice.id, matchedBy }, ranked: [] });
@@ -414,7 +445,15 @@ export async function matchJob(db, organisationId, obligation, {
   const candidates = (await find({ contactId: xeroContactId, ...window }))
     // An invoice whose whole total other jobs already account for is theirs.
     .filter((i) => !rejected.has(i.id) && (taken.get(i.id) ?? 0) < (i.totalCents ?? 0));
-  const { decision, ranked } = rankCandidates(obligation, candidates, { prior, rivals });
+  // The patient's name in the Reference: when one live invoice has it, at an
+  // amount that fits, it is this job's invoice, whatever other jobs of the
+  // customer cost the same (docs/JOB_INVOICE_LINKS.md, "The matcher").
+  const patient = patientOf && candidates.some((i) => i.reference) ? await patientOf(obligation) : null;
+  if (patient) {
+    const named = candidates.filter((i) => live(i) && referenceNamesPatient(i.reference, patient));
+    if (named.length === 1 && amountsAgree(obligation, named[0])) return exact(named[0], 'patient_reference');
+  }
+  const { decision, ranked } = rankCandidates(obligation, candidates, { prior, rivals, patient });
   if (decision === 'none') {
     // Only a complete, fresh copy proves that Xero holds no invoice.
     if (!obligation.jobDate || !mirror.complete || !mirror.fresh) return { evidence: null, ranked: [] };
@@ -448,7 +487,7 @@ async function holdIfStale(db, organisationId, obligation, { now, staleDays }) {
 
 // Matches every job that changed, or whose candidates may have changed, since
 // it was last checked. Answers counts by outcome.
-export async function matchJobs(db, organisationId, { accounting, now = new Date(), staleDays = STALE_DAYS, limit = MATCH_BATCH }) {
+export async function matchJobs(db, organisationId, { accounting, work = null, now = new Date(), staleDays = STALE_DAYS, limit = MATCH_BATCH }) {
   const mirror = await accounting.capabilities.findInvoices({ organisationId });
   const result = { checked: 0, linked: 0, followed: 0, suggested: 0, unsure: 0, notFound: 0, noContact: 0, held: 0, waiting: 0 };
   if (!mirror.complete) return { ...result, skipped: 'the accounting copy is still importing' };
@@ -491,6 +530,18 @@ export async function matchJobs(db, organisationId, { accounting, now = new Date
     : [];
   const rivalsOf = new Map();
   for (const o of open) rivalsOf.set(o.contactId, [...(rivalsOf.get(o.contactId) ?? []), o]);
+  // The patient name the work system gives a job, read from its copy; only
+  // PATIENT_READS jobs a pass may ask the work system itself.
+  let reads = 0;
+  const patientOf = typeof work?.capabilities?.jobReferenceFields === 'function'
+    ? async (obligation) => {
+      if (obligation.sourceSystem !== work.id) return null;
+      const found = await work.capabilities.jobReferenceFields({ organisationId, sourceJobRef: obligation.sourceJobRef, read: reads < PATIENT_READS })
+        .catch(() => null);
+      if (found?.asked) reads += 1;
+      return found?.patient ?? null;
+    }
+    : null;
 
   for (const obligation of due) {
     result.checked += 1;
@@ -501,6 +552,7 @@ export async function matchJobs(db, organisationId, { accounting, now = new Date
       rejected: rejectedFor.get(obligation.id) ?? new Set(),
       taken,
       rivals: rivalsOf.get(obligation.contactId) ?? [],
+      patientOf,
     });
     await saveSuggestions(db, organisationId, obligation.id, accounting.id, ranked);
     if (!evidence) {
@@ -564,7 +616,7 @@ export async function runPipelineOnce(db, integrations, { now = new Date() } = {
       });
     }
     const settings = await readInvoicingSettings(db, organisationId);
-    summary.matching = await matchJobs(db, organisationId, { accounting, now, staleDays: settings.staleDays });
+    summary.matching = await matchJobs(db, organisationId, { accounting, work: work ?? null, now, staleDays: settings.staleDays });
   }
   if (work || accounting) summary.automations = await runAutomations(db, organisationId, { accounting: accounting ?? null, work: work ?? null, now });
   return summary;

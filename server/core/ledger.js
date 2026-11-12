@@ -20,7 +20,7 @@ export const SOURCE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 // Ways to tie accounting evidence to a job that are exact, not a guess:
 // `prior_link` is a link the earlier installation held, checked against the
 // accounting mirror; `person` is a link a person chose.
-export const EXACT_MATCHES = ['flow_invoice', 'source_invoice_ref', 'accounting_ref', 'prior_link', 'person'];
+export const EXACT_MATCHES = ['flow_invoice', 'source_invoice_ref', 'patient_reference', 'accounting_ref', 'prior_link', 'person'];
 
 const LINKED_STATES = ['drafted', 'authorised', 'part_paid', 'paid', 'voided', 'deleted'];
 

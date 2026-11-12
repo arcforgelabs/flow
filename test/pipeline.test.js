@@ -6,7 +6,7 @@ import { confirmNoInvoice, ledgerView } from '../server/core/ledger.js';
 import { listContacts } from '../server/core/contacts.js';
 import { externalIdFor } from '../server/core/links.js';
 import {
-  linkCustomers, normaliseName, rankCandidates, runPipelineOnce, scoreCandidate,
+  linkCustomers, normaliseName, rankCandidates, referenceNamesPatient, runPipelineOnce, scoreCandidate,
 } from '../server/core/pipeline.js';
 import { billingObligations, linkRejections, linkSuggestions, priorLinks } from '../server/db/schema.js';
 import { findInvoices, listCustomers, mirrorState } from '../server/integrations/xero/lookup.js';
@@ -31,8 +31,8 @@ const job = (ref, { clientId, invoiceRef = null, jobDate, cents = 20000, code = 
   },
 });
 
-const invoice = (id, { contactId, total = 22000, issuedOn, number = `INV-${id}`, status = 'AUTHORISED', codes = ['CROWN'] }) => ({
-  id, number, contactId, status, issuedOn, totalCents: total, subtotalCents: Math.round(total / 1.1), itemCodes: codes,
+const invoice = (id, { contactId, total = 22000, issuedOn, number = `INV-${id}`, status = 'AUTHORISED', codes = ['CROWN'], reference = null }) => ({
+  id, number, contactId, status, reference, issuedOn, totalCents: total, subtotalCents: Math.round(total / 1.1), itemCodes: codes,
   state: { AUTHORISED: 'authorised', VOIDED: 'voided', PAID: 'paid', DRAFT: 'drafted' }[status],
 });
 
@@ -103,6 +103,30 @@ describe('names and scores', () => {
     assert.equal(one.ranked.length, 1);
     assert.equal(rankCandidates(ob, [invoice('a', { issuedOn: '2026-03-11' }), invoice('b', { issuedOn: '2026-03-12' })]).decision, 'unsure');
     assert.equal(rankCandidates(ob, [invoice('b', { issuedOn: '2026-03-12', total: 5000 })]).decision, 'none');
+  });
+
+  test('a Reference names the patient only with the whole name, word for word', () => {
+    assert.equal(referenceNamesPatient('Dr Ada Lovel - Jane Citizen', 'jane  citizen'), true);
+    assert.equal(referenceNamesPatient('Dr Ada - Zoë Ng.', 'Zoe Ng'), true);
+    assert.equal(referenceNamesPatient('Dr Ada - Jane Citizenship', 'Jane Citizen'), false);
+    assert.equal(referenceNamesPatient('Dr Jane - Citizen Kane', 'Jane Citizen'), false);
+    assert.equal(referenceNamesPatient(null, 'Jane Citizen'), false);
+    assert.equal(referenceNamesPatient('Dr Ada - Jane Citizen', ''), false);
+  });
+
+  test('the patient in the Reference makes a candidate at any amount, and leads twins apart', () => {
+    const twins = [
+      invoice('a', { issuedOn: '2026-03-11', reference: 'Dr Ada - Jane Citizen' }),
+      invoice('b', { issuedOn: '2026-03-11', reference: 'Dr Ada - John Doe' }),
+    ];
+    assert.equal(rankCandidates(ob, twins).decision, 'unsure');
+    const named = rankCandidates(ob, twins, { patient: 'John Doe' });
+    assert.deepEqual([named.decision, named.ranked[0].invoice.id], ['suggested', 'b']);
+    assert.deepEqual(named.ranked[1].signals.map((s) => s.signal), ['other_patient', 'total', 'items_same', 'date_close']);
+    // A Reference with the practitioner only names nobody.
+    assert.equal(scoreCandidate(ob, invoice('d', { issuedOn: '2026-03-11', reference: 'Dr Ada' }), { patient: 'John Doe' }).score, 11);
+    const other = rankCandidates(ob, [invoice('c', { issuedOn: '2026-03-11', total: 23650, reference: 'Dr Ada - John Doe' })], { patient: 'John Doe' });
+    assert.deepEqual(other.ranked[0].signals.map((s) => s.signal), ['patient', 'items_same', 'date_close']);
   });
 });
 
@@ -270,6 +294,34 @@ describe('the pipeline', { skip: skipWithoutDatabase }, () => {
     await handle.db.execute(sql`delete from pipeline_cursors`);
     await runPipelineOnce(handle.db, integrationsOf([work.adapter]), { now: NOW });
     assert.equal((await obligation('1005')).holdState, 'review');
+  });
+
+  test('twins at the same price, for different patients, each link to the invoice with their patient', async () => {
+    state.invoices.push(
+      invoice('X-600', { contactId: 'x2', issuedOn: '2026-05-21', reference: 'Dr Ada - Jane Citizen' }),
+      invoice('X-601', { contactId: 'x2', issuedOn: '2026-05-21', reference: 'Dr Ada - John Doe' }),
+      invoice('X-602', { contactId: 'x2', issuedOn: '2026-05-21', total: 23650, reference: 'Dr Ada - Sam Lee' }),
+    );
+    state.changedAt = new Date('2026-05-25T00:00:00Z');
+    const patients = { 1009: 'John Doe', 1010: 'Jane Citizen', 1011: 'Sam Lee' };
+    const asked = [];
+    const work = fakeWork([{ items: ['1009', '1010', '1011'].map((ref) => job(ref, { clientId: 'c2', jobDate: '2026-05-20' })), withdrawn: [] }]);
+    work.adapter.capabilities.jobReferenceFields = async ({ sourceJobRef, read }) => {
+      asked.push(read);
+      return { patient: patients[sourceJobRef] ?? null };
+    };
+    await handle.db.execute(sql`delete from pipeline_cursors`);
+    await runPipelineOnce(handle.db, integrationsOf([work.adapter, accounting]), { now: new Date('2026-05-25T01:00:00Z') });
+    const rows = await Promise.all(['1009', '1010', '1011'].map(obligation));
+    assert.deepEqual(rows.slice(0, 2).map((r) => [r.accountingRef, r.accountingMatchedBy]),
+      [['X-601', 'patient_reference'], ['X-600', 'patient_reference']]);
+    // Another amount (the total plus a fee) is likely, never linked by itself.
+    assert.deepEqual([rows[2].accountingState, rows[2].accountingRef], ['ambiguous', null]);
+    const { rows: suggested } = await handle.db.execute(sql`select external_id, signals from link_suggestions where obligation_id = ${rows[2].id} and state = 'open' order by rank`);
+    assert.equal(suggested[0].external_id, 'X-602');
+    // A signal keeps its name only, never the patient.
+    assert.ok(!JSON.stringify(suggested).includes('Sam'));
+    assert.ok(asked.length >= 3 && asked.every((read) => read === true));
   });
 });
 

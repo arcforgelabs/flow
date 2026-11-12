@@ -197,9 +197,15 @@ export async function storeRows(tx, organisationId, resource, rows, counts) {
   }
 }
 
-async function readCursor(db, organisationId, resource) {
-  await db.execute(sql`insert into xero_mirror_cursors (organisation_id, resource) values (${organisationId}, ${resource})
-    on conflict do nothing`);
+// A copy read with another XERO_KEEP_REFERENCE (or before Flow noted it)
+// starts again from the beginning: a read copies only changes, so old rows
+// would keep the free text they were read with. The rows stay; each is
+// written again only if it differs.
+async function readCursor(db, organisationId, resource, { keepReference }) {
+  await db.execute(sql`insert into xero_mirror_cursors (organisation_id, resource, kept_reference)
+    values (${organisationId}, ${resource}, ${keepReference}) on conflict do nothing`);
+  await db.execute(sql`update xero_mirror_cursors set modified_since = null, page = 1, kept_reference = ${keepReference}
+    where organisation_id = ${organisationId} and resource = ${resource} and kept_reference is distinct from ${keepReference}`);
   const { rows: [row] } = await db.execute(sql`select * from xero_mirror_cursors
     where organisation_id = ${organisationId} and resource = ${resource}`);
   return { modifiedSince: row.modified_since ? new Date(row.modified_since) : null, page: row.page };
@@ -232,7 +238,7 @@ export async function mirrorResource(db, runtime, organisationId, resource, { ma
   const counts = { pages: 0, read: 0, inserted: 0, changed: 0, unchanged: 0 };
   return withXeroLane('sync', async () => {
     const { client } = await runtime.clientFor(db, organisationId);
-    let position = await readCursor(db, organisationId, resource);
+    let position = await readCursor(db, organisationId, resource, { keepReference: Boolean(settings.keepReference) });
     for (;;) {
       if (counts.pages >= maxPages) return { resource, ...counts, stopped: 'max_pages' };
       const budget = runtime.governor.status(client.tenantId);
@@ -264,6 +270,23 @@ export async function mirrorResource(db, runtime, organisationId, resource, { ma
       if (next.done) return { resource, ...counts, stopped: 'done' };
     }
   });
+}
+
+// One sales invoice read from Xero itself (one call), for a person or an agent
+// who must check the source before a repair: Flow's copy is a lead, not
+// proof. The copy's row is written again when it differs. Answers Xero's
+// record in the copy's shape, and what the copy did (`inserted`, `changed`,
+// `unchanged`), or null when Xero has no such invoice.
+export async function readInvoiceFromXero(db, runtime, organisationId, xeroInvoiceId) {
+  return runtime.serial(organisationId, () => withXeroLane('sync', async () => {
+    const { client } = await runtime.clientFor(db, organisationId);
+    const [row] = mapRecords('invoices', await client.listInvoicesByIds([xeroInvoiceId]), runtime.settings);
+    if (!row) return null;
+    const counts = { inserted: 0, changed: 0, unchanged: 0 };
+    await storeRows(db, organisationId, 'invoices', [row], counts);
+    const copy = counts.inserted ? 'inserted' : counts.changed ? 'changed' : 'unchanged';
+    return { invoice: row, copy };
+  }));
 }
 
 // Reads each resource in turn, one organisation at a time with any other Xero
