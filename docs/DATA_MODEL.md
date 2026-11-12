@@ -83,7 +83,10 @@ pipeline that links each job to its accounting invoice
 the work that the matcher compares with invoice dates.
 
 `invoicing_settings` and `customer_billing_settings` hold the invoicing rules
-and send modes (`docs/INVOICING_RULES.md`). `billing_obligations.ready_at`
+and send modes (`docs/INVOICING_RULES.md`).
+`customer_billing_settings.bill_to_contact_id` is the customer's payer, a
+customer of the same organisation that bills to itself (Bill to,
+`docs/CONTACTS.md`). `billing_obligations.ready_at`
 and `ready_by` record Flow's own "ready to invoice" stage: when, and which
 person or automation. `billing_obligations.source_status` is the work
 system's status; each move of it is a `status_changed` event.

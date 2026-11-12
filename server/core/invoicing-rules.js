@@ -2,6 +2,7 @@ import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import {
   billingObligations, contacts, customerBillingSettings, externalLinks, invoicingSettings, SEND_MODES,
 } from '../db/schema.js';
+import { payersOf } from './contacts.js';
 import { FlowError, notFound } from './errors.js';
 import { HISTORY_HOLD_REASON } from './history.js';
 import { accountingItemsFor, listRules, ruleNonChargeable, ruleReasons } from './invoice-rules.js';
@@ -38,8 +39,9 @@ export const INVOICING_DEFAULTS = Object.freeze({
 });
 
 const CUSTOMER_DEFAULTS = Object.freeze({
-  billable: true, defaultPractitioner: null, autoDraft: null, sendMode: null, paymentTermsDays: null,
+  billable: true, defaultPractitioner: null, autoDraft: null, sendMode: null, paymentTermsDays: null, billToContactId: null,
 });
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const pick = (row, keys) => Object.fromEntries(keys.map((k) => [k, row[k]]));
 const SETTING_KEYS = Object.keys(INVOICING_DEFAULTS);
@@ -125,6 +127,19 @@ export async function readCustomerBilling(db, organisationId, contactId) {
 export async function saveCustomerBilling(db, organisationId, contactId, changes, { personId = null } = {}) {
   if (!changes || typeof changes !== 'object' || Array.isArray(changes)) throw invalid('the settings must be an object');
   await requireCustomer(db, organisationId, contactId);
+  // Bill to is checked and saved under one lock per organisation, so two
+  // saves at once never make a chain of payers.
+  if (Object.prototype.hasOwnProperty.call(changes, 'billToContactId')) {
+    return db.transaction(async (tx) => {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`bill_to:${organisationId}`}))`);
+      return saveBilling(tx, organisationId, contactId, changes, personId);
+    });
+  }
+  return saveBilling(db, organisationId, contactId, changes, personId);
+}
+
+async function saveBilling(db, organisationId, contactId, changes, personId) {
+  const before = (await readCustomerBilling(db, organisationId, contactId)).billToContactId;
   const fields = {};
   for (const [key, value] of Object.entries(changes)) {
     if (key === 'billable') fields[key] = flag(value, key);
@@ -132,6 +147,7 @@ export async function saveCustomerBilling(db, organisationId, contactId, changes
     else if (key === 'autoDraft') fields[key] = value === null ? null : flag(value, key);
     else if (key === 'sendMode') fields[key] = value === null ? null : sendMode(value, key);
     else if (key === 'paymentTermsDays') fields[key] = value === null ? null : wholeNumber(value, key, 0, 365);
+    else if (key === 'billToContactId') fields[key] = await billTo(db, organisationId, contactId, value);
     else throw invalid(`unknown setting: ${key}`);
   }
   await db.insert(customerBillingSettings)
@@ -140,7 +156,35 @@ export async function saveCustomerBilling(db, organisationId, contactId, changes
       target: [customerBillingSettings.organisationId, customerBillingSettings.contactId],
       set: { ...fields, updatedBy: personId, updatedAt: sql`now()` },
     });
+  // A new payer is a new place to look: the matcher checks this customer's
+  // unbilled jobs again on its next pass.
+  if ('billToContactId' in fields && fields.billToContactId !== before) {
+    await db.update(billingObligations).set({ accountingCheckedAt: null, updatedAt: sql`now()` }).where(and(
+      eq(billingObligations.organisationId, organisationId), eq(billingObligations.contactId, contactId),
+      isNull(billingObligations.accountingRef), isNull(billingObligations.invoiceId),
+    ));
+  }
   return readCustomerBilling(db, organisationId, contactId);
+}
+
+// Bill to (docs/CONTACTS.md): another customer, the payer, whose accounting
+// contact this customer's work is billed to. One level only: a payer bills
+// to itself, and a customer that is a payer names no payer.
+async function billTo(db, organisationId, contactId, value) {
+  if (value === null) return null;
+  if (typeof value !== 'string' || !UUID.test(value)) throw invalid('billToContactId must name a customer');
+  if (value === contactId) throw invalid('a customer cannot bill to itself; clear Bill to instead');
+  const [payer] = await db.select({ id: contacts.id, kind: contacts.kind, name: contacts.name }).from(contacts)
+    .where(and(eq(contacts.organisationId, organisationId), eq(contacts.id, value)));
+  if (!payer) throw notFound('customer');
+  if (payer.kind !== 'customer') throw invalid('the payer must be a customer');
+  const [payerOwn] = await db.select({ billTo: customerBillingSettings.billToContactId }).from(customerBillingSettings)
+    .where(and(eq(customerBillingSettings.organisationId, organisationId), eq(customerBillingSettings.contactId, value)));
+  if (payerOwn?.billTo) throw invalid(`${payer.name} bills to another customer; pick that one`);
+  const [billed] = await db.select({ id: customerBillingSettings.contactId }).from(customerBillingSettings)
+    .where(and(eq(customerBillingSettings.organisationId, organisationId), eq(customerBillingSettings.billToContactId, contactId))).limit(1);
+  if (billed) throw invalid('other customers bill to this customer, so it cannot bill to another');
+  return value;
 }
 
 // The customers' own settings, by contact id.
@@ -263,9 +307,11 @@ const SAME_REFERENCE_DAYS = 90;
 export function copyCheck(accounting, organisationId, { db = null } = {}) {
   const contactOf = async (contactId) => {
     if (!db || !contactId) return null;
+    // A customer with a payer is billed under the payer's contact (Bill to).
+    const payer = (await payersOf(db, organisationId, [contactId])).get(contactId);
     const [link] = await db.select({ externalId: externalLinks.externalId }).from(externalLinks).where(and(
       eq(externalLinks.organisationId, organisationId), eq(externalLinks.system, accounting.id),
-      eq(externalLinks.entity, 'contact'), eq(externalLinks.state, 'active'), eq(externalLinks.flowId, contactId),
+      eq(externalLinks.entity, 'contact'), eq(externalLinks.state, 'active'), eq(externalLinks.flowId, payer),
     ));
     return link?.externalId ?? null;
   };

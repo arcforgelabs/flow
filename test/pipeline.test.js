@@ -7,7 +7,7 @@ import { confirmNoInvoice, ledgerView, observeJob } from '../server/core/ledger.
 import { listContacts, updateContact } from '../server/core/contacts.js';
 import { externalIdFor } from '../server/core/links.js';
 import {
-  hideNonClients, linkCustomers, normaliseName, rankCandidates, referenceNamesPatient, runPipelineOnce, scoreCandidate,
+  hideNonClients, linkCustomers, matchJobs, normaliseName, rankCandidates, referenceNamesPatient, runPipelineOnce, scoreCandidate,
 } from '../server/core/pipeline.js';
 import { billingObligations, linkRejections, linkSuggestions, priorLinks } from '../server/db/schema.js';
 import { findInvoices, listCustomers, mirrorState } from '../server/integrations/xero/lookup.js';
@@ -445,5 +445,42 @@ describe('contacts that are not clients', { skip: skipWithoutDatabase }, () => {
     const marked = customers.map((x) => (x.id === 'a3' ? { ...x, customer: true } : x));
     assert.deepEqual(await hideNonClients(handle.db, organisationId, { system: 'xero', customers: marked }), { shown: 1, hidden: 0 });
     assert.deepEqual(await hidden(), []);
+  });
+});
+
+describe('bill to', { skip: skipWithoutDatabase }, () => {
+  let handle;
+  let organisationId;
+  const state = { invoices: [], changedAt: new Date('2026-04-01T00:00:00Z') };
+  const accounting = fakeAccounting(state);
+
+  before(async () => {
+    handle = await freshDatabase();
+    organisationId = (await createOrganisation(handle.db, { name: 'Example Lab' })).id;
+    await createPriceItem(handle.db, organisationId, { code: 'CROWN', name: 'Crown', unitAmountCents: 20000 });
+  });
+  after(async () => { await handle?.close(); });
+
+  test('a customer with a payer matches under the payer\'s accounting contact, in one pool with the payer\'s other customers', async () => {
+    const payer = await createContact(handle.db, organisationId, { kind: 'customer', name: 'Example Group' });
+    const north = await createContact(handle.db, organisationId, { kind: 'customer', name: 'North Clinic' });
+    const south = await createContact(handle.db, organisationId, { kind: 'customer', name: 'South Clinic' });
+    await linkCustomers(handle.db, organisationId, { system: 'xero', customers: [{ id: 'g1', name: 'Example Group' }] });
+    for (const c of [north, south]) await saveCustomerBilling(handle.db, organisationId, c.id, { billToContactId: payer.id });
+    state.invoices = [
+      invoice('G-1', { contactId: 'g1', issuedOn: '2026-03-10' }),
+      invoice('G-2', { contactId: 'g1', issuedOn: '2026-03-20' }),
+    ];
+    const line = [{ itemCode: 'CROWN', description: 'Crown', quantity: 1, unitAmountCents: 20000, taxCode: 'GST' }];
+    // Two jobs at one price, one for each clinic: each finds the payer's
+    // invoices, and the other clinic's job is its rival, as two jobs of one
+    // customer are, so each has one clear leader by date.
+    await observeJob(handle.db, organisationId, { sourceSystem: 'seazona', sourceJobRef: 'N-1', contactId: north.id, jobDate: '2026-03-09', lines: line });
+    await observeJob(handle.db, organisationId, { sourceSystem: 'seazona', sourceJobRef: 'S-1', contactId: south.id, jobDate: '2026-03-19', lines: line });
+    const result = await matchJobs(handle.db, organisationId, { accounting, now: new Date('2026-04-02T00:00:00Z') });
+    assert.deepEqual([result.noContact, result.suggested, result.unsure], [0, 2, 0]);
+    const { rows } = await handle.db.execute(sql`select o.source_job_ref, s.external_id from link_suggestions s
+      join billing_obligations o on o.id = s.obligation_id where s.organisation_id = ${organisationId} and s.rank = 1 order by o.source_job_ref`);
+    assert.deepEqual(rows.map((r) => [r.source_job_ref, r.external_id]), [['N-1', 'G-1'], ['S-1', 'G-2']]);
   });
 });
