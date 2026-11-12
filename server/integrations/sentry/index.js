@@ -1,6 +1,6 @@
 import * as SentryNode from '@sentry/node';
 import { isReplitWorkspace } from '../../core/host.js';
-import { scrubSpan } from '../../ui/monitoring.js';
+import { scrubEvent, scrubSpan } from '../../ui/monitoring.js';
 
 // The Sentry adapter (docs/SENTRY.md). It sends the errors Flow logs, the
 // browser's errors and problem reports, and performance traces from both
@@ -48,6 +48,7 @@ export const SENTRY_SETUP = {
     { name: 'SENTRY_ENVIRONMENT', label: 'Environment', advanced: true, help: 'How Sentry labels this installation, for example production. Empty: production, or workspace in a Replit workspace.' },
     { name: 'SENTRY_CLIENT', label: 'Client', advanced: true, help: 'The name your support desk files this installation\'s reports under. Sent as the client tag. Empty: no client tag.' },
     { name: 'SENTRY_FEEDBACK', label: 'Report button', kind: 'onoff', default: 'on', help: 'On: everyone signed in can send a report, with a screenshot, to this Sentry project.' },
+    { name: 'SENTRY_SCREENSHOT', label: 'Screenshot', kind: 'onoff', default: 'off', help: 'On: a report can add a screenshot. A screenshot shows the screen as it is, with names and prices, so it is off by default.' },
     { name: 'SENTRY_REPLAY', label: 'Replay', kind: 'onoff', default: 'on', help: 'On: each report and each browser error keeps up to the last minute of the page, as a replay with every word hidden.' },
     { name: 'SENTRY_TRACES_SAMPLE_RATE', label: 'Traces', advanced: true, help: 'The share of clicks, page loads and requests timed, from 0 (off) to 1 (all). Empty: 0.2.' },
   ],
@@ -61,6 +62,7 @@ export function readSentrySettings(env) {
   // labelled apart so they never read as the live app's.
   const environment = String(env.SENTRY_ENVIRONMENT ?? '').trim() || (isReplitWorkspace(env) ? 'workspace' : 'production');
   const feedback = String(env.SENTRY_FEEDBACK ?? 'on').trim() !== 'off';
+  const screenshot = String(env.SENTRY_SCREENSHOT ?? 'off').trim() === 'on';
   const replay = String(env.SENTRY_REPLAY ?? 'on').trim() !== 'off';
   const rate = String(env.SENTRY_TRACES_SAMPLE_RATE ?? '').trim();
   const tracesSampleRate = rate === '' ? DEFAULT_TRACES_SAMPLE_RATE : Number(rate);
@@ -72,7 +74,7 @@ export function readSentrySettings(env) {
   // Every event says which product and, when set, which client it is from,
   // so one support desk can serve many installations.
   const tags = client ? { product: 'flow', client } : { product: 'flow' };
-  return { dsn, environment, feedback, replay, tracesSampleRate, tags };
+  return { dsn, environment, feedback, screenshot, replay, tracesSampleRate, tags };
 }
 
 // No trace for the host's health check: it is not a person waiting.
@@ -105,8 +107,10 @@ export function createSentryAdapter({ sdk = SentryNode, env: hostEnv = process.e
         environment: settings.environment,
         release: release ?? undefined,
         initialScope: { tags: settings.tags },
-        // Flow sends what it logs; no request bodies, cookies or IP addresses.
+        // Flow sends what it logs, with private words masked (scrubEvent);
+        // no request bodies, cookies or IP addresses.
         sendDefaultPii: false,
+        beforeSend: scrubEvent,
         // A request the browser traced keeps the browser's choice, so a
         // click and the server work it caused stay one trace.
         tracesSampler: ({ attributes, inheritOrSampleWith }) => (
@@ -139,12 +143,13 @@ export function createSentryAdapter({ sdk = SentryNode, env: hostEnv = process.e
       // meant for browsers.
       browserMonitoring() {
         if (!settings) return null;
-        const { tracesSampleRate, replay } = settings;
+        const { tracesSampleRate, replay, screenshot } = settings;
         return {
           dsn: settings.dsn,
           environment: settings.environment,
           release,
           feedback: settings.feedback,
+          screenshot,
           replay,
           tags: settings.tags,
           tracesSampleRate,

@@ -126,6 +126,62 @@ export function scrubRecordingEvent(event) {
   return { ...event, data: { ...event.data, payload: next } };
 }
 
+// Private data in an event's words. Flow's own lines name a step and a code;
+// the text they pass on from the database, Xero or Seazona can hold a name,
+// an email, an amount or a record id. Each becomes a placeholder, so the event
+// keeps the fault and drops the data, and the same fault with other records
+// is one issue in Sentry, not one issue per record.
+const TEXT_MASKS = [
+  [/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, '<email>'],
+  [/\b\d{4}-\d{2}-\d{2}(T[\d:.]+Z?)?\b/g, '<time>'],
+  [/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi, '<id>'],
+  // A database's "Key (column)=(value)".
+  [/\(([^()\n]{1,200})\)=\(([^()\n]{0,200})\)/g, '(<field>)=(<value>)'],
+  // Quoted text: a contact, a reference, a file name. An apostrophe inside a
+  // word ("Flow's") is not a quote.
+  [/"[^"\n]{1,200}"|“[^”\n]{1,200}”|‘[^’\n]{1,200}’|(?<![\w'])'[^'\n]{1,200}'(?![\w'])/g, '<text>'],
+  [/[$£€]\s?\d[\d,]*(\.\d+)?|\b\d[\d,]*\.\d{2}\b/g, '<amount>'],
+  [/\b[A-Z]{2,6}-\d{2,}\b/g, '<ref>'],
+  [/\+?\d[\d ().-]{6,}\d/g, '<number>'],
+  [/\b\d{3,}\b/g, '<n>'],
+];
+// Only the address-like words: for what a person types in a problem report,
+// where a number can be the point of the report.
+const CONTACT_MASKS = TEXT_MASKS.slice(0, 1).concat([[/\+?\d[\d ()-]{8,}\d/g, '<number>']]);
+export function maskText(value, masks = TEXT_MASKS) {
+  if (typeof value !== 'string') return value;
+  return masks.reduce((text, [pattern, mark]) => text.replace(pattern, mark), value);
+}
+
+// Every event before it leaves Flow, on the server and in the browser
+// (beforeSend). The words are masked (maskText); a request keeps its path,
+// never its body, query string, cookies or headers; the person is their Flow
+// id only. A problem report keeps what the person typed, with addresses and
+// phone numbers masked, and keeps their email only when they asked for a
+// response (notify=yes, tagNotify).
+export function scrubEvent(event) {
+  if (!event || typeof event !== 'object') return event;
+  const report = event.type === 'feedback';
+  if (!report) {
+    event.message = maskText(event.message);
+    if (event.logentry) event.logentry = { ...event.logentry, message: maskText(event.logentry.message), formatted: maskText(event.logentry.formatted), params: undefined };
+    for (const value of event.exception?.values ?? []) value.value = maskText(value.value);
+    if (event.extra) event.extra = Object.fromEntries(Object.entries(event.extra).map(([key, value]) => [key, maskText(typeof value === 'string' ? value : '<data>')]));
+  }
+  if (Array.isArray(event.breadcrumbs)) {
+    event.breadcrumbs = event.breadcrumbs.map(({ data, message, ...crumb }) => ({ ...crumb, ...(message ? { message: maskText(message) } : {}), ...(data?.url ? { data: { url: withoutQuery(data.url), method: data.method, status_code: data.status_code } } : {}) }));
+  }
+  if (event.request) event.request = { method: event.request.method, url: withoutQuery(event.request.url) };
+  if (event.user) event.user = event.user.id == null ? {} : { id: event.user.id };
+  const feedback = event.contexts?.feedback;
+  if (feedback) {
+    const keepContact = event.tags?.notify === 'yes';
+    event.contexts.feedback = { ...feedback, message: maskText(feedback.message, CONTACT_MASKS), name: undefined, contact_email: keepContact ? feedback.contact_email : undefined };
+    if (keepContact && feedback.contact_email) event.user = { ...event.user, email: feedback.contact_email };
+  }
+  return event;
+}
+
 /** Resolves to a function that opens the "Report a problem" form, or null. */
 export async function startMonitoring({ flow, person }) {
   const config = await flow('/api/monitoring');
@@ -142,7 +198,9 @@ export async function startMonitoring({ flow, person }) {
     showName: false,
     // The form fills in the signed-in person's name and email (setUser).
     useSentryUser: { name: 'username', email: 'email' },
-    enableScreenshot: true,
+    // A screenshot is the screen as it is, names and all: off unless the
+    // installation turns it on (SENTRY_SCREENSHOT).
+    enableScreenshot: Boolean(config.screenshot),
     triggerLabel: 'Report a problem',
     formTitle: 'Report a problem',
     messageLabel: 'What went wrong?',
@@ -180,13 +238,15 @@ export async function startMonitoring({ flow, person }) {
     // Replay: never a whole visit, only the minute before a report or error.
     replaysSessionSampleRate: 0,
     replaysOnErrorSampleRate: config.replay ? 1 : 0,
+    beforeSend: scrubEvent,
     beforeSendSpan: scrubSpan,
     initialScope: { tags: config.tags ?? {} },
   });
   // Read when the report is sent: the tick box of the form open now.
   let wantsResponse = false;
-  Sentry.getClient()?.on('beforeSendFeedback', (event) => tagNotify(event, wantsResponse));
-  // Who reported or met the error, so the lab can follow up.
+  Sentry.getClient()?.on('beforeSendFeedback', (event) => { tagNotify(event, wantsResponse); scrubEvent(event); });
+  // Fills in the report form. Events keep only the Flow id (scrubEvent); a
+  // report keeps the email only when the person asks for a response.
   Sentry.setUser({ id: person.id, email: person.email, username: person.name || undefined });
   const feedback = config.feedback ? Sentry.getFeedback() : null;
   if (!feedback) return null;
