@@ -167,6 +167,24 @@ describe('Seazona sweep (issue #126)', { skip: skipWithoutDatabase }, () => {
     assert.deepEqual(result.reports, []);
   });
 
+  test('an orders cycle from before Flow kept the remake flag is done again, and fills the flag', async () => {
+    assert.equal((await sweep()).ok, true);
+    // A cursor written before the flag: the cycle finished, but read no remake.
+    await db.execute(sql`update seazona_lane_state set cursor = jsonb_set(cursor, '{orders}', (cursor->'orders') - 'reads') where lane = 'sweep'`);
+    state.orders[0] = order(1, 1, { isRemake: true });
+    clock.set('2026-10-02T12:00:00.000Z'); // well inside the 7-day cycle
+
+    const from = seazona.calls.length;
+    const result = await sweep();
+    assert.equal(result.ok, true, JSON.stringify(result));
+    assert.equal((await getOrder('ORD-9001')).remake, true);
+    assert.deepEqual(sweepCalls(from), ['orders/'], 'one list call for the day, no detail read');
+    // Done once: the next run waits for the cycle again.
+    const again = seazona.calls.length;
+    assert.equal((await sweep()).ok, true);
+    assert.deepEqual(sweepCalls(again), []);
+  });
+
   test('a client and an invoice gone from Seazona are marked missing, never deleted, and the mark clears', async () => {
     state.clients.splice(1, 1);
     state.invoices.splice(1, 1);
