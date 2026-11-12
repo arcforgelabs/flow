@@ -848,7 +848,7 @@ export function createInvoicingRouter({
   router.post('/jobs/:id/no-invoice', ...manager, handle(log, async (req, res) => {
     const obligationId = pathId(req.params.id, 'job');
     const organisationId = await organisationOf(req);
-    const job = await confirmNoInvoice(db, organisationId, obligationId, { actor: `person:${req.person.id}` });
+    const job = await confirmNoInvoice(db, organisationId, obligationId, { actor: `person:${req.person.id}`, system: accounting()?.id ?? null });
     res.json({ ok: true, job: { id: job.id, accountingState: job.accountingState } });
   }));
 

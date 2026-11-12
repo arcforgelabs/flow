@@ -777,9 +777,11 @@ export async function setHold(db, organisationId, obligationId, { holdState, rea
 
 // A job with no invoice of its own whose accounting evidence is ambiguous:
 // the matcher found accounting invoices that may be this job's, but none
-// exactly. A person settles it on the Reconcile page: "Make invoice", or a
-// link to a Flow invoice (linkJobToInvoice).
-const unlinked = (o) => o.accountingState === 'ambiguous' && !o.invoiceId && !o.accountingRef;
+// exactly. Or the accounting invoice the matcher linked was voided or deleted
+// there: it bills nothing now. A person settles it on the Reconcile page or
+// the job: "Make invoice", or a link to a Flow invoice (linkJobToInvoice).
+const GONE_STATES = ['voided', 'deleted'];
+const unlinked = (o) => !o.invoiceId && (GONE_STATES.includes(o.accountingState) || (o.accountingState === 'ambiguous' && !o.accountingRef));
 
 // The matcher's open suggestions for one job, best first.
 export async function linkSuggestionsFor(db, organisationId, obligationId) {
@@ -814,14 +816,26 @@ async function rejectSuggestions(tx, obligation, { actor }) {
 // "Make invoice": a person says the job has no invoice yet. Every suggestion
 // is rejected and the job is recorded as not found, so it can draft. The
 // live check before the draft still runs (draftInvoiceForObligation).
-export async function confirmNoInvoice(db, organisationId, obligationId, { actor }) {
+// `system` is the accounting system's id: a released voided or deleted link
+// becomes that person's "not this one" too, so the matcher never offers it.
+export async function confirmNoInvoice(db, organisationId, obligationId, { actor, system = null }) {
   requireActor(actor);
   return db.transaction(async (tx) => {
     const obligation = await loadObligation(tx, organisationId, obligationId, { lock: true });
     if (!unlinked(obligation)) throw new FlowError('invalid', 'the job is not waiting for a person to settle its invoice');
     const rejected = await rejectSuggestions(tx, obligation, { actor });
-    const row = await update(tx, obligation, { accountingState: 'not_found', accountingCheckedAt: sql`now()` });
-    await addEvent(tx, row, 'accounting_checked', actor, { reported: 'not_found', state: 'not_found', matchedBy: 'person', rejected });
+    // A voided or deleted link is let go, so the matcher stops following it.
+    const gone = GONE_STATES.includes(obligation.accountingState) ? obligation.accountingRef : null;
+    const row = await update(tx, obligation, {
+      accountingState: 'not_found', accountingCheckedAt: sql`now()`,
+      ...(gone ? { accountingRef: null, accountingUrl: null, accountingMatchedBy: null } : {}),
+    });
+    if (gone && system) {
+      await tx.insert(linkRejections).values({ organisationId, obligationId: obligation.id, system, externalId: gone, actor }).onConflictDoNothing();
+    }
+    await addEvent(tx, row, 'accounting_checked', actor, {
+      reported: 'not_found', state: 'not_found', matchedBy: 'person', rejected, ...(gone ? { released: gone } : {}),
+    });
     return row;
   });
 }
