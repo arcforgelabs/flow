@@ -129,6 +129,12 @@ A non-chargeable rule that matches a job wins over every wait rule, so a $0
 remake is not stopped by a "No amount" rule. It also wins over the skip rules
 below it in the list. A skip rule above it still stops the job.
 
+Flow's own draft checks do not stop such a job either, because its draft is
+never sent: a line with no price item, a line with unknown tax, Seazona totals
+that differ from the lines, and an old Seazona report. Flow does not read the
+report again first. The hold, the customer and the accounting checks still
+apply: a job that Xero already bills waits for a person.
+
 | Name | If | Then |
 | --- | --- | --- |
 | Own clinics | Customer contains `Example Group` | Non-chargeable |
