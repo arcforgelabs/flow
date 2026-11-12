@@ -1,0 +1,96 @@
+// The CI gate (.github/workflows/ci.yml, `flow/ci-gate`) is the one CI check
+// the main ruleset requires. These tests hold the two ways it could let a
+// failure through: a lane the gate does not wait for, and a changed path that
+// turns no lane on.
+import test from "node:test";
+import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
+
+const ROOT = resolve(import.meta.dirname, "..");
+const CI = readFileSync(join(ROOT, ".github/workflows/ci.yml"), "utf8");
+const SCOPE = join(ROOT, ".github/scripts/ci-scope.py");
+
+function jobs() {
+  const body = CI.slice(CI.indexOf("\njobs:\n"));
+  return [...body.matchAll(/^ {2}([a-z0-9-]+):$/gm)].map((m) => m[1]);
+}
+
+function scopes() {
+  const m = CI.match(/SCOPES: >-\n((?: {12}.*\n)+)/);
+  return JSON.parse(m[1].replace(/\n/g, " "));
+}
+
+function gateNeeds() {
+  const m = CI.match(/\n {2}ci-gate:\n(?: {4}.*\n)*? {4}needs: \[([^\]]+)\]/);
+  return m[1].split(",").map((s) => s.trim());
+}
+
+test("the gate waits for every other job in ci.yml", () => {
+  const all = jobs();
+  assert.ok(all.includes("ci-gate"));
+  assert.deepEqual(gateNeeds().sort(), all.filter((j) => j !== "ci-gate").sort());
+  assert.match(CI, /\n {2}ci-gate:\n {4}name: flow\/ci-gate\n/);
+});
+
+test("every lane runs only when preflight turns it on", () => {
+  const lanes = Object.keys(scopes()).map((l) => (l === "app" ? ["test", "docker-build", "package"] : [l])).flat();
+  assert.deepEqual(lanes.sort(), jobs().filter((j) => j !== "ci-gate" && j !== "preflight").sort());
+  for (const lane of lanes) {
+    const key = ["test", "docker-build", "package"].includes(lane) ? "app" : lane.replace(/-/g, "_");
+    assert.match(CI, new RegExp(`\\n {2}${lane}:\\n(?: {4}.*\\n)*? {4}if: needs\\.preflight\\.outputs\\.${key} == 'true'\\n`), lane);
+  }
+});
+
+function select(files, env = {}) {
+  const dir = mkdtempSync(join(tmpdir(), "flow-ci-scope-"));
+  try {
+    const git = (...args) => execFileSync("git", ["-C", dir, "-c", "user.name=t", "-c", "user.email=t@t", ...args], { encoding: "utf8" }).trim();
+    git("init", "-q");
+    writeFileSync(join(dir, "seed"), "x");
+    git("add", ".");
+    git("commit", "-qm", "base");
+    const base = git("rev-parse", "HEAD");
+    for (const file of files) {
+      mkdirSync(dirname(join(dir, file)), { recursive: true });
+      writeFileSync(join(dir, file), "x");
+    }
+    git("add", "-A");
+    git("commit", "-qm", "head", "--allow-empty");
+    const head = git("rev-parse", "HEAD");
+    const out = execFileSync("python3", ["-I", SCOPE], {
+      cwd: dir,
+      encoding: "utf8",
+      env: { PATH: process.env.PATH, EVENT: "pull_request", BASE: base, HEAD: head, SCOPES: JSON.stringify(scopes()), ...env },
+    });
+    return Object.fromEntries(out.trim().split("\n").map((l) => l.split("=")).map(([k, v]) => [k, v === "true"]));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+test("a code change runs the app lanes", () => {
+  assert.deepEqual(select(["server/index.js"]), { app: true, check_docs: false });
+  assert.deepEqual(select(["package.json"]), { app: true, check_docs: false });
+  assert.deepEqual(select(["CHANGELOG/2026.11.4.md"]), { app: true, check_docs: false });
+  assert.deepEqual(select(["skills/flow/SKILL.md"]), { app: true, check_docs: false });
+  assert.deepEqual(select(["design-system/components/Tip/README.md"]), { app: true, check_docs: false });
+  assert.deepEqual(select([".github/workflows/mobile.yml"]), { app: true, check_docs: false });
+  assert.deepEqual(select(["a-new-top-level-file.js"]), { app: true, check_docs: false });
+});
+
+test("a docs or agent-notes change skips the app lanes", () => {
+  assert.deepEqual(select(["docs/XERO.md"]), { app: false, check_docs: true });
+  assert.deepEqual(select(["AGENTS.md", ".agents/skills/flow-release/SKILL.md"]), { app: false, check_docs: false });
+  assert.deepEqual(select(["docs/XERO.md", "server/index.js"]), { app: true, check_docs: true });
+});
+
+test("CI itself, an empty diff and every run that is not a pull request select every lane", () => {
+  assert.deepEqual(select([".github/workflows/ci.yml"]), { app: true, check_docs: true });
+  assert.deepEqual(select([".github/scripts/ci-scope.py"]), { app: true, check_docs: true });
+  assert.deepEqual(select([]), { app: true, check_docs: true });
+  assert.deepEqual(select(["docs/XERO.md"], { EVENT: "push" }), { app: true, check_docs: true });
+  assert.deepEqual(select(["docs/XERO.md"], { REF: "abc123" }), { app: true, check_docs: true });
+});

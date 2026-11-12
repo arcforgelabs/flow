@@ -15,11 +15,11 @@ function reply(status, body, headers = {}) {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", ...headers } });
 }
 
-test("the required checks are the main ruleset's: CI's test and Secret Scan's gitleaks", () => {
+test("a release commit needs CI's test lane and Secret Scan's gitleaks; main needs the CI gate and gitleaks", () => {
   assert.deepEqual(REQUIRED_CHECKS, ["test", "gitleaks"]);
   const ruleset = JSON.parse(readFileSync(join(import.meta.dirname, "../.github/rulesets/main.json"), "utf8"));
   const required = ruleset.rules.find((rule) => rule.type === "required_status_checks").parameters.required_status_checks;
-  assert.deepEqual(required.map((check) => check.context), REQUIRED_CHECKS);
+  assert.deepEqual(required.map((check) => check.context), ["flow/ci-gate", "gitleaks"]);
   assert.ok(required.every((check) => check.integration_id === 15368));
 });
 

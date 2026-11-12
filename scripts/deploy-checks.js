@@ -14,8 +14,10 @@
 // could not check.
 //
 // Only check runs from GitHub Actions count, so another app cannot report a
-// required name. The names are the ones the ruleset on main requires
-// (.github/rulesets/main.json).
+// required name. The ruleset on main (.github/rulesets/main.json) requires
+// CI's `flow/ci-gate` and `gitleaks`; a release commit runs every CI lane, so
+// this asks for the `test` lane itself, which the gate may skip only on a
+// pull request that changes no app path.
 //
 //   FLOW_DEPLOY_CHECKS_API=<url>   tests only: read the checks from here, not https://api.github.com
 import { resolve } from "node:path";
