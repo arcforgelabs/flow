@@ -379,7 +379,7 @@ a.fx-link:hover, a.fx-link:focus-visible { border-color: var(--t-strong); }
 .fx-tiles + .fx-tiles { margin-top: 16px; }
 .fx-tiles__head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .fx-tiles__head h2 { color: var(--t-strong); font: 600 15px/1.3 var(--t-body); }
-.fx-tiles__more { display: inline-flex; align-items: center; gap: 4px; color: var(--t-dim); font-size: 13.5px; text-decoration: none; }
+.fx-tiles__more { display: inline-flex; align-items: center; gap: 4px; min-height: 44px; color: var(--t-dim); font-size: 13.5px; text-decoration: none; }
 .fx-tiles__more:hover, .fx-tiles__more:focus-visible { color: var(--t-strong); }
 .fx-tiles__more .fx-lucide { width: 15px; height: 15px; }
 .fx-tiles__grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 12px; }
@@ -1567,7 +1567,6 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
   /* Tiles: every card is one 56px row, as a list row: the mark, the name,
      the status and ›. The blurb and the button stay on the page it opens. */
   .fx-int-grid, .fx-tiles__grid { gap: 8px; }
-  .fx-tiles__more { min-height: 44px; }
   :is(.fx-int-card, .fx-tile)[data-phone-layout="one-line"] {
     display: flex; align-items: center; gap: 12px; box-sizing: border-box;
     height: 56px; padding: 0 8px 0 12px;
