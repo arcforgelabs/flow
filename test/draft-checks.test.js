@@ -47,3 +47,33 @@ describe('marking jobs ready from their work status', { skip: skipWithoutDatabas
     assert.ok(row.readyAt, 'the shipped job is ready');
   });
 });
+
+describe('the draft check against the accounting copy', { skip: skipWithoutDatabase }, () => {
+  let handle;
+  let db;
+  let lab;
+  let practice;
+
+  before(async () => {
+    handle = await freshDatabase();
+    db = handle.db;
+    lab = await createOrganisation(db, { name: 'Example Lab' });
+    practice = await createContact(db, lab.id, { kind: 'customer', name: 'Example Practice' });
+  });
+
+  after(async () => handle?.close());
+
+  test('another customer\'s invoice with the same number does not stop the draft', async () => {
+    const { copyCheck } = await import('../server/core/invoicing-rules.js');
+    const { linkRecord } = await import('../server/core/links.js');
+    const copy = [{ id: 'ACC-OTHER', number: '5001', state: 'authorised', contactId: 'XC-OTHER' }];
+    const accounting = { id: 'accounts', capabilities: { findInvoices: async () => ({ complete: true, fresh: true, changedAt: null, invoices: copy }) } };
+    const job = { contactId: practice.id, sourceInvoiceRef: '5001', accountingState: 'not_found', accountingCheckedAt: new Date() };
+    // Without the customer's accounting contact, any invoice of that number stops it.
+    assert.equal((await copyCheck(accounting, lab.id, { db })(job)).state, 'authorised');
+    await linkRecord(db, lab.id, { entity: 'contact', flowId: practice.id, system: 'accounts', externalId: 'XC-MINE', matchedBy: 'person' });
+    assert.equal((await copyCheck(accounting, lab.id, { db })(job)).state, 'not_found');
+    copy.push({ id: 'ACC-MINE', number: '5001', state: 'authorised', contactId: 'XC-MINE' });
+    assert.equal((await copyCheck(accounting, lab.id, { db })(job)).accountingRef, 'ACC-MINE');
+  });
+});

@@ -1,6 +1,6 @@
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import {
-  billingObligations, contacts, customerBillingSettings, invoicingSettings, SEND_MODES,
+  billingObligations, contacts, customerBillingSettings, externalLinks, invoicingSettings, SEND_MODES,
 } from '../db/schema.js';
 import { FlowError, notFound } from './errors.js';
 import { listRules, ruleReasons } from './invoice-rules.js';
@@ -214,8 +214,18 @@ const isoDay = (at) => `${at.getFullYear()}-${String(at.getMonth() + 1).padStart
 // The ledger's live check, answered from the accounting system's copy in Flow
 // instead of a call for each job: the copy is complete and was read lately,
 // the matcher checked the job after the copy last changed, and the copy holds
-// no invoice with the job's own invoice number.
-export function copyCheck(accounting, organisationId) {
+// no invoice with the job's own invoice number. Another customer's invoice
+// with the same number is not this job's: when the job's customer is linked to
+// an accounting contact (`db` given), only that contact's invoices count.
+export function copyCheck(accounting, organisationId, { db = null } = {}) {
+  const contactOf = async (contactId) => {
+    if (!db || !contactId) return null;
+    const [link] = await db.select({ externalId: externalLinks.externalId }).from(externalLinks).where(and(
+      eq(externalLinks.organisationId, organisationId), eq(externalLinks.system, accounting.id),
+      eq(externalLinks.entity, 'contact'), eq(externalLinks.state, 'active'), eq(externalLinks.flowId, contactId),
+    ));
+    return link?.externalId ?? null;
+  };
   return async (obligation) => {
     const { complete, fresh, changedAt, invoices } = await accounting.capabilities.findInvoices({
       organisationId,
@@ -226,7 +236,8 @@ export function copyCheck(accounting, organisationId) {
     if (changedAt && (!obligation.accountingCheckedAt || new Date(obligation.accountingCheckedAt) < changedAt)) {
       throw new Error('the accounting copy changed after the job was last matched');
     }
-    const sales = invoices.filter((i) => !['voided', 'deleted'].includes(i.state));
+    const xeroContactId = await contactOf(obligation.contactId);
+    const sales = invoices.filter((i) => !['voided', 'deleted'].includes(i.state) && (!xeroContactId || i.contactId === xeroContactId));
     if (sales.length) return { state: sales[0].state, accountingRef: sales[0].id, matchedBy: 'copy' };
     return { state: 'not_found', matchedBy: 'copy' };
   };
@@ -269,7 +280,7 @@ export async function autoDraftJobs(db, organisationId, { accounting = null, wor
   const customers = await customerBillingByContact(db, organisationId, contactIds);
   const names = await customerNames(db, organisationId, contactIds);
   const named = (contactId) => ({ ...effectiveSettings(settings, customers.get(contactId)), name: names.get(contactId) ?? null });
-  const liveCheck = accounting ? copyCheck(accounting, organisationId) : null;
+  const liveCheck = accounting ? copyCheck(accounting, organisationId, { db }) : null;
   const invoiceDate = isoDay(now);
   let accountingRead = null;
 
