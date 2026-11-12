@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto';
-import { and, eq, inArray, sql } from 'drizzle-orm';
-import { alertDismissals, invoices } from '../db/schema.js';
+import { and, asc, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
+import { alertDismissals, billingObligations, invoices } from '../db/schema.js';
 import { FlowError } from './errors.js';
+import { READY_GRACE_DAYS } from './reconcile.js';
 import { listReview } from './review.js';
 import { invoiceViews } from './sending.js';
 
@@ -19,7 +20,7 @@ import { invoiceViews } from './sending.js';
 // they never leave the server. `roles` are who may see it. `action`, when
 // there is one, is { label, href } or { label, tab } for a tab on the page.
 
-export const ALERT_PAGES = Object.freeze(['invoices', 'price-list', 'integrations']);
+export const ALERT_PAGES = Object.freeze(['jobs', 'invoices', 'price-list', 'integrations']);
 const ALL_ROLES = Object.freeze(['owner', 'admin', 'staff']);
 const MANAGERS = Object.freeze(['owner', 'admin']);
 const TONES = new Set(['warn', 'danger']);
@@ -40,6 +41,40 @@ function checkAlert(alert) {
 }
 
 // ── Sources ────────────────────────────────────────────────────────────────
+
+// Jobs: finished jobs that nothing is billing. A job ready longer than the
+// daily reconcile's grace, with no Flow invoice, no accounting invoice and
+// no hold, opens Reconcile, where a person links its invoice or makes one.
+// A hold is how a person says "do not bill".
+export function jobGapsSource(db, { now = () => Date.now() } = {}) {
+  return async (organisationId) => {
+    const before = new Date(now() - READY_GRACE_DAYS * 86_400_000);
+    const unbilled = await db.select({ id: billingObligations.id, totalCents: billingObligations.totalCents })
+      .from(billingObligations)
+      .where(and(
+        eq(billingObligations.organisationId, organisationId),
+        isNull(billingObligations.invoiceId),
+        isNull(billingObligations.accountingRef),
+        eq(billingObligations.holdState, 'none'),
+        lt(billingObligations.readyAt, before),
+      ))
+      .orderBy(asc(billingObligations.readyAt))
+      .limit(MAX_MEMBERS);
+    const alerts = [];
+    if (unbilled.length) {
+      alerts.push({
+        key: 'jobs:not-invoiced',
+        page: 'jobs',
+        tone: 'warn',
+        title: `${plural(unbilled.length, 'finished job has', 'finished jobs have')} no invoice after ${READY_GRACE_DAYS} days.`,
+        action: { label: 'Open Reconcile', href: '/reconcile' },
+        moneyAtRiskCents: unbilled.reduce((sum, o) => sum + Number(o.totalCents ?? 0), 0),
+        members: unbilled.map((o) => o.id),
+      });
+    }
+    return alerts;
+  };
+}
 
 // Invoices: drafts a check stopped and issued invoices the accounting system
 // refused (server/core/sending.js). One alert for all of them.
