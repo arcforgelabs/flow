@@ -23,6 +23,12 @@ const LINE_PRICES = [
   { value: 'work', label: 'Job price' },
   { value: 'list', label: 'Price list' },
 ];
+// Where an invoice line takes its GST (`lineTax`): the job's own flag, or
+// this list's tax, which follows the accounting system's items.
+const LINE_TAXES = [
+  { value: 'work', label: 'Job' },
+  { value: 'list', label: 'Price list' },
+];
 const NUMBER_WORDS = ['Low to high', 'High to low'];
 
 // The list's columns (columns.js): each keeps its own width, saved with the
@@ -204,18 +210,24 @@ export async function renderPriceList(main, ui) {
   // The price list's settings: one dialog from the head's settings icon.
   async function openSettings() {
     const select = h('select', { class: 'fx-select', 'aria-label': 'Invoice line price', disabled }, LINE_PRICES.map((p) => h('option', { value: p.value }, p.label)));
-    let saved = 'work';
+    const taxSelect = h('select', { class: 'fx-select', 'aria-label': 'Invoice line GST', disabled }, LINE_TAXES.map((p) => h('option', { value: p.value }, p.label)));
+    let saved = { linePrice: 'work', lineTax: 'work' };
     try {
       const { automations } = await flow('/api/invoicing/automations');
-      saved = automations.find((a) => a.key === 'map_lines')?.config.linePrice ?? 'work';
-    } catch { /* the default shows */ }
-    select.value = saved;
+      const config = automations.find((a) => a.key === 'map_lines')?.config ?? {};
+      saved = { linePrice: config.linePrice ?? 'work', lineTax: config.lineTax ?? 'work' };
+    } catch { /* the defaults show */ }
+    select.value = saved.linePrice;
+    taxSelect.value = saved.lineTax;
     const ok = await dialog({
       title: 'Price list settings',
-      body: h('div', { class: 'fx-fields' }, h('label', { class: 'fx-field' }, h('span', { class: 'fx-label' }, 'Invoice line price'), select)),
+      body: h('div', { class: 'fx-fields' },
+        h('label', { class: 'fx-field' }, h('span', { class: 'fx-label' }, 'Invoice line price'), select),
+        h('label', { class: 'fx-field' }, h('span', { class: 'fx-label' }, 'Invoice line GST'), taxSelect)),
       confirm: 'Save',
     });
-    if (ok && select.value !== saved) await send('/api/invoicing/automations/map_lines', 'PUT', { config: { linePrice: select.value } });
+    const changes = Object.fromEntries([['linePrice', select.value], ['lineTax', taxSelect.value]].filter(([key, value]) => value !== saved[key]));
+    if (ok && Object.keys(changes).length) await send('/api/invoicing/automations/map_lines', 'PUT', { config: changes });
   }
 
   // A group's name: a choice's label, or Yes / No.

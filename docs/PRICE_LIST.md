@@ -97,6 +97,17 @@ line:
   app did.
 - **Price list**: the price item's price.
 
+## The line GST
+
+"Invoice line GST" in the same settings (`lineTax`) chooses each mapped
+line's GST:
+
+- **Job** (default): Seazona's taxable flag.
+- **Price list**: the price item's tax, which the price check keeps the same
+  as the Xero item's. When Seazona's flag differs, the job waits for a person
+  ("a source line's GST differs from its price item"). Fix the product in
+  Seazona, or the price item.
+
 ## Later
 
 - Customer prices: a price for one customer.

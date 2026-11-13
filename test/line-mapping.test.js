@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { lineLookupText, mapLine, mapLines, mappingContext, quantityOf, readMapping } from '../server/core/line-mapping.js';
+import { lineLookupText, mapLine, mapLines, mappingContext, quantityOf, readMapping, readMappingConfig } from '../server/core/line-mapping.js';
 
 // A work system's lines carry its own codes and labels; the lab's price list
 // has the accounting codes. Every name here is made up.
@@ -100,6 +100,21 @@ test('source tax takes precedence over saved item and account choices', () => {
   }
   const context = mappingContext({ items: [], mappings: [{ kind: 'account', match: 'exact', label: 'sample adjustment', accountCode: '200' }] });
   assert.equal(mapLine(line('Sample adjustment', -1000, { taxCode: null }), context).taxCode, null);
+});
+
+test('with lineTax list, the price item gives the GST and a different work flag stays on the line', () => {
+  const context = mappingContext({ items, config: { lineTax: 'list' } });
+  const flagged = mapLine(line('Special Tray', 5500, { taxCode: 'GST' }), context);
+  assert.equal(flagged.taxCode, 'GST_FREE');
+  assert.equal(flagged.workTaxCode, 'GST');
+  const agrees = mapLine(line('Special Tray', 5500), context);
+  assert.equal(agrees.taxCode, 'GST_FREE');
+  assert.equal('workTaxCode' in agrees, false);
+  assert.equal(mapLine(line('Special Tray', 5500, { taxCode: null }), context).taxCode, 'GST_FREE');
+  // The default keeps the work system's flag.
+  assert.equal(mapLine(line('Special Tray', 5500, { taxCode: 'GST' }), mappingContext({ items })).taxCode, 'GST');
+  assert.throws(() => readMappingConfig({ lineTax: 'xero' }), /lineTax must be one of work, list/);
+  assert.equal(readMappingConfig({ lineTax: 'list' }).lineTax, 'list');
 });
 
 test('a line no step answers keeps no code, so the ledger holds the job', () => {

@@ -107,6 +107,15 @@ function draftsSection(ui) {
     return input;
   };
 
+  // An on/off setting saves on each press.
+  const onOff = (key, label) => {
+    const button = h('button', { class: 'fx-switch', type: 'button', role: 'switch', 'aria-label': label, 'aria-checked': String(Boolean(saved[key])), disabled });
+    button.addEventListener('click', async () => {
+      if (await save({ [key]: !saved[key] }, button)) button.setAttribute('aria-checked', String(Boolean(saved[key])));
+    });
+    return button;
+  };
+
   (async () => {
     try {
       saved = (await flow('/api/invoicing/settings')).settings;
@@ -118,6 +127,8 @@ function draftsSection(ui) {
       h('h2', { class: 'fx-set__title' }, 'Drafts'),
       disabled ? notice('Only an owner or admin can change these.', 'info') : null,
       row('Payment terms', 'Days from invoice to due date.', box('paymentTermsDays', 'Payment terms in days', { type: 'number', read: Number })),
+      // New invoices only: a draft keeps the setting it was made with.
+      row('Prices include GST', 'New invoices send prices with GST inside, as Xero items do.', onOff('amountsIncludeTax', 'Prices include GST')),
       row('Reference', 'The Reference on each invoice. Use {practitioner} and {patient}.',
         box('referenceTemplate', 'Reference rule', { placeholder: 'Type a reference rule' })),
       // The reasons for No Charge, for the lab's reports (no-charge.js).

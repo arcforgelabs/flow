@@ -4,7 +4,7 @@ import {
   billingObligations, invoices, linkRejections, linkSuggestions, obligationEvents, obligationPayments, obligationWritebacks, priceItems,
 } from '../db/schema.js';
 import { FlowError, notFound } from './errors.js';
-import { createDraftInvoice, getInvoice, updateDraftInvoice } from './invoices.js';
+import { createDraftInvoice, getInvoice, pricesIncludeTax, updateDraftInvoice } from './invoices.js';
 import { invoiceTotals, lineTotals } from './money.js';
 import { openReview, resolveReviewFor } from './review.js';
 
@@ -81,7 +81,7 @@ function requireActor(actor) {
   if (!actor) throw new FlowError('invalid', 'actor is required');
 }
 
-async function normaliseLines(tx, organisationId, lines) {
+async function normaliseLines(tx, organisationId, lines, { inclusive = false } = {}) {
   if (!Array.isArray(lines) || !lines.length) throw new FlowError('invalid', 'a job needs at least one line');
   const normalised = [];
   for (const [index, line] of lines.entries()) {
@@ -105,7 +105,7 @@ async function normaliseLines(tx, organisationId, lines) {
     if (!description) throw new FlowError('invalid', `line ${index + 1}: description is required`);
     let totals;
     try {
-      totals = lineTotals({ quantity, unitAmountCents, taxCode: taxCode ?? 'GST_FREE' });
+      totals = lineTotals({ quantity, unitAmountCents, taxCode: taxCode ?? 'GST_FREE', inclusive });
       if (taxCode === null) totals.taxCents = null;
     } catch (error) {
       throw new FlowError('invalid', `line ${index + 1}: ${error.message}`);
@@ -116,6 +116,7 @@ async function normaliseLines(tx, organisationId, lines) {
       ...(accountCode ? { accountCode } : {}),
       ...(line.label ? { label: line.label } : {}),
       ...(line.mappedBy ? { mappedBy: line.mappedBy } : {}),
+      ...(line.workTaxCode && line.workTaxCode !== taxCode ? { workTaxCode: line.workTaxCode } : {}),
     };
     normalised.push({ itemCode, priceItemId, description, quantity, unitAmountCents, taxCode, ...extra, ...totals });
   }
@@ -144,12 +145,23 @@ function readSourceTotals(raw) {
 }
 
 // A source invoice total is evidence, not permission to allocate its tax.
+// When the lab's prices include GST, the work system's subtotal (its prices,
+// before the GST it adds on top) is the invoice total: only that is compared,
+// and its GST is not.
 export function sourceBillingProblems(obligation) {
   const reasons = [];
   const lines = obligation.lines ?? [];
   if (lines.some((line) => line.taxCode === null)) reasons.push('a source line has unknown tax treatment');
-  const calculated = invoiceTotals(lines);
+  if (lines.some((line) => line.workTaxCode)) reasons.push("a source line's GST differs from its price item");
+  const inclusive = Boolean(obligation.amountsIncludeTax);
+  const calculated = invoiceTotals(lines, { inclusive });
   const source = obligation.sourceTotals ?? {};
+  if (inclusive) {
+    if (source.subtotalCents != null && source.subtotalCents !== calculated.totalCents) {
+      reasons.push('the source invoice totals differ from the reconstructed lines');
+    }
+    return reasons;
+  }
   // When the source total and GST both match Flow's lines, Flow's subtotal is
   // their difference, so a different source subtotal (Seazona can send 0) is a
   // fault in that one source field, not a wrong invoice. It stays in evidence.
@@ -168,7 +180,7 @@ async function recordSourceReview(tx, row, actor) {
     await openReview(tx, row.organisationId, {
       kind: REVIEW_SOURCE_TOTALS, entity: 'obligation', flowId: row.id,
       systems: [row.sourceSystem, 'flow'], moneyAtRiskCents: Math.abs(row.totalCents),
-      evidence: { reasons, sourceTotals: row.sourceTotals, reconstructed: invoiceTotals(row.lines),
+      evidence: { reasons, sourceTotals: row.sourceTotals, reconstructed: invoiceTotals(row.lines, { inclusive: row.amountsIncludeTax }),
         unknownTaxLines: row.lines.flatMap((line, index) => line.taxCode === null ? [index + 1] : []),
         sourceJobRef: row.sourceJobRef, invoiceId: row.invoiceId },
     });
@@ -186,10 +198,20 @@ export async function observeJob(db, organisationId, job) {
   if (!sourceSystem || !sourceJobRef) throw new FlowError('invalid', 'sourceSystem and sourceJobRef are required');
   const seenAt = job.observedAt ? new Date(job.observedAt) : new Date();
   return db.transaction(async (tx) => {
-    const lines = await normaliseLines(tx, organisationId, job.lines);
+    const amountsIncludeTax = await pricesIncludeTax(tx, organisationId);
+    const lines = await normaliseLines(tx, organisationId, job.lines, { inclusive: amountsIncludeTax });
     const sourceTotals = readSourceTotals(job.sourceTotals);
-    const totals = { ...invoiceTotals(lines), ...sourceTotals };
-    if (sourceTotals?.totalCents == null) totals.totalCents = totals.subtotalCents + totals.taxCents;
+    let totals;
+    if (amountsIncludeTax) {
+      // The work system's prices are the total, GST inside (sourceBillingProblems).
+      totals = invoiceTotals(lines, { inclusive: true });
+      if (sourceTotals?.subtotalCents != null) {
+        totals = { ...totals, totalCents: sourceTotals.subtotalCents, subtotalCents: sourceTotals.subtotalCents - totals.taxCents };
+      }
+    } else {
+      totals = { ...invoiceTotals(lines), ...sourceTotals };
+      if (sourceTotals?.totalCents == null) totals.totalCents = totals.subtotalCents + totals.taxCents;
+    }
     const facts = {
       sourceInvoiceRef: job.sourceInvoiceRef ?? null,
       caseRef: job.caseRef ?? null,
@@ -203,6 +225,7 @@ export async function observeJob(db, organisationId, job) {
       lineFingerprint: fingerprint(lines),
       sourceTotals,
       ...totals,
+      amountsIncludeTax,
       mappingComplete: lines.every((l) => l.priceItemId || l.accountCode),
     };
     const [existing] = await tx.select().from(billingObligations)
@@ -240,6 +263,7 @@ export async function observeJob(db, organisationId, job) {
     if (!changed.length) {
       const row = await update(tx, existing, {
         sourceSeenAt: seenAt, mappingComplete: facts.mappingComplete, lines, jobDate: facts.jobDate, sourceStatus: facts.sourceStatus, remake: facts.remake,
+        amountsIncludeTax,
       });
       await statusChanged(tx, organisationId, existing, row, actor);
       return recordSourceReview(tx, row, actor);
@@ -505,7 +529,7 @@ export async function jobChangeFor(db, organisationId, invoiceId) {
   // job-change/accounting comparison, never a new source-resolution action.
   const sourceReview = sourceProblems.length && compare.invoiceStatus === 'draft' ? {
     sourceTotals: obligation.sourceTotals ?? null,
-    reconstructed: { ...invoiceTotals(obligation.lines), ...(obligation.lines.some((line) => line.taxCode === null) ? { taxCents: null, totalCents: null } : {}) },
+    reconstructed: { ...invoiceTotals(obligation.lines, { inclusive: obligation.amountsIncludeTax }), ...(obligation.lines.some((line) => line.taxCode === null) ? { taxCents: null, totalCents: null } : {}) },
     unknownTaxLines: obligation.lines.flatMap((line, index) => line.taxCode === null
       ? [{ position: index + 1, description: line.description, itemCode: line.itemCode ?? null }] : []),
     savedInvoice: compare.invoiceTotals,

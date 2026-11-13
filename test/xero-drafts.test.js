@@ -56,6 +56,13 @@ describe('the Xero draft for a document', () => {
     });
   });
 
+  test('a document whose prices include GST sends Inclusive line amounts', () => {
+    const items = new Map([['CROWN', { code: 'CROWN' }]]);
+    const { draft } = buildDraft({ ...document, amountsIncludeTax: true }, { settings, contact: { xeroContactId: XC, salesTracking: [] }, items });
+    assert.equal(draft.LineAmountTypes, 'Inclusive');
+    assert.deepEqual(draft.LineItems[0], { Description: 'Crown', Quantity: 2, UnitAmount: 250, LineAmount: 500, TaxType: 'OUTPUT', ItemCode: 'CROWN' });
+  });
+
   test('a linked Xero item sends under Xero\'s own code; a gone link or an item not sold stops the draft', () => {
     const contact = { xeroContactId: XC, salesTracking: [] };
     const linked = buildDraft(document, { settings, contact, items: new Map([['CROWN', { code: 'CRN-01', linked: true }]]) });

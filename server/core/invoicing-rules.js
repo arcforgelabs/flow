@@ -43,6 +43,8 @@ export const INVOICING_DEFAULTS = Object.freeze({
   rushPercent: 20,
   referenceTemplate: DEFAULT_REFERENCE,
   noChargeReasons: NO_CHARGE_REASONS,
+  // Prices include GST: new invoices send tax-inclusive lines.
+  amountsIncludeTax: false,
 });
 
 const CUSTOMER_DEFAULTS = Object.freeze({
@@ -105,7 +107,7 @@ function readSettingChanges(changes) {
   if (!changes || typeof changes !== 'object' || Array.isArray(changes)) throw invalid('the settings must be an object');
   const out = {};
   for (const [key, value] of Object.entries(changes)) {
-    if (key === 'requirePractitioner') out[key] = flag(value, key);
+    if (key === 'requirePractitioner' || key === 'amountsIncludeTax') out[key] = flag(value, key);
     else if (key === 'sendMode') out[key] = sendMode(value, key);
     else if (key === 'staleDays') out[key] = wholeNumber(value, key, 1, 3650);
     else if (key === 'paymentTermsDays') out[key] = wholeNumber(value, key, 0, 365);

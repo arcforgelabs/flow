@@ -257,8 +257,10 @@ The rules:
   Xero contact that already exists.
 - **Each line names its item.** A line's `itemCode` from the issued document
   becomes the Xero `ItemCode`; a code Xero does not have stops the draft. Tax
-  types come from `XERO_TAX_TYPE_GST` and `XERO_TAX_TYPE_GST_FREE`; amounts are
-  tax-exclusive with each line's amount sent as Flow calculated it.
+  types come from `XERO_TAX_TYPE_GST` and `XERO_TAX_TYPE_GST_FREE`. Each line's
+  amount is sent as Flow calculated it: tax-exclusive, or `Inclusive` when the
+  invoice was made while "Prices include GST" was on (Settings, Invoicing,
+  Drafts). An invoice keeps the setting it was made with.
 - **Reference and dates.** The Xero reference is the invoice's reference, or
   its number. The date is the issue date; the due date is the invoice's, or
   `XERO_DEFAULT_DUE_DAYS` later. With `XERO_INVOICE_NUMBER=flow` Xero gets
