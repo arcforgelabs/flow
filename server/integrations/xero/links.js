@@ -3,7 +3,7 @@ import { billingObligations, contacts, invoices, obligationEvents, priceItems } 
 import { payersOf } from '../../core/contacts.js';
 import { createContact } from '../../core/directory.js';
 import { FlowError } from '../../core/errors.js';
-import { createDraftInvoice, deleteUnsentRows, issueInvoice } from '../../core/invoices.js';
+import { createDraftInvoice, deleteUnsentRows, hasSendOverride, issueInvoice } from '../../core/invoices.js';
 import { linkJobToInvoice, recordAccountingEvidence, releaseAccountingRef } from '../../core/ledger.js';
 import { normaliseName } from './catalogue.js';
 import { findInvoices } from './lookup.js';
@@ -287,8 +287,9 @@ export async function useXeroInvoice(db, organisationId, invoiceId, { xeroInvoic
     if (jobs.length > 1) throw new FlowError('invalid', 'the Flow invoice bills more than one job; link each by hand');
     if (invoice.status === 'void' && !jobs.length) throw new FlowError('invalid', 'the void Flow invoice holds no job');
     // A copy that never reached Xero is deleted, not voided (Samuel, 13
-    // November 2026). A send in flight, or a link, keeps the old void.
-    const unsent = !(await everInXero(tx, organisationId, invoiceId));
+    // November 2026). A send in flight, a link, or an owner's override record
+    // keeps the old void.
+    const unsent = !(await everInXero(tx, organisationId, invoiceId)) && !(await hasSendOverride(tx, invoiceId));
     if (invoice.status === 'issued' && !unsent) await tx.update(invoices).set({ status: 'void', updatedAt: sql`now()` }).where(eq(invoices.id, invoiceId));
     for (const job of jobs) {
       await tx.update(billingObligations).set({ invoiceId: null, draftBasis: null, updatedAt: sql`now()` }).where(eq(billingObligations.id, job.id));

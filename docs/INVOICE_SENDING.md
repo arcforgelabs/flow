@@ -246,6 +246,9 @@ again. An owner or admin can also **Delete** it:
   (`draft_deleted`, `removed: true`). The number is not used again.
 - An invoice on its way (`send_state` queued) is refused until the send
   finishes.
+- An invoice with an owner's override record (below) keeps the old rule.
+  The override is a record that stays, so its invoice is voided, never
+  deleted.
 - Every other issued invoice keeps the old rule: it is voided only after
   Xero deletes its draft. What a customer was sent stays a record.
 - The database holds this rule too (migration 0039): it refuses to delete an

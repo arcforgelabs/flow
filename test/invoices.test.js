@@ -180,6 +180,16 @@ describe('invoices', { skip: skipWithoutDatabase }, () => {
     await deleteDraft(db, lab.id, voided.id, { actor: 'person:test', accounting });
     await assert.rejects(getInvoice(db, lab.id, voided.id), { code: 'not_found' });
 
+    // An owner's override record stays, so its invoice is never deleted: the
+    // old rules apply (here: the test system is not connected, so nothing changes).
+    const held = await createDraftInvoice(db, lab.id, { contactId: practice.id, lines: [{ priceItemId: crown.id }] });
+    const heldIssued = await issueInvoice(db, lab.id, held.id, { issuedBy: 'user:test', issueDate: '2026-10-16' });
+    const { rows: [person] } = await handle.pool.query("INSERT INTO people (email, role, status) VALUES ('override-owner@example.test', 'owner', 'active') RETURNING id");
+    await handle.pool.query("INSERT INTO send_overrides (organisation_id, invoice_id, version, document_hash, problems, reason_code, person_id) VALUES ($1, $2, $3, 'sample', '[]', 'one_off', $4)",
+      [lab.id, held.id, heldIssued.issuedVersion, person.id]);
+    await assert.rejects(deleteDraft(db, lab.id, held.id, { actor: 'person:test', accounting }), { code: 'accounting_not_connected' });
+    assert.equal((await getInvoice(db, lab.id, held.id)).status, 'issued');
+
     // One the accounting system has (a send started, or a link) keeps the old rules.
     sent = true;
     const real = await createDraftInvoice(db, lab.id, { contactId: practice.id, lines: [{ priceItemId: crown.id }] });

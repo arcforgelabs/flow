@@ -591,7 +591,6 @@ function guarded(db, client, mayWrite) {
       return client.createInvoice(...args);
     },
     async beforeEmail(push) {
-      await allowed();
       const [row] = (await db.execute(sql`select send_mode, send_email from invoices where id = ${push.invoiceId}`)).rows;
       if (row?.send_mode !== 'approve_and_email') return;
       const contactId = JSON.parse(push.requestBody ?? '{}').Contact?.ContactID;
@@ -599,6 +598,12 @@ function guarded(db, client, mayWrite) {
       if (!row.send_email || String(live?.EmailAddress ?? '').trim().toLowerCase() !== row.send_email) {
         throw guardError('xero_email_changed', 'the client\'s email in Xero is not the one shown when Send was pressed. Check it in Xero, then email it there.');
       }
+    },
+    // Last, right before the request: the contact read above can take a
+    // moment, and a change of role meanwhile still stops the email.
+    async emailInvoice(...args) {
+      await allowed();
+      return client.emailInvoice(...args);
     },
   };
 }

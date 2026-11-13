@@ -683,6 +683,25 @@ describe('Xero drafts from issued invoices', { skip: skipWithoutDatabase }, () =
       assert.equal(posts(made).length, 1, 'the invoice, and no email');
     });
 
+    test('a sender made staff while Flow reads the contact before the email sends no email', async () => {
+      const org = lab.organisation.id;
+      const XR = '00000000-0000-4000-8000-0000000000e6';
+      const slow = await createContact(handle.db, org, { kind: 'customer', name: 'Slow Practice' });
+      await handle.db.execute(sql`insert into xero_contacts (organisation_id, xero_contact_id, name, email, status, is_customer) values (${org}, ${XR}, 'Slow Practice', 'shown@example.com', 'ACTIVE', true)`);
+      const invoice = await issuedFor(slow);
+      await handle.db.execute(sql`update invoices set send_mode = 'approve_and_email', send_email = 'shown@example.com' where id = ${invoice.id}`);
+      const readR = xeroAnswer('Invoices/r1', { Invoices: [{ ...xeroInvoice('r1', { reference: invoice.reference, status: 'AUTHORISED' }), Contact: { ContactID: XR } }] });
+      const replay = xero.script([liveContact(XR, 'shown@example.com'), byReference([]), approved('r1'), readR, liveContact(XR, 'shown@example.com')]);
+      // Allowed for the invoice; refused at the email, after the contact read.
+      let asked = 0;
+      const refused = { code: 'requester_not_allowed', message: 'The person who asked to send this is no longer an owner or admin.' };
+      const [result] = (await pushInvoices(handle.db, xero.runtime, { organisationId: org, invoiceIds: [invoice.id], mayWrite: async () => (++asked > 1 ? refused : null) })).invoices;
+      assert.equal(result.outcome, 'created', JSON.stringify(result));
+      assert.equal(result.email.state, 'failed');
+      assert.equal(asked, 2, 'asked before the invoice and again right before the email');
+      assert.equal(posts(replay).length, 1, 'the invoice, and no email request');
+    });
+
     test('a press that chose Approve and email sends a Xero draft when the email in Xero is not the one shown', async () => {
       const org = lab.organisation.id;
       const XC2 = '00000000-0000-4000-8000-0000000000e4';

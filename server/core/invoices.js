@@ -250,6 +250,13 @@ export async function deleteUnsentRows(tx, organisationId, invoiceId) {
   await tx.execute(sql`select set_config('flow.remove_unsent', '', true)`);
 }
 
+// An owner's override (send_overrides) is a record that stays: its row
+// keeps the invoice. An invoice with one is voided, never deleted.
+export async function hasSendOverride(db, invoiceId) {
+  const { rows } = await db.execute(sql`select 1 from send_overrides where invoice_id = ${invoiceId} limit 1`);
+  return rows.length > 0;
+}
+
 // True only when the accounting system says this invoice never reached it:
 // no send was started and no link was made. Without that answer, false.
 async function neverSent(accounting, organisationId, invoiceId) {
@@ -290,7 +297,7 @@ async function deleteInAccounting(accounting, organisationId, invoiceId, actor) 
 // nothing in Flow changes.
 export async function deleteDraft(db, organisationId, invoiceId, { actor = null, accounting = null } = {}) {
   const current = await loadInvoice(db, organisationId, invoiceId);
-  if (current.issuedVersion > 0 && await neverSent(accounting, organisationId, invoiceId)) {
+  if (current.issuedVersion > 0 && await neverSent(accounting, organisationId, invoiceId) && !(await hasSendOverride(db, invoiceId))) {
     return db.transaction(async (tx) => {
       const invoice = await loadInvoice(tx, organisationId, invoiceId, { lock: true });
       if (invoice.sendState === 'queued') {
