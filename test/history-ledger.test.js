@@ -152,6 +152,25 @@ describe('history jobs in the ledger', { skip: skipWithoutDatabase }, () => {
     assert.equal(row.holdReason, HISTORY_HOLD_REASON, 'the job stays held');
   });
 
+  test('a new mapping reaches a released history job too, and its release stays', async () => {
+    const work = fakeWork();
+    const line = { description: 'Wide plate', quantity: 1, unitAmountCents: 45600, taxCode: 'GST' };
+    work.adapter.capabilities.pullHistoryJobs = async (cursor) => ({
+      items: cursor ? [] : [{ clientId: 'c1', historical: true, ledgerJob: { ...ledgerJob('H-10'), lines: [line] } }],
+      cursor: 'read', more: false,
+    });
+    await runPipelineOnce(db, integrationsOf([work.adapter]), { now: NOW });
+    const [held] = await rows('H-10');
+    await releaseHistoryJob(db, organisationId, held.id, { actor: 'person:test' });
+
+    await createMapping(db, organisationId, { kind: 'saved', label: 'wide plate', unitAmountCents: 45600, itemCode: 'CROWN' });
+    await runPipelineOnce(db, integrationsOf([work.adapter]), { now: NOW });
+    const [row] = await rows('H-10');
+    assert.equal(row.lines[0].itemCode, 'CROWN');
+    assert.equal(row.mappingComplete, true);
+    assert.equal(row.holdState, 'none', 'history does not hold a released job again');
+  });
+
   test('the board leaves held history jobs out, and shows each job\'s integration issues', async () => {
     const work = fakeWork();
     work.state.live = [ledgerJob('L-2')];

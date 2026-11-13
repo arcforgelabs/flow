@@ -607,7 +607,7 @@ The pipeline reads `pullHistoryJobs` after the live feed
 | The ledger has no job with that order id | The job is made and held: `hold_state` `held`, reason `history_import`, actor `import:seazona_history`. A held job never drafts. |
 | The live feed made the job first | Nothing changes: not its lines, hold, ready mark or invoice. |
 | History made the job, then the live feed reads it | The live read updates its lines. The hold stays. |
-| A later import changes a job only history has reported | The job takes the new lines and stays held. |
+| A later import, or a new line mapping, changes a job only history has reported | The job takes the new lines. A held job stays held, and a released job stays released. If the job already has an invoice, it goes to review like any job change. |
 
 The matcher runs on held jobs too, so each history job gets its accounting
 state. `GET /api/seazona/history/ledger` lists the held history jobs by that

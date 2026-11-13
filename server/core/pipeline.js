@@ -11,7 +11,7 @@ import { loadMappingContext, mapLines } from './line-mapping.js';
 import { checkPrices, readCatalogues } from './price-list.js';
 import { linkRecord, priorLinkFor } from './links.js';
 import { billedBy, createContact, payersOf, readContact } from './contacts.js';
-import { HISTORY_ACTOR, HISTORY_HOLD_REASON, isHistoryHeld } from './history.js';
+import { HISTORY_ACTOR, HISTORY_HOLD_REASON } from './history.js';
 import { deadHoldSince, deadSince, enqueueJob, runNextJob } from './queue.js';
 
 // The pipeline (docs/DATA_SPINE.md, issue 58). It joins what the integrations
@@ -318,8 +318,10 @@ export async function ingestWork(db, organisationId, { adapter, restart = false,
 // it is history, most likely invoiced long ago, so it never drafts until a
 // person releases it, and the matcher still links it to its invoice. A job
 // the ledger already has from the live feed is left as it is: its hold, ready
-// mark and invoice never change here. A held history job that only history
-// has reported takes a later import's changes.
+// mark and invoice never change here. A job that only history has reported
+// takes a later import's changes and a new mapping, held or released: its
+// hold and ready mark stay, and a change after its invoice goes to review
+// like any job change (ledger.js).
 export async function ingestHistory(db, organisationId, { adapter, pages = WORK_PAGES }) {
   const name = `${adapter.id}.history`;
   let cursor = await readCursor(db, organisationId, name);
@@ -340,14 +342,12 @@ export async function ingestHistory(db, organisationId, { adapter, pages = WORK_
         eq(billingObligations.sourceJobRef, job.sourceJobRef),
       ));
       if (existing) {
-        const [live] = existing && isHistoryHeld(existing)
-          ? await db.select({ id: obligationEvents.id }).from(obligationEvents).where(and(
-            eq(obligationEvents.organisationId, organisationId),
-            eq(obligationEvents.obligationId, existing.id),
-            inArray(obligationEvents.kind, ['observed', 'source_changed']),
-            sql`${obligationEvents.actor} <> ${HISTORY_ACTOR}`,
-          )).limit(1)
-          : [{ id: 'live' }];
+        const [live] = await db.select({ id: obligationEvents.id }).from(obligationEvents).where(and(
+          eq(obligationEvents.organisationId, organisationId),
+          eq(obligationEvents.obligationId, existing.id),
+          inArray(obligationEvents.kind, ['observed', 'source_changed']),
+          sql`${obligationEvents.actor} <> ${HISTORY_ACTOR}`,
+        )).limit(1);
         if (live) {
           result.alreadyLive += 1;
           continue;
