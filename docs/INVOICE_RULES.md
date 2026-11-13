@@ -147,13 +147,20 @@ shows it and filters by it, for the lab's reports.
 Old held jobs settle by rule too. The history import holds each job it adds
 (`history_import`). When the accounting matcher finds no invoice for such a
 job (`not_found`; with no accounting system connected, also `unknown`), and a
-non-chargeable rule matches it, the draft step releases it (actor
-`rule:<id>`) and drafts it on the No charge tab. A job that the
-accounting system has invoiced stays held. The step's run summary counts the
-released jobs (`settle_history`). The release lasts only while such a rule
-matches: turn the rule off, and these jobs go back on the history hold
-(`reheld`), not to Pending or Ready. A draft one has is not sent until a
-person releases the job.
+non-chargeable rule matches it, the draft step marks it No Charge (actor
+`rule:<id>`, reason the rule's reason or name). The job keeps its history
+hold: Flow makes no draft for it, it stays off the board and the Invoices
+tabs, and the history list counts it as `no_charge`, not as waiting for a
+person. A job that the accounting system has invoiced stays held as it is.
+The step's run summary counts these jobs (`settle_history`: `settled`). The
+No Charge lasts only while such a rule matches: turn the rule off, and the
+job waits for a person again (`unsettled`).
+
+Jobs that an earlier release let go (before rules settled history in place,
+a rule released the job and Flow drafted it on the No charge tab) keep that
+release only while such a rule matches. Turn the rule off, and they go back
+on the history hold (`reheld`), not to Pending or Ready. A draft one has is
+not sent until a person releases the job.
 
 ## No Charge
 
