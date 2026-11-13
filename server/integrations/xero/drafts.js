@@ -395,6 +395,17 @@ const payerMissing = (name) => problem('xero_contact_missing',
   `This client is billed to ${name}, and no Xero contact is named "${name}". Link ${name} to its Xero client on its contact page, then check again.`,
   { short: 'Payer not in Xero' });
 
+// The send mode the person chose at the press (invoices.send_mode), or null:
+// the customer's or organisation's mode then applies. Approved and emailed
+// chosen at the press needs an email on the Xero contact; without one the
+// invoice goes as a Xero draft, so Flow never approves an invoice that Xero
+// cannot email.
+function sendModeOf(invoice, match) {
+  if (!invoice.sendMode) return null;
+  if (invoice.sendMode === 'approve_and_email' && match.state === 'matched' && !match.contact.email) return 'accounting_draft';
+  return invoice.sendMode;
+}
+
 async function previewOne(db, runtime, organisationId, invoiceId, shared = sharedReads()) {
   const { invoice, version, document } = await documentFor(db, organisationId, invoiceId);
   const problems = [];
@@ -405,7 +416,7 @@ async function previewOne(db, runtime, organisationId, invoiceId, shared = share
   if (match.state === 'missing') problems.push(own ? missingContact(name, { offerCreate }) : payerMissing(name));
   if (match.state === 'ambiguous') problems.push(own ? twiceContact(name) : { ...twiceContact(name), offerLink: false });
   const items = await shared.items(db, organisationId, document.lines.map((l) => l.itemCode));
-  const sendMode = await shared.sendMode(db, organisationId, invoice.contactId);
+  const sendMode = sendModeOf(invoice, match) ?? await shared.sendMode(db, organisationId, invoice.contactId);
   const { taxFromXero } = await shared.settings(db, organisationId);
   const { draft, problems: lineProblems } = buildDraft(document, { settings: runtime.settings, contact: match.contact, items, sendMode, taxFromXero });
   problems.push(...lineProblems);
@@ -432,7 +443,7 @@ async function previewOne(db, runtime, organisationId, invoiceId, shared = share
     sendMode,
     state,
     problems,
-    contact: { state: match.state, xeroContactId: match.contact?.xeroContactId ?? null, name: match.contact?.name ?? null },
+    contact: { state: match.state, xeroContactId: match.contact?.xeroContactId ?? null, name: match.contact?.name ?? null, email: match.contact?.email || null },
     totalCents: document.totalCents,
     draft,
     push: describePush(current),
@@ -597,7 +608,7 @@ async function pushOne(db, runtime, client, organisationId, invoiceId, { pushedB
   const items = await xeroItemsForCodes(db, organisationId, document.lines.map((l) => l.itemCode));
   // An invoice sent with an override always goes as a Xero draft, so nothing
   // is emailed to the customer before a person approves it in Xero.
-  const sendMode = accepted.length ? 'accounting_draft' : await sendModeFor(db, organisationId, invoice.contactId);
+  const sendMode = accepted.length ? 'accounting_draft' : sendModeOf(invoice, match) ?? await sendModeFor(db, organisationId, invoice.contactId);
   const { taxFromXero } = await readInvoicingSettings(db, organisationId);
   const { draft, problems: found } = buildDraft(document, { settings: runtime.settings, contact: match.contact, items, sendMode, taxFromXero });
   // The override passes the warnings it recorded, by key. A new problem (the

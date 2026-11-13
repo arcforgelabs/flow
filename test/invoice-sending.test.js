@@ -524,6 +524,19 @@ describe('Send all ready over the API', { skip: skipWithoutDatabase }, () => {
     fake.status = { connected: true, writesAllowed: true };
     assert.equal((await call('/invoices/send-again', { method: 'POST', body: { invoiceIds: ['nope'] } })).status, 400);
   });
+
+  test('a press can choose Approve and email, and the invoice keeps who chose it', async () => {
+    const ready = await createDraftInvoice(handle.db, lab.id, { contactId: practice.id, lines: [{ priceItemId: crown.id, quantity: 1 }] });
+    let res = await call('/invoices/send-ready', { method: 'POST', body: { issueDate: ISSUE_DATE, invoiceIds: [ready.id], sendMode: 'email_everyone' } });
+    assert.equal(res.status, 400, 'an unknown send mode is refused before anything is issued');
+    assert.equal((await handle.db.select().from(invoices).where(eq(invoices.id, ready.id)))[0].status, 'draft');
+
+    res = await call('/invoices/send-ready', { method: 'POST', body: { issueDate: ISSUE_DATE, invoiceIds: [ready.id], sendMode: 'approve_and_email' } });
+    assert.equal(res.status, 200);
+    assert.deepEqual([res.body.issued, res.body.queued], [1, 1]);
+    const [row] = await handle.db.select().from(invoices).where(eq(invoices.id, ready.id));
+    assert.deepEqual([row.sendState, row.sendMode, typeof row.sendRequestedBy], ['queued', 'approve_and_email', 'string']);
+  });
 });
 
 describe('the send worker reports a refusal', { skip: skipWithoutDatabase }, () => {

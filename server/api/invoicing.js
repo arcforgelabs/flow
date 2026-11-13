@@ -55,7 +55,9 @@ import {
 //                                     accounting system { issueDate, invoiceIds? (only these; one that fails
 //                                     a check now stays on Pending and counts as held; one id is all or
 //                                     nothing when its job cannot be confirmed, more than one id sends the
-//                                     rest and counts the unconfirmed in waiting) }
+//                                     rest and counts the unconfirmed in waiting), sendMode? (this press
+//                                     only: 'approve_and_email' or 'accounting_draft'; default each
+//                                     customer's mode) }
 //   POST  /invoices/send-again        owner or admin: queue failed sends again { invoiceIds? }
 //   GET   /invoices/:id               one invoice: lines, contact, job, issued versions, and where it sends
 //   GET   /invoices/:id/pdf?version=  the invoice as a PDF, drawn by Flow (server/core/invoice-pdf.js),
@@ -618,8 +620,10 @@ export function createInvoicingRouter({
     const ids = req.body?.invoiceIds === undefined ? null : invoiceIdsOf(req.body);
     // Read before act (issue #141) reads each old job from the work system that can.
     const reader = work().find((a) => typeof a.capabilities.readWorkItem === 'function') ?? null;
-    const result = await sendAllReady(db, organisationId, { accounting: accounting(), work: reader, personId: req.person.id, issueDate, invoiceIds: ids });
-    log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} sent all ready: ${JSON.stringify(result)}`);
+    // Optional: 'approve_and_email' or 'accounting_draft' for this press only.
+    const sendMode = req.body?.sendMode ?? null;
+    const result = await sendAllReady(db, organisationId, { accounting: accounting(), work: reader, personId: req.person.id, issueDate, invoiceIds: ids, sendMode });
+    log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} sent all ready${sendMode ? ` as ${sendMode}` : ''}: ${JSON.stringify(result)}`);
     res.json({ ok: true, ...result });
   }));
 

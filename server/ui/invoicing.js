@@ -329,16 +329,18 @@ export async function renderInvoiceList(main, ui) {
         icon: to ? 'send' : 'circle-check-big', label: to ? `Send to ${to}` : 'Approve', primary: true,
         title: to ? `Send to ${to}` : 'Approve',
         run: async (working) => {
+          const choice = to && context.xero ? emailChoice(ui, context, body.sendMode, ticked) : null;
           const ok = await ui.dialog({
             title: to ? `Send ${plural(ticked.length, 'invoice', 'invoices')} to ${to}?` : `Approve ${plural(ticked.length, 'invoice', 'invoices')}?`,
-            body: h('p', {}, to ? sendModeNote(to, body.sendMode, 'each one') : 'Each one gets the next number and is locked.'),
+            body: choice?.element ?? h('p', {}, to ? sendModeNote(to, body.sendMode, 'each one') : 'Each one gets the next number and is locked.'),
             confirm: to ? `Send ${ticked.length}` : `Approve ${ticked.length}`,
           });
           if (!ok) return;
           working(to ? 'Sending' : 'Approving');
           // The sent ones show on Draft as Sending until the accounting
           // system has them; the approved ones on Approved.
-          await post('send-ready', { issueDate: localDate(), invoiceIds: ticked }, (res) => {
+          const sendMode = choice?.mode(ok) ?? null;
+          await post('send-ready', { issueDate: localDate(), invoiceIds: ticked, ...(sendMode ? { sendMode } : {}) }, (res) => {
             const sent = to ? `${res.issued} on the way to ${to}.` : `${res.issued} approved.`;
             const notes = [
               res.held ? `${res.held} failed a check and went to Pending.` : '',
@@ -1727,6 +1729,48 @@ function xeroCard(invoice, ui, context, status, reload) {
     h('div', { class: 'fx-row' },
       status.xero?.url ? h('a', { class: 'fx-btn fx-btn--sm fx-btn--ghost', href: status.xero.url, target: '_blank', rel: 'noopener' }, 'Open in Xero') : null,
       resolve));
+}
+
+// The Send dialog's body when Xero is connected: what Send does, and a tick
+// box to send this batch approved, with Xero's email to each client, while the
+// setting stays Draft. Ticked, it lists each invoice's Xero contact email and
+// total from Flow's copy of Xero (no Xero calls). A client with no email in
+// Xero gets a Xero draft. Answers { element, mode(form) } for the press.
+function emailChoice(ui, context, sendMode, invoiceIds) {
+  const { h, flow } = ui;
+  const organisationId = context.organisations[0]?.id;
+  const setting = sendMode?.mode === 'approve_and_email';
+  const note = h('p', {});
+  const list = h('div', { class: 'fx-email-list', hidden: true });
+  let loaded = false;
+  const box = h('input', { type: 'checkbox', name: 'email', checked: setting });
+  const show = async () => {
+    note.textContent = sendModeNote('Xero', { ...sendMode, mode: box.checked ? 'approve_and_email' : 'accounting_draft' }, 'each one');
+    list.hidden = !box.checked;
+    if (!box.checked || loaded || !organisationId) return;
+    loaded = true;
+    list.replaceChildren(h('div', { class: 'fx-skeleton' }));
+    try {
+      const shown = invoiceIds.slice(0, 100);
+      const res = await flow('/api/xero/invoices/preview', { method: 'POST', body: JSON.stringify({ organisationId, invoiceIds: shown }) });
+      const rows = (res.invoices ?? []).map((p) => h('div', { class: 'fx-email-list__row' },
+        h('span', { class: 'fx-strong' }, p.contact?.name ?? '—'),
+        p.contact?.email ? h('span', { class: 'fx-dim' }, p.contact.email) : h('span', { class: 'fx-dim' }, 'No email in Xero: goes as a draft'),
+        h('span', { class: 'fx-num' }, formatCents(p.totalCents))));
+      const more = invoiceIds.length - shown.length;
+      list.replaceChildren(...rows, ...(more > 0 ? [h('p', { class: 'fx-dim' }, `And ${more} more.`)] : []));
+    } catch (error) {
+      list.replaceChildren(h('p', { class: 'fx-dim' }, `The emails could not be shown: ${error.message}`));
+    }
+  };
+  box.addEventListener('change', show);
+  show();
+  return {
+    element: h('div', {}, note, h('label', { class: 'fx-check' }, box, 'Approve in Xero and email each client'), list),
+    // The press always carries the choice, so the dialog is what happens:
+    // not ticked, no customer's own mode can email a client from this press.
+    mode: (form) => (form.get('email') ? 'approve_and_email' : 'accounting_draft'),
+  };
 }
 
 // Send to Xero (POST /api/xero/invoices/push). The customer's send mode

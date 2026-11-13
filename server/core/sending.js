@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
-import { billingObligations, contacts, invoiceLines, invoices, people, priceItems } from '../db/schema.js';
+import { billingObligations, contacts, invoiceLines, invoices, people, priceItems, SEND_MODES } from '../db/schema.js';
 import { FlowError } from './errors.js';
 import { accountingItemsFor, listRules, ruleExceptionsFor, ruleNonChargeable, rulePending, rulePricesFor, ruleSkip } from './invoice-rules.js';
 import { customerBillingByContact, effectiveSettings, readInvoicingSettings } from './invoicing-rules.js';
@@ -321,8 +321,11 @@ function stoppedSendMessage({ accountingWaiting, accountingReason, stops, waitin
 // system. With `invoiceIds`, only those drafts. One id (the invoice page) is
 // all or nothing. More than one id (the bulk bar) sends the ones Flow could
 // confirm and leaves the rest. `work` is the work integration, for the read
-// before act. Answers { issued, queued, remaining, waiting, held }.
-export async function sendAllReady(db, organisationId, { accounting = null, work = null, personId, issueDate, invoiceIds = null, now = new Date() }) {
+// before act. `sendMode` is how the person chose to send this batch (an owner
+// or admin can send it approved and emailed while the setting stays Draft);
+// null keeps each customer's mode. Answers { issued, queued, remaining, waiting, held }.
+export async function sendAllReady(db, organisationId, { accounting = null, work = null, personId, issueDate, invoiceIds = null, sendMode = null, now = new Date() }) {
+  if (sendMode !== null && !SEND_MODES.includes(sendMode)) throw new FlowError('invalid', `sendMode must be one of ${SEND_MODES.join(', ')}`);
   await assertCanSend(accounting, organisationId);
   // Issue #45: the accounting copy reads its latest changes first, so the
   // draft checks below see an invoice someone made there meanwhile.
@@ -370,7 +373,7 @@ export async function sendAllReady(db, organisationId, { accounting = null, work
   for (const invoiceId of batch) {
     // Queued first: the worker sends only issued invoices, so a stop between
     // the two steps leaves a queued draft, never an issued invoice nobody sends.
-    if (accounting) await queue(db, organisationId, [invoiceId], personId);
+    if (accounting) await queue(db, organisationId, [invoiceId], personId, sendMode);
     try {
       await issueInvoice(db, organisationId, invoiceId, { issuedBy: `person:${personId}`, issueDate });
     } catch (error) {
@@ -440,15 +443,15 @@ export async function sendAgain(db, organisationId, { accounting = null, personI
   return { queued: rows.length };
 }
 
-async function queue(db, organisationId, invoiceIds, personId) {
+async function queue(db, organisationId, invoiceIds, personId, sendMode = null) {
   if (!invoiceIds.length) return;
   await db.update(invoices)
-    .set({ sendState: 'queued', sendError: null, sendRequestedBy: personId ?? null, sendUpdatedAt: sql`now()` })
+    .set({ sendState: 'queued', sendError: null, sendRequestedBy: personId ?? null, sendMode, sendUpdatedAt: sql`now()` })
     .where(and(eq(invoices.organisationId, organisationId), inArray(invoices.id, invoiceIds)));
 }
 
 function unqueue(db, organisationId, invoiceId) {
-  return db.update(invoices).set({ sendState: null, sendRequestedBy: null, sendUpdatedAt: sql`now()` })
+  return db.update(invoices).set({ sendState: null, sendRequestedBy: null, sendMode: null, sendUpdatedAt: sql`now()` })
     .where(and(eq(invoices.organisationId, organisationId), eq(invoices.id, invoiceId), eq(invoices.status, 'draft')));
 }
 

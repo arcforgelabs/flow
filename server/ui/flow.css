@@ -1039,6 +1039,10 @@ th:hover > .fx-th-grip::after { background: var(--t-brd-hi); }
 .fx-move__stage { padding: 2px 10px; border: 1px solid var(--fx-line); border-radius: 999px; color: var(--t-strong); font-size: 13px; font-weight: 600; }
 .fx-move__note { margin: 0; color: var(--t-text); }
 .fx-check { display: inline-flex; align-items: center; gap: 8px; color: var(--t-dim); font-size: 13.5px; cursor: pointer; }
+/* The Send dialog's list of who Xero emails (invoicing.js, emailChoice). */
+.fx-email-list { display: grid; gap: 6px; margin-top: 12px; max-height: 40vh; overflow: auto; }
+.fx-email-list__row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) auto; gap: 12px; align-items: baseline; overflow-wrap: anywhere; }
+@media (max-width: 639px) { .fx-email-list__row { grid-template-columns: minmax(0, 1fr) auto; } .fx-email-list__row > :nth-child(2) { grid-column: 1 / -1; grid-row: 2; } }
 
 /* ── Job page ───────────────────────────────────────────────────────────────
    A job opened from the board: a large panel over it, like a task page, with
