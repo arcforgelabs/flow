@@ -1,6 +1,8 @@
 // Money is integer cents. GST is 10% and is calculated and rounded per line,
-// half away from zero, on tax-exclusive amounts (the Xero default), so a
-// line's tax never changes when other lines are added.
+// half away from zero, so a line's tax never changes when other lines are
+// added. Amounts are tax exclusive (the Xero default), or tax inclusive when
+// the lab's prices include GST (`inclusive`): then a line's amount holds its
+// GST (one eleventh), and the total is the sum of the lines.
 
 export const GST_RATE_BASIS_POINTS = 1000;
 
@@ -10,7 +12,7 @@ function roundHalfAwayFromZero(numerator, denominator) {
   return sign * Math.floor((abs * 2 + denominator) / (denominator * 2));
 }
 
-export function lineTotals({ quantity, unitAmountCents, taxCode }) {
+export function lineTotals({ quantity, unitAmountCents, taxCode, inclusive = false }) {
   if (!Number.isSafeInteger(quantity) || quantity <= 0) {
     throw new TypeError('quantity must be a positive whole number');
   }
@@ -21,18 +23,24 @@ export function lineTotals({ quantity, unitAmountCents, taxCode }) {
     throw new TypeError(`unknown tax code: ${taxCode}`);
   }
   const lineAmountCents = quantity * unitAmountCents;
-  const taxCents = taxCode === 'GST'
-    ? roundHalfAwayFromZero(lineAmountCents * GST_RATE_BASIS_POINTS, 10_000)
-    : 0;
+  let taxCents = 0;
+  if (taxCode === 'GST') {
+    taxCents = inclusive
+      ? roundHalfAwayFromZero(lineAmountCents * GST_RATE_BASIS_POINTS, 10_000 + GST_RATE_BASIS_POINTS)
+      : roundHalfAwayFromZero(lineAmountCents * GST_RATE_BASIS_POINTS, 10_000);
+  }
   return { lineAmountCents, taxCents };
 }
 
-export function invoiceTotals(lines) {
-  let subtotalCents = 0;
+// Inclusive: the subtotal is the lines less their GST, as Xero shows it.
+export function invoiceTotals(lines, { inclusive = false } = {}) {
+  let amountCents = 0;
   let taxCents = 0;
   for (const line of lines) {
-    subtotalCents += line.lineAmountCents;
+    amountCents += line.lineAmountCents;
     taxCents += line.taxCents;
   }
-  return { subtotalCents, taxCents, totalCents: subtotalCents + taxCents };
+  return inclusive
+    ? { subtotalCents: amountCents - taxCents, taxCents, totalCents: amountCents }
+    : { subtotalCents: amountCents, taxCents, totalCents: amountCents + taxCents };
 }

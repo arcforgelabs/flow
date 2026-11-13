@@ -133,6 +133,7 @@ async function documentFor(db, organisationId, invoiceId) {
       subtotalCents: invoice.subtotalCents,
       taxCents: invoice.taxCents,
       totalCents: invoice.totalCents,
+      ...(invoice.amountsIncludeTax ? { amountsIncludeTax: true } : {}),
     },
   };
 }
@@ -190,7 +191,8 @@ export function buildDraft(document, { settings, contact, items, sendMode = 'acc
     ...(issueDate ? { Date: issueDate, DueDate: document.dueDate ?? addDays(issueDate, settings.defaultDueDays) } : {}),
     Reference: xeroReference(document),
     CurrencyCode: document.currency,
-    LineAmountTypes: 'Exclusive',
+    // A lab whose prices include GST sends its lines as they are, GST inside.
+    LineAmountTypes: document.amountsIncludeTax ? 'Inclusive' : 'Exclusive',
     ...(settings.invoiceNumber === 'flow' && document.number ? { InvoiceNumber: document.number } : {}),
     LineItems: lines,
   };

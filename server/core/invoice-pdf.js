@@ -64,6 +64,7 @@ async function flowDocument(db, organisationId, invoiceId, { version }) {
       subtotalCents: invoice.subtotalCents,
       taxCents: invoice.taxCents,
       totalCents: invoice.totalCents,
+      ...(invoice.amountsIncludeTax ? { amountsIncludeTax: true } : {}),
     },
   };
 }
@@ -242,7 +243,11 @@ export function renderInvoicePdf({ seller, document: doc, facts = null }) {
     }
     y += 4;
     const totalsX = left + width - 240;
-    const totals = [['Subtotal', doc.subtotalCents], ['TOTAL GST 10%', doc.taxCents], [`TOTAL ${currency}`, doc.totalCents]];
+    // Prices that include GST: the line amounts add up to the total, with
+    // the GST inside it, as Xero prints them.
+    const totals = doc.amountsIncludeTax
+      ? [['Includes GST 10%', doc.taxCents], [`TOTAL ${currency}`, doc.totalCents]]
+      : [['Subtotal', doc.subtotalCents], ['TOTAL GST 10%', doc.taxCents], [`TOTAL ${currency}`, doc.totalCents]];
     for (const [index, [label, cents]] of totals.entries()) {
       const grand = index === totals.length - 1;
       if (grand) {

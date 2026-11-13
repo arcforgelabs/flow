@@ -26,8 +26,11 @@ import { FlowError, notFound } from './errors.js';
 // gives its code, its text and, when the work system gave none, its price and
 // tax. A closest-name guess cannot supply missing source tax; it needs an
 // explicit tax flag before mapping. With `linePrice: 'list'` the price item's
-// price wins instead. A line no step answers keeps no code, so the ledger
-// holds the job.
+// price wins instead. With `lineTax: 'list'` the price item's tax wins (the
+// price list follows the accounting system's items), and a work system flag
+// that disagrees stays on the line as `workTaxCode`, so the job waits for a
+// person (ledger.js, sourceBillingProblems). A line no step answers keeps no
+// code, so the ledger holds the job.
 
 export const STEPS = Object.freeze([
   'same_code', 'account', 'saved', 'catalog_name', 'price_alias', 'catalog_name_price', 'catalog_score', 'alias',
@@ -46,7 +49,10 @@ export const ZERO_LINES = Object.freeze(['keep', 'drop']);
 // Where a mapped line's price comes from: the work system's amount (as the
 // earlier app did), or the lab's own price list.
 export const LINE_PRICES = Object.freeze(['work', 'list']);
-export const MAPPING_DEFAULTS = Object.freeze({ steps: [...STEPS], zeroLines: 'keep', linePrice: 'work' });
+// Where a mapped line's GST comes from: the work system's flag, or the price
+// item (the same choices as LINE_PRICES).
+export const LINE_TAXES = LINE_PRICES;
+export const MAPPING_DEFAULTS = Object.freeze({ steps: [...STEPS], zeroLines: 'keep', linePrice: 'work', lineTax: 'work' });
 
 const SCORE_MIN = 16;
 const SCORE_GAP = 8;
@@ -151,16 +157,20 @@ export function mapLine(line, context) {
   const base = { ...line, label: lookup || exact || null };
   if (lineCents !== null && lineCents <= 0 && config.zeroLines === 'drop') return { ...base, skip: true, mappedBy: 'zero_line' };
 
-  const toItem = (item, step, taxCode = null) => ({
-    ...base,
-    itemCode: item.code,
-    accountCode: null,
-    description: (item.description || item.name || original).trim(),
-    quantity,
-    unitAmountCents: config.linePrice === 'list' ? item.unitAmountCents : (price ?? item.unitAmountCents),
-    taxCode: line.taxCode ?? taxCode ?? item.taxCode,
-    mappedBy: step,
-  });
+  const toItem = (item, step, taxCode = null) => {
+    const listTax = config.lineTax === 'list' ? (taxCode ?? item.taxCode ?? null) : null;
+    return {
+      ...base,
+      itemCode: item.code,
+      accountCode: null,
+      description: (item.description || item.name || original).trim(),
+      quantity,
+      unitAmountCents: config.linePrice === 'list' ? item.unitAmountCents : (price ?? item.unitAmountCents),
+      taxCode: listTax ?? line.taxCode ?? taxCode ?? item.taxCode,
+      ...(listTax && line.taxCode != null && line.taxCode !== listTax ? { workTaxCode: line.taxCode } : {}),
+      mappedBy: step,
+    };
+  };
   const fromRow = (row, step) => {
     const item = context.byCode.get(row.itemCode);
     return item ? toItem(item, step, row.taxCode) : null;
@@ -255,6 +265,10 @@ function readConfig(raw = {}) {
   if ('linePrice' in raw) {
     if (!LINE_PRICES.includes(raw.linePrice)) throw invalid(`linePrice must be one of ${LINE_PRICES.join(', ')}`);
     out.linePrice = raw.linePrice;
+  }
+  if ('lineTax' in raw) {
+    if (!LINE_TAXES.includes(raw.lineTax)) throw invalid(`lineTax must be one of ${LINE_TAXES.join(', ')}`);
+    out.lineTax = raw.lineTax;
   }
   return out;
 }

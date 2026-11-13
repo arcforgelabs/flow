@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { after, before, describe, test } from 'node:test';
 import { createContact, createOrganisation, createPriceItem } from '../server/core/directory.js';
-import { getInvoice, issueInvoice } from '../server/core/invoices.js';
+import { getInvoice, issueInvoice, listInvoiceVersions } from '../server/core/invoices.js';
+import { saveInvoicingSettings } from '../server/core/invoicing-rules.js';
 import {
   draftInvoiceForObligation,
   explainObligation,
@@ -13,6 +14,7 @@ import {
   recordWritebackResult,
   setHold,
   setReady,
+  sourceBillingProblems,
   linkJobToInvoice,
   unlinkJobInvoice,
 } from '../server/core/ledger.js';
@@ -300,5 +302,37 @@ describe('billing obligation ledger', { skip: skipWithoutDatabase }, () => {
     assert.deepEqual(await listObligations(db, otherLab.id), []);
     const otherLines = [{ description: 'Crown', unitAmountCents: 22000 }];
     await assert.rejects(observeJob(db, otherLab.id, job({ lines: otherLines })), (error) => error.cause?.constraint === 'billing_obligations_contact_same_org');
+  });
+
+  test('prices that include GST: the work system subtotal is the total, and the invoice sends GST inside', async () => {
+    const taxLab = await createOrganisation(db, { name: 'Inclusive Lab' });
+    const client = await createContact(db, taxLab.id, { kind: 'customer', name: 'Inclusive Practice' });
+    await createPriceItem(db, taxLab.id, { code: 'NGD', name: 'Night Guard', unitAmountCents: 20000, taxCode: 'GST' });
+    const report = (overrides = {}) => ({ ...job({ contactId: client.id, lines: [{ itemCode: 'NGD' }] }), ...overrides });
+    // The default: the work system adds GST on top.
+    const before = await observeJob(db, taxLab.id, report({ sourceTotals: { subtotalCents: 20000, taxCents: 2000, totalCents: 22000 } }));
+    assert.deepEqual([before.amountsIncludeTax, before.totalCents, sourceBillingProblems(before)], [false, 22000, []]);
+
+    await saveInvoicingSettings(db, taxLab.id, { amountsIncludeTax: true });
+    const obligation = await observeJob(db, taxLab.id, report({ sourceTotals: { subtotalCents: 20000, taxCents: 2000, totalCents: 22000 } }));
+    assert.deepEqual(
+      [obligation.amountsIncludeTax, obligation.subtotalCents, obligation.taxCents, obligation.totalCents, sourceBillingProblems(obligation)],
+      [true, 18182, 1818, 20000, []],
+    );
+    const off = await observeJob(db, taxLab.id, report({ sourceTotals: { subtotalCents: 21000, taxCents: 2100, totalCents: 23100 } }));
+    assert.deepEqual(sourceBillingProblems(off), ['the source invoice totals differ from the reconstructed lines']);
+    const clash = await observeJob(db, taxLab.id, report({ lines: [{ itemCode: 'NGD', taxCode: 'GST', workTaxCode: 'GST_FREE' }] }));
+    assert.deepEqual(sourceBillingProblems(clash), ["a source line's GST differs from its price item"]);
+
+    await setReady(db, taxLab.id, obligation.id, { actor });
+    await recordAccountingEvidence(db, taxLab.id, obligation.id, { state: 'not_found', actor });
+    const { invoice } = await draftInvoiceForObligation(db, taxLab.id, obligation.id, { actor, liveCheck: notFound });
+    assert.deepEqual(
+      [invoice.amountsIncludeTax, invoice.subtotalCents, invoice.taxCents, invoice.totalCents],
+      [true, 18182, 1818, 20000],
+    );
+    await issueInvoice(db, taxLab.id, invoice.id, { issuedBy: actor, issueDate: '2026-10-20' });
+    const [version] = await listInvoiceVersions(db, taxLab.id, invoice.id);
+    assert.deepEqual([version.document.amountsIncludeTax, version.document.totalCents], [true, 20000]);
   });
 });

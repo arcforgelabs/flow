@@ -346,7 +346,10 @@ for (const { ledgerWithdrawn } of page.withdrawn) {
 | `observedAt` | The last successful read from Seazona, so the ledger's out-of-date check is real |
 | `contactId` | Not set: the core resolves the Flow contact from `item.client` |
 
-Amounts are tax-exclusive. The ledger keeps each explicit source aggregate.
+Seazona's amounts are tax-exclusive. The ledger keeps each explicit source aggregate.
+When the lab's prices include GST (Settings, Invoicing, "Prices include GST"),
+Seazona's subtotal is the job's total with GST inside: Flow compares only the
+subtotal, and takes each GST line's tax as one eleventh of its amount.
 It calculates line tax separately and compares the results with those aggregates.
 A difference opens one `job.source_totals` review item and blocks drafting, approval and Send for an unsent draft.
 Unknown line tax stays null unless a saved mapping or price item supplies it.

@@ -98,10 +98,13 @@ async function xeroStatuses(ui, organisationId, invoiceIds) {
   return new Map((res?.invoices ?? []).map((s) => [s.invoiceId, s]));
 }
 
-function gstCents(lineAmountCents) {
+// The GST of one line, as server/core/money.js works it out: 10% on top, or
+// one eleventh of an amount that includes it.
+function gstCents(lineAmountCents, inclusive = false) {
   const sign = Math.sign(lineAmountCents);
   const abs = Math.abs(lineAmountCents) * 1000;
-  return sign * Math.floor((abs * 2 + 10_000) / 20_000);
+  const base = inclusive ? 11_000 : 10_000;
+  return sign * Math.floor((abs * 2 + base) / (base * 2));
 }
 
 // Dollars typed by a person, to whole cents; null when it is not a number.
@@ -880,11 +883,12 @@ export async function renderInvoice(main, ui, id) {
   draw(invoice);
 }
 
-function totalsBox(ui, { subtotalCents, taxCents, totalCents }) {
+// Prices that include GST show the GST inside the total, as Xero does.
+function totalsBox(ui, { subtotalCents, taxCents, totalCents, amountsIncludeTax = false }) {
   const { h } = ui;
   return h('dl', { class: 'fx-totals' },
-    h('dt', {}, 'Subtotal'), h('dd', {}, formatCents(subtotalCents)),
-    h('dt', {}, 'GST'), h('dd', {}, formatCents(taxCents)),
+    ...(amountsIncludeTax ? [] : [h('dt', {}, 'Subtotal'), h('dd', {}, formatCents(subtotalCents))]),
+    h('dt', {}, amountsIncludeTax ? 'Includes GST' : 'GST'), h('dd', {}, formatCents(taxCents)),
     h('dt', { class: 'fx-totals__grand' }, 'Total'), h('dd', { class: 'fx-totals__grand' }, formatCents(totalCents)));
 }
 
@@ -1040,17 +1044,25 @@ function draftView(invoice, ui, context, redraw) {
   const tbody = h('tbody');
   const datalist = h('datalist', { id: 'fx-price-items' });
   const totalsHost = h('div');
+  // A draft keeps the setting it was made with; a new one takes the lab's.
+  let amountsIncludeTax = Boolean(invoice?.amountsIncludeTax);
   const preview = () => {
-    let subtotalCents = 0;
+    let amountCents = 0;
     let taxCents = 0;
     for (const line of lines) {
       if (line.unitAmountCents == null || !(line.quantity > 0)) continue;
       const amount = line.quantity * line.unitAmountCents;
-      subtotalCents += amount;
-      taxCents += line.taxCode === 'GST' ? gstCents(amount) : 0;
+      amountCents += amount;
+      taxCents += line.taxCode === 'GST' ? gstCents(amount, amountsIncludeTax) : 0;
     }
-    totalsHost.replaceChildren(totalsBox(ui, { subtotalCents, taxCents, totalCents: subtotalCents + taxCents }));
+    const totals = amountsIncludeTax
+      ? { subtotalCents: amountCents - taxCents, taxCents, totalCents: amountCents }
+      : { subtotalCents: amountCents, taxCents, totalCents: amountCents + taxCents };
+    totalsHost.replaceChildren(totalsBox(ui, { ...totals, amountsIncludeTax }));
   };
+  if (!invoice) {
+    flow('/api/invoicing/settings').then((body) => { amountsIncludeTax = Boolean(body.settings?.amountsIncludeTax); preview(); }).catch(() => {});
+  }
 
   const drawLines = () => {
     tbody.replaceChildren(...lines.map((line, index) => {

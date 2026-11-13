@@ -28,3 +28,15 @@ test('invoice totals add the rounded lines', () => {
   ];
   assert.deepEqual(invoiceTotals(lines), { subtotalCents: 10, taxCents: 2, totalCents: 12 });
 });
+
+test('prices that include GST hold one eleventh as tax, and the total is the sum of the lines', () => {
+  assert.deepEqual(lineTotals({ quantity: 1, unitAmountCents: 20000, taxCode: 'GST', inclusive: true }), { lineAmountCents: 20000, taxCents: 1818 });
+  assert.deepEqual(lineTotals({ quantity: 1, unitAmountCents: 11, taxCode: 'GST', inclusive: true }), { lineAmountCents: 11, taxCents: 1 });
+  assert.deepEqual(lineTotals({ quantity: 1, unitAmountCents: -2200, taxCode: 'GST', inclusive: true }), { lineAmountCents: -2200, taxCents: -200 });
+  assert.deepEqual(lineTotals({ quantity: 2, unitAmountCents: 7500, taxCode: 'GST_FREE', inclusive: true }), { lineAmountCents: 15000, taxCents: 0 });
+  const lines = [
+    lineTotals({ quantity: 1, unitAmountCents: 20000, taxCode: 'GST', inclusive: true }),
+    lineTotals({ quantity: 2, unitAmountCents: 7500, taxCode: 'GST_FREE', inclusive: true }),
+  ];
+  assert.deepEqual(invoiceTotals(lines, { inclusive: true }), { subtotalCents: 33182, taxCents: 1818, totalCents: 35000 });
+});

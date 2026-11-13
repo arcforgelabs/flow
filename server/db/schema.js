@@ -124,6 +124,9 @@ export const invoices = pgTable('invoices', {
   subtotalCents: integer('subtotal_cents').notNull().default(0),
   taxCents: integer('tax_cents').notNull().default(0),
   totalCents: integer('total_cents').notNull().default(0),
+  // The line amounts include GST (the lab's "Prices include GST" when the
+  // invoice was made). It never changes, so each version reads the same.
+  amountsIncludeTax: boolean('amounts_include_tax').notNull().default(false),
   // When a person marked the draft ready to send, and who. Any change to the
   // draft clears it (server/core/sending.js).
   readyAt: timestamp('ready_at', { withTimezone: true }),
@@ -291,6 +294,9 @@ export const billingObligations = pgTable('billing_obligations', {
   subtotalCents: integer('subtotal_cents').notNull(),
   taxCents: integer('tax_cents').notNull(),
   totalCents: integer('total_cents').notNull(),
+  // The line amounts include GST, as the lab's setting was when the work
+  // system last reported the job.
+  amountsIncludeTax: boolean('amounts_include_tax').notNull().default(false),
   // Every line maps to a price item.
   mappingComplete: boolean('mapping_complete').notNull(),
   sourceSeenAt: timestamp('source_seen_at', { withTimezone: true }).notNull(),
@@ -677,6 +683,9 @@ export const invoicingSettings = pgTable('invoicing_settings', {
   rushPercent: integer('rush_percent').notNull().default(20),
   // The invoice Reference, from tokens (server/core/references.js).
   referenceTemplate: text('reference_template').notNull().default('{practitioner} - {patient}'),
+  // The lab's prices include GST: Flow sends tax-inclusive lines and takes
+  // each line's GST out of its amount (server/core/money.js).
+  amountsIncludeTax: boolean('amounts_include_tax').notNull().default(false),
   // The reasons a person or a rule can give for No Charge, in menu order.
   noChargeReasons: jsonb('no_charge_reasons').notNull().default(sql`'["Promotion","Internal","Remake","Rework","Warranty","Goodwill"]'::jsonb`),
   // The fixed checks above became invoice rules (invoice_rules). True once

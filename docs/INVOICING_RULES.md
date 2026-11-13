@@ -98,6 +98,13 @@ rules.
 A draft gets the invoice date when it is issued, and a due date
 `paymentTermsDays` after the day Flow drafted it (default 30).
 
+`amountsIncludeTax` ("Prices include GST", default off) makes new invoices
+tax-inclusive: each GST line's amount holds its GST (one eleventh), the total
+is the sum of the lines, and Xero gets `Inclusive` line amounts. An invoice
+keeps the setting it was made with (`invoices.amounts_include_tax`), and a job
+keeps the one it was last read with (`billing_obligations.amounts_include_tax`,
+migration `0034`).
+
 The automation "Draft when ready" turns the drafts on or off. It is on by
 default. A customer's `autoDraft` turns them off for that customer. It runs
 with or without an accounting integration. With no integrations on at all,

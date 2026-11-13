@@ -1,5 +1,5 @@
 import { and, asc, desc, eq, sql } from 'drizzle-orm';
-import { billingObligations, contacts, invoiceLines, invoices, invoiceVersions, obligationEvents, organisations, priceItems } from '../db/schema.js';
+import { billingObligations, contacts, invoiceLines, invoices, invoiceVersions, invoicingSettings, obligationEvents, organisations, priceItems } from '../db/schema.js';
 import { FlowError, notFound } from './errors.js';
 import { invoiceTotals, lineTotals } from './money.js';
 
@@ -22,7 +22,15 @@ async function loadInvoice(tx, organisationId, invoiceId, { lock = false } = {})
   return row;
 }
 
-async function resolveLines(tx, organisationId, lines) {
+// Whether the lab's prices include GST (Settings, Invoicing). A new invoice
+// and a newly reported job take it; an invoice keeps the one it was made with.
+export async function pricesIncludeTax(db, organisationId) {
+  const [row] = await db.select({ inclusive: invoicingSettings.amountsIncludeTax }).from(invoicingSettings)
+    .where(eq(invoicingSettings.organisationId, organisationId));
+  return row?.inclusive ?? false;
+}
+
+async function resolveLines(tx, organisationId, lines, { inclusive = false } = {}) {
   if (!Array.isArray(lines)) throw new FlowError('invalid', 'lines must be a list');
   const resolved = [];
   for (const [index, line] of lines.entries()) {
@@ -40,7 +48,7 @@ async function resolveLines(tx, organisationId, lines) {
     if (!description?.trim()) throw new FlowError('invalid', `line ${index + 1}: description is required`);
     let totals;
     try {
-      totals = lineTotals({ quantity, unitAmountCents, taxCode });
+      totals = lineTotals({ quantity, unitAmountCents, taxCode, inclusive });
     } catch (error) {
       throw new FlowError('invalid', `line ${index + 1}: ${error.message}`);
     }
@@ -69,7 +77,7 @@ async function writeLines(tx, invoice, lines) {
     })));
   }
   const [row] = await tx.update(invoices)
-    .set({ ...invoiceTotals(lines), updatedAt: sql`now()` })
+    .set({ ...invoiceTotals(lines, { inclusive: invoice.amountsIncludeTax }), updatedAt: sql`now()` })
     .where(eq(invoices.id, invoice.id))
     .returning();
   return row;
@@ -82,9 +90,10 @@ export async function createDraftInvoice(db, organisationId, { contactId, refere
     if (!contact) throw new FlowError('invalid', 'contact not found');
     if (contact.kind !== 'customer') throw new FlowError('invalid', 'an invoice goes to a customer contact');
     if (contact.mergedIntoId) throw new FlowError('invalid', 'this contact was merged into another; pick that one');
-    const resolved = await resolveLines(tx, organisationId, lines);
+    const amountsIncludeTax = await pricesIncludeTax(tx, organisationId);
+    const resolved = await resolveLines(tx, organisationId, lines, { inclusive: amountsIncludeTax });
     const [invoice] = await tx.insert(invoices)
-      .values({ organisationId, contactId, reference, dueDate })
+      .values({ organisationId, contactId, reference, dueDate, amountsIncludeTax })
       .returning();
     return writeLines(tx, invoice, resolved);
   });
@@ -121,7 +130,7 @@ export async function updateDraftInvoice(db, organisationId, invoiceId, changes)
         lines = lines(current);
         if (lines === null) return row;
       }
-      row = await writeLines(tx, row, await resolveLines(tx, organisationId, lines));
+      row = await writeLines(tx, row, await resolveLines(tx, organisationId, lines, { inclusive: row.amountsIncludeTax }));
     }
     return row;
   });
@@ -164,6 +173,7 @@ export async function issueInvoice(db, organisationId, invoiceId, { issuedBy, is
       subtotalCents: invoice.subtotalCents,
       taxCents: invoice.taxCents,
       totalCents: invoice.totalCents,
+      ...(invoice.amountsIncludeTax ? { amountsIncludeTax: true } : {}),
     };
     await tx.insert(invoiceVersions).values({ organisationId, invoiceId, version, issuedBy, document });
     const [row] = await tx.update(invoices)
