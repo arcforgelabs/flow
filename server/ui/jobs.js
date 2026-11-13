@@ -133,6 +133,10 @@ export async function renderJobs(main, ui) {
   // In the list, ticked rows get the same floating bar as Invoices.
   const bulk = bulkBar(ui, { label: 'Ticked jobs' });
   const frame = listFrame(main, host);
+  // Board only: fold every empty lane at once (foldLane). Shown while an
+  // open lane has no card.
+  const foldEmpty = h('button', { class: 'fx-btn fx-btn--ghost', type: 'button', hidden: true, title: 'Fold every empty lane', onclick: () => foldEmptyLanes() }, 'Fold empty');
+  frame.tools.append(foldEmpty);
   // A form photo from the Jobs page; Capture lists it with its result.
   const shoot = captureButton(ui, { icon: true, added: () => ui.toast('Sent to Capture.', 'success') });
   // Finished jobs that nothing is billing (server/core/alerts.js).
@@ -337,6 +341,8 @@ export async function renderJobs(main, ui) {
     frame.count(`${found.length} ${found.length === 1 ? 'job' : 'jobs'}`);
     if (state.view.layout !== 'board') boardTabs.hidden = true;
     host.replaceChildren(state.view.layout === 'list' ? list(groups, found.length) : board(groups));
+    state.emptyLanes = state.view.layout === 'board' ? groups.filter((g) => !g.jobs.length && !(state.view.folded ?? []).includes(g.label)).map((g) => g.label) : [];
+    foldEmpty.hidden = !state.emptyLanes.length;
     drawBulk();
   }
 
@@ -458,7 +464,7 @@ export async function renderJobs(main, ui) {
     // flowLaneOf): a drag here would not change the work system.
     if (group === 'lane' || (group === 'none' && state.view.layout === 'board')) {
       return groupJobs(jobs, keptStatuses(state.view, laneLabels(), 'lane'), flowLaneOf)
-        .map((g) => ({ ...g, rank: laneRank(g.label), foldable: true }));
+        .map((g) => ({ ...g, rank: laneRank(g.label) }));
     }
     if (group === 'status' || group === 'none' || !GROUPS[group]) {
       return groupJobs(jobs, keptStatuses(state.view, orderStatuses(state.statuses, state.jobs)), laneStatusOf)
@@ -474,6 +480,12 @@ export async function renderJobs(main, ui) {
   }
 
   const totalOf = (jobs) => jobs.reduce((sum, job) => sum + (job.totalCents ?? 0), 0);
+
+  // Fold every open lane with no card, and keep it in the saved view.
+  function foldEmptyLanes() {
+    const folded = state.view.folded ?? [];
+    change({ folded: [...folded, ...(state.emptyLanes ?? []).filter((label) => !folded.includes(label))] });
+  }
 
   // Fold or open one lane, and keep it in the saved view.
   function foldLane(label, fold) {
@@ -512,10 +524,10 @@ export async function renderJobs(main, ui) {
       return h('div', { class: 'fx-panel' }, h('p', { class: 'fx-empty' }, 'No job matches the search or filter.'));
     }
     const folded = new Set(state.view.folded ?? []);
-    const element = h('div', { class: 'fx-board' }, groups.map(({ label, jobs, rank, color, foldable }, index) => {
-      // A folded lane is a thin column with its name and count. It loads
+    const element = h('div', { class: 'fx-board' }, groups.map(({ label, jobs, rank, color }, index) => {
+      // Any lane folds to a thin column with its name and count. It loads
       // no cards; a click opens it (state.view.folded, saved with the view).
-      if (foldable && folded.has(label)) {
+      if (folded.has(label)) {
         return h('section', { class: 'fx-board__col fx-board__col--folded', 'aria-label': label, 'data-lane': String(index) },
           h('button', {
             class: 'fx-board__unfold', type: 'button', title: `Open ${label}`, 'aria-label': `Open ${label}, ${jobs.length} ${jobs.length === 1 ? 'job' : 'jobs'}`,
@@ -526,10 +538,10 @@ export async function renderJobs(main, ui) {
         h('header', { class: 'fx-board__head' },
           color ? h('span', { class: 'fx-cf__opt fx-board__lane', 'data-color': color }, label, h('span', { class: 'fx-stage__count' }, String(jobs.length))) : stagePill(label, jobs.length, rank),
           h('span', { class: 'fx-board__sum' }, jobs.length ? formatCents(totalOf(jobs)) : ''),
-          foldable ? h('button', {
+          h('button', {
             class: 'fx-btn fx-btn--ghost fx-btn--icon fx-board__fold', type: 'button', 'aria-label': `Fold ${label}`, title: `Fold ${label}`,
             onclick: () => foldLane(label, true),
-          }, lucide(h, 'fold-horizontal')) : null),
+          }, lucide(h, 'fold-horizontal'))),
         laneCards(jobs));
     }));
     if (groups.some((g) => g.drop)) enableDrag(element, groups);

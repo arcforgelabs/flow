@@ -35,8 +35,9 @@ invoice made outside Flow. A Xero draft keeps the job in its status lane.
 Group: Status shows the work system's statuses alone, as before, and keeps
 the stage moves below.
 
-Any lane folds to a thin column with its name and count (the fold button in
-the lane head; a click on the column opens it). Folded lanes are saved with
+Any lane, in any group, folds to a thin column with its name and count (the
+fold button in the lane head; a click on the column opens it). **Fold empty**
+in the board's foot folds every open lane with no card. Folded lanes are saved with
 the view (`folded`, lane labels). Done starts folded. A folded lane draws no
 cards; an open lane draws 50 cards and the next 50 as its foot scrolls into
 view. The filter "Lane is not Done" hides the Done lane. A view saved before
