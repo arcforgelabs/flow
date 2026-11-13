@@ -6,7 +6,7 @@ import { createDraftInvoice, issueInvoice, listInvoiceVersions, reviseInvoice } 
 import { saveCustomerBilling } from '../server/core/invoicing-rules.js';
 import { draftInvoiceForObligation, observeJob, recordAccountingEvidence } from '../server/core/ledger.js';
 import { sellingCodes, xeroItemsForCodes } from '../server/integrations/xero/catalogue.js';
-import { buildDraft, differences, pushDrafts } from '../server/integrations/xero/drafts.js';
+import { buildDraft, differences, pushDrafts, readOnce } from '../server/integrations/xero/drafts.js';
 import { createXeroRuntime } from '../server/integrations/xero/runtime.js';
 import { resolveXeroSettings } from '../server/integrations/xero/settings.js';
 import { request } from './support/clerk.js';
@@ -120,6 +120,27 @@ describe('the Xero draft for a document', () => {
       fetch: async () => assert.fail('no request'),
     });
     await assert.rejects(pushDrafts(null, live, 'org', ['inv']), (error) => error.code === 'xero_writes_off');
+  });
+
+  test('a batch shares one read per key; a shared read that fails once is read again by each caller', async () => {
+    const once = readOnce();
+    let calls = 0;
+    const read = async () => {
+      calls += 1;
+      if (calls === 1) throw new Error('passing fault');
+      return 'contact';
+    };
+    const answers = await Promise.all([1, 2, 3, 4].map(() => once('payer', read)));
+    assert.deepEqual(answers, ['contact', 'contact', 'contact', 'contact']);
+    assert.equal(calls, 5, 'one shared read, then one read for each caller that waited on it');
+    assert.equal(await once('payer', read), 'contact');
+    assert.equal(calls, 6, 'the failed read is forgotten, so a later caller reads again');
+
+    const shared = readOnce();
+    let good = 0;
+    const ok = async () => { good += 1; return 'items'; };
+    await Promise.all([1, 2, 3].map(() => shared('items', ok)));
+    assert.equal(good, 1, 'a read that works is shared');
   });
 });
 

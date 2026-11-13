@@ -359,12 +359,20 @@ const PREVIEW_AT_ONCE = 4;
 
 // Reads that are the same for every invoice of one preview batch, each made
 // once. A failed read is not kept, so the next invoice tries again.
-function sharedReads() {
+// One read per key, shared by every caller of the batch. A shared read that
+// fails is not shared: each caller that waited on it reads once on its own,
+// as the one-by-one preview did, so one passing fault does not block every
+// invoice waiting on it. The failed read is forgotten for later callers.
+export function readOnce() {
   const memo = new Map();
-  const once = (key, read) => {
+  return (key, read) => {
     if (!memo.has(key)) memo.set(key, read().catch((error) => { memo.delete(key); throw error; }));
-    return memo.get(key);
+    return memo.get(key).catch(() => read());
   };
+}
+
+function sharedReads() {
+  const once = readOnce();
   return {
     settings: (db, organisationId) => once('settings', () => readInvoicingSettings(db, organisationId)),
     sendMode: (db, organisationId, contactId) => once(`mode:${contactId}`, () => sendModeFor(db, organisationId, contactId)),
