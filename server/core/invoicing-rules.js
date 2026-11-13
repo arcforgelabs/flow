@@ -45,8 +45,8 @@ export const INVOICING_DEFAULTS = Object.freeze({
   noChargeReasons: NO_CHARGE_REASONS,
   // Prices include GST: new invoices send tax-inclusive lines.
   amountsIncludeTax: false,
-  // With an accounting system on, its items decide each line's GST and its
-  // default sales tax decides "Prices include GST" (each catalogue read).
+  // With an accounting system on, its items decide each line's GST (each
+  // catalogue read). "Prices include GST" stays the lab's own setting.
   // Off: Flow keeps the price list and the work system's flags as they are.
   taxFromXero: true,
 });
