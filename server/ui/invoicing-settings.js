@@ -120,6 +120,12 @@ function draftsSection(ui) {
       row('Payment terms', 'Days from invoice to due date.', box('paymentTermsDays', 'Payment terms in days', { type: 'number', read: Number })),
       row('Reference', 'The Reference on each invoice. Use {practitioner} and {patient}.',
         box('referenceTemplate', 'Reference rule', { placeholder: 'Type a reference rule' })),
+      // The reasons for No Charge, for the lab's reports (no-charge.js).
+      row('No Charge reasons', 'Why work is not charged. Separate them with commas.',
+        box('noChargeReasons', 'No Charge reasons', {
+          show: (v) => (v ?? []).join(', '),
+          read: (v) => v.split(',').map((r) => r.trim()).filter(Boolean),
+        })),
     ].filter(Boolean));
   })();
   return section;

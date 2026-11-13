@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import { billingObligations, contacts, invoiceLines, invoices, people, priceItems } from '../db/schema.js';
 import { FlowError } from './errors.js';
-import { accountingItemsFor, listRules, ruleExceptionsFor, ruleNonChargeable, rulePending, ruleSkip } from './invoice-rules.js';
+import { accountingItemsFor, listRules, ruleExceptionsFor, ruleNonChargeable, rulePending, rulePricesFor, ruleSkip } from './invoice-rules.js';
 import { customerBillingByContact, effectiveSettings, readInvoicingSettings } from './invoicing-rules.js';
 import { issueInvoice } from './invoices.js';
 import { CHANGED_REASON, diffJobLines, sourceBillingProblems, STATUS_BACK_REASON } from './ledger.js';
@@ -108,7 +108,8 @@ async function checkDrafts(db, organisationId, drafts, accounting) {
   // draft. A skip rule holds a draft that already exists: void it, or change
   // the rule. Matching stays in invoice-rules.js.
   const rules = (await listRules(db, organisationId)).filter((r) => r.enabled && ['pending', 'skip', 'non_chargeable'].includes(r.action.kind));
-  if (rules.length && jobs.length) {
+  // A job a person said is No Charge is on the Non-chargeable tab with no rule.
+  if (jobs.length && (rules.length || jobs.some((j) => j.obligation.noChargeReason))) {
     const settings = await readInvoicingSettings(db, organisationId);
     const customers = await customerBillingByContact(db, organisationId, jobs.map((j) => j.obligation.contactId));
     const exceptions = await ruleExceptionsFor(db, organisationId, jobs.map((j) => j.obligation.id));
@@ -119,6 +120,7 @@ async function checkDrafts(db, organisationId, drafts, accounting) {
       .where(and(inArray(invoiceLines.invoiceId, jobs.map((j) => j.obligation.invoiceId)), sql`${invoiceLines.unitAmountCents} * ${invoiceLines.quantity} > 0`));
     const itemsOf = Map.groupBy(itemRows, (r) => r.invoiceId);
     const items = await accountingItemsFor(accounting, organisationId, rules, jobs.map((j) => j.obligation));
+    const prices = await rulePricesFor(db, organisationId, rules);
     for (const { obligation, reference, customerName } of jobs) {
       const customer = { ...effectiveSettings(settings, customers.get(obligation.contactId)), name: customerName ?? null };
       const job = {
@@ -126,7 +128,7 @@ async function checkDrafts(db, organisationId, drafts, accounting) {
         ruleExceptions: exceptions.get(obligation.id) ?? [],
         draftItems: (itemsOf.get(obligation.invoiceId) ?? []).map((r) => r.code),
       };
-      const found = [...ruleNonChargeable(rules, job, { customer, items }), ...rulePending(rules, job, { customer, items }), ...ruleSkip(rules, job, { customer, items })];
+      const found = [...ruleNonChargeable(rules, job, { customer, items, prices }), ...rulePending(rules, job, { customer, items, prices }), ...ruleSkip(rules, job, { customer, items, prices })];
       if (found.length) problems.set(obligation.invoiceId, [...(problems.get(obligation.invoiceId) ?? []), ...found]);
     }
   }

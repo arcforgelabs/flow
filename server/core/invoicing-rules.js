@@ -1,11 +1,11 @@
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import {
-  billingObligations, contacts, customerBillingSettings, externalLinks, invoicingSettings, SEND_MODES,
+  billingObligations, contacts, customerBillingSettings, externalLinks, invoiceRules, invoicingSettings, obligationEvents, SEND_MODES,
 } from '../db/schema.js';
 import { payersOf } from './contacts.js';
 import { FlowError, notFound } from './errors.js';
 import { HISTORY_HOLD_REASON } from './history.js';
-import { accountingItemsFor, listRules, ruleNonChargeable, ruleReasons } from './invoice-rules.js';
+import { accountingItemsFor, listRules, ruleNonChargeable, rulePricesFor, ruleReasons } from './invoice-rules.js';
 import { draftInvoiceForObligation, setHold, setReady } from './ledger.js';
 import { needsRead, readAccountingFirst, readBeforeAct, READS_PER_PASS } from './read-before-act.js';
 import { checkReferenceTemplate, DEFAULT_REFERENCE, jobReference } from './references.js';
@@ -28,6 +28,12 @@ import { checkReferenceTemplate, DEFAULT_REFERENCE, jobReference } from './refer
 export const ACTOR = 'system:rules';
 const DRAFT_BATCH = 200;
 
+// The reasons a lab gives for work it does not charge, for its reports. The
+// lab can rename, add or remove them (Settings, Invoicing).
+export const NO_CHARGE_REASONS = Object.freeze(['Promotion', 'Internal', 'Remake', 'Rework', 'Warranty', 'Goodwill']);
+const MAX_REASONS = 20;
+const MAX_REASON = 40;
+
 export const INVOICING_DEFAULTS = Object.freeze({
   sendMode: 'accounting_draft',
   staleDays: 90,
@@ -36,6 +42,7 @@ export const INVOICING_DEFAULTS = Object.freeze({
   rushItemCode: null,
   rushPercent: 20,
   referenceTemplate: DEFAULT_REFERENCE,
+  noChargeReasons: NO_CHARGE_REASONS,
 });
 
 const CUSTOMER_DEFAULTS = Object.freeze({
@@ -74,6 +81,15 @@ function referenceTemplate(value) {
   return value.trim();
 }
 
+// A reason is one name of 40 characters at most; names are not repeated.
+function noChargeReasons(value) {
+  if (!Array.isArray(value) || !value.length || value.length > MAX_REASONS) throw invalid(`noChargeReasons must be a list of 1 to ${MAX_REASONS} names`);
+  const names = value.map((v) => (typeof v === 'string' ? v.trim().replace(/\s+/g, ' ') : ''));
+  if (names.some((n) => !n || n.length > MAX_REASON)) throw invalid(`each No Charge reason is a name of ${MAX_REASON} characters at most`);
+  if (new Set(names.map((n) => n.toLowerCase())).size !== names.length) throw invalid('each No Charge reason must be different');
+  return names;
+}
+
 function sendMode(value, name) {
   if (!SEND_MODES.includes(value)) throw invalid(`${name} must be one of ${SEND_MODES.join(', ')}`);
   return value;
@@ -96,6 +112,7 @@ function readSettingChanges(changes) {
     else if (key === 'rushPercent') out[key] = wholeNumber(value, key, 0, 100);
     else if (key === 'rushItemCode') out[key] = shortText(value, key);
     else if (key === 'referenceTemplate') out[key] = referenceTemplate(value);
+    else if (key === 'noChargeReasons') out[key] = noChargeReasons(value);
     else throw invalid(`unknown setting: ${key}`);
   }
   return out;
@@ -107,6 +124,36 @@ export async function saveInvoicingSettings(db, organisationId, changes, { perso
     .values({ organisationId, ...fields, updatedBy: personId })
     .onConflictDoUpdate({ target: invoicingSettings.organisationId, set: { ...fields, updatedBy: personId, updatedAt: sql`now()` } });
   return readInvoicingSettings(db, organisationId);
+}
+
+// A lab renames one No Charge reason, or folds it into another: the list,
+// every job that has it, and every rule that gives it change together. Each
+// job keeps an event with the earlier reason. Answers { settings, jobs }.
+export async function renameNoChargeReason(db, organisationId, { from, to }, { personId = null } = {}) {
+  const old = typeof from === 'string' ? from.trim() : '';
+  const [name] = noChargeReasons([to]);
+  if (!old) throw invalid('from must be a No Charge reason');
+  const settings = await readInvoicingSettings(db, organisationId);
+  const at = settings.noChargeReasons.findIndex((r) => r.toLowerCase() === old.toLowerCase());
+  if (at < 0) throw invalid(`"${old}" is not one of the No Charge reasons`);
+  const list = settings.noChargeReasons.filter((r, i) => i === at || r.toLowerCase() !== name.toLowerCase());
+  list[list.indexOf(settings.noChargeReasons[at])] = name;
+  const actor = personId ? `person:${personId}` : 'system';
+  return db.transaction(async (tx) => {
+    await tx.insert(invoicingSettings).values({ organisationId, noChargeReasons: list, updatedBy: personId })
+      .onConflictDoUpdate({ target: invoicingSettings.organisationId, set: { noChargeReasons: list, updatedBy: personId, updatedAt: sql`now()` } });
+    const jobs = await tx.update(billingObligations).set({ noChargeReason: name, updatedAt: sql`now()` })
+      .where(and(eq(billingObligations.organisationId, organisationId), sql`lower(${billingObligations.noChargeReason}) = lower(${old})`))
+      .returning({ id: billingObligations.id });
+    if (jobs.length) {
+      await tx.insert(obligationEvents).values(jobs.map((j) => ({
+        organisationId, obligationId: j.id, kind: 'no_charge', actor, evidence: { from: old, to: name, renamed: true },
+      })));
+    }
+    await tx.update(invoiceRules).set({ action: sql`jsonb_set(${invoiceRules.action}, '{reason}', to_jsonb(${name}::text))`, updatedAt: sql`now()` })
+      .where(and(eq(invoiceRules.organisationId, organisationId), sql`lower(${invoiceRules.action}->>'reason') = lower(${old})`));
+    return { settings: { ...settings, noChargeReasons: list }, jobs: jobs.length };
+  });
 }
 
 async function requireCustomer(db, organisationId, contactId) {
@@ -248,10 +295,10 @@ export async function sendModeSummary(db, organisationId) {
 // read: Flow's own ready stage, then the lab's invoice rules (invoice-rules.js)
 // in their order. An empty list means the job may be drafted. `rules` is the
 // organisation's rules, read once per run with listRules.
-export function ruleBlockers(obligation, effective, { now = new Date(), rules = [], items = null } = {}) {
+export function ruleBlockers(obligation, effective, { now = new Date(), rules = [], items = null, prices = null } = {}) {
   const reasons = [];
   if (!obligation.readyAt) reasons.push('the job is not marked ready to invoice');
-  return [...reasons, ...ruleReasons(rules, obligation, { customer: effective, now, items })];
+  return [...reasons, ...ruleReasons(rules, obligation, { customer: effective, now, items, prices })];
 }
 
 // Old jobs from the history import wait on hold, out of the rules' sight. A
@@ -276,13 +323,14 @@ export async function settleHistoryByRules(db, organisationId, { accounting = nu
   )).orderBy(sql`${billingObligations.jobDate} desc nulls last`, billingObligations.id).limit(limit);
   if (!jobs.length) return result;
   const settings = await readInvoicingSettings(db, organisationId);
+  const prices = await rulePricesFor(db, organisationId, rules);
   const contactIds = [...new Set(jobs.map((j) => j.contactId))];
   const customers = await customerBillingByContact(db, organisationId, contactIds);
   const names = await customerNames(db, organisationId, contactIds);
   for (const job of jobs) {
     result.checked += 1;
     const customer = { ...effectiveSettings(settings, customers.get(job.contactId)), name: names.get(job.contactId) ?? null };
-    const [rule] = ruleNonChargeable(rules, job, { customer, now });
+    const [rule] = ruleNonChargeable(rules, job, { customer, now, prices });
     if (!rule) continue;
     const actor = `rule:${rule.rule}`;
     await setHold(db, organisationId, job.id, { holdState: 'none', reason: `${rule.short}: non-chargeable`, actor });
@@ -389,6 +437,7 @@ export async function autoDraftJobs(db, organisationId, { accounting = null, wor
   let accountingRead = null;
   // The codes that send as accounting items, for a rule that reads them.
   const items = await accountingItemsFor(accounting, organisationId, rules, candidates);
+  const prices = await rulePricesFor(db, organisationId, rules);
 
   for (const candidate of candidates) {
     let effective = named(candidate.contactId);
@@ -396,14 +445,14 @@ export async function autoDraftJobs(db, organisationId, { accounting = null, wor
       result.off += 1;
       continue;
     }
-    if (ruleBlockers(candidate, effective, { now, rules, items }).length) {
+    if (ruleBlockers(candidate, effective, { now, rules, items, prices }).length) {
       result.waiting += 1;
       continue;
     }
     // A job a non-chargeable rule matches (own clinics, remakes) is never
     // billed: its draft goes to the Non-chargeable tab whatever its price
     // items, tax or report age say. Any other job needs every line mapped.
-    const noCharge = ruleNonChargeable(rules, candidate, { customer: effective, now }).length > 0;
+    const noCharge = ruleNonChargeable(rules, candidate, { customer: effective, now, prices }).length > 0;
     if (!noCharge && !candidate.mappingComplete) {
       result.waiting += 1;
       continue;
@@ -450,7 +499,7 @@ export async function autoDraftJobs(db, organisationId, { accounting = null, wor
       // The job read again may have new codes: read their accounting items too.
       const itemsNow = items && (obligation.lines ?? []).some((l) => l.itemCode && !items.has(l.itemCode))
         ? await accountingItemsFor(accounting, organisationId, rules, [obligation]) : items;
-      if (!effective.autoDraft || ruleBlockers(obligation, effective, { now, rules, items: itemsNow }).length) {
+      if (!effective.autoDraft || ruleBlockers(obligation, effective, { now, rules, items: itemsNow, prices }).length) {
         result.waiting += 1;
         continue;
       }

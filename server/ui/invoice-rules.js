@@ -40,7 +40,9 @@ export function ruleSummary(rule, meta) {
     const value = Array.isArray(c.value) ? c.value.map((v) => labelOf(field, v)).join(', ') : labelOf(field, c.value);
     return `${field.label} ${test} ${value}`;
   };
-  const then = rule.action.kind === 'pending' ? `Pending: ${rule.action.note}` : ACTION_LABELS[rule.action.kind] ?? rule.action.kind;
+  const then = rule.action.kind === 'pending' ? `Pending: ${rule.action.note}`
+    : rule.action.kind === 'non_chargeable' && rule.action.reason ? `${ACTION_LABELS.non_chargeable}: ${rule.action.reason}`
+      : ACTION_LABELS[rule.action.kind] ?? rule.action.kind;
   const excepted = rule.exceptions ? ` · ${rule.exceptions} ${rule.exceptions === 1 ? 'exception' : 'exceptions'}` : '';
   return `${rule.conditions.map(part).join(' and ')} · ${then}${excepted}`;
 }
@@ -176,7 +178,20 @@ export function rulesSection(ui, title = 'Rules') {
       placeholder: 'Price list code',
     });
     const addField = h('div', { class: 'fx-field' }, h('span', { class: 'fx-label' }, 'Offer to add'), addItem);
-    const showNote = () => { noteField.hidden = action.value !== 'pending'; addField.hidden = action.value !== 'pending'; };
+    // A non-chargeable rule's No Charge reason, for the lab's reports: one of
+    // the lab's reasons (Settings, Invoicing). A person can change it on a job.
+    const { settings } = await flow('/api/invoicing/settings');
+    const given = draft?.action.reason ?? '';
+    const reasons = [...new Set([...(settings?.noChargeReasons ?? []), ...(given ? [given] : [])])];
+    const reason = h('select', { class: 'fx-select', 'aria-label': 'Reason' },
+      h('option', { value: '' }, 'No reason'), ...reasons.map((r) => h('option', { value: r }, r)));
+    reason.value = given;
+    const reasonField = h('div', { class: 'fx-field' }, h('span', { class: 'fx-label' }, 'Reason'), reason);
+    const showNote = () => {
+      noteField.hidden = action.value !== 'pending';
+      addField.hidden = action.value !== 'pending';
+      reasonField.hidden = action.value !== 'non_chargeable';
+    };
     action.addEventListener('change', showNote);
     showNote();
     let editors = [];
@@ -226,6 +241,7 @@ export function rulesSection(ui, title = 'Rules') {
         label('Then', action),
         noteField,
         addField,
+        reasonField,
         remove),
       confirm: rule ? 'Save' : 'Add rule',
     });
@@ -239,7 +255,8 @@ export function rulesSection(ui, title = 'Rules') {
       name: name.value,
       icon: icon.value(),
       conditions: editors.map((e) => e.read()),
-      action: action.value === 'pending' ? { kind: 'pending', note: note.value, ...(addItem.value.trim() ? { addItem: addItem.value.trim() } : {}) } : { kind: action.value },
+      action: action.value === 'pending' ? { kind: 'pending', note: note.value, ...(addItem.value.trim() ? { addItem: addItem.value.trim() } : {}) }
+        : action.value === 'non_chargeable' && reason.value ? { kind: 'non_chargeable', reason: reason.value } : { kind: action.value },
     };
     const body = rule
       ? await send(`/api/invoicing/rules/${rule.id}`, 'PUT', payload)

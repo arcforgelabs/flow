@@ -77,12 +77,42 @@ export const FIELDS = Object.freeze({
   // the Flow codes that send (accountingItemsFor). It is null when no
   // accounting system is on or its list was never read: then the field has
   // no value and no rule on it matches.
+  // A person made the work free in the work system: a line set to $0 although
+  // its price list item has a price (a free promotion, a waived repair), or a
+  // discount that takes the job to $0 (goodwill). The reason is in the work
+  // system's line note, which Flow cannot read, so a rule on this field holds
+  // the job for a person, who gives the No Charge and its reason. `prices` is
+  // the price items' prices (rulePricesFor).
+  made_free: {
+    label: 'Made free in the work system', kind: 'boolean', prices: true,
+    read: (j, { prices }) => (prices ? freeLines(j, prices).length > 0 : null),
+    detail: (j, { prices }) => (prices && freeLines(j, prices).length ? `made free: ${freeLines(j, prices).join(', ')}` : null),
+  },
   accounting_item: {
     label: 'Every item is in accounting', kind: 'boolean', accounting: true,
     read: (j, { items }) => (items ? !missingItems(j, items).length : null),
     detail: (j, { items }) => (items && missingItems(j, items).length ? `not in accounting: ${missingItems(j, items).join(', ')}` : null),
   },
 });
+
+// What made a job free: its $0 lines whose price item has a price, and the
+// discount lines of a job whose total is $0.
+function freeLines(job, prices) {
+  const lines = job.lines ?? [];
+  const label = (l) => l.itemCode || l.description || '?';
+  const zero = lines.filter((l) => l.priceItemId && (l.unitAmountCents ?? 0) === 0 && (prices.get(l.priceItemId) ?? 0) > 0);
+  const discounts = (job.totalCents ?? 0) === 0 ? lines.filter((l) => (l.unitAmountCents ?? 0) < 0) : [];
+  return [...new Set([...zero, ...discounts].map(label))];
+}
+
+// The price items' prices by id, for the rules that read `made_free`.
+// Null when no enabled rule reads it.
+export async function rulePricesFor(db, organisationId, rules) {
+  if (!rules.some((r) => r.enabled && r.conditions.some((c) => FIELDS[c.field]?.prices))) return null;
+  const rows = await db.select({ id: priceItems.id, unitAmountCents: priceItems.unitAmountCents }).from(priceItems)
+    .where(eq(priceItems.organisationId, organisationId));
+  return new Map(rows.map((r) => [r.id, r.unitAmountCents]));
+}
 
 // The codes on a job's lines that do not send as an accounting item.
 function missingItems(job, items) {
@@ -180,6 +210,13 @@ export function readRule(raw) {
       action.addItem = item;
     }
   } else {
+    // A non-chargeable rule may give the No Charge reason, for the lab's
+    // reports: one of the lab's reasons (Settings, Invoicing).
+    if (action.kind === 'non_chargeable' && raw.action.reason !== undefined && raw.action.reason !== null && raw.action.reason !== '') {
+      const reason = typeof raw.action.reason === 'string' ? raw.action.reason.trim() : '';
+      if (!reason || reason.length > 40) throw invalid('the reason must be a No Charge reason of 40 characters at most');
+      action.reason = reason;
+    }
     const early = conditions.find((c) => FIELDS[c.field].draftOnly);
     if (early) throw invalid(`${FIELDS[early.field].label} is on the draft only: use Then "Pending, with a note"`);
   }
@@ -244,11 +281,15 @@ function matches(condition, job, context) {
 // means no rule stops its draft. `customer` is the customer's own billing
 // settings (invoicing-rules.js).
 // `items`: the Flow codes that send as accounting items (accountingItemsFor).
-const contextOf = ({ customer = {}, now = new Date(), items = null } = {}) => ({ customer, now, items });
+// `prices`: the price items' prices (rulePricesFor).
+const contextOf = ({ customer = {}, now = new Date(), items = null, prices = null } = {}) => ({ customer, now, items, prices });
 // A non-chargeable rule that matches wins over the wait rules (a $0 remake
 // is never billed, so "No amount" must not hold it), and over the skip rules
 // below it in the list. Rules are in the lab's order.
+// A person's No Charge (job.noChargeReason) wins over every rule: the person
+// read the work and decided.
 const waitingRules = (rules, job, context) => {
+  if (job.noChargeReason) return [];
   const live = rules.filter((rule) => rule.enabled && rule.trigger === 'job_ready');
   const hit = (rule) => rule.conditions.every((c) => matches(c, job, context));
   const free = live.findIndex((rule) => rule.action.kind === 'non_chargeable' && hit(rule));
@@ -324,12 +365,17 @@ export function ruleSkip(rules, job, options) {
 // The enabled non-chargeable rules that match one draft's job (sending.js):
 // the draft is on the Non-chargeable tab, never on Pending or Ready, and
 // Send never sends it.
+// A person's No Charge comes first, with its reason. `reason` is the No Charge
+// reason for the lab's reports: the person's, else the rule's, else null.
 export function ruleNonChargeable(rules, job, options) {
   const context = contextOf(options);
-  return rules
+  const person = job.noChargeReason
+    ? [{ code: 'non_chargeable', message: `No Charge (${job.noChargeReason}). Flow keeps it and never sends it.`, short: job.noChargeReason.slice(0, 40), rule: null, reason: job.noChargeReason }]
+    : [];
+  return [...person, ...rules
     .filter((r) => r.enabled && r.trigger === 'job_ready' && r.action.kind === 'non_chargeable')
     .filter((r) => r.conditions.every((c) => matches(c, job, context)))
-    .map((r) => ({ code: 'non_chargeable', message: `Rule "${r.name}": non-chargeable. Flow keeps it and never sends it.`, short: r.name.slice(0, 40), rule: r.id ?? null }));
+    .map((r) => ({ code: 'non_chargeable', message: `Rule "${r.name}": non-chargeable. Flow keeps it and never sends it.`, short: r.name.slice(0, 40), rule: r.id ?? null, reason: r.action.reason ?? null }))];
 }
 
 // The starter rules made from the earlier fixed settings.

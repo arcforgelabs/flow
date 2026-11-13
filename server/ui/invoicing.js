@@ -18,6 +18,7 @@ import { fieldGroup, fieldIdOf, filterCount, filterJobs, INVOICE_COLUMNS, invoic
 import { INVOICE_FILTER_FIELDS, INVOICE_FILTER_STATUSES, invoiceFilterKind, invoiceKindOf, invoiceValue, normaliseInvoicesView } from '/assets/ui/list-views.js';
 import { listPager, pager, PAGE_SIZES } from '/assets/ui/pager.js';
 import { savedViews } from '/assets/ui/saved-views.js';
+import { chooseNoCharge } from '/assets/ui/no-charge.js';
 import { problemPrompt } from '/assets/ui/problem-prompt.js';
 import { xeroContactActions } from '/assets/ui/xero-contact.js';
 import { findBox, today, viewBar } from '/assets/ui/view-bar.js';
@@ -225,6 +226,7 @@ export async function renderInvoiceList(main, ui) {
       if (field === 'status') return INVOICE_FILTER_STATUSES;
       if (field === 'linked') return (raw?.linksTo ?? []).filter((s) => s.kind === 'work').map((s) => ({ value: s.id, label: s.name }));
       if (field === 'practitioner') return labels(raw?.practitioners);
+      if (field === 'reason') return labels(raw?.reasons);
       const custom = fieldById(fieldIdOf(field));
       if (custom?.type === 'person') return [{ value: 'me', label: 'Me' }, ...state.people.map((p) => ({ value: p.id, label: p.name }))];
       return (custom?.options ?? []).map((o) => ({ value: o.id, label: o.archived ? `${o.name} (archived)` : o.name, color: o.color }));
@@ -633,7 +635,9 @@ export async function renderInvoiceList(main, ui) {
     const statusCell = (invoice) => {
       const cell = h('span', {}, invoice.sending
         ? h('span', { class: 'fx-status', 'data-tone': 'info' }, 'Sending')
-        : h('span', { class: 'fx-status', 'data-tone': TAB_TONE[invoice.tab] ?? 'mute', title: TAB_LABEL[invoice.tab] ?? null }, TAB_LABEL[invoice.tab] ?? ''));
+        // A Non-chargeable invoice shows why: its No Charge reason.
+        : h('span', { class: 'fx-status', 'data-tone': TAB_TONE[invoice.tab] ?? 'mute', title: TAB_LABEL[invoice.tab] ?? null },
+          (invoice.tab === 'non_chargeable' && invoice.noChargeReason) || TAB_LABEL[invoice.tab] || ''));
       if (!linked) statusCells.set(invoice.id, cell);
       return cell;
     };
@@ -1358,14 +1362,30 @@ function draftView(invoice, ui, context, redraw) {
   }
 
   const previewBtn = isNew ? null : previewButton(ui, invoice.id, 'Shows the saved invoice.');
+  // An owner or admin says the draft's job is not charged, and why, changes
+  // the reason, or charges it again (no-charge.js).
+  const job = invoice?.job ?? null;
+  const noChargeButton = !isNew && context.canIssue && invoice.status === 'draft' && job?.id && !job.accountingRef ? h('button', {
+    class: 'fx-btn fx-btn--ghost', type: 'button',
+    onclick: async () => {
+      try {
+        if (!(await chooseNoCharge(ui, { jobId: job.id, current: job.noChargeReason ?? null }))) return;
+        const { invoice: fresh } = await flow(`/api/invoicing/invoices/${invoice.id}`);
+        redraw(fresh);
+      } catch (error) {
+        toast(error.message, 'danger');
+      }
+    },
+  }, job.noChargeReason ? 'Change No Charge' : 'No Charge') : null;
   const showAccept = Boolean(jobChange?.canAccept && context.canIssue);
   const header = ui.pageHeader(isNew ? 'New invoice' : ready ? 'Ready invoice' : nonChargeable ? 'Non-chargeable invoice' : 'Pending invoice', {
-    actions: [fromJob, deleteButton, previewBtn, saveButton, sendButton ?? issueButton].filter(Boolean),
+    actions: [fromJob, deleteButton, noChargeButton, previewBtn, saveButton, sendButton ?? issueButton].filter(Boolean),
   });
   const primaryOf = () => (showAccept ? null : (sendButton ?? issueButton ?? (saveButton.hidden ? null : saveButton)));
   const chrome = mountRecord(ui, invoice, header, primaryOf, (skip) => [
     menuEntry(fromJob, 'briefcase', skip),
     menuEntry(deleteButton, 'trash-2', skip),
+    menuEntry(noChargeButton, 'badge-percent', skip),
     menuEntry(previewBtn, 'eye', skip),
     menuEntry(saveButton, 'check', skip),
     menuEntry(sendButton, 'mail', skip),

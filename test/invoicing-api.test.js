@@ -391,7 +391,7 @@ describe('invoicing API', { skip: skipWithoutDatabase }, () => {
     assert.equal(drafted.body.invoice.reference, 'Dr Example');
     assert.deepEqual(drafted.body.invoice.job, {
       id: job.id, sourceSystem: 'worksystem', sourceJobRef: 'JOB-1', sourceInvoiceRef: null, caseRef: 'CASE-JOB-1', practitioner: 'Dr Example', shippedOn: '2026-10-17',
-      systemName: 'Work system', link: null,
+      systemName: 'Work system', link: null, accountingRef: null, noChargeReason: null,
     });
     // The Linked card lists each connected system.
     assert.deepEqual(drafted.body.invoice.linksTo.map((s) => [s.id, s.kind]), [['worksystem', 'work']]);
@@ -569,6 +569,26 @@ describe('invoicing API', { skip: skipWithoutDatabase }, () => {
     const issued = await request(appWithoutCheck, `/api/invoicing/invoices/${invoice.id}/issue`, { token: ownerToken, method: 'POST', body: { organisationId: lab.id } });
     assert.equal(issued.status, 200, JSON.stringify(issued.body));
     assert.equal(issued.body.invoice.status, 'issued');
+  });
+
+  test('No Charge: an owner or admin picks a reason from the list; the Non-chargeable tab shows and filters it', async () => {
+    const job = await observeJob(handle.db, lab.id, { sourceSystem: 'worksystem', sourceJobRef: 'JOB-NC', contactId: practice.id, sourceStatus: 'Shipped', lines: [{ itemCode: 'CRN' }] });
+    await recordAccountingEvidence(handle.db, lab.id, job.id, { state: 'not_found', actor: 'user:test' });
+    const { invoice } = await draftInvoiceForObligation(handle.db, lab.id, job.id, { actor: 'user:test', liveCheck: async () => ({ state: 'not_found' }) });
+    const set = (reason, token = ownerToken) => request(appWithoutCheck, `/api/invoicing/jobs/${job.id}/no-charge`, { token, method: 'POST', body: { organisationId: lab.id, reason } });
+    assert.equal((await set('Promotion', staffToken)).status, 403);
+    assert.equal((await set('Because')).status, 400, 'only the lab\'s reasons');
+    const saved = await set('promotion');
+    assert.equal(saved.status, 200, JSON.stringify(saved.body));
+    assert.equal(saved.body.job.noChargeReason, 'Promotion');
+    const list = await request(appWithoutCheck, `/api/invoicing/invoices?status=non_chargeable&organisationId=${lab.id}`, { token: ownerToken });
+    const row = list.body.invoices.find((i) => i.id === invoice.id);
+    assert.equal(row?.noChargeReason, 'Promotion');
+    assert.ok(list.body.reasons.includes('Promotion'));
+    const again = await set(null);
+    assert.equal(again.body.job.noChargeReason, null);
+    const after = await request(appWithoutCheck, `/api/invoicing/invoices?status=non_chargeable&organisationId=${lab.id}`, { token: ownerToken });
+    assert.equal(after.body.invoices.find((i) => i.id === invoice.id), undefined);
   });
 
   test('Recheck reads the job from the work system again; a fixed job ends the problem', async () => {
