@@ -3,11 +3,12 @@ import { billingObligations, contacts, invoices, obligationEvents, priceItems } 
 import { payersOf } from '../../core/contacts.js';
 import { createContact } from '../../core/directory.js';
 import { FlowError } from '../../core/errors.js';
-import { createDraftInvoice, issueInvoice } from '../../core/invoices.js';
+import { createDraftInvoice, deleteUnsentRows, issueInvoice } from '../../core/invoices.js';
 import { linkJobToInvoice, recordAccountingEvidence, releaseAccountingRef } from '../../core/ledger.js';
 import { normaliseName } from './catalogue.js';
 import { findInvoices } from './lookup.js';
 import { canFit, markRivals, scoreFit, sureFits } from './fit.js';
+import { everInXero } from './delete-invoice.js';
 
 // The Import page (docs/XERO_IMPORT.md): each sales invoice in Flow's copy of
 // Xero against Flow's own invoices. Flow's own records are the ones it works
@@ -284,18 +285,22 @@ export async function useXeroInvoice(db, organisationId, invoiceId, { xeroInvoic
       .where(and(eq(billingObligations.organisationId, organisationId), eq(billingObligations.invoiceId, invoiceId)))
       .for('update');
     if (jobs.length > 1) throw new FlowError('invalid', 'the Flow invoice bills more than one job; link each by hand');
-    if (invoice.status === 'issued') await tx.update(invoices).set({ status: 'void', updatedAt: sql`now()` }).where(eq(invoices.id, invoiceId));
-    else if (!jobs.length) throw new FlowError('invalid', 'the void Flow invoice holds no job');
+    if (invoice.status === 'void' && !jobs.length) throw new FlowError('invalid', 'the void Flow invoice holds no job');
+    // A copy that never reached Xero is deleted, not voided (Samuel, 13
+    // November 2026). A send in flight, or a link, keeps the old void.
+    const unsent = !(await everInXero(tx, organisationId, invoiceId));
+    if (invoice.status === 'issued' && !unsent) await tx.update(invoices).set({ status: 'void', updatedAt: sql`now()` }).where(eq(invoices.id, invoiceId));
     for (const job of jobs) {
       await tx.update(billingObligations).set({ invoiceId: null, draftBasis: null, updatedAt: sql`now()` }).where(eq(billingObligations.id, job.id));
       await tx.insert(obligationEvents).values({
         createdAt: sql`clock_timestamp()`, organisationId, obligationId: job.id, kind: 'draft_deleted', actor,
-        evidence: { invoiceId, reason: 'used_xero_invoice', xeroInvoiceId, xeroNumber: row.number ?? null },
+        evidence: { invoiceId, number: invoice.number, reason: 'used_xero_invoice', removed: unsent, xeroInvoiceId, xeroNumber: row.number ?? null },
       });
     }
+    if (unsent) await deleteUnsentRows(tx, organisationId, invoiceId);
     // The new Flow invoice stays with the client of the one it replaces.
     const made = await makeFrom(tx, organisationId, row, { jobId: jobs[0]?.id ?? null, contactId: invoice.contact_id, actor });
-    return { voided: { id: invoiceId, number: invoice.number }, invoice: { id: made.invoice.id, number: made.invoice.number }, xeroInvoiceId, jobId: jobs[0]?.id ?? null };
+    return { [unsent ? 'removed' : 'voided']: { id: invoiceId, number: invoice.number }, invoice: { id: made.invoice.id, number: made.invoice.number }, xeroInvoiceId, jobId: jobs[0]?.id ?? null };
   });
 }
 

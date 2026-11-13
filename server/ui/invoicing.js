@@ -380,17 +380,20 @@ export async function renderInvoiceList(main, ui) {
     // A draft that was never issued is deleted on Pending, Ready and
     // Non-chargeable. An issued
     // invoice is deleted only while Flow's copy of Xero says Draft. Approved
-    // or paid stays hidden. A mix runs every ticked row and reports each one.
+    // or paid stays hidden. An issued or void invoice that never reached Xero
+    // (a send that failed) is deleted too, never voided. A mix runs every
+    // ticked row and reports each one.
     const fresh = rows.filter((i) => i.status === 'draft' && i.issuedVersion === 0);
     const issuedXero = rows.filter((i) => i.status === 'issued' && xeroById.has(i.id));
     const xeroDraft = issuedXero.filter((i) => xeroById.get(i.id)?.state === 'draft');
     const xeroApproved = issuedXero.filter((i) => ['approved', 'part_paid', 'paid'].includes(xeroById.get(i.id)?.state));
-    const deletable = [...fresh, ...xeroDraft, ...xeroApproved];
+    const notSent = rows.filter((i) => i.issuedVersion > 0 && i.status !== 'draft' && i.sendState !== 'queued' && xeroById.get(i.id)?.state === 'not_sent');
+    const deletable = [...fresh, ...xeroDraft, ...xeroApproved, ...notSent];
     const onDraftTabs = ['pending', 'ready', 'non_chargeable'].includes(state.status) && fresh.length;
-    if (context.canIssue && (onDraftTabs || xeroDraft.length)) {
+    if (context.canIssue && (onDraftTabs || xeroDraft.length || notSent.length)) {
       danger.push({
         icon: 'trash-2', label: 'Delete', iconOnly: true, tone: 'danger', title: 'Delete',
-        run: () => deleteAll(deletable, { xero: xeroDraft.length + xeroApproved.length > 0 }),
+        run: () => deleteAll(deletable, { xero: xeroDraft.length + xeroApproved.length > 0, notSent: notSent.length > 0 }),
       });
     }
     const all = body.invoices.map((i) => i.id);
@@ -470,19 +473,18 @@ export async function renderInvoiceList(main, ui) {
 
   // Delete, one invoice after another, as on one invoice's page. A Xero
   // draft reports each row: deleted, or refused with the reason.
-  async function deleteAll(rows, { xero = false } = {}) {
+  async function deleteAll(rows, { xero = false, notSent = false } = {}) {
     const fresh = rows.some((i) => i.status === 'draft' && i.issuedVersion === 0);
     const ok = await ui.dialog({
       title: `Delete ${plural(rows.length, 'invoice', 'invoices')}?`,
-      body: xero
-        ? h('div', {},
-          fresh ? h('p', {}, 'A draft that was never issued is removed. Its job can be invoiced again, and the rules decide.') : null,
-          h('p', {}, 'Also deletes the draft in Xero.'))
-        : h('p', {}, 'A draft that was never issued is removed. Its job can be invoiced again, and the rules decide.'),
+      body: h('div', {},
+        fresh || !(xero || notSent) ? h('p', {}, 'A draft that was never issued is removed. Its job can be invoiced again, and the rules decide.') : null,
+        notSent ? h('p', {}, NOT_SENT_DELETE) : null,
+        xero ? h('p', {}, 'Also deletes the draft in Xero.') : null),
       confirm: `Delete ${rows.length}`, tone: 'danger',
     });
     if (!ok) return;
-    if (xero) {
+    if (xero || notSent) {
       const results = [];
       for (const invoice of rows) {
         const name = invoice.number ?? 'Draft';
@@ -1513,16 +1515,21 @@ function previewButton(ui, invoiceId, title = 'Shows the invoice as a PDF.') {
   }, 'Preview');
 }
 
+// What Delete does to an issued or void invoice that never reached Xero.
+const NOT_SENT_DELETE = 'An invoice that never reached Xero is removed, not voided. Its job can be invoiced again, and its number is not used again.';
+
 // Delete asks first. A Xero draft says so; a never-issued draft says the job
 // can be invoiced again. Then the list opens.
-function deleteControl(ui, invoice, { xeroDraft }) {
+function deleteControl(ui, invoice, { xeroDraft, notSent = false }) {
   const { h, flow, toast, go } = ui;
   return h('button', {
     class: 'fx-btn fx-btn--ghost fx-btn--danger', type: 'button', 'data-delete': '',
     onclick: async () => {
       const ok = await ui.dialog({
         title: 'Delete this invoice?',
-        body: h('p', {}, xeroDraft
+        body: h('p', {}, notSent
+          ? NOT_SENT_DELETE
+          : xeroDraft
           ? 'Also deletes the draft in Xero.'
           : invoice.job
             ? 'It was never issued. The job can be invoiced again, and the rules decide.'
@@ -1572,11 +1579,13 @@ function issuedView(invoice, ui, context, redraw) {
     xeroHost.replaceChildren(xeroCard(invoice, ui, context, xeroStatus, loadXero) ?? '');
     linkedHost.replaceChildren(linkedCard(ui, invoice, xeroStatus) ?? '');
     if (xeroStatus && xeroStatus.state !== 'not_sent') showSent(send);
-    // Delete only while Flow's copy says Draft. Approved and paid stay on Void.
-    const canDelete = invoice.status === 'issued' && context.canIssue && xeroStatus?.state === 'draft';
+    // Delete while Flow's copy says Draft, or when the invoice never reached
+    // Xero (issued or void; a send that failed). Approved and paid stay.
+    const notSent = invoice.sendState !== 'queued' && xeroStatus?.state === 'not_sent';
+    const canDelete = context.canIssue && ((invoice.status === 'issued' && xeroStatus?.state === 'draft') || notSent);
     const remove = actionBar?.querySelector('[data-delete]');
     if (canDelete && !remove && actionBar) {
-      deleteButton = deleteControl(ui, invoice, { xeroDraft: true });
+      deleteButton = deleteControl(ui, invoice, { xeroDraft: !notSent, notSent });
       actionBar.prepend(deleteButton);
     }
     if (!canDelete && remove) {
@@ -1615,7 +1624,8 @@ function issuedView(invoice, ui, context, redraw) {
     rel: 'noopener',
   }, 'Open in Xero') : null;
   // Send stopped it for a Xero invoice of the same client and Reference: that
-  // Xero invoice is the bill. One press voids this copy and gives the job the
+  // Xero invoice is the bill. One press deletes this copy (voids it, if a send
+  // ever started) and gives the job the
   // Xero invoice (POST /api/xero/invoices/:id/use-xero), never a bare void.
   const useXero = matched?.code === 'xero_same_reference_different_amount' && invoice.status === 'issued' && context.canIssue && organisationId
     ? h('button', {
@@ -1624,7 +1634,7 @@ function issuedView(invoice, ui, context, redraw) {
         event.currentTarget.disabled = true;
         try {
           const body = await ui.flow(`/api/xero/invoices/${invoice.id}/use-xero`, { method: 'POST', body: JSON.stringify({ organisationId, xeroInvoiceId: matched.xero.invoiceId }) });
-          ui.toast(`${invoice.number} is void. The job has ${matched.xero.number ?? 'the Xero invoice'}.`, 'success');
+          ui.toast(`${invoice.number} is ${body.removed ? 'deleted' : 'void'}. The job has ${matched.xero.number ?? 'the Xero invoice'}.`, 'success');
           ui.go(`/invoices/${body.invoice.id}`);
         } catch (error) {
           event.currentTarget.disabled = false;

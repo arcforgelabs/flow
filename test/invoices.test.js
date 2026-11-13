@@ -12,6 +12,9 @@ import {
   updateDraftInvoice,
   voidInvoice,
 } from '../server/core/invoices.js';
+import { linkJobToInvoice, observeJob } from '../server/core/ledger.js';
+import { billingObligations, obligationEvents } from '../server/db/schema.js';
+import { eq } from 'drizzle-orm';
 import { freshDatabase, skipWithoutDatabase } from './support/db.js';
 
 // Synthetic data only (CONTRIBUTING.md).
@@ -142,6 +145,48 @@ describe('invoices', { skip: skipWithoutDatabase }, () => {
     await assert.rejects(deleteDraft(db, lab.id, revised.id), { code: 'accounting_unavailable' });
     assert.equal((await getInvoice(db, lab.id, revised.id)).status, 'draft');
     await assert.rejects(deleteDraft(db, otherLab.id, revised.id), { code: 'not_found' });
+  });
+
+  test('an issued or void invoice that never reached the accounting system is deleted, not voided', async () => {
+    let sent = false;
+    const accounting = { name: 'Xero', capabilities: { everSent: async () => sent, deleteInvoice: async () => ({ state: 'unavailable' }) } };
+    const job = await observeJob(db, lab.id, { sourceSystem: 'worksystem', sourceJobRef: 'JOB-UNSENT', caseRef: 'CASE-UNSENT', contactId: practice.id, shippedOn: '2026-10-16', jobDate: '2026-10-16', lines: [{ itemCode: 'CROWN', description: 'Crown', quantity: 1, unitAmountCents: 22000 }] });
+    const failed = await createDraftInvoice(db, lab.id, { contactId: practice.id, lines: [{ priceItemId: crown.id }] });
+    const issued = await issueInvoice(db, lab.id, failed.id, { issuedBy: 'user:test', issueDate: '2026-10-16' });
+    await linkJobToInvoice(db, lab.id, job.id, { invoiceId: failed.id, actor: 'person:test' });
+
+    // The database still refuses it without the code's check.
+    await assert.rejects(handle.pool.query('DELETE FROM invoices WHERE id = $1', [failed.id]), /cannot be deleted; void it/);
+    await assert.rejects(handle.pool.query('DELETE FROM invoice_versions WHERE invoice_id = $1', [failed.id]), /append-only/);
+    // On its way: wait for the send to finish.
+    await handle.pool.query("UPDATE invoices SET send_state = 'queued' WHERE id = $1", [failed.id]);
+    await assert.rejects(deleteDraft(db, lab.id, failed.id, { actor: 'person:test', accounting }), /on its way to Xero/);
+    await handle.pool.query("UPDATE invoices SET send_state = 'failed' WHERE id = $1", [failed.id]);
+
+    const removed = await deleteDraft(db, lab.id, failed.id, { actor: 'person:test', accounting });
+    assert.equal(removed.removed, true);
+    await assert.rejects(getInvoice(db, lab.id, failed.id), { code: 'not_found' });
+    assert.equal((await handle.pool.query('SELECT 1 FROM invoice_versions WHERE invoice_id = $1', [failed.id])).rows.length, 0);
+    const [freed] = await db.select().from(billingObligations).where(eq(billingObligations.id, job.id));
+    assert.equal(freed.invoiceId, null, 'the job can be invoiced again');
+    const events = await db.select().from(obligationEvents).where(eq(obligationEvents.obligationId, job.id));
+    const kept = events.find((e) => e.kind === 'draft_deleted');
+    assert.deepEqual([kept.evidence.number, kept.evidence.reason, kept.actor], [issued.number, 'never_sent', 'person:test']);
+
+    // A void invoice that never reached it goes too.
+    const voided = await createDraftInvoice(db, lab.id, { contactId: practice.id, lines: [{ priceItemId: crown.id }] });
+    await issueInvoice(db, lab.id, voided.id, { issuedBy: 'user:test', issueDate: '2026-10-16' });
+    await voidInvoice(db, lab.id, voided.id);
+    await deleteDraft(db, lab.id, voided.id, { actor: 'person:test', accounting });
+    await assert.rejects(getInvoice(db, lab.id, voided.id), { code: 'not_found' });
+
+    // One the accounting system has (a send started, or a link) keeps the old rules.
+    sent = true;
+    const real = await createDraftInvoice(db, lab.id, { contactId: practice.id, lines: [{ priceItemId: crown.id }] });
+    await issueInvoice(db, lab.id, real.id, { issuedBy: 'user:test', issueDate: '2026-10-16' });
+    await voidInvoice(db, lab.id, real.id);
+    await assert.rejects(deleteDraft(db, lab.id, real.id, { actor: 'person:test', accounting }), /void invoice is final/);
+    assert.equal((await getInvoice(db, lab.id, real.id)).status, 'void');
   });
 
   test('an invoice goes only to a customer contact', async () => {

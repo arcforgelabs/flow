@@ -739,7 +739,7 @@ export function createInvoicingRouter({
     const invoiceId = pathId(req.params.id, 'invoice');
     const organisationId = await organisationOf(req);
     const removed = await deleteDraft(db, organisationId, invoiceId, { actor: `person:${req.person.id}`, accounting: accounting() });
-    log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} ${removed.status === 'void' ? 'voided invoice' : 'deleted draft invoice'} ${invoiceId}`);
+    log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} ${removed.removed ? `deleted invoice ${removed.number}, never sent,` : removed.status === 'void' ? 'voided invoice' : 'deleted draft invoice'} ${invoiceId}`);
     res.json({ ok: true });
   }));
 

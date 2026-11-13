@@ -258,7 +258,7 @@ describe('Xero import: Xero invoices against Flow invoices', { skip: skipWithout
     assert.equal(read.status, 200);
   });
 
-  test('Use the Xero invoice: the Flow copy Send stopped is voided and the job gets the Xero bill', async () => {
+  test('Use the Xero invoice: the Flow copy Send stopped is deleted (it never reached Xero) and the job gets the Xero bill', async () => {
     const job = await observeJob(handle.db, org(), { sourceSystem: 'worksystem', sourceJobRef: 'JOB-U', caseRef: 'CASE-U', contactId: practice.id, shippedOn: '2026-10-20', jobDate: '2026-10-20', lines: [{ itemCode: 'CROWN' }] });
     const flowCopy = await flowInvoice('2026-10-20');
     await linkJobToInvoice(handle.db, org(), job.id, { invoiceId: flowCopy.id, actor: 'person:test' });
@@ -267,10 +267,9 @@ describe('Xero import: Xero invoices against Flow invoices', { skip: skipWithout
     const other = await copy(22, { contact: XC2, issuedOn: '2026-10-20', total: 29000 });
     await assert.rejects(useXeroInvoice(handle.db, org(), flowCopy.id, { xeroInvoiceId: other, actor: 'person:test' }), /another client/);
     const used = await useXeroInvoice(handle.db, org(), flowCopy.id, { xeroInvoiceId: id, actor: 'person:test' });
-    assert.equal(used.voided.id, flowCopy.id);
+    assert.equal(used.removed.id, flowCopy.id);
     assert.equal(used.jobId, job.id);
-    const [voided] = await handle.db.select().from(invoices).where(eq(invoices.id, flowCopy.id));
-    assert.equal(voided.status, 'void');
+    assert.deepEqual(await handle.db.select().from(invoices).where(eq(invoices.id, flowCopy.id)), [], 'a send that failed is not a void');
     const [made] = await handle.db.select().from(invoices).where(eq(invoices.id, used.invoice.id));
     assert.equal(made.subtotalCents, 26500, 'the Xero bill, with its extra line');
     const [linkedJob] = await handle.db.select().from(billingObligations).where(eq(billingObligations.id, job.id));
@@ -284,8 +283,20 @@ describe('Xero import: Xero invoices against Flow invoices', { skip: skipWithout
     const id2 = await copy(23, { issuedOn: '2026-10-21', total: 29000 });
     const second = await useXeroInvoice(handle.db, org(), voidedEarlier.id, { xeroInvoiceId: id2, actor: 'person:test' });
     assert.equal(second.jobId, job2.id);
-    // Once it holds no job, it cannot give way again.
+    assert.equal(second.removed.id, voidedEarlier.id);
+    // A send that started (in flight, no Xero id yet) may have reached Xero:
+    // that copy is voided, as before.
+    const job3 = await observeJob(handle.db, org(), { sourceSystem: 'worksystem', sourceJobRef: 'JOB-F', caseRef: 'CASE-F', contactId: practice.id, shippedOn: '2026-10-22', jobDate: '2026-10-22', lines: [{ itemCode: 'CROWN' }] });
+    const inFlight = await flowInvoice('2026-10-22');
+    await linkJobToInvoice(handle.db, org(), job3.id, { invoiceId: inFlight.id, actor: 'person:test' });
+    await handle.db.execute(sql`insert into xero_invoice_pushes (organisation_id, invoice_id, version, state, idempotency_key, request_body, body_hash)
+      values (${org()}, ${inFlight.id}, 1, 'ambiguous', 'key-in-flight', '{}', 'hash')`);
+    const id4 = await copy(26, { issuedOn: '2026-10-22', total: 29000 });
+    const third = await useXeroInvoice(handle.db, org(), inFlight.id, { xeroInvoiceId: id4, actor: 'person:test' });
+    assert.equal(third.voided.id, inFlight.id);
+    assert.equal((await handle.db.select().from(invoices).where(eq(invoices.id, inFlight.id)))[0].status, 'void');
+    // Gone, it cannot give way again.
     const id3 = await copy(24, { issuedOn: '2026-10-21', total: 29000 });
-    await assert.rejects(useXeroInvoice(handle.db, org(), voidedEarlier.id, { xeroInvoiceId: id3, actor: 'person:test' }), /holds no job/);
+    await assert.rejects(useXeroInvoice(handle.db, org(), voidedEarlier.id, { xeroInvoiceId: id3, actor: 'person:test' }), /not found/);
   });
 });

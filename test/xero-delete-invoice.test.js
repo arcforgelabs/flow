@@ -249,13 +249,13 @@ describe('delete an issued invoice and its Xero draft', { skip: skipWithoutDatab
     assert.equal(replay.calls.length, 0);
   });
 
-  test('an issued invoice with no Xero id is refused, and Flow stays issued', async () => {
+  test('an issued invoice that never reached Xero is deleted in Flow, with no Xero call', async () => {
     const draft = await createDraftInvoice(handle.db, org(), { contactId: practice.id, lines: [{ priceItemId: crown.id }] });
     const invoice = await issueInvoice(handle.db, org(), draft.id, { issuedBy: 'user:test', issueDate: '2026-10-18' });
     const replay = xero.script([]);
-    await assert.rejects(remove(invoice), (error) => error.code === 'accounting_unavailable');
+    assert.equal((await remove(invoice)).removed, true);
     assert.equal(replay.calls.length, 0);
-    assert.equal((await flowRow(invoice.id)).status, 'issued');
+    assert.equal(await flowRow(invoice.id), undefined);
   });
 
   test('a 504 leaves Flow unchanged; the retry reads first and does not post again', async () => {
