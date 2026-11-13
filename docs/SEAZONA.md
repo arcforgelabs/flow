@@ -437,9 +437,12 @@ shown until persisted steps are available.
 `running`, `waiting` (the guard holds or a run failed; `nextRunAt` is the
 retry), `failed` (Seazona halted calls, 3 runs failed in a row, or the read
 gave up; `cause` says why, and `gaveUp` has the code, the status, the failed
-runs, the day and the page), `stopped` or `done`. `ordersSkipped` counts the
-orders left out after repeated failed reads. On the card, Copy error copies
-these facts for an agent. The
+runs, the day and the page), `stopped` or `done`. `code` is the failure's
+code. `ordersSkipped` counts the orders this read left out after repeated
+failed reads; a later read that works clears the order's failure record.
+The cause never names an order: a request path shows as `/v1/orders/:id`.
+On the card, Copy error copies the codes, counts and days for an agent,
+not the cause's words. The
 page calls `POST /api/seazona/history/backfill` with
 `{ "from": "2019-01-01" }` (and `through`, by default the day before the
 recent-order lane's window). The `history` lane then:

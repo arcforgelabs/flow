@@ -1,8 +1,9 @@
-import { and, eq, inArray, isNotNull, sql } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import { FlowError } from '../../../core/errors.js';
 import { mapOrder, parseSeazonaDate, text } from '../map.js';
-import { seazonaHistoryBatchJobs, seazonaLaneState, seazonaOrders, seazonaRecordReadFailures } from '../schema.js';
-import { recordRecordFailure } from '../store.js';
+import { pathShape } from '../governor.js';
+import { seazonaHistoryBatchJobs, seazonaLaneState, seazonaOrders } from '../schema.js';
+import { clearRecordFailures, recordRecordFailure } from '../store.js';
 import { createApiBatch, finishApiBatch, stageApiJobs } from './index.js';
 
 // The history backfill (docs/SEAZONA.md, "History import"). A person starts
@@ -110,6 +111,15 @@ export function describeBackfill(cursor) {
   };
 }
 
+// The lane's failure text with every record id taken out: a request path
+// keeps its names only (/v1/orders/:id), so the cause a person reads, and
+// what the lane stores, never names an order.
+export function causeText(message) {
+  return String(message ?? '')
+    .replace(/\/v\d+\/[^\s,;)]*/g, (path) => pathShape(path))
+    .replace(/\border (?!list\b)[^\s,;)]+/g, 'order :id');
+}
+
 // A read that failed this many runs in a row shows as failed, not waiting.
 const FAILED_AFTER = 3;
 
@@ -128,18 +138,17 @@ export async function readBackfill(db) {
   if (!backfill) return null;
   const phase = phaseOf(backfill, state);
   const gaveUp = state.cursor.gaveUp ?? null;
-  const [{ skipped }] = await db.select({ skipped: sql`count(*)::int` }).from(seazonaRecordReadFailures)
-    .where(and(eq(seazonaRecordReadFailures.resource, RESOURCE), isNotNull(seazonaRecordReadFailures.quarantinedUntil)));
   return {
     ...backfill,
     phase,
-    cause: ['waiting', 'failed'].includes(phase) ? gaveUp?.cause ?? state.lastError : null,
-    // A read that gave up makes no call until a person presses Retry. The
-    // detail is plain text a person can copy for an AI: codes and counts, no
-    // record, host or credential.
-    gaveUp,
-    // Orders the history reads left out after repeated failed reads, by count.
-    ordersSkipped: skipped,
+    cause: ['waiting', 'failed'].includes(phase) ? causeText(gaveUp?.cause ?? state.lastError) || null : null,
+    // The failure as a code, for Copy error: never free text.
+    code: ['waiting', 'failed'].includes(phase) ? gaveUp?.code ?? state.heldReason ?? 'seazona_lane_failed' : null,
+    // A read that gave up makes no call until a person presses Retry. Its
+    // detail is codes, counts and days: no record, host or credential.
+    gaveUp: gaveUp ? { ...gaveUp, cause: causeText(gaveUp.cause) } : null,
+    // Orders this read (its batch) left out after repeated failed reads.
+    ordersSkipped: state.cursor.skipped ?? 0,
     nextRunAt: backfill.running && !gaveUp ? state.nextRunAt : null,
   };
 }
@@ -163,7 +172,7 @@ export function backfillGaveUp(state, error, { status, heldReason, failedRuns, m
     gaveUp: {
       at: new Date(at).toISOString(),
       code,
-      cause: refused ? message : `${message} (${failedRuns} runs failed in a row; Flow stopped trying)`,
+      cause: causeText(refused ? message : `${message} (${failedRuns} runs failed in a row; Flow stopped trying)`),
       failedRuns,
       httpStatus: Number.isInteger(error?.statusCode) ? error.statusCode : null,
       day: cursor.listDay ?? cursor.nextDay ?? null,
@@ -195,6 +204,7 @@ export async function runHistoryBackfill(ctx, { isLaneLevel, describeReadFailure
   // Orders this run read or found gone. They are staged when the run ends,
   // so a list that names one again in the same run must not read it twice.
   const doneNow = new Set();
+  const cleared = [];
   let deleted = 0;
   let quarantined = 0;
 
@@ -267,12 +277,14 @@ export async function runHistoryBackfill(ctx, { isLaneLevel, describeReadFailure
         const record = { ...mapOrder({}, detail, { keepPatientReference: sync.keepPatientReference }), id };
         jobs.push({ jobKey: `case:${id}`, job: orderToHistoryJob(record) });
         doneNow.add(id);
+        cleared.push(id);
         cursor.read = (cursor.read ?? 0) + 1;
       } catch (error) {
         if (isLaneLevel(error)) throw error;
         // Seazona has no such order now: nothing to keep.
         if (error?.statusCode === 404) {
           doneNow.add(id);
+          cleared.push(id);
           deleted += 1;
           continue;
         }
@@ -282,8 +294,10 @@ export async function runHistoryBackfill(ctx, { isLaneLevel, describeReadFailure
         });
         failures.push({ id, ...failure, ...recorded });
         // Read again later in the walk, until it is quarantined.
-        if (recorded.quarantinedUntil) quarantined += 1;
-        else {
+        if (recorded.quarantinedUntil) {
+          quarantined += 1;
+          cursor.skipped = (cursor.skipped ?? 0) + 1;
+        } else {
           failedNow.add(id);
           cursor.pending.push(id);
         }
@@ -292,6 +306,8 @@ export async function runHistoryBackfill(ctx, { isLaneLevel, describeReadFailure
   } finally {
     // What was read is kept even when the lane stops on a lane-level failure.
     await stageApiJobs(db, cursor.batchId, jobs, { at });
+    // A read that worked, or an order that is gone, ends its failure record.
+    await clearRecordFailures(db, RESOURCE, cleared);
   }
   if (cursor.done) await finishApiBatch(db, cursor.batchId, { at });
   const failureDetails = failures.length

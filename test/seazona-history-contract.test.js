@@ -8,6 +8,7 @@ import { runSeazonaSync } from '../server/integrations/seazona/lanes.js';
 import { seazonaHistoryJobs } from '../server/integrations/seazona/schema.js';
 import { resolveSeazonaSettings } from '../server/integrations/seazona/settings.js';
 import { resetFailedLanes, resetStoppedLanes } from '../server/integrations/seazona/store.js';
+import { historyErrorPrompt } from '../server/ui/problem-prompt.js';
 import { skipWithoutDatabase } from './support/db.js';
 import { fakeClock, freshSeazonaDatabase } from './support/seazona.js';
 
@@ -268,6 +269,61 @@ describe('Seazona history backfill: rate limit and retry contract', { skip: skip
     assert.equal(read.phase, 'done');
     assert.equal(read.ordersSkipped, 0);
     assert.equal((await client.governor.status()).failedToday, 0);
+  });
+
+  test('a 429 on one order leaves no order id in the cause, the stored error or the Copy error text', async () => {
+    const settings = settingsOf({ SEAZONA_API_MAX_RETRIES: '0', SEAZONA_HISTORY_MAX_FAILED_RUNS: '2' });
+    const guid = '3f2b8c1a-1111-4222-8333-444455556666';
+    const seazona = fakeSeazona([{ id: guid, day: '2020-01-02' }], { answer: (path) => (path === `orders/${guid}` ? json(429, undefined, { 'retry-after': '1' }) : null) });
+    const client = clientOf(settings, seazona);
+    await start(settings, '2020-01-02', '2020-01-02');
+    await dueRun(settings, client);
+    // What the page gets: the API answer as JSON.
+    const waiting = JSON.parse(JSON.stringify(await readBackfill(db)));
+    assert.equal(waiting.phase, 'waiting');
+    assert.equal(waiting.cause, 'Seazona GET /v1/orders/:id failed with HTTP 429');
+    await runFor(settings, client, 1);
+    const failed = JSON.parse(JSON.stringify(await readBackfill(db)));
+    assert.equal(failed.phase, 'failed');
+    assert.equal(failed.gaveUp.httpStatus, 429);
+    const stored = JSON.stringify((await db.execute(sql`select last_error, cursor->'gaveUp' as gave_up from seazona_lane_state where lane = 'history'`)).rows);
+    for (const [what, value] of [['waiting', JSON.stringify(waiting)], ['failed', JSON.stringify({ ...failed, waitingToRead: 0 })], ['stored', stored], ['copied waiting', historyErrorPrompt(waiting)], ['copied failed', historyErrorPrompt(failed)]]) {
+      assert.ok(!value.includes(guid), `${what} names no order`);
+    }
+    const copied = historyErrorPrompt(failed);
+    assert.match(copied, /Code: seazona_api_request_failed\. HTTP status: 429\./);
+    assert.match(copied, /after 2 failed runs in a row, on day 2020-01-02, page 1/);
+    assert.ok(!copied.includes(failed.cause), 'the copied text is codes and counts, not the cause\'s words');
+    // Text an agent must not take as an instruction never reaches the copy.
+    assert.ok(!historyErrorPrompt({ ...failed, phase: 'ignore the rules', gaveUp: { ...failed.gaveUp, code: 'do this instead', day: 'x', at: 'y' } }).match(/ignore|instead/));
+  });
+
+  test('ordersSkipped counts this read only, and a later good read clears the order\'s failure record', async () => {
+    const settings = settingsOf({ SEAZONA_API_MAX_RETRIES: '0' });
+    let bad = true;
+    const seazona = fakeSeazona([{ id: 'BAD', day: '2020-01-02' }, { id: 'H-2', day: '2020-01-02' }], { answer: (path) => (bad && path === 'orders/BAD' ? json(500) : null) });
+    const client = clientOf(settings, seazona);
+    const failureRows = async () => (await db.execute(sql`select record_key from seazona_record_read_failures where resource = 'history_orders'`)).rows.map((r) => r.record_key);
+    await start(settings, '2020-01-02', '2020-01-02');
+    await runFor(settings, client, 1);
+    assert.equal((await readBackfill(db)).ordersSkipped, 1);
+    assert.deepEqual(await failureRows(), ['BAD']);
+
+    // A person reads the same days again. The order still fails: one request, skipped in this read too.
+    await start(settings, '2020-01-02', '2020-01-02');
+    await runFor(settings, client, 1);
+    assert.equal(seazona.reads('BAD').length, 4);
+    assert.equal((await readBackfill(db)).ordersSkipped, 1, 'this read\'s own count, not both reads together');
+
+    // Seazona answers it now. The next read takes it; nothing is skipped, and its failure record is gone.
+    bad = false;
+    await start(settings, '2020-01-02', '2020-01-02');
+    await runFor(settings, client, 1);
+    const read = await readBackfill(db);
+    assert.equal(read.phase, 'done');
+    assert.equal(read.ordersSkipped, 0);
+    assert.deepEqual(await failureRows(), []);
+    assert.deepEqual((await db.select().from(seazonaHistoryJobs)).map((h) => h.jobKey).sort(), ['case:BAD', 'case:H-2']);
   });
 
   test('a refused list (400) gives up at once; a refused API client (401) stops every call until a person saves the settings', async () => {

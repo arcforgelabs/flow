@@ -22,6 +22,7 @@ import { renderHome } from '/assets/ui/home.js';
 import { renderReconcile } from '/assets/ui/reconcile.js';
 import { renderXeroImport } from '/assets/ui/xero-import.js';
 import { syncStatus } from '/assets/ui/sync-status.js';
+import { historyErrorPrompt } from '/assets/ui/problem-prompt.js';
 import { xeroUsage } from '/assets/ui/xero-usage.js';
 import { startMonitoring } from '/assets/ui/monitoring.js';
 import { isSearchKey, openSearch } from '/assets/ui/search.js';
@@ -1099,18 +1100,10 @@ function seazonaHistorySection() {
   let actionLabel;
   const actionButton = h('button', { class: 'fx-btn fx-btn--sm', type: 'button', onclick: event => press(event.currentTarget, actionLabel) });
   // A read that waits or failed says why; Copy error gives the facts to
-  // paste to an agent: codes, counts and days, never a record.
+  // paste to an agent: codes, counts and days, never a record or the cause's words.
   const copyCause = copyButton({
     label: 'Copy error', copied: 'Error copied. Paste it to your agent.',
-    text: () => [
-      `Flow's Seazona history read is ${run?.phase}.`,
-      `Cause: ${run?.cause ?? 'not known'}`,
-      run?.gaveUp
-        ? `Code: ${run.gaveUp.code}. HTTP status: ${run.gaveUp.httpStatus ?? 'none'}. Failed runs in a row: ${run.gaveUp.failedRuns}. Gave up at ${run.gaveUp.at}, on day ${run.gaveUp.day ?? 'unknown'}, page ${run.gaveUp.page ?? 'unknown'}. Flow makes no Seazona call for this read until a person presses Retry.`
-        : `Next try: ${run?.nextRunAt ?? 'none'}.`,
-      `Read ${run?.from} to ${run?.through}. Orders read: ${run?.ordersRead ?? 0}. Waiting to read: ${run?.waitingToRead ?? 0}. Skipped after failed reads: ${run?.ordersSkipped ?? 0}.`,
-      'See docs/SEAZONA.md, "The backfill\'s limits".',
-    ].join('\n'),
+    text: () => historyErrorPrompt(run),
   });
   const actions = h('span', { class: 'fx-history__actions' }, copyCause, actionButton);
   const load = async () => {

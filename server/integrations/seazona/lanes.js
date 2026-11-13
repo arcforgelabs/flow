@@ -9,7 +9,7 @@ import {
   orderListSignature,
   text,
 } from './map.js';
-import { backfillGaveUp, LANE as HISTORY_LANE, runHistoryBackfill } from './history/backfill.js';
+import { backfillGaveUp, causeText, LANE as HISTORY_LANE, runHistoryBackfill } from './history/backfill.js';
 import { seazonaOrders } from './schema.js';
 import { runSweep } from './sweep.js';
 import {
@@ -656,7 +656,9 @@ export async function runSeazonaSync(db, client, { settings, now = Date.now, onl
     } catch (error) {
       const outcome = laneOutcome(error, state, sync);
       // A database error's text ends with the query's values: never kept or shown.
-      const message = (text(error?.message) || 'Seazona lane failed').split('\nparams:')[0].slice(0, 500);
+      const plain = (text(error?.message) || 'Seazona lane failed').split('\nparams:')[0].slice(0, 500);
+      // The history card shows this text: it never names an order.
+      const message = lane === HISTORY_LANE ? causeText(plain) : plain;
       const failureCount = (state?.failureCount ?? 0) + 1;
       // The history read never retries without end: after a refusal, or
       // enough failed runs in a row, it gives up until a person presses Retry.
