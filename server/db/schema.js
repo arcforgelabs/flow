@@ -697,6 +697,8 @@ export const invoicingSettings = pgTable('invoicing_settings', {
   // The lab's prices include GST: Flow sends tax-inclusive lines and takes
   // each line's GST out of its amount (server/core/money.js).
   amountsIncludeTax: boolean('amounts_include_tax').notNull().default(false),
+  // "GST from Xero" (server/core/invoicing-rules.js, taxFromXero).
+  taxFromXero: boolean('tax_from_xero').notNull().default(true),
   // The reasons a person or a rule can give for No Charge, in menu order.
   noChargeReasons: jsonb('no_charge_reasons').notNull().default(sql`'["Promotion","Internal","Remake","Rework","Warranty","Goodwill"]'::jsonb`),
   // The fixed checks above became invoice rules (invoice_rules). True once

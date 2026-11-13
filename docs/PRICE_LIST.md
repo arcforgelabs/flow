@@ -102,8 +102,8 @@ line:
 "Invoice line GST" in the same settings (`lineTax`) chooses each mapped
 line's GST:
 
-- **Price list** (default): the price item's tax. With Xero on, each Xero
-  sync copies the linked Xero item's tax type onto the price item (`OUTPUT`
+- **Price list** (default): the price item's tax. With Xero and "GST from
+  Xero" on, each Xero sync copies the linked Xero item's tax type onto the price item (`OUTPUT`
   is GST, any other type is GST free), so Xero decides. When Seazona's flag
   differs, the job waits for a person ("a source line's GST differs from its
   price item"). Fix the product in Seazona.

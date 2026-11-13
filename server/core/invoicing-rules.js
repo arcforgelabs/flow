@@ -45,6 +45,10 @@ export const INVOICING_DEFAULTS = Object.freeze({
   noChargeReasons: NO_CHARGE_REASONS,
   // Prices include GST: new invoices send tax-inclusive lines.
   amountsIncludeTax: false,
+  // With an accounting system on, its items decide each line's GST (each
+  // catalogue read). "Prices include GST" stays the lab's own setting.
+  // Off: Flow keeps the price list and the work system's flags as they are.
+  taxFromXero: true,
 });
 
 const CUSTOMER_DEFAULTS = Object.freeze({
@@ -107,7 +111,7 @@ function readSettingChanges(changes) {
   if (!changes || typeof changes !== 'object' || Array.isArray(changes)) throw invalid('the settings must be an object');
   const out = {};
   for (const [key, value] of Object.entries(changes)) {
-    if (key === 'requirePractitioner' || key === 'amountsIncludeTax') out[key] = flag(value, key);
+    if (key === 'requirePractitioner' || key === 'amountsIncludeTax' || key === 'taxFromXero') out[key] = flag(value, key);
     else if (key === 'sendMode') out[key] = sendMode(value, key);
     else if (key === 'staleDays') out[key] = wholeNumber(value, key, 1, 3650);
     else if (key === 'paymentTermsDays') out[key] = wholeNumber(value, key, 0, 365);

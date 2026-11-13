@@ -262,11 +262,12 @@ The rules:
   invoice was made while "Prices include GST" was on (Settings, Invoicing,
   Drafts). An invoice keeps the setting it was made with. A line whose GST
   differs from its Xero item's tax type stops the draft (`xero_tax_differs`,
-  "GST not as Xero"): sync Xero, then check the draft again.
-- **Xero decides GST.** Each catalogue sync copies every Xero item's tax type
-  onto its linked price item, and sets "Prices include GST" from the Xero
-  organisation's default sales tax ("Tax Inclusive" on, "Tax Exclusive" or
-  "No Tax" off; another value changes nothing).
+  "GST not as Xero"): sync Xero, then check the draft again. With "GST from
+  Xero" off (Settings, Invoicing, `taxFromXero`) that check does not run.
+- **Xero decides GST** while "GST from Xero" is on (the default). Each
+  catalogue sync copies every Xero item's tax type
+  onto its linked price item. "Prices include GST" stays the lab's own
+  setting: Xero's default sales tax does not change it.
 - **Reference and dates.** The Xero reference is the invoice's reference, or
   its number. The date is the issue date; the due date is the invoice's, or
   `XERO_DEFAULT_DUE_DAYS` later. With `XERO_INVOICE_NUMBER=flow` Xero gets
