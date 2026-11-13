@@ -28,8 +28,8 @@ import { FlowError, notFound } from './errors.js';
 // explicit tax flag before mapping. With `linePrice: 'list'` the price item's
 // price wins instead. With `lineTax: 'list'` (the default) the price item's
 // tax wins (the price list follows the accounting system's items), and a work system flag
-// that disagrees stays on the line as `workTaxCode`, so the job waits for a
-// person (ledger.js, sourceBillingProblems). A line no step answers keeps no
+// that disagrees stays on the line as `workTaxCode`: the price item still wins
+// (ledger.js, sourceBillingProblems and workTax). A line no step answers keeps no
 // code, so the ledger holds the job.
 
 export const STEPS = Object.freeze([

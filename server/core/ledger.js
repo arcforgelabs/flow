@@ -123,9 +123,16 @@ async function normaliseLines(tx, organisationId, lines, { inclusive = false } =
   return normalised;
 }
 
+// The GST the work system gave a line. When the accounting system's item sets
+// the line's GST (line-mapping.js, `lineTax: 'list'`), the work system's own
+// flag stays as `workTaxCode`. "The job changed" means the work system changed,
+// so job keys use this; the invoice's GST is checked against the accounting
+// system's items before it sends (xero/drafts.js).
+const workTax = (line) => line.workTaxCode ?? line.taxCode;
+
 function fingerprint(lines) {
   const keys = lines
-    .map((l) => [l.itemCode ?? l.accountCode ?? l.description.toLowerCase(), l.quantity, l.unitAmountCents, l.taxCode])
+    .map((l) => [l.itemCode ?? l.accountCode ?? l.description.toLowerCase(), l.quantity, l.unitAmountCents, workTax(l)])
     .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
   return createHash('sha256').update(JSON.stringify(keys)).digest('hex');
 }
@@ -155,14 +162,24 @@ function sourcePrices(source) {
 // When the lab's prices include GST, the work system's prices (its total less
 // the GST it adds on top; Seazona's subtotal leaves out GST-free lines) are
 // the invoice total: only that is compared, and its GST is not.
+// When the accounting system's items set a line's GST against the work
+// system's flag (`workTaxCode`), the accounting system wins: the work
+// system's GST and total cannot match, so only its prices before GST are
+// compared with Flow's subtotal.
 export function sourceBillingProblems(obligation) {
   const reasons = [];
   const lines = obligation.lines ?? [];
   if (lines.some((line) => line.taxCode === null)) reasons.push('a source line has unknown tax treatment');
-  if (lines.some((line) => line.workTaxCode)) reasons.push("a source line's GST differs from its price item");
   const inclusive = Boolean(obligation.amountsIncludeTax);
   const calculated = invoiceTotals(lines, { inclusive });
   const source = obligation.sourceTotals ?? {};
+  if (!inclusive && lines.some((line) => line.workTaxCode)) {
+    const prices = sourcePrices(source);
+    if (prices != null && prices !== calculated.subtotalCents) {
+      reasons.push('the source invoice totals differ from the reconstructed lines');
+    }
+    return reasons;
+  }
   if (inclusive) {
     const prices = sourcePrices(source);
     if (prices != null && prices !== calculated.totalCents) {
@@ -215,6 +232,9 @@ export async function observeJob(db, organisationId, job) {
       totals = invoiceTotals(lines, { inclusive: true });
       const prices = sourcePrices(sourceTotals);
       if (prices != null) totals = { ...totals, totalCents: prices, subtotalCents: prices - totals.taxCents };
+    } else if (lines.some((line) => line.workTaxCode)) {
+      // The accounting system's items set the GST (sourceBillingProblems).
+      totals = invoiceTotals(lines);
     } else {
       totals = { ...invoiceTotals(lines), ...sourceTotals };
       if (sourceTotals?.totalCents == null) totals.totalCents = totals.subtotalCents + totals.taxCents;
@@ -329,9 +349,10 @@ async function statusBillableAgain(tx, organisationId, before, row, actor) {
 // drafts the invoice: the merge base of the three-way compare.
 function basisOf(o) {
   return {
-    lines: o.lines.map(({ itemCode = null, priceItemId = null, accountCode = null, description, quantity, unitAmountCents, taxCode }) => (
-      { itemCode, priceItemId, accountCode, description, quantity, unitAmountCents, taxCode }
-    )),
+    lines: o.lines.map((line) => {
+      const { itemCode = null, priceItemId = null, accountCode = null, description, quantity, unitAmountCents, taxCode } = line;
+      return { itemCode, priceItemId, accountCode, description, quantity, unitAmountCents, taxCode, ...(line.workTaxCode ? { workTaxCode: line.workTaxCode } : {}) };
+    }),
     contactId: o.contactId ?? null,
     subtotalCents: o.subtotalCents,
     taxCents: o.taxCents,
@@ -342,14 +363,16 @@ function basisOf(o) {
 }
 
 // One key for a set of lines, the same for the job's lines and the invoice's.
-function linesKey(lines) {
+// `tax` picks the GST in the key: the work system's own flag when the work
+// system is compared with itself, the line's GST when the invoice is compared.
+function linesKey(lines, tax = (l) => l.taxCode) {
   const keys = (lines ?? [])
-    .map((l) => [l.priceItemId ?? l.accountCode ?? String(l.description ?? '').trim().toLowerCase(), l.quantity, l.unitAmountCents, l.taxCode])
+    .map((l) => [l.priceItemId ?? l.accountCode ?? String(l.description ?? '').trim().toLowerCase(), l.quantity, l.unitAmountCents, tax(l)])
     .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
   return createHash('sha256').update(JSON.stringify(keys)).digest('hex');
 }
 
-const sideValue = (side, field) => (field === 'lines' ? linesKey(side.lines) : (side[field] ?? null));
+const sideValue = (side, field, tax) => (field === 'lines' ? linesKey(side.lines, tax) : (side[field] ?? null));
 
 // The three-way compare, field by field, of the facts the invoice was built
 // from (base), the work system now (source) and Flow's invoice now (flow).
@@ -360,8 +383,11 @@ const sideValue = (side, field) => (field === 'lines' ? linesKey(side.lines) : (
 //   conflict both changed, or the invoice left Flow: an alert only
 export function compareThreeWays(base, source, flow, { sent = false } = {}) {
   const fields = COMPARED.map((field) => {
+    // Did the work system change: its own GST flags count, not the GST the
+    // accounting system's items set (workTax).
+    const workMoved = sideValue(source, field, workTax) !== sideValue(base, field, workTax);
     const [b, s, f] = [base, source, flow].map((side) => sideValue(side, field));
-    const changedIn = s === b ? (f === b ? 'none' : 'flow') : (f === b ? 'work' : (f === s ? 'same' : 'both'));
+    const changedIn = !workMoved ? (f === b ? 'none' : 'flow') : (f === b ? 'work' : (f === s ? 'same' : 'both'));
     return { field, owner: FIELD_OWNERS[field], changedIn };
   });
   const work = fields.filter((f) => ['work', 'both'].includes(f.changedIn));

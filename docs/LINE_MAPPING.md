@@ -36,8 +36,9 @@ A saved tax choice or price item supplies tax only when the source gave none. Th
 `list` takes the price list's price. Price list settings, "Invoice line price"
 sets it. `lineTax` does the same for GST: `list` (the default) takes the price
 item's tax and keeps a different work
-flag on the line as `workTaxCode`, so the job waits for a person
-("Invoice line GST"); `work` keeps the work system's flag. A line that no step
+flag on the line as `workTaxCode` ("Invoice line GST"). The price item wins:
+the job does not wait, the work system's GST and total are not compared (only
+its prices before GST), and the work flag alone decides "the job changed"; `work` keeps the work system's flag. A line that no step
 answers keeps no price item, so the ledger holds the job ("a line does not
 map to a price item").
 
