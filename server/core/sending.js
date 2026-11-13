@@ -325,8 +325,8 @@ function stoppedSendMessage({ accountingWaiting, accountingReason, stops, waitin
 // or admin can send it approved and emailed while the setting stays Draft);
 // null keeps each customer's mode. With approve_and_email, `recipients` maps
 // each invoice id to the client email the person saw in the dialog. An
-// invoice with no email there goes as a draft: Flow never emails an address
-// nobody saw. Answers { issued, queued, remaining, waiting, held }.
+// invoice with no email there goes as a draft, so Flow asks Xero to email
+// only invoices whose address was shown. Answers { issued, queued, remaining, waiting, held }.
 export async function sendAllReady(db, organisationId, { accounting = null, work = null, personId, issueDate, invoiceIds = null, sendMode = null, recipients = null, now = new Date() }) {
   if (sendMode !== null && !SEND_MODES.includes(sendMode)) throw new FlowError('invalid', `sendMode must be one of ${SEND_MODES.join(', ')}`);
   const seen = seenRecipients(recipients);

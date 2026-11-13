@@ -214,8 +214,10 @@ ticked when the organisation's send mode is approve and email.
   and again right before each email request, a retry included. When Xero's
   email is not the one shown before the invoice is made, it goes as a Xero
   draft. When it changes after that, Xero has the approved invoice but Flow
-  sends no email request, and the person is told. So Xero never emails an
-  address nobody saw.
+  sends no email request, and the person is told. Xero's email request
+  takes only the invoice, not an address. So a change made in Xero in the
+  short time between Flow's last read and that request can still get the
+  email. Xero's own Approve and email has the same gap.
 - A client with no email address in Xero shows "No email in Xero: goes as a
   draft". That invoice goes to Xero as a draft and is not emailed.
 - Only a signed-in person can choose it: an assistant's key gets
