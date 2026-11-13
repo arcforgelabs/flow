@@ -1352,6 +1352,7 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
 .fx-sync[data-phase="done"] .fx-sync__word { color: var(--t-success); }
 .fx-sync__clock { font: 12px var(--t-data); color: var(--t-dim); }
 .fx-sync__action { margin-left: auto; }
+.fx-history__actions { display: inline-flex; align-items: center; gap: 8px; }
 .fx-sync__action .fx-btn { min-width: 44px; min-height: 44px; }
 .fx-sync__dots { display: inline-flex; gap: 3px; margin-right: 8px; vertical-align: middle; }
 .fx-sync__dots[hidden], .fx-sync__track[hidden] { display: none; }
