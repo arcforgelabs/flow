@@ -204,7 +204,7 @@ export function errorPrompt({ origin, page = null, said = null, failed = null, a
     ask: 'Flow showed an error. Find the cause and fix it, or explain it to me in plain words.',
     facts: [
       where ? `Page: ${base}${where}` : null,
-      'The words on the screen are not copied, because they can hold a name. To see them, repeat a failed read (step below), or ask me.',
+      `The words on the screen are not copied, because they can hold a name. To see them, ${read ? 'repeat the failed read (step below), or ' : ''}ask me.`,
       apiPath ? `Flow call that failed: ${call.method} ${apiPath}${Number.isInteger(call.status) ? `, HTTP ${call.status}` : ''}${code(call.code) ? `, code ${call.code}` : ''}` : null,
       ids.length ? `Flow ids in it: ${ids.join(', ')}` : null,
       when ? `When: ${new Date(when).toISOString()}` : null,

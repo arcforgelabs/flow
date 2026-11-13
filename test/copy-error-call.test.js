@@ -9,6 +9,7 @@ registerHooks({
   resolve: (specifier, context, next) => next(specifier.startsWith('/assets/ui/') ? new URL(specifier.slice('/assets/ui/'.length), uiRoot).href : specifier, context),
 });
 const { noteFailure, recentFailure } = await import('../server/ui/kit.js');
+const { errorPrompt } = await import('../server/ui/problem-prompt.js');
 
 test('Copy error names a failed call only when one call matches the words on the screen', () => {
   const t = 1_000_000;
@@ -22,6 +23,9 @@ test('Copy error names a failed call only when one call matches the words on the
   noteFailure({ path: '/api/invoicing/invoices/b', status: 401, code: 'signed_out', message: 'Sign in to Flow.' }, u);
   noteFailure({ path: '/api/invoicing/jobs/c/reconcile', status: 401, code: 'signed_out', message: 'Sign in to Flow.' }, u + 5);
   assert.equal(recentFailure(u + 10, 'Sign in to Flow.'), null, 'two different calls with the same words: no call, not a wrong one');
+  const text = errorPrompt({ origin: 'https://flow.example.com', page: '/jobs', said: 'Sign in to Flow.', failed: null, at: u + 10 });
+  assert.doesNotMatch(text, /\/api\/|step below/, 'no call and no repeat step is named');
+  assert.match(text, /To see them, ask me\./);
 
   // The same call failing twice is still that call.
   const v = u + 60_000;
