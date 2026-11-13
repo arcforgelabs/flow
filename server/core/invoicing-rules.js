@@ -494,7 +494,7 @@ export async function autoDraftJobs(db, organisationId, { accounting = null, wor
   // The codes that send as accounting items, for a rule that reads them.
   const items = await accountingItemsFor(accounting, organisationId, rules, candidates);
   const prices = await rulePricesFor(db, organisationId, rules);
-  // History jobs a rule released: drafted only as non-chargeable (history.js).
+  // History jobs a rule released (history.js): never drafted again.
   const historyByRule = await ruleReleasedHistory(db, organisationId, candidates.map((o) => o.id));
 
   for (const candidate of candidates) {
@@ -511,7 +511,10 @@ export async function autoDraftJobs(db, organisationId, { accounting = null, wor
     // billed: its draft goes to the Non-chargeable tab whatever its price
     // items, tax or report age say. Any other job needs every line mapped.
     const noCharge = ruleNonChargeable(rules, candidate, { customer: effective, now, prices }).length > 0;
-    if (!noCharge && historyByRule.has(candidate.id)) {
+    // A history job a rule released is never drafted: settleHistoryByRules
+    // puts it back on the hold, as No Charge while a rule matches it. This
+    // holds when its draft is deleted between the two steps of one run.
+    if (historyByRule.has(candidate.id)) {
       result.waiting += 1;
       continue;
     }
