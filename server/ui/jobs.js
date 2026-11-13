@@ -20,9 +20,10 @@ import { lucide } from '/assets/ui/custom-fields.js';
 import { formatCents } from '/assets/ui/invoicing.js';
 import { jobChangeReview } from '/assets/ui/job-change.js';
 import {
-  caseNumber, FINAL_RANK, fixes, INVOICE_STAGES, invoiceStage, matches, NO_STATUS, orderStatuses, phoneLaneIndex, PHONE_HOLD_MS, problemSummary, statusRank,
+  caseNumber, checkOf, FINAL_RANK, fixes, INVOICE_STAGES, invoiceStage, matches, NO_STATUS, orderStatuses, phoneLaneIndex, PHONE_HOLD_MS, problemSummary, statusRank,
 } from '/assets/ui/job-board.js';
 import { rowMenu } from '/assets/ui/kit.js';
+import { fixPrompt, problemPrompt } from '/assets/ui/problem-prompt.js';
 import { chooseNoCharge } from '/assets/ui/no-charge.js';
 import { isPhone } from '/assets/ui/mobile.js';
 import {
@@ -337,6 +338,7 @@ export async function renderJobs(main, ui) {
       state.jobs = body.jobs;
       state.statuses = body.statuses;
       state.canDraft = context.canIssue;
+      state.organisationId = context.organisations?.[0]?.id ?? null;
       state.fields = fields?.fields ?? [];
       state.systemFields = fields?.systemFields ?? [];
       state.people = fields?.people ?? [];
@@ -1213,6 +1215,8 @@ export async function renderJobs(main, ui) {
     // The change: as the invoice page shows it (job-change.js),
     // read from the invoice when the sidecar first needs it.
     const reviewBody = h('div', { class: 'fx-task__review' }, h('p', { class: 'fx-dim' }, 'Loading…'));
+    // The Lines table's body, so a change can mark its lines (markLines).
+    let linesBody = h('tbody');
     let reviewRead = false;
     const readReview = () => {
       if (reviewRead) return;
@@ -1222,9 +1226,31 @@ export async function renderJobs(main, ui) {
     };
     function drawReview(invoice) {
       const change = invoice?.jobChange ?? null;
-      reviewBody.replaceChildren(change
-        ? jobChangeReview(ui, change, { money: formatCents, canAccept: state.canDraft, done: reopen })
-        : h('p', { class: 'fx-dim' }, `The draft matches ${system}.`));
+      const prompt = () => problemPrompt({ origin: location.origin, invoice, change, organisationId: state.organisationId });
+      markLines(change);
+      reviewBody.replaceChildren(...(change
+        ? [jobChangeReview(ui, change, { money: formatCents, canAccept: state.canDraft, done: reopen, prompt }), checkLine(rest.find((f) => f.go === 'review'))]
+        : [h('p', { class: 'fx-dim' }, `The draft matches ${system}.`)]).filter(Boolean));
+    }
+    // The lines the change names glow red in the job's Lines table: an
+    // added or changed line (a removed one is no longer there).
+    function markLines(change) {
+      const at = new Set((change?.lines ?? []).filter((l) => l.change !== 'removed').map((l) => l.position));
+      linesBody.querySelectorAll('tr').forEach((row, index) => {
+        const bad = at.has(index + 1);
+        row.classList.toggle('fx-row--bad', bad);
+        if (bad) row.title = 'This line changed after the draft was made.';
+        else row.removeAttribute('title');
+      });
+    }
+    // Which Flow check or rule stops the job, named and linked (checkOf).
+    function checkLine(f) {
+      const check = checkOf(f);
+      if (!check) return null;
+      const name = check.href.startsWith('/')
+        ? h('a', { class: 'fx-task__link', href: check.href, onclick: (event) => { close(); ui.go(event); } }, check.name)
+        : h('a', { class: 'fx-task__link', href: check.href, target: '_blank', rel: 'noopener' }, `${check.name} ↗`);
+      return h('p', { class: 'fx-task__check' }, h('span', { class: 'fx-dim' }, check.kind === 'rule' ? 'Rule: ' : 'Check: '), name);
     }
     // After Accept change or a recheck: the board reads again, and this
     // job's panel opens again with its new facts.
@@ -1242,8 +1268,14 @@ export async function renderJobs(main, ui) {
         readReview();
         return h('section', { class: 'fx-task__fixitem', 'aria-label': f.label }, reviewBody);
       }
+      const copy = ui.copyButton({
+        label: 'Copy prompt',
+        text: () => fixPrompt({ origin: location.origin, fix: { ...f, check: checkOf(f) }, job, organisationId: state.organisationId }),
+        copied: 'Prompt copied. Paste it to your agent.',
+      });
       return h('section', { class: 'fx-task__fixitem', 'aria-label': f.label },
-        h('strong', {}, f.label), h('p', {}, f.text), f.todo ? h('p', { class: 'fx-dim' }, f.todo) : null, fixLink(f.go, null, f.rule));
+        h('strong', {}, f.label), h('p', {}, f.text), checkLine(f), f.todo ? h('p', { class: 'fx-dim' }, f.todo) : null,
+        h('div', { class: 'fx-change__acts' }, fixLink(f.go, null, f.rule), copy));
     }
     const sideButton = h('button', {
       class: 'fx-btn fx-btn--ghost fx-btn--icon', type: 'button', 'aria-label': 'Side panel', title: 'Side panel', 'aria-pressed': 'false',
@@ -1361,7 +1393,7 @@ export async function renderJobs(main, ui) {
           lines.length ? h('table', {},
             h('colgroup', {}, h('col', {}), h('col', { class: 'fx-task__col-code' }), h('col', { class: 'fx-task__col-amount' })),
             h('thead', {}, h('tr', {}, h('th', {}, 'Item'), h('th', {}, 'Price code'), h('th', { class: 'fx-num' }, 'Amount'))),
-            h('tbody', {}, lines.map((line) => h('tr', {},
+            linesBody = h('tbody', {}, lines.map((line) => h('tr', {},
               h('td', {}, line.description),
               line.code && line.mapped ? h('td', { class: 'fx-mono' }, line.code)
                 : h('td', { class: 'fx-task__miss', title: line.code ? `${line.code} is not in the price list` : null }, line.code ? `${line.code}: not in the price list` : 'No price code'),
@@ -1376,6 +1408,8 @@ export async function renderJobs(main, ui) {
     element.addEventListener('close', () => element.remove());
     document.body.append(element);
     element.showModal();
+    // A changed job reads its change now, so the changed lines show red at once.
+    if (reviewable) readReview();
     const last = readSide();
     // On a phone the tabs are the page, so the sidecar stays open.
     if (isPhone()) side.open((atFix || last === 'fix') && hasFix ? 'fix' : 'activity');

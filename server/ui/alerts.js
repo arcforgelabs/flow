@@ -40,6 +40,8 @@ export function alertStrip(ui, page, { onTab = () => {}, scope = null, onLoad = 
         first.moneyAtRiskCents > 0 ? h('span', { class: 'fx-alerts__money' }, ` ${money.format(first.moneyAtRiskCents / 100)} at risk.`) : null),
       action,
       alerts.length > 1 ? h('span', { class: 'fx-alerts__more' }, `+${alerts.length - 1} more`) : null,
+      // Copy error: this alert, as a prompt for an agent (kit.js).
+      ui.errorCopy ? ui.errorCopy(line, { call: false }) : null,
       close,
     ].filter(Boolean));
   }

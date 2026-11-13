@@ -2,7 +2,11 @@
 // (server/core/contacts.js, docs/CONTACTS.md). The list and the record work
 // with no integration on. When Xero is connected, the record says whether
 // that contact is in Xero and, for an owner or admin, offers Link and Create.
+import { columnTable, rowCells, viewSaver } from '/assets/ui/columns.js';
+import { lucide } from '/assets/ui/custom-fields.js';
+import { CONTACT_COLUMNS, normaliseListView } from '/assets/ui/job-view.js';
 import { initialsOf } from '/assets/ui/person.js';
+import { findBox } from '/assets/ui/view-bar.js';
 import { xeroContactActions } from '/assets/ui/xero-contact.js';
 
 const DOCS = 'https://github.com/arcforgelabs/flow/blob/main/docs/CONTACTS.md';
@@ -16,57 +20,82 @@ export async function renderContacts(main, ui, id) {
   return renderContactList(main, ui);
 }
 
+// The list sits in the shared list window (listHead, listFrame, columnTable),
+// as Jobs, Invoices and Price list do: it never runs off the page, and each
+// column keeps the width the person gives it.
 async function renderContactList(main, ui) {
-  const { h, flow, toast, notice, dialog, pageHeader, go, me } = ui;
+  const { h, flow, toast, notice, dialog, listHead, listFrame, go, me } = ui;
   const canEdit = ['owner', 'admin'].includes(me?.person.role);
   const host = h('div', { class: 'fx-panel' }, h('div', { class: 'fx-skeleton' }));
-  const search = input(h, { type: 'search', 'aria-label': 'Search', placeholder: 'Search', class: 'fx-input fx-contacts__search' });
-  const kind = h('select', { class: 'fx-select', 'aria-label': 'Kind' },
-    h('option', { value: 'all', selected: true }, 'All'),
-    ...KINDS.map(([value, label]) => h('option', { value }, `${label}s`)),
-    // Contacts that are not clients (docs/CONTACTS.md, "Hidden contacts").
-    h('option', { value: 'hidden' }, 'Hidden'));
-  const page = h('div', { class: 'fx-contacts' });
-  const add = h('button', { class: 'fx-btn fx-btn--primary', type: 'button', hidden: !canEdit, onclick: () => createContact() }, 'New');
-  page.append(
-    pageHeader('Contacts', { help: { href: DOCS, label: 'How contacts work' }, actions: [add] }),
-    host,
-  );
-  main.append(page);
+  let view = normaliseListView(me?.views?.contacts, CONTACT_COLUMNS);
+  const saveView = viewSaver(ui, 'contacts');
+  const heads = columnTable(h, {
+    order: () => view.columns,
+    widths: () => view.widths,
+    change: (patch) => {
+      view = normaliseListView({ ...view, ...patch }, CONTACT_COLUMNS);
+      saveView(view);
+      draw();
+    },
+    hidden: () => Object.keys(CONTACT_COLUMNS).filter((id) => !view.columns.includes(id)).map((id) => ({ id, label: CONTACT_COLUMNS[id] })),
+  });
+  // All, Customers, Suppliers, and Hidden: contacts that are not clients
+  // (docs/CONTACTS.md, "Hidden contacts").
+  let tab = 'all';
+  let query = '';
+  const tabs = h('div', { class: 'fx-tabs', role: 'tablist' });
+  const find = findBox(h, { label: 'Find a name, email or account', oninput: (words) => { query = words; draw(); } });
+  const add = h('button', { class: 'fx-btn fx-btn--primary', type: 'button', hidden: !canEdit, onclick: () => createContact() }, lucide(h, 'plus'), 'New');
+  const top = listHead('Contacts', {
+    help: { href: DOCS, label: 'How contacts work' }, actions: [add], start: tabs, end: find.element, line: true, sticky: true,
+  });
+  const frame = listFrame(main, host);
+  main.append(...top.nodes, frame.element);
+
+  const COLUMN_DEFS = {
+    name: { kind: 'client', phone: 'title', cell: (contact) => h('a', { class: 'fx-person', href: `/contacts/${contact.id}`, onclick: (event) => { event.stopPropagation(); go(event); } },
+      h('span', { class: 'fx-avatar', 'aria-hidden': 'true' }, initialsOf(contact.name)),
+      h('span', { class: 'fx-person__name' }, contact.name,
+        contact.active ? null : h('span', { class: 'fx-tag' }, 'Inactive'),
+        contact.hidden ? h('span', { class: 'fx-tag' }, 'Hidden') : null)) },
+    kind: { kind: 'status', phone: 'meta', className: 'fx-dim', cell: (contact) => KINDS.find(([value]) => value === contact.kind)?.[1] ?? contact.kind },
+    email: { kind: 'text', phone: 'meta', className: 'fx-dim', cell: (contact) => contact.email ?? '' },
+    account: { kind: 'text', phone: 'hide', className: 'fx-num', cell: (contact) => contact.accountNumber ?? '' },
+  };
 
   let rows = [];
   const draw = () => {
-    const needle = search.value.trim().toLowerCase();
+    const needle = query.trim().toLowerCase();
+    const counts = { all: rows.length, ...Object.fromEntries(KINDS.map(([value]) => [value, rows.filter((c) => c.kind === value).length])) };
+    tabs.replaceChildren(...[['all', 'All'], ...KINDS.map(([value, label]) => [value, `${label}s`]), ['hidden', 'Hidden']].map(([id, label]) => h('button', {
+      type: 'button', role: 'tab', 'aria-selected': String(tab === id), onclick: () => { const was = tab; tab = id; if ((was === 'hidden') !== (id === 'hidden')) load(); else draw(); },
+    }, label, id === 'hidden' || listed === 'true' ? null : h('span', { class: 'fx-tabs__count' }, String(counts[id] ?? 0)))));
     const shown = rows.filter((contact) => {
-      if (!['all', 'hidden'].includes(kind.value) && contact.kind !== kind.value) return false;
+      if (!['all', 'hidden'].includes(tab) && contact.kind !== tab) return false;
       if (!needle) return true;
       return [contact.name, contact.email, contact.accountNumber].some((value) => String(value ?? '').toLowerCase().includes(needle));
     });
-    const body = shown.length
-      ? h('table', { class: 'fx-table fx-people' },
-        h('thead', { class: 'fx-sr' }, h('tr', {}, h('th', {}, 'Name'), h('th', {}, 'Kind'), h('th', {}, 'Account'))),
-        h('tbody', {}, shown.map((contact) => h('tr', {},
-          h('td', {}, h('a', { class: 'fx-person', href: `/contacts/${contact.id}`, onclick: go },
-            h('span', { class: 'fx-avatar', 'aria-hidden': 'true' }, initialsOf(contact.name)),
-            h('span', { class: 'fx-person__text' },
-              h('span', { class: 'fx-person__name' }, contact.name,
-                contact.active ? null : h('span', { class: 'fx-tag' }, 'Inactive'),
-                contact.hidden ? h('span', { class: 'fx-tag' }, 'Hidden') : null),
-              contact.email ? h('span', { class: 'fx-person__email' }, contact.email) : null))),
-          h('td', {}, KINDS.find(([value]) => value === contact.kind)?.[1] ?? contact.kind),
-          h('td', {}, contact.accountNumber ?? '')))))
-      : h('p', { class: 'fx-empty' }, rows.length ? 'Nothing matches.' : 'No contacts.');
-    host.replaceChildren(
-      h('div', { class: 'fx-contacts__tools' }, search, kind),
-      body,
-    );
+    frame.count(`${shown.length} ${shown.length === 1 ? 'contact' : 'contacts'}`);
+    if (!shown.length) {
+      host.replaceChildren(h('p', { class: 'fx-empty' }, rows.length ? 'Nothing matches.' : 'No contacts.'));
+      return;
+    }
+    const columns = view.columns.map((id) => ({ id, label: CONTACT_COLUMNS[id], ...COLUMN_DEFS[id] }));
+    const open = (contact) => go(`/contacts/${contact.id}`);
+    host.replaceChildren(heads.table({
+      className: 'fx-table--rows fx-contacts__table',
+      columns,
+      rows: h('tbody', {}, shown.map((contact) => h('tr', {
+        class: 'fx-row-link', tabindex: '0', onclick: () => open(contact), onkeydown: (event) => { if (event.key === 'Enter') open(contact); },
+      }, rowCells(h, columns, contact), h('td', { class: 'fx-c-end' })))),
+    }));
   };
 
   // The hidden contacts are their own list: the server leaves them out of
   // every other one.
   let listed = null;
   async function load() {
-    const hidden = kind.value === 'hidden' ? 'true' : 'false';
+    const hidden = tab === 'hidden' ? 'true' : 'false';
     if (hidden === listed) return draw();
     try {
       ({ contacts: rows } = await flow(`/api/invoicing/contacts?kind=all&active=all&hidden=${hidden}&limit=500`));
@@ -76,9 +105,6 @@ async function renderContactList(main, ui) {
       host.replaceChildren(notice(error.message, 'danger'));
     }
   }
-
-  search.addEventListener('input', draw);
-  kind.addEventListener('change', load);
 
   async function createContact() {
     const name = input(h, { name: 'name', required: true, 'aria-label': 'Name' });

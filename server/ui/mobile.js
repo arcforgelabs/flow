@@ -165,6 +165,24 @@ export const RULES = {
     "mark": false,
     "card": "CopyButton"
   },
+  "errorCopy": {
+    "component": "errorCopy",
+    "direction": "control",
+    "phone": {
+      "layout": "control"
+    },
+    "tablet": {
+      "layout": "control"
+    },
+    "desk": {
+      "layout": "control"
+    },
+    "touch": 44,
+    "pageOverflow": "none",
+    "screens": [],
+    "mark": false,
+    "card": "CopyError"
+  },
   "crumbs": {
     "component": "crumbs",
     "direction": "trail",

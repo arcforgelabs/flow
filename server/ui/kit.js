@@ -7,6 +7,7 @@
 import { lucide } from '/assets/ui/custom-fields.js';
 import { applyPhoneRule } from './mobile.js';
 import { named } from '/assets/ui/tip.js';
+import { errorPrompt } from './problem-prompt.js';
 
 // h('p', { class: 'x', onclick }, 'text', child) — children are text or nodes.
 export function h(tag, attrs = {}, ...children) {
@@ -150,12 +151,40 @@ export function sectionTitle(text, help = null) {
 }
 
 // With `short`, a phone shows only that one line ("Client not in Xero") in
-// place of the title and text.
+// place of the title and text. A danger note has Copy error at its end
+// (errorCopy): the full detail as a prompt for an agent.
 export function notice(text, tone = 'info', title = null, { short = null } = {}) {
+  const said = [title, typeof text === 'string' ? text : text?.textContent].filter(Boolean).join(' ');
   return applyPhoneRule(h('div', { class: 'fx-notice', 'data-tone': tone, role: tone === 'danger' ? 'alert' : 'status' },
     title ? h('strong', { class: short ? 'fx-notice__long' : null }, title) : null,
     h('span', { class: short ? 'fx-notice__long' : null }, text),
-    short ? h('span', { class: 'fx-notice__short' }, short) : null), 'notice');
+    short ? h('span', { class: 'fx-notice__short' }, short) : null,
+    tone === 'danger' ? errorCopy(said) : null), 'notice');
+}
+
+// The last Flow call that failed (app.js, flow), so an error's Copy error
+// can say which call failed. Kept for 15 seconds: an older one is not this
+// error's cause.
+let lastFailure = null;
+export function noteFailure({ method = 'GET', path, status = null, code = null, reasons = [] }) {
+  lastFailure = { method: String(method).toUpperCase(), path, status, code, reasons, at: Date.now() };
+}
+const recentFailure = (now) => (lastFailure && now - lastFailure.at < 15000 ? lastFailure : null);
+
+// "Copy error" (CopyError card): the icon button every error in Flow
+// carries. It copies the screen's words, the page, the Flow call that
+// failed and the steps to find the cause, as a prompt to paste to an agent
+// (problem-prompt.js, errorPrompt). `said`: the error's words. `call:
+// false` for a problem that no failed call made (an alert).
+export function errorCopy(said, { call = true } = {}) {
+  const at = Date.now();
+  const failed = call ? recentFailure(at) : null;
+  const page = typeof location === 'undefined' ? null : location.pathname;
+  return copyButton({
+    label: 'Copy error',
+    text: () => errorPrompt({ origin: typeof location === 'undefined' ? '' : location.origin, page, said, failed, at }),
+    copied: 'Error copied. Paste it to your agent.',
+  });
 }
 
 // A table that is a list of small cards on a phone (CardRows card). On a
@@ -188,21 +217,27 @@ export function fieldError(field, on = true) {
 }
 
 // A short result after an action. With `stay: true` it stays until the person
-// closes it (for a danger a failed press must not pass unseen).
+// closes it (for a danger a failed press must not pass unseen). A danger
+// toast has Copy error (errorCopy), and stays while the pointer is on it.
 export function toast(text, tone = 'info', { stay = false } = {}) {
   const region = document.getElementById('toasts');
+  const danger = tone === 'danger';
   const item = applyPhoneRule(h('div', {
-    class: stay ? 'fx-toast fx-toast--stay' : 'fx-toast',
+    class: stay || danger ? 'fx-toast fx-toast--stay' : 'fx-toast',
     'data-tone': tone,
-    role: tone === 'danger' ? 'alert' : 'status',
-  }, h('span', { class: 'fx-toast__text' }, text)), 'toast');
+    role: danger ? 'alert' : 'status',
+  }, h('span', { class: 'fx-toast__text' }, text), danger ? errorCopy(text) : null), 'toast');
   if (stay) {
     item.append(h('button', {
       type: 'button', class: 'fx-toast__close', 'aria-label': 'Close', title: 'Close',
       onclick: () => item.remove(),
     }, lucide(h, 'x')));
   } else {
-    setTimeout(() => item.remove(), 4200);
+    let timer = setTimeout(() => item.remove(), danger ? 9000 : 4200);
+    if (danger) {
+      item.addEventListener('pointerenter', () => clearTimeout(timer));
+      item.addEventListener('pointerleave', () => { timer = setTimeout(() => item.remove(), 4200); });
+    }
   }
   region.append(item);
 }

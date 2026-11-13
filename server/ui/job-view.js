@@ -489,6 +489,9 @@ export const invoiceColumnsView = (input) => normaliseListView(input, INVOICE_CO
 export const PRICE_COLUMNS = Object.freeze({
   code: 'Code', name: 'Name', price: 'Price', tax: 'Tax',
 });
+export const CONTACT_COLUMNS = Object.freeze({
+  name: 'Name', kind: 'Kind', email: 'Email', account: 'Account',
+});
 export const RECONCILE_COLUMNS = Object.freeze({
   kind: 'Type', client: 'Client', detail: 'Detail', date: 'Date', total: 'Total', possible: 'Possible',
 });
