@@ -369,6 +369,20 @@ describe('ready, problem and send', { skip: skipWithoutDatabase }, () => {
     assert.equal(stopped.sendError.code, 'requester_disabled');
   });
 
+  test('a queued send stops when the person who asked is made staff before it goes', async () => {
+    const fake = fakeAccounting();
+    const admin = await invitePerson(handle.db, { email: 'admin-made-staff@example.test', role: 'admin', invitedBy: owner.id });
+    const one = await good();
+    await markReady(handle.db, lab.id, [one.id], { personId: admin.id });
+    await sendAllReady(handle.db, lab.id, { accounting: fake.adapter, personId: admin.id, issueDate: ISSUE_DATE, invoiceIds: [one.id], sendMode: 'approve_and_email', recipients: { [one.id]: 'billing@example.com' } });
+    assert.equal((await row(one.id)).sendState, 'queued');
+    await updatePerson(handle.db, { id: admin.id, actorId: owner.id, role: 'staff' });
+    const sent = await sendQueued(handle.db, lab.id, { accounting: fake.adapter });
+    assert.deepEqual(sent, { sent: 0, failed: 1, waiting: 0, refused: ['requester_not_allowed'] });
+    assert.equal(fake.pushed.length, 0, 'nothing reached the accounting system');
+    assert.equal((await row(one.id)).sendError.code, 'requester_not_allowed');
+  });
+
   test('Send all ready issues and queues; the worker sends; a refusal is a problem until sent again', async () => {
     const fake = fakeAccounting();
     const one = await good();
@@ -531,11 +545,21 @@ describe('Send all ready over the API', { skip: skipWithoutDatabase }, () => {
     assert.equal(res.status, 400, 'an unknown send mode is refused before anything is issued');
     assert.equal((await handle.db.select().from(invoices).where(eq(invoices.id, ready.id)))[0].status, 'draft');
 
-    res = await call('/invoices/send-ready', { method: 'POST', body: { issueDate: ISSUE_DATE, invoiceIds: [ready.id], sendMode: 'approve_and_email' } });
+    res = await call('/invoices/send-ready', { method: 'POST', body: { issueDate: ISSUE_DATE, invoiceIds: [ready.id], sendMode: 'approve_and_email', recipients: 'everyone' } });
+    assert.equal(res.status, 400, 'recipients must be a map of emails');
+
+    res = await call('/invoices/send-ready', { method: 'POST', body: { issueDate: ISSUE_DATE, invoiceIds: [ready.id], sendMode: 'approve_and_email', recipients: { [ready.id]: ' Billing@Example.com ' } } });
     assert.equal(res.status, 200);
     assert.deepEqual([res.body.issued, res.body.queued], [1, 1]);
     const [row] = await handle.db.select().from(invoices).where(eq(invoices.id, ready.id));
-    assert.deepEqual([row.sendState, row.sendMode, typeof row.sendRequestedBy], ['queued', 'approve_and_email', 'string']);
+    assert.deepEqual([row.sendState, row.sendMode, row.sendEmail, typeof row.sendRequestedBy], ['queued', 'approve_and_email', 'billing@example.com', 'string']);
+
+    // No email shown for it in the dialog: it goes as a draft.
+    const unseen = await createDraftInvoice(handle.db, lab.id, { contactId: practice.id, lines: [{ priceItemId: crown.id, quantity: 1 }] });
+    res = await call('/invoices/send-ready', { method: 'POST', body: { issueDate: ISSUE_DATE, invoiceIds: [unseen.id], sendMode: 'approve_and_email' } });
+    assert.equal(res.status, 200);
+    const [draft] = await handle.db.select().from(invoices).where(eq(invoices.id, unseen.id));
+    assert.deepEqual([draft.sendMode, draft.sendEmail], ['accounting_draft', null]);
   });
 });
 

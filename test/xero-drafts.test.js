@@ -551,6 +551,7 @@ describe('Xero drafts from issued invoices', { skip: skipWithoutDatabase }, () =
     const XE = '00000000-0000-4000-8000-0000000000e1';
     let emailing;
     const emailed = (id, options = {}) => xeroAnswer(`Invoices/${id}/Email`, undefined, { method: 'POST', status: 204, ...options });
+    const liveContact = (id, email) => xeroAnswer(`Contacts/${id}`, { Contacts: [{ ContactID: id, EmailAddress: email }] });
     const approved = (id) => xeroAnswer('Invoices', { Invoices: [{ InvoiceID: id, InvoiceNumber: `INV-${id}`, Status: 'AUTHORISED' }] }, { method: 'POST' });
     const readApproved = (id, reference) => xeroAnswer(`Invoices/${id}`, { Invoices: [{ ...xeroInvoice(id, { reference, status: 'AUTHORISED' }), Contact: { ContactID: XE } }] });
 
@@ -625,18 +626,44 @@ describe('Xero drafts from issued invoices', { skip: skipWithoutDatabase }, () =
       const chosen = await createContact(handle.db, org, { kind: 'customer', name: 'Chosen Practice' });
       await handle.db.execute(sql`insert into xero_contacts (organisation_id, xero_contact_id, name, email, status, is_customer) values (${org}, ${XP}, 'Chosen Practice', 'billing@example.com', 'ACTIVE', true)`);
       const invoice = await issuedFor(chosen);
-      await handle.db.execute(sql`update invoices set send_mode = 'approve_and_email' where id = ${invoice.id}`);
+      await handle.db.execute(sql`update invoices set send_mode = 'approve_and_email', send_email = 'billing@example.com' where id = ${invoice.id}`);
       const preview = await request(app, '/api/xero/invoices/preview', {
         token: lab.staffToken, method: 'POST', body: { organisationId: org, invoiceIds: [invoice.id] },
       });
       assert.equal(preview.body.invoices[0].sendMode, 'approve_and_email');
       assert.equal(preview.body.invoices[0].contact.email, 'billing@example.com');
-      const replay = xero.script([byReference([]), approved('e3'), xeroAnswer('Invoices/e3', { Invoices: [{ ...xeroInvoice('e3', { reference: invoice.reference, status: 'AUTHORISED' }), Contact: { ContactID: XP } }] }), emailed('e3')]);
+      // Flow reads the contact's email from Xero first: Xero emails that one.
+      const replay = xero.script([liveContact(XP, 'Billing@Example.com'), byReference([]), approved('e3'), xeroAnswer('Invoices/e3', { Invoices: [{ ...xeroInvoice('e3', { reference: invoice.reference, status: 'AUTHORISED' }), Contact: { ContactID: XP } }] }), emailed('e3')]);
       const res = await push([invoice.id]);
       assert.equal(res.body.invoices[0].outcome, 'created', JSON.stringify(res.body));
       assert.equal(res.body.invoices[0].email.state, 'sent');
       assert.equal(posts(replay)[0].body.Invoices[0].Status, 'AUTHORISED');
       assert.equal((await pushRow(invoice.id))[0].send_mode, 'approve_and_email');
+    });
+
+    test('a press that chose Approve and email sends a Xero draft when the email in Xero is not the one shown', async () => {
+      const org = lab.organisation.id;
+      const XC2 = '00000000-0000-4000-8000-0000000000e4';
+      const moved = await createContact(handle.db, org, { kind: 'customer', name: 'Moved Practice' });
+      await handle.db.execute(sql`insert into xero_contacts (organisation_id, xero_contact_id, name, email, status, is_customer) values (${org}, ${XC2}, 'Moved Practice', 'old@example.com', 'ACTIVE', true)`);
+      const shown = await issuedFor(moved);
+      await handle.db.execute(sql`update invoices set send_mode = 'approve_and_email', send_email = 'old@example.com' where id = ${shown.id}`);
+      const replay = xero.script([liveContact(XC2, 'new@example.com'), byReference([]), created('m1'), xeroAnswer('Invoices/m1', { Invoices: [{ ...xeroInvoice('m1', { reference: shown.reference }), Contact: { ContactID: XC2 } }] })]);
+      const res = await push([shown.id]);
+      assert.equal(res.body.invoices[0].outcome, 'created', JSON.stringify(res.body));
+      assert.equal(res.body.invoices[0].email.state, 'held');
+      assert.match(res.body.invoices[0].email.error, /not the one shown/);
+      assert.equal(posts(replay).length, 1, 'no email request');
+      assert.equal(posts(replay)[0].body.Invoices[0].Status, 'DRAFT');
+      assert.equal((await pushRow(shown.id))[0].send_mode, 'accounting_draft');
+
+      // No email was shown for it (the press had none): a draft, without asking Xero.
+      const unseen = await issuedFor(moved);
+      await handle.db.execute(sql`update invoices set send_mode = 'approve_and_email' where id = ${unseen.id}`);
+      const second = xero.script([byReference([]), created('m2'), xeroAnswer('Invoices/m2', { Invoices: [{ ...xeroInvoice('m2', { reference: unseen.reference }), Contact: { ContactID: XC2 } }] })]);
+      const again = await push([unseen.id]);
+      assert.equal(again.body.invoices[0].email.state, 'held', JSON.stringify(again.body));
+      assert.equal(posts(second)[0].body.Invoices[0].Status, 'DRAFT');
     });
 
     test('a press that chose Approve and email sends a Xero draft when the Xero contact has no email', async () => {

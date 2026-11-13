@@ -323,9 +323,13 @@ function stoppedSendMessage({ accountingWaiting, accountingReason, stops, waitin
 // confirm and leaves the rest. `work` is the work integration, for the read
 // before act. `sendMode` is how the person chose to send this batch (an owner
 // or admin can send it approved and emailed while the setting stays Draft);
-// null keeps each customer's mode. Answers { issued, queued, remaining, waiting, held }.
-export async function sendAllReady(db, organisationId, { accounting = null, work = null, personId, issueDate, invoiceIds = null, sendMode = null, now = new Date() }) {
+// null keeps each customer's mode. With approve_and_email, `recipients` maps
+// each invoice id to the client email the person saw in the dialog. An
+// invoice with no email there goes as a draft: Flow never emails an address
+// nobody saw. Answers { issued, queued, remaining, waiting, held }.
+export async function sendAllReady(db, organisationId, { accounting = null, work = null, personId, issueDate, invoiceIds = null, sendMode = null, recipients = null, now = new Date() }) {
   if (sendMode !== null && !SEND_MODES.includes(sendMode)) throw new FlowError('invalid', `sendMode must be one of ${SEND_MODES.join(', ')}`);
+  const seen = seenRecipients(recipients);
   await assertCanSend(accounting, organisationId);
   // Issue #45: the accounting copy reads its latest changes first, so the
   // draft checks below see an invoice someone made there meanwhile.
@@ -373,7 +377,11 @@ export async function sendAllReady(db, organisationId, { accounting = null, work
   for (const invoiceId of batch) {
     // Queued first: the worker sends only issued invoices, so a stop between
     // the two steps leaves a queued draft, never an issued invoice nobody sends.
-    if (accounting) await queue(db, organisationId, [invoiceId], personId, sendMode);
+    if (accounting) {
+      const email = sendMode === 'approve_and_email' ? seen.get(invoiceId) ?? null : null;
+      const mode = sendMode === 'approve_and_email' && !email ? 'accounting_draft' : sendMode;
+      await queue(db, organisationId, [invoiceId], personId, mode, email);
+    }
     try {
       await issueInvoice(db, organisationId, invoiceId, { issuedBy: `person:${personId}`, issueDate });
     } catch (error) {
@@ -443,15 +451,29 @@ export async function sendAgain(db, organisationId, { accounting = null, personI
   return { queued: rows.length };
 }
 
-async function queue(db, organisationId, invoiceIds, personId, sendMode = null) {
+// The recipients the Send dialog showed: { invoiceId: email }, as a Map of
+// lower-case emails. Anything else is refused.
+function seenRecipients(recipients) {
+  if (recipients == null) return new Map();
+  if (typeof recipients !== 'object' || Array.isArray(recipients)) throw new FlowError('invalid', 'recipients must map invoice ids to emails');
+  const seen = new Map();
+  for (const [id, email] of Object.entries(recipients)) {
+    if (email == null) continue;
+    if (typeof email !== 'string' || email.length > 320 || !email.includes('@')) throw new FlowError('invalid', 'each recipient must be an email address');
+    seen.set(id, email.trim().toLowerCase());
+  }
+  return seen;
+}
+
+async function queue(db, organisationId, invoiceIds, personId, sendMode = null, sendEmail = null) {
   if (!invoiceIds.length) return;
   await db.update(invoices)
-    .set({ sendState: 'queued', sendError: null, sendRequestedBy: personId ?? null, sendMode, sendUpdatedAt: sql`now()` })
+    .set({ sendState: 'queued', sendError: null, sendRequestedBy: personId ?? null, sendMode, sendEmail, sendUpdatedAt: sql`now()` })
     .where(and(eq(invoices.organisationId, organisationId), inArray(invoices.id, invoiceIds)));
 }
 
 function unqueue(db, organisationId, invoiceId) {
-  return db.update(invoices).set({ sendState: null, sendRequestedBy: null, sendMode: null, sendUpdatedAt: sql`now()` })
+  return db.update(invoices).set({ sendState: null, sendRequestedBy: null, sendMode: null, sendEmail: null, sendUpdatedAt: sql`now()` })
     .where(and(eq(invoices.organisationId, organisationId), eq(invoices.id, invoiceId), eq(invoices.status, 'draft')));
 }
 
@@ -505,9 +527,15 @@ export function refusalReport(result) {
   return `[sending] the accounting system refused ${count} ${word}${detail ? `: ${detail}` : ''}`;
 }
 
-async function requesterActive(db, personId) {
-  const [row] = await db.select({ status: people.status }).from(people).where(eq(people.id, personId));
-  return row?.status === 'active';
+// Why the person who queued a send may not send it now, or null. Only an
+// active owner or admin sends to the accounting system; the worker checks
+// again at the send, so a person turned off or made staff meanwhile stops
+// what they queued.
+async function requesterRefusal(db, personId) {
+  const [row] = await db.select({ status: people.status, role: people.role }).from(people).where(eq(people.id, personId));
+  if (row?.status !== 'active') return { code: 'requester_disabled', message: 'The person who asked to send this is turned off. Send it again.' };
+  if (!['owner', 'admin'].includes(row.role)) return { code: 'requester_not_allowed', message: 'The person who asked to send this is no longer an owner or admin. An owner or admin can send it again.' };
+  return null;
 }
 
 // One pass of the send worker: up to `limit` queued invoices, oldest first.
@@ -520,14 +548,15 @@ export async function sendQueued(db, organisationId, { accounting, limit = WORKE
   for (const [by, group] of Map.groupBy(rows, (r) => r.by ?? null)) {
     const known = new Map(group.map((row) => [row.id, row]));
     // A send waits in the queue. The person who asked for it must still be
-    // active when it goes, so turning a person (or an assistant's key) off
-    // also stops what they queued.
-    if (by && !(await requesterActive(db, by))) {
+    // an active owner or admin when it goes, so turning a person (or an
+    // assistant's key) off, or making them staff, also stops what they queued.
+    const refusal = by ? await requesterRefusal(db, by) : null;
+    if (refusal) {
       for (const row of group) {
-        await settle(db, organisationId, row.id, { sendState: 'failed', sendError: { code: 'requester_disabled', message: 'The person who asked to send this is turned off. Send it again.' } });
+        await settle(db, organisationId, row.id, { sendState: 'failed', sendError: refusal });
         summary.failed += 1;
       }
-      summary.refused = [...new Set([...(summary.refused ?? []), 'requester_disabled'])];
+      summary.refused = [...new Set([...(summary.refused ?? []), refusal.code])];
       continue;
     }
     // An invoice sent with an override (sendAnyway): the adapter passes the

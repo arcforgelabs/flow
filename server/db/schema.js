@@ -142,6 +142,9 @@ export const invoices = pgTable('invoices', {
   // the customer's or the organisation's send mode. An owner or admin can
   // send one batch approved and emailed while the setting stays Draft.
   sendMode: text('send_mode'),
+  // With approve_and_email: the client email the person saw in the Send
+  // dialog, lower case. Flow emails only when Xero's contact still has it.
+  sendEmail: text('send_email'),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 }, (t) => [

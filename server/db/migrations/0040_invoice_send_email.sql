@@ -1,0 +1,1 @@
+ALTER TABLE "invoices" ADD COLUMN IF NOT EXISTS "send_email" text;

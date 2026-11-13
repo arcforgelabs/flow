@@ -57,7 +57,8 @@ import {
 //                                     nothing when its job cannot be confirmed, more than one id sends the
 //                                     rest and counts the unconfirmed in waiting), sendMode? (this press
 //                                     only: 'approve_and_email' or 'accounting_draft'; default each
-//                                     customer's mode) }
+//                                     customer's mode), recipients? ({ invoiceId: email } the dialog
+//                                     showed; with approve_and_email an invoice not in it goes as a draft) }
 //   POST  /invoices/send-again        owner or admin: queue failed sends again { invoiceIds? }
 //   GET   /invoices/:id               one invoice: lines, contact, job, issued versions, and where it sends
 //   GET   /invoices/:id/pdf?version=  the invoice as a PDF, drawn by Flow (server/core/invoice-pdf.js),
@@ -622,7 +623,9 @@ export function createInvoicingRouter({
     const reader = work().find((a) => typeof a.capabilities.readWorkItem === 'function') ?? null;
     // Optional: 'approve_and_email' or 'accounting_draft' for this press only.
     const sendMode = req.body?.sendMode ?? null;
-    const result = await sendAllReady(db, organisationId, { accounting: accounting(), work: reader, personId: req.person.id, issueDate, invoiceIds: ids, sendMode });
+    // With approve_and_email: { invoiceId: email } as the dialog showed them.
+    const recipients = req.body?.recipients ?? null;
+    const result = await sendAllReady(db, organisationId, { accounting: accounting(), work: reader, personId: req.person.id, issueDate, invoiceIds: ids, sendMode, recipients });
     log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} sent all ready${sendMode ? ` as ${sendMode}` : ''}: ${JSON.stringify(result)}`);
     res.json({ ok: true, ...result });
   }));

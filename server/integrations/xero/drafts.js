@@ -541,7 +541,7 @@ function summarise(results) {
       ambiguous: count('ambiguous'),
       failed: count('failed') + count('not_tried'),
       emailed: results.filter((r) => r.email?.state === 'sent').length,
-      emailProblems: results.filter((r) => r.email && ['failed', 'unknown'].includes(r.email.state)).length,
+      emailProblems: results.filter((r) => r.email && ['failed', 'unknown', 'held'].includes(r.email.state)).length,
     },
     invoices: results,
   };
@@ -608,7 +608,19 @@ async function pushOne(db, runtime, client, organisationId, invoiceId, { pushedB
   const items = await xeroItemsForCodes(db, organisationId, document.lines.map((l) => l.itemCode));
   // An invoice sent with an override always goes as a Xero draft, so nothing
   // is emailed to the customer before a person approves it in Xero.
-  const sendMode = accepted.length ? 'accounting_draft' : sendModeOf(invoice, match) ?? await sendModeFor(db, organisationId, invoice.contactId);
+  let sendMode = accepted.length ? 'accounting_draft' : sendModeOf(invoice, match) ?? await sendModeFor(db, organisationId, invoice.contactId);
+  // Approved and emailed, chosen at the press: Xero emails the contact's
+  // email as Xero holds it now, so Flow reads it first. When it is not the
+  // email the person saw in the Send dialog, the invoice goes as a draft.
+  let emailHeld = null;
+  if (sendMode === 'approve_and_email' && invoice.sendMode === 'approve_and_email') {
+    const live = invoice.sendEmail ? await client.getContact(match.contact.xeroContactId) : null;
+    const now = String(live?.EmailAddress ?? '').trim().toLowerCase();
+    if (!invoice.sendEmail || now !== invoice.sendEmail) {
+      sendMode = 'accounting_draft';
+      emailHeld = { state: 'held', error: `${document.number} went to Xero as a draft, not emailed: the client's email in Xero is not the one shown when Send was pressed. Check it in Xero, then approve and email it there.`, at: null };
+    }
+  }
   const { taxFromXero } = await readInvoicingSettings(db, organisationId);
   const { draft, problems: found } = buildDraft(document, { settings: runtime.settings, contact: match.contact, items, sendMode, taxFromXero });
   // The override passes the warnings it recorded, by key. A new problem (the
@@ -649,7 +661,8 @@ async function pushOne(db, runtime, client, organisationId, invoiceId, { pushedB
       ${new Date(runtime.now())}, ${new Date(runtime.now())}, ${sendMode}, ${sendMode === 'approve_and_email' ? 'pending' : null})
     on conflict (invoice_id, version) do nothing returning *`);
   if (!rows.length) throw xeroError('xero_push_in_progress', 'This invoice is being sent to Xero already. Check again shortly.', { status: 409 });
-  return dispatch(db, client, mapPush(rows[0]), document, { fresh: true });
+  const result = await dispatch(db, client, mapPush(rows[0]), document, { fresh: true });
+  return emailHeld ? { ...result, email: emailHeld } : result;
 }
 
 async function recordExisting(db, { organisationId, invoiceId, version, draft, same, pushedBy }) {
