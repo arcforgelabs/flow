@@ -1098,6 +1098,21 @@ function seazonaHistorySection() {
   };
   let actionLabel;
   const actionButton = h('button', { class: 'fx-btn fx-btn--sm', type: 'button', onclick: event => press(event.currentTarget, actionLabel) });
+  // A read that waits or failed says why; Copy error gives the facts to
+  // paste to an agent: codes, counts and days, never a record.
+  const copyCause = copyButton({
+    label: 'Copy error', copied: 'Error copied. Paste it to your agent.',
+    text: () => [
+      `Flow's Seazona history read is ${run?.phase}.`,
+      `Cause: ${run?.cause ?? 'not known'}`,
+      run?.gaveUp
+        ? `Code: ${run.gaveUp.code}. HTTP status: ${run.gaveUp.httpStatus ?? 'none'}. Failed runs in a row: ${run.gaveUp.failedRuns}. Gave up at ${run.gaveUp.at}, on day ${run.gaveUp.day ?? 'unknown'}, page ${run.gaveUp.page ?? 'unknown'}. Flow makes no Seazona call for this read until a person presses Retry.`
+        : `Next try: ${run?.nextRunAt ?? 'none'}.`,
+      `Read ${run?.from} to ${run?.through}. Orders read: ${run?.ordersRead ?? 0}. Waiting to read: ${run?.waitingToRead ?? 0}. Skipped after failed reads: ${run?.ordersSkipped ?? 0}.`,
+      'See docs/SEAZONA.md, "The backfill\'s limits".',
+    ].join('\n'),
+  });
+  const actions = h('span', { class: 'fx-history__actions' }, copyCause, actionButton);
   const load = async () => {
     clearTimeout(timer);
     if (disposed || pending || document.hidden) return;
@@ -1117,7 +1132,8 @@ function seazonaHistorySection() {
         count: body.history.jobs, unit: 'jobs', from: run?.from, through: run?.through,
         at: run?.readingDay ?? run?.resumeFrom ?? run?.through,
         cause: run?.cause, nextRunAt: run?.nextRunAt,
-      }, actionButton);
+      }, actions);
+      copyCause.hidden = !run?.cause;
     } catch (error) {
       sync.draw({ phase: 'failed', cause: 'Could not check progress. Try again.' }, h('button', { class: 'fx-btn fx-btn--sm', type: 'button', onclick: load }, 'Retry'));
     } finally { pending = false; schedule(); }

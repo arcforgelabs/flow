@@ -4,6 +4,7 @@ import { billingObligations, contacts, invoiceLines, invoices, people, priceItem
 import { FlowError } from './errors.js';
 import { accountingItemsFor, listRules, ruleExceptionsFor, ruleNonChargeable, rulePending, rulePricesFor, ruleSkip } from './invoice-rules.js';
 import { customerBillingByContact, effectiveSettings, readInvoicingSettings } from './invoicing-rules.js';
+import { HISTORY_HOLD_REASON, isHistoryHeld, ruleReleasedHistory } from './history.js';
 import { getInvoice, issueInvoice } from './invoices.js';
 import { CHANGED_REASON, diffJobLines, sourceBillingProblems, STATUS_BACK_REASON } from './ledger.js';
 import { soleOrganisation } from './pipeline.js';
@@ -140,6 +141,18 @@ async function checkDrafts(db, organisationId, drafts, accounting) {
       const found = { ...problem('job_review', 'Check the source invoice: ' + reason + '.', 'Source tax', { kind: 'job_review' }), sourceBilling: true };
       problems.set(obligation.invoiceId, [...(problems.get(obligation.invoiceId) ?? []), found]);
     }
+  }
+  // A history job is never charged without a person (history.js): a draft
+  // whose job is on the history hold, or that only a rule released and no
+  // non-chargeable rule matches now, is not sent.
+  const historyByRule = await ruleReleasedHistory(db, organisationId, jobs.map((j) => j.obligation.id));
+  for (const { obligation } of jobs) {
+    if (!isHistoryHeld(obligation) && !historyByRule.has(obligation.id)) continue;
+    const found = problems.get(obligation.invoiceId) ?? [];
+    if (found.some((p) => p.code === 'non_chargeable')) continue;
+    problems.set(obligation.invoiceId, [...found, problem('history_job',
+      'This job is from the history import. Only a non-chargeable rule released it, and no such rule matches it now. Release the job in the Seazona history, or void this draft.',
+      'History job', { kind: 'job_hold', reason: HISTORY_HOLD_REASON })]);
   }
   const reviewed = jobs.map((j) => j.obligation).filter((o) => o.holdState === 'review');
   for (const obligation of reviewed) {

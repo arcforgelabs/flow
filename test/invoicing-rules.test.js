@@ -8,7 +8,7 @@ import {
   autoDraftJobs, effectiveSettings, INVOICING_DEFAULTS, readCustomerBilling, readInvoicingSettings, renameNoChargeReason, ruleBlockers,
   saveCustomerBilling, saveInvoicingSettings, sendModeSummary, settleHistoryByRules,
 } from '../server/core/invoicing-rules.js';
-import { HISTORY_ACTOR, HISTORY_HOLD_REASON } from '../server/core/history.js';
+import { HISTORY_ACTOR, HISTORY_HOLD_REASON, releaseHistoryJob } from '../server/core/history.js';
 import { createRule, deleteRule, starterRules } from '../server/core/invoice-rules.js';
 import { listAutomations, runAutomations, saveAutomation, statusMatches, workStatuses } from '../server/core/automations.js';
 import { explainObligation, observeJob, recordAccountingEvidence, setHold, setNoCharge, setReady } from '../server/core/ledger.js';
@@ -308,6 +308,58 @@ describe('drafts by rule', { skip: skipWithoutDatabase }, () => {
     // A remake flag is kept on the job for the Remake field.
     assert.equal((await reload(await old({ contact: practice, remake: true }))).remake, true);
     await deleteRule(handle.db, lab.id, rule.id);
+  });
+
+  test('a history job only a rule released is never a draft to charge once the rule is gone: it is held again until a person releases it', async () => {
+    copy = { state: { complete: true, fresh: true, changedAt: new Date(NOW.getTime() - 60_000) }, invoices: [] };
+    const own = await createContact(handle.db, lab.id, { kind: 'customer', name: 'Own Branch Three' });
+    const rule = await createRule(handle.db, lab.id, { name: 'Own clinics', conditions: [{ field: 'customer', test: 'is', value: own.id }], action: { kind: 'non_chargeable' } });
+    const old = async () => {
+      const row = await observeJob(handle.db, lab.id, {
+        sourceSystem: 'seazona', sourceJobRef: `past-${++counter}`, caseRef: `PAST-${counter}`, contactId: own.id, sourceStatus: 'Closed',
+        jobDate: '2026-03-01', lines: [{ itemCode: 'CROWN', description: 'Crown' }], observedAt: NOW,
+      });
+      await setHold(handle.db, lab.id, row.id, { holdState: 'held', reason: HISTORY_HOLD_REASON, actor: HISTORY_ACTOR });
+      await recordAccountingEvidence(handle.db, lab.id, row.id, { state: 'not_found', actor: 'test', checkedAt: NOW });
+      return row;
+    };
+    // One job the rule released and Flow drafted; one it released and has not drafted yet.
+    const drafted = await old();
+    await settleHistoryByRules(handle.db, lab.id, { accounting, now: NOW });
+    await autoDraftJobs(handle.db, lab.id, { accounting, now: NOW });
+    const waiting = await old();
+    await settleHistoryByRules(handle.db, lab.id, { accounting, now: NOW });
+    const { invoiceId } = await reload(drafted);
+    assert.ok(invoiceId);
+    assert.equal((await reload(waiting)).holdState, 'none');
+    assert.ok((await invoiceViews(handle.db, lab.id, { accounting: null })).nonChargeable.has(invoiceId));
+
+    await deleteRule(handle.db, lab.id, rule.id);
+    // At once, before any routine runs: the draft is not Ready and not sendable.
+    let views = await invoiceViews(handle.db, lab.id, { accounting: null });
+    assert.ok(!views.ready.includes(invoiceId), 'never on Ready');
+    assert.deepEqual(views.problems.get(invoiceId).map((p) => p.code), ['history_job']);
+    // The draft run alone drafts nothing for the job that waited.
+    await autoDraftJobs(handle.db, lab.id, { accounting, now: NOW });
+    assert.equal((await reload(waiting)).invoiceId, null, 'no draft to charge');
+    // The routine puts both back on the history hold.
+    const settled = await settleHistoryByRules(handle.db, lab.id, { accounting, now: NOW });
+    assert.ok(settled.reheld >= 2);
+    for (const row of [drafted, waiting]) {
+      const job = await reload(row);
+      assert.equal(job.holdState, 'held');
+      assert.equal(job.holdReason, HISTORY_HOLD_REASON);
+    }
+    await autoDraftJobs(handle.db, lab.id, { accounting, now: NOW });
+    assert.equal((await reload(waiting)).invoiceId, null);
+    views = await invoiceViews(handle.db, lab.id, { accounting: null });
+    assert.ok(!views.ready.includes(invoiceId));
+    // Only a person's release makes it an invoice to charge.
+    await releaseHistoryJob(handle.db, lab.id, drafted.id, { actor: 'person:test' });
+    views = await invoiceViews(handle.db, lab.id, { accounting: null });
+    assert.ok(!(views.problems.get(invoiceId) ?? []).some((p) => p.code === 'history_job'));
+    assert.equal((await settleHistoryByRules(handle.db, lab.id, { accounting, now: NOW })).reheld, 0, 'a person released it: it stays released');
+    assert.equal((await reload(drafted)).holdState, 'none');
   });
 
   test('a job a non-chargeable rule matches drafts to Non-chargeable whatever its price items, tax or report age', async () => {

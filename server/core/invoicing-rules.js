@@ -1,10 +1,10 @@
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import {
-  billingObligations, contacts, customerBillingSettings, externalLinks, invoiceRules, invoicingSettings, obligationEvents, SEND_MODES,
+  billingObligations, contacts, customerBillingSettings, externalLinks, invoiceRules, invoices, invoicingSettings, obligationEvents, SEND_MODES,
 } from '../db/schema.js';
 import { payersOf } from './contacts.js';
 import { FlowError, notFound } from './errors.js';
-import { HISTORY_HOLD_REASON } from './history.js';
+import { HISTORY_ACTOR, HISTORY_HOLD_REASON, ruleReleasedHistory } from './history.js';
 import { accountingItemsFor, listRules, ruleNonChargeable, rulePricesFor, ruleReasons } from './invoice-rules.js';
 import { draftInvoiceForObligation, setHold, setReady } from './ledger.js';
 import { needsRead, readAccountingFirst, readBeforeAct, READS_PER_PASS } from './read-before-act.js';
@@ -313,9 +313,33 @@ export function ruleBlockers(obligation, effective, { now = new Date(), rules = 
 // the rule releases it and marks it ready, and the next draft run puts its
 // draft on the Non-chargeable tab, never sent. A job with an accounting
 // invoice, or one that is unclear, stays for a person. Answers counts.
+//
+// The release lasts only while a non-chargeable rule matches. A job a rule
+// released that no rule matches now (the rule was turned off, changed or
+// deleted) goes back on the history hold first (`reheld`), so it never
+// becomes a draft to charge without a person.
 export async function settleHistoryByRules(db, organisationId, { accounting = null, now = new Date(), limit = DRAFT_BATCH } = {}) {
-  const result = { checked: 0, released: 0 };
+  const result = { checked: 0, released: 0, reheld: 0 };
   const rules = (await listRules(db, organisationId)).filter((r) => r.enabled && r.trigger === 'job_ready' && r.action.kind === 'non_chargeable');
+  const settings = await readInvoicingSettings(db, organisationId);
+  const prices = await rulePricesFor(db, organisationId, rules);
+  const freed = [...await ruleReleasedHistory(db, organisationId)];
+  const lapsed = freed.length ? await db.select().from(billingObligations).where(and(
+    eq(billingObligations.organisationId, organisationId),
+    inArray(billingObligations.id, freed),
+    eq(billingObligations.holdState, 'none'),
+    sql`(${billingObligations.invoiceId} is null or exists (select 1 from ${invoices} i where i.id = ${billingObligations.invoiceId} and i.status = 'draft'))`,
+  )) : [];
+  if (lapsed.length) {
+    const customers = await customerBillingByContact(db, organisationId, lapsed.map((j) => j.contactId));
+    const names = await customerNames(db, organisationId, lapsed.map((j) => j.contactId));
+    for (const job of lapsed) {
+      const customer = { ...effectiveSettings(settings, customers.get(job.contactId)), name: names.get(job.contactId) ?? null };
+      if (ruleNonChargeable(rules, job, { customer, now, prices }).length) continue;
+      await setHold(db, organisationId, job.id, { holdState: 'held', reason: HISTORY_HOLD_REASON, actor: HISTORY_ACTOR });
+      result.reheld += 1;
+    }
+  }
   if (!rules.length) return result;
   const jobs = await db.select().from(billingObligations).where(and(
     eq(billingObligations.organisationId, organisationId),
@@ -328,8 +352,6 @@ export async function settleHistoryByRules(db, organisationId, { accounting = nu
       : inArray(billingObligations.accountingState, ['not_found', 'unknown']),
   )).orderBy(sql`${billingObligations.jobDate} desc nulls last`, billingObligations.id).limit(limit);
   if (!jobs.length) return result;
-  const settings = await readInvoicingSettings(db, organisationId);
-  const prices = await rulePricesFor(db, organisationId, rules);
   const contactIds = [...new Set(jobs.map((j) => j.contactId))];
   const customers = await customerBillingByContact(db, organisationId, contactIds);
   const names = await customerNames(db, organisationId, contactIds);
@@ -444,6 +466,8 @@ export async function autoDraftJobs(db, organisationId, { accounting = null, wor
   // The codes that send as accounting items, for a rule that reads them.
   const items = await accountingItemsFor(accounting, organisationId, rules, candidates);
   const prices = await rulePricesFor(db, organisationId, rules);
+  // History jobs a rule released: drafted only as non-chargeable (history.js).
+  const historyByRule = await ruleReleasedHistory(db, organisationId, candidates.map((o) => o.id));
 
   for (const candidate of candidates) {
     let effective = named(candidate.contactId);
@@ -459,6 +483,10 @@ export async function autoDraftJobs(db, organisationId, { accounting = null, wor
     // billed: its draft goes to the Non-chargeable tab whatever its price
     // items, tax or report age say. Any other job needs every line mapped.
     const noCharge = ruleNonChargeable(rules, candidate, { customer: effective, now, prices }).length > 0;
+    if (!noCharge && historyByRule.has(candidate.id)) {
+      result.waiting += 1;
+      continue;
+    }
     if (!noCharge && !candidate.mappingComplete) {
       result.waiting += 1;
       continue;

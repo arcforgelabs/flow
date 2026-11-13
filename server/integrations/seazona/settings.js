@@ -153,6 +153,9 @@ export function resolveSeazonaSettings(env = process.env) {
     // the rate limit, so the live lanes always have room.
     historyCallsPerRun: clampInt(env.SEAZONA_HISTORY_CALLS_PER_RUN, 10, 1, 25),
     historyPageSize: clampInt(env.SEAZONA_HISTORY_PAGE_SIZE, 500, 1, 500),
+    // The history read gives up after this many failed runs in a row, and
+    // makes no call until a person presses Retry.
+    historyMaxFailedRuns: clampInt(env.SEAZONA_HISTORY_MAX_FAILED_RUNS, 6, 1, 20),
     // Re-read this much before a lastModified cursor, so a change written
     // while the last run was reading is not missed.
     cursorOverlapMs: 5 * MINUTE,
