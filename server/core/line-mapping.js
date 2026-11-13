@@ -54,12 +54,18 @@ export const LINE_PRICES = Object.freeze(['work', 'list']);
 export const LINE_TAXES = LINE_PRICES;
 // GST follows the price list by default: with Xero on, the price list keeps
 // each item's Xero tax (xero/catalogue.js), so the invoice matches Xero.
+// `placeholders`: lines a lab adds in the work system only to open a job (for
+// example a "Models" line at $0.00). Each is { label, unitAmountCents }, with
+// null for any price. Such a line leaves the job when the job has other lines.
+// The config holds the list only when it has an entry.
 export const MAPPING_DEFAULTS = Object.freeze({ steps: [...STEPS], zeroLines: 'keep', linePrice: 'work', lineTax: 'list' });
+export const MAX_PLACEHOLDERS = 50;
 
 const SCORE_MIN = 16;
 const SCORE_GAP = 8;
 const MAX_MAPPINGS = 2000;
 const invalid = (message) => new FlowError('invalid', message);
+const text = (value) => (typeof value === 'string' ? value.trim() : '');
 
 // Text in the form every comparison uses: lower case, "&" as "and", every
 // other mark a space.
@@ -177,7 +183,17 @@ export function mapLine(line, context) {
     const item = context.byCode.get(row.itemCode);
     return item ? toItem(item, step, row.taxCode) : null;
   };
-  const unmapped = (reason) => ({ ...base, itemCode: null, accountCode: null, mappedBy: null, unmapped: reason });
+  // A line that waits keeps the work system's own code (`workCode`), so
+  // "Price codes" can name the product and link it.
+  const unmapped = (reason) => ({
+    ...base, itemCode: null, accountCode: null, mappedBy: null, unmapped: reason,
+    ...(text(line.itemCode) ? { workCode: text(line.itemCode) } : {}),
+  });
+
+  // A placeholder line (the routine's `placeholders`) is not work to bill.
+  if ((config.placeholders ?? []).some((p) => p.label === (lookup || exact) && (p.unitAmountCents === null || p.unitAmountCents === lineCents))) {
+    return { ...base, itemCode: null, accountCode: null, mappedBy: 'placeholder', placeholder: true };
+  }
 
   const linked = line.itemCode ? context.byLinkedCode?.get(lineText(line.itemCode)) : null;
   if (linked) return toItem(linked, 'linked');
@@ -245,10 +261,14 @@ export function mapLine(line, context) {
   return unmapped(original ? `no mapping step found a price item for "${original}"` : 'the line has no text');
 }
 
-// Maps every line of a job. Lines the routine drops leave the job.
+// Maps every line of a job. Lines the routine drops leave the job. A
+// placeholder line leaves too, unless the job has nothing else: then it stays
+// (marked `mappedBy: 'placeholder'`), so the job is still seen and the lab's
+// rules hold it until the work system has the real lines.
 export function mapLines(lines, context) {
-  return lines.map((line) => mapLine(line, context)).filter((l) => !l.skip)
-    .map(({ skip: _skip, unmapped: _unmapped, ...line }) => line);
+  const mapped = lines.map((line) => mapLine(line, context)).filter((l) => !l.skip);
+  const real = mapped.filter((l) => !l.placeholder);
+  return (real.length ? real : mapped).map(({ skip: _skip, unmapped: _unmapped, placeholder: _placeholder, ...line }) => line);
 }
 
 function readConfig(raw = {}) {
@@ -271,6 +291,18 @@ function readConfig(raw = {}) {
   if ('lineTax' in raw) {
     if (!LINE_TAXES.includes(raw.lineTax)) throw invalid(`lineTax must be one of ${LINE_TAXES.join(', ')}`);
     out.lineTax = raw.lineTax;
+  }
+  if ('placeholders' in raw) {
+    if (!Array.isArray(raw.placeholders) || raw.placeholders.length > MAX_PLACEHOLDERS) throw invalid(`placeholders must be a list of ${MAX_PLACEHOLDERS} lines at most`);
+    const seen = new Set();
+    const list = raw.placeholders.map((p) => {
+      const label = p && typeof p === 'object' && typeof p.label === 'string' ? (lineLookupText(p.label) || lineText(p.label)) : '';
+      if (!label || label.length > 200) throw invalid('each placeholder needs a label of 200 characters at most');
+      const unitAmountCents = p.unitAmountCents ?? null;
+      if (unitAmountCents !== null && (!Number.isInteger(unitAmountCents) || Math.abs(unitAmountCents) > 100_000_000)) throw invalid('a placeholder price must be whole cents, or null for any price');
+      return { label, unitAmountCents };
+    }).filter((p) => !seen.has(`${p.label}|${p.unitAmountCents}`) && seen.add(`${p.label}|${p.unitAmountCents}`));
+    if (list.length) out.placeholders = list;
   }
   return out;
 }
@@ -299,8 +331,10 @@ export function readMapping(raw) {
   if (!label || label.length > 200) throw invalid('the label must be text of 200 characters at most');
   const priced = ['price_alias', 'saved'].includes(raw.kind);
   let unitAmountCents = raw.unitAmountCents ?? null;
-  if (unitAmountCents !== null && (!Number.isInteger(unitAmountCents) || unitAmountCents < 0 || unitAmountCents > 100_000_000)) {
-    throw invalid('unitAmountCents must be whole cents');
+  // A saved choice can be for a line below zero: a discount line.
+  const least = raw.kind === 'saved' ? -100_000_000 : 0;
+  if (unitAmountCents !== null && (!Number.isInteger(unitAmountCents) || unitAmountCents < least || unitAmountCents > 100_000_000)) {
+    throw invalid(raw.kind === 'saved' ? 'unitAmountCents must be whole cents' : 'unitAmountCents must be whole cents, zero or more');
   }
   if (priced && unitAmountCents === null) throw invalid('this kind needs a unit price');
   if (!priced) unitAmountCents = null;

@@ -9,7 +9,7 @@ import { externalIdFor } from '../server/core/links.js';
 import {
   hideNonClients, linkCustomers, matchJobs, normaliseName, rankCandidates, referenceNamesPatient, runPipelineOnce, scoreCandidate,
 } from '../server/core/pipeline.js';
-import { billingObligations, linkRejections, linkSuggestions, priorLinks } from '../server/db/schema.js';
+import { billingObligations, linkRejections, linkSuggestions, pipelineCursors, priorLinks } from '../server/db/schema.js';
 import { findInvoices, listCustomers, mirrorState } from '../server/integrations/xero/lookup.js';
 import { freshDatabase, skipWithoutDatabase } from './support/db.js';
 import { refreshStaleCatalogues } from '../server/integrations/xero/import.js';
@@ -245,6 +245,19 @@ describe('the pipeline', { skip: skipWithoutDatabase }, () => {
   test('a run with nothing new checks nothing', async () => {
     const summary = await runPipelineOnce(handle.db, integrationsOf([fakeWork([]).adapter, accounting]), { now: NOW });
     assert.equal(summary.matching.checked, 0);
+  });
+
+  test('a new mapped line shape reads every job again once, from the start', async () => {
+    const first = fakeWork([]);
+    await runPipelineOnce(handle.db, integrationsOf([first.adapter, accounting]), { now: NOW });
+    assert.notEqual(first.calls[0], null, 'the read goes on from its cursor');
+    await handle.db.delete(pipelineCursors).where(and(eq(pipelineCursors.organisationId, organisationId), eq(pipelineCursors.name, 'map_lines.shape')));
+    const again = fakeWork([]);
+    await runPipelineOnce(handle.db, integrationsOf([again.adapter, accounting]), { now: NOW });
+    assert.equal(again.calls[0], null, 'jobs stored before the release are read again');
+    const after = fakeWork([]);
+    await runPipelineOnce(handle.db, integrationsOf([after.adapter, accounting]), { now: NOW });
+    assert.notEqual(after.calls[0], null, 'only once');
   });
 
   test('a linked invoice is followed through its life: voided in Xero, the job needs a person', async () => {

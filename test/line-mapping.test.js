@@ -126,6 +126,34 @@ test('a line no step answers keeps no code, so the ledger holds the job', () => 
   assert.equal(mapLine(line('Bite Block', 4500), mappingContext({ items })).itemCode, null);
 });
 
+test('a linked product maps at any price, and a waiting line keeps the work system code', () => {
+  const linked = mappingContext({ items: items.map((item) => ({ ...item, id: `id-${item.code}` })), links: [{ priceItemId: `id-${items[0].code}`, externalCode: '2101' }] });
+  const line = { itemCode: '2101', description: 'A name no step knows', unitAmountCents: 12345, taxCode: 'GST_FREE' };
+  const mapped = mapLine(line, linked);
+  assert.deepEqual([mapped.itemCode, mapped.mappedBy, mapped.unitAmountCents], [items[0].code, 'linked', 12345]);
+  const waits = mapLine(line, mappingContext({ items }));
+  assert.deepEqual([waits.itemCode, waits.workCode], [null, '2101']);
+  assert.equal(mapLine({ ...line, itemCode: null }, mappingContext({ items })).workCode, undefined);
+});
+
+test('a saved choice can be for a discount line below zero; other kinds cannot', () => {
+  assert.equal(readMapping({ kind: 'saved', label: 'Family discount', unitAmountCents: -17500, itemCode: 'DISC' }).unitAmountCents, -17500);
+  assert.throws(() => readMapping({ kind: 'price_alias', label: 'Family discount', unitAmountCents: -17500, itemCode: 'DISC' }), /zero or more/);
+});
+
+test('a placeholder line leaves a job that has other lines, and stays when it is the only line', () => {
+  const config = readMappingConfig({ placeholders: [{ label: 'Models', unitAmountCents: 0 }, { label: 'models', unitAmountCents: 0 }] });
+  assert.deepEqual(config.placeholders, [{ label: 'models', unitAmountCents: 0 }]);
+  const context = mappingContext({ items, config });
+  const both = mapLines([line('Models', 0), line('Special Tray', 5500)], context);
+  assert.deepEqual(both.map((l) => l.itemCode), ['SPT'], 'the placeholder is off the job');
+  const alone = mapLines([line('Models', 0)], context);
+  assert.deepEqual(alone.map((l) => [l.description, l.mappedBy, l.itemCode]), [['Models', 'placeholder', null]], 'a job with nothing else keeps it');
+  assert.equal(mapLines([line('Models', 20000), line('Special Tray', 5500)], context).length, 2, 'another price is not the placeholder');
+  assert.equal(mapLines([line('Models', 0), line('Special Tray', 5500)], mappingContext({ items })).length, 2, 'no setting, no change');
+  assert.throws(() => readMappingConfig({ placeholders: [{ label: '' }] }), /label/);
+});
+
 test('zero lines drop only when the routine says so', () => {
   assert.equal(mapLines([line('Special Tray', 0)], mappingContext({ items })).length, 1);
   assert.equal(mapLines([line('Special Tray', 0)], mappingContext({ items, config: { zeroLines: 'drop' } })).length, 0);

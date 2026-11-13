@@ -42,16 +42,48 @@ its prices before GST), and the work flag alone decides "the job changed"; `work
 answers keeps no price item, so the ledger holds the job ("a line does not
 map to a price item").
 
-A change to a mapping row, or to the routine, reads every job again from
+A change to a mapping row, or to the routine, or a release that changes what\na stored line holds (`MAPPING_SHAPE`, `server/core/pipeline.js`), reads every job again from
 Flow's own copy of the work system. It makes no calls to the work system.
+
+## Placeholder lines
+
+Some labs add a line in the work system only to open a job, before the real
+work is known (for example "Models" at $0.00). The routine's setting
+`placeholders` lists them: `[{ "label": "Models", "unitAmountCents": 0 }]`
+(`null` for any price). It is the lab's own setting, not Flow's code.
+
+- A placeholder line leaves the job when the job has other lines. It does not
+  reach the invoice and holds nothing.
+- A job with only placeholder lines keeps them (`mappedBy` `placeholder`), so
+  the job is still seen. The lab's rules hold it (for example "No amount")
+  until the work system has the real lines.
+- Flow does not write to the work system, so the line stays there.
+
+Set it on Price codes (a $0.00 row offers "Placeholder: leave it off the
+invoice"), or `PUT /api/invoicing/automations/map_lines` with
+`{ "config": { "placeholders": [...] } }`.
 
 ## Price codes (Settings, Rules)
 
-Each label that found no price item shows as one row, with its price and the
-number of lines it holds back. An owner or admin picks the price item. Flow
-saves it as a `saved` row for that label at that price.
+Each group of lines that found no price item shows as one row: the work
+system's text, its product code, the price on the job (and the list price when
+it differs), and the lines and jobs it holds back. One label that waits at two
+prices is two rows. An owner or admin picks the price item:
 
-API (`server/api/invoicing.js`): `GET /line-labels`, `GET /line-mappings`,
+- A row with a product code links that product to the price item (the price
+  list's link, `docs/PRICE_LIST.md`). Every line of the product then maps, at
+  every price: a price set by hand on one job no longer stops it.
+- A row with no product (a free-text line, for example a discount) saves a
+  `saved` row for that label at that price. The price can be below zero.
+
+Each row has "Copy prompt": the facts and the steps for a connected agent. An
+error stays on the page in red, with its own "Copy prompt".
+
+A waiting line keeps the work system's code as `workCode`. A Seazona invoice
+line has no product code of its own; it takes the code of the order's line for
+the same product (`server/integrations/seazona/ledger.js`, `ledgerLinesFor`).
+
+API (`server/api/invoicing.js`): `GET /line-labels` (`labels`: every label; `waiting`: the rows above), `GET /line-mappings`,
 `POST /line-mappings`, `PUT /line-mappings/:id`, `DELETE /line-mappings/:id`.
 
 ## From the earlier app

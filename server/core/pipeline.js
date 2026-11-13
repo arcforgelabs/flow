@@ -235,6 +235,12 @@ export async function hideNonClients(db, organisationId, { system, customers, wo
   return result;
 }
 
+// The shape of a mapped line. Raise it when line-mapping.js or a work adapter
+// changes what a stored line holds (2: a waiting line keeps `workCode`, and a
+// Seazona invoice line takes its product code from the order).
+const MAPPING_SHAPE = '2';
+const MAPPING_SHAPE_CURSOR = 'map_lines.shape';
+
 async function readCursor(db, organisationId, name) {
   const [row] = await db.select().from(pipelineCursors)
     .where(and(eq(pipelineCursors.organisationId, organisationId), eq(pipelineCursors.name, name)));
@@ -269,6 +275,12 @@ export async function ingestWork(db, organisationId, { adapter, restart = false,
   const name = `${adapter.id}.work`;
   let cursor = restart ? null : await readCursor(db, organisationId, name);
   const toJob = await workJobMaker(db, organisationId, adapter);
+  // A release that changes what a mapped line keeps reads every job again
+  // once, from Flow's own copy, so jobs stored before it take the new shape.
+  if (toJob.mapped && (await readCursor(db, organisationId, MAPPING_SHAPE_CURSOR)) !== MAPPING_SHAPE) {
+    cursor = null;
+    await writeCursor(db, organisationId, MAPPING_SHAPE_CURSOR, MAPPING_SHAPE);
+  }
   const result = { observed: 0, withoutCustomer: 0, skipped: 0, sentToReview: 0, readyCleared: 0, unmappedLines: 0, more: false };
   for (let page = 0; page < pages; page += 1) {
     const { items, withdrawn, cursor: next, more } = await adapter.capabilities.pullWorkItems(cursor, { limit: 200 });
@@ -315,7 +327,7 @@ export async function ingestHistory(db, organisationId, { adapter, pages = WORK_
   const contactOf = new Map(links.map((l) => [l.externalId, l.flowId]));
   const result = { held: 0, updated: 0, alreadyLive: 0, skipped: 0, more: false };
   const mapping = (await listAutomations(db, organisationId)).find((a) => a.key === 'map_lines');
-  const context = mapping?.enabled ? await loadMappingContext(db, organisationId, mapping.config) : null;
+  const context = mapping?.enabled ? await loadMappingContext(db, organisationId, mapping.config, { system: adapter.id }) : null;
   for (let page = 0; page < pages; page += 1) {
     const { items, cursor: next, more } = await adapter.capabilities.pullHistoryJobs(cursor, { limit: 200 });
     for (const item of items) {

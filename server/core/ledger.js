@@ -125,6 +125,8 @@ async function normaliseLines(tx, organisationId, lines, { inclusive = false } =
       ...(line.label ? { label: line.label } : {}),
       ...(line.mappedBy ? { mappedBy: line.mappedBy } : {}),
       ...(line.workTaxCode && line.workTaxCode !== taxCode ? { workTaxCode: line.workTaxCode } : {}),
+      // The work system's code of a line that found no price item (line-mapping.js).
+      ...(!priceItemId && !accountCode && line.workCode ? { workCode: String(line.workCode).slice(0, 100) } : {}),
     };
     normalised.push({ itemCode, priceItemId, description, quantity, unitAmountCents, taxCode, ...extra, ...totals });
   }
