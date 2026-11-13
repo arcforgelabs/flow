@@ -170,6 +170,16 @@ test('a browser envelope goes on only to the installation\'s own Sentry project'
   assert.equal(sent[0][1].method, 'POST');
   assert.equal(sent[0][1].body, body);
   await adapter.stop();
+
+  // A Sentry that takes the envelope and never answers does not hold Flow.
+  const stalled = createSentryAdapter({ sdk: fakeSdk(), env: {}, envelopeTimeoutMs: 20,
+    fetch: (url, init) => new Promise((resolve, reject) => init.signal.addEventListener('abort', () => reject(init.signal.reason))) });
+  await stalled.start({ log: quiet, env: { SENTRY_DSN: DSN } });
+  // AbortSignal.timeout does not keep a test process alive; a server does.
+  const alive = setTimeout(() => {}, 5000);
+  await assert.rejects(stalled.capabilities.forwardEnvelope(envelope(DSN)), { name: 'TimeoutError' });
+  clearTimeout(alive);
+  await stalled.stop();
 });
 
 test('with traces at 0 the adapter traces nothing and the browser loads the SDK without tracing', async () => {

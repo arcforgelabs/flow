@@ -115,7 +115,11 @@ export function envelopeTarget(body, dsn) {
 
 // `sdk` is for tests: anything with init, captureEvent, captureException
 // and close, as @sentry/node has.
-export function createSentryAdapter({ sdk = SentryNode, env: hostEnv = process.env, fetch: send = globalThis.fetch } = {}) {
+// How long Flow waits for Sentry to take one browser envelope. A stalled
+// Sentry endpoint must not hold the request open: the route answers 502.
+export const ENVELOPE_TIMEOUT_MS = 10_000;
+
+export function createSentryAdapter({ sdk = SentryNode, env: hostEnv = process.env, fetch: send = globalThis.fetch, envelopeTimeoutMs = ENVELOPE_TIMEOUT_MS } = {}) {
   let settings = null;
   let release = null;
 
@@ -184,12 +188,13 @@ export function createSentryAdapter({ sdk = SentryNode, env: hostEnv = process.e
       },
       // Passes one browser envelope on to the Sentry project (ENVELOPE_PATH).
       // Answers the HTTP status for the browser: Sentry's own, 400 for an
-      // envelope that is not for this DSN, 503 while Sentry is off.
+      // envelope that is not for this DSN, 503 while Sentry is off. A wait
+      // past ENVELOPE_TIMEOUT_MS throws (the route answers 502).
       async forwardEnvelope(body) {
         if (!settings) return 503;
         const target = envelopeTarget(body, settings.dsn);
         if (!target) return 400;
-        const res = await send(target, { method: 'POST', headers: { 'Content-Type': 'application/x-sentry-envelope' }, body });
+        const res = await send(target, { method: 'POST', headers: { 'Content-Type': 'application/x-sentry-envelope' }, body, signal: AbortSignal.timeout(envelopeTimeoutMs) });
         return res.status;
       },
       // Runs `work` in a span of the current trace (server/core/tracing.js).
