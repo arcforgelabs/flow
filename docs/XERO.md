@@ -264,6 +264,9 @@ The rules:
   differs from its Xero item's tax type stops the draft (`xero_tax_differs`,
   "GST not as Xero"): sync Xero, then check the draft again. With "GST from
   Xero" off (Settings, Invoicing, `taxFromXero`) that check does not run.
+  An owner or admin can send one such invoice with an override
+  (`docs/INVOICE_SENDING.md`, "Override"): the line then goes with its item
+  code and Flow's own tax type, always as a Xero draft.
 - **Xero decides GST** while "GST from Xero" is on (the default). Each
   catalogue sync copies every Xero item's tax type
   onto its linked price item. "Prices include GST" stays the lab's own

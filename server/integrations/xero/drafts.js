@@ -187,7 +187,7 @@ export function buildDraft(document, { settings, contact, items, sendMode = 'acc
         // Xero's item sets the GST: a line whose GST differs never goes.
         const xeroTax = taxCodeOf(item.salesTaxType, settings.taxTypes);
         if (taxFromXero && xeroTax && line.taxCode && xeroTax !== line.taxCode) {
-          problems.push(problem('xero_tax_differs', `Line ${line.position}: GST differs from Xero item ${item.code || line.itemCode} (${xeroTax === 'GST' ? 'GST' : 'GST free'} in Xero). Sync Xero, then check the draft again.`, { itemCode: line.itemCode, short: 'GST not as Xero' }));
+          problems.push(problem('xero_tax_differs', `Line ${line.position}: GST differs from Xero item ${item.code || line.itemCode} (${xeroTax === 'GST' ? 'GST' : 'GST free'} in Xero). Sync Xero, then check the draft again.`, { itemCode: line.itemCode, short: 'GST not as Xero', line: line.position, key: `xero_tax_differs:${line.position}:${line.itemCode}`, flowTax: line.taxCode, xeroTax }));
         }
       }
     } else if (line.accountCode) {
@@ -406,7 +406,9 @@ async function previewOne(db, runtime, organisationId, invoiceId) {
 // Sends issued invoices to Xero as drafts, one at a time, on the writes lane.
 // `allowExistingReference` lists invoice ids a person chose to send although
 // Xero holds an invoice with the same reference.
-export async function pushDrafts(db, runtime, organisationId, invoiceIds, { pushedBy = null, allowExistingReference = [] } = {}) {
+// `accepted` maps an invoice id to the problem keys an owner or admin's
+// override passes (server/core/send-override.js).
+export async function pushDrafts(db, runtime, organisationId, invoiceIds, { pushedBy = null, allowExistingReference = [], accepted = null } = {}) {
   if (!Array.isArray(invoiceIds) || !invoiceIds.length || invoiceIds.length > MAX_BATCH) {
     throw xeroError('invalid', `invoiceIds must list 1 to ${MAX_BATCH} invoices`, { status: 400 });
   }
@@ -419,7 +421,7 @@ export async function pushDrafts(db, runtime, organisationId, invoiceIds, { push
     const results = [];
     for (const invoiceId of invoiceIds) {
       try {
-        results.push(await pushOne(db, runtime, client, organisationId, invoiceId, { pushedBy, allowExisting: allowed.has(invoiceId) }));
+        results.push(await pushOne(db, runtime, client, organisationId, invoiceId, { pushedBy, allowExisting: allowed.has(invoiceId), accepted: accepted?.get(invoiceId) ?? [] }));
       } catch (error) {
         if (stopsTheBatch(error)) {
           // Every later invoice would fail the same way: stop and say so.
@@ -445,10 +447,10 @@ async function keepSendState(db, organisationId, results) {
 }
 
 // Send all ready (server/core/sending.js): issued invoices in batches.
-export async function pushInvoices(db, runtime, { organisationId, invoiceIds, pushedBy = null }) {
+export async function pushInvoices(db, runtime, { organisationId, invoiceIds, pushedBy = null, accepted = null }) {
   const invoices = [];
   for (let at = 0; at < invoiceIds.length; at += MAX_BATCH) {
-    invoices.push(...(await pushDrafts(db, runtime, organisationId, invoiceIds.slice(at, at + MAX_BATCH), { pushedBy })).invoices);
+    invoices.push(...(await pushDrafts(db, runtime, organisationId, invoiceIds.slice(at, at + MAX_BATCH), { pushedBy, accepted })).invoices);
   }
   return { invoices };
 }
@@ -464,8 +466,10 @@ export async function checkDrafts(db, runtime, { organisationId, invoiceIds }) {
     for (const preview of invoices) {
       found.set(preview.invoiceId, preview.problems
         .filter((p) => p.blocking !== false && p.code !== 'invoice_not_issued')
-        .map(({ code, message, short, offerCreate, offerLink }) => ({
+        .map(({ code, message, short, offerCreate, offerLink, key, line, itemCode, flowTax, xeroTax }) => ({
           code, message, ...(short ? { short } : {}), ...(offerCreate ? { offerCreate: true } : {}), ...(offerLink ? { offerLink: true } : {}),
+          // What names one warning for an override (server/core/send-override.js).
+          ...(key ? { key, line, itemCode, flowTax, xeroTax } : {}),
         })));
     }
   }
@@ -515,7 +519,7 @@ function provesNothingCreated(error) {
 
 const shownXero = (inv) => ({ invoiceId: inv.InvoiceID, number: inv.InvoiceNumber ?? null, status: inv.Status ?? null });
 
-async function pushOne(db, runtime, client, organisationId, invoiceId, { pushedBy, allowExisting }) {
+async function pushOne(db, runtime, client, organisationId, invoiceId, { pushedBy, allowExisting, accepted = [] }) {
   const { invoice, version, document } = await documentFor(db, organisationId, invoiceId);
   if (invoice.status === 'void') throw xeroError('invoice_void', 'This invoice is void. Flow does not send it to Xero.', { status: 409 });
   if (invoice.status !== 'issued') throw xeroError('invoice_not_issued', 'Only an issued invoice goes to Xero. Issue it first.', { status: 409 });
@@ -552,9 +556,14 @@ async function pushOne(db, runtime, client, organisationId, invoiceId, { pushedB
     throw xeroError(found.code, found.message, { status: 409, short: found.short });
   }
   const items = await xeroItemsForCodes(db, organisationId, document.lines.map((l) => l.itemCode));
-  const sendMode = await sendModeFor(db, organisationId, invoice.contactId);
+  // An invoice sent with an override always goes as a Xero draft, so nothing
+  // is emailed to the customer before a person approves it in Xero.
+  const sendMode = accepted.length ? 'accounting_draft' : await sendModeFor(db, organisationId, invoice.contactId);
   const { taxFromXero } = await readInvoicingSettings(db, organisationId);
-  const { draft, problems } = buildDraft(document, { settings: runtime.settings, contact: match.contact, items, sendMode, taxFromXero });
+  const { draft, problems: found } = buildDraft(document, { settings: runtime.settings, contact: match.contact, items, sendMode, taxFromXero });
+  // The override passes the warnings it recorded, by key. A new problem (the
+  // item left Xero meanwhile) still stops the send.
+  const problems = found.filter((p) => !(p.key && accepted.includes(p.key)));
   if (problems.length) throw xeroError(problems[0].code, problems.map((p) => p.message).join(' '), { status: 409, short: problems[0].short });
 
   // Live duplicate check: invoices in Xero with this reference, made by Flow

@@ -797,6 +797,33 @@ export const invoiceRuleExceptions = pgTable('invoice_rule_exceptions', {
   check('invoice_rule_exceptions_reason_valid', sql`length(${t.reason}) between 1 and 200`),
 ]);
 
+// Send anyway (docs/INVOICE_SENDING.md, "Override"): an owner or admin sent
+// one invoice although it had a warning. One row for each override, append
+// only (migration 0037). `problems` keeps each warning's code, key and words
+// as they were at the press. The open item on Reconcile is a review item
+// (`send.override`) whose flowId is this row's id.
+export const SEND_OVERRIDE_REASONS = ['xero_item_wrong', 'one_off', 'client_tax', 'other'];
+export const sendOverrides = pgTable('send_overrides', {
+  id: id(),
+  organisationId: organisationId().references(() => organisations.id),
+  invoiceId: uuid('invoice_id').notNull().references(() => invoices.id),
+  // The issued version this override allows. A revision needs a new one.
+  version: integer('version').notNull(),
+  // sha256 of that version's document (invoice_versions.document).
+  documentHash: text('document_hash').notNull(),
+  problems: jsonb('problems').notNull(),
+  reasonCode: text('reason_code').notNull(),
+  note: text('note'),
+  personId: uuid('person_id').notNull().references(() => people.id),
+  createdAt: createdAt(),
+}, (t) => [
+  unique('send_overrides_invoice_version').on(t.invoiceId, t.version),
+  index('send_overrides_person_day').on(t.personId, t.createdAt),
+  check('send_overrides_reason_valid', inList('reason_code', SEND_OVERRIDE_REASONS)),
+  check('send_overrides_other_has_note', sql`${t.reasonCode} <> 'other' or ${t.note} is not null`),
+  check('send_overrides_note_length', sql`${t.note} is null or length(${t.note}) between 1 and 200`),
+]);
+
 // Automations (server/core/automations.js): Flow's routines, each on or off,
 // with its own settings. The routines are defined in code; a row holds an
 // organisation's choice. No row means the routine's default.

@@ -34,7 +34,8 @@ import {
 import { isHistoryHeld } from '../core/history.js';
 import { invoicePdfDocument, pdfFields, pdfFilename, renderInvoicePdf } from '../core/invoice-pdf.js';
 import { emailedStage, INVOICE_TABS, invoiceTab, OLD_TABS } from '../core/invoice-status.js';
-import { invoiceView, invoiceViews, markNotReady, markReady, sendAgain, sendAllReady } from '../core/sending.js';
+import { invoiceView, invoiceViews, markNotReady, markReady, sendAgain, sendAllReady, sendAnyway } from '../core/sending.js';
+import { acceptOverride, getOverride, listOverrides, overridable, overridesOfInvoice, OVERRIDE_REASONS, problemKey, recheckOpenOverrides, recheckOverride } from '../core/send-override.js';
 import { createContact, getContact, listContacts, presentContact, updateContact } from '../core/contacts.js';
 import { mergeContacts } from '../core/merge-contacts.js';
 import {
@@ -136,6 +137,7 @@ const ERROR_STATUS = {
   invalid: 400, organisation_required: 400, not_found: 404, not_draft: 409, not_issued: 409,
   never_issued: 409, was_issued: 409, not_ready: 409, live_check_unavailable: 409, conflict: 409,
   accounting_not_connected: 409, accounting_writes_off: 409, accounting_unavailable: 409, accounting_approved: 409,
+  not_overridable: 409, override_stale: 409, override_limit: 429,
   conflict: 409,
 };
 
@@ -405,6 +407,12 @@ async function invoiceDetail(db, organisationId, invoiceId, accounting = null, w
     // rule's added shipping, for example). Flow cannot write lines to the
     // work system, so the page shows the gap until the work system has them.
     sourceGap: await sourceGap(db, organisationId, invoice),
+    // Override: may an owner or admin send this draft with its warnings, and
+    // the overrides this invoice went with (newest first).
+    canOverride: Boolean(accounting) && invoice.status === 'draft' && viewed.view === 'problem' && overridable(viewed.problems),
+    problems: viewed.problems.map((p) => ({ ...p, key: problemKey(p) })),
+    overrides: await overridesOfInvoice(db, organisationId, invoiceId),
+    overrideReasons: OVERRIDE_REASONS,
     // The exceptions people gave this invoice's job, current or ended.
     ruleExceptions: await exceptionsOfInvoice(db, organisationId, invoice),
     // The Linked card: each connected system, and this invoice's link there.
@@ -442,6 +450,8 @@ export const INVOICING_ACTIONS = Object.freeze({
   sendReady: { cooldownMs: 0, budget: false },
   sendAgain: { cooldownMs: 0, budget: false },
   draftJob: { cooldownMs: 10_000, budget: false },
+  // One invoice, one press: the wait is for that invoice.
+  sendAnyway: { cooldownMs: 30_000, budget: false },
 });
 
 export function createInvoicingRouter({
@@ -455,6 +465,8 @@ export function createInvoicingRouter({
 
   const signedIn = [personAuth.requireSession];
   const manager = [...signedIn, personAuth.requireRole('owner', 'admin')];
+  // An owner or admin in person: an assistant's key is refused.
+  const managerInPerson = [...manager, personAuth.requirePerson];
   const organisationOf = (req) => resolveOrganisation(db, req.method === 'GET' ? req.query.organisationId : (req.body?.organisationId ?? req.query.organisationId));
 
   router.get('/context', ...signedIn, handle(log, async (req, res) => {
@@ -620,6 +632,51 @@ export function createInvoicingRouter({
     res.json({ ok: true, ...result });
   }));
 
+  // Override (docs/INVOICE_SENDING.md, "Override"): one Pending draft goes
+  // although it has a warning. One invoice a press, a person only.
+  router.post('/invoices/:id/send-anyway', ...managerInPerson, act('sendAnyway', (req) => req.params.id), handle(log, async (req, res) => {
+    const invoiceId = pathId(req.params.id, 'invoice');
+    const organisationId = await organisationOf(req);
+    const issueDate = optionalDate(req.body?.issueDate, 'issueDate') ?? today();
+    const reader = work().find((a) => typeof a.capabilities.readWorkItem === 'function') ?? null;
+    const { override } = await sendAnyway(db, organisationId, invoiceId, {
+      accounting: accounting(), work: reader, personId: req.person.id, issueDate,
+      acknowledged: req.body?.acknowledged, reasonCode: req.body?.reasonCode, note: req.body?.note ?? null,
+    });
+    // The log names ids and codes only: no note, no customer.
+    log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} sent invoice ${invoiceId} with an override ${override.id}: ${override.problems.map((p) => p.code).join(', ')}`);
+    res.json({ ok: true, override: { id: override.id }, invoice: await invoiceDetail(db, organisationId, invoiceId, accounting(), work()) });
+  }));
+
+  router.get('/overrides', ...signedIn, handle(log, async (req, res) => {
+    const organisationId = await organisationOf(req);
+    const state = text(req.query.state) || 'open';
+    if (!['open', 'all'].includes(state)) throw invalid('state must be open or all');
+    res.json({ ok: true, overrides: await listOverrides(db, organisationId, { state }), reasons: OVERRIDE_REASONS });
+  }));
+
+  router.get('/overrides/:id', ...signedIn, handle(log, async (req, res) => {
+    const organisationId = await organisationOf(req);
+    res.json({ ok: true, override: await getOverride(db, organisationId, pathId(req.params.id, 'override')) });
+  }));
+
+  // Recheck: the open item closes when its cause is gone (Flow's copy of the
+  // accounting system, no call).
+  router.post('/overrides/:id/recheck', ...manager, handle(log, async (req, res) => {
+    const overrideId = pathId(req.params.id, 'override');
+    const organisationId = await organisationOf(req);
+    const result = await recheckOverride(db, organisationId, overrideId, { accounting: accounting() });
+    res.json({ ok: true, ...result, override: await getOverride(db, organisationId, overrideId) });
+  }));
+
+  router.post('/overrides/:id/accept', ...managerInPerson, handle(log, async (req, res) => {
+    const overrideId = pathId(req.params.id, 'override');
+    const organisationId = await organisationOf(req);
+    const override = await acceptOverride(db, organisationId, overrideId, { personId: req.person.id, note: req.body?.note });
+    log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} accepted override ${overrideId}`);
+    res.json({ ok: true, override });
+  }));
+
   router.get('/invoices/:id', ...signedIn, handle(log, async (req, res) => {
     const invoiceId = pathId(req.params.id, 'invoice');
     const organisationId = await organisationOf(req);
@@ -700,6 +757,8 @@ export function createInvoicingRouter({
     const invoiceId = pathId(req.params.id, 'invoice');
     const organisationId = await organisationOf(req);
     await voidInvoice(db, organisationId, invoiceId);
+    // A void invoice has no open override left.
+    await recheckOpenOverrides(db, organisationId, { accounting: accounting(), invoiceId });
     log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} voided invoice ${invoiceId}`);
     res.json({ ok: true, invoice: await invoiceDetail(db, organisationId, invoiceId, accounting(), work()) });
   }));
@@ -708,6 +767,7 @@ export function createInvoicingRouter({
     const invoiceId = pathId(req.params.id, 'invoice');
     const organisationId = await organisationOf(req);
     const removed = await deleteDraft(db, organisationId, invoiceId, { actor: `person:${req.person.id}`, accounting: accounting() });
+    if (removed.status === 'void') await recheckOpenOverrides(db, organisationId, { accounting: accounting(), invoiceId });
     log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} ${removed.status === 'void' ? 'voided invoice' : 'deleted draft invoice'} ${invoiceId}`);
     res.json({ ok: true });
   }));
@@ -885,7 +945,8 @@ export function createInvoicingRouter({
   // (core/job-match.js). Flow's own records only; no integration is called.
   router.get('/reconcile', ...signedIn, handle(log, async (req, res) => {
     const organisationId = await organisationOf(req);
-    res.json({ ok: true, ...await listReconcile(db, organisationId) });
+    // The open overrides (send-override.js) are rows of the same list.
+    res.json({ ok: true, ...await listReconcile(db, organisationId), overrides: await listOverrides(db, organisationId, { state: 'open' }) });
   }));
 
   // The open review queue (core/review.js): daily reconcile days, job

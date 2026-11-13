@@ -4,10 +4,11 @@ import { billingObligations, contacts, invoiceLines, invoices, people, priceItem
 import { FlowError } from './errors.js';
 import { accountingItemsFor, listRules, ruleExceptionsFor, ruleNonChargeable, rulePending, rulePricesFor, ruleSkip } from './invoice-rules.js';
 import { customerBillingByContact, effectiveSettings, readInvoicingSettings } from './invoicing-rules.js';
-import { issueInvoice } from './invoices.js';
+import { getInvoice, issueInvoice } from './invoices.js';
 import { CHANGED_REASON, diffJobLines, sourceBillingProblems, STATUS_BACK_REASON } from './ledger.js';
 import { soleOrganisation } from './pipeline.js';
 import { needsRead, readAccountingFirst, readBeforeAct, READS_PER_PASS } from './read-before-act.js';
+import { acceptedKeysFor, assertUnderLimit, overridable, problemKey, readReason, recordOverride } from './send-override.js';
 import { deadHoldSince, deadSince, enqueueJob, runNextJob } from './queue.js';
 
 // Pending, Ready and Send all ready (docs/INVOICE_SENDING.md).
@@ -370,6 +371,51 @@ export async function sendAllReady(db, organisationId, { accounting = null, work
   return { issued, queued: accounting ? issued : 0, remaining: Math.max(0, ready.length - SEND_BATCH), waiting: waiting.length, held };
 }
 
+// Override (docs/INVOICE_SENDING.md, "Override"): an owner or admin sends one
+// Pending draft although it has a warning. It is the only door: Send ready
+// and the bulk bar never read an override. Every problem of the draft must be
+// on the allow list (send-override.js), and the person must have ticked each
+// warning as it is now (`acknowledged`, the problem keys). The record, the
+// invoice number and the queue commit together. The send worker then passes
+// the recorded keys to the accounting adapter, which still stops on any other
+// problem. Answers { invoice, override }.
+export async function sendAnyway(db, organisationId, invoiceId, {
+  accounting = null, work = null, personId, issueDate, acknowledged, reasonCode, note = null, now = new Date(),
+}) {
+  if (!accounting) throw new FlowError('accounting_not_connected', 'No accounting system is on. Nothing to send.');
+  if (!personId) throw new FlowError('invalid', 'personId is required');
+  const reason = readReason(reasonCode, note);
+  if (!Array.isArray(acknowledged) || acknowledged.some((key) => typeof key !== 'string')) throw new FlowError('invalid', 'acknowledged must list the warnings the person ticked');
+  await assertCanSend(accounting, organisationId);
+  let invoice = await getInvoice(db, organisationId, invoiceId);
+  if (invoice.status !== 'draft') throw new FlowError('not_draft', 'Only a draft can be sent with a warning.');
+  const accountingRead = await readAccountingFirst(db, organisationId, { accounting, work, now });
+  if (accountingRead.outcome === 'waiting') {
+    throw new FlowError('not_ready', stoppedSendMessage({ accountingWaiting: true, accountingReason: accountingRead.reason, stops: [], waiting: [invoiceId] }));
+  }
+  const { go, waiting, stops } = await readJobsFirst(db, organisationId, [invoiceId], { work, now, personId });
+  if (!go.length) throw new FlowError('not_ready', stoppedSendMessage({ accountingWaiting: false, stops, waiting }));
+  invoice = await getInvoice(db, organisationId, invoiceId);
+  const found = (await checkDrafts(db, organisationId, [invoice], accounting)).get(invoiceId) ?? [];
+  if (!found.length) throw new FlowError('not_overridable', 'This invoice has no warning. Send it in the usual way.');
+  if (!overridable(found)) {
+    const blocking = found.find((p) => !overridable([p]));
+    throw new FlowError('not_overridable', `Not sent: ${blocking.message.replace(/\.?$/, '.')} An override cannot pass this problem.`);
+  }
+  const keys = found.map(problemKey).sort();
+  const ticked = [...new Set(acknowledged)].sort();
+  if (keys.length !== ticked.length || keys.some((key, i) => key !== ticked[i])) {
+    throw new FlowError('override_stale', 'The warnings changed. Read them again.');
+  }
+  await assertUnderLimit(db, personId, now);
+  return db.transaction(async (tx) => {
+    await queue(tx, organisationId, [invoiceId], personId);
+    const issued = await issueInvoice(tx, organisationId, invoiceId, { issuedBy: `person:${personId}`, issueDate });
+    const override = await recordOverride(tx, organisationId, issued, { problems: found, ...reason, personId });
+    return { invoice: issued, override };
+  });
+}
+
 // Send again: issued invoices that failed go back on the queue. With no ids,
 // every failed one.
 export async function sendAgain(db, organisationId, { accounting = null, personId, invoiceIds = null }) {
@@ -469,8 +515,11 @@ export async function sendQueued(db, organisationId, { accounting, limit = WORKE
       summary.refused = [...new Set([...(summary.refused ?? []), 'requester_disabled'])];
       continue;
     }
+    // An invoice sent with an override (sendAnyway): the adapter passes the
+    // recorded warnings and still stops on any other problem.
+    const accepted = await acceptedKeysFor(db, organisationId, group.map((r) => r.id));
     const { invoices: results } = await accounting.capabilities.pushInvoices({
-      organisationId, invoiceIds: group.map((r) => r.id), pushedBy: by,
+      organisationId, invoiceIds: group.map((r) => r.id), pushedBy: by, ...(accepted.size ? { accepted } : {}),
     });
     for (const result of results) {
       if (SENT.has(result.outcome)) {

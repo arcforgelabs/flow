@@ -69,6 +69,14 @@ async function addEvent(tx, obligation, kind, actor, evidence = {}) {
   });
 }
 
+// An override of a send (send-override.js) is part of the job's history: who
+// sent its invoice with a warning, and how that closed.
+export async function recordOverrideEvent(tx, obligation, kind, actor, evidence) {
+  requireActor(actor);
+  if (!['send.override', 'send.override.closed'].includes(kind)) throw new FlowError('invalid', 'not an override event');
+  await addEvent(tx, obligation, kind, actor, evidence);
+}
+
 async function update(tx, obligation, fields) {
   const [row] = await tx.update(billingObligations)
     .set({ ...fields, updatedAt: sql`now()` })

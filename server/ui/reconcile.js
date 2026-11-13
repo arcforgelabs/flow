@@ -105,7 +105,7 @@ const NAV_KEY = 'flow_reconcile_nav';
 const FILTER_FIELDS = RECONCILE_FILTER_FIELDS;
 const MATCH_OPS = { yes: 'Has one', no: 'Has none' };
 const SET_OPS = { is: 'Is', not: 'Is not' };
-const TYPES = [{ value: 'job', label: 'Job', icon: 'briefcase' }, { value: 'invoice', label: 'Invoice', icon: 'file-text' }];
+const TYPES = [{ value: 'job', label: 'Job', icon: 'briefcase' }, { value: 'invoice', label: 'Invoice', icon: 'file-text' }, { value: 'override', label: 'Override', icon: 'shield-alert' }];
 
 function readStored(store, key, fallback) {
   try { return JSON.parse(store.getItem(key)) ?? fallback; } catch { return fallback; }
@@ -114,9 +114,14 @@ function writeStored(store, key, value) {
   try { store.setItem(key, JSON.stringify(value)); } catch { /* the page still works, it forgets */ }
 }
 
-// One row for each gap, jobs and invoices together, oldest first.
-export function reconcileRows({ jobs = [], invoices = [] }) {
+// One row for each gap, jobs and invoices together, oldest first. An open
+// override (an invoice sent with a warning, send-override.js) is a row too.
+export function reconcileRows({ jobs = [], invoices = [], overrides = [] }) {
   return [
+    ...overrides.map((o) => ({
+      kind: 'override', id: o.id, client: o.invoice?.clientName ?? null, who: o.invoice?.number ?? 'Invoice', status: o.invoice?.status, stage: 'Override',
+      date: String(o.createdAt ?? '').slice(0, 10) || null, totalCents: o.invoice?.totalCents ?? null, possible: 0,
+    })),
     ...jobs.map((j) => ({
       kind: 'job', id: j.id, client: j.clientName, who: j.practitioner, stage: j.status ?? null, date: j.jobDate, totalCents: j.totalCents, possible: j.possible, unclear: j.unclear,
       key: j.sourceSystem && j.sourceJobRef ? `${j.sourceSystem}\u0000${j.sourceJobRef}` : null,
@@ -165,8 +170,8 @@ export async function renderReconcile(main, ui, id = null) {
   return renderList(main, ui);
 }
 
-const pathOf = (row) => `/reconcile/${row.id}${row.kind === 'invoice' ? '?kind=invoice' : ''}`;
-const KIND_ICON = { job: ['briefcase', 'Job'], invoice: ['file-text', 'Invoice'] };
+const pathOf = (row) => `/reconcile/${row.id}${row.kind === 'job' ? '' : `?kind=${row.kind}`}`;
+const KIND_ICON = { job: ['briefcase', 'Job'], invoice: ['file-text', 'Invoice'], override: ['shield-alert', 'Override'] };
 
 async function renderList(main, ui) {
   const { h, flow, toast, listHead, listFrame } = ui;
@@ -302,13 +307,13 @@ async function renderList(main, ui) {
       for (const b of boxes.values()) b.checked = all.checked;
       drawBar();
     } });
-    const possible = (r) => (r.possible
+    const possible = (r) => (r.kind === 'override' ? h('span', { class: 'fx-rec__possible' }) : r.possible
       ? h('span', { class: 'fx-rec__possible', 'data-state': 'some' }, icon('link-2', 'Possible match'), String(r.possible))
       : h('span', { class: 'fx-rec__possible' }, icon('circle-dashed', 'No possible match')));
     const ALL = {
       kind: { kind: 'icon', phone: 'meta', icon: 'layers', className: 'fx-rec-list__kind', cell: (r) => icon(...KIND_ICON[r.kind]) },
       client: { kind: 'client', phone: 'title', className: 'fx-strong', cell: (r) => r.client ?? h('span', { class: 'fx-dim' }, 'No client') },
-      detail: { kind: 'text', phone: 'meta', cell: (r) => h('span', { class: r.kind === 'invoice' ? 'fx-num' : 'fx-dim' }, r.who ?? '—', r.kind === 'invoice' ? h('span', { class: 'fx-dim' }, ` · ${statusWords(r.status)}`) : null) },
+      detail: { kind: 'text', phone: 'meta', cell: (r) => h('span', { class: r.kind === 'job' ? 'fx-dim' : 'fx-num' }, r.who ?? '—', r.kind === 'job' ? null : h('span', { class: 'fx-dim' }, ` · ${r.kind === 'override' ? 'Override' : statusWords(r.status)}`)) },
       date: { kind: 'date', phone: 'hide', className: 'fx-dim', cell: (r) => shortDate(r.date) },
       total: { kind: 'total', phone: 'end', num: true, cell: (r) => money(r.totalCents) },
       possible: { kind: 'status', phone: 'meta', className: 'fx-rec-list__mid', cell: possible },
@@ -341,6 +346,7 @@ async function renderGap(main, ui, id) {
   const icon = (name, label) => lucide(h, name, label);
   const canAct = ['owner', 'admin'].includes(ui.me?.person?.role);
   const params = new URLSearchParams(location.search);
+  if (params.get('kind') === 'override') return renderOverride(main, ui, id);
   const kind = params.get('kind') === 'invoice' || params.get('tab') === 'invoices' ? 'invoice' : 'job';
 
   // The pager steps through the list as it was; opened from elsewhere, it
@@ -512,4 +518,92 @@ async function renderGap(main, ui, id) {
   }
 
   await load();
+}
+
+const TAX_WORDS = { GST: 'GST', GST_FREE: 'GST free' };
+const taxWords = (code) => TAX_WORDS[code] ?? code ?? '—';
+
+// One open override: an invoice an owner or admin sent with a warning
+// (docs/INVOICE_SENDING.md, "Override"). The warning as it was recorded,
+// Flow's value beside the accounting system's for each line, who, when and
+// why. Recheck closes it when the cause is gone; Accept closes it with a note.
+async function renderOverride(main, ui, id) {
+  const { h, flow, toast } = ui;
+  const icon = (name, label) => lucide(h, name, label);
+  const canAct = ['owner', 'admin'].includes(ui.me?.person?.role);
+  let order = readStored(sessionStorage, NAV_KEY, null)?.rows ?? [];
+  if (!order.some((r) => r.id === id)) {
+    const lists = await flow('/api/invoicing/reconcile').catch(() => null);
+    order = lists ? reconcileRows(lists).filter((r) => r.kind === 'override').map(({ kind, id: i }) => ({ kind, id: i })) : [];
+  }
+  const at = order.findIndex((r) => r.id === id);
+  const { element: pagerBar, draw: drawPager } = pager(h, { label: 'Reconcile', back: () => ui.go('/reconcile') });
+  const goRow = (row) => (row ? () => ui.go(pathOf(row)) : null);
+  drawPager({ count: at >= 0 ? `${at + 1} of ${order.length}` : '', prev: goRow(at > 0 ? order[at - 1] : null), next: goRow(at >= 0 ? order[at + 1] : null) });
+  const next = () => {
+    const rest = order.filter((r) => r.id !== id);
+    writeStored(sessionStorage, NAV_KEY, { ...readStored(sessionStorage, NAV_KEY, {}), rows: rest });
+    const to = rest[Math.min(Math.max(at, 0), rest.length - 1)];
+    ui.go(to ? pathOf(to) : '/reconcile');
+  };
+  const body = h('div', { class: 'fx-rec__results' }, h('div', { class: 'fx-skeleton' }));
+  const actions = h('div', { class: 'fx-ph__actions' });
+  const sub = h('p', { class: 'fx-ph__sub' });
+  const card = h('section', { class: 'fx-rec fx-rec__gap', 'aria-label': 'Override' },
+    pagerBar,
+    h('header', { class: 'fx-ph' }, h('div', { class: 'fx-ph__text' }, h('h1', { class: 'fx-title' }, 'Override'), sub), actions),
+    body);
+  main.append(card);
+
+  let override;
+  try {
+    ({ override } = await flow(`/api/invoicing/overrides/${id}`));
+  } catch (error) {
+    body.replaceChildren(h('p', { class: 'fx-empty' }, error.message));
+    return;
+  }
+  const open = override.review?.state === 'open';
+  const when = new Date(override.createdAt).toLocaleString('en-AU', { dateStyle: 'medium', timeStyle: 'short' });
+  sub.textContent = `${override.invoice?.number ?? 'Invoice'} · ${override.invoice?.clientName ?? 'No client'} · ${money(override.invoice?.totalCents)}`;
+  // A plain list of facts (fx-facts): it reads the same on a phone.
+  const fact = (label, value) => [h('dt', {}, label), h('dd', {}, value)];
+  const differs = () => h('span', { class: 'fx-rec__mark', 'data-mark': 'differs', 'aria-label': 'Different' }, '≠');
+  const facts = h('section', { class: 'fx-card fx-side-card' }, h('dl', { class: 'fx-facts' },
+    ...override.problems.flatMap((p) => [
+      ...fact(p.line != null ? `Line ${p.line}${p.itemCode ? ` · ${p.itemCode}` : ''}` : p.short ?? p.code,
+        p.flowTax || p.xeroTax ? h('span', {}, `Flow sent ${taxWords(p.flowTax)} `, differs(), ` Xero item has ${taxWords(p.xeroTax)}`) : p.short ?? p.code),
+      ...fact('Warning', p.message),
+    ]),
+    ...fact('Sent by', `${override.person?.name ?? 'A person'}, ${when}`),
+    ...fact('Reason', override.reason),
+    ...(override.note ? fact('Note', override.note) : []),
+    ...(open ? [] : fact('Closed', [override.review?.resolution, override.review?.note].filter(Boolean).join(' · ')))));
+  body.replaceChildren(...[open ? null : h('p', { class: 'fx-notice' }, 'This override is closed.'), facts].filter(Boolean));
+
+  const act = async (run) => {
+    for (const b of card.querySelectorAll('button')) b.disabled = true;
+    try {
+      await run();
+    } catch (error) {
+      toast(error.message, 'danger');
+    } finally {
+      for (const b of card.querySelectorAll('button')) b.disabled = false;
+    }
+  };
+  const recheck = canAct && open ? h('button', { class: 'fx-btn', type: 'button', onclick: () => act(async () => {
+    const res = await flow(`/api/invoicing/overrides/${id}/recheck`, { method: 'POST', body: '{}' });
+    if (res.closed) { toast('Flow and Xero agree. Closed.', 'success'); next(); } else toast(res.reason === 'accounting_not_connected' ? 'Xero is not connected. Nothing was checked.' : 'The difference is still there. Sync Xero after you correct it, then recheck.', 'warn');
+  }) }, icon('refresh-cw'), 'Recheck') : null;
+  const accept = canAct && open ? h('button', { class: 'fx-btn fx-btn--primary', type: 'button', onclick: () => act(async () => {
+    const note = h('textarea', { class: 'fx-input', name: 'note', rows: 2, maxlength: 200, required: true, 'aria-label': 'Note' });
+    const form = await ui.dialog({ title: 'Accept this difference?', body: h('div', {}, h('p', {}, 'The override closes with your note. Its record stays.'), note), confirm: 'Accept' });
+    if (!form) return;
+    await flow(`/api/invoicing/overrides/${id}/accept`, { method: 'POST', body: JSON.stringify({ note: String(form.get('note') ?? '').trim() }) });
+    toast('Accepted. Closed.', 'success');
+    next();
+  }) }, icon('check'), 'Accept') : null;
+  actions.replaceChildren(...[
+    h('a', { class: 'fx-btn', href: `/invoices/${override.invoiceId}`, onclick: (event) => ui.go(event) }, icon('file-text'), 'Open invoice'),
+    recheck, accept,
+  ].filter(Boolean));
 }
