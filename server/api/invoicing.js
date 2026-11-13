@@ -55,7 +55,10 @@ import {
 //                                     accounting system { issueDate, invoiceIds? (only these; one that fails
 //                                     a check now stays on Pending and counts as held; one id is all or
 //                                     nothing when its job cannot be confirmed, more than one id sends the
-//                                     rest and counts the unconfirmed in waiting) }
+//                                     rest and counts the unconfirmed in waiting), sendMode? (this press
+//                                     only: 'approve_and_email' or 'accounting_draft'; default each
+//                                     customer's mode), recipients? ({ invoiceId: email } the dialog
+//                                     showed; with approve_and_email an invoice not in it goes as a draft) }
 //   POST  /invoices/send-again        owner or admin: queue failed sends again { invoiceIds? }
 //   GET   /invoices/:id               one invoice: lines, contact, job, issued versions, and where it sends
 //   GET   /invoices/:id/pdf?version=  the invoice as a PDF, drawn by Flow (server/core/invoice-pdf.js),
@@ -618,8 +621,15 @@ export function createInvoicingRouter({
     const ids = req.body?.invoiceIds === undefined ? null : invoiceIdsOf(req.body);
     // Read before act (issue #141) reads each old job from the work system that can.
     const reader = work().find((a) => typeof a.capabilities.readWorkItem === 'function') ?? null;
-    const result = await sendAllReady(db, organisationId, { accounting: accounting(), work: reader, personId: req.person.id, issueDate, invoiceIds: ids });
-    log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} sent all ready: ${JSON.stringify(result)}`);
+    // Optional: 'approve_and_email' or 'accounting_draft' for this press only.
+    const sendMode = req.body?.sendMode ?? null;
+    // Approve and email reaches clients, so a person must press it: an
+    // assistant's key is refused (person_required), as for an override.
+    if (sendMode === 'approve_and_email' && req.agent) return personAuth.requirePerson(req, res, () => {});
+    // With approve_and_email: { invoiceId: email } as the dialog showed them.
+    const recipients = req.body?.recipients ?? null;
+    const result = await sendAllReady(db, organisationId, { accounting: accounting(), work: reader, personId: req.person.id, issueDate, invoiceIds: ids, sendMode, recipients });
+    log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} sent all ready${sendMode ? ` as ${sendMode}` : ''}: ${JSON.stringify(result)}`);
     res.json({ ok: true, ...result });
   }));
 
@@ -735,7 +745,7 @@ export function createInvoicingRouter({
     const invoiceId = pathId(req.params.id, 'invoice');
     const organisationId = await organisationOf(req);
     const removed = await deleteDraft(db, organisationId, invoiceId, { actor: `person:${req.person.id}`, accounting: accounting() });
-    log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} ${removed.status === 'void' ? 'voided invoice' : 'deleted draft invoice'} ${invoiceId}`);
+    log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} ${removed.removed ? `deleted invoice ${removed.number}, never sent,` : removed.status === 'void' ? 'voided invoice' : 'deleted draft invoice'} ${invoiceId}`);
     res.json({ ok: true });
   }));
 

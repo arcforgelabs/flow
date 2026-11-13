@@ -97,7 +97,10 @@ Flow drafts a job's invoice (`POST /api/invoicing/jobs/:id/draft`).
 `deleteInvoice({ organisationId, invoiceId, actor })` reads that system's
 invoice live and answers `{ state, status }`: `deleted`, `gone`, `approved`
 or `unavailable`. The core voids an issued Flow invoice only after `deleted`
-or `gone` (`docs/XERO.md`, "Deleting a draft"). An adapter declares only the ones it has, and
+or `gone` (`docs/XERO.md`, "Deleting a draft"). `everSent({ organisationId,
+invoiceId })` answers false only when the invoice never reached that system
+(no send started, no link); the core then deletes it in Flow instead of
+voiding it (`docs/INVOICE_SENDING.md`, "A send that failed"). An adapter declares only the ones it has, and
 must declare `health`.
 
 An adapter may also declare `routes(context)`: a function that returns an

@@ -34,6 +34,16 @@ async function linkedXeroId(db, organisationId, invoiceId) {
   return links[0]?.xero_invoice_id ?? null;
 }
 
+// False only when this Flow invoice never reached Xero: no send was started
+// (no push row, not even one in flight) and no link was ever made. The core
+// then deletes it in Flow instead of voiding it.
+export async function everInXero(db, organisationId, invoiceId) {
+  const { rows } = await db.execute(sql`
+    select exists (select 1 from xero_invoice_pushes where organisation_id = ${organisationId} and invoice_id = ${invoiceId})
+      or exists (select 1 from xero_invoice_links where organisation_id = ${organisationId} and invoice_id = ${invoiceId}) as sent`);
+  return rows[0]?.sent === true;
+}
+
 // Who deleted it, and the status Xero confirmed, on the push, the link and
 // Flow's copy. The ledger records deleted or voided so the job is not treated
 // as still drafted.

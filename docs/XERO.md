@@ -283,10 +283,13 @@ The rules:
   dated within 90 days is held, unless the person sends again with that
   invoice in `allowExistingReference`. The held invoice offers **Use Xero
   invoice** (`POST /api/xero/invoices/:id/use-xero` with `xeroInvoiceId`):
-  Flow reads Xero's changes, voids its own copy, makes its Flow invoice from
-  the Xero one and gives it to the job. The Xero invoice must be the same
-  client's, and the copy must bill one job. A copy voided by hand earlier
-  whose job still points at it is cleaned up the same way.
+  Flow reads Xero's changes, deletes its own copy (it never reached Xero;
+  [INVOICE_SENDING.md](INVOICE_SENDING.md#a-send-that-failed)), makes its
+  Flow invoice from the Xero one and gives it to the job. A copy whose send
+  started (a push row, even in flight) or that has a link is voided instead.
+  The Xero invoice must be the same client's, and the copy must bill one job.
+  A copy voided by hand earlier whose job still points at it is cleaned up
+  the same way.
 - **Before the draft.** The same check runs before Flow makes a job's draft,
   so a draft that Send would stop is never made. The live check asks Xero for
   the draft's own Reference as well as the case reference; the automatic

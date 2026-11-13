@@ -13,6 +13,7 @@ import { adapters } from '../server/integrations/adapters.js';
 import { migrateAdapterSchema } from '../server/integrations/schema.js';
 import { freshDatabase, skipWithoutDatabase, testDatabaseUrl } from './support/db.js';
 import { explainObligation } from '../server/core/ledger.js';
+import { getInvoice } from '../server/core/invoices.js';
 
 async function inSchema(pool, schema) {
   const { rows } = await pool.query(
@@ -64,7 +65,7 @@ test('Flow\'s tables live in "flow"', { skip: skipWithoutDatabase }, async (t) =
       assert.deepEqual(await functionsIn(handle.pool, 'public'), []);
       const flow = await inSchema(handle.pool, 'flow');
       for (const table of ['organisations', 'invoices', 'captures', 'xero_calls', 'seazona_orders']) assert.ok(flow.includes(table), table);
-      assert.deepEqual(await functionsIn(handle.pool, 'flow'), ['flow_invoice_lines_draft_only', 'flow_invoice_rules', 'flow_refuse_change']);
+      assert.deepEqual(await functionsIn(handle.pool, 'flow'), ['flow_invoice_lines_draft_only', 'flow_invoice_rules', 'flow_invoice_versions_append_only', 'flow_refuse_change']);
     } finally {
       await handle.close();
     }
@@ -169,6 +170,33 @@ test('source totals upgrade preserves old rows and does not backfill them', { sk
     const detail = await explainObligation(handle.db, organisation.id, old.data.id);
     assert.equal(detail.view, 'held');
     assert.ok(detail.reasons.includes('Sample hold'));
+  } finally {
+    rmSync(before, { recursive: true, force: true });
+    await handle.close();
+  }
+});
+
+test('send mode and shown email upgrade keeps old invoices on their customer\'s mode', { skip: skipWithoutDatabase }, async () => {
+  const handle = await freshDatabase();
+  const before = coreBeforeMigration(38);
+  try {
+    await handle.pool.query('DROP SCHEMA IF EXISTS drizzle CASCADE; DROP SCHEMA IF EXISTS flow CASCADE; DROP SCHEMA public CASCADE; CREATE SCHEMA public;');
+    await migrateDatabase(handle.db, { folder: before });
+    const { rows: [organisation] } = await handle.pool.query("insert into organisations (name) values ('Sample Upgrade Lab') returning id");
+    const { rows: [contact] } = await handle.pool.query("insert into contacts (organisation_id, kind, name) values ($1, 'customer', 'Sample Practice') returning id", [organisation.id]);
+    const { rows: [old] } = await handle.pool.query(
+      `insert into invoices (organisation_id, contact_id, send_state, send_requested_by) values ($1, $2, 'queued', null)
+        returning to_jsonb(invoices) as data`, [organisation.id, contact.id],
+    );
+    assert.equal('send_mode' in old.data, false);
+    await migrateDatabase(handle.db);
+    await migrateDatabase(handle.db);
+    const { rows: [upgraded] } = await handle.pool.query('select to_jsonb(i) as data from invoices i where id = $1', [old.data.id]);
+    const { send_mode, send_email, ...unchanged } = upgraded.data;
+    assert.deepEqual([send_mode, send_email], [null, null], 'an old invoice keeps its customer\'s send mode and has no shown email');
+    assert.deepEqual(unchanged, old.data, 'the upgrade changes no existing value');
+    const loaded = await getInvoice(handle.db, organisation.id, old.data.id);
+    assert.deepEqual([loaded.sendState, loaded.sendMode, loaded.sendEmail], ['queued', null, null]);
   } finally {
     rmSync(before, { recursive: true, force: true });
     await handle.close();

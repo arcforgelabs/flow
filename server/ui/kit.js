@@ -278,7 +278,9 @@ export function copyButton({ label, text, copied = 'Copied.' }) {
 }
 
 // A modal built on <dialog>: resolves with the button's value, or null.
-export function dialog({ title, body, confirm, tone = 'primary', choices = null }) {
+// `gate(button)` gets the confirm button once the dialog is open, so a body
+// that is still loading can hold it (disabled) until it is ready.
+export function dialog({ title, body, confirm, tone = 'primary', choices = null, gate = null }) {
   return new Promise((resolve) => {
     const choiceList = choices
       ? h('div', { class: 'fx-sheet__choices', role: 'group', 'aria-label': title },
@@ -307,6 +309,7 @@ export function dialog({ title, body, confirm, tone = 'primary', choices = null 
     if (choices) element.addEventListener('click', (event) => { if (event.target === element) element.close(); });
     document.body.append(element);
     element.showModal();
+    if (gate && actions) gate(actions.querySelector('button[value="ok"]'));
     // A danger step starts on Cancel, so Enter or a second tap does not confirm it.
     element.querySelector(choices ? '.fx-sheet__choice' : `input, select, button[value="${tone === 'danger' ? 'cancel' : 'ok'}"]`)?.focus();
   });

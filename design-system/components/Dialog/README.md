@@ -5,5 +5,6 @@ A confirm step before an action that is hard to undo.
 - `await dialog({ title, body, confirm, tone })` gives the form's data, or null on Cancel.
 - The title is the question ("Send 3 invoices?"). `confirm` is the action's one word.
 - `tone: 'danger'` for a delete or a disconnect. A danger dialog opens with Cancel focused, so Enter alone does not confirm it.
+- `gate(button)` gets the confirm button once the dialog is open. A body that is still loading holds it (`button.disabled = true`) until the person can see what they confirm.
 
 Code: `dialog` in `server/ui/kit.js`.

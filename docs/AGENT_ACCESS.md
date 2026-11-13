@@ -48,9 +48,11 @@ products, and the price codes that hold job lines (`docs/PRICE_LIST.md`). Owner
 actions (People, Integrations, updates) always refuse the key: an agent request
 is never a verified owner sign-in. Sending an invoice with a warning
 (`docs/INVOICE_SENDING.md`, "Override") also refuses the key
-(`person_required`): a person owns that. Turning the person off in People stops the
+(`person_required`): a person owns that. So does Send with Approve and email
+(`sendMode: approve_and_email`), which reaches clients. Turning the person off in People stops the
 key on the next request, and a send it queued fails as `requester_disabled`
-instead of reaching the accounting system. Removing either setting turns the
+instead of reaching the accounting system (`requester_not_allowed` when the
+person was made staff). Removing either setting turns the
 door off. Each call
 logs one line with the route and the person, never the key.
 

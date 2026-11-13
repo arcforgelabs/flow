@@ -138,6 +138,13 @@ export const invoices = pgTable('invoices', {
   sendError: jsonb('send_error'),
   sendRequestedBy: uuid('send_requested_by').references(() => people.id, { onDelete: 'set null' }),
   sendUpdatedAt: timestamp('send_updated_at', { withTimezone: true }),
+  // How the person who pressed Send chose to send it (SEND_MODES), or null:
+  // the customer's or the organisation's send mode. An owner or admin can
+  // send one batch approved and emailed while the setting stays Draft.
+  sendMode: text('send_mode'),
+  // With approve_and_email: the client email the person saw in the Send
+  // dialog, lower case. Flow emails only when Xero's contact still has it.
+  sendEmail: text('send_email'),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 }, (t) => [
@@ -151,6 +158,7 @@ export const invoices = pgTable('invoices', {
   check('invoices_status_valid', sql`${t.status} in ('draft', 'issued', 'void')`),
   check('invoices_issued_has_number', sql`${t.status} = 'draft' or ${t.number} is not null`),
   check('invoices_send_state_valid', sql`${t.sendState} is null or ${t.sendState} in ('queued', 'sent', 'failed')`),
+  check('invoices_send_mode_valid', sql`${t.sendMode} is null or ${t.sendMode} in ('accounting_draft', 'approve_and_email')`),
 ]);
 
 // Each invoice's tab on the Invoices page (server/core/invoice-status.js), as

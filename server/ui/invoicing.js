@@ -329,16 +329,20 @@ export async function renderInvoiceList(main, ui) {
         icon: to ? 'send' : 'circle-check-big', label: to ? `Send to ${to}` : 'Approve', primary: true,
         title: to ? `Send to ${to}` : 'Approve',
         run: async (working) => {
+          const choice = to && context.xero ? emailChoice(ui, context, body.sendMode, ticked) : null;
           const ok = await ui.dialog({
             title: to ? `Send ${plural(ticked.length, 'invoice', 'invoices')} to ${to}?` : `Approve ${plural(ticked.length, 'invoice', 'invoices')}?`,
-            body: h('p', {}, to ? sendModeNote(to, body.sendMode, 'each one') : 'Each one gets the next number and is locked.'),
+            body: choice?.element ?? h('p', {}, to ? sendModeNote(to, body.sendMode, 'each one') : 'Each one gets the next number and is locked.'),
             confirm: to ? `Send ${ticked.length}` : `Approve ${ticked.length}`,
+            gate: choice?.gate ?? null,
           });
           if (!ok) return;
           working(to ? 'Sending' : 'Approving');
           // The sent ones show on Draft as Sending until the accounting
           // system has them; the approved ones on Approved.
-          await post('send-ready', { issueDate: localDate(), invoiceIds: ticked }, (res) => {
+          const sendMode = choice?.mode(ok) ?? null;
+          const recipients = sendMode === 'approve_and_email' ? choice.recipients() : null;
+          await post('send-ready', { issueDate: localDate(), invoiceIds: ticked, ...(sendMode ? { sendMode } : {}), ...(recipients ? { recipients } : {}) }, (res) => {
             const sent = to ? `${res.issued} on the way to ${to}.` : `${res.issued} approved.`;
             const notes = [
               res.held ? `${res.held} failed a check and went to Pending.` : '',
@@ -378,17 +382,20 @@ export async function renderInvoiceList(main, ui) {
     // A draft that was never issued is deleted on Pending, Ready and
     // Non-chargeable. An issued
     // invoice is deleted only while Flow's copy of Xero says Draft. Approved
-    // or paid stays hidden. A mix runs every ticked row and reports each one.
+    // or paid stays hidden. An issued or void invoice that never reached Xero
+    // (a send that failed) is deleted too, never voided. A mix runs every
+    // ticked row and reports each one.
     const fresh = rows.filter((i) => i.status === 'draft' && i.issuedVersion === 0);
     const issuedXero = rows.filter((i) => i.status === 'issued' && xeroById.has(i.id));
     const xeroDraft = issuedXero.filter((i) => xeroById.get(i.id)?.state === 'draft');
     const xeroApproved = issuedXero.filter((i) => ['approved', 'part_paid', 'paid'].includes(xeroById.get(i.id)?.state));
-    const deletable = [...fresh, ...xeroDraft, ...xeroApproved];
+    const notSent = rows.filter((i) => i.issuedVersion > 0 && i.status !== 'draft' && i.sendState !== 'queued' && xeroById.get(i.id)?.state === 'not_sent');
+    const deletable = [...fresh, ...xeroDraft, ...xeroApproved, ...notSent];
     const onDraftTabs = ['pending', 'ready', 'non_chargeable'].includes(state.status) && fresh.length;
-    if (context.canIssue && (onDraftTabs || xeroDraft.length)) {
+    if (context.canIssue && (onDraftTabs || xeroDraft.length || notSent.length)) {
       danger.push({
         icon: 'trash-2', label: 'Delete', iconOnly: true, tone: 'danger', title: 'Delete',
-        run: () => deleteAll(deletable, { xero: xeroDraft.length + xeroApproved.length > 0 }),
+        run: () => deleteAll(deletable, { xero: xeroDraft.length + xeroApproved.length > 0, notSent: notSent.length > 0 }),
       });
     }
     const all = body.invoices.map((i) => i.id);
@@ -468,19 +475,18 @@ export async function renderInvoiceList(main, ui) {
 
   // Delete, one invoice after another, as on one invoice's page. A Xero
   // draft reports each row: deleted, or refused with the reason.
-  async function deleteAll(rows, { xero = false } = {}) {
+  async function deleteAll(rows, { xero = false, notSent = false } = {}) {
     const fresh = rows.some((i) => i.status === 'draft' && i.issuedVersion === 0);
     const ok = await ui.dialog({
       title: `Delete ${plural(rows.length, 'invoice', 'invoices')}?`,
-      body: xero
-        ? h('div', {},
-          fresh ? h('p', {}, 'A draft that was never issued is removed. Its job can be invoiced again, and the rules decide.') : null,
-          h('p', {}, 'Also deletes the draft in Xero.'))
-        : h('p', {}, 'A draft that was never issued is removed. Its job can be invoiced again, and the rules decide.'),
+      body: h('div', {},
+        fresh || !(xero || notSent) ? h('p', {}, 'A draft that was never issued is removed. Its job can be invoiced again, and the rules decide.') : null,
+        notSent ? h('p', {}, NOT_SENT_DELETE) : null,
+        xero ? h('p', {}, 'Also deletes the draft in Xero.') : null),
       confirm: `Delete ${rows.length}`, tone: 'danger',
     });
     if (!ok) return;
-    if (xero) {
+    if (xero || notSent) {
       const results = [];
       for (const invoice of rows) {
         const name = invoice.number ?? 'Draft';
@@ -1511,16 +1517,21 @@ function previewButton(ui, invoiceId, title = 'Shows the invoice as a PDF.') {
   }, 'Preview');
 }
 
+// What Delete does to an issued or void invoice that never reached Xero.
+const NOT_SENT_DELETE = 'An invoice that never reached Xero is removed, not voided. Its job can be invoiced again, and its number is not used again.';
+
 // Delete asks first. A Xero draft says so; a never-issued draft says the job
 // can be invoiced again. Then the list opens.
-function deleteControl(ui, invoice, { xeroDraft }) {
+function deleteControl(ui, invoice, { xeroDraft, notSent = false }) {
   const { h, flow, toast, go } = ui;
   return h('button', {
     class: 'fx-btn fx-btn--ghost fx-btn--danger', type: 'button', 'data-delete': '',
     onclick: async () => {
       const ok = await ui.dialog({
         title: 'Delete this invoice?',
-        body: h('p', {}, xeroDraft
+        body: h('p', {}, notSent
+          ? NOT_SENT_DELETE
+          : xeroDraft
           ? 'Also deletes the draft in Xero.'
           : invoice.job
             ? 'It was never issued. The job can be invoiced again, and the rules decide.'
@@ -1570,11 +1581,13 @@ function issuedView(invoice, ui, context, redraw) {
     xeroHost.replaceChildren(xeroCard(invoice, ui, context, xeroStatus, loadXero) ?? '');
     linkedHost.replaceChildren(linkedCard(ui, invoice, xeroStatus) ?? '');
     if (xeroStatus && xeroStatus.state !== 'not_sent') showSent(send);
-    // Delete only while Flow's copy says Draft. Approved and paid stay on Void.
-    const canDelete = invoice.status === 'issued' && context.canIssue && xeroStatus?.state === 'draft';
+    // Delete while Flow's copy says Draft, or when the invoice never reached
+    // Xero (issued or void; a send that failed). Approved and paid stay.
+    const notSent = invoice.sendState !== 'queued' && xeroStatus?.state === 'not_sent';
+    const canDelete = context.canIssue && ((invoice.status === 'issued' && xeroStatus?.state === 'draft') || notSent);
     const remove = actionBar?.querySelector('[data-delete]');
     if (canDelete && !remove && actionBar) {
-      deleteButton = deleteControl(ui, invoice, { xeroDraft: true });
+      deleteButton = deleteControl(ui, invoice, { xeroDraft: !notSent, notSent });
       actionBar.prepend(deleteButton);
     }
     if (!canDelete && remove) {
@@ -1613,7 +1626,8 @@ function issuedView(invoice, ui, context, redraw) {
     rel: 'noopener',
   }, 'Open in Xero') : null;
   // Send stopped it for a Xero invoice of the same client and Reference: that
-  // Xero invoice is the bill. One press voids this copy and gives the job the
+  // Xero invoice is the bill. One press deletes this copy (voids it, if a send
+  // ever started) and gives the job the
   // Xero invoice (POST /api/xero/invoices/:id/use-xero), never a bare void.
   const useXero = matched?.code === 'xero_same_reference_different_amount' && invoice.status === 'issued' && context.canIssue && organisationId
     ? h('button', {
@@ -1622,7 +1636,7 @@ function issuedView(invoice, ui, context, redraw) {
         event.currentTarget.disabled = true;
         try {
           const body = await ui.flow(`/api/xero/invoices/${invoice.id}/use-xero`, { method: 'POST', body: JSON.stringify({ organisationId, xeroInvoiceId: matched.xero.invoiceId }) });
-          ui.toast(`${invoice.number} is void. The job has ${matched.xero.number ?? 'the Xero invoice'}.`, 'success');
+          ui.toast(`${invoice.number} is ${body.removed ? 'deleted' : 'void'}. The job has ${matched.xero.number ?? 'the Xero invoice'}.`, 'success');
           ui.go(`/invoices/${body.invoice.id}`);
         } catch (error) {
           event.currentTarget.disabled = false;
@@ -1729,6 +1743,74 @@ function xeroCard(invoice, ui, context, status, reload) {
       resolve));
 }
 
+// The Send dialog's body when Xero is connected: what Send does, and a tick
+// box to send this batch approved, with Xero's email to each client, while the
+// setting stays Draft. Ticked, it lists each invoice's Xero contact email and
+// total from Flow's copy of Xero (no Xero calls), and Send waits until every
+// row is shown. A client with no email in Xero gets a Xero draft. Flow sends
+// the emails shown, and before each send checks them with Xero: a changed one
+// goes as a draft. Answers { element, gate, mode(form), recipients() }.
+function emailChoice(ui, context, sendMode, invoiceIds) {
+  const { h, flow } = ui;
+  const organisationId = context.organisations[0]?.id;
+  const setting = sendMode?.mode === 'approve_and_email';
+  const note = h('p', {});
+  const list = h('div', { class: 'fx-email-list', hidden: true });
+  const shown = new Map();
+  let loaded = false;
+  let loading = null;
+  let confirm = null;
+  const box = h('input', { type: 'checkbox', name: 'email', checked: setting });
+  const hold = () => { if (confirm) confirm.disabled = box.checked && !loaded; };
+  const load = async () => {
+    list.replaceChildren(h('div', { class: 'fx-skeleton' }));
+    try {
+      const rows = [];
+      let warning = null;
+      for (let at = 0; at < invoiceIds.length; at += 100) {
+        const res = await flow('/api/xero/invoices/preview', { method: 'POST', body: JSON.stringify({ organisationId, invoiceIds: invoiceIds.slice(at, at + 100) }) });
+        warning ??= (res.warnings ?? []).find((w) => ['xero_sync_stale', 'xero_not_synced'].includes(w.code))?.message ?? null;
+        for (const p of res.invoices ?? []) {
+          shown.set(p.invoiceId, p.contact?.email ?? null);
+          rows.push(h('div', { class: 'fx-email-list__row' },
+            h('span', { class: 'fx-strong' }, p.contact?.name ?? '—'),
+            h('span', { class: 'fx-dim' }, p.contact?.email ?? 'No email in Xero: goes as a draft'),
+            h('span', { class: 'fx-num' }, formatCents(p.totalCents))));
+        }
+      }
+      list.replaceChildren(
+        ...(warning ? [h('p', { class: 'fx-problem' }, `${warning} Flow checks each email with Xero before it sends; a changed email goes as a draft.`)] : []),
+        ...rows);
+      loaded = true;
+    } catch (error) {
+      shown.clear();
+      list.replaceChildren(
+        h('p', { class: 'fx-problem' }, `The emails could not be shown: ${error.message} Untick to send as drafts.`),
+        h('button', { class: 'fx-btn fx-btn--sm fx-btn--ghost', type: 'button', onclick: () => { loading = load(); } }, 'Try again'));
+    } finally {
+      hold();
+    }
+  };
+  const show = () => {
+    note.textContent = sendModeNote('Xero', { ...sendMode, mode: box.checked ? 'approve_and_email' : 'accounting_draft' }, 'each one');
+    list.hidden = !box.checked;
+    hold();
+    if (box.checked && !loaded && !loading && organisationId) loading = load().finally(() => { loading = null; });
+  };
+  box.addEventListener('change', show);
+  show();
+  return {
+    element: h('div', {}, note, h('label', { class: 'fx-check' }, box, 'Approve in Xero and email each client'), list),
+    // Send stays off while the emails load, so nobody confirms a list they
+    // have not seen.
+    gate: (button) => { confirm = button; hold(); },
+    // The press always carries the choice, so the dialog is what happens:
+    // not ticked, no customer's own mode can email a client from this press.
+    mode: (form) => (form.get('email') ? 'approve_and_email' : 'accounting_draft'),
+    recipients: () => Object.fromEntries(shown),
+  };
+}
+
 // Send to Xero (POST /api/xero/invoices/push). The customer's send mode
 // (Settings, Rules) decides what Xero gets: a draft that a person approves
 // there, or an approved invoice that Xero emails to the customer.
@@ -1745,7 +1827,7 @@ function sendToXero(invoice, ui, context) {
         const res = await flow('/api/xero/invoices/push', { method: 'POST', body: JSON.stringify({ organisationId, invoiceIds: [invoice.id] }) });
         const result = res.invoices?.[0];
         const email = result?.email;
-        if (email && ['failed', 'unknown'].includes(email.state)) toast(email.error, 'danger');
+        if (email && ['failed', 'unknown', 'held'].includes(email.state)) toast(email.error, 'danger');
         else if (email?.state === 'sent') toast(`${invoice.number} is approved in Xero, and Xero emailed it to the customer.`, 'success');
         else if (['created', 'reconciled', 'existing'].includes(result?.outcome)) toast(`${invoice.number} is in Xero as a draft.`, 'success');
         else if (result?.outcome === 'already_in_xero') toast(`Xero already has ${invoice.number}.`, 'info');

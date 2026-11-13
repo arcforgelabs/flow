@@ -196,6 +196,69 @@ the invoice the next number and locks it, and sends nothing. It is greyed
 until the invoice has a client and a due date, and while the draft's job
 change is open.
 
+### Approve and email
+
+An owner or admin can approve and email a batch from Flow, without a
+second step in Xero. With Xero connected, the **Send to Xero** dialog on the
+Ready tab has a tick box, **Approve in Xero and email each client**. It is
+ticked when the organisation's send mode is approve and email.
+
+- Ticked, the dialog lists each invoice with its client, the email address
+  Flow's copy of Xero holds for that client and the total, so the person sees
+  who gets what before they confirm. **Send** stays off until every row is
+  shown. If the list cannot load, the dialog says so and offers **Try
+  again**; unticked, the press sends drafts. When Flow's copy of Xero is more
+  than a day old, the dialog says so.
+- Flow stores the email shown for each invoice (`invoices.send_email`). Flow
+  reads the client's contact from Xero twice: before Xero makes the invoice,
+  and again right before each email request, a retry included. When Xero's
+  email is not the one shown before the invoice is made, it goes as a Xero
+  draft. When it changes after that, Xero has the approved invoice but Flow
+  sends no email request, and the person is told. Xero's email request
+  takes only the invoice, not an address. So a change made in Xero in the
+  short time between Flow's last read and that request can still get the
+  email. Xero's own Approve and email has the same gap.
+- A client with no email address in Xero shows "No email in Xero: goes as a
+  draft". That invoice goes to Xero as a draft and is not emailed.
+- Only a signed-in person can choose it: an assistant's key gets
+  `person_required` and nothing is issued, as for an override.
+- The person who pressed Send must still be an active owner or admin when
+  the queued invoice goes. Flow checks it when the worker starts and again
+  right before each Xero write (making the invoice, emailing it). If they
+  were turned off or made staff meanwhile, that write does not go
+  (`requester_disabled` or `requester_not_allowed`). An owner or admin can
+  send it again.
+- Not ticked, every invoice of the press goes as a Xero draft, whatever the
+  customer's send mode.
+- The choice is for this press only, and it wins over each customer's own
+  send mode, so the dialog is what happens.
+- Xero sends the email (Xero's own invoice email). Flow sends no email.
+- The checks do not change. A draft that fails a check, a $0 draft included,
+  stays on Pending. An override (below) always goes as a Xero draft.
+
+## A send that failed
+
+A send that fails is not a void (Samuel, 13 November 2026). The invoice keeps
+its number and goes to Pending with the reason, where **Send again** tries
+again. An owner or admin can also **Delete** it:
+
+- Delete removes an issued or void invoice that never reached Xero: no send
+  was started (no push row, not even one in flight) and no link was made.
+  Only the invoice goes: its lines and issued versions. Its job is
+  disconnected and kept, so the job is ready again and the lab's rules
+  decide. The job's history keeps the number, total, who deleted it and why
+  (`draft_deleted`, `removed: true`). The number is not used again.
+- An invoice on its way (`send_state` queued) is refused until the send
+  finishes.
+- An invoice with an owner's override record (below) keeps the old rule.
+  The override is a record that stays, so its invoice is voided, never
+  deleted.
+- Every other issued invoice keeps the old rule: it is voided only after
+  Xero deletes its draft. What a customer was sent stays a record.
+- The database holds this rule too (migration 0039): it refuses to delete an
+  issued invoice or its versions unless the transaction names that one
+  invoice, which Flow does only after the check above.
+
 ## Override
 
 An owner or admin can send one Pending draft although it has a warning. It
@@ -258,7 +321,11 @@ somewhere else (the job board, search, a link) steps through its own tab.
 
 `invoices.send_state` is `queued`, `sent` or `failed` (null when the invoice
 was never queued). `send_error` holds `{ code, message }` while failed.
-Revising an issued invoice clears both. `xero_invoices.sent_to_contact` holds
+Revising an issued invoice clears both. `invoices.send_mode` holds the
+send mode a person chose for that press (`approve_and_email` or
+`accounting_draft`; null when the press made no choice), with
+`send_requested_by` (who pressed). Each push row keeps the mode Xero got, who
+pushed it and whether Xero emailed it. `xero_invoices.sent_to_contact` holds
 Xero's `SentToContact` flag.
 
 ## API
@@ -279,7 +346,9 @@ Xero's `SentToContact` flag.
   system is connected and takes writes).
 - `POST /api/invoicing/invoices/mark-ready` and `mark-not-ready` stay for
   older pages; they no longer change the tab.
-- `POST /api/invoicing/invoices/send-ready` `{ issueDate, invoiceIds? }`:
+- `POST /api/invoicing/invoices/send-ready` `{ issueDate, invoiceIds?, sendMode? }`:
+  `sendMode` (`approve_and_email` or `accounting_draft`) overrides each
+  customer's send mode for this press; any other value is `invalid` (400).
   with `invoiceIds`, only those drafts. One id is all or nothing (`not_ready`
   when it is not ready, or its job cannot be confirmed; the message names the
   cause). More than one id sends the ones that are ready and confirmed;
@@ -296,7 +365,9 @@ Xero's `SentToContact` flag.
 - `DELETE /api/invoicing/invoices/:id` (owner or admin) removes a draft that
   was never issued (`status` draft and `issuedVersion` 0). Its job's billing
   obligation is freed, so the job is ready again and the lab's rules decide
-  whether to draft it. An invoice that was issued is deleted only when its
+  whether to draft it. An issued or void invoice that never reached the
+  accounting system is removed the same way ("A send that failed"); the
+  answer's log names it. Any other invoice that was issued is deleted only when its
   accounting adapter deletes the draft there, or reports it already gone:
   Flow then voids the invoice (the issued versions stay) and frees the job.
   Approved or paid answers `accounting_approved` (`Approved in Xero. Void it in Xero first.` when the adapter is Xero) and changes nothing.
