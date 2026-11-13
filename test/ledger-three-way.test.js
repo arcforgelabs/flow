@@ -58,6 +58,17 @@ describe('three-way compare, field by field', () => {
     assert.equal(compareThreeWays(base, { ...base, contactId: 'c2' }, base, { sent: true }).outcome, 'conflict');
   });
 
+  test('GST that Xero sets is not a change in the work system', () => {
+    const free = { ...line(100), taxCode: 'GST_FREE' };
+    const fromXero = { ...line(100), taxCode: 'GST', workTaxCode: 'GST_FREE' };
+    const old = { ...base, lines: [free] };
+    // An invoice built from the work system's flag; Xero's item now sets GST.
+    assert.equal(compareThreeWays(old, { ...base, lines: [fromXero] }, old, { sent: true }).outcome, 'none');
+    // A real change in the work system still counts.
+    const moved = { ...fromXero, unitAmountCents: 200 };
+    assert.equal(compareThreeWays(old, { ...base, lines: [moved] }, old).outcome, 'offer');
+  });
+
   test('line order does not count as a change', () => {
     const two = [line(100), line(300)];
     assert.equal(compareThreeWays({ ...base, lines: two }, { ...base, lines: [...two].reverse() }, { ...base, lines: two }).outcome, 'none');

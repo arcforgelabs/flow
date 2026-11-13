@@ -312,6 +312,12 @@ describe('billing obligation ledger', { skip: skipWithoutDatabase }, () => {
     // The default: the work system adds GST on top.
     const before = await observeJob(db, taxLab.id, report({ sourceTotals: { subtotalCents: 20000, taxCents: 2000, totalCents: 22000 } }));
     assert.deepEqual([before.amountsIncludeTax, before.totalCents, sourceBillingProblems(before)], [false, 22000, []]);
+    // Xero's item sets GST against the work system's flag: Flow's sums stand,
+    // and only the prices before GST are compared.
+    const xero = await observeJob(db, taxLab.id, report({
+      lines: [{ itemCode: 'NGD', taxCode: 'GST', workTaxCode: 'GST_FREE' }], sourceTotals: { subtotalCents: 0, taxCents: 0, totalCents: 20000 },
+    }));
+    assert.deepEqual([xero.subtotalCents, xero.taxCents, xero.totalCents, sourceBillingProblems(xero)], [20000, 2000, 22000, []]);
 
     await saveInvoicingSettings(db, taxLab.id, { amountsIncludeTax: true });
     const obligation = await observeJob(db, taxLab.id, report({ sourceTotals: { subtotalCents: 20000, taxCents: 2000, totalCents: 22000 } }));
@@ -324,8 +330,6 @@ describe('billing obligation ledger', { skip: skipWithoutDatabase }, () => {
     assert.deepEqual([noSubtotal.totalCents, sourceBillingProblems(noSubtotal)], [20000, []]);
     const off = await observeJob(db, taxLab.id, report({ sourceTotals: { subtotalCents: 21000, taxCents: 2100, totalCents: 23100 } }));
     assert.deepEqual(sourceBillingProblems(off), ['the source invoice totals differ from the reconstructed lines']);
-    const clash = await observeJob(db, taxLab.id, report({ lines: [{ itemCode: 'NGD', taxCode: 'GST', workTaxCode: 'GST_FREE' }] }));
-    assert.deepEqual(sourceBillingProblems(clash), ["a source line's GST differs from its price item"]);
 
     await setReady(db, taxLab.id, obligation.id, { actor });
     await recordAccountingEvidence(db, taxLab.id, obligation.id, { state: 'not_found', actor });
