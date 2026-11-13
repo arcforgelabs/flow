@@ -1,6 +1,6 @@
 import { and, eq, inArray, isNull } from 'drizzle-orm';
 import { billingObligations } from '../../db/schema.js';
-import { fillShippedDay } from '../../core/ledger.js';
+import { fillShippedDay, isCalendarDay } from '../../core/ledger.js';
 import { parseSeazonaDate } from './map.js';
 import { seazonaHistoryJobs, seazonaInvoices, seazonaOrders } from './schema.js';
 import { SEAZONA_SOURCE_SYSTEM } from './ledger.js';
@@ -50,8 +50,11 @@ export async function shipDays(db, organisationId, { apply = false, actor = null
   const rows = jobs.map((o) => {
     const number = o.sourceInvoiceRef ?? invoiceOfOrder.get(o.sourceJobRef) ?? null;
     const fromHistory = shippedOf.get(o.sourceJobRef) ?? null;
-    const day = fromHistory ?? (number ? dateOf.get(number) ?? null : null);
-    return { obligationId: o.id, caseRef: o.sourceJobRef, invoiceRef: number, shippedOn: day, from: fromHistory ? 'history' : day ? 'invoice_date' : null };
+    // Only a real calendar day counts, so apply never fails half way on a bad one.
+    const historyDay = isCalendarDay(fromHistory) ? fromHistory : null;
+    const invoiceDay = number ? dateOf.get(number) ?? null : null;
+    const day = historyDay ?? (isCalendarDay(invoiceDay) ? invoiceDay : null);
+    return { obligationId: o.id, caseRef: o.sourceJobRef, invoiceRef: number, shippedOn: day, from: historyDay ? 'history' : day ? 'invoice_date' : null };
   });
   let set = 0;
   if (apply) {

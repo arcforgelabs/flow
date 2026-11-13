@@ -66,6 +66,13 @@ describe('Seazona work in the billing ledger', { skip: skipWithoutDatabase }, ()
       sourceSystem: 'seazona', sourceJobRef: 'ORD-7701', sourceInvoiceRef: '7701', caseRef: 'ORD-7701', sourceStatus: 'Shipped', shipped: true,
       lines: [{ description: 'Example crown', quantity: 1, unitAmountCents: 10000, taxCode: 'GST' }], observedAt: '2026-09-01T00:00:00Z', actor: 'seazona',
     });
+    await db.insert(seazonaInvoices).values({
+      invoiceNumber: '7703', invoiceDateText: '2026-13-40', recordHash: 'h', firstSeenAt: at, lastSyncedAt: at, lastChangedAt: at,
+    });
+    const bad = await observeJob(db, lab.id, {
+      sourceSystem: 'seazona', sourceJobRef: 'ORD-7703', sourceInvoiceRef: '7703', caseRef: 'ORD-7703', sourceStatus: 'Shipped', shipped: true,
+      lines: [{ description: 'Example crown', quantity: 1, unitAmountCents: 10000, taxCode: 'GST' }], observedAt: '2026-09-01T00:00:00Z', actor: 'seazona',
+    });
     const none = await observeJob(db, lab.id, {
       sourceSystem: 'seazona', sourceJobRef: 'ORD-7702', caseRef: 'ORD-7702', sourceStatus: 'Shipped', shipped: true,
       lines: [{ description: 'Example crown', quantity: 1, unitAmountCents: 10000, taxCode: 'GST' }], observedAt: '2026-09-01T00:00:00Z', actor: 'seazona',
@@ -74,6 +81,7 @@ describe('Seazona work in the billing ledger', { skip: skipWithoutDatabase }, ()
     const rowOf = (result, id) => result.rows.find((r) => r.obligationId === id);
     assert.deepEqual(rowOf(dry, shipped.id), { obligationId: shipped.id, caseRef: 'ORD-7701', invoiceRef: '7701', shippedOn: '2026-08-20', from: 'invoice_date' });
     assert.equal(rowOf(dry, none.id).shippedOn, null, 'no invoice, no day: never a guess');
+    assert.equal(rowOf(dry, bad.id).shippedOn, null, 'an impossible date is no day, so apply cannot fail half way');
     assert.equal(dry.set, 0);
     const [still] = await db.select().from(billingObligations).where(eq(billingObligations.id, shipped.id));
     assert.equal(still.shippedOn, null, 'a dry run writes nothing');

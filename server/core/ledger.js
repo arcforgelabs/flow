@@ -327,13 +327,20 @@ export async function observeJob(db, organisationId, job) {
   });
 }
 
+// A real calendar day as yyyy-mm-dd: 2026-02-30 and 2026-13-40 are not.
+export function isCalendarDay(day) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(day ?? ''))) return false;
+  const at = new Date(`${day}T00:00:00Z`);
+  return !Number.isNaN(at.getTime()) && at.toISOString().slice(0, 10) === day;
+}
+
 // Sets the shipped day of a job that has none, from a day a work system's
 // copy gives (ship-days backfill, server/integrations/seazona/ship-days.js).
 // A job that has a shipped day keeps it. Answers the obligation, or null when
 // it had one already.
 export async function fillShippedDay(db, organisationId, obligationId, { day, from, actor }) {
   requireActor(actor);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(day ?? ''))) throw new FlowError('invalid', 'day must be yyyy-mm-dd');
+  if (!isCalendarDay(day)) throw new FlowError('invalid', 'day must be a real yyyy-mm-dd day');
   return db.transaction(async (tx) => {
     const obligation = await loadObligation(tx, organisationId, obligationId, { lock: true });
     if (obligation.shippedOn) return null;

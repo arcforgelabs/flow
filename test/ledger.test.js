@@ -7,6 +7,7 @@ import {
   draftInvoiceForObligation,
   explainObligation,
   fillShippedDay,
+  isCalendarDay,
   listObligations,
   listPendingWritebacks,
   observeJob,
@@ -89,6 +90,9 @@ describe('billing obligation ledger', { skip: skipWithoutDatabase }, () => {
     const filled = await fillShippedDay(db, lab.id, blank.id, { day: '2026-08-20', from: 'invoice_date', actor: 'person:test' });
     assert.equal(filled.shippedOn, '2026-08-20');
     assert.equal(await fillShippedDay(db, lab.id, blank.id, { day: '2026-08-21', from: 'invoice_date', actor: 'person:test' }), null);
+    await assert.rejects(fillShippedDay(db, lab.id, blank.id, { day: '2026-13-40', from: 'invoice_date', actor: 'person:test' }), /real yyyy-mm-dd/);
+    assert.equal(isCalendarDay('2026-02-30'), false);
+    assert.equal(isCalendarDay('2026-02-28'), true);
     const { events: filledEvents } = await explainObligation(db, lab.id, blank.id);
     assert.deepEqual(filledEvents.filter((e) => e.kind === 'shipped_day').map((e) => e.evidence), [{ shippedOn: '2026-08-20', from: 'invoice_date' }]);
   });
