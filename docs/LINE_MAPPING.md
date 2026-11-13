@@ -42,7 +42,7 @@ its prices before GST), and the work flag alone decides "the job changed"; `work
 answers keeps no price item, so the ledger holds the job ("a line does not
 map to a price item").
 
-A change to a mapping row, or to the routine, reads every job again from
+A change to a mapping row, or to the routine, or a release that changes what\na stored line holds (`MAPPING_SHAPE`, `server/core/pipeline.js`), reads every job again from
 Flow's own copy of the work system. It makes no calls to the work system.
 
 ## Price codes (Settings, Rules)
