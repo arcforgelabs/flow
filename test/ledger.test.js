@@ -319,6 +319,9 @@ describe('billing obligation ledger', { skip: skipWithoutDatabase }, () => {
       [obligation.amountsIncludeTax, obligation.subtotalCents, obligation.taxCents, obligation.totalCents, sourceBillingProblems(obligation)],
       [true, 18182, 1818, 20000, []],
     );
+    // Seazona's subtotal leaves out GST-free lines: its total less its GST counts.
+    const noSubtotal = await observeJob(db, taxLab.id, report({ sourceTotals: { subtotalCents: 0, taxCents: 2000, totalCents: 22000 } }));
+    assert.deepEqual([noSubtotal.totalCents, sourceBillingProblems(noSubtotal)], [20000, []]);
     const off = await observeJob(db, taxLab.id, report({ sourceTotals: { subtotalCents: 21000, taxCents: 2100, totalCents: 23100 } }));
     assert.deepEqual(sourceBillingProblems(off), ['the source invoice totals differ from the reconstructed lines']);
     const clash = await observeJob(db, taxLab.id, report({ lines: [{ itemCode: 'NGD', taxCode: 'GST', workTaxCode: 'GST_FREE' }] }));

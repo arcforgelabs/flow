@@ -144,10 +144,17 @@ function readSourceTotals(raw) {
   return Object.keys(totals).length ? totals : null;
 }
 
+// The work system's prices before the GST it adds: its total less its GST,
+// else its subtotal.
+function sourcePrices(source) {
+  if (source?.totalCents != null && source?.taxCents != null) return source.totalCents - source.taxCents;
+  return source?.subtotalCents ?? null;
+}
+
 // A source invoice total is evidence, not permission to allocate its tax.
-// When the lab's prices include GST, the work system's subtotal (its prices,
-// before the GST it adds on top) is the invoice total: only that is compared,
-// and its GST is not.
+// When the lab's prices include GST, the work system's prices (its total less
+// the GST it adds on top; Seazona's subtotal leaves out GST-free lines) are
+// the invoice total: only that is compared, and its GST is not.
 export function sourceBillingProblems(obligation) {
   const reasons = [];
   const lines = obligation.lines ?? [];
@@ -157,7 +164,8 @@ export function sourceBillingProblems(obligation) {
   const calculated = invoiceTotals(lines, { inclusive });
   const source = obligation.sourceTotals ?? {};
   if (inclusive) {
-    if (source.subtotalCents != null && source.subtotalCents !== calculated.totalCents) {
+    const prices = sourcePrices(source);
+    if (prices != null && prices !== calculated.totalCents) {
       reasons.push('the source invoice totals differ from the reconstructed lines');
     }
     return reasons;
@@ -205,9 +213,8 @@ export async function observeJob(db, organisationId, job) {
     if (amountsIncludeTax) {
       // The work system's prices are the total, GST inside (sourceBillingProblems).
       totals = invoiceTotals(lines, { inclusive: true });
-      if (sourceTotals?.subtotalCents != null) {
-        totals = { ...totals, totalCents: sourceTotals.subtotalCents, subtotalCents: sourceTotals.subtotalCents - totals.taxCents };
-      }
+      const prices = sourcePrices(sourceTotals);
+      if (prices != null) totals = { ...totals, totalCents: prices, subtotalCents: prices - totals.taxCents };
     } else {
       totals = { ...invoiceTotals(lines), ...sourceTotals };
       if (sourceTotals?.totalCents == null) totals.totalCents = totals.subtotalCents + totals.taxCents;

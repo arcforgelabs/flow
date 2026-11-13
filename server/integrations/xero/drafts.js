@@ -68,6 +68,14 @@ function xeroDate(value) {
 
 const problem = (code, message, extra = {}) => ({ code, message, ...extra });
 
+// A Xero tax type as Flow's tax code: GST for a type that charges it, GST free
+// for any other set type, null when the item has none.
+const GST_TAX_TYPES = new Set(['OUTPUT', 'OUTPUT2']);
+function taxCodeOf(type, taxTypes = {}) {
+  if (!type) return null;
+  return type === taxTypes.GST || GST_TAX_TYPES.has(type) ? 'GST' : 'GST_FREE';
+}
+
 // The few words the Invoices list shows for a refusal; the message says how
 // to fix it. Another code shows "Not sent" (sending.js).
 const SHORT = {
@@ -175,6 +183,11 @@ export function buildDraft(document, { settings, contact, items, sendMode = 'acc
       } else {
         out.ItemCode = item.code || line.itemCode;
         if (settings.lineText === 'item' && item.name) out.Description = item.name;
+        // Xero's item sets the GST: a line whose GST differs never goes.
+        const xeroTax = taxCodeOf(item.salesTaxType, settings.taxTypes);
+        if (xeroTax && line.taxCode && xeroTax !== line.taxCode) {
+          problems.push(problem('xero_tax_differs', `Line ${line.position}: GST differs from Xero item ${item.code || line.itemCode} (${xeroTax === 'GST' ? 'GST' : 'GST free'} in Xero). Sync Xero, then check the draft again.`, { itemCode: line.itemCode, short: 'GST not as Xero' }));
+        }
       }
     } else if (line.accountCode) {
       // A line with no item books to its own account, such as a surcharge.

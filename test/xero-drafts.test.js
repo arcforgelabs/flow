@@ -56,6 +56,14 @@ describe('the Xero draft for a document', () => {
     });
   });
 
+  test('a line whose GST differs from its Xero item never goes', () => {
+    const items = new Map([['CROWN', { code: 'CROWN', salesTaxType: 'EXEMPTOUTPUT' }]]);
+    const { problems } = buildDraft(document, { settings, contact: { xeroContactId: XC, salesTracking: [] }, items });
+    assert.deepEqual(problems.map((p) => [p.code, p.short]), [['xero_tax_differs', 'GST not as Xero']]);
+    const agrees = new Map([['CROWN', { code: 'CROWN', salesTaxType: 'OUTPUT' }]]);
+    assert.deepEqual(buildDraft(document, { settings, contact: { xeroContactId: XC, salesTracking: [] }, items: agrees }).problems, []);
+  });
+
   test('a document whose prices include GST sends Inclusive line amounts', () => {
     const items = new Map([['CROWN', { code: 'CROWN' }]]);
     const { draft } = buildDraft({ ...document, amountsIncludeTax: true }, { settings, contact: { xeroContactId: XC, salesTracking: [] }, items });

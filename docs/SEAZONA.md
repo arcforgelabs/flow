@@ -348,8 +348,9 @@ for (const { ledgerWithdrawn } of page.withdrawn) {
 
 Seazona's amounts are tax-exclusive. The ledger keeps each explicit source aggregate.
 When the lab's prices include GST (Settings, Invoicing, "Prices include GST"),
-Seazona's subtotal is the job's total with GST inside: Flow compares only the
-subtotal, and takes each GST line's tax as one eleventh of its amount.
+Seazona's prices are the job's total with GST inside. Flow reads them as the
+total less the tax (Seazona's subtotal leaves out GST-free lines), compares
+only that, and takes each GST line's tax as one eleventh of its amount.
 It calculates line tax separately and compares the results with those aggregates.
 A difference opens one `job.source_totals` review item and blocks drafting, approval and Send for an unsent draft.
 Unknown line tax stays null unless a saved mapping or price item supplies it.

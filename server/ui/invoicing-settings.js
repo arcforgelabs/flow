@@ -128,7 +128,7 @@ function draftsSection(ui) {
       disabled ? notice('Only an owner or admin can change these.', 'info') : null,
       row('Payment terms', 'Days from invoice to due date.', box('paymentTermsDays', 'Payment terms in days', { type: 'number', read: Number })),
       // New invoices only: a draft keeps the setting it was made with.
-      row('Prices include GST', 'New invoices send prices with GST inside, as Xero items do.', onOff('amountsIncludeTax', 'Prices include GST')),
+      row('Prices include GST', "New invoices send prices with GST inside. With Xero on, each sync sets it from Xero's default sales tax.", onOff('amountsIncludeTax', 'Prices include GST')),
       row('Reference', 'The Reference on each invoice. Use {practitioner} and {patient}.',
         box('referenceTemplate', 'Reference rule', { placeholder: 'Type a reference rule' })),
       // The reasons for No Charge, for the lab's reports (no-charge.js).
