@@ -196,6 +196,42 @@ the invoice the next number and locks it, and sends nothing. It is greyed
 until the invoice has a client and a due date, and while the draft's job
 change is open.
 
+## Override
+
+An owner or admin can send one Pending draft although it has a warning. It
+is a second door, with one more step, and it goes straight through: no
+approval or Reconcile step follows. Send ready and the bulk bar never use
+it.
+
+- **What it can pass.** Only a warning on the allow list (`OVERRIDABLE`,
+  `server/core/send-override.js`). Today that is one: `xero_tax_differs` (GST
+  not as Xero). Every problem on the draft must be on the list. Any other
+  problem, and any code Flow does not know, always blocks.
+- **Who.** An owner or admin, as a signed-in person. Staff get
+  `role_required`. An assistant key gets `person_required`.
+- **The step.** A small **Override** button sits beside the problem (in the
+  More menu on a phone). It shows only when the server says the draft can be
+  overridden and the page has no unsaved change. A danger dialog lists each
+  warning with a tick box, a **Reason** (Xero item is wrong, One-off for this
+  invoice, Client tax treatment, Other) and a **Note** (200 characters;
+  required for Other). Send works only with every tick and a reason.
+- **The gates.** The server reads the accounting copy and the job first, as
+  Send does. The ticked warnings must be the warnings at the press
+  (`override_stale`). There is no daily limit and no wait between presses:
+  the dialog is the check.
+- **What goes.** The invoice is issued and queued. The send worker gives the
+  accounting adapter the recorded warning keys (`accepted`). The adapter
+  passes those and still stops on any other problem. An override always goes
+  to Xero as a draft, also for a customer whose invoices Flow approves and
+  emails.
+- **The record.** One `send_overrides` row for each override: the person,
+  the time, the reason, the note, each warning with its words then, the
+  invoice version and the hash of its document. The row cannot be changed or
+  deleted. The job gets a `send.override` event. The note stays in that row:
+  it is not in the log or a copied prompt.
+- **After.** The sent invoice shows "Override. Sent with 1 warning", who,
+  when, the reason and the note. Nothing more is necessary.
+
 ## New invoice from a job
 
 A new invoice can start blank or from a job. **From a job**, in the page
@@ -251,6 +287,12 @@ Xero's `SentToContact` flag.
   could not be confirmed. When none can go, the answer is `not_ready` and
   names the cause and the count.
 - `POST /api/invoicing/invoices/send-again` `{ invoiceIds? }`.
+- `POST /api/invoicing/invoices/:id/send-anyway`
+  `{ acknowledged, reasonCode, note?, issueDate? }` (owner or admin, a person):
+  the override above. `acknowledged` lists the `key` of each problem the
+  person ticked. `GET /invoices/:id` gives each problem its `key`, and
+  `canOverride`, `overrides` and `overrideReasons`. Refusals: `not_overridable`,
+  `override_stale`, `person_required`.
 - `DELETE /api/invoicing/invoices/:id` (owner or admin) removes a draft that
   was never issued (`status` draft and `issuedVersion` 0). Its job's billing
   obligation is freed, so the job is ready again and the lab's rules decide

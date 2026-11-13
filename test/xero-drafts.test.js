@@ -330,6 +330,64 @@ describe('Xero drafts from issued invoices', { skip: skipWithoutDatabase }, () =
     assert.deepEqual((await pushRow(invoice.id))[0].pre_existing_ids, ['hand-2']);
   });
 
+  test('an override passes its own tax warning by key, sends Flow\'s tax, and hides no other problem', async () => {
+    const org = lab.organisation.id;
+    const ship = await createPriceItem(handle.db, org, { code: 'SHIP', name: 'Shipping', unitAmountCents: 1500 });
+    await handle.db.execute(sql`insert into xero_items (organisation_id, xero_item_id, code, name, sales_tax_type) values (${org}, 'i-ship', 'SHIP', 'Shipping', 'EXEMPTOUTPUT')`);
+    const pushInvoices = integrations.with('pushInvoices')[0].capabilities.pushInvoices;
+    const shipped = async (lines = [{ priceItemId: ship.id }]) => {
+      const draft = await createDraftInvoice(handle.db, org, { contactId: practice.id, reference: `CASE-${++counter}`, lines });
+      return issueInvoice(handle.db, org, draft.id, { issuedBy: 'user:test', issueDate: '2026-10-18' });
+    };
+    const key = 'xero_tax_differs:1:SHIP';
+
+    // With no override the line never goes, and the public push route takes no override.
+    const invoice = await shipped();
+    let replay = xero.script([]);
+    const held = await push([invoice.id], { accepted: { [invoice.id]: [key] } });
+    assert.equal(held.body.invoices[0].error.code, 'xero_tax_differs');
+    assert.equal(replay.calls.length, 0);
+
+    // A key for another line passes nothing.
+    const wrong = await pushInvoices({ organisationId: org, invoiceIds: [invoice.id], accepted: new Map([[invoice.id, ['xero_tax_differs:2:SHIP']]]) });
+    assert.equal(wrong.invoices[0].error.code, 'xero_tax_differs');
+
+    // The recorded key passes: the line goes with its item code and Flow's tax.
+    replay = xero.script([byReference([]), created('o1'), readBack('o1', { reference: invoice.reference, total: 16.5, sub: 15, tax: 1.5 })]);
+    const sent = await pushInvoices({ organisationId: org, invoiceIds: [invoice.id], accepted: new Map([[invoice.id, [key]]]) });
+    assert.equal(sent.invoices[0].outcome, 'created', JSON.stringify(sent.invoices[0]));
+    const [line] = posts(replay)[0].body.Invoices[0].LineItems;
+    assert.equal(line.ItemCode, 'SHIP');
+    assert.equal(line.TaxType, 'OUTPUT');
+
+    // An accepted warning does not hide a second problem.
+    const gone = await createPriceItem(handle.db, org, { code: 'GONE', name: 'Not in Xero', unitAmountCents: 1000 });
+    const two = await shipped([{ priceItemId: ship.id }, { priceItemId: gone.id }]);
+    replay = xero.script([]);
+    const stopped = await pushInvoices({ organisationId: org, invoiceIds: [two.id], accepted: new Map([[two.id, [key]]]) });
+    assert.equal(stopped.invoices[0].error.code, 'xero_item_missing');
+    assert.equal(replay.calls.length, 0);
+  });
+
+  test('an override goes as a Xero draft, also for a customer whose invoices Flow approves and emails', async () => {
+    const org = lab.organisation.id;
+    const XO = '00000000-0000-4000-8000-0000000000f1';
+    const emailing = await createContact(handle.db, org, { kind: 'customer', name: 'Override Practice' });
+    await handle.db.execute(sql`insert into xero_contacts (organisation_id, xero_contact_id, name, email, status, is_customer) values (${org}, ${XO}, 'Override Practice', 'accounts@example.com', 'ACTIVE', true)`);
+    await saveCustomerBilling(handle.db, org, emailing.id, { sendMode: 'approve_and_email' });
+    const [ship] = (await handle.db.execute(sql`select id from price_items where organisation_id = ${org} and code = 'SHIP'`)).rows;
+    const draft = await createDraftInvoice(handle.db, org, { contactId: emailing.id, reference: `CASE-${++counter}`, lines: [{ priceItemId: ship.id }] });
+    const invoice = await issueInvoice(handle.db, org, draft.id, { issuedBy: 'user:test', issueDate: '2026-10-18' });
+    const replay = xero.script([byReference([]), created('o2'), xeroAnswer('Invoices/o2', { Invoices: [{ ...xeroInvoice('o2', { reference: invoice.reference, total: 16.5, sub: 15, tax: 1.5 }), Contact: { ContactID: XO } }] })]);
+    const sent = await integrations.with('pushInvoices')[0].capabilities.pushInvoices({
+      organisationId: org, invoiceIds: [invoice.id], accepted: new Map([[invoice.id, ['xero_tax_differs:1:SHIP']]]),
+    });
+    assert.equal(sent.invoices[0].outcome, 'created', JSON.stringify(sent.invoices[0]));
+    assert.equal(posts(replay).length, 1);
+    assert.equal(posts(replay)[0].body.Invoices[0].Status, 'DRAFT');
+    assert.equal((await pushRow(invoice.id))[0].send_mode, 'accounting_draft');
+  });
+
   test('when Xero refuses the draft, nothing is recorded and it can be sent again', async () => {
     const invoice = await issued();
     xero.script([byReference([]), xeroAnswer('Invoices', { Invoices: [{ HasErrors: true, ValidationErrors: [{ Message: 'Contact is archived.' }] }] }, { method: 'POST' })]);

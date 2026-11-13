@@ -34,7 +34,8 @@ import {
 import { isHistoryHeld } from '../core/history.js';
 import { invoicePdfDocument, pdfFields, pdfFilename, renderInvoicePdf } from '../core/invoice-pdf.js';
 import { emailedStage, INVOICE_TABS, invoiceTab, OLD_TABS } from '../core/invoice-status.js';
-import { invoiceView, invoiceViews, markNotReady, markReady, sendAgain, sendAllReady } from '../core/sending.js';
+import { invoiceView, invoiceViews, markNotReady, markReady, sendAgain, sendAllReady, sendAnyway } from '../core/sending.js';
+import { overridable, overridesOfInvoice, OVERRIDE_REASONS, problemKey } from '../core/send-override.js';
 import { createContact, getContact, listContacts, presentContact, updateContact } from '../core/contacts.js';
 import { mergeContacts } from '../core/merge-contacts.js';
 import {
@@ -136,6 +137,7 @@ const ERROR_STATUS = {
   invalid: 400, organisation_required: 400, not_found: 404, not_draft: 409, not_issued: 409,
   never_issued: 409, was_issued: 409, not_ready: 409, live_check_unavailable: 409, conflict: 409,
   accounting_not_connected: 409, accounting_writes_off: 409, accounting_unavailable: 409, accounting_approved: 409,
+  not_overridable: 409, override_stale: 409,
   conflict: 409,
 };
 
@@ -405,6 +407,12 @@ async function invoiceDetail(db, organisationId, invoiceId, accounting = null, w
     // rule's added shipping, for example). Flow cannot write lines to the
     // work system, so the page shows the gap until the work system has them.
     sourceGap: await sourceGap(db, organisationId, invoice),
+    // Override: may an owner or admin send this draft with its warnings, and
+    // the overrides this invoice went with (newest first).
+    canOverride: Boolean(accounting) && invoice.status === 'draft' && viewed.view === 'problem' && overridable(viewed.problems),
+    problems: viewed.problems.map((p) => ({ ...p, key: problemKey(p) })),
+    overrides: await overridesOfInvoice(db, organisationId, invoiceId),
+    overrideReasons: OVERRIDE_REASONS,
     // The exceptions people gave this invoice's job, current or ended.
     ruleExceptions: await exceptionsOfInvoice(db, organisationId, invoice),
     // The Linked card: each connected system, and this invoice's link there.
@@ -442,6 +450,7 @@ export const INVOICING_ACTIONS = Object.freeze({
   sendReady: { cooldownMs: 0, budget: false },
   sendAgain: { cooldownMs: 0, budget: false },
   draftJob: { cooldownMs: 10_000, budget: false },
+  // One invoice, one press: the wait is for that invoice.
 });
 
 export function createInvoicingRouter({
@@ -455,6 +464,8 @@ export function createInvoicingRouter({
 
   const signedIn = [personAuth.requireSession];
   const manager = [...signedIn, personAuth.requireRole('owner', 'admin')];
+  // An owner or admin in person: an assistant's key is refused.
+  const managerInPerson = [...manager, personAuth.requirePerson];
   const organisationOf = (req) => resolveOrganisation(db, req.method === 'GET' ? req.query.organisationId : (req.body?.organisationId ?? req.query.organisationId));
 
   router.get('/context', ...signedIn, handle(log, async (req, res) => {
@@ -618,6 +629,22 @@ export function createInvoicingRouter({
     const result = await sendAgain(db, organisationId, { accounting: accounting(), personId: req.person.id, invoiceIds: ids });
     log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} sent again: ${JSON.stringify(result)}`);
     res.json({ ok: true, ...result });
+  }));
+
+  // Override (docs/INVOICE_SENDING.md, "Override"): one Pending draft goes
+  // although it has a warning. One invoice a press, a person only.
+  router.post('/invoices/:id/send-anyway', ...managerInPerson, handle(log, async (req, res) => {
+    const invoiceId = pathId(req.params.id, 'invoice');
+    const organisationId = await organisationOf(req);
+    const issueDate = optionalDate(req.body?.issueDate, 'issueDate') ?? today();
+    const reader = work().find((a) => typeof a.capabilities.readWorkItem === 'function') ?? null;
+    const { override } = await sendAnyway(db, organisationId, invoiceId, {
+      accounting: accounting(), work: reader, personId: req.person.id, issueDate,
+      acknowledged: req.body?.acknowledged, reasonCode: req.body?.reasonCode, note: req.body?.note ?? null,
+    });
+    // The log names ids and codes only: no note, no customer.
+    log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} sent invoice ${invoiceId} with an override ${override.id}: ${override.problems.map((p) => p.code).join(', ')}`);
+    res.json({ ok: true, override: { id: override.id }, invoice: await invoiceDetail(db, organisationId, invoiceId, accounting(), work()) });
   }));
 
   router.get('/invoices/:id', ...signedIn, handle(log, async (req, res) => {

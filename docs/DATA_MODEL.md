@@ -283,6 +283,7 @@ installation low maintenance.
 | One active link per external record and per Flow record in each system. A name match stays proposed until a person confirms it. | Partial unique indexes and a check on `external_links`; `server/core/links.js` |
 | One queued or running job per kind and key; a job is finished only by the worker that holds its lease. | A partial unique index on `background_jobs`; `server/core/queue.js` |
 | Every write to another system has an outbox row first, with a unique idempotency key. | `outbox`; `server/core/outbox.js` |
+| An override of a send is a record: one `send_overrides` row for each invoice version, never updated or deleted. | A unique constraint and a trigger in `0037_send_overrides.sql`; `server/core/send-override.js` |
 | One open review item per kind and record; a closed one records who chose what. | A partial unique index and a check on `review_items`; `server/core/review.js` |
 | One capture per idempotency key in an organisation. The photo bytes are deleted on a decision, and a capture with no decision is deleted after 7 days. A form is read only through the AI port, and only on an `au.` profile in Sydney or Melbourne. | `captures`; `server/core/captures.js`; `server/core/reader.js` |
 

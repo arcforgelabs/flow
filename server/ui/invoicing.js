@@ -19,6 +19,7 @@ import { INVOICE_FILTER_FIELDS, INVOICE_FILTER_STATUSES, invoiceFilterKind, invo
 import { listPager, pager, PAGE_SIZES } from '/assets/ui/pager.js';
 import { savedViews } from '/assets/ui/saved-views.js';
 import { chooseNoCharge } from '/assets/ui/no-charge.js';
+import { chooseOverride, overrideNotice } from '/assets/ui/send-override.js';
 import { problemPrompt } from '/assets/ui/problem-prompt.js';
 import { xeroContactActions } from '/assets/ui/xero-contact.js';
 import { findBox, today, viewBar } from '/assets/ui/view-bar.js';
@@ -1365,13 +1366,40 @@ function draftView(invoice, ui, context, redraw) {
     h('p', {}, deleteButton
       ? 'If this unissued draft is no longer needed, use Delete. It remains Pending while the job is in review.'
       : 'Ask an owner or administrator to review this draft. It remains Pending while the job is in review.')) : null;
+  // Override: an owner or admin sends this draft with its warnings, through
+  // one more step (send-override.js). A small button beside the problem,
+  // never the page's main action; the server says when it applies. Unsaved
+  // changes come first: the warnings are those of the saved draft.
+  const overrideButton = context.canIssue && to && invoice?.canOverride ? h('button', {
+    class: 'fx-btn fx-btn--ghost fx-btn--sm', type: 'button',
+    onclick: async () => {
+      if (overrideButton.disabled) return;
+      if (changed()) { toast('Save the invoice first.', 'danger'); return; }
+      overrideButton.disabled = true;
+      const label = overrideButton.textContent;
+      try {
+        overrideButton.setAttribute('aria-busy', 'true');
+        const sent = await chooseOverride(ui, { invoice, to, issueDate: localDate() });
+        if (!sent) return;
+        toast(`${sent.number} is on the way to ${to}, with an override.`, 'success');
+        openNext(ui, invoice.id);
+      } catch (error) {
+        toast(error.message, 'danger', { stay: true });
+      } finally {
+        overrideButton.disabled = false;
+        overrideButton.removeAttribute('aria-busy');
+        overrideButton.textContent = label;
+        if (overrideButton.isConnected && document.activeElement === document.body) overrideButton.focus();
+      }
+    },
+  }, 'Override') : null;
   const problems = [
     holdReview,
     // Accepting changes the draft for the business: owners and admins only.
     jobChange ? jobChangeReview(ui, jobChange, { money: formatCents, canAccept: context.canIssue, unsaved: changed, done: redraw, prompt }) : null,
     problemList.some(deferredJobReview) ? notice('The job also changed after this invoice was made. Resolve the source amount problem first. Select Recheck, then review the remaining job changes.', 'danger') : null,
     unavailable.length ? notice('The resolution view is unavailable. Ask an administrator to restore it, then reopen this invoice. It remains Pending.', 'danger', 'Cannot resolve.') : null,
-    problemNotice ? h('div', { class: 'fx-offer' }, problemNotice, ...clientActions, ...ruleActions, jobChange ? null : copyPrompt()) : null,
+    problemNotice ? h('div', { class: 'fx-offer' }, problemNotice, ...clientActions, ...ruleActions, jobChange ? null : copyPrompt(), overrideButton) : null,
   ];
   // A red field names the banner as its reason (for a screen reader).
   const banner = problemNotice;
@@ -1411,6 +1439,7 @@ function draftView(invoice, ui, context, redraw) {
     menuEntry(saveButton, 'check', skip),
     menuEntry(sendButton, 'mail', skip),
     menuEntry(issueButton, 'check', skip),
+    menuEntry(overrideButton, 'shield-alert', skip),
   ]);
   syncRecord = chrome.sync;
   return [
@@ -1630,6 +1659,7 @@ function issuedView(invoice, ui, context, redraw) {
     chrome.pager,
     header,
     problemRow,
+    overrideNotice(ui, invoice),
     sourceGapNotice(ui, invoice),
     exceptionsNotice(ui, invoice),
     h('div', { class: 'fx-invoice__grid' },
