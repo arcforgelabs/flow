@@ -248,6 +248,41 @@ export function fixes(o) {
   });
 }
 
+// The Flow check or rule behind a fix, named and linked, so a person sees
+// which one stops the job (Fix tab, jobs.js) and an agent can read it
+// (problem-prompt.js, fixPrompt). A rule links to the rule in Flow; a
+// built-in check links to the docs page that says how it works.
+const DOCS = 'https://github.com/arcforgelabs/flow/blob/main/docs/';
+const CHECKS = {
+  'Not checked yet': ['Accounting check', 'JOB_INVOICE_LINKS.md'],
+  'No price code': ['Every line has a price code', 'LINE_MAPPING.md'],
+  'Client not linked': ['Client is a Flow customer', 'CONTACTS.md'],
+  'Out of date': ['Work system report is fresh', 'SEAZONA.md'],
+  'Job changed': ['Job changed after the draft', 'INVOICE_SENDING.md#the-job-changed-after-the-draft-was-made'],
+  'Status moved back': ['Job status moved back', 'JOB_INVOICE_LINKS.md'],
+  Deleted: ['Job deleted in the work system', 'JOB_INVOICE_LINKS.md'],
+  'Invoice link changed': ['One invoice for each job', 'JOB_INVOICE_LINKS.md'],
+  'May be invoiced': ['One invoice for each job', 'JOB_INVOICE_LINKS.md'],
+  'Invoice voided': ['Invoice voided', 'JOB_INVOICE_LINKS.md'],
+  'Invoice deleted': ['Invoice deleted', 'JOB_INVOICE_LINKS.md'],
+  'Invoice void': ['Invoice voided', 'JOB_INVOICE_LINKS.md'],
+  'No lines': ['Invoice has lines', 'INVOICE_SENDING.md'],
+  'Total is $0': ['Invoice total is not $0', 'INVOICE_SENDING.md'],
+  'Not sent': ['Invoice sent', 'INVOICE_SENDING.md'],
+  'Invoice problem': ['Invoice checks before send', 'INVOICE_SENDING.md'],
+  'On hold': ['Job on hold', 'INVOICING_RULES.md'],
+  'Needs review': ['Job needs review', 'INVOICING_RULES.md'],
+};
+export function checkOf(fix) {
+  if (!fix) return null;
+  if (fix.go === 'rule' && fix.rule) {
+    return { kind: 'rule', name: `Rule "${fix.label}"`, href: `/invoicing-settings/invoices?rule=${encodeURIComponent(fix.rule)}` };
+  }
+  if (fix.rule || fix.label === 'Stopped by a rule') return { kind: 'rule', name: 'Invoice rule', href: `${DOCS}INVOICE_RULES.md` };
+  const found = CHECKS[fix.label];
+  return found ? { kind: 'check', name: found[0], href: `${DOCS}${found[1]}` } : null;
+}
+
 // The short words for a job's problems: the first label, and "+N" for more.
 export function problemSummary(found) {
   const labels = [...new Set(found.map((f) => f.label))];

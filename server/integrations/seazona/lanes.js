@@ -9,7 +9,7 @@ import {
   orderListSignature,
   text,
 } from './map.js';
-import { runHistoryBackfill } from './history/backfill.js';
+import { backfillGaveUp, causeText, LANE as HISTORY_LANE, runHistoryBackfill } from './history/backfill.js';
 import { seazonaOrders } from './schema.js';
 import { runSweep } from './sweep.js';
 import {
@@ -71,8 +71,10 @@ const MAX_REPORTED = 25;
 const FINAL_STATUS_PATTERN = 'shipped|delivered|cancelled|canceled|void|closed|archived|deleted';
 
 class LaneError extends Error {
-  constructor(message, { code, details = null, held = false, retryAfterMs = null, progress = null } = {}) {
+  constructor(message, { code, details = null, held = false, retryAfterMs = null, progress = null, fatal = false } = {}) {
     super(message);
+    // No wait fixes it: the history read gives up at once (backfillGaveUp).
+    this.fatal = fatal;
     this.code = code;
     this.details = details;
     this.held = held;
@@ -652,15 +654,25 @@ export async function runSeazonaSync(db, client, { settings, now = Date.now, onl
       const { cursor, cursorTime, anyFailed, ...reported } = result;
       results[lane] = { ok: true, ...reported };
     } catch (error) {
-      const { status, heldReason, delayMs } = laneOutcome(error, state, sync);
-      const message = text(error?.message) || 'Seazona lane failed';
+      const outcome = laneOutcome(error, state, sync);
+      // A database error's text ends with the query's values: never kept or shown.
+      const plain = (text(error?.message) || 'Seazona lane failed').split('\nparams:')[0].slice(0, 500);
+      // The history card shows this text: it never names an order.
+      const message = lane === HISTORY_LANE ? causeText(plain) : plain;
+      const failureCount = (state?.failureCount ?? 0) + 1;
+      // The history read never retries without end: after a refusal, or
+      // enough failed runs in a row, it gives up until a person presses Retry.
+      const gaveUp = lane === HISTORY_LANE
+        ? backfillGaveUp(state, error, { ...outcome, failedRuns: failureCount, message, code: outcome.heldReason ?? error?.code ?? 'seazona_lane_failed', at, sync })
+        : null;
+      const { status, heldReason, delayMs } = gaveUp ? { status: 'stopped', heldReason: 'seazona_history_gave_up', delayMs: null } : outcome;
       const code = heldReason ?? error?.code ?? 'seazona_lane_failed';
       await finishLane(db, lane, {
         status,
         lastAttemptAt: at,
         nextRunAt: delayMs === null ? null : new Date(Number(now()) + delayMs),
-        ...(error?.progress?.cursor ? { cursor: error.progress.cursor } : {}),
-        failureCount: (state?.failureCount ?? 0) + 1,
+        ...(gaveUp ? { cursor: gaveUp } : error?.progress?.cursor ? { cursor: error.progress.cursor } : {}),
+        failureCount,
         lastError: message,
         failureDetails: error?.details ?? (Number.isInteger(error?.statusCode) ? { httpStatus: error.statusCode, path: error.path ?? null } : null),
         heldReason,

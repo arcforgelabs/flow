@@ -228,7 +228,7 @@ export async function runAutomations(db, organisationId, { accounting = null, wo
     } else if (automation.key === 'draft_when_ready') {
       // Old held jobs a non-chargeable rule matches join this run's drafts.
       const settled = await settleHistoryByRules(db, organisationId, { accounting, now });
-      if (settled.released) summary.settle_history = settled;
+      if (settled.released || settled.reheld) summary.settle_history = settled;
       summary[automation.key] = await autoDraftJobs(db, organisationId, { accounting, work, now, actor: actorOf(automation.key) });
     } else if (automation.key === 'ready_when_drafted') {
       summary[automation.key] = await readyWhenDrafted(db, organisationId);

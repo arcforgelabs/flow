@@ -9,7 +9,7 @@ import { test } from 'node:test';
 // that draws its own list table is on OLD_TABLES until it moves (#411);
 // that list only gets shorter.
 const UI = new URL('../server/ui/', import.meta.url);
-const OLD_TABLES = new Set(['app.js', 'contacts.js', 'price-reconcile.js', 'xero-import.js']);
+const OLD_TABLES = new Set(['app.js', 'price-reconcile.js', 'xero-import.js']);
 const pages = readdirSync(UI).filter((f) => f.endsWith('.js') && f !== 'columns.js')
   .map((file) => ({ file, source: readFileSync(new URL(file, UI), 'utf8') }));
 

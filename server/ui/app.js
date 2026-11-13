@@ -22,13 +22,14 @@ import { renderHome } from '/assets/ui/home.js';
 import { renderReconcile } from '/assets/ui/reconcile.js';
 import { renderXeroImport } from '/assets/ui/xero-import.js';
 import { syncStatus } from '/assets/ui/sync-status.js';
+import { historyErrorPrompt } from '/assets/ui/problem-prompt.js';
 import { xeroUsage } from '/assets/ui/xero-usage.js';
 import { startMonitoring } from '/assets/ui/monitoring.js';
 import { isSearchKey, openSearch } from '/assets/ui/search.js';
 import { alertStrip } from '/assets/ui/alerts.js';
 import { initialsOf, personLabel } from '/assets/ui/person.js';
 import { startTips } from '/assets/ui/tip.js';
-import { cardRows, copyButton, crumbs, dialog, edgeFade, fieldError, h, holdButton, iconPicker, linksOpenWith, listFrame, listHead, notice, pageHeader, pickOne, rowMenu, sectionTitle, settingRow, tileCard, tileSection, toast } from '/assets/ui/kit.js';
+import { cardRows, copyButton, crumbs, dialog, edgeFade, errorCopy, fieldError, h, holdButton, iconPicker, linksOpenWith, listFrame, listHead, notice, noteFailure, pageHeader, pickOne, rowMenu, sectionTitle, settingRow, tileCard, tileSection, toast } from '/assets/ui/kit.js';
 import { NAV_DEFAULT, NAV_LOCKED } from '/assets/ui/nav-pins.js';
 
 const $ = (id) => document.getElementById(id);
@@ -123,6 +124,8 @@ async function flow(path, options = {}) {
   // A button that calls Xero or Seazona waits between presses (the action
   // guard): a press too soon says how long (retryAfterMs), and a good run
   // says its own wait (Flow-Cooldown-Ms). holdButton shows the wait.
+  // The failure is kept for the error's Copy error (kit.js, errorCopy).
+  if (!res.ok) noteFailure({ method: options.method ?? 'GET', path, status: res.status, code: body.code, reasons: body.details?.reasons ?? [], message: body.error || `HTTP ${res.status}` });
   if (!res.ok) throw Object.assign(new Error(body.error || `HTTP ${res.status}`), { status: res.status, code: body.code, details: body.details, retryAfterMs: body.retryAfterMs });
   const cooldownMs = Number(res.headers.get('Flow-Cooldown-Ms'));
   if (cooldownMs > 0 && body && typeof body === 'object') body.cooldownMs = cooldownMs;
@@ -339,7 +342,7 @@ function navigate(event) {
 // The shared pieces a view module (invoicing.js) builds with. Its `go`
 // takes a path, or a link's click event.
 const ui = () => ({
-  h, flow, toast, notice, cardRows, copyButton, fieldError, pageHeader, listHead, listFrame, edgeFade, sectionTitle, settingRow, dialog, pickOne, iconPicker, me, holdButton, tileCard, tileSection, crumbs,
+  h, flow, toast, notice, cardRows, copyButton, errorCopy, fieldError, pageHeader, listHead, listFrame, edgeFade, sectionTitle, settingRow, dialog, pickOne, iconPicker, me, holdButton, tileCard, tileSection, crumbs,
   go: (target, options) => (typeof target === 'string' ? go(target, options) : navigate(target)),
 });
 
@@ -1098,6 +1101,13 @@ function seazonaHistorySection() {
   };
   let actionLabel;
   const actionButton = h('button', { class: 'fx-btn fx-btn--sm', type: 'button', onclick: event => press(event.currentTarget, actionLabel) });
+  // A read that waits or failed says why; Copy error gives the facts to
+  // paste to an agent: codes, counts and days, never a record or the cause's words.
+  const copyCause = copyButton({
+    label: 'Copy error', copied: 'Error copied. Paste it to your agent.',
+    text: () => historyErrorPrompt(run),
+  });
+  const actions = h('span', { class: 'fx-history__actions' }, copyCause, actionButton);
   const load = async () => {
     clearTimeout(timer);
     if (disposed || pending || document.hidden) return;
@@ -1117,7 +1127,8 @@ function seazonaHistorySection() {
         count: body.history.jobs, unit: 'jobs', from: run?.from, through: run?.through,
         at: run?.readingDay ?? run?.resumeFrom ?? run?.through,
         cause: run?.cause, nextRunAt: run?.nextRunAt,
-      }, actionButton);
+      }, actions);
+      copyCause.hidden = !run?.cause;
     } catch (error) {
       sync.draw({ phase: 'failed', cause: 'Could not check progress. Try again.' }, h('button', { class: 'fx-btn fx-btn--sm', type: 'button', onclick: load }, 'Retry'));
     } finally { pending = false; schedule(); }
