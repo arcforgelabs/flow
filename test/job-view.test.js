@@ -192,7 +192,7 @@ test('a view can group by a custom field, by its id', () => {
   const id = '0a1b2c3d-0000-4000-8000-000000000001';
   assert.equal(normaliseJobsView({ group: fieldGroup(id) }).group, `field:${id}`);
   assert.equal(fieldIdOf(`field:${id}`), id);
-  assert.equal(normaliseJobsView({ group: 'field:nope' }).group, 'status');
+  assert.equal(normaliseJobsView({ group: 'field:nope' }).group, DEFAULT_VIEW.group);
   assert.equal(fieldIdOf('status'), null);
 });
 
@@ -232,4 +232,21 @@ describe('a saved view follows the account', { skip: skipWithoutDatabase }, () =
       await assert.rejects(setPersonView(handle.db, { id: owner.id, page, view: {} }), { code: 'not_found' });
     }
   });
+});
+
+test('the board groups by Flow lanes with Done folded; a view from before lanes moves to them', () => {
+  assert.equal(DEFAULT_VIEW.group, 'lane');
+  assert.deepEqual(normaliseJobsView({}).folded, ['Done']);
+  // Saved before lanes: no `folded`, and 'status' was the old default.
+  assert.equal(normaliseJobsView({ group: 'status' }).group, 'lane');
+  // Saved after: Status is a person's own pick (the work system's board).
+  assert.equal(normaliseJobsView({ group: 'status', folded: [] }).group, 'status');
+  assert.deepEqual(normaliseJobsView({ folded: ['Done', 'Hold', 7, ''] }).folded, ['Done', 'Hold']);
+});
+
+test('"Lane is not Done" hides the Done lane', () => {
+  const view = normaliseJobsView({ groups: [{ match: 'all', filters: [{ field: 'lane', op: 'not', value: ['Done'] }] }] });
+  assert.deepEqual(keptStatuses(view, ['In Prod', 'Shipped', 'Invoiced', 'Paid', 'Done'], 'lane'), ['In Prod', 'Shipped', 'Invoiced', 'Paid']);
+  // A lane row does not hide status lanes on the Status board.
+  assert.deepEqual(keptStatuses(view, ['In Prod', 'Shipped']), ['In Prod', 'Shipped']);
 });

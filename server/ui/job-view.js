@@ -6,8 +6,10 @@
 
 export const LAYOUTS = ['board', 'list'];
 // 'none' is one plain list with no group heads. The board has a lane per
-// group, so there it shows the status lanes.
-export const GROUPS = { status: 'Status', stage: 'Invoice stage', client: 'Client', practitioner: 'Practitioner', none: 'None' };
+// group, so there it shows the lanes. 'lane' is Flow's lanes: the work
+// system's statuses, then Invoiced, Paid and Done (job-board.js flowLaneOf).
+// 'status' is the work system's statuses alone.
+export const GROUPS = { lane: 'Lane', status: 'Status', stage: 'Invoice stage', client: 'Client', practitioner: 'Practitioner', none: 'None' };
 // What a job can be sorted by. A custom field can sort too ('field:<id>').
 // No sort keeps the order the lab system gives.
 export const SORTS = { due: 'Due', ordered: 'Requested', shipped: 'Shipped', client: 'Client', practitioner: 'Practitioner', total: 'Total' };
@@ -29,6 +31,7 @@ export const DEFAULT_COLUMNS = Object.freeze(['practitioner', 'patient', 'stage'
 // ('field:<id>'); its kind comes from its type. Each kind has ClickUp's
 // operators, in the order ClickUp's menu shows them.
 export const FILTER_FIELDS = {
+  lane: { label: 'Lane', kind: 'choice', icon: 'kanban' },
   status: { label: 'Status', kind: 'choice', icon: 'circle-dot' },
   stage: { label: 'Invoice stage', kind: 'choice', icon: 'receipt' },
   // The job's invoice status, as the Invoices page names it; "Not invoiced"
@@ -78,8 +81,12 @@ const ALL_OPS = new Set(Object.values(OPERATORS).flatMap(Object.keys));
 // operator ('next7', 'before' with a day). They load as "Is <range>".
 const OLD_DATE_OPS = new Set(['overdue', 'today', 'next7', 'last7', 'before', 'after', 'on']);
 
+// The board's folded lanes, by label: a folded lane is a thin column with
+// its name and count, and loads no cards. Done starts folded.
+export const DEFAULT_FOLDED = Object.freeze(['Done']);
+
 export const DEFAULT_VIEW = Object.freeze({
-  layout: 'board', group: 'status', groupDir: 'asc', sorts: Object.freeze([]), match: 'all', groups: Object.freeze([]), columns: DEFAULT_COLUMNS,
+  layout: 'board', group: 'lane', folded: DEFAULT_FOLDED, groupDir: 'asc', sorts: Object.freeze([]), match: 'all', groups: Object.freeze([]), columns: DEFAULT_COLUMNS,
   widths: Object.freeze({}),
 });
 
@@ -166,9 +173,13 @@ function cleanSorts(value) {
 export function normaliseJobsView(input) {
   const value = input && typeof input === 'object' && !Array.isArray(input) ? input : {};
   const pick = (key, allowed) => (allowed.includes(value[key]) ? value[key] : DEFAULT_VIEW[key]);
+  // A view saved before lanes has no `folded`. Its 'status' was the old
+  // default, so it takes the new default, Lane.
+  const beforeLanes = !Array.isArray(value.folded) && value.group === 'status';
   return {
     layout: pick('layout', LAYOUTS),
-    group: FIELD_GROUP.test(value.group ?? '') ? value.group : pick('group', Object.keys(GROUPS)),
+    group: FIELD_GROUP.test(value.group ?? '') ? value.group : beforeLanes ? DEFAULT_VIEW.group : pick('group', Object.keys(GROUPS)),
+    folded: Array.isArray(value.folded) ? cleanLabels(value.folded) : [...DEFAULT_FOLDED],
     groupDir: pick('groupDir', DIRS),
     sorts: cleanSorts(value),
     ...cleanFilterView(Array.isArray(value.groups) || Array.isArray(value.filters) ? value : { filters: oldFilters(value) }, jobKind),
@@ -317,15 +328,15 @@ export function filterJobs(jobs, view, { valueOf, kindOf = (field) => FILTER_FIE
   return jobs.filter((job) => (view.match === 'any' ? groups.some(passGroup(job)) : groups.every(passGroup(job))));
 }
 
-// The status lanes to show: a status filter hides the lanes it leaves out,
-// even empty ones. A row whose group (or the groups' join) is "any" can be
-// passed another way, so it hides no lane.
-export function keptStatuses(view, labels) {
+// The lanes to show: a status (or lane) filter hides the lanes it leaves
+// out, even empty ones. A row whose group (or the groups' join) is "any" can
+// be passed another way, so it hides no lane. "Lane is not Done" hides Done.
+export function keptStatuses(view, labels, field = 'status') {
   const groups = (view.groups ?? []).filter((g) => g.filters.some((f) => filterIsOn(f)));
   if (view.match === 'any' && groups.length > 1) return labels;
   return groups.filter((g) => g.match !== 'any' || g.filters.length === 1)
     .flatMap((g) => g.filters)
-    .filter((f) => f.field === 'status' && filterIsOn(f) && Array.isArray(f.value)).reduce((kept, f) => (f.op === 'is'
+    .filter((f) => f.field === field && filterIsOn(f) && Array.isArray(f.value)).reduce((kept, f) => (f.op === 'is'
       ? kept.filter((label) => f.value.includes(label))
       : f.op === 'not' ? kept.filter((label) => !f.value.includes(label)) : kept), labels);
 }

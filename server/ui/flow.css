@@ -894,8 +894,24 @@ th:hover > .fx-th-grip::after { background: var(--t-brd-hi); }
    the page down to its bottom edge, the page itself does not scroll, and
    each lane scrolls inside itself (jobs.js sets fx-main--board while the
    board shows). */
-.fx-board { --fx-lane: min(85vw, 272px); display: grid; grid-auto-flow: column; grid-auto-columns: var(--fx-lane); justify-content: start; gap: 12px; align-items: start; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: thin; padding-bottom: 4px; }
-.fx-board__col { display: flex; flex-direction: column; gap: 8px; min-width: 0; min-height: 0; padding: 10px 6px 6px 8px; border-radius: var(--t-radius-lg); background: transparent; }
+.fx-board { --fx-lane: min(85vw, 272px); display: grid; grid-auto-flow: column; grid-auto-columns: max-content; justify-content: start; gap: 12px; align-items: start; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: thin; padding-bottom: 4px; }
+.fx-board__col { width: var(--fx-lane); display: flex; flex-direction: column; gap: 8px; min-width: 0; min-height: 0; padding: 10px 6px 6px 8px; border-radius: var(--t-radius-lg); background: transparent; }
+/* A folded lane (jobs.js foldLane): a thin column with its name and count,
+   turned on its side. A click opens it. */
+.fx-board__col--folded { width: 44px; padding: 6px 0; }
+.fx-board__unfold { flex: 1; display: flex; justify-content: center; align-items: flex-start; min-height: 120px; padding: 8px 0; border: 1px solid var(--fx-line); border-radius: var(--t-radius-lg); background: transparent; color: inherit; cursor: pointer; }
+.fx-board__unfold:hover { background: var(--t-paper); }
+.fx-board__unfold .fx-stage { writing-mode: vertical-rl; }
+.fx-board__fold { flex: none; }
+/* A touch target on a phone or tablet is 44px both ways. */
+@media (max-width: 1023px) {
+  .fx-board__fold { min-width: 44px; min-height: 44px; }
+}
+@media (hover: hover) {
+  .fx-board__fold { opacity: 0; }
+  .fx-board__head:hover .fx-board__fold, .fx-board__fold:focus-visible { opacity: 1; }
+}
+.fx-board__more { padding: 4px; color: var(--t-dim); font-size: 12px; text-align: center; }
 .fx-board__head { display: flex; flex: none; align-items: center; gap: 8px; min-width: 0; padding: 2px 4px 4px 2px; }
 .fx-board__sum { flex: none; margin-left: auto; color: var(--t-dim); font-size: 12px; font-variant-numeric: tabular-nums; }
 .fx-board__cards { display: grid; gap: 8px; align-content: start; min-height: 0; max-height: 70vh; padding-right: 2px; overflow-y: auto; scrollbar-width: thin; }
@@ -957,7 +973,9 @@ th:hover > .fx-th-grip::after { background: var(--t-brd-hi); }
     --fx-lane: 100%; grid-auto-columns: 100%; gap: 0; min-width: 0; width: 100%;
     scroll-snap-type: x mandatory; scrollbar-width: none;
   }
-  .fx-main--board .fx-board__col { scroll-snap-align: start; scroll-snap-stop: always; border-radius: 0; }
+  .fx-main--board .fx-board__col { width: 100%; scroll-snap-align: start; scroll-snap-stop: always; border-radius: 0; }
+  .fx-main--board .fx-board__unfold { min-height: 44px; margin: 8px; }
+  .fx-main--board .fx-board__unfold .fx-stage { writing-mode: horizontal-tb; }
   .fx-main--board .fx-board__head { display: none; }
   .fx-main--board .fx-board__cards { max-height: none; padding: 8px; }
 }
