@@ -253,6 +253,13 @@
       "when": 1794534797044,
       "tag": "0035_invoice_list_tabs",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1794535452393,
+      "tag": "0036_tax_from_xero",
+      "breakpoints": true
     }
   ]
 }

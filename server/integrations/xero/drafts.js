@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { isCallsStopped } from '../call-guard.js';
 import { billedContact } from '../../core/contacts.js';
+import { readInvoicingSettings } from '../../core/invoicing-rules.js';
 import { getInvoice, listInvoiceVersions } from '../../core/invoices.js';
 import { sendModeFor } from '../../core/invoicing-rules.js';
 import { contacts as flowContacts, invoices as flowInvoices, priceItems } from '../../db/schema.js';
@@ -159,7 +160,7 @@ function trackingFor(settings, contact) {
 }
 
 // The Xero draft for a document, and what stops it.
-export function buildDraft(document, { settings, contact, items, sendMode = 'accounting_draft' }) {
+export function buildDraft(document, { settings, contact, items, sendMode = 'accounting_draft', taxFromXero = true }) {
   const problems = [];
   const tracking = trackingFor(settings, contact);
   const lines = document.lines.map((line) => {
@@ -185,7 +186,7 @@ export function buildDraft(document, { settings, contact, items, sendMode = 'acc
         if (settings.lineText === 'item' && item.name) out.Description = item.name;
         // Xero's item sets the GST: a line whose GST differs never goes.
         const xeroTax = taxCodeOf(item.salesTaxType, settings.taxTypes);
-        if (xeroTax && line.taxCode && xeroTax !== line.taxCode) {
+        if (taxFromXero && xeroTax && line.taxCode && xeroTax !== line.taxCode) {
           problems.push(problem('xero_tax_differs', `Line ${line.position}: GST differs from Xero item ${item.code || line.itemCode} (${xeroTax === 'GST' ? 'GST' : 'GST free'} in Xero). Sync Xero, then check the draft again.`, { itemCode: line.itemCode, short: 'GST not as Xero' }));
         }
       }
@@ -366,7 +367,8 @@ async function previewOne(db, runtime, organisationId, invoiceId) {
   if (match.state === 'ambiguous') problems.push(own ? twiceContact(name) : { ...twiceContact(name), offerLink: false });
   const items = await xeroItemsForCodes(db, organisationId, document.lines.map((l) => l.itemCode));
   const sendMode = await sendModeFor(db, organisationId, invoice.contactId);
-  const { draft, problems: lineProblems } = buildDraft(document, { settings: runtime.settings, contact: match.contact, items, sendMode });
+  const { taxFromXero } = await readInvoicingSettings(db, organisationId);
+  const { draft, problems: lineProblems } = buildDraft(document, { settings: runtime.settings, contact: match.contact, items, sendMode, taxFromXero });
   problems.push(...lineProblems);
   if (sendMode === 'approve_and_email' && match.state === 'matched' && !match.contact.email) {
     problems.push(problem('xero_contact_no_email', `The Xero contact "${match.contact.name}" has no email address, so Xero cannot email the invoice. Add one in Xero, then sync.`, { blocking: false }));
@@ -551,7 +553,8 @@ async function pushOne(db, runtime, client, organisationId, invoiceId, { pushedB
   }
   const items = await xeroItemsForCodes(db, organisationId, document.lines.map((l) => l.itemCode));
   const sendMode = await sendModeFor(db, organisationId, invoice.contactId);
-  const { draft, problems } = buildDraft(document, { settings: runtime.settings, contact: match.contact, items, sendMode });
+  const { taxFromXero } = await readInvoicingSettings(db, organisationId);
+  const { draft, problems } = buildDraft(document, { settings: runtime.settings, contact: match.contact, items, sendMode, taxFromXero });
   if (problems.length) throw xeroError(problems[0].code, problems.map((p) => p.message).join(' '), { status: 409, short: problems[0].short });
 
   // Live duplicate check: invoices in Xero with this reference, made by Flow

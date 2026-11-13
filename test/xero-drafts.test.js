@@ -62,6 +62,8 @@ describe('the Xero draft for a document', () => {
     assert.deepEqual(problems.map((p) => [p.code, p.short]), [['xero_tax_differs', 'GST not as Xero']]);
     const agrees = new Map([['CROWN', { code: 'CROWN', salesTaxType: 'OUTPUT' }]]);
     assert.deepEqual(buildDraft(document, { settings, contact: { xeroContactId: XC, salesTracking: [] }, items: agrees }).problems, []);
+    // GST from Xero off: Flow's own GST goes as it is.
+    assert.deepEqual(buildDraft(document, { settings, contact: { xeroContactId: XC, salesTracking: [] }, items, taxFromXero: false }).problems, []);
   });
 
   test('a document whose prices include GST sends Inclusive line amounts', () => {

@@ -1,4 +1,5 @@
 import { sql } from 'drizzle-orm';
+import { readInvoicingSettings } from '../../core/invoicing-rules.js';
 import { externalIdFor } from '../../core/links.js';
 import { withXeroLane } from './governor.js';
 
@@ -174,11 +175,13 @@ export async function syncCatalogue(db, runtime, organisationId, { startedBy = n
       const items = (await client.listItems()).map(mapItem).filter((i) => i.xeroItemId && i.code);
       // Xero's own default for sales lines (Financial settings): Flow's
       // "Prices include GST" follows it. An unread or unknown answer changes nothing.
-      const inclusive = salesTaxInclusive(await client.getOrganisation().catch(() => null));
+      // "GST from Xero" off (Settings, Invoicing): the read leaves both alone.
+      const { taxFromXero } = await readInvoicingSettings(db, organisationId);
+      const inclusive = taxFromXero ? salesTaxInclusive(await client.getOrganisation().catch(() => null)) : null;
       await db.transaction(async (tx) => {
         await replaceContacts(tx, organisationId, contacts);
         await replaceItems(tx, organisationId, items);
-        await followXeroTax(tx, organisationId, { inclusive, taxTypes: runtime.settings.taxTypes });
+        if (taxFromXero) await followXeroTax(tx, organisationId, { inclusive, taxTypes: runtime.settings.taxTypes });
         await tx.execute(sql`update xero_sync_runs set status = 'succeeded', finished_at = now(), contact_count = ${contacts.length}, item_count = ${items.length} where id = ${run.id}`);
       });
       return { id: run.id, status: 'succeeded', contactCount: contacts.length, itemCount: items.length };

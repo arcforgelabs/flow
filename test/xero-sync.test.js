@@ -3,7 +3,7 @@ import { after, before, describe, test } from 'node:test';
 import { sql } from 'drizzle-orm';
 import { invitePerson } from '../server/auth/people.js';
 import { createPriceItem } from '../server/core/directory.js';
-import { readInvoicingSettings } from '../server/core/invoicing-rules.js';
+import { readInvoicingSettings, saveInvoicingSettings } from '../server/core/invoicing-rules.js';
 import { lastSuccessfulSyncAt, matchContact, mapItem, parseXeroDate, salesTaxInclusive } from '../server/integrations/xero/catalogue.js';
 import { listPriceItems } from '../server/integrations/xero/lookup.js';
 import { request } from './support/clerk.js';
@@ -51,6 +51,9 @@ describe('Xero contact and item sync', { skip: skipWithoutDatabase }, () => {
       xeroAnswer('Items', { Items: [item('i1', 'CROWN', 260)] }),
       xeroAnswer('Organisation', { Organisations: [{ Name: 'Example Lab' }] }),
       xeroAnswer('Contacts', { Message: 'down' }, { query: { page: 1 }, status: 500 }),
+      // GST from Xero off: no Organisation read.
+      xeroAnswer('Contacts', { Contacts: [contact('c1', 'Example Practice')] }, { query: { page: 1 } }),
+      xeroAnswer('Items', { Items: [item('i1', 'CROWN', 260)] }),
     ]);
     const booted = await bootFlow(handle, { runtime: replay.runtime, log: replay.log });
     app = booted.app;
@@ -124,6 +127,16 @@ describe('Xero contact and item sync', { skip: skipWithoutDatabase }, () => {
     assert.equal(status.body.lastSync.error.code, 'xero_api_error');
     assert.deepEqual(await lastSuccessfulSyncAt(handle.db, lab.organisation.id), before);
     assert.ok(status.body.rateLimit.laneCounts.sync >= 5, 'sync calls count against the sync lane');
+  });
+
+  test('with GST from Xero off, a sync leaves the price list GST and Prices include GST alone', async () => {
+    await saveInvoicingSettings(handle.db, lab.organisation.id, { taxFromXero: false, amountsIncludeTax: false });
+    await handle.db.execute(sql`update price_items set tax_code = 'GST_FREE' where code = 'CROWN'`);
+    const res = await sync(lab.ownerToken);
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    const { rows: [crown] } = await handle.db.execute(sql`select tax_code from price_items where code = 'CROWN'`);
+    assert.equal(crown.tax_code, 'GST_FREE');
+    assert.equal((await readInvoicingSettings(handle.db, lab.organisation.id)).amountsIncludeTax, false);
   });
 
   test('two syncs for one organisation run one after the other', async () => {

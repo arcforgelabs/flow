@@ -1,0 +1,1 @@
+ALTER TABLE "invoicing_settings" ADD COLUMN IF NOT EXISTS "tax_from_xero" boolean DEFAULT true NOT NULL;
