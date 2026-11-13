@@ -387,7 +387,12 @@ export function compareThreeWays(base, source, flow, { sent = false } = {}) {
     // accounting system's items set (workTax).
     const workMoved = sideValue(source, field, workTax) !== sideValue(base, field, workTax);
     const [b, s, f] = [base, source, flow].map((side) => sideValue(side, field));
-    const changedIn = !workMoved ? (f === b ? 'none' : 'flow') : (f === b ? 'work' : (f === s ? 'same' : 'both'));
+    // The invoice may already hold the work system's new lines with the work
+    // system's own GST (an invoice made from the work system's invoice, while
+    // Flow first read the order). That is the same, not a change: only the
+    // GST the accounting system's items set differs, and that is a tax rule.
+    const same = f === s || (field === 'lines' && f === sideValue(source, field, workTax));
+    const changedIn = !workMoved ? (f === b ? 'none' : 'flow') : (f === b ? 'work' : (same ? 'same' : 'both'));
     return { field, owner: FIELD_OWNERS[field], changedIn };
   });
   const work = fields.filter((f) => ['work', 'both'].includes(f.changedIn));
