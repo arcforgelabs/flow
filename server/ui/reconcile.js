@@ -25,6 +25,7 @@ import { savedViews } from '/assets/ui/saved-views.js';
 import { pager } from '/assets/ui/pager.js';
 import { findBox, today, viewBar } from '/assets/ui/view-bar.js';
 import { formatCents } from '/assets/ui/invoicing.js';
+import { gapPrompt } from '/assets/ui/problem-prompt.js';
 
 const STATUS = { draft: 'Draft', issued: 'Approved', void: 'Void' };
 const fullDate = (iso) => (iso ? new Date(`${iso}T00:00:00`).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' }) : '—');
@@ -112,6 +113,16 @@ function readStored(store, key, fallback) {
 }
 function writeStored(store, key, value) {
   try { store.setItem(key, JSON.stringify(value)); } catch { /* the page still works, it forgets */ }
+}
+
+// "Copy prompt" for one gap (problem-prompt.js, gapPrompt). `candidates`:
+// the possible other sides, when the page has read them.
+function gapCopy(ui, kind, id, candidates = () => []) {
+  return ui.copyButton({
+    label: 'Copy prompt',
+    text: () => gapPrompt({ origin: location.origin, kind, gapId: id, candidates: candidates(), organisationId: null }),
+    copied: 'Prompt copied. Paste it to your agent.',
+  });
 }
 
 // One row for each gap, jobs and invoices together, oldest first.
@@ -327,7 +338,8 @@ async function renderList(main, ui) {
         return h('tr', { 'data-kind': r.kind, onclick: () => { remember(); ui.go(pathOf(r)); } },
           canAct ? h('td', { class: 'fx-tick-cell', onclick: (event) => event.stopPropagation() }, box) : null,
           rowCells(h, columns, r),
-          h('td', { class: 'fx-c-end' }));
+          // Copy prompt: this gap, for an agent to find its other side.
+          h('td', { class: 'fx-c-end fx-rec-list__copy', onclick: (event) => event.stopPropagation() }, gapCopy(ui, r.kind, r.id)));
       })),
     })));
     drawBar();
@@ -392,6 +404,10 @@ async function renderGap(main, ui, id) {
   main.append(card);
 
 
+  // The possible other sides as last read, for Copy prompt.
+  let found = [];
+  const copy = gapCopy(ui, kind, id, () => found);
+
   async function act(run, done) {
     for (const b of card.querySelectorAll('button')) b.disabled = true;
     try {
@@ -444,7 +460,7 @@ async function renderGap(main, ui, id) {
     try {
       body = await flow(`/api/invoicing/${kind === 'job' ? 'jobs' : 'invoices'}/${id}/reconcile${q.trim() ? `?q=${encodeURIComponent(q.trim())}` : ''}`);
     } catch (error) {
-      results.replaceChildren(h('p', { class: 'fx-empty' }, error.message));
+      results.replaceChildren(ui.notice(error.message, 'danger'));
       return;
     }
     if (kind === 'job') renderJob(body, q);
@@ -454,6 +470,7 @@ async function renderGap(main, ui, id) {
   const skip = () => (order.length > 1 ? h('button', { class: 'fx-btn', type: 'button', onclick: next }, icon('skip-forward'), 'Skip') : null);
 
   function renderJob({ job, invoices }, q) {
+    found = invoices;
     const system = job.sourceName ?? job.sourceSystem;
     sub.replaceChildren([job.clientName ?? 'No client', job.practitioner, fullDate(job.jobDate), money(job.totalCents)].filter(Boolean).join(' · '));
     const candidates = invoices.map((invoice) => {
@@ -475,6 +492,7 @@ async function renderGap(main, ui, id) {
         : h('p', { class: 'fx-empty' }, q.trim() ? 'No Flow invoice matches the search.' : 'Flow found no invoice that may be for this job. Find one, or make it.'),
     ].flat().filter(Boolean));
     actions.replaceChildren(...[
+      copy,
       skip(),
       // An unclear job (a voided or deleted Xero link) is not open to a link,
       // but Make invoice settles it.
@@ -489,6 +507,7 @@ async function renderGap(main, ui, id) {
   }
 
   function renderInvoice({ invoice, jobs }, q) {
+    found = jobs;
     sub.replaceChildren([invoice.number ?? 'Draft', invoice.clientName, fullDate(invoice.date), money(invoice.totalCents)].filter(Boolean).join(' · '));
     const candidates = jobs.map((job) => {
       const facts = jobCandidateFacts(job);
@@ -508,7 +527,7 @@ async function renderGap(main, ui, id) {
       candidates.length ? compareView({ ours: invoiceFacts(invoice), oursTitle: 'This invoice', oursSub: 'Flow', candidates })
         : h('p', { class: 'fx-empty' }, q.trim() ? 'No job matches the search.' : 'Flow found no job that may be for this invoice.'),
     ].flat().filter(Boolean));
-    actions.replaceChildren(...[skip(), h('a', { class: 'fx-btn', href: `/invoices/${invoice.id}`, onclick: (event) => ui.go(event) }, icon('file-text'), 'Open invoice')].filter(Boolean));
+    actions.replaceChildren(...[copy, skip(), h('a', { class: 'fx-btn', href: `/invoices/${invoice.id}`, onclick: (event) => ui.go(event) }, icon('file-text'), 'Open invoice')].filter(Boolean));
   }
 
   await load();

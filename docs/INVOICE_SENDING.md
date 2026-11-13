@@ -396,6 +396,23 @@ what to do, and has one button to the place to fix it. The sidecar has tabs
 (Activity, Fix) and closes with ×; closed, the job's details take the full
 width. The panel icon at the top reopens it.
 
+Each problem in the Fix tab names what stops the job: **Rule:** and the rule's
+name, linked to the rule in Flow, or **Check:** and the Flow check, linked to
+the page that says how it works (`checkOf`, `server/ui/job-board.js`). For
+**Job changed**, the lines that changed are red in the job's **Lines** table
+as soon as the panel opens, and in the change table.
+
+Every problem has **Copy prompt** (the copy icon) beside its buttons. It copies
+the problem as a prompt for an agent with the Flow skill (Gandalf): the Flow
+ids and links, the rule or check, the commands that read Flow, Seazona and
+Xero, and what waits for the person's yes (`server/ui/problem-prompt.js`).
+Reconcile has the same button on each row and on each gap, and Price list ›
+Reconcile on each record. Any other error in Flow (a red note, a red toast, an
+alert) has **Copy error**: the page, the Flow call that failed, its HTTP
+status and code, and the Flow ids. The words on the screen and a rule's name
+are not copied, because they can hold a contact's, a clinic's or a patient's
+name; the agent repeats the read or asks the person.
+
 The job and its draft hold one fact: the job is in review. Flow stores it once
 (the job's hold, and one open review item for each job; a second report
 updates that item). The panel shows it once: the draft's copy of the hold

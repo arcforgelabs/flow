@@ -29,7 +29,7 @@ import { isSearchKey, openSearch } from '/assets/ui/search.js';
 import { alertStrip } from '/assets/ui/alerts.js';
 import { initialsOf, personLabel } from '/assets/ui/person.js';
 import { startTips } from '/assets/ui/tip.js';
-import { cardRows, copyButton, crumbs, dialog, edgeFade, fieldError, h, holdButton, iconPicker, linksOpenWith, listFrame, listHead, notice, pageHeader, pickOne, rowMenu, sectionTitle, settingRow, tileCard, tileSection, toast } from '/assets/ui/kit.js';
+import { cardRows, copyButton, crumbs, dialog, edgeFade, errorCopy, fieldError, h, holdButton, iconPicker, linksOpenWith, listFrame, listHead, notice, noteFailure, pageHeader, pickOne, rowMenu, sectionTitle, settingRow, tileCard, tileSection, toast } from '/assets/ui/kit.js';
 import { NAV_DEFAULT, NAV_LOCKED } from '/assets/ui/nav-pins.js';
 
 const $ = (id) => document.getElementById(id);
@@ -124,6 +124,8 @@ async function flow(path, options = {}) {
   // A button that calls Xero or Seazona waits between presses (the action
   // guard): a press too soon says how long (retryAfterMs), and a good run
   // says its own wait (Flow-Cooldown-Ms). holdButton shows the wait.
+  // The failure is kept for the error's Copy error (kit.js, errorCopy).
+  if (!res.ok) noteFailure({ method: options.method ?? 'GET', path, status: res.status, code: body.code, reasons: body.details?.reasons ?? [], message: body.error || `HTTP ${res.status}` });
   if (!res.ok) throw Object.assign(new Error(body.error || `HTTP ${res.status}`), { status: res.status, code: body.code, details: body.details, retryAfterMs: body.retryAfterMs });
   const cooldownMs = Number(res.headers.get('Flow-Cooldown-Ms'));
   if (cooldownMs > 0 && body && typeof body === 'object') body.cooldownMs = cooldownMs;
@@ -340,7 +342,7 @@ function navigate(event) {
 // The shared pieces a view module (invoicing.js) builds with. Its `go`
 // takes a path, or a link's click event.
 const ui = () => ({
-  h, flow, toast, notice, cardRows, copyButton, fieldError, pageHeader, listHead, listFrame, edgeFade, sectionTitle, settingRow, dialog, pickOne, iconPicker, me, holdButton, tileCard, tileSection, crumbs,
+  h, flow, toast, notice, cardRows, copyButton, errorCopy, fieldError, pageHeader, listHead, listFrame, edgeFade, sectionTitle, settingRow, dialog, pickOne, iconPicker, me, holdButton, tileCard, tileSection, crumbs,
   go: (target, options) => (typeof target === 'string' ? go(target, options) : navigate(target)),
 });
 

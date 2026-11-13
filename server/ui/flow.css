@@ -250,7 +250,7 @@ body:is([data-state="off"], [data-state="error"], [data-state="no-access"]) .fx-
   font-size: var(--t-label-size, 12px); font-weight: var(--t-label-weight, 600); letter-spacing: var(--t-label-spacing, .08em);
   text-transform: var(--t-label-case, uppercase); color: var(--t-dim);
 }
-.fx-change__table tbody th { font-weight: 400; color: var(--t-dim); white-space: nowrap; }
+.fx-change__table tbody th { font-weight: 600; color: var(--t-danger); white-space: nowrap; box-shadow: inset 3px 0 0 var(--t-danger); }
 .fx-change__was { background: color-mix(in srgb, var(--t-danger) 9%, transparent); text-decoration: line-through; text-decoration-thickness: 1px; }
 .fx-change__now { background: color-mix(in srgb, var(--t-success) 11%, transparent); color: var(--t-strong); font-weight: 600; }
 .fx-change__table .fx-num { text-align: left; font-family: var(--t-data); font-variant-numeric: tabular-nums; }
@@ -304,6 +304,15 @@ a.fx-link:hover, a.fx-link:focus-visible { border-color: var(--t-strong); }
 }
 .fx-toast__close:hover { opacity: 1; background: color-mix(in srgb, currentColor 14%, transparent); }
 .fx-toast__close svg { width: 16px; height: 16px; }
+/* Copy error on a danger toast: the icon in the toast's own colour. */
+.fx-toast > .fx-copy { flex: none; margin: -6px 0; border-color: transparent; background: transparent; color: inherit; }
+.fx-toast > .fx-copy:hover { background: color-mix(in srgb, currentColor 14%, transparent); }
+/* Copy error at the end of a danger note. */
+.fx-notice > .fx-copy { float: right; margin: -4px -6px 0 8px; }
+/* A line that causes the problem (a job's changed line, jobs.js). */
+.fx-row--bad > td { background: var(--t-danger-bg); color: var(--t-danger); }
+.fx-row--bad > td:first-child { box-shadow: inset 3px 0 0 var(--t-danger); padding-left: 10px; }
+.fx-task__check { margin: 8px 0 0; font-size: 13px; }
 
 /* ── Table and people ───────────────────────────────────────────────────── */
 .fx-table { width: 100%; border-collapse: collapse; font-size: 14px; }
@@ -549,6 +558,9 @@ a.fx-strong:hover { text-decoration: underline; }
 .fx-alerts__more { flex: none; font-size: 12.5px; color: var(--t-dim); white-space: nowrap; }
 .fx-alerts__close { flex: none; display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: var(--t-radius); background: none; color: var(--t-dim); cursor: pointer; }
 .fx-alerts__close:hover { background: var(--fx-hover); color: var(--t-strong); }
+/* Copy error on an alert: a quiet icon, like Dismiss. */
+.fx-alerts > .fx-copy { flex: none; border-color: transparent; background: none; color: var(--t-dim); }
+.fx-alerts > .fx-copy:hover { background: var(--fx-hover); color: var(--t-strong); }
 .fx-alerts__close svg { width: 14px; height: 14px; }
 .fx-alerts__action:focus-visible, .fx-alerts__close:focus-visible { outline: 2px solid var(--t-ring); outline-offset: 2px; }
 @media (max-width: 639px) {
@@ -1474,7 +1486,7 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
   #menu-toggle, #search { width: 44px; height: 44px; }
   /* The notice's buttons grow to 44px into its padding, so the notice
      stays one short line. */
-  .fx-alerts__close { width: 44px; height: 44px; margin: -12px -8px; }
+  .fx-alerts__close, .fx-alerts > .fx-copy { width: 44px; height: 44px; margin: -12px -8px; }
   .fx-alerts__action { display: inline-flex; align-items: center; min-height: 44px; margin-block: -12px; }
   .fx-main { padding-top: 20px; }
   /* A two-line list needs the rows, not the gaps, so seven fit at 375×667.
@@ -1983,7 +1995,12 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
    tab line, the controls keep 8px clear of the line; only the tabs sit on it. */
 /* A finger needs 44px: on a phone or tablet every list's toolbar controls
    are that tall (the ListHead card's touch rule). */
-@media (max-width: 1023px) { .fx-listhead { --fx-control-h: 44px; } }
+@media (max-width: 1023px) {
+  .fx-listhead { --fx-control-h: 44px; }
+  /* The help link beside a page title is a touch target too. The negative
+     margins keep the icon and the row where they were. */
+  .fx-ph__text > .fx-help { min-width: 44px; min-height: 44px; justify-content: center; align-items: center; margin: -10px; }
+}
 .fx-listhead .fx-toolbar :is(.fx-btn, .fx-chip, .fx-views__add, .fx-views__tab) { min-height: var(--fx-control-h); }
 .fx-listhead .fx-toolbar .fx-btn:not(.fx-btn--sm) { padding-block: 0; font-size: 14px; }
 .fx-listhead .fx-toolbar :is(.fx-btn, .fx-chip) { height: var(--fx-control-h); }
@@ -2172,8 +2189,14 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
 .fx-offer { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .fx-offer > .fx-notice { flex: 1 1 220px; }
 .fx-contacts { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
-.fx-contacts__tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--fx-line-soft); }
-.fx-contacts__search { flex: 1 1 180px; max-width: 320px; }
+/* The Contacts list (shared list window): a name cell is the avatar and
+   the name on one line, cut with "…" when the column is narrow. */
+.fx-contacts__table .fx-person { color: inherit; text-decoration: none; gap: 10px; }
+.fx-contacts__table .fx-person__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; overflow-wrap: normal; }
+.fx-contacts__table .fx-avatar { flex: none; }
+.fx-rec-list__copy { text-align: right; }
+.fx-rec-list__copy .fx-copy { border-color: transparent; background: transparent; color: var(--t-dim); }
+.fx-rec-list__copy .fx-copy:hover { color: var(--t-strong); }
 .fx-contacts .fx-card { padding: 16px 20px; }
 .fx-contacts__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
 .fx-contacts__wide { grid-column: 1 / -1; }

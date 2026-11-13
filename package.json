@@ -1,6 +1,6 @@
 {
   "name": "@arcforgelabs/flow",
-  "version": "2026.11.15",
+  "version": "2026.11.16",
   "description": "Invoicing, bill entry and a financial dashboard for labs, with Seazona and Xero integrations.",
   "license": "MIT",
   "repository": {

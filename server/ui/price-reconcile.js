@@ -15,6 +15,7 @@ import { bulkBar } from '/assets/ui/bulk-bar.js';
 import { lucide } from '/assets/ui/custom-fields.js';
 import { pager as recordPager } from '/assets/ui/pager.js';
 import { findCodes, nameScore, reconcileRows, SAME_NAME } from '/assets/ui/price-match.js';
+import { pricePrompt } from '/assets/ui/problem-prompt.js';
 
 const TAX_LABELS = { GST: 'GST', GST_FREE: 'GST free' };
 const money = (cents) => (cents === null || cents === undefined ? '—' : `$${(cents / 100).toFixed(2)}`);
@@ -203,7 +204,8 @@ export async function renderPriceReconcile(main, ui) {
         h('th', { scope: 'row' }, icon(glyph, label)),
         h('td', {}, left), h('td', { class: 'fx-xi-cmp__mid' }, mark(state)), h('td', {}, right)))));
 
-    const acts = [];
+    // Copy prompt: this row, for an agent to check at the sources.
+    const acts = [ui.copyButton({ label: 'Copy prompt', text: () => pricePrompt({ origin: location.origin, row }), copied: 'Prompt copied. Paste it to your agent.' })];
     const busy = (button, run) => async () => {
       button.disabled = true;
       try { await run(); } finally { button.disabled = false; }
