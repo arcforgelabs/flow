@@ -34,6 +34,17 @@ test('saved views keep only good entries; a default must name one of them', () =
   assert.equal(normaliseSavedViews('jobs', { list: many }).list.length, MAX_SAVED_VIEWS);
 });
 
+test('views saved before Contacts had columns load unchanged; a Contacts view keeps only its own columns', () => {
+  const before = { jobs: DEFAULT_VIEW, nav: ['jobs'], unknown: { x: 1 } };
+  const loaded = normaliseViews(before);
+  assert.deepEqual(Object.keys(loaded).sort(), ['jobs', 'nav']);
+  assert.deepEqual(loaded, normaliseViews(loaded));
+  assert.equal(loaded.contacts, undefined);
+  const contacts = normaliseViews({ ...before, contacts: { columns: ['name', 'email', 'bogus'] } }).contacts;
+  assert.ok(contacts && !JSON.stringify(contacts).includes('bogus'));
+  assert.deepEqual(normaliseViews({ ...before, contacts: { columns: ['name'] } }).jobs, loaded.jobs);
+});
+
 test('each page checks its own view: Invoices and Reconcile keep only their filter fields', () => {
   const field = 'field:6f1c2a4e-1b2c-4d3e-8f9a-0b1c2d3e4f5a';
   const view = { match: 'any', groups: [{ match: 'all', filters: [{ field: 'client', op: 'is', value: ['A'] }, { field: 'stage', op: 'is', value: ['B'] }, { field, op: 'set' }] }] };
