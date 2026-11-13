@@ -51,7 +51,7 @@
   "small": 15
  },
  "phone-chromium-harbour-light/custom-fields": {
-  "small": 20,
+  "small": 19,
   "axe": {
    "aria-required-children": 5,
    "color-contrast": 4
@@ -122,7 +122,7 @@
   "small": 15
  },
  "phone-chromium-meridian-dark/custom-fields": {
-  "small": 20,
+  "small": 19,
   "axe": {
    "aria-required-children": 5,
    "color-contrast": 4
@@ -187,7 +187,7 @@
   "small": 15
  },
  "phone-chromium-meridian-light/custom-fields": {
-  "small": 20,
+  "small": 19,
   "axe": {
    "aria-required-children": 5,
    "color-contrast": 4
@@ -255,7 +255,7 @@
   "small": 15
  },
  "phone-l-chromium-harbour-light/custom-fields": {
-  "small": 20
+  "small": 19
  },
  "phone-l-chromium-harbour-light/integrations": {
   "small": 4
@@ -299,7 +299,7 @@
   "small": 15
  },
  "phone-l-chromium-meridian-dark/custom-fields": {
-  "small": 20
+  "small": 19
  },
  "phone-l-chromium-meridian-dark/integrations": {
   "small": 4
@@ -343,7 +343,7 @@
   "small": 15
  },
  "phone-l-chromium-meridian-light/custom-fields": {
-  "small": 20
+  "small": 19
  },
  "phone-l-chromium-meridian-light/integrations": {
   "small": 4
@@ -387,7 +387,7 @@
   "small": 15
  },
  "phone-l-webkit-harbour-light/custom-fields": {
-  "small": 20
+  "small": 19
  },
  "phone-l-webkit-harbour-light/integrations": {
   "small": 4
@@ -431,7 +431,7 @@
   "small": 15
  },
  "phone-l-webkit-meridian-dark/custom-fields": {
-  "small": 20
+  "small": 19
  },
  "phone-l-webkit-meridian-dark/integrations": {
   "small": 4
@@ -475,7 +475,7 @@
   "small": 15
  },
  "phone-l-webkit-meridian-light/custom-fields": {
-  "small": 20
+  "small": 19
  },
  "phone-l-webkit-meridian-light/integrations": {
   "small": 4
@@ -519,7 +519,7 @@
   "small": 15
  },
  "phone-s-chromium-harbour-light/custom-fields": {
-  "small": 15
+  "small": 14
  },
  "phone-s-chromium-harbour-light/integrations": {
   "small": 4
@@ -557,7 +557,7 @@
   "small": 15
  },
  "phone-s-chromium-meridian-dark/custom-fields": {
-  "small": 15
+  "small": 14
  },
  "phone-s-chromium-meridian-dark/integrations": {
   "small": 4
@@ -595,7 +595,7 @@
   "small": 15
  },
  "phone-s-chromium-meridian-light/custom-fields": {
-  "small": 15
+  "small": 14
  },
  "phone-s-chromium-meridian-light/integrations": {
   "small": 4
@@ -633,7 +633,7 @@
   "small": 15
  },
  "phone-s-webkit-harbour-light/custom-fields": {
-  "small": 15
+  "small": 14
  },
  "phone-s-webkit-harbour-light/integrations": {
   "small": 4
@@ -671,7 +671,7 @@
   "small": 15
  },
  "phone-s-webkit-meridian-dark/custom-fields": {
-  "small": 15
+  "small": 14
  },
  "phone-s-webkit-meridian-dark/integrations": {
   "small": 4
@@ -709,7 +709,7 @@
   "small": 15
  },
  "phone-s-webkit-meridian-light/custom-fields": {
-  "small": 15
+  "small": 14
  },
  "phone-s-webkit-meridian-light/integrations": {
   "small": 4
@@ -747,7 +747,7 @@
   "small": 15
  },
  "phone-webkit-harbour-light/custom-fields": {
-  "small": 20,
+  "small": 19,
   "axe": {
    "aria-required-children": 5,
    "color-contrast": 4
@@ -818,7 +818,7 @@
   "small": 15
  },
  "phone-webkit-meridian-dark/custom-fields": {
-  "small": 20,
+  "small": 19,
   "axe": {
    "aria-required-children": 5,
    "color-contrast": 4
@@ -883,7 +883,7 @@
   "small": 15
  },
  "phone-webkit-meridian-light/custom-fields": {
-  "small": 20,
+  "small": 19,
   "axe": {
    "aria-required-children": 5,
    "color-contrast": 4
@@ -960,7 +960,7 @@
   "small": 2
  },
  "tablet-chromium-harbour-light/custom-fields": {
-  "small": 26
+  "small": 25
  },
  "tablet-chromium-harbour-light/home": {
   "small": 2
@@ -1043,7 +1043,7 @@
   "small": 2
  },
  "tablet-chromium-meridian-dark/custom-fields": {
-  "small": 26
+  "small": 25
  },
  "tablet-chromium-meridian-dark/home": {
   "small": 2
@@ -1126,7 +1126,7 @@
   "small": 2
  },
  "tablet-chromium-meridian-light/custom-fields": {
-  "small": 26
+  "small": 25
  },
  "tablet-chromium-meridian-light/home": {
   "small": 2
@@ -1209,7 +1209,7 @@
   "small": 2
  },
  "tablet-webkit-harbour-light/custom-fields": {
-  "small": 26
+  "small": 25
  },
  "tablet-webkit-harbour-light/home": {
   "small": 2
@@ -1292,7 +1292,7 @@
   "small": 2
  },
  "tablet-webkit-meridian-dark/custom-fields": {
-  "small": 26
+  "small": 25
  },
  "tablet-webkit-meridian-dark/home": {
   "small": 2
@@ -1375,7 +1375,7 @@
   "small": 2
  },
  "tablet-webkit-meridian-light/custom-fields": {
-  "small": 26
+  "small": 25
  },
  "tablet-webkit-meridian-light/home": {
   "small": 2
