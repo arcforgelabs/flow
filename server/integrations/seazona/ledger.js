@@ -61,8 +61,11 @@ export function toLedgerJob(item) {
     caseRef: item.sourceId,
     practitioner: item.doctorName ?? null,
     // The Seazona API gives a shipped status but no shipped date: the
-    // ledger keeps the day it first sees the job shipped.
+    // ledger keeps the day it first sees the job shipped. A job first seen
+    // already shipped takes its Seazona invoice date: the lab invoices the
+    // work when it ships it.
     shipped: item.shipped === true,
+    shippedEstimate: item.shipped === true ? item.invoice?.invoiceDate ?? null : null,
     // The day of the work, for matching it to its accounting invoice.
     jobDate: item.invoice?.invoiceDate ?? item.dueOn ?? item.orderedOn ?? null,
     // The draft rules bill only the statuses the lab chose (for example Shipped).

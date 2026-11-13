@@ -276,10 +276,12 @@ export async function observeJob(db, organisationId, job) {
     // A work system without a shipped date (Seazona) says only that the job
     // is shipped: the day Flow sees its status move to a shipped one is its
     // shipped day. A job Flow first sees already shipped (a first sync, or a
-    // job shipped before Flow kept this day) stays without one.
+    // job shipped before Flow kept this day) takes the work system's best
+    // other day (`shippedEstimate`: Seazona's invoice date), else none.
     const statusMoved = existing && String(existing.sourceStatus ?? '') !== String(facts.sourceStatus ?? '');
     facts.shippedOn = job.shippedOn ?? existing?.shippedOn
-      ?? (job.shipped && statusMoved ? localDay(seenAt) : null);
+      ?? (job.shipped && statusMoved ? localDay(seenAt) : null)
+      ?? (job.shipped ? job.shippedEstimate ?? null : null);
 
     if (!existing) {
       const [row] = await tx.insert(billingObligations)
@@ -332,6 +334,29 @@ export async function observeJob(db, organisationId, job) {
     }
     await statusChanged(tx, organisationId, existing, row, actor);
     return recordSourceReview(tx, row, actor);
+  });
+}
+
+// A real calendar day as yyyy-mm-dd: 2026-02-30 and 2026-13-40 are not.
+export function isCalendarDay(day) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(day ?? ''))) return false;
+  const at = new Date(`${day}T00:00:00Z`);
+  return !Number.isNaN(at.getTime()) && at.toISOString().slice(0, 10) === day;
+}
+
+// Sets the shipped day of a job that has none, from a day a work system's
+// copy gives (ship-days backfill, server/integrations/seazona/ship-days.js).
+// A job that has a shipped day keeps it. Answers the obligation, or null when
+// it had one already.
+export async function fillShippedDay(db, organisationId, obligationId, { day, from, actor }) {
+  requireActor(actor);
+  if (!isCalendarDay(day)) throw new FlowError('invalid', 'day must be a real yyyy-mm-dd day');
+  return db.transaction(async (tx) => {
+    const obligation = await loadObligation(tx, organisationId, obligationId, { lock: true });
+    if (obligation.shippedOn) return null;
+    const row = await update(tx, obligation, { shippedOn: day });
+    await addEvent(tx, row, 'shipped_day', actor, { shippedOn: day, from });
+    return row;
   });
 }
 

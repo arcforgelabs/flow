@@ -14,6 +14,7 @@ import {
   stageBatch,
 } from './history/index.js';
 import { readBackfill, startBackfill, stopBackfill } from './history/backfill.js';
+import { shipDays } from './ship-days.js';
 
 // The Seazona adapter's routes, mounted at /api/seazona (server/integrations/port.js).
 // The history import (docs/SEAZONA.md, "History import"):
@@ -31,6 +32,10 @@ import { readBackfill, startBackfill, stopBackfill } from './history/backfill.js
 //   POST /history/backfill                owner or admin: { from, through? } reads
 //                                         past orders from the Seazona API, a few a run
 //   POST /history/backfill/stop           owner or admin
+//   POST /ship-days                       owner or admin: { apply } finds a
+//                                         shipped day for shipped jobs with
+//                                         none, from Flow's copy (ship-days.js).
+//                                         A dry run unless apply is true.
 //   GET  /history/ledger?state=&limit=&offset=   any signed-in person: held
 //                                         history jobs by accounting state
 //                                         (state: one state, or needs_person)
@@ -211,6 +216,13 @@ export function createSeazonaRouter({
 
   router.post('/history/backfill/stop', ...manager, handle(log, async (req, res) => {
     res.json({ ok: true, backfill: await stopBackfill(db) });
+  }));
+
+  router.post('/ship-days', ...manager, json, handle(log, async (req, res) => {
+    const apply = req.body?.apply === true;
+    const result = await shipDays(db, await organisation(), { apply, actor: actor(req) });
+    if (apply) log.info?.(`[seazona] ship days set on ${result.set} of ${result.found} shipped jobs by ${actor(req)}`);
+    res.json(result);
   }));
 
   router.get('/history/ledger', ...signedIn, handle(log, async (req, res) => {
