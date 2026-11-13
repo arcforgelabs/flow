@@ -140,6 +140,7 @@ copies, so it costs no Xero or Seazona calls.
 | Lines that wait for a code | `flow.sh get invoicing/line-labels`: the `waiting` rows. Each has its own price, the Seazona product `code`, `lines`, `jobs`, `jobsToInvoice` and `product` (the record to link) |
 | Give a waiting product its code | when the row has `product`: `flow.sh post invoicing/price-links '{"links":[{"priceItemId":"<id>","system":"<product.system>","externalId":"<product.externalId>"}]}'`. The link maps its lines at every price |
 | Give a line with no product its code | `flow.sh post invoicing/line-mappings '{"kind":"saved","label":"<label>","unitAmountCents":<label price>,"itemCode":"<Flow code>"}'` |
+| Placeholder lines (a line only there to open the job) | read `flow.sh get invoicing/automations` (`map_lines`, `config.placeholders`); set the whole list: `flow.sh put invoicing/automations/map_lines '{"config":{"placeholders":[{"label":"<label>","unitAmountCents":0}]}}'`. The line leaves each job that has other lines |
 | Saved code choices | `flow.sh get invoicing/line-mappings`; change `put invoicing/line-mappings/<id>`, remove `delete invoicing/line-mappings/<id>` |
 
 How to read `price-list`:

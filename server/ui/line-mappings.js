@@ -12,6 +12,7 @@
 import { priceCodePrompt } from '/assets/ui/problem-prompt.js';
 
 const money = (cents) => (cents === null || cents === undefined ? '' : `${cents < 0 ? '-' : ''}$${(Math.abs(cents) / 100).toFixed(2)}`);
+const PLACEHOLDER = '__placeholder';
 const count = (n, one, many) => (n === 1 ? `1 ${one}` : `${n} ${many}`);
 
 // The line under a waiting row's name: its code, its price and what it holds.
@@ -60,15 +61,27 @@ export function lineMappingSection(ui) {
     const options = [h('option', { value: '' }, 'Choose a price item…'),
       ...items.map((i) => h('option', { value: i.id }, `${i.code} · ${i.name} · ${money(i.unitAmountCents)}`))];
     body.replaceChildren(...waiting.map((line) => {
-      const select = h('select', { class: 'fx-select', 'aria-label': `Price item for ${line.sample}`, disabled }, options.map((o) => o.cloneNode(true)));
+      // A $0.00 line can be a placeholder: a line the lab adds only to open the job.
+      const own = options.map((o) => o.cloneNode(true));
+      if (line.unitAmountCents === 0) own.splice(1, 0, h('option', { value: PLACEHOLDER }, 'Placeholder: leave it off the invoice'));
+      const select = h('select', { class: 'fx-select', 'aria-label': `Price item for ${line.sample}`, disabled }, own);
       const problem = h('div', {});
       select.addEventListener('change', async () => {
+        const placeholder = select.value === PLACEHOLDER;
         const item = items.find((i) => i.id === select.value);
-        if (!item) return;
+        if (!item && !placeholder) return;
         select.disabled = true;
-        const action = line.product ? 'Link the product' : 'Save the price code';
+        const action = placeholder ? 'Save the placeholder' : line.product ? 'Link the product' : 'Save the price code';
         try {
-          if (line.product) {
+          if (placeholder) {
+            const { automations } = await flow('/api/invoicing/automations');
+            const now = automations.find((a) => a.key === 'map_lines')?.config?.placeholders ?? [];
+            await flow('/api/invoicing/automations/map_lines', {
+              method: 'PUT',
+              body: JSON.stringify({ config: { placeholders: [...now, { label: line.label, unitAmountCents: line.unitAmountCents }] } }),
+            });
+            toast('Saved. Flow leaves this line off each invoice from the next sync.', 'success');
+          } else if (line.product) {
             await flow('/api/invoicing/price-links', {
               method: 'POST',
               body: JSON.stringify({ links: [{ priceItemId: item.id, system: line.product.system, externalId: line.product.externalId }] }),

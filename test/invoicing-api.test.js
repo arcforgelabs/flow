@@ -546,6 +546,14 @@ describe('invoicing API', { skip: skipWithoutDatabase }, () => {
     const waiting = (await call(`/line-labels?organisationId=${lab.id}`, { token: staffToken })).body.waiting.filter((w) => w.label === 'night splint');
     assert.deepEqual(waiting.map((w) => [w.unitAmountCents, w.code, w.sample, w.lines, w.jobs, w.jobsToInvoice, w.product]).sort((a, b) => a[0] - b[0]),
       [[15000, null, 'Night Splint', 1, 1, 1, null], [18500, '2132', 'Night Splint', 1, 1, 1, null]]);
+    // A placeholder line that stayed on a job is not a line that waits.
+    await observeJob(handle.db, lab.id, {
+      sourceSystem: 'worksystem', sourceJobRef: 'JOB-MAP-3', contactId: practice.id,
+      lines: [{ label: 'opening line', description: 'Opening Line', unitAmountCents: 0, taxCode: 'GST_FREE', mappedBy: 'placeholder' }],
+    });
+    const after = (await call(`/line-labels?organisationId=${lab.id}`, { token: staffToken })).body;
+    assert.equal(after.waiting.some((w) => w.label === 'opening line'), false);
+    assert.equal(after.labels.find((l) => l.label === 'opening line').unmapped, 0);
 
     const mapping = { organisationId: lab.id, kind: 'saved', label: 'night splint', unitAmountCents: 15000, itemCode: 'CRN' };
     assert.equal((await call('/line-mappings', { method: 'POST', token: staffToken, body: mapping })).status, 403);

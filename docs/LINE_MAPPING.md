@@ -45,6 +45,24 @@ map to a price item").
 A change to a mapping row, or to the routine, or a release that changes what\na stored line holds (`MAPPING_SHAPE`, `server/core/pipeline.js`), reads every job again from
 Flow's own copy of the work system. It makes no calls to the work system.
 
+## Placeholder lines
+
+Some labs add a line in the work system only to open a job, before the real
+work is known (for example "Models" at $0.00). The routine's setting
+`placeholders` lists them: `[{ "label": "Models", "unitAmountCents": 0 }]`
+(`null` for any price). It is the lab's own setting, not Flow's code.
+
+- A placeholder line leaves the job when the job has other lines. It does not
+  reach the invoice and holds nothing.
+- A job with only placeholder lines keeps them (`mappedBy` `placeholder`), so
+  the job is still seen. The lab's rules hold it (for example "No amount")
+  until the work system has the real lines.
+- Flow does not write to the work system, so the line stays there.
+
+Set it on Price codes (a $0.00 row offers "Placeholder: leave it off the
+invoice"), or `PUT /api/invoicing/automations/map_lines` with
+`{ "config": { "placeholders": [...] } }`.
+
 ## Price codes (Settings, Rules)
 
 Each group of lines that found no price item shows as one row: the work

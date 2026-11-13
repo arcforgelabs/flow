@@ -1165,7 +1165,7 @@ export function createInvoicingRouter({
     const organisationId = await organisationOf(req);
     const rows = (await db.execute(sql`
       select l->>'label' as label, count(*)::int as lines,
-        count(*) filter (where l->>'priceItemId' is null and l->>'accountCode' is null)::int as unmapped,
+        count(*) filter (where l->>'priceItemId' is null and l->>'accountCode' is null and l->>'mappedBy' is distinct from 'placeholder')::int as unmapped,
         min(l->>'description') as sample, min((l->>'unitAmountCents')::int) as "unitAmountCents",
         min(l->>'mappedBy') as "mappedBy", min(l->>'itemCode') as "itemCode"
       from billing_obligations o, jsonb_array_elements(o.lines) l
@@ -1179,7 +1179,7 @@ export function createInvoicingRouter({
         (count(distinct o.id) filter (where o.invoice_id is null))::int as "jobsToInvoice"
       from billing_obligations o, jsonb_array_elements(o.lines) l
       where o.organisation_id = ${organisationId} and l->>'label' is not null
-        and l->>'priceItemId' is null and l->>'accountCode' is null
+        and l->>'priceItemId' is null and l->>'accountCode' is null and l->>'mappedBy' is distinct from 'placeholder'
       group by 1, 2, 3 order by 7 desc, 5 desc, 1, 2 limit 1000`)).rows ?? [];
     // A waiting code that is a product of a connected work system: linking the
     // product (the price list's link) maps its lines at every price.
