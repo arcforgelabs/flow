@@ -47,11 +47,25 @@ Flow's own copy of the work system. It makes no calls to the work system.
 
 ## Price codes (Settings, Rules)
 
-Each label that found no price item shows as one row, with its price and the
-number of lines it holds back. An owner or admin picks the price item. Flow
-saves it as a `saved` row for that label at that price.
+Each group of lines that found no price item shows as one row: the work
+system's text, its product code, the price on the job (and the list price when
+it differs), and the lines and jobs it holds back. One label that waits at two
+prices is two rows. An owner or admin picks the price item:
 
-API (`server/api/invoicing.js`): `GET /line-labels`, `GET /line-mappings`,
+- A row with a product code links that product to the price item (the price
+  list's link, `docs/PRICE_LIST.md`). Every line of the product then maps, at
+  every price: a price set by hand on one job no longer stops it.
+- A row with no product (a free-text line, for example a discount) saves a
+  `saved` row for that label at that price. The price can be below zero.
+
+Each row has "Copy prompt": the facts and the steps for a connected agent. An
+error stays on the page in red, with its own "Copy prompt".
+
+A waiting line keeps the work system's code as `workCode`. A Seazona invoice
+line has no product code of its own; it takes the code of the order's line for
+the same product (`server/integrations/seazona/ledger.js`, `ledgerLinesFor`).
+
+API (`server/api/invoicing.js`): `GET /line-labels` (`labels`: every label; `waiting`: the rows above), `GET /line-mappings`,
 `POST /line-mappings`, `PUT /line-mappings/:id`, `DELETE /line-mappings/:id`.
 
 ## From the earlier app

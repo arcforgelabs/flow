@@ -60,6 +60,7 @@ const SCORE_MIN = 16;
 const SCORE_GAP = 8;
 const MAX_MAPPINGS = 2000;
 const invalid = (message) => new FlowError('invalid', message);
+const text = (value) => (typeof value === 'string' ? value.trim() : '');
 
 // Text in the form every comparison uses: lower case, "&" as "and", every
 // other mark a space.
@@ -177,7 +178,12 @@ export function mapLine(line, context) {
     const item = context.byCode.get(row.itemCode);
     return item ? toItem(item, step, row.taxCode) : null;
   };
-  const unmapped = (reason) => ({ ...base, itemCode: null, accountCode: null, mappedBy: null, unmapped: reason });
+  // A line that waits keeps the work system's own code (`workCode`), so
+  // "Price codes" can name the product and link it.
+  const unmapped = (reason) => ({
+    ...base, itemCode: null, accountCode: null, mappedBy: null, unmapped: reason,
+    ...(text(line.itemCode) ? { workCode: text(line.itemCode) } : {}),
+  });
 
   const linked = line.itemCode ? context.byLinkedCode?.get(lineText(line.itemCode)) : null;
   if (linked) return toItem(linked, 'linked');
@@ -299,8 +305,10 @@ export function readMapping(raw) {
   if (!label || label.length > 200) throw invalid('the label must be text of 200 characters at most');
   const priced = ['price_alias', 'saved'].includes(raw.kind);
   let unitAmountCents = raw.unitAmountCents ?? null;
-  if (unitAmountCents !== null && (!Number.isInteger(unitAmountCents) || unitAmountCents < 0 || unitAmountCents > 100_000_000)) {
-    throw invalid('unitAmountCents must be whole cents');
+  // A saved choice can be for a line below zero: a discount line.
+  const least = raw.kind === 'saved' ? -100_000_000 : 0;
+  if (unitAmountCents !== null && (!Number.isInteger(unitAmountCents) || unitAmountCents < least || unitAmountCents > 100_000_000)) {
+    throw invalid(raw.kind === 'saved' ? 'unitAmountCents must be whole cents' : 'unitAmountCents must be whole cents, zero or more');
   }
   if (priced && unitAmountCents === null) throw invalid('this kind needs a unit price');
   if (!priced) unitAmountCents = null;

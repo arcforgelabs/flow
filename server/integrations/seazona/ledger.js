@@ -28,10 +28,17 @@ export function ledgerLine(line) {
 // order and no other, its lines are what the lab billed, discounts included.
 // When it carries several orders, its lines cannot be split between them, so
 // the order's own lines are used and nothing is billed twice.
+//
+// A Seazona invoice line has the product's id but not its code; the order's
+// line for the same product has both. The invoice line takes the code from
+// there, so the price list's link for that product maps the line at any price.
 export function ledgerLinesFor(item) {
   const invoiceLines = item.invoice?.lines ?? [];
   const useInvoice = item.invoice && item.invoiceOrderCount === 1 && invoiceLines.length > 0;
-  return { lines: (useInvoice ? invoiceLines : item.lines ?? []).map(ledgerLine), linesFrom: useInvoice ? 'invoice' : 'order' };
+  if (!useInvoice) return { lines: (item.lines ?? []).map(ledgerLine), linesFrom: 'order' };
+  const codeOf = new Map((item.lines ?? []).filter((l) => l.itemId && l.code).map((l) => [l.itemId, l.code]));
+  const withCode = (line) => (line.code || !codeOf.has(line.itemId) ? line : { ...line, code: codeOf.get(line.itemId) });
+  return { lines: invoiceLines.map((line) => ledgerLine(withCode(line))), linesFrom: 'invoice' };
 }
 
 // observeJob's input for one billable feed item, without contactId.

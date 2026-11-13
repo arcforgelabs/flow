@@ -126,6 +126,21 @@ test('a line no step answers keeps no code, so the ledger holds the job', () => 
   assert.equal(mapLine(line('Bite Block', 4500), mappingContext({ items })).itemCode, null);
 });
 
+test('a linked product maps at any price, and a waiting line keeps the work system code', () => {
+  const linked = mappingContext({ items: items.map((item) => ({ ...item, id: `id-${item.code}` })), links: [{ priceItemId: `id-${items[0].code}`, externalCode: '2101' }] });
+  const line = { itemCode: '2101', description: 'A name no step knows', unitAmountCents: 12345, taxCode: 'GST_FREE' };
+  const mapped = mapLine(line, linked);
+  assert.deepEqual([mapped.itemCode, mapped.mappedBy, mapped.unitAmountCents], [items[0].code, 'linked', 12345]);
+  const waits = mapLine(line, mappingContext({ items }));
+  assert.deepEqual([waits.itemCode, waits.workCode], [null, '2101']);
+  assert.equal(mapLine({ ...line, itemCode: null }, mappingContext({ items })).workCode, undefined);
+});
+
+test('a saved choice can be for a discount line below zero; other kinds cannot', () => {
+  assert.equal(readMapping({ kind: 'saved', label: 'Family discount', unitAmountCents: -17500, itemCode: 'DISC' }).unitAmountCents, -17500);
+  assert.throws(() => readMapping({ kind: 'price_alias', label: 'Family discount', unitAmountCents: -17500, itemCode: 'DISC' }), /zero or more/);
+});
+
 test('zero lines drop only when the routine says so', () => {
   assert.equal(mapLines([line('Special Tray', 0)], mappingContext({ items })).length, 1);
   assert.equal(mapLines([line('Special Tray', 0)], mappingContext({ items, config: { zeroLines: 'drop' } })).length, 0);

@@ -315,7 +315,7 @@ export async function ingestHistory(db, organisationId, { adapter, pages = WORK_
   const contactOf = new Map(links.map((l) => [l.externalId, l.flowId]));
   const result = { held: 0, updated: 0, alreadyLive: 0, skipped: 0, more: false };
   const mapping = (await listAutomations(db, organisationId)).find((a) => a.key === 'map_lines');
-  const context = mapping?.enabled ? await loadMappingContext(db, organisationId, mapping.config) : null;
+  const context = mapping?.enabled ? await loadMappingContext(db, organisationId, mapping.config, { system: adapter.id }) : null;
   for (let page = 0; page < pages; page += 1) {
     const { items, cursor: next, more } = await adapter.capabilities.pullHistoryJobs(cursor, { limit: 200 });
     for (const item of items) {

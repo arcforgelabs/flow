@@ -1171,7 +1171,28 @@ export function createInvoicingRouter({
       from billing_obligations o, jsonb_array_elements(o.lines) l
       where o.organisation_id = ${organisationId} and l->>'label' is not null
       group by 1 order by 3 desc, 2 desc, 1 limit 1000`)).rows ?? [];
-    res.json({ ok: true, labels: rows });
+    // The lines that wait, by their own label, price and work system code:
+    // one label can wait at several prices, and its mapped lines do not count.
+    const waiting = (await db.execute(sql`
+      select l->>'label' as label, (l->>'unitAmountCents')::int as "unitAmountCents", l->>'workCode' as code,
+        min(l->>'description') as sample, count(*)::int as lines, count(distinct o.id)::int as jobs,
+        (count(distinct o.id) filter (where o.invoice_id is null))::int as "jobsToInvoice"
+      from billing_obligations o, jsonb_array_elements(o.lines) l
+      where o.organisation_id = ${organisationId} and l->>'label' is not null
+        and l->>'priceItemId' is null and l->>'accountCode' is null
+      group by 1, 2, 3 order by 7 desc, 5 desc, 1, 2 limit 1000`)).rows ?? [];
+    // A waiting code that is a product of a connected work system: linking the
+    // product (the price list's link) maps its lines at every price.
+    const products = new Map();
+    if (waiting.some((row) => row.code)) {
+      for (const catalogue of (await catalogues(organisationId)).values()) {
+        if (catalogue.unread || catalogue.kind !== 'work') continue;
+        for (const record of catalogue.items) {
+          if (record.code && !products.has(String(record.code))) products.set(String(record.code), { system: catalogue.id, externalId: String(record.id), unitAmountCents: record.unitAmountCents ?? null });
+        }
+      }
+    }
+    res.json({ ok: true, labels: rows, waiting: waiting.map((row) => ({ ...row, product: (row.code && products.get(row.code)) || null })) });
   }));
 
   router.post('/line-mappings', ...manager, handle(log, async (req, res) => {

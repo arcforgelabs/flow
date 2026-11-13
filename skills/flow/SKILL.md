@@ -137,8 +137,9 @@ copies, so it costs no Xero or Seazona calls.
 | Link records to codes | `flow.sh post invoicing/price-links '{"links":[{"priceItemId":"<id>","system":"xero","externalId":"<id>"}]}'` |
 | Remove a link | `flow.sh delete invoicing/price-links/<link id>` |
 | Accept a difference | `flow.sh post invoicing/price-items/<id>/resolve` |
-| Lines that wait for a code | `flow.sh get invoicing/line-labels` (rows with `unmapped` above 0) |
-| Give a line its code | `flow.sh post invoicing/line-mappings '{"kind":"saved","label":"<label>","unitAmountCents":<label price>,"itemCode":"<Flow code>"}'` |
+| Lines that wait for a code | `flow.sh get invoicing/line-labels`: the `waiting` rows. Each has its own price, the Seazona product `code`, `lines`, `jobs`, `jobsToInvoice` and `product` (the record to link) |
+| Give a waiting product its code | when the row has `product`: `flow.sh post invoicing/price-links '{"links":[{"priceItemId":"<id>","system":"<product.system>","externalId":"<product.externalId>"}]}'`. The link maps its lines at every price |
+| Give a line with no product its code | `flow.sh post invoicing/line-mappings '{"kind":"saved","label":"<label>","unitAmountCents":<label price>,"itemCode":"<Flow code>"}'` |
 | Saved code choices | `flow.sh get invoicing/line-mappings`; change `put invoicing/line-mappings/<id>`, remove `delete invoicing/line-mappings/<id>` |
 
 How to read `price-list`:
@@ -191,10 +192,14 @@ Reconcile steps:
    - A record that is the same thing as a code but has no link: link it.
    - A difference that is correct (for example a Seazona product at $0):
      accept it with `resolve`.
-4. Waiting lines: match each label to a code by name and price, show the
-   person the pairs, and save each pair they agree with as a line mapping.
-   The `label` and `unitAmountCents` come from that `line-labels` row. Jobs
-   with that line move on at the next Flow sync (a few minutes).
+4. Waiting lines: read the `waiting` rows. A row with `product` is a Seazona
+   product that has no link: find its code by name and list price, show the
+   person the pairs, and link each pair they agree with. A row with no
+   product is a free-text line (a discount, a special charge): ask the person
+   which code it is and save a line mapping; the `label` and
+   `unitAmountCents` come from that row. A price on the job that differs from
+   the list price is a price set by hand or a $0 placeholder in Seazona: say
+   which. Jobs with that line move on at the next Flow sync (a few minutes).
 5. Read `price-list` and `line-labels` again and show what is left.
 
 Every change on this list (price, code, link, resolve, line mapping) needs
