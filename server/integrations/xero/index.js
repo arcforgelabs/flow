@@ -138,7 +138,7 @@ export function createXeroAdapter({ runtime: given = null } = {}) {
       // (delete-invoice.js). The core voids in Flow after deleted or gone.
       deleteInvoice: ({ organisationId, invoiceId, actor = null }) => deleteXeroInvoice(database, current(), { organisationId, invoiceId, actor }),
       // Several issued invoices, in batches of MAX_BATCH (drafts.js).
-      pushInvoices: ({ organisationId, invoiceIds, pushedBy = null }) => pushInvoices(database, current(), { organisationId, invoiceIds, pushedBy }),
+      pushInvoices: ({ organisationId, invoiceIds, pushedBy = null, accepted = null }) => pushInvoices(database, current(), { organisationId, invoiceIds, pushedBy, accepted }),
       // The Invoices page tab of each issued invoice (reconcile.js), from
       // Flow's copy of Xero: draft, approved, sent, void or pending.
       invoiceStages: ({ organisationId, invoiceIds = null }) => invoiceStages(database, current(), organisationId, invoiceIds),

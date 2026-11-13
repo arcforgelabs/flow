@@ -69,6 +69,14 @@ async function addEvent(tx, obligation, kind, actor, evidence = {}) {
   });
 }
 
+// An override of a send (send-override.js) is part of the job's history: who
+// sent its invoice with a warning.
+export async function recordOverrideEvent(tx, obligation, kind, actor, evidence) {
+  requireActor(actor);
+  if (kind !== 'send.override') throw new FlowError('invalid', 'not an override event');
+  await addEvent(tx, obligation, kind, actor, evidence);
+}
+
 async function update(tx, obligation, fields) {
   const [row] = await tx.update(billingObligations)
     .set({ ...fields, updatedAt: sql`now()` })
@@ -117,6 +125,8 @@ async function normaliseLines(tx, organisationId, lines, { inclusive = false } =
       ...(line.label ? { label: line.label } : {}),
       ...(line.mappedBy ? { mappedBy: line.mappedBy } : {}),
       ...(line.workTaxCode && line.workTaxCode !== taxCode ? { workTaxCode: line.workTaxCode } : {}),
+      // The work system's code of a line that found no price item (line-mapping.js).
+      ...(!priceItemId && !accountCode && line.workCode ? { workCode: String(line.workCode).slice(0, 100) } : {}),
     };
     normalised.push({ itemCode, priceItemId, description, quantity, unitAmountCents, taxCode, ...extra, ...totals });
   }
@@ -387,7 +397,12 @@ export function compareThreeWays(base, source, flow, { sent = false } = {}) {
     // accounting system's items set (workTax).
     const workMoved = sideValue(source, field, workTax) !== sideValue(base, field, workTax);
     const [b, s, f] = [base, source, flow].map((side) => sideValue(side, field));
-    const changedIn = !workMoved ? (f === b ? 'none' : 'flow') : (f === b ? 'work' : (f === s ? 'same' : 'both'));
+    // The invoice may already hold the work system's new lines with the work
+    // system's own GST (an invoice made from the work system's invoice, while
+    // Flow first read the order). That is the same, not a change: only the
+    // GST the accounting system's items set differs, and that is a tax rule.
+    const same = f === s || (field === 'lines' && f === sideValue(source, field, workTax));
+    const changedIn = !workMoved ? (f === b ? 'none' : 'flow') : (f === b ? 'work' : (same ? 'same' : 'both'));
     return { field, owner: FIELD_OWNERS[field], changedIn };
   });
   const work = fields.filter((f) => ['work', 'both'].includes(f.changedIn));

@@ -70,7 +70,7 @@ describe('was and now, line by line', () => {
       ['Total', '$220.00', '$295.00'],
     ]);
     assert.equal(changeSummary(change, 4), 'Changed in Seazona. 4 changes.');
-    assert.match(changeSummary({ ...change, canAdopt: false, sent: true }, 1), /after sending\. 1 change\./);
+    assert.match(changeSummary({ ...change, canAdopt: false, sent: true }, 1), /and the sent invoice differ\. 1 change\./);
   });
 });
 

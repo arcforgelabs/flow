@@ -4,6 +4,7 @@ import { accountingItemsFor, listRules, ruleExceptionsFor, rulePending, rulePric
 import { customerBillingByContact, effectiveSettings, readInvoicingSettings, ruleBlockers } from './invoicing-rules.js';
 import { REVIEW_CHANGED, listObligations } from './ledger.js';
 import { isHistoryHeld } from './history.js';
+import { invoiceTab } from './invoice-status.js';
 import { invoiceViews } from './sending.js';
 
 // The Jobs board (/jobs, server/ui/jobs.js). Its columns are the work
@@ -22,7 +23,7 @@ export async function describeObligations(db, organisationId, listed, { accounti
   const contactIds = [...new Set(listed.map((e) => e.obligation.contactId).filter(Boolean))];
   const invoiceIds = [...new Set(listed.map((e) => e.obligation.invoiceId).filter(Boolean))];
   const changedIds = listed.filter((e) => e.obligation.holdState === 'review' && e.obligation.invoiceId).map((e) => e.obligation.id);
-  const [names, numbers, views, changed] = await Promise.all([
+  const [names, numbers, views, changed, stages] = await Promise.all([
     contactIds.length
       ? db.select({ id: contacts.id, name: contacts.name }).from(contacts)
         .where(and(eq(contacts.organisationId, organisationId), inArray(contacts.id, contactIds)))
@@ -40,6 +41,11 @@ export async function describeObligations(db, organisationId, listed, { accounti
         eq(reviewItems.state, 'open'), inArray(reviewItems.flowId, changedIds),
       ))
       : [],
+    // Each issued invoice's stage in the accounting system, from Flow's copy
+    // (no calls), so a job says what the Invoices page says.
+    invoiceIds.length && typeof accounting?.capabilities?.invoiceStages === 'function'
+      ? accounting.capabilities.invoiceStages({ organisationId, invoiceIds })
+      : new Map(),
   ]);
   const offers = new Set(changed.filter((r) => r.evidence?.canUseNewLines).map((r) => r.flowId));
   const nameOf = new Map(names.map((c) => [c.id, c.name]));
@@ -65,6 +71,16 @@ export async function describeObligations(db, organisationId, listed, { accounti
   };
   const ready = new Set(views?.ready ?? []);
   const toCheck = new Set(views?.toCheck ?? []);
+  // The job's invoice on the Invoices page's tab (invoice-status.js): one
+  // rule, so a job card and the Invoices page never disagree. A draft the
+  // checks did not reach has no tab yet.
+  const tabOf = (id) => {
+    const invoice = invoiceOf.get(id);
+    if (!invoice) return null;
+    const view = !views ? null : views.nonChargeable.has(id) ? 'non_chargeable' : views.problems.has(id) ? 'problem' : views.sending.has(id) ? 'sending' : null;
+    if (invoice.status === 'draft' && !view && !ready.has(id) && !toCheck.has(id)) return null;
+    return invoiceTab({ status: invoice.status, view, stage: stages.get(id) ?? null, connected: Boolean(accounting) });
+  };
   const invoiceView = (id) => (!id || !views ? null
     : views.problems.has(id) ? 'problem' : views.nonChargeable.has(id) ? 'non_chargeable' : ready.has(id) ? 'ready' : toCheck.has(id) ? 'to_check'
       : views.sending.has(id) ? 'sending' : null);
@@ -87,6 +103,7 @@ export async function describeObligations(db, organisationId, listed, { accounti
     invoiceNumber: invoiceOf.get(o.invoiceId)?.number ?? null,
     invoiceStatus: invoiceOf.get(o.invoiceId)?.status ?? null,
     invoiceView: invoiceView(o.invoiceId),
+    invoiceTab: tabOf(o.invoiceId),
     invoiceProblems: (o.invoiceId && views?.problems.get(o.invoiceId)) || [],
     view,
     reasons,
