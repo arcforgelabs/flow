@@ -8,7 +8,8 @@ import { createSeazonaClient } from '../server/integrations/seazona/client.js';
 import { listWork, readBillableWork } from '../server/integrations/seazona/feed.js';
 import { runSeazonaSync } from '../server/integrations/seazona/lanes.js';
 import { ledgerLinesFor, toLedgerJob } from '../server/integrations/seazona/ledger.js';
-import { seazonaOrders } from '../server/integrations/seazona/schema.js';
+import { seazonaInvoices, seazonaOrders } from '../server/integrations/seazona/schema.js';
+import { shipDays } from '../server/integrations/seazona/ship-days.js';
 import { billingObligations } from '../server/db/schema.js';
 import { createReplayFetch, loadReplay } from '../server/integrations/seazona/replay.js';
 import { resolveSeazonaSettings } from '../server/integrations/seazona/settings.js';
@@ -55,6 +56,34 @@ describe('Seazona work in the billing ledger', { skip: skipWithoutDatabase }, ()
     lab = await createOrganisation(db, { name: 'Example Lab' });
   });
   after(async () => handle?.close());
+
+  test('the ship-days backfill gives a shipped job with no day its Seazona invoice date, after a dry run', async () => {
+    const at = new Date('2026-09-01T00:00:00Z');
+    await db.insert(seazonaInvoices).values({
+      invoiceNumber: '7701', invoiceDateText: '20/08/2026', recordHash: 'h', firstSeenAt: at, lastSyncedAt: at, lastChangedAt: at,
+    });
+    const shipped = await observeJob(db, lab.id, {
+      sourceSystem: 'seazona', sourceJobRef: 'ORD-7701', sourceInvoiceRef: '7701', caseRef: 'ORD-7701', sourceStatus: 'Shipped', shipped: true,
+      lines: [{ description: 'Example crown', quantity: 1, unitAmountCents: 10000, taxCode: 'GST' }], observedAt: '2026-09-01T00:00:00Z', actor: 'seazona',
+    });
+    const none = await observeJob(db, lab.id, {
+      sourceSystem: 'seazona', sourceJobRef: 'ORD-7702', caseRef: 'ORD-7702', sourceStatus: 'Shipped', shipped: true,
+      lines: [{ description: 'Example crown', quantity: 1, unitAmountCents: 10000, taxCode: 'GST' }], observedAt: '2026-09-01T00:00:00Z', actor: 'seazona',
+    });
+    const dry = await shipDays(db, lab.id);
+    const rowOf = (result, id) => result.rows.find((r) => r.obligationId === id);
+    assert.deepEqual(rowOf(dry, shipped.id), { obligationId: shipped.id, caseRef: 'ORD-7701', invoiceRef: '7701', shippedOn: '2026-08-20', from: 'invoice_date' });
+    assert.equal(rowOf(dry, none.id).shippedOn, null, 'no invoice, no day: never a guess');
+    assert.equal(dry.set, 0);
+    const [still] = await db.select().from(billingObligations).where(eq(billingObligations.id, shipped.id));
+    assert.equal(still.shippedOn, null, 'a dry run writes nothing');
+
+    const applied = await shipDays(db, lab.id, { apply: true, actor: 'person:test' });
+    assert.ok(applied.set >= 1);
+    const [filled] = await db.select().from(billingObligations).where(eq(billingObligations.id, shipped.id));
+    assert.equal(filled.shippedOn, '2026-08-20');
+    assert.equal(rowOf(await shipDays(db, lab.id), shipped.id), undefined, 'a job with a day is not listed again');
+  });
 
   test('a feed item becomes one obligation with the lines the lab billed in Seazona', async () => {
     await sync(loadReplay(BILLING_REPLAY).responses, ['invoices', 'orders_recent', 'clients']);

@@ -6,6 +6,7 @@ import { saveInvoicingSettings } from '../server/core/invoicing-rules.js';
 import {
   draftInvoiceForObligation,
   explainObligation,
+  fillShippedDay,
   listObligations,
   listPendingWritebacks,
   observeJob,
@@ -75,6 +76,21 @@ describe('billing obligation ledger', { skip: skipWithoutDatabase }, () => {
     assert.equal((await observeJob(db, lab.id, old)).shippedOn, null);
     const again = await observeJob(db, lab.id, { ...old, observedAt: '2026-10-21T10:00:00Z' });
     assert.equal(again.shippedOn, null);
+
+    // With the work system's best other day (Seazona's invoice date), it
+    // takes that day, and keeps it.
+    const estimated = await observeJob(db, lab.id, { ...old, shippedEstimate: '2026-10-14', observedAt: '2026-10-22T10:00:00Z' });
+    assert.equal(estimated.shippedOn, '2026-10-14');
+    assert.equal((await observeJob(db, lab.id, { ...old, shippedEstimate: '2026-10-15', observedAt: '2026-10-23T10:00:00Z' })).shippedOn, '2026-10-14');
+
+    // The backfill fills a job with no day, once, and names where the day came from.
+    const blank = await observeJob(db, lab.id, job({ shippedOn: undefined, sourceStatus: 'Shipped', shipped: true, observedAt: '2026-10-20T10:00:00Z' }));
+    assert.equal(blank.shippedOn, null);
+    const filled = await fillShippedDay(db, lab.id, blank.id, { day: '2026-08-20', from: 'invoice_date', actor: 'person:test' });
+    assert.equal(filled.shippedOn, '2026-08-20');
+    assert.equal(await fillShippedDay(db, lab.id, blank.id, { day: '2026-08-21', from: 'invoice_date', actor: 'person:test' }), null);
+    const { events: filledEvents } = await explainObligation(db, lab.id, blank.id);
+    assert.deepEqual(filledEvents.filter((e) => e.kind === 'shipped_day').map((e) => e.evidence), [{ shippedOn: '2026-08-20', from: 'invoice_date' }]);
   });
 
   test('one billable job gives one obligation with a stable identity', async () => {
