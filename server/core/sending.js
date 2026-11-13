@@ -562,8 +562,11 @@ export async function sendQueued(db, organisationId, { accounting, limit = WORKE
     // An invoice sent with an override (sendAnyway): the adapter passes the
     // recorded warnings and still stops on any other problem.
     const accepted = await acceptedKeysFor(db, organisationId, group.map((r) => r.id));
+    // The adapter asks again right before each write (making the invoice,
+    // emailing it), so a change of role meanwhile still stops it.
     const { invoices: results } = await accounting.capabilities.pushInvoices({
       organisationId, invoiceIds: group.map((r) => r.id), pushedBy: by, ...(accepted.size ? { accepted } : {}),
+      ...(by ? { mayWrite: () => requesterRefusal(db, by) } : {}),
     });
     for (const result of results) {
       if (SENT.has(result.outcome)) {

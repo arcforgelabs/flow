@@ -141,7 +141,7 @@ export function createXeroAdapter({ runtime: given = null } = {}) {
       // tables, no Xero call (delete-invoice.js).
       everSent: ({ organisationId, invoiceId }) => everInXero(database, organisationId, invoiceId),
       // Several issued invoices, in batches of MAX_BATCH (drafts.js).
-      pushInvoices: ({ organisationId, invoiceIds, pushedBy = null, accepted = null }) => pushInvoices(database, current(), { organisationId, invoiceIds, pushedBy, accepted }),
+      pushInvoices: ({ organisationId, invoiceIds, pushedBy = null, accepted = null, mayWrite = null }) => pushInvoices(database, current(), { organisationId, invoiceIds, pushedBy, accepted, mayWrite }),
       // The Invoices page tab of each issued invoice (reconcile.js), from
       // Flow's copy of Xero: draft, approved, sent, void or pending.
       invoiceStages: ({ organisationId, invoiceIds = null }) => invoiceStages(database, current(), organisationId, invoiceIds),

@@ -458,7 +458,7 @@ async function previewOne(db, runtime, organisationId, invoiceId, shared = share
 // Xero holds an invoice with the same reference.
 // `accepted` maps an invoice id to the problem keys an owner or admin's
 // override passes (server/core/send-override.js).
-export async function pushDrafts(db, runtime, organisationId, invoiceIds, { pushedBy = null, allowExistingReference = [], accepted = null } = {}) {
+export async function pushDrafts(db, runtime, organisationId, invoiceIds, { pushedBy = null, allowExistingReference = [], accepted = null, mayWrite = null } = {}) {
   if (!Array.isArray(invoiceIds) || !invoiceIds.length || invoiceIds.length > MAX_BATCH) {
     throw xeroError('invalid', `invoiceIds must list 1 to ${MAX_BATCH} invoices`, { status: 400 });
   }
@@ -471,7 +471,7 @@ export async function pushDrafts(db, runtime, organisationId, invoiceIds, { push
     const results = [];
     for (const invoiceId of invoiceIds) {
       try {
-        results.push(await pushOne(db, runtime, client, organisationId, invoiceId, { pushedBy, allowExisting: allowed.has(invoiceId), accepted: accepted?.get(invoiceId) ?? [] }));
+        results.push(await pushOne(db, runtime, client, organisationId, invoiceId, { pushedBy, allowExisting: allowed.has(invoiceId), accepted: accepted?.get(invoiceId) ?? [], mayWrite }));
       } catch (error) {
         if (stopsTheBatch(error)) {
           // Every later invoice would fail the same way: stop and say so.
@@ -497,10 +497,10 @@ async function keepSendState(db, organisationId, results) {
 }
 
 // Send all ready (server/core/sending.js): issued invoices in batches.
-export async function pushInvoices(db, runtime, { organisationId, invoiceIds, pushedBy = null, accepted = null }) {
+export async function pushInvoices(db, runtime, { organisationId, invoiceIds, pushedBy = null, accepted = null, mayWrite = null }) {
   const invoices = [];
   for (let at = 0; at < invoiceIds.length; at += MAX_BATCH) {
-    invoices.push(...(await pushDrafts(db, runtime, organisationId, invoiceIds.slice(at, at + MAX_BATCH), { pushedBy, accepted })).invoices);
+    invoices.push(...(await pushDrafts(db, runtime, organisationId, invoiceIds.slice(at, at + MAX_BATCH), { pushedBy, accepted, mayWrite })).invoices);
   }
   return { invoices };
 }
@@ -569,7 +569,42 @@ function provesNothingCreated(error) {
 
 const shownXero = (inv) => ({ invoiceId: inv.InvoiceID, number: inv.InvoiceNumber ?? null, status: inv.Status ?? null });
 
-async function pushOne(db, runtime, client, organisationId, invoiceId, { pushedBy, allowExisting, accepted = [] }) {
+// A guard error: Flow stopped the write itself, so Xero got no request.
+const guardError = (code, message) => Object.assign(xeroError(code, message, { status: 409 }), { guard: true });
+
+// The Xero client for one queued invoice, with checks right before each
+// write. `mayWrite()` answers why the person who queued it may not send it
+// now (turned off, or no longer an owner or admin), or null; it runs before
+// Xero makes the invoice and before Xero emails it. `beforeEmail(push)` also
+// reads the contact from Xero: Xero emails the contact's email as it is at
+// that moment, so when the press chose Approve and email, it must still be
+// the email the person saw in the Send dialog (invoices.send_email).
+function guarded(db, client, mayWrite) {
+  const allowed = async () => {
+    const refusal = mayWrite ? await mayWrite() : null;
+    if (refusal) throw guardError(refusal.code, refusal.message);
+  };
+  return {
+    ...client,
+    async createInvoice(...args) {
+      await allowed();
+      return client.createInvoice(...args);
+    },
+    async beforeEmail(push) {
+      await allowed();
+      const [row] = (await db.execute(sql`select send_mode, send_email from invoices where id = ${push.invoiceId}`)).rows;
+      if (row?.send_mode !== 'approve_and_email') return;
+      const contactId = JSON.parse(push.requestBody ?? '{}').Contact?.ContactID;
+      const live = row.send_email && contactId ? await client.getContact(contactId) : null;
+      if (!row.send_email || String(live?.EmailAddress ?? '').trim().toLowerCase() !== row.send_email) {
+        throw guardError('xero_email_changed', 'the client\'s email in Xero is not the one shown when Send was pressed. Check it in Xero, then email it there.');
+      }
+    },
+  };
+}
+
+async function pushOne(db, runtime, client, organisationId, invoiceId, { pushedBy, allowExisting, accepted = [], mayWrite = null }) {
+  client = guarded(db, client, mayWrite);
   const { invoice, version, document } = await documentFor(db, organisationId, invoiceId);
   if (invoice.status === 'void') throw xeroError('invoice_void', 'This invoice is void. Flow does not send it to Xero.', { status: 409 });
   if (invoice.status !== 'issued') throw xeroError('invoice_not_issued', 'Only an issued invoice goes to Xero. Issue it first.', { status: 409 });
@@ -688,6 +723,11 @@ async function dispatch(db, client, push, document, { fresh = false } = {}) {
   try {
     created = await client.createInvoice(draft, { idempotencyKey: push.idempotencyKey });
   } catch (error) {
+    // Flow stopped it (guarded): no request went, so nothing changes in Xero.
+    if (error.guard) {
+      if (fresh) await db.execute(sql`delete from xero_invoice_pushes where id = ${push.id} and state = 'dispatching'`);
+      throw error;
+    }
     if (fresh && provesNothingCreated(error)) {
       await db.execute(sql`delete from xero_invoice_pushes where id = ${push.id} and state = 'dispatching'`);
       throw error;
@@ -741,7 +781,7 @@ async function verify(db, client, push, draft, document, created, outcome) {
 
 // Xero errors that prove it sent no email: it refused the request, or the
 // call guard stopped it before it went.
-const emailRefused = (error) => isCallsStopped(error) || error.code === 'xero_validation_failed'
+const emailRefused = (error) => error.guard || isCallsStopped(error) || error.code === 'xero_validation_failed'
   || (error.code === 'xero_api_error' && error.status >= 400 && error.status < 500);
 
 // Asks Xero to email an approved invoice that Flow sent and checked, once.
@@ -754,6 +794,7 @@ async function emailIfDue(db, client, push) {
     where id = ${push.id} and email_state in ('pending', 'failed') returning id`);
   if (!rows.length) return { state: 'sending', error: null, at: null };
   try {
+    await client.beforeEmail?.(push);
     await client.emailInvoice(push.xero.invoiceId);
   } catch (error) {
     const state = emailRefused(error) ? 'failed' : 'unknown';

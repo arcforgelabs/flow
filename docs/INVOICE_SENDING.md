@@ -209,17 +209,21 @@ ticked when the organisation's send mode is approve and email.
   shown. If the list cannot load, the dialog says so and offers **Try
   again**; unticked, the press sends drafts. When Flow's copy of Xero is more
   than a day old, the dialog says so.
-- Flow stores the email shown for each invoice (`invoices.send_email`). Just
-  before the send, Flow reads the client's contact from Xero. When Xero's
-  email is not the one shown, the invoice goes as a Xero draft and is not
-  emailed, and the person is told. So Xero never emails an address nobody
-  saw.
+- Flow stores the email shown for each invoice (`invoices.send_email`). Flow
+  reads the client's contact from Xero twice: before Xero makes the invoice,
+  and again right before each email request, a retry included. When Xero's
+  email is not the one shown before the invoice is made, it goes as a Xero
+  draft. When it changes after that, Xero has the approved invoice but Flow
+  sends no email request, and the person is told. So Xero never emails an
+  address nobody saw.
 - A client with no email address in Xero shows "No email in Xero: goes as a
   draft". That invoice goes to Xero as a draft and is not emailed.
 - The person who pressed Send must still be an active owner or admin when
-  the queued invoice goes. If they were turned off or made staff meanwhile,
-  the send fails (`requester_disabled` or `requester_not_allowed`) and
-  nothing reaches Xero. An owner or admin can send it again.
+  the queued invoice goes. Flow checks it when the worker starts and again
+  right before each Xero write (making the invoice, emailing it). If they
+  were turned off or made staff meanwhile, that write does not go
+  (`requester_disabled` or `requester_not_allowed`). An owner or admin can
+  send it again.
 - Not ticked, every invoice of the press goes as a Xero draft, whatever the
   customer's send mode.
 - The choice is for this press only, and it wins over each customer's own
