@@ -45,12 +45,15 @@ const historyHeld = (organisationId) => and(
 // Held history jobs by accounting state: counts, and one page of jobs
 // (`state` one accounting state, or `needs_person`).
 export async function listHistoryJobs(db, organisationId, { state = null, limit = 100, offset = 0 } = {}) {
-  const counts = Object.fromEntries((await db.select({ state: billingObligations.accountingState, n: sql`count(*)::int` })
-    .from(billingObligations).where(historyHeld(organisationId)).groupBy(billingObligations.accountingState))
+  // A job a rule settled as No Charge (settleHistoryByRules) counts as
+  // `no_charge`, not by its accounting state: it waits for no person.
+  const stateOf = sql`case when ${billingObligations.noChargeReason} is not null then 'no_charge' else ${billingObligations.accountingState} end`;
+  const counts = Object.fromEntries((await db.select({ state: stateOf, n: sql`count(*)::int` })
+    .from(billingObligations).where(historyHeld(organisationId)).groupBy(stateOf))
     .map((r) => [r.state, r.n]));
   const filters = [historyHeld(organisationId)];
-  if (state === 'needs_person') filters.push(sql`${billingObligations.accountingState} in ('not_found', 'ambiguous', 'conflict')`);
-  else if (state) filters.push(eq(billingObligations.accountingState, state));
+  if (state === 'needs_person') filters.push(sql`${billingObligations.noChargeReason} is null and ${billingObligations.accountingState} in ('not_found', 'ambiguous', 'conflict')`);
+  else if (state) filters.push(sql`${stateOf} = ${state}`);
   const jobs = await db.select().from(billingObligations).where(and(...filters))
     .orderBy(asc(billingObligations.jobDate), asc(billingObligations.sourceJobRef))
     .limit(Math.max(1, Math.min(500, Number(limit) || 100))).offset(Math.max(0, Number(offset) || 0));
@@ -68,6 +71,7 @@ export async function listHistoryJobs(db, organisationId, { state = null, limit 
       accountingState: o.accountingState,
       accountingRef: o.accountingRef,
       accountingMatchedBy: o.accountingMatchedBy,
+      noChargeReason: o.noChargeReason,
     })),
   };
 }

@@ -1026,6 +1026,25 @@ export async function setNoCharge(db, organisationId, obligationId, { reason, ac
   });
 }
 
+// A rule settles a held history job as No Charge (invoicing-rules.js,
+// settleHistoryByRules): the job keeps its history hold, so Flow never drafts
+// it and it stays off the board and the Invoices tabs, but it no longer waits
+// for a person. `reason` null takes the rule's No Charge away again, when no
+// non-chargeable rule matches the job any more. Each change is an event.
+export async function setHistoryNoCharge(db, organisationId, obligationId, { reason, actor }) {
+  requireActor(actor);
+  const next = reason?.trim() || null;
+  return db.transaction(async (tx) => {
+    const obligation = await loadObligation(tx, organisationId, obligationId, { lock: true });
+    if ((obligation.noChargeReason ?? null) === next) return obligation;
+    const row = await update(tx, obligation, {
+      noChargeReason: next, noChargeBy: next ? actor : null, noChargeAt: next ? sql`now()` : null,
+    });
+    await addEvent(tx, row, 'no_charge', actor, { from: obligation.noChargeReason ?? null, to: next, held: obligation.holdReason ?? null });
+    return row;
+  });
+}
+
 // A person links a job to a Flow invoice that already exists (Reconcile).
 // The job then has its invoice: Flow drafts no other. A job held on unclear
 // accounting evidence is settled by it; whether the Flow invoice matches one
