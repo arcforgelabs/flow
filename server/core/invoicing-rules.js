@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, like, sql } from 'drizzle-orm';
 import {
   billingObligations, contacts, customerBillingSettings, externalLinks, invoiceRules, invoices, invoicingSettings, obligationEvents, SEND_MODES,
 } from '../db/schema.js';
@@ -6,7 +6,7 @@ import { payersOf } from './contacts.js';
 import { FlowError, notFound } from './errors.js';
 import { HISTORY_ACTOR, HISTORY_HOLD_REASON, ruleReleasedHistory } from './history.js';
 import { accountingItemsFor, listRules, ruleNonChargeable, rulePricesFor, ruleReasons } from './invoice-rules.js';
-import { draftInvoiceForObligation, setHold, setReady } from './ledger.js';
+import { draftInvoiceForObligation, setHistoryNoCharge, setHold } from './ledger.js';
 import { needsRead, readAccountingFirst, readBeforeAct, READS_PER_PASS } from './read-before-act.js';
 import { checkReferenceTemplate, DEFAULT_REFERENCE, jobReference } from './references.js';
 
@@ -310,16 +310,19 @@ export function ruleBlockers(obligation, effective, { now = new Date(), rules = 
 // Old jobs from the history import wait on hold, out of the rules' sight. A
 // job that a non-chargeable rule matches (own clinics, remakes) needs no
 // person: it is never billed. When no accounting invoice was found for it,
-// the rule releases it and marks it ready, and the next draft run puts its
-// draft on the Non-chargeable tab, never sent. A job with an accounting
-// invoice, or one that is unclear, stays for a person. Answers counts.
+// the rule settles it as No Charge and it stays on the history hold: Flow
+// makes no draft for it, so old work never fills the Non-chargeable tab. A
+// job with an accounting invoice, or one that is unclear, stays for a person.
+// When no rule matches a settled job any more, its No Charge is taken away
+// (`unsettled`) and it waits for a person again. Answers counts.
 //
-// The release lasts only while a non-chargeable rule matches. A job a rule
-// released that no rule matches now (the rule was turned off, changed or
-// deleted) goes back on the history hold first (`reheld`), so it never
-// becomes a draft to charge without a person.
+// Jobs an earlier release let go (a rule released them from the hold, before
+// rules settled history in place) keep that release only while a
+// non-chargeable rule matches. One that no rule matches now (the rule was
+// turned off, changed or deleted) goes back on the history hold first
+// (`reheld`), so it never becomes a draft to charge without a person.
 export async function settleHistoryByRules(db, organisationId, { accounting = null, now = new Date(), limit = DRAFT_BATCH } = {}) {
-  const result = { checked: 0, released: 0, reheld: 0 };
+  const result = { checked: 0, settled: 0, unsettled: 0, reheld: 0 };
   const rules = (await listRules(db, organisationId)).filter((r) => r.enabled && r.trigger === 'job_ready' && r.action.kind === 'non_chargeable');
   const settings = await readInvoicingSettings(db, organisationId);
   const prices = await rulePricesFor(db, organisationId, rules);
@@ -335,9 +338,35 @@ export async function settleHistoryByRules(db, organisationId, { accounting = nu
     const names = await customerNames(db, organisationId, lapsed.map((j) => j.contactId));
     for (const job of lapsed) {
       const customer = { ...effectiveSettings(settings, customers.get(job.contactId)), name: names.get(job.contactId) ?? null };
-      if (ruleNonChargeable(rules, job, { customer, now, prices }).length) continue;
+      const [match] = ruleNonChargeable(rules, job, { customer, now, prices }).filter((m) => m.rule);
+      // A rule still matches a job that keeps its draft: it stays as it is
+      // until a person deletes the draft.
+      if (match && job.invoiceId) continue;
       await setHold(db, organisationId, job.id, { holdState: 'held', reason: HISTORY_HOLD_REASON, actor: HISTORY_ACTOR });
-      result.reheld += 1;
+      if (!match) {
+        result.reheld += 1;
+        continue;
+      }
+      // With no draft, it settles in place, as new history jobs do.
+      await setHistoryNoCharge(db, organisationId, job.id, { reason: match.reason ?? match.short, actor: `rule:${match.rule}` });
+      result.settled += 1;
+    }
+  }
+  // Held jobs a rule settled that no rule matches now wait for a person again.
+  const settledHeld = await db.select().from(billingObligations).where(and(
+    eq(billingObligations.organisationId, organisationId),
+    eq(billingObligations.holdState, 'held'),
+    eq(billingObligations.holdReason, HISTORY_HOLD_REASON),
+    like(billingObligations.noChargeBy, 'rule:%'),
+  ));
+  if (settledHeld.length) {
+    const customers = await customerBillingByContact(db, organisationId, settledHeld.map((j) => j.contactId));
+    const names = await customerNames(db, organisationId, settledHeld.map((j) => j.contactId));
+    for (const job of settledHeld) {
+      const customer = { ...effectiveSettings(settings, customers.get(job.contactId)), name: names.get(job.contactId) ?? null };
+      if (ruleNonChargeable(rules, job, { customer, now, prices }).some((m) => m.rule)) continue;
+      await setHistoryNoCharge(db, organisationId, job.id, { reason: null, actor: HISTORY_ACTOR });
+      result.unsettled += 1;
     }
   }
   if (!rules.length) return result;
@@ -346,6 +375,7 @@ export async function settleHistoryByRules(db, organisationId, { accounting = nu
     eq(billingObligations.holdState, 'held'),
     eq(billingObligations.holdReason, HISTORY_HOLD_REASON),
     isNull(billingObligations.invoiceId),
+    isNull(billingObligations.noChargeReason),
     sql`${billingObligations.contactId} is not null`,
     accounting
       ? eq(billingObligations.accountingState, 'not_found')
@@ -360,10 +390,8 @@ export async function settleHistoryByRules(db, organisationId, { accounting = nu
     const customer = { ...effectiveSettings(settings, customers.get(job.contactId)), name: names.get(job.contactId) ?? null };
     const [rule] = ruleNonChargeable(rules, job, { customer, now, prices });
     if (!rule) continue;
-    const actor = `rule:${rule.rule}`;
-    await setHold(db, organisationId, job.id, { holdState: 'none', reason: `${rule.short}: non-chargeable`, actor });
-    await setReady(db, organisationId, job.id, { actor });
-    result.released += 1;
+    await setHistoryNoCharge(db, organisationId, job.id, { reason: rule.reason ?? rule.short, actor: `rule:${rule.rule}` });
+    result.settled += 1;
   }
   return result;
 }
