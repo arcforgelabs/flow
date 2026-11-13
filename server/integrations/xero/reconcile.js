@@ -155,10 +155,11 @@ export async function accountingStatus(db, runtime, organisationId, invoiceIds =
 }
 
 // The Invoices page tab of each issued Flow invoice, from Flow's copy of
-// Xero (no calls): draft (on its way, or a Xero DRAFT), approved (AUTHORISED,
-// not sent to the customer yet), sent (Xero sent it, or it is part or fully
-// paid), void (voided or deleted in Xero), or pending (out of sync: a person
-// looks). Answers Map(invoiceId -> stage).
+// Xero (no calls): draft (on its way, or a Xero DRAFT), approved (AUTHORISED
+// or part paid, not emailed to the customer), sent (the same, emailed), paid
+// (paid in full), void (voided or deleted in Xero), or pending (out of sync: a
+// person looks). Answers Map(invoiceId -> stage); the status rule
+// (server/core/invoice-status.js) turns it into a tab.
 export async function invoiceStages(db, runtime, organisationId, invoiceIds = null) {
   const statuses = await accountingStatus(db, runtime, organisationId, invoiceIds);
   const out = new Map();
@@ -169,10 +170,12 @@ export async function invoiceStages(db, runtime, organisationId, invoiceIds = nu
   return out;
 }
 
+// Approved (not paid in full) is `sent` once Xero emailed it to the
+// customer; paid in full is `paid`.
 export function stageOf(status) {
   if (status.finding) return 'pending';
-  if (['part_paid', 'paid'].includes(status.state)) return 'sent';
-  if (status.state === 'approved') return status.xero?.sentToContact ? 'sent' : 'approved';
+  if (status.state === 'paid') return 'paid';
+  if (['approved', 'part_paid'].includes(status.state)) return status.xero?.sentToContact ? 'sent' : 'approved';
   if (['voided', 'deleted'].includes(status.state)) return 'void';
   return 'draft';
 }

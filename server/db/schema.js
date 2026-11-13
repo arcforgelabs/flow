@@ -127,6 +127,10 @@ export const invoices = pgTable('invoices', {
   // The line amounts include GST (the lab's "Prices include GST" when the
   // invoice was made). It never changes, so each version reads the same.
   amountsIncludeTax: boolean('amounts_include_tax').notNull().default(false),
+  // Its tab on the Invoices page (server/core/invoice-status.js), as the list
+  // last worked it out, and when it last changed. Null: no tab yet.
+  listTab: text('list_tab'),
+  listTabAt: timestamp('list_tab_at', { withTimezone: true }),
   // When a person marked the draft ready to send, and who. Any change to the
   // draft clears it (server/core/sending.js).
   readyAt: timestamp('ready_at', { withTimezone: true }),
