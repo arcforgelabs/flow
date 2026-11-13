@@ -162,16 +162,27 @@ export function notice(text, tone = 'info', title = null, { short = null } = {})
     tone === 'danger' ? errorCopy(said) : null), 'notice');
 }
 
-// The last Flow call that failed (app.js, flow), so an error's Copy error
-// can say which call failed. It is this error's call only when the error
-// shows the call's own message, within 15 seconds; another error (a form
-// check, an older failure) gets no call.
-let lastFailure = null;
-export function noteFailure({ method = 'GET', path, status = null, code = null, reasons = [], message = null }) {
-  lastFailure = { method: String(method).toUpperCase(), path, status, code, reasons, message, at: Date.now() };
+// The Flow calls that failed in the last 15 seconds (app.js, flow), so an
+// error's Copy error can say which call failed. A call is this error's call
+// only when the error shows that call's own message and no other recent
+// call failed with the same words: when two calls (say two reads that both
+// say "Sign in to Flow.") match, Copy error names no call rather than a
+// wrong one. Another error (a form check, an older failure) gets no call.
+const FAILURE_MS = 15000;
+let failures = [];
+export function noteFailure({ method = 'GET', path, status = null, code = null, reasons = [], message = null }, now = Date.now()) {
+  failures = failures.filter((failure) => now - failure.at < FAILURE_MS).slice(-19);
+  failures.push({ method: String(method).toUpperCase(), path, status, code, reasons, message, at: now });
 }
-const recentFailure = (now, said) => (lastFailure && now - lastFailure.at < 15000
-  && typeof lastFailure.message === 'string' && lastFailure.message && String(said ?? '').includes(lastFailure.message) ? lastFailure : null);
+const callOf = (failure) => [failure.method, failure.path, failure.status, failure.code].join(' ');
+export function recentFailure(now, said) {
+  const words = String(said ?? '');
+  const matches = failures.filter((failure) => now - failure.at < FAILURE_MS
+    && typeof failure.message === 'string' && failure.message && words.includes(failure.message));
+  if (!matches.length) return null;
+  const last = matches[matches.length - 1];
+  return matches.every((failure) => callOf(failure) === callOf(last)) ? last : null;
+}
 
 // "Copy error" (CopyError card): the icon button every error in Flow
 // carries. It copies the page, the Flow call that failed (only when the
