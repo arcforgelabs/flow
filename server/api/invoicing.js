@@ -623,6 +623,9 @@ export function createInvoicingRouter({
     const reader = work().find((a) => typeof a.capabilities.readWorkItem === 'function') ?? null;
     // Optional: 'approve_and_email' or 'accounting_draft' for this press only.
     const sendMode = req.body?.sendMode ?? null;
+    // Approve and email reaches clients, so a person must press it: an
+    // assistant's key is refused (person_required), as for an override.
+    if (sendMode === 'approve_and_email' && req.agent) return personAuth.requirePerson(req, res, () => {});
     // With approve_and_email: { invoiceId: email } as the dialog showed them.
     const recipients = req.body?.recipients ?? null;
     const result = await sendAllReady(db, organisationId, { accounting: accounting(), work: reader, personId: req.person.id, issueDate, invoiceIds: ids, sendMode, recipients });

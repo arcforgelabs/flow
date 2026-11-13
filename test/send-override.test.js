@@ -243,6 +243,13 @@ describe('override over the API', { skip: skipWithoutDatabase }, () => {
     assert.equal((await call(`/invoices/${clean.id}`)).body.invoice.canOverride, false);
   });
 
+  test('an assistant key cannot choose Approve and email; nothing is issued', async () => {
+    const ready = await createDraftInvoice(handle.db, lab.id, { contactId: practice.id, lines: [{ priceItemId: crown.id, quantity: 1 }] });
+    const res = await call('/invoices/send-ready', { method: 'POST', token: KEY, body: { invoiceIds: [ready.id], sendMode: 'approve_and_email', recipients: { [ready.id]: 'billing@example.com' } } });
+    assert.deepEqual([res.status, res.body.code], [403, 'person_required']);
+    assert.equal((await call(`/invoices/${ready.id}`)).body.invoice.status, 'draft');
+  });
+
   test('staff and an assistant key cannot override; an owner can, with no wait and no limit', async () => {
     const invoice = await warned();
     const path = `/invoices/${invoice.id}/send-anyway`;

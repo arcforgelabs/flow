@@ -218,6 +218,8 @@ ticked when the organisation's send mode is approve and email.
   address nobody saw.
 - A client with no email address in Xero shows "No email in Xero: goes as a
   draft". That invoice goes to Xero as a draft and is not emailed.
+- Only a signed-in person can choose it: an assistant's key gets
+  `person_required` and nothing is issued, as for an override.
 - The person who pressed Send must still be an active owner or admin when
   the queued invoice goes. Flow checks it when the worker starts and again
   right before each Xero write (making the invoice, emailing it). If they
