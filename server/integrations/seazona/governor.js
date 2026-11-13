@@ -40,7 +40,9 @@ export const SEAZONA_CALL_GUARD = Object.freeze({
 });
 
 const WINDOW_MS = 60_000;
-const MAX_COOLDOWN_MS = 60_000;
+// A 429's Retry-After is kept in full, to at most 6 hours (the lanes' longest
+// wait), so Flow never calls again sooner than Seazona asked.
+export const MAX_COOLDOWN_MS = 6 * 60 * 60_000;
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)));
 
 function normaliseWorkflow(value) {
@@ -161,7 +163,8 @@ export function createSeazonaGovernor({
       if (decision.admitted) return { requestId: decision.requestId, waitedMs };
       if (decision.stopped) throw new SeazonaCallsStopped(decision.stopped.reason, decision.stopped.retryAfterMs);
       const delay = Math.max(1, Math.min(decision.waitMs, maxWaitMs));
-      if (waitedMs + delay > maxWaitMs) throw new SeazonaGovernorTimeout(waitedMs, delay);
+      // The whole wait still to go, so the lane comes back when it has ended.
+      if (waitedMs + delay > maxWaitMs) throw new SeazonaGovernorTimeout(waitedMs, decision.waitMs);
       waitedMs += delay;
       await sleepFn(delay);
     }

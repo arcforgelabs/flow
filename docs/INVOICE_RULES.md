@@ -150,7 +150,10 @@ job (`not_found`; with no accounting system connected, also `unknown`), and a
 non-chargeable rule matches it, the draft step releases it (actor
 `rule:<id>`) and drafts it on the No charge tab. A job that the
 accounting system has invoiced stays held. The step's run summary counts the
-released jobs (`settle_history`).
+released jobs (`settle_history`). The release lasts only while such a rule
+matches: turn the rule off, and these jobs go back on the history hold
+(`reheld`), not to Pending or Ready. A draft one has is not sent until a
+person releases the job.
 
 ## No Charge
 

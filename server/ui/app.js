@@ -22,6 +22,7 @@ import { renderHome } from '/assets/ui/home.js';
 import { renderReconcile } from '/assets/ui/reconcile.js';
 import { renderXeroImport } from '/assets/ui/xero-import.js';
 import { syncStatus } from '/assets/ui/sync-status.js';
+import { historyErrorPrompt } from '/assets/ui/problem-prompt.js';
 import { xeroUsage } from '/assets/ui/xero-usage.js';
 import { startMonitoring } from '/assets/ui/monitoring.js';
 import { isSearchKey, openSearch } from '/assets/ui/search.js';
@@ -1098,6 +1099,13 @@ function seazonaHistorySection() {
   };
   let actionLabel;
   const actionButton = h('button', { class: 'fx-btn fx-btn--sm', type: 'button', onclick: event => press(event.currentTarget, actionLabel) });
+  // A read that waits or failed says why; Copy error gives the facts to
+  // paste to an agent: codes, counts and days, never a record or the cause's words.
+  const copyCause = copyButton({
+    label: 'Copy error', copied: 'Error copied. Paste it to your agent.',
+    text: () => historyErrorPrompt(run),
+  });
+  const actions = h('span', { class: 'fx-history__actions' }, copyCause, actionButton);
   const load = async () => {
     clearTimeout(timer);
     if (disposed || pending || document.hidden) return;
@@ -1117,7 +1125,8 @@ function seazonaHistorySection() {
         count: body.history.jobs, unit: 'jobs', from: run?.from, through: run?.through,
         at: run?.readingDay ?? run?.resumeFrom ?? run?.through,
         cause: run?.cause, nextRunAt: run?.nextRunAt,
-      }, actionButton);
+      }, actions);
+      copyCause.hidden = !run?.cause;
     } catch (error) {
       sync.draw({ phase: 'failed', cause: 'Could not check progress. Try again.' }, h('button', { class: 'fx-btn fx-btn--sm', type: 'button', onclick: load }, 'Retry'));
     } finally { pending = false; schedule(); }

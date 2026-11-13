@@ -85,6 +85,7 @@ workspace live credentials.
 | `SEAZONA_DAILY_FAILURE_BUDGET` | Failed calls allowed in one UTC day. When they are spent, calls stop until the next day. Default 50. |
 | `SEAZONA_SWEEP_CALLS_PER_RUN`, `SEAZONA_SWEEP_CALLS_PER_DAY`, `SEAZONA_SWEEP_CYCLE_DAYS`, `SEAZONA_SWEEP_CADENCE_MS` | The sweep's calls per run and per UTC day, how often each kind of record is checked again, and how often the lane runs. Defaults 10, 100, 7 days and 15 minutes. 0 calls a day turns the sweep off. |
 | `SEAZONA_HISTORY_CALLS_PER_RUN`, `SEAZONA_HISTORY_CADENCE_MS`, `SEAZONA_HISTORY_PAGE_SIZE` | Calls the history backfill makes per run, how often it runs, and orders per list page. Defaults 10, 2 minutes and 500. It calls Seazona only while a person has started one. |
+| `SEAZONA_HISTORY_MAX_FAILED_RUNS` | Failed runs in a row after which the history backfill gives up and waits for a person. Default 6, at most 20. |
 
 The code holds no Seazona host or account. Every address and credential is
 configuration.
@@ -98,9 +99,11 @@ because Seazona does (`server/integrations/seazona/governor.js`):
 - A request waits until fewer than 30 requests went out in the last minute,
   and at least 2 seconds have passed since the last one.
 - A 429 answer with `Retry-After` holds every process for that long (at most
-  60 seconds).
+  6 hours). No request goes out sooner than Seazona asked.
 - A 429 or 5xx answer is retried at most `SEAZONA_API_MAX_RETRIES` times, with
-  a growing wait. Each retry counts against the limit.
+  a growing wait of at most 60 seconds. Each retry counts against the limit.
+  A longer `Retry-After` ends the retries: the lane waits and comes back when
+  it has passed.
 - A request that waits longer than `SEAZONA_API_MAX_WAIT_MS` gives up with
   `seazona_api_governor_timeout`.
 - In `live` and `sandbox` the client refuses to start without the governor,
@@ -432,8 +435,14 @@ shown until persisted steps are available.
 `GET /api/seazona/history` gives the run's `startedAt`, persisted `endedAt`
 (after Stop or Done, so elapsed time survives reload), and its `phase`:
 `running`, `waiting` (the guard holds or a run failed; `nextRunAt` is the
-retry), `failed` (Seazona halted calls, or 3 runs failed in a row; `cause`
-says why), `stopped` or `done`. The
+retry), `failed` (Seazona halted calls, 3 runs failed in a row, or the read
+gave up; `cause` says why, and `gaveUp` has the code, the status, the failed
+runs, the day and the page), `stopped` or `done`. `code` is the failure's
+code. `ordersSkipped` counts the orders this read left out after repeated
+failed reads; a later read that works clears the order's failure record.
+The cause never names an order: a request path shows as `/v1/orders/:id`.
+On the card, Copy error copies the codes, counts and days for an agent,
+not the cause's words. The
 page calls `POST /api/seazona/history/backfill` with
 `{ "from": "2019-01-01" }` (and `through`, by default the day before the
 recent-order lane's window). The `history` lane then:
@@ -450,13 +459,39 @@ recent-order lane's window). The `history` lane then:
 4. reconciles each staged job at once, and writes a new one to Flow's
    history; a job that needs a person waits in the batch.
 
-It makes at most `SEAZONA_HISTORY_CALLS_PER_RUN` calls a run (default 10,
-at most 25), every `SEAZONA_HISTORY_CADENCE_MS` (default 2 minutes), through
-the same rate governor, circuit and failed-call budget as the live lanes.
-At the default, about 300 calls an hour. A 404 means the order is gone and
-is skipped. Other failed reads are retried later in the walk and quarantined
-after `SEAZONA_ORDER_QUARANTINE_FAILURES`. A refused or halted call stops
-the lane as it stops the others. The lane keeps its place (day, page and
+#### The backfill's limits
+
+The backfill stays inside Seazona's rate limit and never retries without
+end (`test/seazona-history-contract.test.js`):
+
+- **Rate.** Every request goes through the rate governor: at most 30 a
+  minute for all lanes together, 2 seconds apart, half of what Seazona
+  allows. A 429 stops every request for its `Retry-After`.
+- **Budget.** A run sends at most `SEAZONA_HISTORY_CALLS_PER_RUN` requests
+  (default 10, at most 25), retries counted: a call retries only as far as
+  the requests the run has left. It runs every
+  `SEAZONA_HISTORY_CADENCE_MS` (default 2 minutes): at most 300 requests
+  an hour, 7,200 a day.
+- **Failed calls.** The circuit and the day's failed-call budget (above)
+  count its failures with the live lanes': 5 in 10 minutes pause every call,
+  50 in a UTC day stop them until the next day.
+- **One order.** A failed read is tried again once a run, not at once. After
+  `SEAZONA_ORDER_QUARANTINE_FAILURES` (default 3) the order is left out and
+  the walk goes on; `ordersSkipped` counts these. A 404 is skipped after
+  one request and is not a failure.
+- **A failing run.** After `SEAZONA_HISTORY_MAX_FAILED_RUNS` failed runs in
+  a row (default 6, about half an hour) the read gives up. So does a list
+  that Seazona refuses (400 or 404), or one that answers the same full page
+  twice, at once. A read that gave up makes no request, after a restart
+  too, until a person presses Retry.
+- **A refused API client.** A 401 or 403 halts every Seazona call. The read
+  goes on only after a person saves the Seazona settings.
+- **The walk.** The list answers the orders placed on or after a day, oldest
+  first. Years with no orders cost no request: the walk pages through the
+  list, then goes on from the newest day it answered. No order is read
+  twice.
+
+The lane keeps its place (day, page and
 orders still to read) in its cursor, so it resumes after a restart. When
 the last day is done, the batch waits like an upload for a person to decide
 what is left. `POST /api/seazona/history/backfill/stop` ends it early.
@@ -581,6 +616,12 @@ A matched job stays held: it is history and already invoiced. Only a
 person's release (`POST /api/seazona/history/ledger/:obligationId/release`)
 moves a job into drafting, or a non-chargeable rule when the accounting
 system has no invoice for the job ([invoice rules](INVOICE_RULES.md#non-chargeable-rules)).
+A rule's release lasts only while a non-chargeable rule matches the job, so
+its draft is on the No charge tab and is never sent. When no such rule
+matches any more (the rule was turned off, changed or deleted), the job goes
+back on the history hold, Flow drafts nothing for it, and a draft it has is
+not sent (`history_job`) until a person releases the job
+(`server/core/history.js`, `ruleReleasedHistory`).
 The Jobs board and `GET /api/invoicing/jobs`
 leave held history jobs out; `/jobs?history=include` shows them, and its
 `counts.history` gives how many there are.

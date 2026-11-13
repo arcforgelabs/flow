@@ -1,5 +1,5 @@
-import { and, asc, eq, sql } from 'drizzle-orm';
-import { billingObligations } from '../db/schema.js';
+import { and, asc, eq, inArray, sql } from 'drizzle-orm';
+import { billingObligations, obligationEvents } from '../db/schema.js';
 import { FlowError, notFound } from './errors.js';
 import { setHold } from './ledger.js';
 
@@ -12,6 +12,26 @@ export const HISTORY_HOLD_REASON = 'history_import';
 export const HISTORY_ACTOR = 'import:seazona_history';
 
 export const isHistoryHeld = (obligation) => obligation?.holdState === 'held' && obligation?.holdReason === HISTORY_HOLD_REASON;
+
+// History jobs that only a non-chargeable rule released (invoicing-rules.js,
+// settleHistoryByRules): the job was held as history, and its last release or
+// No Charge change came from a rule, not a person. Such a job is free only
+// while a non-chargeable rule matches it. When none does (the rule was turned
+// off, changed or deleted, or the customer changed), it is history again: it
+// never drafts, and a draft it has is never sent, until a person releases it.
+// `obligationIds` null reads every such job. Answers a Set of obligation ids.
+export async function ruleReleasedHistory(db, organisationId, obligationIds = null) {
+  if (obligationIds && !obligationIds.length) return new Set();
+  const rows = await db.select({ id: billingObligations.id }).from(billingObligations).where(and(
+    eq(billingObligations.organisationId, organisationId),
+    ...(obligationIds ? [inArray(billingObligations.id, obligationIds)] : []),
+    sql`exists (select 1 from ${obligationEvents} h where h.obligation_id = ${billingObligations.id}
+      and h.kind = 'held' and h.evidence->>'reason' = ${HISTORY_HOLD_REASON})`,
+    sql`(select e.actor from ${obligationEvents} e where e.obligation_id = ${billingObligations.id}
+      and e.kind in ('released', 'no_charge') order by e.created_at desc, e.id desc limit 1) like 'rule:%'`,
+  ));
+  return new Set(rows.map((r) => r.id));
+}
 
 // Accounting states that need a person: no invoice found, or more than one fits.
 export const HISTORY_NEEDS_PERSON = ['not_found', 'ambiguous', 'conflict'];

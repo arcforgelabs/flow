@@ -14,6 +14,25 @@ const code = (value) => (typeof value === 'string' && /^[a-z0-9_.:-]{1,64}$/i.te
 const dollars = (cents) => (Number.isSafeInteger(cents) ? `${cents < 0 ? '-' : ''}$${(Math.abs(cents) / 100).toFixed(2)}` : 'not supplied');
 const amounts = (totals) => `subtotal ${dollars(totals?.subtotalCents)}, GST ${dollars(totals?.taxCents)}, total ${dollars(totals?.totalCents)}`;
 
+// "Copy error" on the Seazona history card: what stopped the read, for an
+// agent. Codes, counts, days and times only. The cause a person reads is
+// left out: it is text from a failed call.
+const day = (value) => (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : 'unknown');
+const stamp = (value) => (typeof value === 'string' && Number.isFinite(Date.parse(value)) ? new Date(value).toISOString() : 'none');
+const whole = (value) => (Number.isSafeInteger(value) ? value : 0);
+export function historyErrorPrompt(run) {
+  const gaveUp = run?.gaveUp ?? null;
+  return [
+    `Flow's Seazona history read is ${code(run?.phase) ?? 'unknown'}.`,
+    `Code: ${code(gaveUp?.code ?? run?.code) ?? 'unknown'}. HTTP status: ${Number.isInteger(gaveUp?.httpStatus) ? gaveUp.httpStatus : 'none'}.`,
+    gaveUp
+      ? `It gave up at ${stamp(gaveUp.at)} after ${whole(gaveUp.failedRuns)} failed runs in a row, on day ${day(gaveUp.day)}, page ${whole(gaveUp.page)}. Flow makes no Seazona call for this read until a person presses Retry.`
+      : `Next try: ${stamp(run?.nextRunAt)}.`,
+    `Read ${day(run?.from)} to ${day(run?.through)}. Orders read: ${whole(run?.ordersRead)}. Waiting to read: ${whole(run?.waitingToRead)}. Skipped after failed reads: ${whole(run?.ordersSkipped)}.`,
+    'See docs/SEAZONA.md, "The backfill\'s limits".',
+  ].join('\n');
+}
+
 // The problem codes on an invoice, one per kind. Three kinds share the code
 // job_review, so the resolution kind and source flag tell them apart.
 export function problemCodes({ problems = [], change = null } = {}) {

@@ -1,8 +1,9 @@
 import { eq, inArray } from 'drizzle-orm';
 import { FlowError } from '../../../core/errors.js';
 import { mapOrder, parseSeazonaDate, text } from '../map.js';
+import { pathShape } from '../governor.js';
 import { seazonaHistoryBatchJobs, seazonaLaneState, seazonaOrders } from '../schema.js';
-import { recordRecordFailure } from '../store.js';
+import { clearRecordFailures, recordRecordFailure } from '../store.js';
 import { createApiBatch, finishApiBatch, stageApiJobs } from './index.js';
 
 // The history backfill (docs/SEAZONA.md, "History import"). A person starts
@@ -110,14 +111,24 @@ export function describeBackfill(cursor) {
   };
 }
 
+// The lane's failure text with every record id taken out: a request path
+// keeps its names only (/v1/orders/:id), so the cause a person reads, and
+// what the lane stores, never names an order.
+export function causeText(message) {
+  return String(message ?? '')
+    .replace(/\/v\d+\/[^\s,;)]*/g, (path) => pathShape(path))
+    .replace(/\border (?!list\b)[^\s,;)]+/g, 'order :id');
+}
+
 // A read that failed this many runs in a row shows as failed, not waiting.
 const FAILED_AFTER = 3;
 
 // The card's phase. A held or failed lane waits for its retry at nextRunAt;
-// a lane Seazona halted, or one that failed FAILED_AFTER times, has failed.
+// a lane Seazona halted, one that failed FAILED_AFTER times, or a read that
+// gave up has failed.
 function phaseOf(backfill, state) {
   if (!backfill.running) return backfill.stopped ? 'stopped' : 'done';
-  if (state.status === 'stopped' || (state.status === 'failed' && state.failureCount >= FAILED_AFTER)) return 'failed';
+  if (state.cursor?.gaveUp || state.status === 'stopped' || (state.status === 'failed' && state.failureCount >= FAILED_AFTER)) return 'failed';
   return ['held', 'failed'].includes(state.status) ? 'waiting' : 'running';
 }
 
@@ -126,11 +137,47 @@ export async function readBackfill(db) {
   const backfill = describeBackfill(state?.cursor);
   if (!backfill) return null;
   const phase = phaseOf(backfill, state);
+  const gaveUp = state.cursor.gaveUp ?? null;
   return {
     ...backfill,
     phase,
-    cause: ['waiting', 'failed'].includes(phase) ? state.lastError : null,
-    nextRunAt: backfill.running ? state.nextRunAt : null,
+    cause: ['waiting', 'failed'].includes(phase) ? causeText(gaveUp?.cause ?? state.lastError) || null : null,
+    // The failure as a code, for Copy error: never free text.
+    code: ['waiting', 'failed'].includes(phase) ? gaveUp?.code ?? state.heldReason ?? 'seazona_lane_failed' : null,
+    // A read that gave up makes no call until a person presses Retry. Its
+    // detail is codes, counts and days: no record, host or credential.
+    gaveUp: gaveUp ? { ...gaveUp, cause: causeText(gaveUp.cause) } : null,
+    // Orders this read (its batch) left out after repeated failed reads.
+    ordersSkipped: state.cursor.skipped ?? 0,
+    nextRunAt: backfill.running && !gaveUp ? state.nextRunAt : null,
+  };
+}
+
+// The bound on retries (docs/SEAZONA.md, "The backfill's limits"). The lane
+// calls this when a history run failed. Answers the cursor of a read that
+// gives up, or null while the lane may still retry. It gives up when:
+//   - Seazona refused the list (400 or 404), or the list repeats a page:
+//     no wait fixes either;
+//   - `historyMaxFailedRuns` runs failed in a row, whatever the failure.
+// A halt (401 or 403) is left to the governor: every lane is stopped, no
+// call goes out, and the read goes on when a person saves the settings.
+// A read that gave up stays in the cursor, so a restart does not retry it.
+export function backfillGaveUp(state, error, { status, heldReason, failedRuns, message, code, at, sync }) {
+  const cursor = error?.progress?.cursor ?? state?.cursor;
+  if (!cursor?.batchId || cursor.done || cursor.gaveUp || heldReason === 'seazona_api_halted') return null;
+  const refused = status === 'stopped' || error?.fatal === true;
+  if (!refused && failedRuns < sync.historyMaxFailedRuns) return null;
+  return {
+    ...cursor,
+    gaveUp: {
+      at: new Date(at).toISOString(),
+      code,
+      cause: causeText(refused ? message : `${message} (${failedRuns} runs failed in a row; Flow stopped trying)`),
+      failedRuns,
+      httpStatus: Number.isInteger(error?.statusCode) ? error.statusCode : null,
+      day: cursor.listDay ?? cursor.nextDay ?? null,
+      page: cursor.page ?? null,
+    },
   };
 }
 
@@ -139,13 +186,25 @@ export async function readBackfill(db) {
 export async function runHistoryBackfill(ctx, { isLaneLevel, describeReadFailure, emptyResponse, LaneError }) {
   const { db, client, sync, at, state } = ctx;
   const start = state?.cursor ?? {};
-  if (!start.batchId || start.done) return { idle: true, cursor: start, cursorTime: state?.cursorTime ?? null };
+  // No call while no read runs, or after one gave up (backfillGaveUp).
+  if (!start.batchId || start.done || start.gaveUp) return { idle: true, cursor: start, cursorTime: state?.cursorTime ?? null };
   const cursor = { ...start, pending: [...(start.pending ?? [])] };
   const budget = sync.historyCallsPerRun;
   const pageSize = sync.historyPageSize ?? PAGE_SIZE;
   const jobs = [];
   const failures = [];
-  let calls = 0;
+  // Every request counts against the budget, a retry of a 429 or 5xx too:
+  // a call may retry only as far as the requests the run has left.
+  const sentAtStart = client.requestCount?.() ?? 0;
+  let logical = 0;
+  const sent = () => (client.requestCount ? client.requestCount() - sentAtStart : logical);
+  const withinBudget = () => ({ maxRetries: Math.max(0, budget - sent() - 1) });
+  // Orders whose read failed in this run: read again in a later run, not at once.
+  const failedNow = new Set();
+  // Orders this run read or found gone. They are staged when the run ends,
+  // so a list that names one again in the same run must not read it twice.
+  const doneNow = new Set();
+  const cleared = [];
   let deleted = 0;
   let quarantined = 0;
 
@@ -157,16 +216,16 @@ export async function runHistoryBackfill(ctx, { isLaneLevel, describeReadFailure
   };
 
   try {
-    while (calls < budget) {
+    while (sent() < budget) {
       if (!cursor.pending.length) {
         if (cursor.nextDay > cursor.through) {
           cursor.done = true;
           cursor.endedAt = new Date(at).toISOString();
           break;
         }
-        calls += 1;
+        logical += 1;
         cursor.listDay = cursor.nextDay;
-        const list = await client.get('orders/', { ordered: orderedParam(cursor.nextDay), page: cursor.page, pageSize });
+        const list = await client.get('orders/', { ordered: orderedParam(cursor.nextDay), page: cursor.page, pageSize }, withinBudget());
         if (!Array.isArray(list)) throw new LaneError(`Seazona order list for ${cursor.nextDay} answer was not a list`, { code: 'seazona_list_invalid' });
         // The guide says the list answers orders placed on or after `ordered`,
         // oldest first, in stable pages; the live lane was built when it
@@ -177,36 +236,55 @@ export async function runHistoryBackfill(ctx, { isLaneLevel, describeReadFailure
         const beyond = inRange.length < list.length;
         for (const item of inRange) if (placed(item) > (cursor.reached ?? '')) cursor.reached = placed(item);
         const ids = [...new Set(inRange.map((item) => text(item?.id)).filter(Boolean))];
+        // A full page that is the page before it again: Seazona did not
+        // page, and the walk would list it without end. No wait fixes it.
+        const pageKey = `${cursor.nextDay}|${list.length}|${text(list[0]?.id)}|${text(list.at(-1)?.id)}`;
+        if (list.length >= pageSize && cursor.page > 1 && cursor.lastPage === pageKey) {
+          throw new LaneError(`Seazona order list for ${cursor.nextDay} answered page ${cursor.page} the same as page ${cursor.page - 1}; the walk cannot go on`, { code: 'seazona_list_repeats', fatal: true, progress: { cursor: { ...cursor } } });
+        }
+        cursor.lastPage = pageKey;
         // The live copy holds these already; a read again costs a call for nothing.
         const live = ids.length
           ? new Set((await db.select({ id: seazonaOrders.id }).from(seazonaOrders).where(inArray(seazonaOrders.id, ids))).map((r) => r.id))
           : new Set();
         const seen = await alreadyRead(ids);
-        cursor.pending = ids.filter((id) => !live.has(id) && !seen.has(id));
+        cursor.pending = ids.filter((id) => !live.has(id) && !seen.has(id) && !doneNow.has(id));
         if (beyond) {
           cursor.nextDay = dayOf(Date.parse(cursor.through) + DAY_MS);
         } else if (list.length >= pageSize) {
           cursor.page += 1;
         } else {
+          // A short page is the last one. When it held orders placed after
+          // the listed day, the list answered every order from that day on,
+          // so the walk goes on from the latest day it answered, not from
+          // the next day: that would list all of it again for each day.
+          const next = dayOf(Date.parse(cursor.nextDay) + DAY_MS);
+          const latest = inRange.map(placed).filter(Boolean).sort().at(-1) ?? '';
           cursor.page = 1;
-          cursor.nextDay = dayOf(Date.parse(cursor.nextDay) + DAY_MS);
+          cursor.nextDay = latest > next ? latest : next;
           cursor.days = (cursor.days ?? 0) + 1;
         }
         continue;
       }
+      // Each order is read at most once a run: a failed read waits for the next run.
+      if (failedNow.has(cursor.pending[0])) break;
       const id = cursor.pending.shift();
-      if ((await alreadyRead([id])).size) continue;
-      calls += 1;
+      if (doneNow.has(id) || (await alreadyRead([id])).size) continue;
+      logical += 1;
       try {
-        const detail = await client.get(`orders/${encodeURIComponent(id)}`);
+        const detail = await client.get(`orders/${encodeURIComponent(id)}`, {}, withinBudget());
         if (!detail || typeof detail !== 'object' || Array.isArray(detail)) throw emptyResponse(`order ${id}`);
         const record = { ...mapOrder({}, detail, { keepPatientReference: sync.keepPatientReference }), id };
         jobs.push({ jobKey: `case:${id}`, job: orderToHistoryJob(record) });
+        doneNow.add(id);
+        cleared.push(id);
         cursor.read = (cursor.read ?? 0) + 1;
       } catch (error) {
         if (isLaneLevel(error)) throw error;
         // Seazona has no such order now: nothing to keep.
         if (error?.statusCode === 404) {
+          doneNow.add(id);
+          cleared.push(id);
           deleted += 1;
           continue;
         }
@@ -216,20 +294,27 @@ export async function runHistoryBackfill(ctx, { isLaneLevel, describeReadFailure
         });
         failures.push({ id, ...failure, ...recorded });
         // Read again later in the walk, until it is quarantined.
-        if (recorded.quarantinedUntil) quarantined += 1;
-        else cursor.pending.push(id);
+        if (recorded.quarantinedUntil) {
+          quarantined += 1;
+          cursor.skipped = (cursor.skipped ?? 0) + 1;
+        } else {
+          failedNow.add(id);
+          cursor.pending.push(id);
+        }
       }
     }
   } finally {
     // What was read is kept even when the lane stops on a lane-level failure.
     await stageApiJobs(db, cursor.batchId, jobs, { at });
+    // A read that worked, or an order that is gone, ends its failure record.
+    await clearRecordFailures(db, RESOURCE, cleared);
   }
   if (cursor.done) await finishApiBatch(db, cursor.batchId, { at });
   const failureDetails = failures.length
-    ? { attempted: calls, failed: failures.length, failures: failures.slice(0, 25).map(({ error, ...f }) => f), quarantined }
+    ? { attempted: logical, failed: failures.length, failures: failures.slice(0, 25).map(({ error, ...f }) => f), quarantined }
     : null;
   return {
-    calls,
+    calls: sent(),
     read: jobs.length,
     deleted,
     backfill: describeBackfill(cursor),
