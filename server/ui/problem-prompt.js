@@ -83,15 +83,6 @@ const pagePath = (value) => {
   const path = String(value ?? '').split(/[?#]/)[0];
   return /^\/[A-Za-z0-9._~\/:-]{0,200}$/.test(path) ? path : null;
 };
-// On-screen words, for errorPrompt: quoted names (a contact, a clinic, a
-// searched word) and e-mail addresses are hidden, so the copy holds Flow's
-// words and codes but not a customer's details. The agent reads the record
-// itself by its id.
-const QUOTED = /"[^"]*"|“[^”]*”|‘[^’]*’|'[^']*'(?![a-z])|\S+@\S+\.\S+/g;
-const scrub = (text, max) => {
-  const value = oneLine(text, 1000);
-  return value ? oneLine(value.replace(QUOTED, '[hidden]'), max) : null;
-};
 const UUIDS = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
 const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'];
 
@@ -145,13 +136,16 @@ export function fixPrompt({ origin, fix = {}, job = {}, organisationId = null })
   const orderRef = ref(job?.sourceJobRef);
   const caseRef = ref(job?.caseRef);
   const ruleId = id(fix?.rule);
+  const ruled = Boolean(ruleId) || fix?.check?.kind === 'rule';
   const org = id(organisationId) ?? '<org>';
   return agentPrompt({
     ask: 'A Flow job has a problem. Fix it, or explain it to me in plain words.',
     facts: [
-      `Problem: ${oneLine(fix?.label, 80) ?? 'not named'}${code(fix?.code) ? ` (code ${fix.code})` : ''}`,
-      fix?.check ? `Flow ${fix.check.kind === 'rule' ? 'rule' : 'check'} that stops it: ${oneLine(fix.check.name, 80)}, ${String(fix.check.href).startsWith('/') ? base : ''}${fix.check.href}` : null,
-      ruleId && fix?.check?.kind !== 'rule' ? `Flow rule that stops it: id ${ruleId}, ${base}/invoicing-settings/invoices?rule=${ruleId}` : null,
+      // A rule's name is free text an owner writes (it can hold a name), so
+      // a rule is copied by its id and link only.
+      `Problem: ${ruled ? 'a Flow rule holds the job' : oneLine(fix?.label, 80) ?? 'not named'}${code(fix?.code) ? ` (code ${fix.code})` : ''}`,
+      fix?.check && !ruled ? `Flow check that stops it: ${oneLine(fix.check.name, 80)}, ${String(fix.check.href).startsWith('/') ? base : ''}${fix.check.href}` : null,
+      ruleId ? `Flow rule that stops it: id ${ruleId}, ${base}/invoicing-settings/invoices?rule=${ruleId}` : null,
       jobId ? `Flow job id: ${jobId}, ${base}/reconcile/${jobId}` : null,
       invoiceId ? `Flow invoice id: ${invoiceId}, ${base}/invoices/${invoiceId}` : null,
       caseRef ? `Case number: ${caseRef}` : null,
@@ -191,30 +185,27 @@ export function gapPrompt({ origin, kind, gapId, candidates = [], organisationId
   });
 }
 
-// Any error Flow shows (a danger toast or note, kit.js). `said`: the words
-// on the screen. `page`: location.pathname. `failed`: the last Flow API call
-// that failed ({ method, path, status, code, reasons, at }), when there is
-// one. The screen's words are quoted as data, with quoted names and e-mail
-// addresses hidden (scrub): they come from Flow, but can hold a contact's or
-// a clinic's name from Xero or Seazona.
+// Any error Flow shows (a danger toast or note, kit.js). `page`:
+// location.pathname. `failed`: the Flow API call that failed ({ method,
+// path, status, code }), when the error shows that call's message. The
+// screen's words and the call's reasons are not copied: Flow, Xero and
+// Seazona put contact, clinic and rule names in them. The agent repeats the
+// read, or asks the person, to see them. `said` is accepted and ignored.
 export function errorPrompt({ origin, page = null, said = null, failed = null, at = null }) {
   const base = String(origin ?? '').replace(/\/+$/, '');
   const where = pagePath(page);
-  const words = scrub(said, 300);
   const call = failed && METHODS.includes(failed.method) ? failed : null;
   const apiPath = call ? pagePath(call.path) : null;
   const flowPath = apiPath?.startsWith('/api/') ? apiPath.slice(5) : null;
   const ids = [...new Set([...(where ?? '').matchAll(UUIDS), ...(apiPath ?? '').matchAll(UUIDS)].map((m) => m[0].toLowerCase()))];
-  const reasons = (call?.reasons ?? []).map((reason) => scrub(reason, 120)).filter(Boolean).slice(0, 5);
   const when = at ?? call?.at ?? null;
   const read = call && flowPath && call.method === 'GET';
   return agentPrompt({
     ask: 'Flow showed an error. Find the cause and fix it, or explain it to me in plain words.',
     facts: [
       where ? `Page: ${base}${where}` : null,
-      words ? `The screen said: "${words}"` : null,
+      'The words on the screen are not copied, because they can hold a name. To see them, repeat a failed read (step below), or ask me.',
       apiPath ? `Flow call that failed: ${call.method} ${apiPath}${Number.isInteger(call.status) ? `, HTTP ${call.status}` : ''}${code(call.code) ? `, code ${call.code}` : ''}` : null,
-      reasons.length ? `Reasons Flow gave: ${reasons.join('; ')}` : null,
       ids.length ? `Flow ids in it: ${ids.join(', ')}` : null,
       when ? `When: ${new Date(when).toISOString()}` : null,
     ],
@@ -223,7 +214,6 @@ export function errorPrompt({ origin, page = null, said = null, failed = null, a
       call && !read && flowPath ? `Do not repeat the ${call.method} without my yes. Read the records it changes first.` : null,
       ids.length ? 'Read each record by its id in Flow (invoicing/invoices/<id>, invoicing/jobs/<id>/reconcile, invoicing/contacts/<id>, invoicing/rules/<id>).' : null,
       'Read the same records in Seazona and Xero themselves, not Flow\'s copies of them.',
-      words?.includes('[hidden]') ? 'Words in [hidden] are a name Flow showed on the screen. Read the record by its id to see it.' : null,
       call?.status === 500 ? 'An HTTP 500 is a fault in Flow. Say so, and give me the call and time for a bug report.' : null,
       call?.status > 500 ? `An HTTP ${call.status} often means Flow could not reach Xero or Seazona, or one of them was slow or not connected. Check the connection (flow.sh get xero/status, and Integrations in Flow) and that system itself before you call it a fault in Flow.` : null,
     ],

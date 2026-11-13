@@ -174,9 +174,10 @@ const recentFailure = (now, said) => (lastFailure && now - lastFailure.at < 1500
   && typeof lastFailure.message === 'string' && lastFailure.message && String(said ?? '').includes(lastFailure.message) ? lastFailure : null);
 
 // "Copy error" (CopyError card): the icon button every error in Flow
-// carries. It copies the screen's words, the page, the Flow call that
-// failed and the steps to find the cause, as a prompt to paste to an agent
-// (problem-prompt.js, errorPrompt). `said`: the error's words. `call:
+// carries. It copies the page, the Flow call that failed (only when the
+// error shows that call's message) and the steps to find the cause, as a
+// prompt to paste to an agent (problem-prompt.js, errorPrompt). The error's
+// words (`said`) only match the call; they are not copied. `call:
 // false` for a problem that no failed call made (an alert).
 export function errorCopy(said, { call = true } = {}) {
   const at = Date.now();
