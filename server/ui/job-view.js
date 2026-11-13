@@ -18,10 +18,10 @@ export const DIRS = ['asc', 'desc'];
 // installation keeps patient names; Assignee only when the lab has a
 // person field.
 export const COLUMNS = {
-  case: 'Case', practitioner: 'Practitioner', patient: 'Patient', stage: 'Stage', assignee: 'Assignee',
+  case: 'Case', practitioner: 'Practitioner', patient: 'Patient', stage: 'Stage', invoice: 'Invoice', assignee: 'Assignee',
   ordered: 'Requested', due: 'Due', shipped: 'Shipped', total: 'Total',
 };
-export const DEFAULT_COLUMNS = Object.freeze(['practitioner', 'patient', 'stage', 'assignee', 'due', 'total']);
+export const DEFAULT_COLUMNS = Object.freeze(['practitioner', 'patient', 'stage', 'invoice', 'assignee', 'due', 'total']);
 
 // Filters, like ClickUp's: groups of rows of field, operator and value. The
 // rows in a group all match ('all') or any one matches ('any'); the groups
@@ -31,6 +31,9 @@ export const DEFAULT_COLUMNS = Object.freeze(['practitioner', 'patient', 'stage'
 export const FILTER_FIELDS = {
   status: { label: 'Status', kind: 'choice', icon: 'circle-dot' },
   stage: { label: 'Invoice stage', kind: 'choice', icon: 'receipt' },
+  // The job's invoice status, as the Invoices page names it; "Not invoiced"
+  // when the job never had an invoice (job-board.js invoiceStatusOf).
+  invoice: { label: 'Invoice', kind: 'choice', icon: 'file-check' },
   client: { label: 'Client', kind: 'choice', icon: 'building-2' },
   practitioner: { label: 'Practitioner', kind: 'choice', icon: 'stethoscope' },
   assignee: { label: 'Assignee', kind: 'person', icon: 'user-round' },
