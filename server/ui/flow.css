@@ -891,6 +891,10 @@ th:hover > .fx-th-grip::after { background: var(--t-brd-hi); }
 .fx-board__unfold:hover { background: var(--t-paper); }
 .fx-board__unfold .fx-stage { writing-mode: vertical-rl; }
 .fx-board__fold { flex: none; }
+/* A touch target on a phone or tablet is 44px both ways. */
+@media (max-width: 1023px) {
+  .fx-board__fold { min-width: 44px; min-height: 44px; }
+}
 @media (hover: hover) {
   .fx-board__fold { opacity: 0; }
   .fx-board__head:hover .fx-board__fold, .fx-board__fold:focus-visible { opacity: 1; }
