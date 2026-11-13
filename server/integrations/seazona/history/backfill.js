@@ -184,11 +184,12 @@ export async function runHistoryBackfill(ctx, { isLaneLevel, describeReadFailure
   const pageSize = sync.historyPageSize ?? PAGE_SIZE;
   const jobs = [];
   const failures = [];
-  // Every request counts against the budget, a retry of a 429 or 5xx too.
-  // One call can retry, so a run ends at most `maxRetries` requests over.
+  // Every request counts against the budget, a retry of a 429 or 5xx too:
+  // a call may retry only as far as the requests the run has left.
   const sentAtStart = client.requestCount?.() ?? 0;
   let logical = 0;
   const sent = () => (client.requestCount ? client.requestCount() - sentAtStart : logical);
+  const withinBudget = () => ({ maxRetries: Math.max(0, budget - sent() - 1) });
   // Orders whose read failed in this run: read again in a later run, not at once.
   const failedNow = new Set();
   // Orders this run read or found gone. They are staged when the run ends,
@@ -214,7 +215,7 @@ export async function runHistoryBackfill(ctx, { isLaneLevel, describeReadFailure
         }
         logical += 1;
         cursor.listDay = cursor.nextDay;
-        const list = await client.get('orders/', { ordered: orderedParam(cursor.nextDay), page: cursor.page, pageSize });
+        const list = await client.get('orders/', { ordered: orderedParam(cursor.nextDay), page: cursor.page, pageSize }, withinBudget());
         if (!Array.isArray(list)) throw new LaneError(`Seazona order list for ${cursor.nextDay} answer was not a list`, { code: 'seazona_list_invalid' });
         // The guide says the list answers orders placed on or after `ordered`,
         // oldest first, in stable pages; the live lane was built when it
@@ -261,7 +262,7 @@ export async function runHistoryBackfill(ctx, { isLaneLevel, describeReadFailure
       if (doneNow.has(id) || (await alreadyRead([id])).size) continue;
       logical += 1;
       try {
-        const detail = await client.get(`orders/${encodeURIComponent(id)}`);
+        const detail = await client.get(`orders/${encodeURIComponent(id)}`, {}, withinBudget());
         if (!detail || typeof detail !== 'object' || Array.isArray(detail)) throw emptyResponse(`order ${id}`);
         const record = { ...mapOrder({}, detail, { keepPatientReference: sync.keepPatientReference }), id };
         jobs.push({ jobKey: `case:${id}`, job: orderToHistoryJob(record) });

@@ -465,8 +465,8 @@ end (`test/seazona-history-contract.test.js`):
   minute for all lanes together, 2 seconds apart, half of what Seazona
   allows. A 429 stops every request for its `Retry-After`.
 - **Budget.** A run sends at most `SEAZONA_HISTORY_CALLS_PER_RUN` requests
-  (default 10, at most 25), retries counted; a request that retries can end
-  a run `SEAZONA_API_MAX_RETRIES` over. It runs every
+  (default 10, at most 25), retries counted: a call retries only as far as
+  the requests the run has left. It runs every
   `SEAZONA_HISTORY_CADENCE_MS` (default 2 minutes): at most 300 requests
   an hour, 7,200 a day.
 - **Failed calls.** The circuit and the day's failed-call budget (above)

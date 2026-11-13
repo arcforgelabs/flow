@@ -3,6 +3,7 @@ import { after, before, beforeEach, describe, test } from 'node:test';
 import { sql } from 'drizzle-orm';
 import { createSeazonaClient } from '../server/integrations/seazona/client.js';
 import { readBackfill, startBackfill, stopBackfill } from '../server/integrations/seazona/history/backfill.js';
+import { createApiBatch } from '../server/integrations/seazona/history/index.js';
 import { runSeazonaSync } from '../server/integrations/seazona/lanes.js';
 import { seazonaHistoryJobs } from '../server/integrations/seazona/schema.js';
 import { resolveSeazonaSettings } from '../server/integrations/seazona/settings.js';
@@ -99,7 +100,7 @@ describe('Seazona history backfill: rate limit and retry contract', { skip: skip
       await dueRun(settings, client);
       const sent = seazona.requests.length - before;
       before = seazona.requests.length;
-      assert.ok(sent <= settings.sync.historyCallsPerRun + settings.rate.maxRetries, `run ${run + 1} sent ${sent} requests`);
+      assert.ok(sent <= settings.sync.historyCallsPerRun, `run ${run + 1} sent ${sent} requests`);
       // The 503s open the circuit after 5 in 10 minutes; wait it out.
       clock.advance(10 * 60_000);
     }
@@ -107,6 +108,59 @@ describe('Seazona history backfill: rate limit and retry contract', { skip: skip
     assert.equal(times.length, seazona.requests.length, 'every request was admitted by the governor first');
     for (let i = 1; i < times.length; i += 1) assert.ok(times[i] - times[i - 1] >= 2_000, 'at least 2 seconds between requests');
     for (const at of times) assert.ok(times.filter((t) => t > at - 60_000 && t <= at).length <= 30, 'never more than 30 in a minute');
+  });
+
+  test('the last call of a run does not retry past the budget', async () => {
+    const settings = settingsOf({ SEAZONA_HISTORY_CALLS_PER_RUN: '10' });
+    const orders = Array.from({ length: 12 }, (_, i) => ({ id: `H-${i + 1}`, day: '2020-01-02' }));
+    // The list and eight orders answer well: nine requests. The tenth, order H-9, answers 503 every time.
+    const seazona = fakeSeazona(orders, { answer: (path) => (path === 'orders/H-9' ? json(503) : null) });
+    const client = clientOf(settings, seazona);
+    await start(settings, '2020-01-02', '2020-01-02');
+    const first = await dueRun(settings, client);
+    assert.equal(seazona.requests.length, 10, 'the tenth request is the last, with no retry');
+    assert.equal(first.calls, 10);
+    assert.equal(seazona.reads('H-9').length, 1);
+    // Earlier in a run a call may still retry, inside what is left.
+    clock.advance(2 * 60_000);
+    const before = seazona.requests.length;
+    await dueRun(settings, client);
+    assert.ok(seazona.requests.length - before <= 10);
+    assert.equal(seazona.reads('H-9').length, 1 + 3, 'first in the run: its own three tries');
+  });
+
+  test('a cursor stored before this change still loads: a stopped read resumes, a running one goes on', async () => {
+    const settings = settingsOf();
+    const orders = [{ id: 'H-1', day: '2020-01-02' }, { id: 'H-2', day: '2020-01-02' }, { id: 'H-3', day: '2020-01-03' }];
+    const seazona = fakeSeazona(orders);
+    const client = clientOf(settings, seazona);
+    const at = new Date(clock.now());
+    const { id: batchId } = await createApiBatch(db, { createdBy: 'person:test', from: '2020-01-02', through: '2020-01-03', at });
+    // The shape the lane wrote before: no lastPage and no gaveUp.
+    const stored = {
+      batchId, from: '2020-01-02', through: '2020-01-03', nextDay: '2020-01-02', page: 2, pending: ['H-2'], done: true, stopped: true,
+      days: 0, read: 1, startedAt: '2026-10-19T09:02:00.000Z', endedAt: '2026-10-19T09:03:00.000Z', listDay: '2020-01-02', reached: '2020-01-03',
+    };
+    const store = (cursor) => db.execute(sql`insert into seazona_lane_state (lane, status, cursor, next_run_at) values ('history', 'ok', ${JSON.stringify(cursor)}::jsonb, ${at})
+      on conflict (lane) do update set status = 'ok', cursor = excluded.cursor, next_run_at = excluded.next_run_at`);
+    await store(stored);
+    const read = await readBackfill(db);
+    assert.equal(read.phase, 'stopped');
+    assert.equal(read.resumeFrom, '2020-01-02');
+    assert.equal(read.ordersRead, 1);
+    assert.equal(read.gaveUp, null);
+    assert.equal(read.endedAt, '2026-10-19T09:03:00.000Z');
+    await runFor(settings, client, 1);
+    assert.equal(seazona.requests.length, 0, 'a stopped read makes no request');
+
+    // The same cursor while it ran: the lane goes on from its day, page and waiting orders.
+    await store({ ...stored, done: false, stopped: false, endedAt: undefined, page: 1, nextDay: '2020-01-03' });
+    assert.equal((await readBackfill(db)).phase, 'running');
+    await runFor(settings, client, 1);
+    assert.deepEqual(seazona.requests.map((r) => r.path), ['orders/H-2', 'orders/', 'orders/H-3']);
+    const done = await readBackfill(db);
+    assert.equal(done.phase, 'done');
+    assert.equal(done.ordersRead, 3);
   });
 
   test('a 429 with a long Retry-After: no request goes out until it has passed', async () => {

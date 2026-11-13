@@ -159,16 +159,19 @@ export function createSeazonaClient({
 
   // GET a resource path relative to the API root. Returns the parsed JSON, or
   // null for an empty body; the caller decides whether empty is a failure.
-  async function get(path, query = {}) {
+  // `maxRetries` lowers the retries for this call, for a caller with a
+  // request budget (the history backfill); it never raises them.
+  async function get(path, query = {}, { maxRetries = rate.maxRetries } = {}) {
     const url = buildUrl(baseUrl, path, query);
     const label = `GET ${url.pathname}`;
+    const retries = Math.max(0, Math.min(rate.maxRetries, Math.trunc(maxRetries) || 0));
     for (let tryNumber = 0; ; tryNumber += 1) {
       const result = await serialise(() => attempt(url, tryNumber > 0));
       if (result.failure) {
         throw new SeazonaApiError(`Seazona ${label} failed (${result.failure})`, { kind: result.failure, path: url.pathname });
       }
       const retryable = result.status === 429 || result.status >= 500;
-      if (retryable && tryNumber < rate.maxRetries) {
+      if (retryable && tryNumber < retries) {
         if (result.status === 429) stats.rateLimited += 1;
         stats.retries += 1;
         const backoffMs = Math.min(MAX_RETRY_AFTER_MS, 1_000 * (2 ** tryNumber));
