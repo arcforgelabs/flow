@@ -274,6 +274,13 @@ describe('drafts by rule', { skip: skipWithoutDatabase }, () => {
     await deleteRule(handle.db, lab.id, rule.id);
   });
 
+  // The last release event of a job an earlier rule release let go.
+  const ruleReleased = async (row, rule) => {
+    await handle.db.insert(obligationEvents).values({
+      organisationId: lab.id, obligationId: row.id, kind: 'released', actor: `rule:${rule.id}`, evidence: {},
+    });
+  };
+
   test('a non-chargeable rule settles old held jobs with no accounting invoice as No Charge, with no draft; the rest stay for a person', async () => {
     copy = { state: { complete: true, fresh: true, changedAt: new Date(NOW.getTime() - 60_000) }, invoices: [] };
     const own = await createContact(handle.db, lab.id, { kind: 'customer', name: 'Own Branch' });
@@ -330,10 +337,12 @@ describe('drafts by rule', { skip: skipWithoutDatabase }, () => {
     });
     await setHold(handle.db, lab.id, row.id, { holdState: 'held', reason: HISTORY_HOLD_REASON, actor: HISTORY_ACTOR });
     await recordAccountingEvidence(handle.db, lab.id, row.id, { state: 'not_found', actor: 'test', checkedAt: NOW });
-    // How an earlier release left it: let go by the rule and drafted.
-    await setHold(handle.db, lab.id, row.id, { holdState: 'none', reason: 'Own clinics: non-chargeable', actor: `rule:${rule.id}` });
-    await setReady(handle.db, lab.id, row.id, { actor: `rule:${rule.id}` });
+    // How an earlier release left it: let go by the rule and drafted. The
+    // draft run no longer drafts such a job, so the test drafts it first.
+    await setHold(handle.db, lab.id, row.id, { holdState: 'none', actor: 'person:legacy' });
+    await setReady(handle.db, lab.id, row.id, { actor: 'person:legacy' });
     await autoDraftJobs(handle.db, lab.id, { accounting, now: NOW });
+    await ruleReleased(row, rule);
     const { invoiceId } = await reload(row);
     assert.ok(invoiceId);
     assert.equal((await settleHistoryByRules(handle.db, lab.id, { accounting, now: NOW })).settled, 0, 'it keeps its draft');
@@ -372,8 +381,10 @@ describe('drafts by rule', { skip: skipWithoutDatabase }, () => {
     };
     // One job the rule released and Flow drafted; one it released and has not drafted yet.
     const drafted = await old();
-    await legacyRelease(drafted);
+    await setHold(handle.db, lab.id, drafted.id, { holdState: 'none', actor: 'person:legacy' });
+    await setReady(handle.db, lab.id, drafted.id, { actor: 'person:legacy' });
     await autoDraftJobs(handle.db, lab.id, { accounting, now: NOW });
+    await ruleReleased(drafted, rule);
     const waiting = await old();
     await legacyRelease(waiting);
     const { invoiceId } = await reload(drafted);
