@@ -43,7 +43,8 @@ answers keeps no price item, so the ledger holds the job ("a line does not
 map to a price item").
 
 A change to a mapping row, or to the routine, or a release that changes what\na stored line holds (`MAPPING_SHAPE`, `server/core/pipeline.js`), reads every job again from
-Flow's own copy of the work system. It makes no calls to the work system.
+Flow's own copy of the work system: the live jobs and the held jobs of a
+history import. It makes no calls to the work system.
 
 ## Placeholder lines
 

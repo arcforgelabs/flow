@@ -4,6 +4,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import { createContact, createOrganisation, createPriceItem } from '../server/core/directory.js';
 import { HISTORY_HOLD_REASON, listHistoryJobs, releaseHistoryJob } from '../server/core/history.js';
 import { boardJobs } from '../server/core/job-board.js';
+import { createMapping } from '../server/core/line-mapping.js';
 import { runPipelineOnce } from '../server/core/pipeline.js';
 import { billingObligations } from '../server/db/schema.js';
 import { freshDatabase, skipWithoutDatabase } from './support/db.js';
@@ -130,6 +131,25 @@ describe('history jobs in the ledger', { skip: skipWithoutDatabase }, () => {
     assert.equal(row.holdState, 'held');
     assert.equal(row.holdReason, HISTORY_HOLD_REASON);
     assert.equal(row.invoiceId, null);
+  });
+
+  test('a new mapping reaches a held history job on the next run', async () => {
+    const work = fakeWork();
+    const line = { description: 'Plain plate', quantity: 1, unitAmountCents: 12300, taxCode: 'GST' };
+    // This history feed keeps its cursor: a job is reported once, then only after the cursor is cleared.
+    work.adapter.capabilities.pullHistoryJobs = async (cursor) => ({
+      items: cursor ? [] : [{ clientId: 'c1', historical: true, ledgerJob: { ...ledgerJob('H-9'), lines: [line] } }],
+      cursor: 'read', more: false,
+    });
+    await runPipelineOnce(db, integrationsOf([work.adapter]), { now: NOW });
+    assert.equal((await rows('H-9'))[0].mappingComplete, false);
+
+    await createMapping(db, organisationId, { kind: 'saved', label: 'plain plate', unitAmountCents: 12300, itemCode: 'CROWN' });
+    await runPipelineOnce(db, integrationsOf([work.adapter]), { now: NOW });
+    const [row] = await rows('H-9');
+    assert.equal(row.mappingComplete, true);
+    assert.equal(row.lines[0].itemCode, 'CROWN');
+    assert.equal(row.holdReason, HISTORY_HOLD_REASON, 'the job stays held');
   });
 
   test('the board leaves held history jobs out, and shows each job\'s integration issues', async () => {
