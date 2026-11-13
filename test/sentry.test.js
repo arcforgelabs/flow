@@ -159,12 +159,12 @@ test('a browser envelope goes on only to the installation\'s own Sentry project'
 
   const sent = [];
   const adapter = createSentryAdapter({ sdk: fakeSdk(), env: {}, fetch: async (url, init) => { sent.push([url, init]); return { status: 200 }; } });
-  assert.equal(await adapter.capabilities.forwardEnvelope(envelope(DSN)), 503, 'off: nothing goes');
+  assert.deepEqual(await adapter.capabilities.forwardEnvelope(envelope(DSN)), { status: 503, headers: {} }, 'off: nothing goes');
   await adapter.start({ log: quiet, env: { SENTRY_DSN: DSN } });
-  assert.equal(await adapter.capabilities.forwardEnvelope(envelope(DSN.replace(/\/\d+$/, '/999'))), 400);
+  assert.equal((await adapter.capabilities.forwardEnvelope(envelope(DSN.replace(/\/\d+$/, '/999')))).status, 400);
   assert.equal(sent.length, 0);
   const body = envelope(DSN);
-  assert.equal(await adapter.capabilities.forwardEnvelope(body), 200);
+  assert.deepEqual(await adapter.capabilities.forwardEnvelope(body), { status: 200, headers: {} });
   assert.equal(sent.length, 1);
   assert.equal(sent[0][0], `https://${project.host}/api${project.pathname}/envelope/`);
   assert.equal(sent[0][1].method, 'POST');
@@ -478,10 +478,12 @@ describe('monitoring API', { skip: skipWithoutDatabase }, () => {
   });
 
   test('a browser\'s envelope goes through Flow to the Sentry project, unchanged and without sign-in', async () => {
+    let lastHeaders = null;
     const post = async (app, body) => {
       const server = app.listen(0);
       try {
         const res = await fetch(`http://127.0.0.1:${server.address().port}${ENVELOPE_PATH}`, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=UTF-8' }, body });
+        lastHeaders = res.headers;
         return res.status;
       } finally {
         server.close();
@@ -498,6 +500,11 @@ describe('monitoring API', { skip: skipWithoutDatabase }, () => {
     assert.deepEqual(sent, [[`https://${new URL(DSN).host}/api/42/envelope/`, envelope]]);
     assert.equal(await post(on.app, envelope.replace('/42', '/7')), 400, 'another project');
     assert.equal(sent.length, 1);
+    // Sentry's back-off reaches the browser unchanged.
+    const limited = await appWith({ sentryOn: true, fetch: async () => ({ status: 429, headers: new Headers({ 'X-Sentry-Rate-Limits': '60:feedback:organization', 'Retry-After': '60', 'X-Other': 'no' }) }) });
+    assert.equal(await post(limited.app, envelope), 429);
+    assert.deepEqual([lastHeaders.get('x-sentry-rate-limits'), lastHeaders.get('retry-after'), lastHeaders.get('x-other')], ['60:feedback:organization', '60', null]);
+    await limited.integrations.stop();
     await on.integrations.stop();
   });
 

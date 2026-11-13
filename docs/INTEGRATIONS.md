@@ -75,7 +75,9 @@ this capability keep the billable-feed comparison.
 `captureError({ message,
 source, error })` takes each error Flow logs, and `browserMonitoring()`
 answers the public settings a browser needs. `forwardEnvelope(body)` passes
-one browser envelope on to the service and answers the HTTP status. `traceSpan({ name, op,
+one browser envelope on to the service and answers `{ status, headers }`:
+the service's HTTP status and its rate-limit headers, which the browser SDK
+uses to back off. `traceSpan({ name, op,
 attributes }, work)` runs work inside a span of the current performance
 trace, and `traceRequest()` answers a function that names the request's
 trace by its route (`server/core/tracing.js`). The Sentry adapter has all

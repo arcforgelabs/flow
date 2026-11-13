@@ -115,6 +115,10 @@ export function envelopeTarget(body, dsn) {
 
 // `sdk` is for tests: anything with init, captureEvent, captureException
 // and close, as @sentry/node has.
+// Sentry's answer headers that tell the browser SDK to back off; the
+// pass-through hands them back unchanged.
+export const RATE_LIMIT_HEADERS = ['x-sentry-rate-limits', 'retry-after'];
+
 // How long Flow waits for Sentry to take one browser envelope. A stalled
 // Sentry endpoint must not hold the request open: the route answers 502.
 export const ENVELOPE_TIMEOUT_MS = 10_000;
@@ -187,15 +191,21 @@ export function createSentryAdapter({ sdk = SentryNode, env: hostEnv = process.e
         };
       },
       // Passes one browser envelope on to the Sentry project (ENVELOPE_PATH).
-      // Answers the HTTP status for the browser: Sentry's own, 400 for an
+      // Answers { status, headers } for the browser: Sentry's own status and
+      // rate-limit headers (the browser SDK backs off on them), 400 for an
       // envelope that is not for this DSN, 503 while Sentry is off. A wait
       // past ENVELOPE_TIMEOUT_MS throws (the route answers 502).
       async forwardEnvelope(body) {
-        if (!settings) return 503;
+        if (!settings) return { status: 503, headers: {} };
         const target = envelopeTarget(body, settings.dsn);
-        if (!target) return 400;
+        if (!target) return { status: 400, headers: {} };
         const res = await send(target, { method: 'POST', headers: { 'Content-Type': 'application/x-sentry-envelope' }, body, signal: AbortSignal.timeout(envelopeTimeoutMs) });
-        return res.status;
+        const headers = {};
+        for (const name of RATE_LIMIT_HEADERS) {
+          const value = res.headers?.get?.(name);
+          if (value) headers[name] = value;
+        }
+        return { status: res.status, headers };
       },
       // Runs `work` in a span of the current trace (server/core/tracing.js).
       // Work outside a traced request (the pipeline, the workers) starts no

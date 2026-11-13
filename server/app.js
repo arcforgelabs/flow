@@ -210,7 +210,8 @@ export function createApp({
     const [adapter] = integrations?.with('forwardEnvelope') ?? [];
     if (!adapter || !Buffer.isBuffer(req.body) || !req.body.length) return res.status(adapter ? 400 : 404).end();
     try {
-      res.status(await adapter.capabilities.forwardEnvelope(req.body)).end();
+      const { status, headers } = await adapter.capabilities.forwardEnvelope(req.body);
+      res.status(status).set(headers).end();
     } catch (error) {
       log.warn?.(`[monitoring] envelope not passed on: ${error?.message ?? error}`);
       res.status(502).end();
