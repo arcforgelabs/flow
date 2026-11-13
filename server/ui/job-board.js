@@ -1,7 +1,9 @@
 // The Jobs board's rules, with no page code, so tests can read them
 // (test/job-board.test.js). server/ui/jobs.js draws the page.
 //
-// The board's columns are the work system's own job statuses, one to one.
+// Grouped by Status, the board's columns are the work system's own job
+// statuses, one to one. Grouped by Lane (the default), Flow's lanes follow
+// them (flowLaneOf).
 // A job's invoice has a stage of its own (invoiceStage), shown in the job's
 // detail panel; a job whose invoice needs a person has a problem (fixes).
 
@@ -79,6 +81,35 @@ export function invoiceStatusOf(o) {
   if (o.invoiceView === 'non_chargeable') return 'non_chargeable';
   if (o.invoiceStatus === 'issued') return 'awaiting_payment';
   return 'draft';
+}
+
+// The board's own lanes (docs/JOB_BOARD_MOVES.md, "Lanes"). The first lanes copy the
+// work system's statuses; Flow's lanes follow. A Flow rule puts each job in
+// one lane, the first match from the top:
+//   Done      the work system says Shipped (or Delivered) and the invoice is
+//             Paid or No charge
+//   Paid      the invoice is Paid, the work is not shipped yet
+//   Invoiced  the invoice is Awaiting payment
+//   else      the lane with the name of the job's work system status
+export const INVOICED_LANE = 'Invoiced';
+export const PAID_LANE = 'Paid';
+export const DONE_LANE = 'Done';
+export const FLOW_LANES = Object.freeze([INVOICED_LANE, PAID_LANE, DONE_LANE]);
+const SHIPPED_RANKS = new Set([FINAL_RANK, FINAL_RANK + 1]);
+const SETTLED = new Set(['paid', 'non_chargeable']);
+
+export function flowLaneOf(job) {
+  const invoice = invoiceStatusOf(job?.obligation);
+  if (SHIPPED_RANKS.has(statusRank(job?.status)) && SETTLED.has(invoice)) return DONE_LANE;
+  if (invoice === 'paid') return PAID_LANE;
+  if (invoice === 'awaiting_payment') return INVOICED_LANE;
+  return job?.pendingMove?.to ?? job?.status ?? NO_STATUS;
+}
+
+// The lanes, left to right: the work system's statuses, then Flow's lanes.
+// A status with a Flow lane's name shares that lane.
+export function flowLanes(statusLabels = []) {
+  return [...statusLabels.filter((label) => !FLOW_LANES.includes(label)), ...FLOW_LANES];
 }
 
 const PROBLEM_VIEWS = ['pending', 'review_required', 'held'];

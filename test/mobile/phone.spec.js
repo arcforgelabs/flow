@@ -176,6 +176,7 @@ test('board surface stays continuous without stretching lanes', async ({ page },
   expect(found.pageOverflow).toBeLessThanOrEqual(1);
   const phone = info.project.metadata.size.width < 640;
   for (const width of found.laneWidths) expect(Math.abs(width - (phone ? found.width : 272))).toBeLessThanOrEqual(1);
+  for (const width of found.foldedWidths) expect(Math.abs(width - (phone ? found.width : 44))).toBeLessThanOrEqual(1);
   for (const gap of found.gaps) expect(Math.abs(gap - (phone ? 0 : 12))).toBeLessThanOrEqual(1);
   if (phone) {
     const tabs = page.locator('.fx-board-tabs button');

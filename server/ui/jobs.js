@@ -20,7 +20,7 @@ import { lucide } from '/assets/ui/custom-fields.js';
 import { formatCents } from '/assets/ui/invoicing.js';
 import { jobChangeReview } from '/assets/ui/job-change.js';
 import {
-  caseNumber, FINAL_RANK, fixes, INVOICE_STAGES, INVOICE_STATUS_LABELS, INVOICE_STATUS_TONES, invoiceStage, invoiceStatusOf, matches, NO_STATUS, orderStatuses, phoneLaneIndex, PHONE_HOLD_MS, problemSummary, statusRank,
+  caseNumber, DONE_LANE, FINAL_RANK, fixes, FLOW_LANES, flowLaneOf, flowLanes, INVOICE_STAGES, INVOICE_STATUS_LABELS, INVOICE_STATUS_TONES, invoiceStage, invoiceStatusOf, matches, NO_STATUS, orderStatuses, phoneLaneIndex, PHONE_HOLD_MS, problemSummary, statusRank,
 } from '/assets/ui/job-board.js';
 import { rowMenu } from '/assets/ui/kit.js';
 import { chooseNoCharge } from '/assets/ui/no-charge.js';
@@ -36,6 +36,8 @@ import { findBox, ICONS, svg, today, viewBar } from '/assets/ui/view-bar.js';
 
 const LAYOUT_KEY = 'flow_jobs_layout';
 const FOLDED_KEY = 'flow_jobs_folded';
+// Cards a board lane shows before it loads more (laneCards).
+const LANE_PAGE = 50;
 // The job panel's sidecar: the tab last open, or closed.
 const SIDE_KEY = 'flow_job_side';
 const SIDE_TABS = ['activity', 'fix', 'closed'];
@@ -166,6 +168,10 @@ export async function renderJobs(main, ui) {
   // system has not made yet puts it in its new lane.
   const laneStatusOf = (job) => job.pendingMove?.to ?? job.status ?? NO_STATUS;
   const statusOf = (job) => job.status ?? NO_STATUS;
+  // The lanes of the Lane group: the work system's statuses a status filter
+  // keeps, then Flow's lanes. A Flow lane takes its invoice stage's colour.
+  const laneLabels = () => flowLanes(keptStatuses(state.view, orderStatuses(state.statuses, state.jobs)));
+  const laneRank = (label) => (label === DONE_LANE ? 7 : FLOW_LANES.includes(label) ? STAGE_RANK[label] : statusRank(label));
   const isLate = (job) => Boolean(job.dueOn && job.dueOn < today() && statusRank(job.status) < FINAL_RANK);
 
   // A change to the view: draw it now, save it with the account shortly
@@ -198,7 +204,7 @@ export async function renderJobs(main, ui) {
   const isList = () => state.view.layout === 'list';
   const groupMenu = buildGroupMenu({
     options: groupOptions,
-    view: () => ({ group: state.view.group === 'none' && !isList() ? 'status' : state.view.group, groupDir: state.view.groupDir }),
+    view: () => ({ group: state.view.group === 'none' && !isList() ? DEFAULT_VIEW.group : state.view.group, groupDir: state.view.groupDir }),
     change,
     clearable: isList,
   });
@@ -231,12 +237,13 @@ export async function renderJobs(main, ui) {
   // ClickUp's Status does.
   const PROBLEM_OPS = { yes: 'Has one', no: 'Has none' };
   const SET_OPS = { is: 'Is', not: 'Is not' };
-  const opsOf = (field) => (field === 'problem' ? PROBLEM_OPS : ['status', 'stage', 'invoice'].includes(field) ? SET_OPS : OPERATORS[kindOf(field)] ?? {});
+  const opsOf = (field) => (field === 'problem' ? PROBLEM_OPS : ['lane', 'status', 'stage', 'invoice'].includes(field) ? SET_OPS : OPERATORS[kindOf(field)] ?? {});
   // The choices a choice or person filter offers: [{ value, label }].
   function choicesOf(field) {
     const people = () => [{ value: 'me', label: 'Me' }, ...state.people.map((p) => ({ value: p.id, label: p.name }))];
     const labels = (list) => [...new Set(list.filter(Boolean))].sort((a, b) => a.localeCompare(b)).map((v) => ({ value: v, label: v }));
     if (field === 'status') return orderStatuses(state.statuses, state.jobs).map((v) => ({ value: v, label: v, rank: statusRank(v) }));
+    if (field === 'lane') return laneLabels().map((v) => ({ value: v, label: v, rank: laneRank(v) }));
     if (field === 'stage') return Object.values(STAGE_GROUPS).map((v) => ({ value: v, label: v }));
     if (field === 'invoice') return [NOT_INVOICED, ...Object.values(INVOICE_STATUS_LABELS)].map((v) => ({ value: v, label: v }));
     if (field === 'client') return labels(state.jobs.map(clientOf));
@@ -249,6 +256,7 @@ export async function renderJobs(main, ui) {
   // A job's value for a filter field, as the filter compares it.
   function filterValue(job, field) {
     switch (field) {
+      case 'lane': return flowLaneOf(job);
       case 'status': return statusOf(job);
       case 'stage': return STAGE_GROUPS[invoiceStage(job.obligation) ?? 'in_work'];
       case 'invoice': return invoiceLabel(job);
@@ -294,11 +302,11 @@ export async function renderJobs(main, ui) {
     const { group, sorts, layout } = state.view;
     const list = layout === 'list';
     const field = fieldOfGroup(group);
-    // The board has no "None": it shows the status lanes.
-    const shown = group === 'none' && !list ? 'status' : group;
-    const label = shown === 'none' ? 'Group: None' : `Group: ${field?.name ?? GROUPS[shown] ?? GROUPS.status}`;
-    const grouped = list ? shown !== 'none' : shown !== 'status';
-    groupMenu.set(label, shown !== DEFAULT_VIEW.group, grouped ? () => change({ group: list ? 'none' : 'status' }) : null);
+    // The board has no "None": it shows the lanes.
+    const shown = group === 'none' && !list ? DEFAULT_VIEW.group : group;
+    const label = shown === 'none' ? 'Group: None' : `Group: ${field?.name ?? GROUPS[shown] ?? GROUPS[DEFAULT_VIEW.group]}`;
+    const grouped = list ? shown !== 'none' : shown !== DEFAULT_VIEW.group;
+    groupMenu.set(label, shown !== DEFAULT_VIEW.group, grouped ? () => change({ group: list ? 'none' : DEFAULT_VIEW.group }) : null);
     // In the list, the column heads sort; the Sort chip shows there only
     // while a sort is on, so it can be seen and cleared.
     sortMenu.draw();
@@ -446,6 +454,12 @@ export async function renderJobs(main, ui) {
       });
     }
     if (group === 'none' && state.view.layout === 'list') return [{ label: null, jobs, rank: 'plain' }];
+    // Flow's lanes. A card moves by Flow's rules only (job-board.js
+    // flowLaneOf): a drag here would not change the work system.
+    if (group === 'lane' || (group === 'none' && state.view.layout === 'board')) {
+      return groupJobs(jobs, keptStatuses(state.view, laneLabels(), 'lane'), flowLaneOf)
+        .map((g) => ({ ...g, rank: laneRank(g.label), foldable: true }));
+    }
     if (group === 'status' || group === 'none' || !GROUPS[group]) {
       return groupJobs(jobs, keptStatuses(state.view, orderStatuses(state.statuses, state.jobs)), laneStatusOf)
         .map((g) => ({ ...g, rank: statusRank(g.label), drop: g.label === NO_STATUS ? null : { kind: 'stage', status: g.label } }));
@@ -461,16 +475,63 @@ export async function renderJobs(main, ui) {
 
   const totalOf = (jobs) => jobs.reduce((sum, job) => sum + (job.totalCents ?? 0), 0);
 
+  // Fold or open one lane, and keep it in the saved view.
+  function foldLane(label, fold) {
+    const rest = (state.view.folded ?? []).filter((l) => l !== label);
+    change({ folded: fold ? [...rest, label] : rest });
+  }
+
+  // A lane's cards, LANE_PAGE at a time: the next page loads as the lane's
+  // foot scrolls into view, so a long lane such as Done opens fast. The
+  // lane head counts every card.
+  function laneCards(jobs) {
+    if (!jobs.length) return h('div', { class: 'fx-board__cards' }, h('p', { class: 'fx-board__none' }, 'None'));
+    const box = h('div', { class: 'fx-board__cards' }, jobs.slice(0, LANE_PAGE).map(jobCard));
+    if (jobs.length <= LANE_PAGE || typeof IntersectionObserver !== 'function') {
+      if (jobs.length > LANE_PAGE) box.append(...jobs.slice(LANE_PAGE).map(jobCard));
+      return box;
+    }
+    let shown = LANE_PAGE;
+    const foot = h('p', { class: 'fx-board__more', 'aria-live': 'polite' }, `${shown} of ${jobs.length}`);
+    box.append(foot);
+    const watch = new IntersectionObserver((seen) => {
+      if (!seen.some((entry) => entry.isIntersecting)) return;
+      const next = jobs.slice(shown, shown + LANE_PAGE);
+      shown += next.length;
+      foot.before(...next.map(jobCard));
+      foot.textContent = `${shown} of ${jobs.length}`;
+      if (shown >= jobs.length) { watch.disconnect(); foot.remove(); }
+    }, { rootMargin: '200px' });
+    watch.observe(foot);
+    return box;
+  }
+
   function board(groups) {
     if (!groups.length) {
       boardTabs.hidden = true;
       return h('div', { class: 'fx-panel' }, h('p', { class: 'fx-empty' }, 'No job matches the search or filter.'));
     }
-    const element = h('div', { class: 'fx-board' }, groups.map(({ label, jobs, rank, color }, index) => h('section', { class: 'fx-board__col', 'aria-label': label, 'data-lane': String(index) },
-      h('header', { class: 'fx-board__head' },
-        color ? h('span', { class: 'fx-cf__opt fx-board__lane', 'data-color': color }, label, h('span', { class: 'fx-stage__count' }, String(jobs.length))) : stagePill(label, jobs.length, rank),
-        h('span', { class: 'fx-board__sum' }, jobs.length ? formatCents(totalOf(jobs)) : '')),
-      h('div', { class: 'fx-board__cards' }, jobs.length ? jobs.map(jobCard) : h('p', { class: 'fx-board__none' }, 'None')))));
+    const folded = new Set(state.view.folded ?? []);
+    const element = h('div', { class: 'fx-board' }, groups.map(({ label, jobs, rank, color, foldable }, index) => {
+      // A folded lane is a thin column with its name and count. It loads
+      // no cards; a click opens it (state.view.folded, saved with the view).
+      if (foldable && folded.has(label)) {
+        return h('section', { class: 'fx-board__col fx-board__col--folded', 'aria-label': label, 'data-lane': String(index) },
+          h('button', {
+            class: 'fx-board__unfold', type: 'button', title: `Open ${label}`, 'aria-label': `Open ${label}, ${jobs.length} ${jobs.length === 1 ? 'job' : 'jobs'}`,
+            onclick: () => foldLane(label, false),
+          }, stagePill(label, jobs.length, rank)));
+      }
+      return h('section', { class: 'fx-board__col', 'aria-label': label, 'data-lane': String(index) },
+        h('header', { class: 'fx-board__head' },
+          color ? h('span', { class: 'fx-cf__opt fx-board__lane', 'data-color': color }, label, h('span', { class: 'fx-stage__count' }, String(jobs.length))) : stagePill(label, jobs.length, rank),
+          h('span', { class: 'fx-board__sum' }, jobs.length ? formatCents(totalOf(jobs)) : ''),
+          foldable ? h('button', {
+            class: 'fx-btn fx-btn--ghost fx-btn--icon fx-board__fold', type: 'button', 'aria-label': `Fold ${label}`, title: `Fold ${label}`,
+            onclick: () => foldLane(label, true),
+          }, lucide(h, 'fold-horizontal')) : null),
+        laneCards(jobs));
+    }));
     if (groups.some((g) => g.drop)) enableDrag(element, groups);
     phoneLanes(element, groups);
     // Lanes past the frame's sides, and cards past a lane's foot, fade.

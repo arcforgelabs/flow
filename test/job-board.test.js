@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { ledgerView } from '../server/core/ledger.js';
 import { ruleWait } from '../server/core/invoice-rules.js';
 import {
-  caseNumber, fixes, GO, invoiceStage, invoiceStatusOf, matches, NO_STATUS, orderStatuses, phoneLaneIndex, problemSummary,
+  caseNumber, DONE_LANE, fixes, FLOW_LANES, flowLaneOf, flowLanes, GO, invoiceStage, invoiceStatusOf, matches, NO_STATUS, orderStatuses, phoneLaneIndex, problemSummary,
 } from '../server/ui/job-board.js';
 
 // The Jobs board's rules (server/ui/job-board.js). Synthetic data only.
@@ -193,4 +193,26 @@ test('wait and skip rules preserve their identity through Pending work fixes', (
   const missing = fixes({ view: 'pending', waitingRules: [{ ...waitingRules[0], rule: null }], reasons: [] });
   assert.equal(missing[0].go, null);
   assert.match(missing[0].todo, /resolution is unavailable/);
+});
+
+test('Flow lanes: Shipped and Paid or No charge is Done, then Paid, then Invoiced, else the work system lane', () => {
+  const flowInvoice = (tab) => ({ invoiceId: 'inv-1', invoiceTab: tab });
+  const lane = (status, obligation = null, extra = {}) => flowLaneOf({ status, obligation, ...extra });
+  assert.equal(lane('Shipped', flowInvoice('paid')), DONE_LANE);
+  assert.equal(lane('Shipped', flowInvoice('non_chargeable')), DONE_LANE);
+  assert.equal(lane('Delivered', { accountingState: 'paid' }), DONE_LANE);
+  // Paid before the work ships waits in Paid; No charge before it ships
+  // stays in its work system lane.
+  assert.equal(lane('In Prod', flowInvoice('paid')), 'Paid');
+  assert.equal(lane('In Prod', flowInvoice('non_chargeable')), 'In Prod');
+  assert.equal(lane('Shipped', flowInvoice('awaiting_payment')), 'Invoiced');
+  assert.equal(lane('In Prod', { accountingState: 'part_paid' }), 'Invoiced');
+  // A draft or no invoice: the lane with the work system status's name.
+  assert.equal(lane('Shipped', flowInvoice('draft')), 'Shipped');
+  assert.equal(lane('Shipped'), 'Shipped');
+  assert.equal(lane('Cancelled', flowInvoice('paid')), 'Paid');
+  assert.equal(lane(null), NO_STATUS);
+  assert.equal(lane('Hold', null, { pendingMove: { to: 'In Prod' } }), 'In Prod');
+  assert.deepEqual(flowLanes(['Await Return', 'In Prod', 'Shipped']), ['Await Return', 'In Prod', 'Shipped', ...FLOW_LANES]);
+  assert.deepEqual(flowLanes(['Done', 'Shipped']), ['Shipped', 'Invoiced', 'Paid', 'Done']);
 });

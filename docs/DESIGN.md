@@ -155,10 +155,12 @@ The page at `/sign-in`, `/people`, `/account` and `/appearance`
   (it opens into a box, `findBox`) and Board/List at the right. Each opens a panel of rows, laid out as
   ClickUp's, in Flow's own look; each row has a bin that deletes it, and
   an active chip has an × that clears it ("Clear all filters").
-  Group by is one row: status, invoice stage, client, practitioner or a
-  groupable custom field, and Ascending or Descending (the group order).
-  Its bin takes the groups away: one plain list (the board always has
-  lanes: status lanes). Sort is rows applied in turn (due, requested,
+  Group by is one row: lane (the default: the status lanes, then Invoiced,
+  Paid and Done, `docs/JOB_BOARD_MOVES.md`), status, invoice stage,
+  client, practitioner or a groupable custom field, and Ascending or
+  Descending (the group order). Its bin takes the groups away: one plain
+  list (the board always has lanes). A lane folds to a thin column from
+  its head; Done starts folded. Sort is rows applied in turn (due, requested,
   shipped, client, practitioner, total or any custom field, each in
   either direction), with "Add sort"; no sort keeps the lab system's
   order. Filters work as ClickUp's: groups of rows of field, operator

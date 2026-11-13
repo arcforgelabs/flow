@@ -7,7 +7,10 @@ const css = readFileSync(new URL('../server/ui/flow.css', import.meta.url), 'utf
 test('board lanes keep one fixed phone width and never stretch to fill a wide screen', () => {
   const board = css.match(/^\.fx-board \{([^}]*)\}/m)[1];
   assert.match(board, /--fx-lane: min\(85vw, 272px\);/);
-  assert.match(board, /grid-auto-columns: var\(--fx-lane\);/);
+  // Each lane sets its own width, so a folded lane can be thin.
+  assert.match(board, /grid-auto-columns: max-content;/);
+  assert.match(css, /^\.fx-board__col \{ width: var\(--fx-lane\);/m);
+  assert.match(css, /^\.fx-board__col--folded \{ width: 44px;/m);
   assert.match(board, /justify-content: start;/);
   assert.doesNotMatch(board, /1fr/, 'a lane must not take a share of spare width');
 });
