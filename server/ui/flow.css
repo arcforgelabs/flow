@@ -1994,7 +1994,12 @@ body[data-state="loading"] .fx-loading { display: grid; justify-items: center; }
    tab line, the controls keep 8px clear of the line; only the tabs sit on it. */
 /* A finger needs 44px: on a phone or tablet every list's toolbar controls
    are that tall (the ListHead card's touch rule). */
-@media (max-width: 1023px) { .fx-listhead { --fx-control-h: 44px; } }
+@media (max-width: 1023px) {
+  .fx-listhead { --fx-control-h: 44px; }
+  /* The help link beside a page title is a touch target too. The negative
+     margins keep the icon and the row where they were. */
+  .fx-ph__text > .fx-help { min-width: 44px; min-height: 44px; justify-content: center; align-items: center; margin: -10px; }
+}
 .fx-listhead .fx-toolbar :is(.fx-btn, .fx-chip, .fx-views__add, .fx-views__tab) { min-height: var(--fx-control-h); }
 .fx-listhead .fx-toolbar .fx-btn:not(.fx-btn--sm) { padding-block: 0; font-size: 14px; }
 .fx-listhead .fx-toolbar :is(.fx-btn, .fx-chip) { height: var(--fx-control-h); }
