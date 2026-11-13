@@ -26,8 +26,8 @@ import { FlowError, notFound } from './errors.js';
 // gives its code, its text and, when the work system gave none, its price and
 // tax. A closest-name guess cannot supply missing source tax; it needs an
 // explicit tax flag before mapping. With `linePrice: 'list'` the price item's
-// price wins instead. With `lineTax: 'list'` the price item's tax wins (the
-// price list follows the accounting system's items), and a work system flag
+// price wins instead. With `lineTax: 'list'` (the default) the price item's
+// tax wins (the price list follows the accounting system's items), and a work system flag
 // that disagrees stays on the line as `workTaxCode`, so the job waits for a
 // person (ledger.js, sourceBillingProblems). A line no step answers keeps no
 // code, so the ledger holds the job.
@@ -52,7 +52,9 @@ export const LINE_PRICES = Object.freeze(['work', 'list']);
 // Where a mapped line's GST comes from: the work system's flag, or the price
 // item (the same choices as LINE_PRICES).
 export const LINE_TAXES = LINE_PRICES;
-export const MAPPING_DEFAULTS = Object.freeze({ steps: [...STEPS], zeroLines: 'keep', linePrice: 'work', lineTax: 'work' });
+// GST follows the price list by default: with Xero on, the price list keeps
+// each item's Xero tax (xero/catalogue.js), so the invoice matches Xero.
+export const MAPPING_DEFAULTS = Object.freeze({ steps: [...STEPS], zeroLines: 'keep', linePrice: 'work', lineTax: 'list' });
 
 const SCORE_MIN = 16;
 const SCORE_GAP = 8;

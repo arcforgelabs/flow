@@ -34,10 +34,10 @@ A line keeps the work system's amount and explicit tax flag.
 A saved tax choice or price item supplies tax only when the source gave none. The routine's setting
 `linePrice` changes that: `work` (the default) keeps the work system's amount,
 `list` takes the price list's price. Price list settings, "Invoice line price"
-sets it. `lineTax` does the same for GST: `work` (the default) keeps the work
-system's flag, `list` takes the price item's tax and keeps a different work
+sets it. `lineTax` does the same for GST: `list` (the default) takes the price
+item's tax and keeps a different work
 flag on the line as `workTaxCode`, so the job waits for a person
-("Invoice line GST"). A line that no step
+("Invoice line GST"); `work` keeps the work system's flag. A line that no step
 answers keeps no price item, so the ledger holds the job ("a line does not
 map to a price item").
 

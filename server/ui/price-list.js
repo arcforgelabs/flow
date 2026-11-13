@@ -23,11 +23,11 @@ const LINE_PRICES = [
   { value: 'work', label: 'Job price' },
   { value: 'list', label: 'Price list' },
 ];
-// Where an invoice line takes its GST (`lineTax`): the job's own flag, or
-// this list's tax, which follows the accounting system's items.
+// Where an invoice line takes its GST (`lineTax`): this list's tax (the
+// default; with Xero on it is each Xero item's tax), or the job's own flag.
 const LINE_TAXES = [
-  { value: 'work', label: 'Job' },
   { value: 'list', label: 'Price list' },
+  { value: 'work', label: 'Job' },
 ];
 const NUMBER_WORDS = ['Low to high', 'High to low'];
 
@@ -211,11 +211,11 @@ export async function renderPriceList(main, ui) {
   async function openSettings() {
     const select = h('select', { class: 'fx-select', 'aria-label': 'Invoice line price', disabled }, LINE_PRICES.map((p) => h('option', { value: p.value }, p.label)));
     const taxSelect = h('select', { class: 'fx-select', 'aria-label': 'Invoice line GST', disabled }, LINE_TAXES.map((p) => h('option', { value: p.value }, p.label)));
-    let saved = { linePrice: 'work', lineTax: 'work' };
+    let saved = { linePrice: 'work', lineTax: 'list' };
     try {
       const { automations } = await flow('/api/invoicing/automations');
       const config = automations.find((a) => a.key === 'map_lines')?.config ?? {};
-      saved = { linePrice: config.linePrice ?? 'work', lineTax: config.lineTax ?? 'work' };
+      saved = { linePrice: config.linePrice ?? 'work', lineTax: config.lineTax ?? 'list' };
     } catch { /* the defaults show */ }
     select.value = saved.linePrice;
     taxSelect.value = saved.lineTax;

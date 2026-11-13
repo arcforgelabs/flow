@@ -476,7 +476,7 @@ describe('invoicing API', { skip: skipWithoutDatabase }, () => {
     // owner or admin changes them.
     const seazona = await call(`/automations?organisationId=${lab.id}&place=seazona`, { token: staffToken });
     assert.deepEqual(seazona.body.automations.map((a) => [a.key, a.config]), [
-      ['map_lines', { steps: ['same_code', 'account', 'saved', 'catalog_name', 'price_alias', 'catalog_name_price', 'catalog_score', 'alias'], zeroLines: 'keep', linePrice: 'work', lineTax: 'work' }],
+      ['map_lines', { steps: ['same_code', 'account', 'saved', 'catalog_name', 'price_alias', 'catalog_name_price', 'catalog_score', 'alias'], zeroLines: 'keep', linePrice: 'work', lineTax: 'list' }],
       ['add_contacts', {}],
       ['mark_ready_from_work_status', { statuses: ['shipped', 'delivered'] }]]);
     const statuses = await call(`/work-statuses?organisationId=${lab.id}`, { token: staffToken });

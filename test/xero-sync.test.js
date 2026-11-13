@@ -2,7 +2,9 @@ import assert from 'node:assert/strict';
 import { after, before, describe, test } from 'node:test';
 import { sql } from 'drizzle-orm';
 import { invitePerson } from '../server/auth/people.js';
-import { lastSuccessfulSyncAt, matchContact, mapItem, parseXeroDate } from '../server/integrations/xero/catalogue.js';
+import { createPriceItem } from '../server/core/directory.js';
+import { readInvoicingSettings } from '../server/core/invoicing-rules.js';
+import { lastSuccessfulSyncAt, matchContact, mapItem, parseXeroDate, salesTaxInclusive } from '../server/integrations/xero/catalogue.js';
 import { listPriceItems } from '../server/integrations/xero/lookup.js';
 import { request } from './support/clerk.js';
 import { freshDatabase, skipWithoutDatabase } from './support/db.js';
@@ -23,6 +25,15 @@ test('Xero dates and prices map to Flow types', () => {
   assert.equal(mapItem({ ItemID: 'i', Code: ' X ' }).code, 'X');
 });
 
+test("Xero's default sales tax reads as inclusive, exclusive or unknown", () => {
+  assert.equal(salesTaxInclusive({ DefaultSalesTax: 'Tax Inclusive' }), true);
+  assert.equal(salesTaxInclusive({ DefaultSalesTax: 'INCLUSIVE' }), true);
+  assert.equal(salesTaxInclusive({ DefaultSalesTax: 'Tax Exclusive' }), false);
+  assert.equal(salesTaxInclusive({ DefaultSalesTax: 'No Tax' }), false);
+  assert.equal(salesTaxInclusive({}), null);
+  assert.equal(salesTaxInclusive(null), null);
+});
+
 describe('Xero contact and item sync', { skip: skipWithoutDatabase }, () => {
   let handle;
   let app;
@@ -35,8 +46,10 @@ describe('Xero contact and item sync', { skip: skipWithoutDatabase }, () => {
     replay = xeroRuntime([
       xeroAnswer('Contacts', { Contacts: [contact('c1', 'Example Practice', { SalesTrackingCategories: [{ TrackingCategoryName: 'Department', TrackingOptionName: 'Laboratory' }] }), contact('c2', 'Another  Practice'), contact('c3', 'Example Supplier', { IsCustomer: false, IsSupplier: true })] }, { query: { page: 1 } }),
       xeroAnswer('Items', { Items: [item('i1', 'CROWN', 250), item('i2', 'REPAIR', 80), { ItemID: 'i3', Name: 'no code' }] }),
+      xeroAnswer('Organisation', { Organisations: [{ Name: 'Example Lab', DefaultSalesTax: 'Tax Inclusive' }] }),
       xeroAnswer('Contacts', { Contacts: [contact('c1', 'Example Practice'), contact('c4', 'example practice')] }, { query: { page: 1 } }),
       xeroAnswer('Items', { Items: [item('i1', 'CROWN', 260)] }),
+      xeroAnswer('Organisation', { Organisations: [{ Name: 'Example Lab' }] }),
       xeroAnswer('Contacts', { Message: 'down' }, { query: { page: 1 }, status: 500 }),
     ]);
     const booted = await bootFlow(handle, { runtime: replay.runtime, log: replay.log });
@@ -57,6 +70,8 @@ describe('Xero contact and item sync', { skip: skipWithoutDatabase }, () => {
 
   test('staff cannot sync; an admin can, and Flow keeps a copy of contacts and coded items', async () => {
     await connectDirectly(handle, replay.runtime, lab.organisation.id);
+    // Xero sets the GST: the Flow item takes its Xero item's tax type.
+    await createPriceItem(handle.db, lab.organisation.id, { code: 'CROWN', name: 'Crown', unitAmountCents: 25000, taxCode: 'GST_FREE' });
     assert.equal((await sync(lab.staffToken)).status, 403);
 
     const res = await sync(adminToken);
@@ -74,6 +89,10 @@ describe('Xero contact and item sync', { skip: skipWithoutDatabase }, () => {
     const list = await listPriceItems(handle.db, lab.organisation.id, { taxTypes: { GST: 'OUTPUT', GST_FREE: 'EXEMPTOUTPUT' } });
     assert.equal(list.kind, 'accounting');
     assert.deepEqual(list.items.map((i) => [i.code, i.unitAmountCents, i.taxCode]), [['CROWN', 25000, 'GST'], ['REPAIR', 8000, 'GST']]);
+    // GST follows Xero: the item's tax type, and Xero's default sales tax.
+    const { rows: [crown] } = await handle.db.execute(sql`select tax_code from price_items where code = 'CROWN'`);
+    assert.equal(crown.tax_code, 'GST');
+    assert.equal((await readInvoicingSettings(handle.db, lab.organisation.id)).amountsIncludeTax, true);
   });
 
   test('contacts match by exact name, ignoring case and doubled spaces', async () => {
@@ -91,6 +110,7 @@ describe('Xero contact and item sync', { skip: skipWithoutDatabase }, () => {
     assert.deepEqual(items, [{ code: 'CROWN', sales_unit_amount_cents: 26000 }]);
     const match = await matchContact(handle.db, lab.organisation.id, 'Example Practice');
     assert.equal(match.state, 'ambiguous', 'two Xero contacts with one name are for a person to fix');
+    assert.equal((await readInvoicingSettings(handle.db, lab.organisation.id)).amountsIncludeTax, true, 'no default from Xero changes nothing');
   });
 
   test('a failed sync keeps the copy and records why', async () => {

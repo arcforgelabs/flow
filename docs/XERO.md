@@ -260,7 +260,13 @@ The rules:
   types come from `XERO_TAX_TYPE_GST` and `XERO_TAX_TYPE_GST_FREE`. Each line's
   amount is sent as Flow calculated it: tax-exclusive, or `Inclusive` when the
   invoice was made while "Prices include GST" was on (Settings, Invoicing,
-  Drafts). An invoice keeps the setting it was made with.
+  Drafts). An invoice keeps the setting it was made with. A line whose GST
+  differs from its Xero item's tax type stops the draft (`xero_tax_differs`,
+  "GST not as Xero"): sync Xero, then check the draft again.
+- **Xero decides GST.** Each catalogue sync copies every Xero item's tax type
+  onto its linked price item, and sets "Prices include GST" from the Xero
+  organisation's default sales tax ("Tax Inclusive" on, "Tax Exclusive" or
+  "No Tax" off; another value changes nothing).
 - **Reference and dates.** The Xero reference is the invoice's reference, or
   its number. The date is the issue date; the due date is the invoice's, or
   `XERO_DEFAULT_DUE_DAYS` later. With `XERO_INVOICE_NUMBER=flow` Xero gets

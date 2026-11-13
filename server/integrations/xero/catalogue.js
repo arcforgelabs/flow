@@ -126,6 +126,42 @@ async function replaceItems(tx, organisationId, items) {
   }
 }
 
+// Xero's DefaultSalesTax ("Tax Inclusive", "Tax Exclusive", "No Tax", or the
+// LineAmountTypes names): true, false, or null when Xero gave none.
+export function salesTaxInclusive(organisation) {
+  const value = String(organisation?.DefaultSalesTax ?? '').replace(/[^a-z]/gi, '').toLowerCase();
+  if (value === 'taxinclusive' || value === 'inclusive') return true;
+  if (['taxexclusive', 'exclusive', 'notax'].includes(value)) return false;
+  return null;
+}
+
+// Xero is the source for GST: each Flow price item takes its Xero item's tax
+// (by the price list's link, else the same code), and "Prices include GST"
+// takes Xero's default. A Xero item with no tax type leaves the Flow item as
+// it is.
+async function followXeroTax(tx, organisationId, { inclusive, taxTypes = {} }) {
+  if (inclusive !== null) {
+    await tx.execute(sql`insert into invoicing_settings (organisation_id, amounts_include_tax) values (${organisationId}, ${inclusive})
+      on conflict (organisation_id) do update set amounts_include_tax = excluded.amounts_include_tax, updated_at = now()
+      where invoicing_settings.amounts_include_tax is distinct from excluded.amounts_include_tax`);
+  }
+  const gst = [...new Set(['OUTPUT', 'OUTPUT2', taxTypes.GST].filter(Boolean))];
+  await tx.execute(sql`
+    update price_items p set tax_code = x.tax_code, updated_at = now()
+    from (
+      select p2.id, case when xi.sales_tax_type = any(${sql.param(gst)}::text[]) then 'GST' else 'GST_FREE' end as tax_code
+      from price_items p2
+      left join lateral (
+        select external_id from price_item_links pl
+        where pl.organisation_id = ${organisationId} and pl.price_item_id = p2.id and pl.system = 'xero'
+        order by pl.created_at desc limit 1) l on true
+      join xero_items xi on xi.organisation_id = ${organisationId}
+        and (case when l.external_id is not null then xi.xero_item_id = l.external_id else xi.code = p2.code end)
+      where p2.organisation_id = ${organisationId} and p2.archived_at is null and xi.sales_tax_type is not null
+    ) x
+    where p.id = x.id and p.tax_code <> x.tax_code`);
+}
+
 // Reads every Xero contact and item and replaces Flow's copy. A failed read
 // leaves the copy as it was and records the failure.
 export async function syncCatalogue(db, runtime, organisationId, { startedBy = null } = {}) {
@@ -136,9 +172,13 @@ export async function syncCatalogue(db, runtime, organisationId, { startedBy = n
       const contacts = (await client.listContacts()).map(mapContact).filter((c) => c.xeroContactId && c.name);
       // An item without a code cannot go on an invoice line by code.
       const items = (await client.listItems()).map(mapItem).filter((i) => i.xeroItemId && i.code);
+      // Xero's own default for sales lines (Financial settings): Flow's
+      // "Prices include GST" follows it. An unread or unknown answer changes nothing.
+      const inclusive = salesTaxInclusive(await client.getOrganisation().catch(() => null));
       await db.transaction(async (tx) => {
         await replaceContacts(tx, organisationId, contacts);
         await replaceItems(tx, organisationId, items);
+        await followXeroTax(tx, organisationId, { inclusive, taxTypes: runtime.settings.taxTypes });
         await tx.execute(sql`update xero_sync_runs set status = 'succeeded', finished_at = now(), contact_count = ${contacts.length}, item_count = ${items.length} where id = ${run.id}`);
       });
       return { id: run.id, status: 'succeeded', contactCount: contacts.length, itemCount: items.length };

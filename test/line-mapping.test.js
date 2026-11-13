@@ -91,10 +91,10 @@ test('an account row books a surcharge line to an account', () => {
   assert.equal(mapped.itemCode, null);
 });
 
-test('source tax takes precedence over saved item and account choices', () => {
+test('with lineTax work, source tax takes precedence over saved item and account choices', () => {
   for (const kind of ['alias', 'account']) {
     const mappings = [{ kind, match: 'exact', label: 'sample adjustment', itemCode: 'RLN', accountCode: '200', taxCode: 'GST' }];
-    const context = mappingContext({ items, mappings });
+    const context = mappingContext({ items, mappings, config: { lineTax: 'work' } });
     assert.equal(mapLine(line('Sample adjustment', 1000), context).taxCode, 'GST_FREE');
     assert.equal(mapLine(line('Sample adjustment', 1000, { taxCode: null }), context).taxCode, 'GST');
   }
@@ -102,8 +102,8 @@ test('source tax takes precedence over saved item and account choices', () => {
   assert.equal(mapLine(line('Sample adjustment', -1000, { taxCode: null }), context).taxCode, null);
 });
 
-test('with lineTax list, the price item gives the GST and a different work flag stays on the line', () => {
-  const context = mappingContext({ items, config: { lineTax: 'list' } });
+test('by default the price item gives the GST and a different work flag stays on the line', () => {
+  const context = mappingContext({ items });
   const flagged = mapLine(line('Special Tray', 5500, { taxCode: 'GST' }), context);
   assert.equal(flagged.taxCode, 'GST_FREE');
   assert.equal(flagged.workTaxCode, 'GST');
@@ -111,10 +111,11 @@ test('with lineTax list, the price item gives the GST and a different work flag 
   assert.equal(agrees.taxCode, 'GST_FREE');
   assert.equal('workTaxCode' in agrees, false);
   assert.equal(mapLine(line('Special Tray', 5500, { taxCode: null }), context).taxCode, 'GST_FREE');
-  // The default keeps the work system's flag.
-  assert.equal(mapLine(line('Special Tray', 5500, { taxCode: 'GST' }), mappingContext({ items })).taxCode, 'GST');
+  // lineTax work keeps the work system's flag.
+  assert.equal(mapLine(line('Special Tray', 5500, { taxCode: 'GST' }), mappingContext({ items, config: { lineTax: 'work' } })).taxCode, 'GST');
   assert.throws(() => readMappingConfig({ lineTax: 'xero' }), /lineTax must be one of work, list/);
-  assert.equal(readMappingConfig({ lineTax: 'list' }).lineTax, 'list');
+  assert.equal(readMappingConfig({}).lineTax, 'list');
+  assert.equal(readMappingConfig({ lineTax: 'work' }).lineTax, 'work');
 });
 
 test('a line no step answers keeps no code, so the ledger holds the job', () => {
