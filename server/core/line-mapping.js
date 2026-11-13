@@ -360,10 +360,14 @@ export async function listMappings(db, organisationId) {
 }
 
 // A change to the mappings reads every job again on the next pipeline run, so
-// jobs already in the ledger take the new mapping. It reads Flow's own copy of
-// the work system, not the work system.
+// jobs already in the ledger take the new mapping: the live jobs (`.work`)
+// and the held jobs of a history import (`.history`). It reads Flow's own copy
+// of the work system, not the work system.
 export async function remapJobs(db, organisationId) {
-  await db.delete(pipelineCursors).where(and(eq(pipelineCursors.organisationId, organisationId), sql`${pipelineCursors.name} like '%.work'`));
+  await db.delete(pipelineCursors).where(and(
+    eq(pipelineCursors.organisationId, organisationId),
+    sql`(${pipelineCursors.name} like '%.work' or ${pipelineCursors.name} like '%.history')`,
+  ));
 }
 
 export async function createMapping(db, organisationId, raw, { personId = null, origin = 'person' } = {}) {
