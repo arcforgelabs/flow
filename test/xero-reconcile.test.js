@@ -33,7 +33,8 @@ test('the Invoices page tab of an issued invoice follows its Xero stage', () => 
   assert.deepEqual(['not_sent', 'sending', 'not_copied', 'draft'].map((s) => at(s)), ['draft', 'draft', 'draft', 'draft']);
   assert.equal(at('approved'), 'approved');
   assert.equal(at('approved', { xero: { sentToContact: true } }), 'sent');
-  assert.deepEqual([at('part_paid'), at('paid'), at('voided'), at('deleted')], ['sent', 'sent', 'void', 'void']);
+  assert.deepEqual([at('part_paid'), at('paid'), at('voided'), at('deleted')], ['approved', 'paid', 'void', 'void']);
+  assert.equal(at('part_paid', { xero: { sentToContact: true } }), 'sent');
   assert.equal(at('approved', { finding: 'edited_in_xero' }), 'pending', 'out of sync: a person looks');
   assert.equal(mapInvoice({ InvoiceID: 'x', Status: 'AUTHORISED', SentToContact: true }).sentToContact, true);
   assert.equal(mapInvoice({ InvoiceID: 'x', Status: 'DRAFT' }).sentToContact, null);

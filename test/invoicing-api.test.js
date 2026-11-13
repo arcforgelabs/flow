@@ -243,7 +243,7 @@ describe('invoicing API', { skip: skipWithoutDatabase }, () => {
     assert.equal((await call(`/invoices/${MISSING}`)).status, 404);
     assert.equal((await call('/invoices/not-an-id')).status, 404);
     assert.equal((await call(`/invoices/${MISSING}/issue`, { method: 'POST', body: {} })).status, 404);
-    assert.equal((await call('/invoices?status=paid')).status, 400);
+    assert.equal((await call('/invoices?status=nope')).status, 400);
     assert.equal((await call('/invoices?limit=0')).status, 400);
     assert.equal((await call(`/jobs/${MISSING}/draft`, { method: 'POST', body: {} })).status, 404);
   });
@@ -266,11 +266,11 @@ describe('invoicing API', { skip: skipWithoutDatabase }, () => {
     const all = await call('/invoices');
     const { counts } = all.body;
     // Each invoice is on one tab. With no accounting system, an issued
-    // invoice is Approved.
+    // invoice is Awaiting payment.
     assert.equal(counts.pending + counts.ready, all.body.invoices.filter((i) => i.status === 'draft').length);
-    assert.equal(counts.approved, all.body.invoices.filter((i) => i.status === 'issued').length);
+    assert.equal(counts.awaiting_payment, all.body.invoices.filter((i) => i.status === 'issued').length);
     assert.equal(counts.void, 1);
-    assert.ok(all.body.invoices.every((i) => i.tab === { draft: i.problems.length ? 'pending' : 'ready', issued: 'approved', void: 'void' }[i.status]));
+    assert.ok(all.body.invoices.every((i) => i.tab === { draft: i.problems.length ? 'pending' : 'ready', issued: 'awaiting_payment', void: 'void' }[i.status]));
     assert.equal((await call('/invoices?limit=1')).body.invoices.length, 1);
   });
 

@@ -92,7 +92,7 @@ export async function startFlow({ port = 0, env = {} } = {}) {
   }
 
   // Invoices on several tabs: drafts with lines, drafts with none (Pending),
-  // and issued ones (Approved).
+  // and issued ones (Awaiting payment).
   const invoiceIds = [];
   let issuedId = null;
   for (let i = 0; i < 64; i += 1) {

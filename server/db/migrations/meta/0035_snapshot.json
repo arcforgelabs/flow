@@ -1,5 +1,5 @@
 {
-  "id": "c19a732c-6873-4016-b04d-f5e8f0360d46",
+  "id": "0e72d2fe-886e-4a42-b89d-a7c94d987110",
   "prevId": "fae28858-5035-4081-8c8d-b8033e5a869f",
   "version": "7",
   "dialect": "postgresql",
@@ -2075,6 +2075,93 @@
       },
       "isRLSEnabled": false
     },
+    "public.invoice_list_tabs": {
+      "name": "invoice_list_tabs",
+      "schema": "",
+      "columns": {
+        "invoice_id": {
+          "name": "invoice_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "organisation_id": {
+          "name": "organisation_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tab": {
+          "name": "tab",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "changed_at": {
+          "name": "changed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "invoice_list_tabs_org_tab_idx": {
+          "name": "invoice_list_tabs_org_tab_idx",
+          "columns": [
+            {
+              "expression": "organisation_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "tab",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "invoice_list_tabs_invoice_id_invoices_id_fk": {
+          "name": "invoice_list_tabs_invoice_id_invoices_id_fk",
+          "tableFrom": "invoice_list_tabs",
+          "tableTo": "invoices",
+          "columnsFrom": [
+            "invoice_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "invoice_list_tabs_organisation_id_organisations_id_fk": {
+          "name": "invoice_list_tabs_organisation_id_organisations_id_fk",
+          "tableFrom": "invoice_list_tabs",
+          "tableTo": "organisations",
+          "columnsFrom": [
+            "organisation_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.invoice_rule_exceptions": {
       "name": "invoice_rule_exceptions",
       "schema": "",
@@ -2552,18 +2639,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": false
-        },
-        "list_tab": {
-          "name": "list_tab",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "list_tab_at": {
-          "name": "list_tab_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
         },
         "ready_at": {
           "name": "ready_at",

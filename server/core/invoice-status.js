@@ -1,7 +1,7 @@
 // An invoice's status: the one rule that puts each Flow invoice on one tab of
 // the Invoices page. The list, the invoice page and its pager all read it, and
-// the list stores the answer on the row (invoices.list_tab, with the time it
-// last changed), so a count is one grouped query.
+// the list stores each answer with the time it last changed
+// (invoice_list_tabs), for reports that must not run the draft checks.
 //
 //   void             void in Flow, or voided or deleted in the accounting system
 //   non_chargeable   No charge: a person or a rule says the work is not billed

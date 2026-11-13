@@ -38,7 +38,7 @@ import { invoiceView, invoiceViews, markNotReady, markReady, sendAgain, sendAllR
 import { createContact, getContact, listContacts, presentContact, updateContact } from '../core/contacts.js';
 import { mergeContacts } from '../core/merge-contacts.js';
 import {
-  billingObligations, contacts, invoices, INVOICE_STATUSES, organisations, priceItems, TAX_CODES,
+  billingObligations, contacts, invoiceListTabs, invoices, INVOICE_STATUSES, organisations, priceItems, TAX_CODES,
 } from '../db/schema.js';
 
 // Invoicing for people signed in to Flow, mounted at /api/invoicing. The web
@@ -330,7 +330,8 @@ async function jobChangeDetail(db, organisationId, invoiceId, work) {
 async function invoiceTabs(db, organisationId, system) {
   const [views, rows, stages] = await Promise.all([
     invoiceViews(db, organisationId, { accounting: system }),
-    db.select({ id: invoices.id, status: invoices.status, listTab: invoices.listTab }).from(invoices)
+    db.select({ id: invoices.id, status: invoices.status, listTab: invoiceListTabs.tab }).from(invoices)
+      .leftJoin(invoiceListTabs, eq(invoiceListTabs.invoiceId, invoices.id))
       .where(eq(invoices.organisationId, organisationId)),
     typeof system?.capabilities?.invoiceStages === 'function' ? system.capabilities.invoiceStages({ organisationId }) : new Map(),
   ]);
@@ -358,19 +359,17 @@ function viewOf(views, id) {
   return null;
 }
 
-// Stores each changed tab, and when it changed. One statement per tab.
+// Stores each changed tab, and when it changed (invoice_list_tabs). A draft
+// the checks did not reach keeps the tab it had.
 async function saveTabs(db, organisationId, rows, tabOf) {
-  const moved = new Map();
-  for (const row of rows) {
-    const tab = tabOf.get(row.id) ?? null;
-    if (tab === (row.listTab ?? null)) continue;
-    if (!moved.has(tab)) moved.set(tab, []);
-    moved.get(tab).push(row.id);
-  }
-  for (const [tab, ids] of moved) {
-    await db.update(invoices).set({ listTab: tab, listTabAt: sql`now()` })
-      .where(and(eq(invoices.organisationId, organisationId), inArray(invoices.id, ids)));
-  }
+  const changed = rows
+    .filter((row) => tabOf.has(row.id) && tabOf.get(row.id) !== (row.listTab ?? null))
+    .map((row) => ({ invoiceId: row.id, organisationId, tab: tabOf.get(row.id) }));
+  if (!changed.length) return;
+  await db.insert(invoiceListTabs).values(changed).onConflictDoUpdate({
+    target: invoiceListTabs.invoiceId,
+    set: { tab: sql`excluded.tab`, changedAt: sql`now()` },
+  });
 }
 
 // One invoice's tab, for its page (and its pager).

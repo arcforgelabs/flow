@@ -1,6 +1,6 @@
 # Tabs
 
-Tabs with counts over a list: Pending, Ready, Draft, Approved, Sent, Non-chargeable, Void on Invoices.
+Tabs with counts over a list: Pending, Ready, Draft, Awaiting payment, Paid, No charge, Void on Invoices.
 
 - One word per tab, left to right in the order work moves.
 - Phones and tablets: one row that scrolls; each tab is 44px tall.
