@@ -36,8 +36,9 @@ export const INVOICE_FILTER_STATUSES = Object.freeze([
   { value: 'pending', label: 'Pending' },
   { value: 'ready', label: 'Ready' },
   { value: 'draft', label: 'Draft' },
-  { value: 'approved', label: 'Approved' },
-  { value: 'sent', label: 'Sent' },
+  { value: 'awaiting_payment', label: 'Awaiting payment' },
+  { value: 'paid', label: 'Paid' },
+  { value: 'non_chargeable', label: 'No charge' },
   { value: 'void', label: 'Void' },
   { value: 'sending', label: 'Sending' },
 ]);
@@ -60,7 +61,9 @@ export function invoiceValue(invoice, field) {
     case 'client': return invoice.contactName ?? null;
     case 'number': return invoice.number ?? null;
     case 'reference': return invoice.reference ?? null;
-    case 'date': return invoice.issueDate ?? (invoice.createdAt ? new Date(invoice.createdAt).toISOString().slice(0, 10) : null);
+    // No charge work is never issued: its date is the job's.
+    case 'date': return invoice.tab === 'non_chargeable' && job?.jobDate ? job.jobDate
+      : invoice.issueDate ?? (invoice.createdAt ? new Date(invoice.createdAt).toISOString().slice(0, 10) : null);
     case 'due': return invoice.dueDate ?? null;
     case 'total': return invoice.totalCents == null ? null : invoice.totalCents / 100;
     case 'status': return invoice.sending ? 'sending' : invoice.tab ?? null;
