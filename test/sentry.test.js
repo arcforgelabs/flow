@@ -9,7 +9,7 @@ import { createMonitoredLog } from '../server/core/monitoring.js';
 import { adapters } from '../server/integrations/adapters.js';
 import { createRegistry } from '../server/integrations/port.js';
 import { createTracing, requestName, sqlName, traceQueries } from '../server/core/tracing.js';
-import { createSentryAdapter, readSentrySettings, SENTRY_BROWSER, SENTRY_BROWSER_REPLAY, SENTRY_BROWSER_TRACING, SENTRY_SETUP, sentryRelease } from '../server/integrations/sentry/index.js';
+import { createSentryAdapter, ENVELOPE_PATH, envelopeTarget, readSentrySettings, SENTRY_BROWSER, SENTRY_BROWSER_REPLAY, SENTRY_BROWSER_TRACING, SENTRY_SETUP, sentryRelease } from '../server/integrations/sentry/index.js';
 import { maskText, routePattern, scrubEvent, scrubRecordingEvent, scrubSpan, tagNotify } from '../server/ui/monitoring.js';
 import { fakeClerk, request, TEST_PUBLISHABLE_KEY } from './support/clerk.js';
 import { freshDatabase, skipWithoutDatabase } from './support/db.js';
@@ -127,6 +127,7 @@ test('the adapter starts the SDK without personal data, and sends errors only wh
   // The host's health check is never traced; a browser's choice is kept.
   const sampled = (path) => options.tracesSampler({ attributes: { 'url.path': path }, inheritOrSampleWith: (rate) => rate });
   assert.equal(sampled('/health'), 0);
+  assert.equal(sampled(ENVELOPE_PATH), 0);
   assert.equal(sampled('/api/invoicing/invoices'), 0.2);
 
   adapter.capabilities.captureError({ message: '[seazona] read failed', source: 'seazona' });
@@ -138,13 +139,47 @@ test('the adapter starts the SDK without personal data, and sends errors only wh
   assert.deepEqual(sdk.calls[2][2].tags, { source: 'http' });
 
   assert.deepEqual(adapter.capabilities.browserMonitoring(), {
-    dsn: DSN, environment: 'production', release: 'flow@2026.10.26', feedback: true, screenshot: false, replay: true, tags: { product: 'flow' }, tracesSampleRate: 0.2, script: SENTRY_BROWSER_TRACING,
+    dsn: DSN, environment: 'production', release: 'flow@2026.10.26', feedback: true, screenshot: false, replay: true, tags: { product: 'flow' }, tracesSampleRate: 0.2, tunnel: ENVELOPE_PATH, script: SENTRY_BROWSER_TRACING,
   });
   assert.deepEqual(await adapter.capabilities.health(), { ok: true, environment: 'production', feedback: true });
 
   await adapter.stop();
   assert.deepEqual(sdk.calls.at(-1), ['close']);
   assert.equal(adapter.capabilities.browserMonitoring(), null);
+});
+
+test('a browser envelope goes on only to the installation\'s own Sentry project', async () => {
+  const envelope = (dsn, rest = '{"type":"feedback"}\n{}') => Buffer.from(`${JSON.stringify({ dsn, sent_at: '2026-11-13T00:00:00Z' })}\n${rest}`);
+  const project = new URL(DSN);
+  assert.equal(envelopeTarget(envelope(DSN), DSN), `https://${project.host}/api${project.pathname}/envelope/`);
+  assert.equal(envelopeTarget(envelope(DSN.replace(/\/\d+$/, '/999')), DSN), null, 'another project');
+  assert.equal(envelopeTarget(envelope('https://0123456789abcdef@evil.example/1'), DSN), null, 'another host');
+  assert.equal(envelopeTarget(Buffer.from('not json\n{}'), DSN), null);
+  assert.equal(envelopeTarget(Buffer.from('{}'), DSN), null, 'no DSN');
+
+  const sent = [];
+  const adapter = createSentryAdapter({ sdk: fakeSdk(), env: {}, fetch: async (url, init) => { sent.push([url, init]); return { status: 200 }; } });
+  assert.deepEqual(await adapter.capabilities.forwardEnvelope(envelope(DSN)), { status: 503, headers: {} }, 'off: nothing goes');
+  await adapter.start({ log: quiet, env: { SENTRY_DSN: DSN } });
+  assert.equal((await adapter.capabilities.forwardEnvelope(envelope(DSN.replace(/\/\d+$/, '/999')))).status, 400);
+  assert.equal(sent.length, 0);
+  const body = envelope(DSN);
+  assert.deepEqual(await adapter.capabilities.forwardEnvelope(body), { status: 200, headers: {} });
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0][0], `https://${project.host}/api${project.pathname}/envelope/`);
+  assert.equal(sent[0][1].method, 'POST');
+  assert.equal(sent[0][1].body, body);
+  await adapter.stop();
+
+  // A Sentry that takes the envelope and never answers does not hold Flow.
+  const stalled = createSentryAdapter({ sdk: fakeSdk(), env: {}, envelopeTimeoutMs: 20,
+    fetch: (url, init) => new Promise((resolve, reject) => init.signal.addEventListener('abort', () => reject(init.signal.reason))) });
+  await stalled.start({ log: quiet, env: { SENTRY_DSN: DSN } });
+  // AbortSignal.timeout does not keep a test process alive; a server does.
+  const alive = setTimeout(() => {}, 5000);
+  await assert.rejects(stalled.capabilities.forwardEnvelope(envelope(DSN)), { name: 'TimeoutError' });
+  clearTimeout(alive);
+  await stalled.stop();
 });
 
 test('with traces at 0 the adapter traces nothing and the browser loads the SDK without tracing', async () => {
@@ -407,9 +442,9 @@ describe('monitoring API', { skip: skipWithoutDatabase }, () => {
 
   after(async () => handle?.close());
 
-  async function appWith({ sentryOn, sdk = fakeSdk() }) {
+  async function appWith({ sentryOn, sdk = fakeSdk(), fetch }) {
     const integrations = createRegistry({ log: quiet, env: sentryOn ? { SENTRY_DSN: DSN } : {} });
-    integrations.register(createSentryAdapter({ sdk, env: {} }));
+    integrations.register(createSentryAdapter({ sdk, env: {}, ...(fetch ? { fetch } : {}) }));
     // An integration whose one route fails, to reach the app's last error handler.
     integrations.register({
       id: 'broken',
@@ -439,6 +474,37 @@ describe('monitoring API', { skip: skipWithoutDatabase }, () => {
     assert.equal(body.replay, true);
     assert.equal(body.tracesSampleRate, 0.2);
     assert.equal(body.script.src, SENTRY_BROWSER_TRACING.src);
+    await on.integrations.stop();
+  });
+
+  test('a browser\'s envelope goes through Flow to the Sentry project, unchanged and without sign-in', async () => {
+    let lastHeaders = null;
+    const post = async (app, body) => {
+      const server = app.listen(0);
+      try {
+        const res = await fetch(`http://127.0.0.1:${server.address().port}${ENVELOPE_PATH}`, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=UTF-8' }, body });
+        lastHeaders = res.headers;
+        return res.status;
+      } finally {
+        server.close();
+      }
+    };
+    const envelope = `${JSON.stringify({ dsn: DSN })}\n{"type":"feedback"}\n{"contexts":{"feedback":{"message":"It froze"}}}`;
+    const off = await appWith({ sentryOn: false });
+    assert.equal(await post(off.app, envelope), 404, 'Sentry off: no pass-through');
+
+    const sent = [];
+    const on = await appWith({ sentryOn: true, fetch: async (url, init) => { sent.push([url, Buffer.from(init.body).toString('utf8')]); return { status: 200 }; } });
+    assert.equal((await request(on.app, '/api/monitoring', { token: staffToken })).body.tunnel, ENVELOPE_PATH);
+    assert.equal(await post(on.app, envelope), 200);
+    assert.deepEqual(sent, [[`https://${new URL(DSN).host}/api/42/envelope/`, envelope]]);
+    assert.equal(await post(on.app, envelope.replace('/42', '/7')), 400, 'another project');
+    assert.equal(sent.length, 1);
+    // Sentry's back-off reaches the browser unchanged.
+    const limited = await appWith({ sentryOn: true, fetch: async () => ({ status: 429, headers: new Headers({ 'X-Sentry-Rate-Limits': '60:feedback:organization', 'Retry-After': '60', 'X-Other': 'no' }) }) });
+    assert.equal(await post(limited.app, envelope), 429);
+    assert.deepEqual([lastHeaders.get('x-sentry-rate-limits'), lastHeaders.get('retry-after'), lastHeaders.get('x-other')], ['60:feedback:organization', '60', null]);
+    await limited.integrations.stop();
     await on.integrations.stop();
   });
 

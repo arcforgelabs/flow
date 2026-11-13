@@ -202,6 +202,21 @@ export function createApp({
       res.json(settings ? { ok: true, on: true, service: adapter.id, ...settings } : { ok: true, on: false });
     });
   }
+  // A browser's errors and reports for the error service (docs/SENTRY.md),
+  // passed on from Flow's own address so a blocker of sentry.io does not stop
+  // them. No sign-in: the browser SDK sends no token, and the service takes
+  // only envelopes for its own project, which anyone could send it directly.
+  app.post('/api/monitoring/envelope', express.raw({ type: () => true, limit: '5mb' }), async (req, res) => {
+    const [adapter] = integrations?.with('forwardEnvelope') ?? [];
+    if (!adapter || !Buffer.isBuffer(req.body) || !req.body.length) return res.status(adapter ? 400 : 404).end();
+    try {
+      const { status, headers } = await adapter.capabilities.forwardEnvelope(req.body);
+      res.status(status).set(headers).end();
+    } catch (error) {
+      log.warn?.(`[monitoring] envelope not passed on: ${error?.message ?? error}`);
+      res.status(502).end();
+    }
+  });
   for (const { path, handler } of integrations?.routes({ db: database?.db ?? null, personAuth: auth?.personAuth ?? null, log, messagePage: page, buttonCooldowns }) ?? []) {
     app.use(path, handler);
   }

@@ -32,7 +32,7 @@ export const exampleAdapter = {
 The capabilities are `pullWorkItems`, `pullHistoryJobs`, `pushInvoice`, `pushBill`,
 `pullPayments`, `checkInvoice`, `listCustomers`, `createCustomer`, `findInvoices`, `listWork`,
 `billableJobs`, `workJobPresence`, `listPriceItems`, `itemMatches`, `jobIssues`, `moveWork`, `cancelMove`, `personSettings`,
-`setPersonSetting`, `captureError`, `browserMonitoring`, `traceSpan`, `traceRequest`, `alerts` and
+`setPersonSetting`, `captureError`, `browserMonitoring`, `forwardEnvelope`, `traceSpan`, `traceRequest`, `alerts` and
 `health`. `alerts({ organisationId })` answers what only a person can clear,
 for the quiet alert on the Integrations page (docs/ALERTS.md).
 `listPriceItems({ organisationId })` answers the system's own price list from
@@ -74,11 +74,14 @@ checks refs missing from the billable feed in batches of 400. Adapters without
 this capability keep the billable-feed comparison.
 `captureError({ message,
 source, error })` takes each error Flow logs, and `browserMonitoring()`
-answers the public settings a browser needs. `traceSpan({ name, op,
+answers the public settings a browser needs. `forwardEnvelope(body)` passes
+one browser envelope on to the service and answers `{ status, headers }`:
+the service's HTTP status and its rate-limit headers, which the browser SDK
+uses to back off. `traceSpan({ name, op,
 attributes }, work)` runs work inside a span of the current performance
 trace, and `traceRequest()` answers a function that names the request's
 trace by its route (`server/core/tracing.js`). The Sentry adapter has all
-four (`docs/SENTRY.md`).
+five (`docs/SENTRY.md`).
 `listCustomers({ organisationId })` answers the system's customers as
 `{ id, name }`. `createCustomer({ organisationId, contactId, actor })`
 creates that system's customer from the Flow contact and answers

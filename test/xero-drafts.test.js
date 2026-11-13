@@ -6,7 +6,7 @@ import { createDraftInvoice, issueInvoice, listInvoiceVersions, reviseInvoice } 
 import { saveCustomerBilling } from '../server/core/invoicing-rules.js';
 import { draftInvoiceForObligation, observeJob, recordAccountingEvidence } from '../server/core/ledger.js';
 import { sellingCodes, xeroItemsForCodes } from '../server/integrations/xero/catalogue.js';
-import { buildDraft, differences, pushDrafts } from '../server/integrations/xero/drafts.js';
+import { buildDraft, differences, pushDrafts, readOnce } from '../server/integrations/xero/drafts.js';
 import { createXeroRuntime } from '../server/integrations/xero/runtime.js';
 import { resolveXeroSettings } from '../server/integrations/xero/settings.js';
 import { request } from './support/clerk.js';
@@ -121,6 +121,27 @@ describe('the Xero draft for a document', () => {
     });
     await assert.rejects(pushDrafts(null, live, 'org', ['inv']), (error) => error.code === 'xero_writes_off');
   });
+
+  test('a batch shares one read per key; a shared read that fails once is read again by each caller', async () => {
+    const once = readOnce();
+    let calls = 0;
+    const read = async () => {
+      calls += 1;
+      if (calls === 1) throw new Error('passing fault');
+      return 'contact';
+    };
+    const answers = await Promise.all([1, 2, 3, 4].map(() => once('payer', read)));
+    assert.deepEqual(answers, ['contact', 'contact', 'contact', 'contact']);
+    assert.equal(calls, 5, 'one shared read, then one read for each caller that waited on it');
+    assert.equal(await once('payer', read), 'contact');
+    assert.equal(calls, 6, 'the failed read is forgotten, so a later caller reads again');
+
+    const shared = readOnce();
+    let good = 0;
+    const ok = async () => { good += 1; return 'items'; };
+    await Promise.all([1, 2, 3].map(() => shared('items', ok)));
+    assert.equal(good, 1, 'a read that works is shared');
+  });
 });
 
 describe('Xero drafts from issued invoices', { skip: skipWithoutDatabase }, () => {
@@ -223,6 +244,23 @@ describe('Xero drafts from issued invoices', { skip: skipWithoutDatabase }, () =
     assert.equal(b.state, 'blocked');
     assert.deepEqual(b.problems.map((p) => p.code).sort(), ['invoice_not_issued', 'xero_contact_missing']);
     assert.equal(replay.calls.length, 0);
+  });
+
+  test('a preview of many invoices answers each one, in the order asked, with its own customer', async () => {
+    const org = lab.organisation.id;
+    const stranger = await createContact(handle.db, org, { kind: 'customer', name: 'Stranger Practice' });
+    const ids = [];
+    for (let i = 0; i < 9; i++) {
+      const draft = await createDraftInvoice(handle.db, org, { contactId: i % 3 === 2 ? stranger.id : practice.id, reference: `CASE-${++counter}`, lines: [{ priceItemId: crown.id }] });
+      ids.push((await issueInvoice(handle.db, org, draft.id, { issuedBy: 'user:test', issueDate: '2026-10-18' })).id);
+    }
+    const res = await request(app, '/api/xero/invoices/preview', {
+      token: lab.staffToken, method: 'POST', body: { organisationId: org, invoiceIds: ids },
+    });
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    assert.deepEqual(res.body.invoices.map((p) => p.invoiceId), ids);
+    assert.deepEqual(res.body.invoices.map((p) => p.state), ids.map((_, i) => (i % 3 === 2 ? 'blocked' : 'ready')));
+    assert.deepEqual(res.body.invoices.filter((p) => p.state === 'blocked').map((p) => p.problems.map((q) => q.code)), [['xero_contact_missing'], ['xero_contact_missing'], ['xero_contact_missing']]);
   });
 
   test('a client billed to another customer previews under the payer\'s Xero contact', async () => {

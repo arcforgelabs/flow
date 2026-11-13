@@ -331,15 +331,54 @@ export async function previewDrafts(db, runtime, organisationId, invoiceIds) {
   else if (runtime.now() - new Date(syncedAt).getTime() > 24 * 60 * 60 * 1000) {
     warnings.push(problem('xero_sync_stale', `Xero contacts and items were last copied ${new Date(syncedAt).toISOString().slice(0, 10)}. Sync for current names and items.`));
   }
-  const results = [];
-  for (const invoiceId of invoiceIds) {
-    try {
-      results.push(await previewOne(db, runtime, organisationId, invoiceId));
-    } catch (error) {
-      results.push({ invoiceId, state: 'blocked', problems: [problem(error.code ?? 'xero_preview_failed', error.message, { short: shortFor(error) })] });
+  // One batch reads each shared fact once (settings, a customer's Xero
+  // contact and send mode, a set of item codes) and checks a few invoices at
+  // a time, in their order. Each invoice was about 14 queries one after
+  // another, so 250 drafts kept the Invoices page waiting 10 seconds.
+  const shared = sharedReads();
+  const results = new Array(invoiceIds.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < invoiceIds.length) {
+      const at = next++;
+      const invoiceId = invoiceIds[at];
+      try {
+        results[at] = await previewOne(db, runtime, organisationId, invoiceId, shared);
+      } catch (error) {
+        results[at] = { invoiceId, state: 'blocked', problems: [problem(error.code ?? 'xero_preview_failed', error.message, { short: shortFor(error) })] };
+      }
     }
-  }
+  };
+  await Promise.all(Array.from({ length: Math.min(PREVIEW_AT_ONCE, invoiceIds.length) }, worker));
   return { syncedAt, warnings, invoices: results };
+}
+
+// Invoices one preview batch checks at the same time. The database pool has
+// 10 connections; the rest stay free for other requests.
+const PREVIEW_AT_ONCE = 4;
+
+// Reads that are the same for every invoice of one preview batch, each made
+// once. A failed read is not kept, so the next invoice tries again.
+// One read per key, shared by every caller of the batch. A shared read that
+// fails is not shared: each caller that waited on it reads once on its own,
+// as the one-by-one preview did, so one passing fault does not block every
+// invoice waiting on it. The failed read is forgotten for later callers.
+export function readOnce() {
+  const memo = new Map();
+  return (key, read) => {
+    if (!memo.has(key)) memo.set(key, read().catch((error) => { memo.delete(key); throw error; }));
+    return memo.get(key).catch(() => read());
+  };
+}
+
+function sharedReads() {
+  const once = readOnce();
+  return {
+    settings: (db, organisationId) => once('settings', () => readInvoicingSettings(db, organisationId)),
+    sendMode: (db, organisationId, contactId) => once(`mode:${contactId}`, () => sendModeFor(db, organisationId, contactId)),
+    contact: (db, organisationId, invoice, document) => once(`contact:${invoice.contactId}:${document.contact.name}`, () => accountingContactFor(db, organisationId, invoice, document)),
+    items: (db, organisationId, codes) => once(`items:${[...new Set(codes.filter(Boolean))].sort().join('\u0000')}`, () => xeroItemsForCodes(db, organisationId, codes)),
+  };
 }
 
 // The Xero contact an invoice goes to: its customer's, or its payer's when the
@@ -356,18 +395,18 @@ const payerMissing = (name) => problem('xero_contact_missing',
   `This client is billed to ${name}, and no Xero contact is named "${name}". Link ${name} to its Xero client on its contact page, then check again.`,
   { short: 'Payer not in Xero' });
 
-async function previewOne(db, runtime, organisationId, invoiceId) {
+async function previewOne(db, runtime, organisationId, invoiceId, shared = sharedReads()) {
   const { invoice, version, document } = await documentFor(db, organisationId, invoiceId);
   const problems = [];
   if (invoice.status === 'void') problems.push(problem('invoice_void', 'This invoice is void. Flow does not send it to Xero.'));
   if (invoice.status === 'draft') problems.push(problem('invoice_not_issued', 'This invoice is a draft. Issue it, then send it to Xero.'));
-  const { match, name, own } = await accountingContactFor(db, organisationId, invoice, document);
+  const { match, name, own } = await shared.contact(db, organisationId, invoice, document);
   const offerCreate = match.state === 'missing' && runtime.settings.createContacts && writesAllowed(runtime.settings);
   if (match.state === 'missing') problems.push(own ? missingContact(name, { offerCreate }) : payerMissing(name));
   if (match.state === 'ambiguous') problems.push(own ? twiceContact(name) : { ...twiceContact(name), offerLink: false });
-  const items = await xeroItemsForCodes(db, organisationId, document.lines.map((l) => l.itemCode));
-  const sendMode = await sendModeFor(db, organisationId, invoice.contactId);
-  const { taxFromXero } = await readInvoicingSettings(db, organisationId);
+  const items = await shared.items(db, organisationId, document.lines.map((l) => l.itemCode));
+  const sendMode = await shared.sendMode(db, organisationId, invoice.contactId);
+  const { taxFromXero } = await shared.settings(db, organisationId);
   const { draft, problems: lineProblems } = buildDraft(document, { settings: runtime.settings, contact: match.contact, items, sendMode, taxFromXero });
   problems.push(...lineProblems);
   if (sendMode === 'approve_and_email' && match.state === 'matched' && !match.contact.email) {
