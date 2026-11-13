@@ -225,6 +225,23 @@ describe('Xero drafts from issued invoices', { skip: skipWithoutDatabase }, () =
     assert.equal(replay.calls.length, 0);
   });
 
+  test('a preview of many invoices answers each one, in the order asked, with its own customer', async () => {
+    const org = lab.organisation.id;
+    const stranger = await createContact(handle.db, org, { kind: 'customer', name: 'Stranger Practice' });
+    const ids = [];
+    for (let i = 0; i < 9; i++) {
+      const draft = await createDraftInvoice(handle.db, org, { contactId: i % 3 === 2 ? stranger.id : practice.id, reference: `CASE-${++counter}`, lines: [{ priceItemId: crown.id }] });
+      ids.push((await issueInvoice(handle.db, org, draft.id, { issuedBy: 'user:test', issueDate: '2026-10-18' })).id);
+    }
+    const res = await request(app, '/api/xero/invoices/preview', {
+      token: lab.staffToken, method: 'POST', body: { organisationId: org, invoiceIds: ids },
+    });
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    assert.deepEqual(res.body.invoices.map((p) => p.invoiceId), ids);
+    assert.deepEqual(res.body.invoices.map((p) => p.state), ids.map((_, i) => (i % 3 === 2 ? 'blocked' : 'ready')));
+    assert.deepEqual(res.body.invoices.filter((p) => p.state === 'blocked').map((p) => p.problems.map((q) => q.code)), [['xero_contact_missing'], ['xero_contact_missing'], ['xero_contact_missing']]);
+  });
+
   test('a client billed to another customer previews under the payer\'s Xero contact', async () => {
     const org = lab.organisation.id;
     const member = await createContact(handle.db, org, { kind: 'customer', name: 'Member Clinic' });

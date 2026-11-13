@@ -230,6 +230,9 @@ export async function startMonitoring({ flow, person }) {
   }
   Sentry.init({
     dsn: config.dsn,
+    // Through Flow's own address, so a browser that blocks sentry.io still
+    // reports (ENVELOPE_PATH, server/integrations/sentry/index.js).
+    tunnel: config.tunnel ?? undefined,
     environment: config.environment,
     release: config.release ?? undefined,
     sendDefaultPii: false,

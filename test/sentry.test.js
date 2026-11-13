@@ -9,7 +9,7 @@ import { createMonitoredLog } from '../server/core/monitoring.js';
 import { adapters } from '../server/integrations/adapters.js';
 import { createRegistry } from '../server/integrations/port.js';
 import { createTracing, requestName, sqlName, traceQueries } from '../server/core/tracing.js';
-import { createSentryAdapter, readSentrySettings, SENTRY_BROWSER, SENTRY_BROWSER_REPLAY, SENTRY_BROWSER_TRACING, SENTRY_SETUP, sentryRelease } from '../server/integrations/sentry/index.js';
+import { createSentryAdapter, ENVELOPE_PATH, envelopeTarget, readSentrySettings, SENTRY_BROWSER, SENTRY_BROWSER_REPLAY, SENTRY_BROWSER_TRACING, SENTRY_SETUP, sentryRelease } from '../server/integrations/sentry/index.js';
 import { maskText, routePattern, scrubEvent, scrubRecordingEvent, scrubSpan, tagNotify } from '../server/ui/monitoring.js';
 import { fakeClerk, request, TEST_PUBLISHABLE_KEY } from './support/clerk.js';
 import { freshDatabase, skipWithoutDatabase } from './support/db.js';
@@ -127,6 +127,7 @@ test('the adapter starts the SDK without personal data, and sends errors only wh
   // The host's health check is never traced; a browser's choice is kept.
   const sampled = (path) => options.tracesSampler({ attributes: { 'url.path': path }, inheritOrSampleWith: (rate) => rate });
   assert.equal(sampled('/health'), 0);
+  assert.equal(sampled(ENVELOPE_PATH), 0);
   assert.equal(sampled('/api/invoicing/invoices'), 0.2);
 
   adapter.capabilities.captureError({ message: '[seazona] read failed', source: 'seazona' });
@@ -138,13 +139,37 @@ test('the adapter starts the SDK without personal data, and sends errors only wh
   assert.deepEqual(sdk.calls[2][2].tags, { source: 'http' });
 
   assert.deepEqual(adapter.capabilities.browserMonitoring(), {
-    dsn: DSN, environment: 'production', release: 'flow@2026.10.26', feedback: true, screenshot: false, replay: true, tags: { product: 'flow' }, tracesSampleRate: 0.2, script: SENTRY_BROWSER_TRACING,
+    dsn: DSN, environment: 'production', release: 'flow@2026.10.26', feedback: true, screenshot: false, replay: true, tags: { product: 'flow' }, tracesSampleRate: 0.2, tunnel: ENVELOPE_PATH, script: SENTRY_BROWSER_TRACING,
   });
   assert.deepEqual(await adapter.capabilities.health(), { ok: true, environment: 'production', feedback: true });
 
   await adapter.stop();
   assert.deepEqual(sdk.calls.at(-1), ['close']);
   assert.equal(adapter.capabilities.browserMonitoring(), null);
+});
+
+test('a browser envelope goes on only to the installation\'s own Sentry project', async () => {
+  const envelope = (dsn, rest = '{"type":"feedback"}\n{}') => Buffer.from(`${JSON.stringify({ dsn, sent_at: '2026-11-13T00:00:00Z' })}\n${rest}`);
+  const project = new URL(DSN);
+  assert.equal(envelopeTarget(envelope(DSN), DSN), `https://${project.host}/api${project.pathname}/envelope/`);
+  assert.equal(envelopeTarget(envelope(DSN.replace(/\/\d+$/, '/999')), DSN), null, 'another project');
+  assert.equal(envelopeTarget(envelope('https://0123456789abcdef@evil.example/1'), DSN), null, 'another host');
+  assert.equal(envelopeTarget(Buffer.from('not json\n{}'), DSN), null);
+  assert.equal(envelopeTarget(Buffer.from('{}'), DSN), null, 'no DSN');
+
+  const sent = [];
+  const adapter = createSentryAdapter({ sdk: fakeSdk(), env: {}, fetch: async (url, init) => { sent.push([url, init]); return { status: 200 }; } });
+  assert.equal(await adapter.capabilities.forwardEnvelope(envelope(DSN)), 503, 'off: nothing goes');
+  await adapter.start({ log: quiet, env: { SENTRY_DSN: DSN } });
+  assert.equal(await adapter.capabilities.forwardEnvelope(envelope(DSN.replace(/\/\d+$/, '/999'))), 400);
+  assert.equal(sent.length, 0);
+  const body = envelope(DSN);
+  assert.equal(await adapter.capabilities.forwardEnvelope(body), 200);
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0][0], `https://${project.host}/api${project.pathname}/envelope/`);
+  assert.equal(sent[0][1].method, 'POST');
+  assert.equal(sent[0][1].body, body);
+  await adapter.stop();
 });
 
 test('with traces at 0 the adapter traces nothing and the browser loads the SDK without tracing', async () => {
@@ -407,9 +432,9 @@ describe('monitoring API', { skip: skipWithoutDatabase }, () => {
 
   after(async () => handle?.close());
 
-  async function appWith({ sentryOn, sdk = fakeSdk() }) {
+  async function appWith({ sentryOn, sdk = fakeSdk(), fetch }) {
     const integrations = createRegistry({ log: quiet, env: sentryOn ? { SENTRY_DSN: DSN } : {} });
-    integrations.register(createSentryAdapter({ sdk, env: {} }));
+    integrations.register(createSentryAdapter({ sdk, env: {}, ...(fetch ? { fetch } : {}) }));
     // An integration whose one route fails, to reach the app's last error handler.
     integrations.register({
       id: 'broken',
@@ -439,6 +464,30 @@ describe('monitoring API', { skip: skipWithoutDatabase }, () => {
     assert.equal(body.replay, true);
     assert.equal(body.tracesSampleRate, 0.2);
     assert.equal(body.script.src, SENTRY_BROWSER_TRACING.src);
+    await on.integrations.stop();
+  });
+
+  test('a browser\'s envelope goes through Flow to the Sentry project, unchanged and without sign-in', async () => {
+    const post = async (app, body) => {
+      const server = app.listen(0);
+      try {
+        const res = await fetch(`http://127.0.0.1:${server.address().port}${ENVELOPE_PATH}`, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=UTF-8' }, body });
+        return res.status;
+      } finally {
+        server.close();
+      }
+    };
+    const envelope = `${JSON.stringify({ dsn: DSN })}\n{"type":"feedback"}\n{"contexts":{"feedback":{"message":"It froze"}}}`;
+    const off = await appWith({ sentryOn: false });
+    assert.equal(await post(off.app, envelope), 404, 'Sentry off: no pass-through');
+
+    const sent = [];
+    const on = await appWith({ sentryOn: true, fetch: async (url, init) => { sent.push([url, Buffer.from(init.body).toString('utf8')]); return { status: 200 }; } });
+    assert.equal((await request(on.app, '/api/monitoring', { token: staffToken })).body.tunnel, ENVELOPE_PATH);
+    assert.equal(await post(on.app, envelope), 200);
+    assert.deepEqual(sent, [[`https://${new URL(DSN).host}/api/42/envelope/`, envelope]]);
+    assert.equal(await post(on.app, envelope.replace('/42', '/7')), 400, 'another project');
+    assert.equal(sent.length, 1);
     await on.integrations.stop();
   });
 

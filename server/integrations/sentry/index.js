@@ -77,8 +77,15 @@ export function readSentrySettings(env) {
   return { dsn, environment, feedback, screenshot, replay, tracesSampleRate, tags };
 }
 
-// No trace for the host's health check: it is not a person waiting.
-const UNTRACED_PATHS = new Set(['/health']);
+// The path a browser sends its errors and reports to. Flow passes them on to
+// the Sentry project (`envelopeTarget`), so a browser that blocks sentry.io
+// (Brave Shields, uBlock and similar) still reports. Sentry calls this a
+// tunnel.
+export const ENVELOPE_PATH = '/api/monitoring/envelope';
+
+// No trace for the host's health check or the browser's envelopes: neither is
+// a person waiting.
+const UNTRACED_PATHS = new Set(['/health', ENVELOPE_PATH]);
 
 // The release Sentry groups events by: Flow's release tag, else its commit.
 export function sentryRelease(env) {
@@ -88,9 +95,27 @@ export function sentryRelease(env) {
   return release ? `flow@${release.replace(/^v/, '')}` : revision ? `flow@${revision.slice(0, 12)}` : null;
 }
 
+// Where one browser envelope goes, or null. An envelope's first line is JSON
+// that names the DSN it is for; Flow passes on only envelopes for its own
+// DSN, so the path cannot carry anything to another Sentry project.
+export function envelopeTarget(body, dsn) {
+  const text = Buffer.isBuffer(body) ? body.subarray(0, Math.min(body.length, 4096)).toString('utf8') : String(body ?? '').slice(0, 4096);
+  const end = text.indexOf('\n');
+  let header;
+  try {
+    header = JSON.parse(end < 0 ? text : text.slice(0, end));
+  } catch {
+    return null;
+  }
+  if (!header || typeof header.dsn !== 'string' || header.dsn !== dsn) return null;
+  const { protocol, host, pathname } = new URL(dsn);
+  const project = pathname.replace(/^\//, '');
+  return `${protocol}//${host}/api/${project}/envelope/`;
+}
+
 // `sdk` is for tests: anything with init, captureEvent, captureException
 // and close, as @sentry/node has.
-export function createSentryAdapter({ sdk = SentryNode, env: hostEnv = process.env } = {}) {
+export function createSentryAdapter({ sdk = SentryNode, env: hostEnv = process.env, fetch: send = globalThis.fetch } = {}) {
   let settings = null;
   let release = null;
 
@@ -153,8 +178,19 @@ export function createSentryAdapter({ sdk = SentryNode, env: hostEnv = process.e
           replay,
           tags: settings.tags,
           tracesSampleRate,
+          tunnel: ENVELOPE_PATH,
           script: tracesSampleRate > 0 ? SENTRY_BROWSER_TRACING : replay ? SENTRY_BROWSER_REPLAY : SENTRY_BROWSER,
         };
+      },
+      // Passes one browser envelope on to the Sentry project (ENVELOPE_PATH).
+      // Answers the HTTP status for the browser: Sentry's own, 400 for an
+      // envelope that is not for this DSN, 503 while Sentry is off.
+      async forwardEnvelope(body) {
+        if (!settings) return 503;
+        const target = envelopeTarget(body, settings.dsn);
+        if (!target) return 400;
+        const res = await send(target, { method: 'POST', headers: { 'Content-Type': 'application/x-sentry-envelope' }, body });
+        return res.status;
       },
       // Runs `work` in a span of the current trace (server/core/tracing.js).
       // Work outside a traced request (the pipeline, the workers) starts no

@@ -75,6 +75,21 @@ A change in Flow applies at once, with no restart. The adapter has no tables.
 With Sentry off, Flow loads no Sentry code in the browser, sends nothing, and
 hides the button.
 
+## Through Flow's own address
+
+The browser sends its errors, reports, replays and traces to Flow, at
+`POST /api/monitoring/envelope`, and Flow passes each one on to the Sentry
+project. A browser that blocks sentry.io (Brave Shields, uBlock and similar)
+then still reports. Sentry calls this a tunnel.
+
+- Flow passes on only an envelope whose first line names this installation's
+  own DSN, to that DSN's project. Any other envelope gets 400.
+- The path needs no sign-in: the browser SDK sends no token, and the DSN is
+  public, so anyone could send the same envelope to Sentry directly.
+- The limit for each envelope is 5 MB, and the `/api` rate limit applies.
+- With Sentry off the path answers 404.
+- The path is never traced.
+
 ## Traces
 
 A trace shows where the time goes between a click and the screen it opens.
