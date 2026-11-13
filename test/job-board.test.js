@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { ledgerView } from '../server/core/ledger.js';
 import { ruleWait } from '../server/core/invoice-rules.js';
 import {
-  caseNumber, fixes, GO, invoiceStage, matches, NO_STATUS, orderStatuses, phoneLaneIndex, problemSummary,
+  caseNumber, fixes, GO, invoiceStage, invoiceStatusOf, matches, NO_STATUS, orderStatuses, phoneLaneIndex, problemSummary,
 } from '../server/ui/job-board.js';
 
 // The Jobs board's rules (server/ui/job-board.js). Synthetic data only.
@@ -41,6 +41,23 @@ test('a job\'s invoice stage follows its obligation; a job in work has none', ()
   assert.equal(stage({ view: 'drafted', invoiceStatus: 'void' }), 'problem');
   assert.equal(stage({ view: 'invoiced' }), 'invoiced');
   assert.equal(stage({ view: 'paid' }), 'paid');
+});
+
+test('a job carries its invoice status; blank only when it never had an invoice', () => {
+  assert.equal(invoiceStatusOf(null), null);
+  assert.equal(invoiceStatusOf({ view: 'in_work', accountingState: 'unknown' }), null);
+  assert.equal(invoiceStatusOf({ view: 'ready', accountingState: 'not_found' }), null);
+  // A Flow invoice reads the Invoices page tab, even while the job has a
+  // problem (a change after the invoice): the problem is a mark of its own.
+  assert.equal(invoiceStatusOf({ invoiceId: 'i1', invoiceTab: 'paid', view: 'review_required', holdState: 'review' }), 'paid');
+  assert.equal(invoiceStatusOf({ invoiceId: 'i1', invoiceTab: 'awaiting_payment' }), 'awaiting_payment');
+  assert.equal(invoiceStatusOf({ invoiceId: 'i1', invoiceTab: 'non_chargeable' }), 'non_chargeable');
+  // An invoice made outside Flow: the accounting system's state.
+  assert.equal(invoiceStatusOf({ accountingState: 'paid', accountingRef: 'INV-1' }), 'paid');
+  assert.equal(invoiceStatusOf({ accountingState: 'part_paid', accountingRef: 'INV-1' }), 'awaiting_payment');
+  assert.equal(invoiceStatusOf({ accountingState: 'voided', accountingRef: 'INV-1' }), 'void');
+  // A Flow draft the checks did not reach yet is still a draft, not blank.
+  assert.equal(invoiceStatusOf({ invoiceId: 'i1', invoiceStatus: 'draft' }), 'draft');
 });
 
 test('a source-tax warning does not replace an existing invoice stage', () => {

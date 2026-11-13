@@ -39,6 +39,22 @@ test('an invoice that carries several orders is never split: each job keeps its 
   assert.equal(toLedgerJob({ ...item, remake: true }).remake, true, "Seazona's remake flag reaches the job");
 });
 
+test('an invoice line takes its product code from the order line of the same product', () => {
+  const item = {
+    sourceId: 'ORD-2',
+    invoiceNumber: '9002',
+    lines: [{ itemId: 'p-1', description: 'Example crown', code: '2101', amountCents: 23000, taxable: true }],
+    invoice: { lines: [
+      { itemId: 'p-1', description: 'Example crown', code: null, amountCents: 25000, taxable: true },
+      { itemId: 's-1', description: 'Example freight', code: null, amountCents: 1500, taxable: true },
+    ] },
+    invoiceOrderCount: 1,
+  };
+  const { lines, linesFrom } = ledgerLinesFor(item);
+  assert.equal(linesFrom, 'invoice');
+  assert.deepEqual(lines.map((l) => [l.itemCode, l.unitAmountCents]), [['2101', 25000], [null, 1500]], 'the invoice price stays; a line with no order product keeps no code');
+});
+
 describe('Seazona work in the billing ledger', { skip: skipWithoutDatabase }, () => {
   let handle;
   let db;

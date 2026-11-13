@@ -1003,6 +1003,7 @@ th:hover > .fx-th-grip::after { background: var(--t-brd-hi); }
 .fx-job__problem { display: inline-grid; place-items: center; flex: none; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--t-warn); cursor: pointer; }
 .fx-job__problem:hover, .fx-job__problem:focus-visible { background: var(--t-warn-bg); }
 .fx-job__cell { display: inline-flex; align-items: center; gap: 6px; }
+.fx-job__invoice { justify-self: start; margin-top: 8px; font-size: 11.5px; }
 
 /* Moves on the board (jobs.js, enableDrag): the lifted card, the copy that
    follows the pointer, the lane that takes it, and the "Waiting for

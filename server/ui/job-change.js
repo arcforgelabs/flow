@@ -49,7 +49,9 @@ export function changeSummary(change, rowCount) {
   if (change.sourceReview) return `${system} invoice amounts differ from Flow's.`;
   const count = `${rowCount} ${rowCount === 1 ? 'change' : 'changes'}.`;
   if (change.canAdopt) return `Changed in ${system}. ${count}`;
-  if (change.sent) return `Changed in ${system} after sending. ${count}`;
+  // A sent invoice: say only what is true now. The work system may have had
+  // the line before the invoice was made (Flow read the order first).
+  if (change.sent) return `${system} and the sent invoice differ. ${count}`;
   return `Changed in ${system} and here. ${count}`;
 }
 

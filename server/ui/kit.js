@@ -163,13 +163,15 @@ export function notice(text, tone = 'info', title = null, { short = null } = {})
 }
 
 // The last Flow call that failed (app.js, flow), so an error's Copy error
-// can say which call failed. Kept for 15 seconds: an older one is not this
-// error's cause.
+// can say which call failed. It is this error's call only when the error
+// shows the call's own message, within 15 seconds; another error (a form
+// check, an older failure) gets no call.
 let lastFailure = null;
-export function noteFailure({ method = 'GET', path, status = null, code = null, reasons = [] }) {
-  lastFailure = { method: String(method).toUpperCase(), path, status, code, reasons, at: Date.now() };
+export function noteFailure({ method = 'GET', path, status = null, code = null, reasons = [], message = null }) {
+  lastFailure = { method: String(method).toUpperCase(), path, status, code, reasons, message, at: Date.now() };
 }
-const recentFailure = (now) => (lastFailure && now - lastFailure.at < 15000 ? lastFailure : null);
+const recentFailure = (now, said) => (lastFailure && now - lastFailure.at < 15000
+  && typeof lastFailure.message === 'string' && lastFailure.message && String(said ?? '').includes(lastFailure.message) ? lastFailure : null);
 
 // "Copy error" (CopyError card): the icon button every error in Flow
 // carries. It copies the screen's words, the page, the Flow call that
@@ -178,7 +180,7 @@ const recentFailure = (now) => (lastFailure && now - lastFailure.at < 15000 ? la
 // false` for a problem that no failed call made (an alert).
 export function errorCopy(said, { call = true } = {}) {
   const at = Date.now();
-  const failed = call ? recentFailure(at) : null;
+  const failed = call ? recentFailure(at, said) : null;
   const page = typeof location === 'undefined' ? null : location.pathname;
   return copyButton({
     label: 'Copy error',

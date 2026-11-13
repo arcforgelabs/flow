@@ -124,7 +124,7 @@ async function flow(path, options = {}) {
   // guard): a press too soon says how long (retryAfterMs), and a good run
   // says its own wait (Flow-Cooldown-Ms). holdButton shows the wait.
   // The failure is kept for the error's Copy error (kit.js, errorCopy).
-  if (!res.ok) noteFailure({ method: options.method ?? 'GET', path, status: res.status, code: body.code, reasons: body.details?.reasons ?? [] });
+  if (!res.ok) noteFailure({ method: options.method ?? 'GET', path, status: res.status, code: body.code, reasons: body.details?.reasons ?? [], message: body.error || `HTTP ${res.status}` });
   if (!res.ok) throw Object.assign(new Error(body.error || `HTTP ${res.status}`), { status: res.status, code: body.code, details: body.details, retryAfterMs: body.retryAfterMs });
   const cooldownMs = Number(res.headers.get('Flow-Cooldown-Ms'));
   if (cooldownMs > 0 && body && typeof body === 'object') body.cooldownMs = cooldownMs;

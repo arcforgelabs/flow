@@ -45,6 +45,42 @@ export const INVOICE_STAGES = {
   drafted: 'Drafted', problem: 'Pending', ready: 'Ready to invoice', invoiced: 'Invoiced', non_chargeable: 'No charge', paid: 'Paid',
 };
 
+// An invoice's status, as the Invoices page names its tabs
+// (server/core/invoice-status.js), and the tone of its pill. A job card, the
+// Jobs list and the Invoices page all use these words.
+export const INVOICE_STATUS_LABELS = Object.freeze({
+  pending: 'Pending', ready: 'Ready', draft: 'Draft', awaiting_payment: 'Awaiting payment', paid: 'Paid', non_chargeable: 'No charge', void: 'Void',
+});
+export const INVOICE_STATUS_TONES = Object.freeze({
+  pending: 'danger', ready: 'success', draft: 'info', awaiting_payment: 'info', paid: 'success', non_chargeable: 'mute', void: 'mute',
+});
+
+// The status of a job's invoice, one of INVOICE_STATUS_LABELS' keys, or null
+// when the job never had an invoice (the card then shows nothing). `o` is the
+// job's billing obligation (server/core/job-board.js). A Flow invoice has its
+// Invoices page tab (invoiceTab); a job matched to an invoice made outside
+// Flow has its accounting system's state. A job problem (a change, a hold)
+// is never an invoice status: the card shows it as its own mark.
+export function invoiceStatusOf(o) {
+  if (!o) return null;
+  if (o.invoiceId && o.invoiceTab) return o.invoiceTab;
+  switch (o.accountingState) {
+    case 'paid': return 'paid';
+    case 'authorised':
+    case 'part_paid': return 'awaiting_payment';
+    case 'drafted': return 'draft';
+    case 'voided':
+    case 'deleted': return 'void';
+    default: break;
+  }
+  if (!o.invoiceId) return null;
+  // A Flow invoice the checks did not reach yet.
+  if (o.invoiceStatus === 'void') return 'void';
+  if (o.invoiceView === 'non_chargeable') return 'non_chargeable';
+  if (o.invoiceStatus === 'issued') return 'awaiting_payment';
+  return 'draft';
+}
+
 const PROBLEM_VIEWS = ['pending', 'review_required', 'held'];
 // A rule's reason, as ruleBlockers writes it (server/core/invoicing-rules.js).
 const isRule = (reason) => reason !== 'the job is not marked ready to invoice';

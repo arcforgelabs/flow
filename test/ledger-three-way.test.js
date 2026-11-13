@@ -54,6 +54,20 @@ describe('three-way compare, field by field', () => {
     assert.equal(changedIn(compare).lines, 'both');
   });
 
+  test('a sent invoice that already holds the new line with the work system\'s own GST is the same, not a change', () => {
+    // Flow first read the order (no S/H); the invoice was made from the work
+    // system's invoice (S/H, no GST). Now the job has the S/H line, and the
+    // accounting item sets GST on it: the work system's own flag stays.
+    const shipping = { priceItemId: 'sh', description: 'Shipping', quantity: 1, unitAmountCents: 1500, taxCode: 'NONE' };
+    const sent = { ...base, lines: [line(100), shipping] };
+    const now = { ...base, lines: [line(100), { ...shipping, taxCode: 'GST', workTaxCode: 'NONE' }] };
+    const compare = compareThreeWays(base, now, sent, { sent: true });
+    assert.equal(compare.outcome, 'none');
+    assert.equal(changedIn(compare).lines, 'same');
+    // A different amount is still a conflict.
+    assert.equal(compareThreeWays(base, now, { ...base, lines: [line(100), { ...shipping, unitAmountCents: 1000 }] }, { sent: true }).outcome, 'conflict');
+  });
+
   test('a change in the work system after the invoice left Flow is a conflict', () => {
     assert.equal(compareThreeWays(base, { ...base, contactId: 'c2' }, base, { sent: true }).outcome, 'conflict');
   });

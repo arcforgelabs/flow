@@ -20,7 +20,7 @@ import { lucide } from '/assets/ui/custom-fields.js';
 import { formatCents } from '/assets/ui/invoicing.js';
 import { jobChangeReview } from '/assets/ui/job-change.js';
 import {
-  caseNumber, checkOf, FINAL_RANK, fixes, INVOICE_STAGES, invoiceStage, matches, NO_STATUS, orderStatuses, phoneLaneIndex, PHONE_HOLD_MS, problemSummary, statusRank,
+  caseNumber, checkOf, FINAL_RANK, fixes, INVOICE_STAGES, INVOICE_STATUS_LABELS, INVOICE_STATUS_TONES, invoiceStage, invoiceStatusOf, matches, NO_STATUS, orderStatuses, phoneLaneIndex, PHONE_HOLD_MS, problemSummary, statusRank,
 } from '/assets/ui/job-board.js';
 import { rowMenu } from '/assets/ui/kit.js';
 import { fixPrompt, problemPrompt } from '/assets/ui/problem-prompt.js';
@@ -54,6 +54,9 @@ const ACTIVITY = {
 const BY = { person: 'A person', automation: 'An automation' };
 // Grouped by invoice stage: a job with no invoice stage yet is still in work.
 const STAGE_GROUPS = { in_work: 'In work', ...INVOICE_STAGES };
+// The Invoice filter's value for a job that never had an invoice.
+const NOT_INVOICED = 'Not invoiced';
+const invoiceLabel = (job) => INVOICE_STATUS_LABELS[invoiceStatusOf(job.obligation)] ?? NOT_INVOICED;
 const STAGE_RANK = { 'In work': 0, Drafted: 2, Problem: 2, 'Ready to invoice': 4, Invoiced: 5, 'No charge': 5, Paid: 6 };
 
 const showDate = (iso) => (iso ? new Date(`${iso}T00:00:00`).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' }) : '—');
@@ -229,13 +232,14 @@ export async function renderJobs(main, ui) {
   // ClickUp's Status does.
   const PROBLEM_OPS = { yes: 'Has one', no: 'Has none' };
   const SET_OPS = { is: 'Is', not: 'Is not' };
-  const opsOf = (field) => (field === 'problem' ? PROBLEM_OPS : ['status', 'stage'].includes(field) ? SET_OPS : OPERATORS[kindOf(field)] ?? {});
+  const opsOf = (field) => (field === 'problem' ? PROBLEM_OPS : ['status', 'stage', 'invoice'].includes(field) ? SET_OPS : OPERATORS[kindOf(field)] ?? {});
   // The choices a choice or person filter offers: [{ value, label }].
   function choicesOf(field) {
     const people = () => [{ value: 'me', label: 'Me' }, ...state.people.map((p) => ({ value: p.id, label: p.name }))];
     const labels = (list) => [...new Set(list.filter(Boolean))].sort((a, b) => a.localeCompare(b)).map((v) => ({ value: v, label: v }));
     if (field === 'status') return orderStatuses(state.statuses, state.jobs).map((v) => ({ value: v, label: v, rank: statusRank(v) }));
     if (field === 'stage') return Object.values(STAGE_GROUPS).map((v) => ({ value: v, label: v }));
+    if (field === 'invoice') return [NOT_INVOICED, ...Object.values(INVOICE_STATUS_LABELS)].map((v) => ({ value: v, label: v }));
     if (field === 'client') return labels(state.jobs.map(clientOf));
     if (field === 'practitioner') return labels(state.jobs.map((job) => job.practitioner));
     if (field === 'assignee') return people();
@@ -248,6 +252,7 @@ export async function renderJobs(main, ui) {
     switch (field) {
       case 'status': return statusOf(job);
       case 'stage': return STAGE_GROUPS[invoiceStage(job.obligation) ?? 'in_work'];
+      case 'invoice': return invoiceLabel(job);
       case 'client': return clientOf(job);
       case 'practitioner': return job.practitioner ?? null;
       case 'assignee': return assigneeField() ? valueOf(job, assigneeField().id)?.value ?? null : null;
@@ -366,10 +371,24 @@ export async function renderJobs(main, ui) {
     }, svg(WARN_ICON));
   }
 
+  // The job's invoice status as a pill, in the Invoices page's words and
+  // tones. Nothing when the job never had an invoice.
+  function invoicePill(job, { number = false, className = '' } = {}) {
+    const status = invoiceStatusOf(job.obligation);
+    if (!status) return null;
+    const label = INVOICE_STATUS_LABELS[status];
+    // An invoice made outside Flow has only the accounting system's id, not
+    // a number a person reads: the pill shows its status alone.
+    const invoiceNumber = job.obligation?.invoiceNumber ?? null;
+    return h('span', { class: `fx-status ${className}`.trim(), 'data-tone': INVOICE_STATUS_TONES[status] ?? 'mute', title: invoiceNumber ? `Invoice ${invoiceNumber}: ${label}` : `Invoice: ${label}` },
+      number && invoiceNumber ? `${label} · ${invoiceNumber}` : label);
+  }
+
   // One card ("Task card"). The card design may change, so its markup stays
   // here and its CSS in one block of flow.css ("Job card"): client,
   // practitioner, one date, total, and a warning mark when the job has a
-  // problem. Never the case number. A late job's date shows in red. A stage
+  // problem. Never the case number. A late job's date shows in red. Under
+  // the foot, the invoice's status when the job has an invoice. A stage
   // move the work system has not made yet adds "Waiting for <system>".
   function jobCard(job) {
     const date = dateOf(job);
@@ -388,6 +407,7 @@ export async function renderJobs(main, ui) {
       h('span', { class: 'fx-job__space' }),
       problemMark(job),
       h('span', { class: 'fx-job__amount' }, job.totalCents == null ? '—' : formatCents(job.totalCents))),
+    invoicePill(job, { className: 'fx-job__invoice' }),
     job.pendingMove ? h('span', { class: 'fx-job__wait', title: `Set the status to ${job.pendingMove.to} in ${system}. Flow then reads the change.` }, `Waiting for ${system}`) : null,
     // A rule asks for an item the job lacks in the work system (job-board.js).
     // Fix it there: the lab prints from it too.
@@ -829,6 +849,7 @@ export async function renderJobs(main, ui) {
       practitioner: { kind: 'text', className: 'fx-dim', cell: (job) => job.practitioner ?? '—' },
       patient: { kind: 'text', className: 'fx-dim', cell: (job) => job.patient ?? '—' },
       stage: { kind: 'stage', cell: (job) => stagePill(statusOf(job)) },
+      invoice: { kind: 'text', cell: (job) => invoicePill(job, { number: true }) ?? '' },
       assignee: { kind: 'person', cell: (job) => personBadge(job, assigneeField()) },
       ordered: { kind: 'date', className: 'fx-dim', cell: (job) => day(job.orderedOn) },
       due: { kind: 'date', className: 'fx-dim', cell: late },
@@ -1147,9 +1168,13 @@ export async function renderJobs(main, ui) {
     const link = (attrs, text) => h('a', { class: 'fx-task__link', ...attrs }, text);
     const element = h('dialog', { class: 'fx-dialog fx-task', 'aria-label': clientOf(job) });
     const close = () => element.close();
+    // The invoice's own status (the Invoices page's tab), never the job's
+    // problem: a paid invoice reads Paid even while the job has a fix.
+    const billed = invoiceStatusOf(o);
     const invoiceText = o?.invoiceId
       ? link({ href: `/invoices/${o.invoiceId}`, onclick: (event) => { close(); ui.go(event); } },
-        `${o.invoiceStatus === 'draft' ? 'Draft' : 'Invoice'} ${o.invoiceNumber ?? ''}`.trim() + (stage ? ` · ${INVOICE_STAGES[stage]}` : ''))
+        `${o.invoiceStatus === 'draft' ? 'Draft' : 'Invoice'} ${o.invoiceNumber ?? ''}`.trim() + (billed ? ` · ${INVOICE_STATUS_LABELS[billed]}` : ''))
+      : billed ? `Invoice · ${INVOICE_STATUS_LABELS[billed]}`
       : choose ? h('span', { class: 'fx-task__none' }, svg(WARN_ICON), 'Needs invoice')
         : stage === 'drafted' ? 'Not drafted' : stage ? INVOICE_STAGES[stage] : o ? 'Not ready to invoice' : 'No invoice yet';
     const rest = found.filter((f) => f.go !== 'choose');

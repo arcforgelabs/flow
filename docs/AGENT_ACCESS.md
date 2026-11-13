@@ -46,7 +46,9 @@ release a held history job; `docs/SEAZONA.md`, "History import"). It can also
 compare and fix the price list: Flow codes, links to Xero items and Seazona
 products, and the price codes that hold job lines (`docs/PRICE_LIST.md`). Owner
 actions (People, Integrations, updates) always refuse the key: an agent request
-is never a verified owner sign-in. Turning the person off in People stops the
+is never a verified owner sign-in. Sending an invoice with a warning
+(`docs/INVOICE_SENDING.md`, "Override") also refuses the key
+(`person_required`): a person owns that. Turning the person off in People stops the
 key on the next request, and a send it queued fails as `requester_disabled`
 instead of reaching the accounting system. Removing either setting turns the
 door off. Each call

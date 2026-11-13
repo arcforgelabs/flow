@@ -19,6 +19,7 @@ const DENIALS = {
   access_disabled: [403, 'Your Flow access has been turned off. Ask a Flow owner if this is a mistake.'],
   role_required: [403, 'Your Flow role does not allow this.'],
   owner_required: [403, 'Only a Flow owner can do this.'],
+  person_required: [403, 'Only a signed-in person can do this. An assistant key cannot.'],
   owner_verification_required: [403, null],
   sign_in_unavailable: [503, 'Sign-in is unavailable right now. Try again shortly.'],
 };
@@ -231,5 +232,11 @@ export function createPersonAuth({
     return next();
   }
 
-  return { requireSession, requireRole, requireOwner, ownerVerification };
+  // For an action a person must own, such as sending an invoice with a
+  // warning: an assistant's key (req.agent) is refused. Use after requireSession.
+  function requirePerson(req, res, next) {
+    return req.agent ? deny(res, 'person_required') : next();
+  }
+
+  return { requireSession, requireRole, requireOwner, requirePerson, ownerVerification };
 }
