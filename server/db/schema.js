@@ -818,7 +818,6 @@ export const sendOverrides = pgTable('send_overrides', {
   createdAt: createdAt(),
 }, (t) => [
   unique('send_overrides_invoice_version').on(t.invoiceId, t.version),
-  index('send_overrides_person_day').on(t.personId, t.createdAt),
   check('send_overrides_reason_valid', inList('reason_code', SEND_OVERRIDE_REASONS)),
   check('send_overrides_other_has_note', sql`${t.reasonCode} <> 'other' or ${t.note} is not null`),
   check('send_overrides_note_length', sql`${t.note} is null or length(${t.note}) between 1 and 200`),

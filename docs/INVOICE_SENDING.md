@@ -199,7 +199,8 @@ change is open.
 ## Override
 
 An owner or admin can send one Pending draft although it has a warning. It
-is a second door, with one more step. Send ready and the bulk bar never use
+is a second door, with one more step, and it goes straight through: no
+approval or Reconcile step follows. Send ready and the bulk bar never use
 it.
 
 - **What it can pass.** Only a warning on the allow list (`OVERRIDABLE`,
@@ -216,8 +217,8 @@ it.
   required for Other). Send works only with every tick and a reason.
 - **The gates.** The server reads the accounting copy and the job first, as
   Send does. The ticked warnings must be the warnings at the press
-  (`override_stale`). One person makes at most 10 overrides in 24 hours
-  (`override_limit`). One invoice waits 30 seconds between presses.
+  (`override_stale`). There is no daily limit and no wait between presses:
+  the dialog is the check.
 - **What goes.** The invoice is issued and queued. The send worker gives the
   accounting adapter the recorded warning keys (`accepted`). The adapter
   passes those and still stops on any other problem. An override always goes
@@ -227,10 +228,9 @@ it.
   the time, the reason, the note, each warning with its words then, the
   invoice version and the hash of its document. The row cannot be changed or
   deleted. The job gets a `send.override` event. The note stays in that row:
-  it is not in the log, the review item or a copied prompt.
-- **After.** The sent invoice shows "Override. Sent with 1 warning", who and
-  when, with a link to Reconcile. The override is an open item on Reconcile
-  (`docs/RECONCILE.md`, "Overrides") until it closes.
+  it is not in the log or a copied prompt.
+- **After.** The sent invoice shows "Override. Sent with 1 warning", who,
+  when, the reason and the note. Nothing more is necessary.
 
 ## New invoice from a job
 
@@ -292,11 +292,7 @@ Xero's `SentToContact` flag.
   the override above. `acknowledged` lists the `key` of each problem the
   person ticked. `GET /invoices/:id` gives each problem its `key`, and
   `canOverride`, `overrides` and `overrideReasons`. Refusals: `not_overridable`,
-  `override_stale`, `override_limit` (429), `person_required`.
-- `GET /api/invoicing/overrides?state=open|all` and `GET /overrides/:id`: the
-  overrides, each with its invoice and its review item.
-  `POST /overrides/:id/recheck` (owner or admin) and
-  `POST /overrides/:id/accept` `{ note }` (owner or admin, a person) close one.
+  `override_stale`, `person_required`.
 - `DELETE /api/invoicing/invoices/:id` (owner or admin) removes a draft that
   was never issued (`status` draft and `issuedVersion` 0). Its job's billing
   obligation is freed, so the job is ready again and the lab's rules decide

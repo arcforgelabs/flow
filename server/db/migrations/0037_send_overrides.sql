@@ -27,7 +27,6 @@ DO $flow_guard$ BEGIN
 	ALTER TABLE "send_overrides" ADD CONSTRAINT "send_overrides_person_id_people_id_fk" FOREIGN KEY ("person_id") REFERENCES "flow"."people"("id") ON DELETE no action ON UPDATE no action;
 EXCEPTION WHEN duplicate_object OR duplicate_table OR invalid_table_definition THEN NULL;
 END $flow_guard$;--> statement-breakpoint
-CREATE INDEX IF NOT EXISTS "send_overrides_person_day" ON "send_overrides" USING btree ("person_id","created_at");--> statement-breakpoint
 -- An override is a record (docs/INVOICE_SENDING.md, "Override"): no code path
 -- or manual query may change or remove it.
 DO $flow_guard$ BEGIN

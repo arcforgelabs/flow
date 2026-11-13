@@ -8,7 +8,7 @@ import { getInvoice, issueInvoice } from './invoices.js';
 import { CHANGED_REASON, diffJobLines, sourceBillingProblems, STATUS_BACK_REASON } from './ledger.js';
 import { soleOrganisation } from './pipeline.js';
 import { needsRead, readAccountingFirst, readBeforeAct, READS_PER_PASS } from './read-before-act.js';
-import { acceptedKeysFor, assertUnderLimit, overridable, problemKey, readReason, recordOverride } from './send-override.js';
+import { acceptedKeysFor, overridable, problemKey, readReason, recordOverride } from './send-override.js';
 import { deadHoldSince, deadSince, enqueueJob, runNextJob } from './queue.js';
 
 // Pending, Ready and Send all ready (docs/INVOICE_SENDING.md).
@@ -407,7 +407,6 @@ export async function sendAnyway(db, organisationId, invoiceId, {
   if (keys.length !== ticked.length || keys.some((key, i) => key !== ticked[i])) {
     throw new FlowError('override_stale', 'The warnings changed. Read them again.');
   }
-  await assertUnderLimit(db, personId, now);
   return db.transaction(async (tx) => {
     await queue(tx, organisationId, [invoiceId], personId);
     const issued = await issueInvoice(tx, organisationId, invoiceId, { issuedBy: `person:${personId}`, issueDate });

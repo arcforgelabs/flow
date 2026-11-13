@@ -5359,29 +5359,7 @@
           "default": "now()"
         }
       },
-      "indexes": {
-        "send_overrides_person_day": {
-          "name": "send_overrides_person_day",
-          "columns": [
-            {
-              "expression": "person_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
+      "indexes": {},
       "foreignKeys": {
         "send_overrides_organisation_id_organisations_id_fk": {
           "name": "send_overrides_organisation_id_organisations_id_fk",

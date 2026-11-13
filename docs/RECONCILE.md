@@ -68,28 +68,6 @@ price list, and a person or a rule can change a draft.
   (`resolved_by` `system:reconcile`) when a run finds the day agrees. An open
   item older than 60 days is still checked, so it can close.
 
-## Overrides
-
-An invoice an owner or admin sent with a warning (`docs/INVOICE_SENDING.md`,
-"Override") is one open review item, kind `send.override`, entity
-`send_override`. Its evidence holds the invoice, the version, the document
-hash, each warning's code and line, the reason and the person. It holds no
-note and no customer name. Money at risk is the amount of the lines with a
-warning.
-
-On the Reconcile page each open override is a row of the type **Override**.
-The Type filter finds them. The row opens the override: Flow's value beside
-the Xero item's for each line, who sent it, when and why.
-
-The item closes in one of three ways. Each close adds a
-`send.override.closed` event to the job.
-
-| Way | Trigger | Resolution |
-| --- | --- | --- |
-| The cause is gone | **Recheck** on the override. The adapter's draft check (Flow's copy of Xero, no call) no longer finds the recorded warning. | `agrees`, by `system:send-override` |
-| The invoice is gone | The invoice is void, or a later version went with no override. Void checks at once; Recheck checks too. | `invoice_void` or `replaced` |
-| A person accepts it | **Accept**, by an owner or admin, with a note. An assistant key cannot. | `accepted`, by the person |
-
 ## Running
 
 - The worker (`createReconcileWorker`, started in `server/index.js`) asks every

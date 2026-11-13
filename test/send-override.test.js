@@ -8,12 +8,9 @@ import { createPersonAuth } from '../server/auth/session.js';
 import { createRegistry } from '../server/integrations/port.js';
 import { fakeClerk, request, TEST_PUBLISHABLE_KEY } from './support/clerk.js';
 import { createContact, createOrganisation, createPriceItem } from '../server/core/directory.js';
-import { createDraftInvoice, reviseInvoice, voidInvoice } from '../server/core/invoices.js';
+import { createDraftInvoice, reviseInvoice } from '../server/core/invoices.js';
 import { observeJob } from '../server/core/ledger.js';
-import { listReview } from '../server/core/review.js';
-import {
-  acceptOverride, listOverrides, overridable, OVERRIDABLE, OVERRIDES_PER_DAY, overridesOfInvoice, recheckOpenOverrides, recheckOverride, REVIEW_OVERRIDE,
-} from '../server/core/send-override.js';
+import { overridable, OVERRIDABLE, overridesOfInvoice } from '../server/core/send-override.js';
 import { invoiceViews, sendAllReady, sendAnyway, sendQueued } from '../server/core/sending.js';
 import { billingObligations, invoices, obligationEvents, sendOverrides } from '../server/db/schema.js';
 import { freshDatabase, skipWithoutDatabase } from './support/db.js';
@@ -73,8 +70,6 @@ describe('override: send one invoice with a warning', { skip: skipWithoutDatabas
     practice = await createContact(handle.db, lab.id, { kind: 'customer', name: 'Example Practice' });
     crown = await createPriceItem(handle.db, lab.id, { code: 'CRN', name: 'Crown', unitAmountCents: 22000 });
     fake = fakeAccounting();
-    // Each test starts with no override in the last day.
-    await handle.pool.query('ALTER TABLE flow.send_overrides DISABLE TRIGGER send_overrides_append_only; DELETE FROM flow.review_items; DELETE FROM flow.send_overrides; ALTER TABLE flow.send_overrides ENABLE TRIGGER send_overrides_append_only;');
   });
 
   const good = () => createDraftInvoice(handle.db, lab.id, { contactId: practice.id, reference: 'CASE-1', lines: [{ priceItemId: crown.id, quantity: 1 }] });
@@ -112,12 +107,8 @@ describe('override: send one invoice with a warning', { skip: skipWithoutDatabas
     assert.equal(override.note, 'Checked with the bookkeeper.');
     assert.deepEqual(override.problems, [{ code: TAX.code, key: TAX.key, message: TAX.message, short: TAX.short, line: 1, itemCode: 'CRN', flowTax: 'GST_FREE', xeroTax: 'GST' }]);
 
-    // The open item: the money on the warned line, and no note in its evidence.
-    const [item] = await listReview(handle.db, lab.id, { kind: REVIEW_OVERRIDE });
-    assert.equal(item.flowId, override.id);
-    assert.equal(item.moneyAtRiskCents, 22000);
-    assert.equal(JSON.stringify(item.evidence).includes('bookkeeper'), false);
-    assert.equal(item.evidence.problems[0].message, undefined);
+    // It goes straight through: no item waits for a person.
+    assert.deepEqual((await handle.pool.query('select kind from flow.review_items where organisation_id = $1', [lab.id])).rows, []);
     const events = await handle.db.select().from(obligationEvents).where(eq(obligationEvents.obligationId, job.id));
     const event = events.find((e) => e.kind === 'send.override');
     assert.equal(event.actor, `person:${owner.id}`);
@@ -128,7 +119,7 @@ describe('override: send one invoice with a warning', { skip: skipWithoutDatabas
     assert.equal((await row(invoice.id)).sendState, 'sent');
     const [shown] = await overridesOfInvoice(handle.db, lab.id, invoice.id);
     assert.equal(shown.reason, 'Other');
-    assert.equal(shown.review.state, 'open');
+    assert.equal(shown.note, 'Checked with the bookkeeper.');
   });
 
   test('a usual send passes no warning to the adapter', async () => {
@@ -146,7 +137,7 @@ describe('override: send one invoice with a warning', { skip: skipWithoutDatabas
     const empty = await createDraftInvoice(handle.db, lab.id, { contactId: practice.id, reference: 'CASE-2', lines: [] });
     await assert.rejects(press(empty), { code: 'not_overridable' });
     for (const invoice of [mixed, clean, empty]) assert.equal((await row(invoice.id)).status, 'draft');
-    assert.equal((await handle.db.select().from(sendOverrides)).length, 0);
+    assert.equal((await handle.db.select().from(sendOverrides).where(eq(sendOverrides.organisationId, lab.id))).length, 0);
   });
 
   test('the ticks must be the warnings at the press', async () => {
@@ -175,17 +166,6 @@ describe('override: send one invoice with a warning', { skip: skipWithoutDatabas
     assert.equal((await row(invoice.id)).status, 'draft');
   });
 
-  test('one person makes at most the daily limit of overrides', async () => {
-    for (let n = 0; n < OVERRIDES_PER_DAY; n += 1) await press(await warned());
-    const last = await warned();
-    await assert.rejects(press(last), (error) => error.code === 'override_limit' && error.status === 429);
-    assert.equal((await row(last.id)).status, 'draft');
-    // A day later the person can make one again.
-    const tomorrow = new Date(Date.now() + 25 * 60 * 60 * 1000);
-    await press(last, { now: tomorrow });
-    assert.equal((await row(last.id)).status, 'issued');
-  });
-
   test('an override is a record: no update and no delete', async () => {
     const { override } = await press(await warned());
     await assert.rejects(handle.db.update(sendOverrides).set({ note: 'changed' }).where(eq(sendOverrides.id, override.id)));
@@ -193,53 +173,16 @@ describe('override: send one invoice with a warning', { skip: skipWithoutDatabas
     assert.equal((await handle.db.select().from(sendOverrides).where(eq(sendOverrides.id, override.id))).length, 1);
   });
 
-  test('Recheck closes the item only when the warning is gone', async () => {
-    const invoice = await warned();
-    const { override } = await press(invoice);
-    assert.deepEqual(await recheckOverride(handle.db, lab.id, override.id, { accounting: fake.adapter }), { closed: false, reason: 'still_differs' });
-    assert.deepEqual(await recheckOverride(handle.db, lab.id, override.id, {}), { closed: false, reason: 'accounting_not_connected' });
-    fake.checks.set(invoice.id, []);
-    assert.deepEqual(await recheckOverride(handle.db, lab.id, override.id, { accounting: fake.adapter }), { closed: true, resolution: 'agrees' });
-    assert.deepEqual(await listOverrides(handle.db, lab.id), []);
-    const [all] = await listOverrides(handle.db, lab.id, { state: 'all' });
-    assert.equal(all.review.resolution, 'agrees');
-    assert.equal(all.review.resolvedBy, 'system:send-override');
-    assert.deepEqual(await recheckOverride(handle.db, lab.id, override.id, { accounting: fake.adapter }), { closed: false, reason: 'not_open' });
-  });
-
-  test('Accept needs a note and closes the item as the person', async () => {
-    const { override } = await press(await warned());
-    await assert.rejects(acceptOverride(handle.db, lab.id, override.id, { personId: owner.id, note: ' ' }), { code: 'invalid' });
-    const accepted = await acceptOverride(handle.db, lab.id, override.id, { personId: owner.id, note: 'The client is tax free.' });
-    assert.equal(accepted.review.state, 'resolved');
-    assert.equal(accepted.review.resolution, 'accepted');
-    assert.equal(accepted.review.note, 'The client is tax free.');
-    assert.equal(accepted.review.resolvedBy, `person:${owner.id}`);
-    await assert.rejects(acceptOverride(handle.db, lab.id, override.id, { personId: owner.id, note: 'Again.' }), { code: 'conflict' });
-  });
-
-  test('a void invoice, and a later version sent clean, close the item', async () => {
-    const gone = await warned();
-    await press(gone);
+  test('an override is for one version: a revised invoice sent clean passes no warning', async () => {
     const revised = await warned();
     await press(revised);
     await sendQueued(handle.db, lab.id, { accounting: fake.adapter });
-
-    await voidInvoice(handle.db, lab.id, gone.id);
-    assert.deepEqual(await recheckOpenOverrides(handle.db, lab.id, { accounting: fake.adapter, invoiceId: gone.id }), { open: 0, closed: 1 });
-
-    // Under revision the item stays open; the new version, sent clean, closes it.
     await reviseInvoice(handle.db, lab.id, revised.id);
-    assert.deepEqual(await recheckOpenOverrides(handle.db, lab.id, { accounting: fake.adapter }), { open: 1, closed: 0 });
     fake.checks.set(revised.id, []);
     fake.pushed.length = 0;
     await sendAllReady(handle.db, lab.id, { accounting: fake.adapter, personId: owner.id, issueDate: ISSUE_DATE, invoiceIds: [revised.id] });
     await sendQueued(handle.db, lab.id, { accounting: fake.adapter });
-    // The old override does not apply to the new version.
     assert.deepEqual(fake.pushed, [{ id: revised.id, pushedBy: owner.id, accepted: null }]);
-    assert.deepEqual(await recheckOpenOverrides(handle.db, lab.id, { accounting: fake.adapter }), { open: 0, closed: 1 });
-    const resolutions = (await listOverrides(handle.db, lab.id, { state: 'all' })).map((o) => o.review.resolution).sort();
-    assert.deepEqual(resolutions, ['invoice_void', 'replaced']);
   });
 });
 
@@ -300,7 +243,7 @@ describe('override over the API', { skip: skipWithoutDatabase }, () => {
     assert.equal((await call(`/invoices/${clean.id}`)).body.invoice.canOverride, false);
   });
 
-  test('staff and an assistant key cannot override or accept; an owner can', async () => {
+  test('staff and an assistant key cannot override; an owner can, with no wait and no limit', async () => {
     const invoice = await warned();
     const path = `/invoices/${invoice.id}/send-anyway`;
     let res = await call(path, { method: 'POST', body, token: staffToken });
@@ -314,39 +257,17 @@ describe('override over the API', { skip: skipWithoutDatabase }, () => {
     assert.equal(res.body.invoice.status, 'issued');
     assert.equal(res.body.invoice.canOverride, false);
     assert.equal(res.body.invoice.overrides[0].reason, 'Client tax treatment');
-    const overrideId = res.body.override.id;
 
-    // The same invoice waits 30 seconds between presses.
+    // A second press on the same invoice finds no draft. No wait, no limit.
     res = await call(path, { method: 'POST', body });
-    assert.deepEqual([res.status, res.body.code], [429, 'action_cooldown']);
-
-    // An assistant reads the open overrides, and cannot accept one.
-    res = await call('/overrides', { token: KEY });
-    assert.deepEqual(res.body.overrides.map((o) => o.id), [overrideId]);
-    assert.equal((await call('/review?kind=send.override', { token: KEY })).body.items?.length ?? 1, 1);
-    res = await call(`/overrides/${overrideId}/accept`, { method: 'POST', body: { note: 'Fine.' }, token: KEY });
-    assert.deepEqual([res.status, res.body.code], [403, 'person_required']);
-    res = await call(`/overrides/${overrideId}/accept`, { method: 'POST', body: { note: 'Fine.' }, token: staffToken });
-    assert.equal(res.status, 403);
-
-    res = await call(`/overrides/${overrideId}/recheck`, { method: 'POST', body: {} });
-    assert.deepEqual([res.body.closed, res.body.reason], [false, 'still_differs']);
-    res = await call(`/overrides/${overrideId}/accept`, { method: 'POST', body: {} });
-    assert.equal(res.status, 400);
-    res = await call(`/overrides/${overrideId}/accept`, { method: 'POST', body: { note: 'The client is tax free.' } });
-    assert.equal(res.status, 200, JSON.stringify(res.body));
-    assert.equal(res.body.override.review.resolution, 'accepted');
-    assert.deepEqual((await call('/overrides')).body.overrides, []);
-    assert.equal((await call('/overrides?state=all')).body.overrides.length, 1);
-  });
-
-  test('a void closes the open override', async () => {
-    const invoice = await warned();
-    let res = await call(`/invoices/${invoice.id}/send-anyway`, { method: 'POST', body });
-    assert.equal(res.status, 200, JSON.stringify(res.body));
-    res = await call(`/invoices/${invoice.id}/void`, { method: 'POST', body: {} });
-    assert.equal(res.status, 200, JSON.stringify(res.body));
-    assert.equal(res.body.invoice.overrides[0].review.resolution, 'invoice_void');
+    assert.deepEqual([res.status, res.body.code], [409, 'not_draft']);
+    for (let n = 0; n < 11; n += 1) {
+      const next = await warned();
+      res = await call(`/invoices/${next.id}/send-anyway`, { method: 'POST', body });
+      assert.equal(res.status, 200, JSON.stringify(res.body));
+    }
+    // No Reconcile step: the list holds no override rows.
+    assert.equal((await call('/reconcile')).body.overrides, undefined);
   });
 
   test('changed warnings and a problem off the list are refused with their own codes', async () => {
