@@ -23,17 +23,18 @@ import { problemPrompt } from '/assets/ui/problem-prompt.js';
 import { xeroContactActions } from '/assets/ui/xero-contact.js';
 import { findBox, today, viewBar } from '/assets/ui/view-bar.js';
 
-// The tabs, left to right (server/api/invoicing.js, TABS): Pending (a
-// person must look), Ready (checks pass), then the accounting system's
-// stages: Draft (a draft there, or on its way), Approved, Sent (to the
-// customer). With no accounting system, an issued invoice is Approved.
-// Non-chargeable: work a lab's rule keeps in Flow and never bills.
-const TABS = [['pending', 'Pending'], ['ready', 'Ready'], ['draft', 'Draft'], ['approved', 'Approved'], ['sent', 'Sent'], ['non_chargeable', 'Non-chargeable'], ['void', 'Void']];
+// The tabs, left to right: one status rule puts each invoice on one
+// (server/core/invoice-status.js). Pending (a person must look), Ready
+// (checks pass), then the accounting system's stages: Draft (a draft there,
+// or on its way), Awaiting payment (approved, not paid in full; with no
+// accounting system, every issued invoice), Paid. No charge: work a person or
+// a rule keeps in Flow and never bills.
+const TABS = [['pending', 'Pending'], ['ready', 'Ready'], ['draft', 'Draft'], ['awaiting_payment', 'Awaiting payment'], ['paid', 'Paid'], ['non_chargeable', 'No charge'], ['void', 'Void']];
 const TAB_LABEL = Object.fromEntries(TABS);
-const TAB_TONE = { pending: 'danger', ready: 'success', draft: 'info', approved: 'info', sent: 'success', non_chargeable: 'mute', void: 'mute' };
+const TAB_TONE = { pending: 'danger', ready: 'success', draft: 'info', awaiting_payment: 'info', paid: 'success', non_chargeable: 'mute', void: 'mute' };
 // Tab names an earlier Flow kept in this browser.
-const OLD_TAB = { problem: 'pending', to_check: 'ready', issued: 'approved' };
-const NUMBERED = ['draft', 'approved', 'sent', 'void'];
+const OLD_TAB = { problem: 'pending', to_check: 'ready', issued: 'awaiting_payment', approved: 'awaiting_payment', sent: 'awaiting_payment' };
+const NUMBERED = ['draft', 'awaiting_payment', 'paid', 'void'];
 const EMPTY = {
   pending: 'Nothing needs a look.',
   ready: 'Nothing is ready. Press New invoice to start one.',
@@ -344,7 +345,7 @@ export async function renderInvoiceList(main, ui) {
               res.remaining ? `${res.remaining} more stay in Ready: tick them and press again.` : '',
             ].filter(Boolean);
             return [`${sent}${notes.length ? ` ${notes.join(' ')}` : ''}`, res.held || res.waiting ? 'info' : 'success'];
-          }, (res) => (res.issued ? (to ? 'draft' : 'approved') : null));
+          }, (res) => (res.issued ? (to ? 'draft' : 'awaiting_payment') : null));
         },
       });
     }
@@ -367,7 +368,7 @@ export async function renderInvoiceList(main, ui) {
     if (numbered) apply.push({ icon: 'file-down', label: 'PDFs', iconOnly: true, title: 'Download PDFs', run: () => downloadPdfs(rows) });
     const danger = [];
     const voidable = rows.filter((i) => i.status === 'issued');
-    if (['draft', 'approved', 'sent'].includes(state.status) && context.canIssue && voidable.length) {
+    if (['draft', 'awaiting_payment', 'paid'].includes(state.status) && context.canIssue && voidable.length) {
       danger.push({
         icon: 'ban', label: 'Void', iconOnly: true, tone: 'danger', title: 'Void',
         run: () => voidAll(voidable),
@@ -588,7 +589,9 @@ export async function renderInvoiceList(main, ui) {
     pager.draw({ offset: answer.offset ?? 0, limit: answer.limit ?? state.limit, total: answer.total ?? answer.invoices.length });
     const shown = new Set(body.invoices.map((i) => i.id));
     const total = answer.total ?? body.invoices.length;
-    frame.count(`${total.toLocaleString('en-AU')} ${total === 1 ? 'invoice' : 'invoices'}${total ? ` · ${formatCents(answer.totalCents ?? 0)}` : ''}`);
+    // No charge work is never billed, so its tab counts rows and sums nothing.
+    const summed = total && state.status !== 'non_chargeable';
+    frame.count(`${total.toLocaleString('en-AU')} ${total === 1 ? 'invoice' : 'invoices'}${summed ? ` · ${formatCents(answer.totalCents ?? 0)}` : ''}`);
     for (const id of state.ticked) if (!shown.has(id)) state.ticked.delete(id);
     drawTabs(body.counts);
     drawBar();
@@ -638,9 +641,11 @@ export async function renderInvoiceList(main, ui) {
     const statusCell = (invoice) => {
       const cell = h('span', {}, invoice.sending
         ? h('span', { class: 'fx-status', 'data-tone': 'info' }, 'Sending')
-        // A Non-chargeable invoice shows why: its No Charge reason.
+        // A No charge invoice shows why: its No Charge reason. Awaiting
+        // payment says when the accounting system emailed it.
         : h('span', { class: 'fx-status', 'data-tone': TAB_TONE[invoice.tab] ?? 'mute', title: TAB_LABEL[invoice.tab] ?? null },
-          (invoice.tab === 'non_chargeable' && invoice.noChargeReason) || TAB_LABEL[invoice.tab] || ''));
+          (invoice.tab === 'non_chargeable' && invoice.noChargeReason)
+          || (invoice.tab === 'awaiting_payment' && invoice.emailed ? 'Emailed' : TAB_LABEL[invoice.tab]) || ''));
       if (!linked) statusCells.set(invoice.id, cell);
       return cell;
     };
@@ -665,7 +670,11 @@ export async function renderInvoiceList(main, ui) {
       reference: showProblem
         ? { label: 'Problem', kind: 'text', phone: 'meta', cell: problemCell }
         : { kind: 'text', className: 'fx-dim', phone: numbered ? 'hide' : 'meta', cell: (i) => i.reference ?? '—' },
-      date: { label: created ? 'Created' : 'Date', kind: 'date', className: 'fx-dim', phone: 'meta', cell: (i) => dateCell(h, i.issueDate ?? i.createdAt?.slice(0, 10)) },
+      // No charge shows the job's date (invoiceValue), never the day Flow made the row.
+      date: {
+        label: state.status === 'non_chargeable' ? 'Job date' : created ? 'Created' : 'Date', kind: 'date', className: 'fx-dim', phone: 'meta',
+        cell: (i) => dateCell(h, invoiceValue(i, 'date')),
+      },
       due: { kind: 'date', className: 'fx-dim', cell: (i) => dateCell(h, i.dueDate) },
       total: { kind: 'total', num: true, className: 'fx-strong', cell: (i) => formatCents(i.totalCents) },
       status: { kind: 'status', className: 'fx-status-cell', ...(numbered ? {} : { phone: 'hide' }), cell: statusCell },
@@ -1179,7 +1188,7 @@ function draftView(invoice, ui, context, redraw) {
       const passes = saved.view === 'ready';
       const why = brief(saved.problems?.[0]?.message);
       if (saved.view === 'non_chargeable') {
-        toast('Saved. It is Non-chargeable.', 'success');
+        toast('Saved. It is No charge.', 'success');
         if (isNew) go(`/invoices/${saved.id}`, { replace: true }); else redraw(saved);
       } else if (isNew) {
         toast(passes ? 'Saved. It is Ready.' : `Saved. It is Pending. ${why}`, passes ? 'success' : 'warn');
@@ -1390,7 +1399,7 @@ function draftView(invoice, ui, context, redraw) {
     },
   }, job.noChargeReason ? 'Change No Charge' : 'No Charge') : null;
   const showAccept = Boolean(jobChange?.canAccept && context.canIssue);
-  const header = ui.pageHeader(isNew ? 'New invoice' : ready ? 'Ready invoice' : nonChargeable ? 'Non-chargeable invoice' : 'Pending invoice', {
+  const header = ui.pageHeader(isNew ? 'New invoice' : ready ? 'Ready invoice' : nonChargeable ? 'No charge invoice' : 'Pending invoice', {
     actions: [fromJob, deleteButton, noChargeButton, previewBtn, saveButton, sendButton ?? issueButton].filter(Boolean),
   });
   const primaryOf = () => (showAccept ? null : (sendButton ?? issueButton ?? (saveButton.hidden ? null : saveButton)));
@@ -1409,7 +1418,7 @@ function draftView(invoice, ui, context, redraw) {
     chrome.pager,
     header,
     draftNote(to, invoice) ? ui.notice(draftNote(to, invoice), 'warn') : null,
-    nonChargeable ? ui.notice(brief(invoice.nonChargeable?.[0]?.message ?? 'Non-chargeable.')) : null,
+    nonChargeable ? ui.notice(brief(invoice.nonChargeable?.[0]?.message ?? 'No charge.')) : null,
     ...problems,
     sourceGapNotice(ui, invoice),
     exceptionsNotice(ui, invoice),

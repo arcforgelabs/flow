@@ -61,8 +61,8 @@ function page({ fields = [], people = [], values = [] } = {}) {
 }
 
 const list = (status, numbers) => ({
-  invoices: numbers.map((number, i) => ({ id: `${status}-${i}`, number, contactName: `Client ${number}`, status: status === 'issued' ? 'issued' : 'draft', tab: status === 'issued' ? 'approved' : status, totalCents: 100, createdAt: '2026-01-01' })),
-  counts: { pending: 0, ready: 1, draft: 0, approved: 1, sent: 0, void: 0 },
+  invoices: numbers.map((number, i) => ({ id: `${status}-${i}`, number, contactName: `Client ${number}`, status: status === 'issued' ? 'issued' : 'draft', tab: status === 'issued' ? 'awaiting_payment' : status, totalCents: 100, createdAt: '2026-01-01' })),
+  counts: { pending: 0, ready: 1, draft: 0, awaiting_payment: 1, paid: 0, non_chargeable: 0, void: 0 },
   sendsTo: null,
   sendMode: null,
 });
@@ -81,15 +81,15 @@ test('a tab click selects the tab at once; only the newest answer draws; a tab s
   await opened;
   assert.equal(selected(main), 'Ready');
 
-  // Approved is selected before the server answers; the old list is dimmed.
-  tab(main, 'Approved').onclick();
-  assert.equal(selected(main), 'Approved');
+  // Awaiting payment is selected before the server answers; the old list is dimmed.
+  tab(main, 'Awaiting payment').onclick();
+  assert.equal(selected(main), 'Awaiting payment');
   assert.equal(panel(main).getAttribute('aria-busy'), 'true');
   assert.ok('stale' in panel(main).dataset);
   const issued = asked.shift();
 
   // A quick click back to Ready draws its last list at once, and the late
-  // Approved answer does not replace it.
+  // Awaiting payment answer does not replace it.
   tab(main, 'Ready').onclick();
   assert.equal(selected(main), 'Ready');
   assert.match(panel(main).text, /R-1/);
@@ -106,7 +106,7 @@ test('a tab click selects the tab at once; only the newest answer draws; a tab s
   assert.equal(panel(main).getAttribute('aria-busy'), null);
 });
 
-test('only Draft, Approved, Sent and Void show a Number column; the other tabs open on Client', async () => {
+test('only Draft, Awaiting payment, Paid and Void show a Number column; the other tabs open on Client', async () => {
   globalThis.sessionStorage = { getItem: () => null, setItem() {}, removeItem() {} };
   globalThis.document = { visibilityState: 'visible', addEventListener() {}, removeEventListener() {}, createElement: (tag) => new El(tag) };
   const { main, ui, asked } = page();
@@ -118,7 +118,7 @@ test('only Draft, Approved, Sent and Void show a Number column; the other tabs o
   assert.ok(!heads().includes('Number'));
   assert.equal(heads()[1], 'Client');
 
-  tab(main, 'Approved').onclick();
+  tab(main, 'Awaiting payment').onclick();
   asked.shift().answer(list('issued', ['INV-1']));
   await settle();
   assert.ok(heads().includes('Number'));
@@ -189,7 +189,7 @@ test('with integrations on, a Linked column shows one icon per system; one not i
   assert.equal(icons().length, 1);
   assert.equal(icons()[0].getAttribute('class'), 'fx-link fx-link--none');
 
-  tab(main, 'Approved').onclick();
+  tab(main, 'Awaiting payment').onclick();
   const approved = list('issued', ['FL-1', 'FL-2']);
   approved.invoices[0].job = { sourceSystem: 'seazona', sourceJobRef: '48213', caseRef: '48213', link: { url: 'https://lab.seazona.net/' } };
   asked.shift().answer({ ...approved, sendsTo: 'Xero', linksTo });
@@ -247,8 +247,8 @@ test('ticked rows bring up the bulk bar: N selected, the tab\'s actions, and × 
   bulk().all((el) => el.getAttribute('aria-label') === 'Clear the ticks')[0].onclick();
   assert.equal(bulk().hidden, true);
 
-  // Approved rows can be ticked too; there the bar has Void, not Approve.
-  tab(main, 'Approved').onclick();
+  // Awaiting payment rows can be ticked too; there the bar has Void, not Approve.
+  tab(main, 'Awaiting payment').onclick();
   asked.shift().answer(list('issued', ['FL-1']));
   await settle();
   const fl = panel(main).all((el) => el.tag === 'input' && el.getAttribute('aria-label')?.startsWith('Tick FL-1'))[0];
@@ -283,6 +283,6 @@ test('the list asks the server for one page; a page button asks for the next row
   assert.match(pages.text, /201–250 of 250/);
 
   // A new tab starts at its first page.
-  tab(main, 'Approved').onclick();
+  tab(main, 'Awaiting payment').onclick();
   assert.equal(query(asked.shift().path).get('offset'), '0');
 });

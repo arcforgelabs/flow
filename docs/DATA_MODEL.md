@@ -43,6 +43,7 @@ erDiagram
   invoices ||--|{ invoice_lines : has
   price_items |o--o{ invoice_lines : "fills"
   invoices ||--o{ invoice_versions : "was sent as"
+  invoices ||--o| invoice_list_tabs : "is listed under"
   people |o--o{ people : "invited"
   people ||--o{ agent_grants : "owns"
   organisations ||--o{ agent_grants : "bounds"
@@ -111,6 +112,11 @@ empty or typed proposal, and the decision (`applied` or `discarded`). A new
 capture is `ready`: this slice does not call a model and does not change a
 job. The photo is deleted when someone decides, and a capture with no
 decision is deleted after 7 days.
+
+`invoice_list_tabs` keeps each invoice's tab on the Invoices page and when it
+last changed (`docs/INVOICE_SENDING.md`, migration `0035`). It is a row of its
+own because an issued or void invoice never changes, but its tab follows the
+accounting system. The list writes it; nothing else reads it yet.
 
 `contacts` is Flow's own customer or supplier (`docs/CONTACTS.md`): name,
 first and last name, email, phone, mobile, account number, tax number, tax

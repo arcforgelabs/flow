@@ -13,7 +13,7 @@ flowchart LR
   then -- wait --> wait[Waits for a person]
   then -- skip --> skip[Never drafted by rule]
   then -- pending --> flagged[Draft, on Pending with the note]
-  then -- non_chargeable --> kept[Draft, on Non-chargeable, never sent]
+  then -- non_chargeable --> kept[Draft, on No charge, never sent]
   each -- no rule matches --> draft[Draft invoice in Flow]
   draft --> check{Pending, skip and non-chargeable rules check the draft}
   check -- a pending rule matches --> flagged
@@ -29,7 +29,7 @@ flowchart LR
 | When | `job_ready`: the job is ready to invoice and has no invoice |
 | If | 1 to 10 conditions. All must match |
 | Icon | Optional. Any Lucide icon name, picked in New rule or Edit rule. The card on Rules shows it. With none, the card shows the mark of Then: `flag` pending, `clock` wait, `ban` skip |
-| Then | `wait`: the job waits for a person. `skip`: rules never draft it, and Send holds a draft that already matches. `pending`: Flow drafts it, and the draft is on the Pending tab with the rule's note. `non_chargeable`: Flow drafts it, and the draft is on the Non-chargeable tab |
+| Then | `wait`: the job waits for a person. `skip`: rules never draft it, and Send holds a draft that already matches. `pending`: Flow drafts it, and the draft is on the Pending tab with the rule's note. `non_chargeable`: Flow drafts it, and the draft is on the No charge tab |
 
 A person can still draft a waiting job from the Jobs board. The job lists
 each rule that stops it, for example `rule "Old job": waits for a person`.
@@ -120,7 +120,7 @@ non-chargeable. Xero has no invoice for it.
 
 A non-chargeable rule never stops a draft. Flow drafts the job with its
 lines and prices, so the lab keeps the value of its work. The draft is on
-the Non-chargeable tab, never on Pending or Ready. Send, Send all ready and
+the No charge tab, never on Pending or Ready. Send, Send all ready and
 Approve never send it: `Not sent: Rule "<name>": non-chargeable. Flow keeps
 it and never sends it.` A draft made before the rule moves to the tab by
 itself. Turn the rule off, and its drafts are checked as usual again.
@@ -141,14 +141,14 @@ apply: a job that Xero already bills waits for a person.
 | Remake | Remake is yes | Non-chargeable |
 
 A non-chargeable rule can give a reason, one of the lab's No Charge reasons
-(below): `{ kind: 'non_chargeable', reason: 'Remake' }`. The Non-chargeable tab
+(below): `{ kind: 'non_chargeable', reason: 'Remake' }`. The No charge tab
 shows it and filters by it, for the lab's reports.
 
 Old held jobs settle by rule too. The history import holds each job it adds
 (`history_import`). When the accounting matcher finds no invoice for such a
 job (`not_found`; with no accounting system connected, also `unknown`), and a
 non-chargeable rule matches it, the draft step releases it (actor
-`rule:<id>`) and drafts it on the Non-chargeable tab. A job that the
+`rule:<id>`) and drafts it on the No charge tab. A job that the
 accounting system has invoiced stays held. The step's run summary counts the
 released jobs (`settle_history`).
 
@@ -172,7 +172,7 @@ enough to stop a bill.
   work.
 
 A person's No Charge wins over every wait, skip and pending rule. It releases a
-held job and marks it ready, so the draft step drafts it on the Non-chargeable
+held job and marks it ready, so the draft step drafts it on the No charge
 tab. When no accounting check has run, or the check found no single bill, it
 records that no bill exists (`not_found`), because the person said so. It is
 refused when the job is billed in the accounting system (unlink it first) or

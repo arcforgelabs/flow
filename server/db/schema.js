@@ -153,6 +153,17 @@ export const invoices = pgTable('invoices', {
   check('invoices_send_state_valid', sql`${t.sendState} is null or ${t.sendState} in ('queued', 'sent', 'failed')`),
 ]);
 
+// Each invoice's tab on the Invoices page (server/core/invoice-status.js), as
+// the list last worked it out, and when it last changed. A row of its own: an
+// issued or void invoice never changes, but its tab follows the accounting
+// system. No row: no tab yet (a draft the checks have not reached).
+export const invoiceListTabs = pgTable('invoice_list_tabs', {
+  invoiceId: uuid('invoice_id').primaryKey().references(() => invoices.id, { onDelete: 'cascade' }),
+  organisationId: uuid('organisation_id').notNull().references(() => organisations.id, { onDelete: 'cascade' }),
+  tab: text('tab').notNull(),
+  changedAt: timestamp('changed_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [index('invoice_list_tabs_org_tab_idx').on(t.organisationId, t.tab)]);
+
 export const invoiceLines = pgTable('invoice_lines', {
   id: id(),
   organisationId: organisationId(),

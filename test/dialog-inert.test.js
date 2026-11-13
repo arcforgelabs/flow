@@ -187,8 +187,8 @@ test('deleting an invoice on the Invoices page leaves the list clickable', { ski
     await bulkDeleted.waitFor();
     await bulkDeleted.getByRole('button', { name: 'Close' }).waitFor();
     assert.equal(await appInert(), false);
-    await page.getByRole('tab', { name: /^Approved/ }).click();
-    await page.waitForFunction(() => [...document.querySelectorAll('[role="tab"]')].some((tab) => tab.textContent.startsWith('Approved') && tab.getAttribute('aria-selected') === 'true'));
+    await page.getByRole('tab', { name: /^Awaiting payment/ }).click();
+    await page.waitForFunction(() => [...document.querySelectorAll('[role="tab"]')].some((tab) => tab.textContent.startsWith('Awaiting payment') && tab.getAttribute('aria-selected') === 'true'));
 
     await page.getByRole('tab', { name: /^Ready/ }).click();
     await page.locator('tbody tr').first().click();

@@ -9,7 +9,7 @@ import { createDraftInvoice, reviseInvoice, updateDraftInvoice } from '../server
 import { observeJob } from '../server/core/ledger.js';
 import { READ_BEFORE_ACT_MS, READS_PER_PASS } from '../server/core/read-before-act.js';
 import { createSendWorker, draftProblems, invoiceView, invoiceViews, markNotReady, markReady, refusalReport, sendAgain, sendAllReady, sendQueued } from '../server/core/sending.js';
-import { billingObligations, invoices } from '../server/db/schema.js';
+import { billingObligations, invoiceListTabs, invoices } from '../server/db/schema.js';
 import { createRegistry } from '../server/integrations/port.js';
 import { createXeroAdapter } from '../server/integrations/xero/index.js';
 import { fakeClerk, request, TEST_PUBLISHABLE_KEY } from './support/clerk.js';
@@ -486,7 +486,7 @@ describe('Send all ready over the API', { skip: skipWithoutDatabase }, () => {
 
     res = await call('/invoices?status=ready');
     assert.equal(res.status, 200);
-    assert.deepEqual(res.body.counts, { pending: 1, ready: 1, draft: 0, approved: 0, sent: 0, non_chargeable: 0, void: 0 });
+    assert.deepEqual(res.body.counts, { pending: 1, ready: 1, draft: 0, awaiting_payment: 0, paid: 0, non_chargeable: 0, void: 0 });
     assert.equal(res.body.sendsTo, 'Accounts');
     assert.deepEqual(res.body.invoices.map((i) => [i.id, i.tab]), [[ready.id, 'ready']]);
     res = await call('/invoices?status=pending');
@@ -506,8 +506,16 @@ describe('Send all ready over the API', { skip: skipWithoutDatabase }, () => {
     assert.deepEqual((await call('/invoices?status=approved')).body.invoices.map((i) => i.id), [ready.id]);
     fake.stages.set(ready.id, 'sent');
     res = await call('/invoices?status=sent');
-    assert.deepEqual([res.body.invoices.map((i) => i.id), res.body.counts.sent], [[ready.id], 1]);
-    assert.equal((await call(`/invoices/${ready.id}`)).body.invoice.tab, 'sent');
+    // Approved and Sent are both Awaiting payment; Sent shows it was emailed.
+    assert.deepEqual([res.body.invoices.map((i) => [i.id, i.tab, i.emailed]), res.body.counts.awaiting_payment], [[[ready.id, 'awaiting_payment', true]], 1]);
+    assert.equal((await call(`/invoices/${ready.id}`)).body.invoice.tab, 'awaiting_payment');
+    fake.stages.set(ready.id, 'paid');
+    res = await call('/invoices?status=paid');
+    assert.deepEqual([res.body.invoices.map((i) => i.id), res.body.counts.paid, res.body.counts.awaiting_payment], [[ready.id], 1, 0]);
+    // The list keeps each tab, with when it last changed.
+    const [kept] = await handle.db.select().from(invoiceListTabs).where(eq(invoiceListTabs.invoiceId, ready.id));
+    assert.equal(kept.tab, 'paid');
+    assert.ok(kept.changedAt instanceof Date);
 
     fake.status = { connected: false, writesAllowed: true };
     res = await call('/invoices/send-ready', { method: 'POST', body: {} });

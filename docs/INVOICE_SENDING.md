@@ -1,19 +1,23 @@
 # Invoice tabs and Send all ready
 
 The Invoices page has seven tabs, left to right: Pending, Ready, Draft,
-Approved, Sent, Non-chargeable and Void. Earlier names: Problem is now Pending, Drafts is
-gone (a clean draft is Ready), and Finalised is split into Draft, Approved
-and Sent. Code: `server/core/sending.js`, `server/api/invoicing.js`
-(`invoiceTabs`) and `server/integrations/xero/reconcile.js` (`stageOf`).
+Awaiting payment, Paid, No charge and Void. One status rule puts each invoice
+on one tab: `invoiceTab` in `server/core/invoice-status.js`. The list, the
+invoice page and its pager all use it, and the list keeps each answer with
+the time it last changed (`invoice_list_tabs`, migration `0035`). Earlier
+names: Problem is Pending, Approved and Sent are Awaiting payment,
+Non-chargeable is No charge. Code: `server/core/sending.js`,
+`server/api/invoicing.js` (`invoiceTabs`) and
+`server/integrations/xero/reconcile.js` (`stageOf`).
 
 | Tab | An invoice is here when |
 | --- | --- |
 | Pending | A check failed, or the accounting system refused it. A person must look. |
 | Ready | A Flow draft, and no check fails. Nobody has to mark it. |
 | Draft | Issued in Flow and a draft in the accounting system, or on its way there. |
-| Approved | Approved in the accounting system, not yet sent to the customer. With no accounting system, every issued invoice is here. |
-| Sent | The accounting system sent it to the customer, or it is part paid or paid. |
-| Non-chargeable | A Flow draft whose job a non-chargeable rule matches (`docs/INVOICE_RULES.md`). The work is done but never billed. Nothing sends or approves it. |
+| Awaiting payment | Approved in the accounting system and not paid in full (part paid stays here). Its Status says Emailed when the accounting system sent it to the customer. With no accounting system, every issued invoice is here. |
+| Paid | Paid in full in the accounting system. |
+| No charge | A Flow draft whose job a person or a non-chargeable rule marked No Charge (`docs/INVOICE_RULES.md`). The work is done but never billed. Nothing sends or approves it. The footer counts these invoices; it shows no total. |
 | Void | Voided or deleted. |
 
 The list starts with Number, Client, Reference, Date, Total, Status and
@@ -23,11 +27,13 @@ field (the job's value, `docs/CUSTOM_FIELDS.md`). The columns, their order
 and widths stay with the person's account (`docs/DESIGN.md`, Columns).
 
 A Ready invoice can go to the accounting system at any time. It then moves to
-Draft, the lowest stage Xero takes. Draft, Approved and Sent follow Xero's own
-status and its `SentToContact` flag, read from Flow's copy of Xero (no extra
-Xero calls). An invoice in that copy from before the `sent_to_contact` column
-(Xero migration 0009) shows as Approved until Xero changes it and Flow reads
-it again.
+Draft, the lowest stage Xero takes. Draft, Awaiting payment and Paid follow
+Xero's own status, and Emailed its `SentToContact` flag, read from Flow's copy
+of Xero (no extra Xero calls). An invoice in that copy from before the
+`sent_to_contact` column (Xero migration 0009) shows no Emailed until Xero
+changes it and Flow reads it again.
+
+On No charge the Date column is the job's date, not the invoice's.
 
 ## Home
 
@@ -94,8 +100,8 @@ Invert ticks and Clear ticks. An icon-only action shows its name on hover.
 | Pending | **Retry** (send-again for the ticked issued ones the accounting system refused), Copy references, Export CSV, **Delete** (a ticked draft that was never issued; asks first) |
 | Ready | **Send to Xero** (send-ready for the ticked ids; **Approve** with no accounting system), Copy references, Export CSV, **Delete** (asks first) |
 | Draft | Copy numbers, Export CSV, Download PDFs, **Delete** (a ticked invoice whose accounting copy is a draft; the confirm says `Also deletes the draft in Xero.`; each row reports deleted or refused, with the reason), Void (asks first; Void does not change the accounting system) |
-| Approved, Sent | Copy numbers, Export CSV, Download PDFs, Void (asks first; Flow does not change the accounting system). Delete is hidden: the copy says Approved or Paid. |
-| Non-chargeable | Copy references, Export CSV, **Delete** (asks first) |
+| Awaiting payment, Paid | Copy numbers, Export CSV, Download PDFs, Void (asks first; Flow does not change the accounting system). Delete is hidden: the copy says Approved or Paid. |
+| No charge | Copy references, Export CSV, **Delete** (asks first) |
 | Void | Copy numbers, Export CSV, Download PDFs |
 
 ## Checks
@@ -181,7 +187,7 @@ asks first. There is no separate send bar. Then:
    Xero differs from what Flow sent.
 
 With no accounting system on, the button is **Approve all N ready**: it
-issues the ready drafts only, and they go to Approved.
+issues the ready drafts only, and they go to Awaiting payment.
 
 One ready invoice has its own **Send to Xero** button (**Send to Xero and
 email** when the customer's send mode is approve and email). It does the same
@@ -221,9 +227,10 @@ Xero's `SentToContact` flag.
 
 ## API
 
-- `GET /api/invoicing/invoices?status=pending|ready|draft|approved|sent|void`
-  lists a tab. The old names `problem`, `to_check` and `issued` still work.
-  Each invoice carries `tab`, `sending` and `problems`. `counts` has one
+- `GET /api/invoicing/invoices?status=pending|ready|draft|awaiting_payment|paid|non_chargeable|void`
+  lists a tab. The old names `problem`, `to_check`, `issued`, `approved` and
+  `sent` still work. Each invoice carries `tab`, `emailed`, `sending` and
+  `problems`. `counts` has one
   number per tab. The list is one page: `offset` and `limit` (default 200,
   at most 500) cut it, `filter` (the Filter chip's view as JSON, the rules of
   `server/ui/job-view.js`), `sort` (`number`, `client`, `reference`, `date`,

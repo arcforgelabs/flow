@@ -33,11 +33,12 @@ import {
 } from '../core/ledger.js';
 import { isHistoryHeld } from '../core/history.js';
 import { invoicePdfDocument, pdfFields, pdfFilename, renderInvoicePdf } from '../core/invoice-pdf.js';
+import { emailedStage, INVOICE_TABS, invoiceTab, OLD_TABS } from '../core/invoice-status.js';
 import { invoiceView, invoiceViews, markNotReady, markReady, sendAgain, sendAllReady } from '../core/sending.js';
 import { createContact, getContact, listContacts, presentContact, updateContact } from '../core/contacts.js';
 import { mergeContacts } from '../core/merge-contacts.js';
 import {
-  billingObligations, contacts, invoices, INVOICE_STATUSES, organisations, priceItems, TAX_CODES,
+  billingObligations, contacts, invoiceListTabs, invoices, INVOICE_STATUSES, organisations, priceItems, TAX_CODES,
 } from '../db/schema.js';
 
 // Invoicing for people signed in to Flow, mounted at /api/invoicing. The web
@@ -45,7 +46,8 @@ import {
 //
 //   GET   /context                    the organisations, and whether this person may issue
 //   GET   /invoices?organisationId=&status=&q=&limit=   newest first, with counts by tab;
-//                                     status is a tab: pending, ready, draft, approved, sent, non_chargeable or void (TABS)
+//                                     status is a tab: pending, ready, draft, awaiting_payment, paid, non_chargeable or void (TABS,
+//                                     server/core/invoice-status.js); approved and sent read as awaiting_payment
 //   POST  /invoices/mark-ready        { invoiceIds }: a person checked these drafts; one with a problem stays
 //   POST  /invoices/mark-not-ready    { invoiceIds }: back to To check
 //   POST  /invoices/send-ready        owner or admin: issue every ready draft and queue it for the
@@ -119,15 +121,9 @@ import {
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
-// The Invoices page tabs, left to right. Pending: a person must look (a
-// draft with a problem, a refused send, or out of sync with the accounting
-// system). Ready: a draft whose checks pass. Draft, Approved and Sent: an
-// issued invoice, by its stage in the accounting system (its invoiceStages;
-// Draft while it is on its way); with no accounting system, an issued invoice
-// is Approved. Void: void in Flow or in the accounting system.
-const TABS = ['pending', 'ready', 'draft', 'approved', 'sent', 'non_chargeable', 'void'];
-// Earlier names a saved link may still use.
-const OLD_TABS = { problem: 'pending', to_check: 'ready', issued: 'approved' };
+// The Invoices page tabs, left to right: one status rule puts each invoice
+// on one (server/core/invoice-status.js).
+const TABS = INVOICE_TABS;
 const VIEWS = ['in_work', 'ready', 'pending', 'drafted', 'invoiced', 'paid', 'held', 'review_required'];
 const MAX_LINES = 200;
 const MAX_TEXT = 500;
@@ -278,7 +274,7 @@ export async function resolveOrganisation(db, raw) {
 
 const jobOf = (o) => (o ? {
   id: o.id, sourceSystem: o.sourceSystem, sourceJobRef: o.sourceJobRef, sourceInvoiceRef: o.sourceInvoiceRef, caseRef: o.caseRef, practitioner: o.practitioner, shippedOn: o.shippedOn,
-  noChargeReason: o.noChargeReason ?? null, accountingRef: o.accountingRef ?? null,
+  noChargeReason: o.noChargeReason ?? null, accountingRef: o.accountingRef ?? null, jobDate: o.jobDate ?? null,
 } : null);
 
 // A job with its work system's name and its link in that system's web app
@@ -328,44 +324,59 @@ async function jobChangeDetail(db, organisationId, invoiceId, work) {
 // problems of each pending one and the ones on their way to the accounting
 // system. Drafts come from the draft checks (sending.js); issued invoices
 // from the accounting system's stages, read from Flow's copy (no calls).
+// A draft the checks did not reach (sending.js, CHECK_LIMIT) gets no tab, so
+// an unchecked draft never shows as Ready. Each answer is stored on its row
+// (saveTabs), with the time it changed.
 async function invoiceTabs(db, organisationId, system) {
-  const [views, issued, voided, stages] = await Promise.all([
+  const [views, rows, stages] = await Promise.all([
     invoiceViews(db, organisationId, { accounting: system }),
-    db.select({ id: invoices.id }).from(invoices).where(and(eq(invoices.organisationId, organisationId), eq(invoices.status, 'issued'))),
-    db.select({ id: invoices.id }).from(invoices).where(and(eq(invoices.organisationId, organisationId), eq(invoices.status, 'void'))),
+    db.select({ id: invoices.id, status: invoices.status, listTab: invoiceListTabs.tab }).from(invoices)
+      .leftJoin(invoiceListTabs, eq(invoiceListTabs.invoiceId, invoices.id))
+      .where(eq(invoices.organisationId, organisationId)),
     typeof system?.capabilities?.invoiceStages === 'function' ? system.capabilities.invoiceStages({ organisationId }) : new Map(),
   ]);
+  const checked = new Set([...views.toCheck, ...views.ready, ...views.problems.keys(), ...views.nonChargeable.keys()]);
   const tabOf = new Map();
-  for (const id of [...views.toCheck, ...views.ready]) tabOf.set(id, 'ready');
-  for (const { id } of issued) tabOf.set(id, issuedTab(id, { views, stages, system }));
-  for (const { id } of voided) tabOf.set(id, 'void');
-  for (const id of views.problems.keys()) tabOf.set(id, 'pending');
-  for (const id of views.nonChargeable.keys()) tabOf.set(id, 'non_chargeable');
+  const emailed = new Set();
+  for (const row of rows) {
+    if (row.status === 'draft' && !checked.has(row.id)) continue;
+    const stage = stages.get(row.id) ?? null;
+    tabOf.set(row.id, invoiceTab({ status: row.status, view: viewOf(views, row.id), stage, connected: Boolean(system) }));
+    if (emailedStage(stage)) emailed.add(row.id);
+  }
+  await saveTabs(db, organisationId, rows, tabOf);
   const ids = Object.fromEntries(TABS.map((t) => [t, []]));
   for (const [id, tab] of tabOf) ids[tab].push(id);
   // Each Non-chargeable invoice's reason: the person's, else its rule's.
   const reasonOf = new Map([...views.nonChargeable].map(([id, found]) => [id, found.find((f) => f.reason)?.reason ?? null]));
-  return { tabOf, ids, problems: views.problems, sending: views.sending, reasonOf };
+  return { tabOf, ids, problems: views.problems, sending: views.sending, reasonOf, emailed };
 }
 
-function issuedTab(id, { views, stages, system }) {
-  if (views.problems.has(id)) return 'pending';
-  if (!system) return 'approved';
-  if (views.sending.has(id)) return 'draft';
-  return stages.get(id) ?? 'draft';
+function viewOf(views, id) {
+  if (views.nonChargeable.has(id)) return 'non_chargeable';
+  if (views.problems.has(id)) return 'problem';
+  if (views.sending.has(id)) return 'sending';
+  return null;
+}
+
+// Stores each changed tab, and when it changed (invoice_list_tabs). A draft
+// the checks did not reach keeps the tab it had.
+async function saveTabs(db, organisationId, rows, tabOf) {
+  const changed = rows
+    .filter((row) => tabOf.has(row.id) && tabOf.get(row.id) !== (row.listTab ?? null))
+    .map((row) => ({ invoiceId: row.id, organisationId, tab: tabOf.get(row.id) }));
+  if (!changed.length) return;
+  await db.insert(invoiceListTabs).values(changed).onConflictDoUpdate({
+    target: invoiceListTabs.invoiceId,
+    set: { tab: sql`excluded.tab`, changedAt: sql`now()` },
+  });
 }
 
 // One invoice's tab, for its page (and its pager).
 async function tabOfInvoice(db, organisationId, invoice, view, accounting) {
-  if (invoice.status === 'void') return 'void';
-  if (view === 'problem') return 'pending';
-  if (view === 'non_chargeable') return 'non_chargeable';
-  if (invoice.status === 'draft') return 'ready';
-  if (!accounting) return 'approved';
-  if (view === 'sending') return 'draft';
-  const stages = typeof accounting.capabilities.invoiceStages === 'function'
+  const stages = accounting && invoice.status === 'issued' && typeof accounting.capabilities.invoiceStages === 'function'
     ? await accounting.capabilities.invoiceStages({ organisationId, invoiceIds: [invoice.id] }) : new Map();
-  return stages.get(invoice.id) ?? 'draft';
+  return invoiceTab({ status: invoice.status, view, stage: stages.get(invoice.id) ?? null, connected: Boolean(accounting) });
 }
 
 async function invoiceDetail(db, organisationId, invoiceId, accounting = null, work = []) {
@@ -545,6 +556,8 @@ export function createInvoicingRouter({
         contactName,
         job: withLink(jobs.get(invoice.id) ?? null, systems),
         tab: tabs.tabOf.get(invoice.id) ?? null,
+        // Awaiting payment: the accounting system emailed it to the customer.
+        emailed: tabs.emailed.has(invoice.id),
         sending: tabs.sending.has(invoice.id),
         noChargeReason: tabs.reasonOf.get(invoice.id) ?? null,
         problems: tabs.problems.get(invoice.id) ?? [],
