@@ -8,7 +8,7 @@
 import { alertStrip } from '/assets/ui/alerts.js';
 import { bulkBar } from '/assets/ui/bulk-bar.js';
 import { draftNote, sendModeNote } from '/assets/ui/invoice-notes.js';
-import { caseNumber, fixes } from '/assets/ui/job-board.js';
+import { caseNumber, fixes, INVOICE_STATUS_LABELS, INVOICE_STATUS_TONES } from '/assets/ui/job-board.js';
 import { jobChangeReview } from '/assets/ui/job-change.js';
 import { cardRows, rowMenu } from '/assets/ui/kit.js';
 import { isPhone, WIDTHS } from '/assets/ui/mobile.js';
@@ -29,9 +29,9 @@ import { findBox, today, viewBar } from '/assets/ui/view-bar.js';
 // or on its way), Awaiting payment (approved, not paid in full; with no
 // accounting system, every issued invoice), Paid. No charge: work a person or
 // a rule keeps in Flow and never bills.
-const TABS = [['pending', 'Pending'], ['ready', 'Ready'], ['draft', 'Draft'], ['awaiting_payment', 'Awaiting payment'], ['paid', 'Paid'], ['non_chargeable', 'No charge'], ['void', 'Void']];
-const TAB_LABEL = Object.fromEntries(TABS);
-const TAB_TONE = { pending: 'danger', ready: 'success', draft: 'info', awaiting_payment: 'info', paid: 'success', non_chargeable: 'mute', void: 'mute' };
+const TABS = Object.entries(INVOICE_STATUS_LABELS);
+const TAB_LABEL = INVOICE_STATUS_LABELS;
+const TAB_TONE = INVOICE_STATUS_TONES;
 // Tab names an earlier Flow kept in this browser.
 const OLD_TAB = { problem: 'pending', to_check: 'ready', issued: 'awaiting_payment', approved: 'awaiting_payment', sent: 'awaiting_payment' };
 const NUMBERED = ['draft', 'awaiting_payment', 'paid', 'void'];
