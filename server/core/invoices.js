@@ -222,6 +222,9 @@ export async function voidInvoice(db, organisationId, invoiceId, { accounting = 
     const invoice = await loadInvoice(tx, organisationId, invoiceId, { lock: true });
     if (invoice.status === 'void') return invoice;
     if (invoice.issuedVersion === 0) throw new FlowError('never_issued', 'delete a draft that was never issued; do not void it');
+    if (unseen && !(await stillUnsent(accounting, organisationId, invoice, 'void'))) {
+      throw new FlowError('void_in_accounting', `${invoice.number} is in ${accounting.name}. Void it in ${accounting.name}: Flow follows.`);
+    }
     const [row] = await tx.update(invoices).set({ status: 'void', updatedAt: sql`now()` })
       .where(eq(invoices.id, invoice.id)).returning();
     // No customer saw it, so its job is free again, as after Delete.
@@ -287,6 +290,17 @@ async function neverSent(accounting, organisationId, invoiceId) {
   return (await accounting.capabilities.everSent({ organisationId, invoiceId })) === false;
 }
 
+// Under the invoice's lock, before Flow treats it as never sent. A send that
+// is on its way stops the step: the worker took the invoice as issued and
+// will make it in the accounting system. A send that finished since the
+// caller's first check answers false.
+async function stillUnsent(accounting, organisationId, invoice, verb) {
+  if (invoice.sendState === 'queued') {
+    throw new FlowError('conflict', `${invoice.number} is on its way to ${accounting.name}. Wait for the send to finish, then ${verb} it.`);
+  }
+  return neverSent(accounting, organisationId, invoice.id);
+}
+
 // Same words as the Send gate (server/core/sending.js): writes that are off,
 // or a system that is not connected, stop before anything changes. An issued
 // invoice with no accounting delete answers accounting_unavailable.
@@ -331,8 +345,8 @@ export async function deleteDraft(db, organisationId, invoiceId, { actor = null,
       const forget = accounting.capabilities.forgetInvoice;
       return db.transaction(async (tx) => {
         const invoice = await loadInvoice(tx, organisationId, invoiceId, { lock: true });
-        if (invoice.sendState === 'queued') {
-          throw new FlowError('conflict', `${invoice.number} is on its way to ${accounting.name}. Wait for the send to finish, then delete it.`);
+        if (!(await stillUnsent(accounting, organisationId, invoice, 'delete'))) {
+          throw new FlowError('conflict', `${invoice.number} reached ${accounting.name} while this ran. Delete it again.`);
         }
         // An owner's override record keeps its invoice: Flow voids it, the
         // record stays, and the job is free again.

@@ -141,6 +141,61 @@ test('Flow\'s tables live in "flow"', { skip: skipWithoutDatabase }, async (t) =
   });
 });
 
+// The Xero adapter as an installation before one of its migrations has it.
+function xeroBeforeMigration(index, laterTables) {
+  const adapter = adapters.find((a) => a.id === 'xero');
+  const folder = mkdtempSync(join(tmpdir(), 'flow-xero-before-migration-'));
+  cpSync(adapter.schema.migrationsFolder, folder, { recursive: true });
+  const journalFile = join(folder, 'meta', '_journal.json');
+  const journal = JSON.parse(readFileSync(journalFile, 'utf8'));
+  journal.entries = journal.entries.filter((entry) => entry.idx < index);
+  writeFileSync(journalFile, JSON.stringify(journal));
+  return { ...adapter, schema: { ...adapter.schema, migrationsFolder: folder, tables: adapter.schema.tables.filter((table) => !laterTables.includes(table)) } };
+}
+
+test('the Xero pair history upgrade keeps every invoice, version, override, push and link row', { skip: skipWithoutDatabase }, async () => {
+  const handle = await freshDatabase();
+  // Release 2026.11.19: the Xero adapter up to migration 0016.
+  const before = xeroBeforeMigration(17, ['xero_invoice_link_history']);
+  try {
+    await migrateAdapterSchema(handle.db, before);
+    assert.equal((await inSchema(handle.pool, 'flow')).includes('xero_invoice_link_history'), false);
+    const one = async (text, values) => (await handle.pool.query(text, values)).rows[0];
+    const organisation = await one("insert into organisations (name) values ('Sample Upgrade Lab') returning id");
+    const contact = await one("insert into contacts (organisation_id, kind, name) values ($1, 'customer', 'Sample Practice') returning id", [organisation.id]);
+    const person = await one("insert into people (email, role, status) values ('upgrade-owner@example.test', 'owner', 'active') returning id");
+    const invoice = await one(`insert into invoices (organisation_id, contact_id, number, status, issued_version, issue_date, subtotal_cents, tax_cents, total_cents)
+      values ($1, $2, 'INV-0001', 'issued', 1, '2026-11-01', 10000, 1000, 11000) returning id`, [organisation.id, contact.id]);
+    const linked = await one(`insert into invoices (organisation_id, contact_id, number, status, issued_version, issue_date, subtotal_cents, tax_cents, total_cents)
+      values ($1, $2, 'INV-0002', 'issued', 1, '2026-11-01', 10000, 1000, 11000) returning id`, [organisation.id, contact.id]);
+    for (const id of [invoice.id, linked.id]) {
+      await handle.pool.query(`insert into invoice_versions (organisation_id, invoice_id, version, issued_by, document) values ($1, $2, 1, 'user:sample', '{"totalCents": 11000}')`, [organisation.id, id]);
+    }
+    await handle.pool.query(`insert into send_overrides (organisation_id, invoice_id, version, document_hash, problems, reason_code, person_id)
+      values ($1, $2, 1, 'sample', '[]', 'one_off', $3)`, [organisation.id, invoice.id, person.id]);
+    await handle.pool.query(`insert into xero_invoices (organisation_id, xero_invoice_id, type, invoice_number, status, issued_on, total_cents, record_hash)
+      values ($1, 'sample-x1', 'ACCREC', 'INV-0001', 'AUTHORISED', '2026-11-01', 11000, 'h1'), ($1, 'sample-x2', 'ACCREC', 'INV-0002', 'PAID', '2026-11-01', 11000, 'h2')`, [organisation.id]);
+    await handle.pool.query(`insert into xero_invoice_pushes (organisation_id, invoice_id, version, state, idempotency_key, request_body, body_hash, xero_invoice_id, xero_invoice_number, xero_status, verified)
+      values ($1, $2, 1, 'created', 'sample-key', '{}', 'hash', 'sample-x1', 'INV-0001', 'AUTHORISED', true)`, [organisation.id, invoice.id]);
+    await handle.pool.query(`insert into xero_invoice_links (organisation_id, xero_invoice_id, invoice_id, matched_by, linked_by)
+      values ($1, 'sample-x2', $2, 'made', 'person:sample')`, [organisation.id, linked.id]);
+    const tables = ['invoices', 'invoice_versions', 'send_overrides', 'xero_invoices', 'xero_invoice_pushes', 'xero_invoice_links'];
+    const stored = async () => Object.fromEntries(await Promise.all(tables.map(async (table) => [table,
+      (await handle.pool.query(`select to_jsonb(t) as data from ${table} t order by to_jsonb(t)::text`)).rows.map((row) => row.data)])));
+    const old = await stored();
+    assert.deepEqual(tables.map((table) => old[table].length), [2, 2, 1, 2, 1, 1]);
+
+    await migrateEverything(handle.db);
+    await migrateEverything(handle.db);
+    assert.deepEqual(await stored(), old, 'the upgrade changes no existing row');
+    assert.deepEqual((await handle.pool.query('select count(*)::int as n from xero_invoice_link_history')).rows, [{ n: 0 }]);
+    assert.equal((await getInvoice(handle.db, organisation.id, invoice.id)).status, 'issued');
+  } finally {
+    rmSync(before.schema.migrationsFolder, { recursive: true, force: true });
+    await handle.close();
+  }
+});
+
 test('source totals upgrade preserves old rows and does not backfill them', { skip: skipWithoutDatabase }, async () => {
   const handle = await freshDatabase();
   const before = coreBeforeMigration(25);

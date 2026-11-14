@@ -250,7 +250,9 @@ again. An owner or admin can also **Delete** it:
   decide. The job's history keeps the number, total, who deleted it and why
   (`draft_deleted`, `removed: true`). The number is not used again.
 - An invoice on its way (`send_state` queued) is refused until the send
-  finishes.
+  finishes (`409 conflict`), by **Delete** and by the void route. Flow checks
+  this with the invoice locked, and asks again there whether a send reached
+  Xero, so a send that finished meanwhile also stops the step.
 - An invoice with an owner's override record (below) is voided, never
   deleted: the override is a record that stays. One that never reached Xero
   is voided in Flow with no Xero call, by **Delete** or by
