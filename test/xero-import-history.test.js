@@ -41,7 +41,7 @@ describe('Xero import: the history import', { skip: skipWithoutDatabase }, () =>
         ${total - 2500}, 2500, ${total}, ${due}, ${status === 'PAID' ? total : 0}, ${JSON.stringify(lines)}::jsonb, ${`h${n}`})`);
     return xid(n);
   }
-  const imported = async (number) => (await query(`select i.*, l.xero_invoice_id, l.batch_id, l.matched_by, l.linked_by from invoices i
+  const imported = async (number) => (await query(`select i.*, l.xero_invoice_id, l.batch_id, l.matched_by, l.linked_by, l.copy_hash from invoices i
     left join xero_invoice_links l on l.invoice_id = i.id where i.organisation_id = $1 and i.number = $2`, [org(), number]))[0];
   const versionsOf = async (invoiceId) => query('select version, issued_by, document from invoice_versions where invoice_id = $1 order by version', [invoiceId]);
   const jobs = () => query('select to_jsonb(b) as row from billing_obligations b where organisation_id = $1 order by id', [org()]);
@@ -241,6 +241,102 @@ describe('Xero import: the history import', { skip: skipWithoutDatabase }, () =>
     assert.equal(again.status, 200, JSON.stringify(again.body));
     assert.equal(again.body.batch.counts.imported, 6, '4, 5, 10, 11, 15 and 17');
     assert.equal((await imported('INV-0005')).status, 'void');
+  });
+
+  test('a change Flow cannot follow yet waits, and follows after a person links the contact', async () => {
+    const XC3 = '00000000-0000-4000-8000-0000000000c3';
+    await handle.db.execute(sql`insert into xero_contacts (organisation_id, xero_contact_id, name, status, is_customer, is_supplier, sales_tracking, synced_at)
+      values (${org()}, ${XC3}, 'Twin Dental', 'ACTIVE', true, false, '[]'::jsonb, now())`);
+    // Two Flow customers hold the name: one by its name, one by an earlier name.
+    const twin = await createContact(handle.db, org(), { kind: 'customer', name: 'Twin Dental' });
+    const north = await createContact(handle.db, org(), { kind: 'customer', name: 'Twin Dental North' });
+    await handle.db.execute(sql`update contacts set aliases = '["Twin Dental"]'::jsonb where id = ${north.id}`);
+    const before = await imported('INV-0006');
+    // Xero moved 6 to that contact.
+    await handle.db.execute(sql`update xero_invoices set xero_contact_id = ${XC3}, record_hash = 'h6b' where xero_invoice_id = ${xid(6)}`);
+    for (const read of ['the first read', 'the next read']) {
+      assert.deepEqual(await followImports(handle.db, org()), { changed: 0, voided: 0, removed: 0, imported: 0, failed: 1 }, read);
+      const waits = await imported('INV-0006');
+      assert.deepEqual([waits.contact_id, waits.issued_version, waits.copy_hash], [before.contact_id, 1, 'h6'], `${read} changes nothing of it, and it stays to do`);
+    }
+    // A person says which customer the Xero contact is.
+    await handle.db.execute(sql`insert into external_links (organisation_id, entity, flow_id, system, external_id, matched_by, state)
+      values (${org()}, 'contact', ${twin.id}, 'xero', ${XC3}, 'person', 'active')`);
+    assert.deepEqual(await followImports(handle.db, org()), { changed: 1, voided: 0, removed: 0, imported: 0, failed: 0 });
+    const followed = await imported('INV-0006');
+    assert.deepEqual([followed.contact_id, followed.issued_version, followed.copy_hash], [twin.id, 2, 'h6b']);
+    assert.equal((await versionsOf(followed.id))[1].document.contact.name, 'Twin Dental');
+
+    // A void in Xero is final, so it is followed with or without a contact.
+    await handle.db.execute(sql`delete from external_links where organisation_id = ${org()} and external_id = ${XC3}`);
+    await handle.db.execute(sql`update xero_invoices set xero_contact_id = ${XC2}, status = 'VOIDED', record_hash = 'h6c' where xero_invoice_id = ${xid(6)}`);
+    await handle.db.execute(sql`update contacts set aliases = '["New Clinic"]'::jsonb where id = ${north.id}`);
+    assert.deepEqual(await followImports(handle.db, org()), { changed: 0, voided: 1, removed: 0, imported: 0, failed: 0 });
+    const voided = await imported('INV-0006');
+    assert.deepEqual([voided.status, voided.contact_id, voided.issued_version, voided.copy_hash], ['void', twin.id, 2, 'h6c']);
+  });
+
+  test('two requests for one year at the same time make one batch', async () => {
+    const both = await Promise.all([1, 2].map(() => call('history', { method: 'POST', body: { year: 2018 } })));
+    assert.deepEqual(both.map((res) => res.status).sort(), [200, 409], JSON.stringify(both.map((res) => res.body)));
+    assert.equal(both.find((res) => res.status === 409).body.code, 'batch_exists');
+    const live = () => query('select id from xero_import_batches where organisation_id = $1 and year = 2018 and released_at is null', [org()]);
+    assert.equal((await live()).length, 1);
+    // The database keeps the rule, for a year and for every year.
+    await assert.rejects(query("insert into xero_import_batches (organisation_id, year, started_by) values ($1, 2018, 'test')", [org()]), { code: '23505' });
+    await query("insert into xero_import_batches (organisation_id, started_by) values ($1, 'test')", [org()]);
+    await assert.rejects(query("insert into xero_import_batches (organisation_id, started_by) values ($1, 'test')", [org()]), { code: '23505' });
+    await query('delete from xero_import_batches where organisation_id = $1 and year is null', [org()]);
+    // A released batch does not hold the year.
+    const batch = both.find((res) => res.status === 200).body.batch;
+    assert.equal((await call(`history/${batch.id}/release`, { method: 'POST' })).status, 200);
+    await query("insert into xero_import_batches (organisation_id, year, started_by, released_by, released_at) values ($1, 2018, 'test', 'test', now())", [org()]);
+    assert.equal((await live()).length, 0);
+  });
+
+  test('a release and a read of Xero at the same time leave no invoice in a released batch', async () => {
+    // Statements of this database that wait for a lock.
+    const waiting = async (count) => {
+      for (let tries = 0; tries < 200; tries += 1) {
+        const [{ n }] = await query('select count(*)::int as n from pg_locks where not granted and database = (select oid from pg_database where datname = current_database())');
+        if (n >= count) return;
+        await new Promise((done) => { setTimeout(done, 25); });
+      }
+      assert.fail(`${count} statements did not wait for a lock`);
+    };
+    let n = 30;
+    for (const [year, first] of [[2020, 'the read'], [2021, 'the release']]) {
+      const had = await copy(n += 1, { issuedOn: `${year}-02-01` });
+      const started = await call('history', { method: 'POST', body: { year } });
+      assert.equal(started.body.batch?.counts.imported, 1, JSON.stringify(started.body));
+      const batch = started.body.batch;
+      // Xero made one more in that year since.
+      const since = await copy(n += 1, { issuedOn: `${year}-03-01` });
+      const follow = () => followImports(handle.db, org());
+      const release = () => call(`history/${batch.id}/release`, { method: 'POST' });
+      // Both stop where they write a link, until this transaction ends.
+      const hold = await handle.pool.connect();
+      let results;
+      try {
+        await hold.query('begin');
+        await hold.query('lock table xero_invoice_links in exclusive mode');
+        const one = (first === 'the read' ? follow : release)();
+        await waiting(1);
+        const two = (first === 'the read' ? release : follow)();
+        await waiting(2);
+        await hold.query('commit');
+        results = await Promise.all([one, two]);
+      } finally {
+        hold.release();
+      }
+      const released = results.find((r) => r.status);
+      assert.equal(released.status, 200, JSON.stringify(released.body));
+      assert.equal(released.body.batch.removed, first === 'the read' ? 2 : 1, `${first} went first`);
+      assert.deepEqual(await query('select xero_invoice_id from xero_invoice_links where organisation_id = $1 and (batch_id = $2 or xero_invoice_id = any($3))', [org(), batch.id, [had, since]]), [],
+        `${first} went first: the released batch holds no invoice`);
+      assert.deepEqual(await query(`select number from invoices where organisation_id = $1 and origin = 'xero' and issue_date between $2 and $3`, [org(), `${year}-01-01`, `${year}-12-31`]), []);
+      await query('delete from xero_invoices where organisation_id = $1 and xero_invoice_id = any($2)', [org(), [had, since]]);
+    }
   });
 
   test('a batch for every year takes the rest, and the Invoices list stays fast with the full history', async () => {

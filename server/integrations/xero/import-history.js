@@ -132,9 +132,18 @@ const CANDIDATES = (organisationId, where) => sql`
 
 const emptyCounts = () => ({ imported: 0, void: 0, oddLines: 0, contactsMade: 0, blocked: { noNumber: 0, numberTaken: 0, noContact: 0 } });
 
+// One import step at a time for an organisation, in this process and every
+// other: each step that writes an imported invoice, and the release of a
+// batch, holds this lock to the end of its transaction. So a release sees
+// every invoice its batch has, and a step that waited for a release reads
+// the batch again.
+const importLock = (tx, organisationId) => tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`xero_import:${organisationId}`}))`);
+const SKIP = () => Object.assign(new Error('skipped'), { skip: true });
+
 // One Xero invoice into Flow, in its own transaction: the invoice, its first
 // version and its link commit together, or nothing does. A second caller
-// finds the link and skips.
+// finds the link and skips. A batch released since the caller read it takes
+// no invoice.
 async function importOne(db, organisationId, x, { batchId, actor, resolve, counts }) {
   if (!x.invoice_number) {
     counts.blocked.noNumber += 1;
@@ -143,6 +152,9 @@ async function importOne(db, organisationId, x, { batchId, actor, resolve, count
   let contact = null;
   try {
     const invoice = await db.transaction(async (tx) => {
+      await importLock(tx, organisationId);
+      const { rows: [live] } = await tx.execute(sql`select 1 from xero_import_batches where id = ${batchId} and released_at is null`);
+      if (!live) throw SKIP();
       contact = await resolve(tx, x);
       if (!contact) return null;
       const document = documentOf(x, contact, 1);
@@ -158,7 +170,7 @@ async function importOne(db, organisationId, x, { batchId, actor, resolve, count
           released_by = null, released_at = null, deleted_by = null, deleted_at = null
           where xero_invoice_links.released_at is not null
         returning xero_invoice_id`);
-      if (!rows.length) throw Object.assign(new Error('linked already'), { skip: true });
+      if (!rows.length) throw SKIP();
       return invoice;
     });
     if (!invoice) {
@@ -219,10 +231,11 @@ export async function runImportBatch(db, organisationId, { year = null, actor, n
   if (!actor) throw new FlowError('invalid', 'actor is required');
   if (year !== null && !(Number.isInteger(year) && year >= 1990 && year <= 2100)) throw new FlowError('invalid', 'year must be a year, or left out for every year');
   await readyToImport(db, organisationId, now);
-  const { rows: [open] } = await db.execute(sql`select id from xero_import_batches
-    where organisation_id = ${organisationId} and released_at is null and year is not distinct from ${year} limit 1`);
-  if (open) throw refused('batch_exists', `${year ?? 'Every year'} is imported already. Release that batch first to import it again.`);
-  const { rows: [batch] } = await db.execute(sql`insert into xero_import_batches (organisation_id, year, started_by) values (${organisationId}, ${year}, ${actor}) returning *`);
+  // The database keeps one live batch for a year (xero_import_batches_one_live),
+  // so of two requests at the same time one gets the batch.
+  const { rows: [batch] } = await db.execute(sql`insert into xero_import_batches (organisation_id, year, started_by) values (${organisationId}, ${year}, ${actor})
+    on conflict (organisation_id, coalesce(year, 0)) where released_at is null do nothing returning *`);
+  if (!batch) throw refused('batch_exists', `${year ?? 'Every year'} is imported already. Release that batch first to import it again.`);
   await bumpNextNumber(db, organisationId);
   const counts = await importInto(db, organisationId, batch, { actor });
   const { rows: [done] } = await db.execute(sql`update xero_import_batches set finished_at = now(), counts = ${JSON.stringify(counts)}::jsonb where id = ${batch.id} returning *`);
@@ -261,6 +274,11 @@ export async function followImports(db, organisationId, { actor = IMPORT_ACTOR }
     // not stop the rest. Its hash stays, so the next read tries it again.
     const before = { ...result };
     await db.transaction(async (tx) => {
+      await importLock(tx, organisationId);
+      // A release removed it since the list was read.
+      const { rows: [held] } = await tx.execute(sql`select 1 from xero_invoice_links
+        where organisation_id = ${organisationId} and xero_invoice_id = ${x.xero_invoice_id} and invoice_id = ${x.invoice_id} and released_at is null`);
+      if (!held) return;
       const seen = () => tx.execute(sql`update xero_invoice_links set copy_hash = ${x.record_hash}
         where organisation_id = ${organisationId} and xero_invoice_id = ${x.xero_invoice_id}`);
       // Xero removed it (only a draft can be removed): Flow's copy goes too.
@@ -275,6 +293,14 @@ export async function followImports(db, organisationId, { actor = IMPORT_ACTOR }
       const [latest] = await tx.select().from(invoiceVersions)
         .where(and(eq(invoiceVersions.invoiceId, x.invoice_id), eq(invoiceVersions.version, x.issued_version)));
       const contact = latest?.document?.source?.contactId === x.xero_contact_id ? latest.document.contact : await resolve(tx, x);
+      // Flow cannot say whose invoice it is now (two customers hold the new
+      // contact's name). Nothing of it changes and its hash stays, so the
+      // read after a person links the contact follows it. A void in Xero
+      // still voids it: a void is final, so it is seen.
+      if (!contact && x.status !== 'VOIDED') {
+        result.failed += 1;
+        return;
+      }
       const document = contact ? documentOf(x, contact, x.issued_version + 1) : null;
       const differs = document && contentOf(document) !== contentOf(latest?.document ?? {});
       await mirrorWrite(tx, x.invoice_id, async () => {
@@ -322,18 +348,21 @@ export async function listImportBatches(db, organisationId) {
 // job changes. A customer the batch made stays.
 export async function releaseImportBatch(db, organisationId, batchId, { actor }) {
   if (!actor) throw new FlowError('invalid', 'actor is required');
-  const { rows: [batch] } = await db.execute(sql`select * from xero_import_batches where organisation_id = ${organisationId} and id = ${batchId}`);
-  if (!batch) throw Object.assign(new FlowError('not_found', 'import batch not found'), { status: 404 });
-  if (batch.released_at) throw refused('batch_released', 'This batch was released already.');
-  const { rows: links } = await db.execute(sql`select l.invoice_id from xero_invoice_links l
-    join invoices i on i.organisation_id = l.organisation_id and i.id = l.invoice_id and i.origin <> 'flow'
-    where l.organisation_id = ${organisationId} and l.batch_id = ${batchId}`);
-  for (const link of links) {
-    await db.transaction(async (tx) => {
+  return db.transaction(async (tx) => {
+    // No import step runs while the batch is released (importLock), and all
+    // of it commits together: the batch is released with nothing left in it.
+    await importLock(tx, organisationId);
+    const { rows: [batch] } = await tx.execute(sql`select * from xero_import_batches where organisation_id = ${organisationId} and id = ${batchId}`);
+    if (!batch) throw Object.assign(new FlowError('not_found', 'import batch not found'), { status: 404 });
+    if (batch.released_at) throw refused('batch_released', 'This batch was released already.');
+    const { rows: links } = await tx.execute(sql`select l.invoice_id from xero_invoice_links l
+      join invoices i on i.organisation_id = l.organisation_id and i.id = l.invoice_id and i.origin <> 'flow'
+      where l.organisation_id = ${organisationId} and l.batch_id = ${batchId}`);
+    for (const link of links) {
       await forgetXeroInvoice(tx, organisationId, link.invoice_id, { actor, reason: 'import_batch_released' });
       await removeImportedInvoice(tx, organisationId, link.invoice_id);
-    });
-  }
-  const { rows: [done] } = await db.execute(sql`update xero_import_batches set released_by = ${actor}, released_at = now() where id = ${batchId} returning *`);
-  return { ...batchOf(done), removed: links.length };
+    }
+    const { rows: [done] } = await tx.execute(sql`update xero_import_batches set released_by = ${actor}, released_at = now() where id = ${batchId} returning *`);
+    return { ...batchOf(done), removed: links.length };
+  });
 }

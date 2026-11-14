@@ -196,14 +196,18 @@ was read from.
 - The batch counts what it cannot take, and goes on: no number, a number
   another Flow invoice holds, no contact (`counts.blocked`).
 - Flow's next invoice number moves above the highest Xero number.
-- A year can have one live batch (`409 batch_exists`).
+- A year can have one live batch (`409 batch_exists`). The database keeps
+  this rule (`xero_import_batches_one_live`), so of two requests at the same
+  time one gets the batch.
 
 After each read of Xero, each imported invoice follows its Xero invoice
 (`followImports`): a void in Xero voids it, and a change of number, date,
 contact, lines or totals adds a version (the earlier versions stay). A void
-invoice is final. An invoice Flow cannot follow (its new number is one
-another Flow invoice holds) is counted as `failed` and tried again at the
-next read. With
+invoice is final. An invoice Flow cannot follow is counted as `failed`,
+nothing of it changes, and the next read tries it again: its new number is
+one another Flow invoice holds, or its new contact has a name two customers
+hold (it follows after a person links the Xero contact to one customer). A
+void in Xero voids it in each case. With
 the switch on, an imported year also takes the invoices Xero made since. With
 the switch off, no new invoice comes; the imported ones still follow.
 
@@ -212,7 +216,18 @@ the batch imported, with its versions and its link. Nothing is voided and
 Xero is not called: they were only Flow's copies. Each pair stays as a
 record (`xero_invoice_link_history`, reason `import_batch_released`). No job
 changes. A customer the batch made stays. The year can then be imported
-again.
+again. A release is one transaction: all of the batch goes, or none.
+
+One import step runs at a time for an organisation (a database lock): a
+step that writes an imported invoice, or a release. So a release and a read
+of Xero at the same time leave no invoice in a released batch.
+
+An installation that had the switch on before the history import (release
+2026.11.19 and earlier, where the switch made a Flow invoice of Flow's own
+for each Xero invoice with no fit) keeps the switch on and keeps those
+invoices as they are. A read of Xero makes no invoice for it after the
+upgrade: an imported invoice comes only when a person starts a batch
+(`test/flow-schema.test.js`).
 
 Measured on a test database: 3,001 invoices import in about 11 seconds, and
 the Paid tab with 2,800 invoices answers in under 0.3 seconds

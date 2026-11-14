@@ -16,6 +16,10 @@ CREATE TABLE IF NOT EXISTS "xero_import_batches" (
 --> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "xero_import_batches_org" ON "xero_import_batches" ("organisation_id", "started_at");
 --> statement-breakpoint
+-- One live batch for a year, and one for every year (year null): a year is
+-- imported again only after its batch is released.
+CREATE UNIQUE INDEX IF NOT EXISTS "xero_import_batches_one_live" ON "xero_import_batches" ("organisation_id", coalesce("year", 0)) WHERE "released_at" IS NULL;
+--> statement-breakpoint
 -- The batch that imported the linked Flow invoice, and the hash of the Xero
 -- copy it was last made to follow: when the copy's hash moves on, the import
 -- reads the Xero invoice again.
