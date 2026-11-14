@@ -165,6 +165,43 @@ describe('Xero import: the history import', { skip: skipWithoutDatabase }, () =>
     assert.deepEqual(rows.map((i) => i.number), ['INV-0002', 'INV-0011', 'INV-0120', 'INV-0001', 'INV-0004', 'INV-0005']);
   });
 
+  test('every imported invoice has a job: the tied one, or one built from the invoice', async () => {
+    const list = (query = '') => request(app, `/api/invoicing/jobs?organisationId=${org()}${query}`, { token: lab.ownerToken });
+    // A built job is past work: it is listed with the history only.
+    const plain = await list();
+    assert.equal(plain.status, 200, JSON.stringify(plain.body));
+    assert.ok(plain.body.jobs.every((j) => !j.built));
+    assert.equal(plain.body.counts.built, undefined);
+
+    const all = await list('&history=include');
+    const built = all.body.jobs.filter((j) => j.built);
+    // INV-0004 has its job from the work system (JOB-A), so no job is built.
+    assert.deepEqual(built.map((j) => j.invoiceNumber).sort(), ['INV-0005', 'INV-0011', 'INV-0120']);
+    assert.equal(all.body.counts.built, 3);
+    assert.equal(all.body.jobs.filter((j) => j.accountingRef === xid(4)).map((j) => j.sourceJobRef).join(), 'JOB-A');
+    const paid = built.find((j) => j.invoiceNumber === 'INV-0005');
+    assert.deepEqual([paid.id, paid.sourceSystem, paid.sourceJobRef, paid.accountingRef, paid.invoiceId], [xid(5), 'xero', xid(5), xid(5), null]);
+    assert.deepEqual([paid.view, paid.accountingState, paid.invoiceTab, paid.contactName, paid.jobDate, paid.totalCents], ['paid', 'paid', 'paid', 'Example Practice', '2023-03-01', 27500]);
+    assert.equal(paid.importedInvoiceId, (await imported('INV-0005')).id);
+    assert.deepEqual(paid.lines.map((l) => [l.itemCode, l.lineAmountCents]), [['CROWN', 25000]]);
+    assert.deepEqual(built.map((j) => [j.invoiceNumber, j.view, j.accountingState]).sort(),
+      [['INV-0005', 'paid', 'paid'], ['INV-0011', 'held', 'voided'], ['INV-0120', 'invoiced', 'authorised']]);
+
+    const only = await list('&built=only&view=paid');
+    assert.deepEqual(only.body.jobs.map((j) => j.invoiceNumber), ['INV-0005']);
+    assert.deepEqual((await list('&built=only&limit=1&offset=1')).body.jobs.length, 1);
+    // It is read only: a job route that writes does not know it.
+    const hold = await request(app, `/api/invoicing/jobs/${xid(5)}/hold`, { token: lab.ownerToken, method: 'POST', body: { organisationId: org(), state: 'none', reason: 'test' } });
+    assert.equal(hold.status, 404, JSON.stringify(hold.body));
+
+    // A job from the work system takes the reference: the built job is gone.
+    const job = await observeJob(handle.db, org(), { sourceSystem: 'worksystem', sourceJobRef: 'JOB-T', caseRef: 'JOB-T', contactId: practice.id, shippedOn: '2023-03-01', jobDate: '2023-03-01', lines: [{ itemCode: 'CROWN' }] });
+    await recordAccountingEvidence(handle.db, org(), job.id, { state: 'paid', accountingRef: xid(5), matchedBy: 'accounting_ref', actor: 'test' });
+    const after = await list('&history=include&limit=500');
+    assert.ok(!after.body.jobs.some((j) => j.built && j.invoiceNumber === 'INV-0005'));
+    assert.equal(after.body.jobs.filter((j) => j.accountingRef === xid(5)).length, 1, 'one job for the invoice, never two');
+  });
+
   test('the Reconcile page never offers an imported invoice as a job\'s own', async () => {
     const job = await observeJob(handle.db, org(), { sourceSystem: 'worksystem', sourceJobRef: 'JOB-B', caseRef: 'JOB-B', contactId: practice.id, shippedOn: '2023-05-11', jobDate: '2023-05-11', lines: [{ itemCode: 'CROWN' }] });
     await setReady(handle.db, org(), job.id, { actor: 'person:test' });

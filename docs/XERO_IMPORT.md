@@ -239,8 +239,27 @@ the Paid tab with 2,800 invoices answers in under 0.3 seconds
 (`test/xero-import-history.test.js`).
 
 Not in place yet: a page for the batches (an agent or a script calls the
-routes), a job in the Jobs list for a Xero invoice that has no job from the
-work system, and the change of earlier made invoices to their Xero numbers.
+routes), and the change of earlier made invoices to their Xero numbers.
+
+### A job for every Xero invoice
+
+Every imported invoice has a job (`server/core/built-jobs.js`):
+
+- A job from the work system that holds the invoice's accounting reference
+  is its job. The invoice page lists each one.
+- An imported invoice that no such job holds has a built job: Flow builds it
+  from the invoice on each read. It is not stored, so Flow never holds two
+  jobs for the same work. When a work system's job takes the reference, the
+  built job is gone and that job answers.
+
+`GET /api/invoicing/jobs?history=include` lists the built jobs after the
+stored ones, with `built: true` and `counts.built`. `built=only` lists only
+them. `offset` pages through the list. A built job has the shape of a
+stored job: its `id` and `accountingRef` are the Xero invoice id,
+`importedInvoiceId` is the Flow invoice, and its `view` is `paid`,
+`invoiced` (awaiting payment) or `held` (voided in Xero). It is past work,
+so the Jobs board does not show it. It is read only: a job route that
+writes answers `404` for it.
 
 ### Reconcile cover
 
