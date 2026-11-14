@@ -1661,7 +1661,7 @@ function issuedView(invoice, ui, context, redraw) {
     h('div', { class: 'fx-ph__text' },
       h('h1', { class: 'fx-title' }, invoice.number),
       h('span', { class: 'fx-status', 'data-tone': TAB_TONE[invoice.tab] }, TAB_LABEL[invoice.tab] ?? 'Approved'),
-      own ? null : h('span', { class: 'fx-status', 'data-tone': 'mute', title: `${invoice.sendsTo ?? 'The accounting system'} owns this invoice. Change it there: Flow follows.` }, 'Imported')),
+      own ? null : h('span', { class: 'fx-status', 'data-tone': 'mute', 'data-mark': 'imported', title: `${invoice.sendsTo ?? 'The accounting system'} owns this invoice. Change it there: Flow follows.` }, 'Imported')),
     actionBar);
   const chrome = mountRecord(ui, invoice, header, () => send, (skip) => [
     menuEntry(deleteButton, 'trash-2', skip),

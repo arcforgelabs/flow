@@ -2,6 +2,7 @@ import { and, desc, eq, inArray, ne } from 'drizzle-orm';
 import { billingObligations, contacts, invoices, invoiceVersions } from '../db/schema.js';
 import { HISTORY_HOLD_REASON } from './history.js';
 import { invoiceTab } from './invoice-status.js';
+import { importedRefs } from './invoices.js';
 
 // A job for every accounting invoice (owner rule, 14 November 2026). An
 // imported invoice that no job from a work system is tied to still has a
@@ -18,9 +19,11 @@ import { invoiceTab } from './invoice-status.js';
 const STATE_OF_TAB = { paid: 'paid', void: 'voided' };
 const VIEW_OF_STATE = { paid: 'paid', authorised: 'invoiced', voided: 'held' };
 
+// The reference and the lines come from the invoice's own document, so the
+// built jobs stay when the accounting adapter is off. The adapter only adds
+// the invoice's stage (paid or not): without it, an invoice that is not void
+// reads as awaiting payment.
 export async function builtJobs(db, organisationId, { accounting = null } = {}) {
-  const refsFor = accounting?.capabilities?.importedRefs;
-  if (typeof refsFor !== 'function') return [];
   const rows = await db.select({ invoice: invoices, contactName: contacts.name, document: invoiceVersions.document }).from(invoices)
     .leftJoin(contacts, eq(contacts.id, invoices.contactId))
     .leftJoin(invoiceVersions, and(eq(invoiceVersions.invoiceId, invoices.id), eq(invoiceVersions.version, invoices.issuedVersion)))
@@ -28,23 +31,23 @@ export async function builtJobs(db, organisationId, { accounting = null } = {}) 
     .orderBy(desc(invoices.issueDate), desc(invoices.createdAt));
   if (!rows.length) return [];
   const invoiceIds = rows.map((r) => r.invoice.id);
-  const refOf = await refsFor({ organisationId, invoiceIds });
+  const refOf = await importedRefs(db, organisationId, invoiceIds);
   const refs = [...new Set(refOf.values())];
   if (!refs.length) return [];
   // A job from a work system holds this reference: that job answers.
   const tied = new Set((await db.selectDistinct({ ref: billingObligations.accountingRef }).from(billingObligations)
     .where(and(eq(billingObligations.organisationId, organisationId), inArray(billingObligations.accountingRef, refs)))).map((r) => r.ref));
-  const stages = typeof accounting.capabilities.invoiceStages === 'function'
-    ? await accounting.capabilities.invoiceStages({ organisationId, invoiceIds })
-    : new Map();
+  const connected = typeof accounting?.capabilities?.invoiceStages === 'function';
+  const stages = connected ? await accounting.capabilities.invoiceStages({ organisationId, invoiceIds }) : new Map();
+  const system = accounting?.name ?? 'the accounting system';
   return rows.filter(({ invoice }) => refOf.has(invoice.id) && !tied.has(refOf.get(invoice.id))).map(({ invoice, contactName, document }) => {
     const ref = refOf.get(invoice.id);
-    const tab = invoiceTab({ status: invoice.status, stage: stages.get(invoice.id) ?? null, connected: true });
+    const tab = invoiceTab({ status: invoice.status, stage: stages.get(invoice.id) ?? null, connected });
     const accountingState = STATE_OF_TAB[tab] ?? 'authorised';
     return {
       id: ref,
       built: true,
-      sourceSystem: accounting.id,
+      sourceSystem: accounting?.id ?? document?.source?.system ?? null,
       sourceJobRef: ref,
       sourceInvoiceRef: invoice.number,
       caseRef: null,
@@ -75,7 +78,7 @@ export async function builtJobs(db, organisationId, { accounting = null } = {}) 
       noChargeReason: null,
       canUseNewLines: false,
       view: VIEW_OF_STATE[accountingState],
-      reasons: [`invoice ${invoice.number} is ${accountingState.replace('_', ' ')} in ${accounting.name}`, 'no job from a work system is tied to it'],
+      reasons: [`invoice ${invoice.number} is ${accountingState.replace('_', ' ')} in ${system}`, 'no job from a work system is tied to it'],
       sourceNeeds: [],
       waitingFor: [],
       waitingRules: [],

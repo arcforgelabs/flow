@@ -138,10 +138,14 @@ from. That system owns it:
   The Reconcile page (jobs against Flow's own invoices) never offers it.
 - The Invoices page shows it in its tab, in its place by its own date (an
   invoice Flow made keeps its place by the time Flow made it), with
-  an "Imported" mark. Its lines are the accounting document's (a line can
-  have no quantity or unit price). The page offers no Send, Revise, Void or
+  an "Imported" mark. On a phone the bar shows the number and the status
+  only, so the number is never cut; the Linked card names the Xero invoice.
+  Its lines are the accounting document's (a line can have no quantity or
+  unit price). The page offers no Send, Revise, Void or
   Delete. The Linked card shows the Xero invoice and each job tied to it
-  (`tiedJobs`; the port's `importedRefs` gives each invoice's reference).
+  (`tiedJobs`). The reference is in the invoice's own document
+  (`source.invoiceId`; `importedRefs`, `server/core/invoices.js`), so the
+  jobs stay on the page when the Xero adapter is off.
 - Only the import writes it (`mirrorWrite`) or removes it
   (`removeImportedInvoice`, `server/core/invoices.js`). Removing it calls no
   accounting system: it was only Flow's copy.
@@ -261,6 +265,10 @@ stored job: its `id` and `accountingRef` are the Xero invoice id,
 `invoiced` (awaiting payment) or `held` (voided in Xero). It is past work,
 so the Jobs board does not show it. It is read only: a job route that
 writes answers `404` for it.
+
+The built jobs do not need the Xero adapter: the reference and the lines are
+in the invoice's own document. With the adapter off, Flow cannot read if an
+invoice is paid, so a built job that is not void reads as `invoiced`.
 
 ### Reconcile cover
 

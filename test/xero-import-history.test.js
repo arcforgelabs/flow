@@ -9,7 +9,7 @@ import { followImports, IMPORT_ACTOR } from '../server/integrations/xero/import-
 import { matchXero } from '../server/integrations/xero/links.js';
 import { request } from './support/clerk.js';
 import { freshDatabase, skipWithoutDatabase } from './support/db.js';
-import { bootFlow, connectDirectly, scriptedXero, seedLab } from './support/xero.js';
+import { bootFlow, connectDirectly, OWNER, scriptedXero, seedLab } from './support/xero.js';
 
 // The history import (server/integrations/xero/import-history.js): each Xero
 // sales invoice a customer saw becomes a Flow invoice of origin 'xero', in
@@ -27,6 +27,7 @@ describe('Xero import: the history import', { skip: skipWithoutDatabase }, () =>
   let lab;
   let practice;
   let own;
+  let xero;
   const batches = {};
   const org = () => lab.organisation.id;
   const call = (path, { token = lab.ownerToken, method = 'GET', body } = {}) => request(app, `/api/xero/import/${path}${method === 'GET' ? `?organisationId=${org()}` : ''}`,
@@ -49,7 +50,7 @@ describe('Xero import: the history import', { skip: skipWithoutDatabase }, () =>
 
   before(async () => {
     handle = await freshDatabase();
-    const xero = scriptedXero();
+    xero = scriptedXero();
     const booted = await bootFlow(handle, { runtime: xero.runtime, log: xero.log });
     app = booted.app;
     lab = await seedLab(handle, booted.clerk);
@@ -202,6 +203,35 @@ describe('Xero import: the history import', { skip: skipWithoutDatabase }, () =>
     const after = await list('&history=include&limit=500');
     assert.ok(!after.body.jobs.some((j) => j.built && j.invoiceNumber === 'INV-0005'));
     assert.equal(after.body.jobs.filter((j) => j.accountingRef === xid(5)).length, 1, 'one job for the invoice, never two');
+  });
+
+  test('with the Xero adapter off, an imported invoice keeps its jobs', async () => {
+    // The same database, started again with the adapter off (FLOW_INTEGRATIONS empty).
+    const off = await bootFlow(handle, { on: false, runtime: xero.runtime, log: xero.log });
+    const token = off.clerk.signIn(off.clerk.addUser({ email: OWNER, google: true, password: false }));
+    const get = (path) => request(off.app, `/api/invoicing/${path}${path.includes('?') ? '&' : '?'}organisationId=${org()}`, { token });
+    assert.equal((await request(off.app, `/api/xero/import/history?organisationId=${org()}`, { token })).status, 503, 'the adapter is off');
+
+    // The invoice page and the list still name the job tied to the invoice.
+    const paid = await imported('INV-0004');
+    const page = await get(`invoices/${paid.id}`);
+    assert.equal(page.status, 200, JSON.stringify(page.body));
+    assert.deepEqual([page.body.invoice.imported, page.body.invoice.tiedJobs.map((j) => j.sourceJobRef), page.body.invoice.job.sourceJobRef], [true, ['JOB-A'], 'JOB-A']);
+    assert.deepEqual(page.body.invoice.lines.map((l) => [l.description, l.lineAmountCents]), [['Crown', 25000]]);
+    const rows = (await get('invoices?limit=200')).body.invoices;
+    assert.equal(rows.find((i) => i.number === 'INV-0004').job.sourceJobRef, 'JOB-A');
+
+    // The built jobs stay. Flow cannot read "paid" without the adapter, so an
+    // invoice that is not void reads as invoiced.
+    const all = await get('jobs?history=include&limit=500');
+    assert.equal(all.status, 200, JSON.stringify(all.body));
+    const built = all.body.jobs.filter((j) => j.built);
+    assert.deepEqual(built.map((j) => [j.invoiceNumber, j.view, j.accountingState, j.sourceSystem, j.accountingRef]).sort(),
+      [['INV-0011', 'held', 'voided', 'xero', xid(11)], ['INV-0120', 'invoiced', 'authorised', 'xero', xid(10)]]);
+    assert.equal(all.body.counts.built, 2);
+    assert.deepEqual(built.find((j) => j.invoiceNumber === 'INV-0120').reasons, ['invoice INV-0120 is authorised in the accounting system', 'no job from a work system is tied to it']);
+    // One job for each invoice a work system's job holds, never a built one too.
+    assert.deepEqual([xid(4), xid(5)].map((ref) => all.body.jobs.filter((j) => j.accountingRef === ref).map((j) => j.sourceJobRef)), [['JOB-A'], ['JOB-T']]);
   });
 
   test('the Reconcile page never offers an imported invoice as a job\'s own', async () => {

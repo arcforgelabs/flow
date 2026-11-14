@@ -143,14 +143,6 @@ export function createXeroAdapter({ runtime: given = null } = {}) {
       everSent: ({ organisationId, invoiceId }) => everInXero(database, organisationId, invoiceId),
       // Drop the push and link rows of a Flow invoice the core is removing,
       // inside its transaction (delete-invoice.js).
-      // The Xero invoice id of each imported invoice (import-history.js).
-      importedRefs: async ({ organisationId, invoiceIds }) => {
-        if (!invoiceIds?.length) return new Map();
-        const { rows } = await database.execute(sql`select l.invoice_id, l.xero_invoice_id from xero_invoice_links l
-          join invoices i on i.organisation_id = l.organisation_id and i.id = l.invoice_id and i.origin <> 'flow'
-          where l.organisation_id = ${organisationId} and l.released_at is null and l.invoice_id = any(${sql.param(invoiceIds)}::uuid[])`);
-        return new Map(rows.map((r) => [r.invoice_id, r.xero_invoice_id]));
-      },
       forgetInvoice: ({ tx, organisationId, invoiceId, actor, reason }) => forgetXeroInvoice(tx, organisationId, invoiceId, { actor, reason }),
       // Several issued invoices, in batches of MAX_BATCH (drafts.js).
       pushInvoices: ({ organisationId, invoiceIds, pushedBy = null, accepted = null, mayWrite = null }) => pushInvoices(database, current(), { organisationId, invoiceIds, pushedBy, accepted, mayWrite }),

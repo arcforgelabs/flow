@@ -7,7 +7,7 @@ import { FlowError } from '../core/errors.js';
 import { listReview } from '../core/review.js';
 import { createActionGuard } from '../integrations/call-guard.js';
 import {
-  createDraftInvoice, deleteDraft, getInvoice, isImported, issueInvoice, listInvoiceVersions, reviseInvoice, updateDraftInvoice, voidInvoice,
+  createDraftInvoice, deleteDraft, getInvoice, importedRefs, isImported, issueInvoice, listInvoiceVersions, reviseInvoice, updateDraftInvoice, voidInvoice,
 } from '../core/invoices.js';
 import { listAutomations, saveAutomation, workStatuses } from '../core/automations.js';
 import {
@@ -312,11 +312,10 @@ async function jobsByInvoice(db, organisationId, invoiceIds) {
 // The jobs tied to imported invoices: Map(invoiceId -> [job], oldest first).
 // A job holds an imported invoice by its accounting reference, never as its
 // own invoice, so several jobs can share one and the import changes no job.
-async function tiedJobs(db, organisationId, accounting, rows) {
-  const ask = accounting?.capabilities?.importedRefs;
+async function tiedJobs(db, organisationId, rows) {
   const ids = rows.filter(isImported).map((r) => r.id);
-  if (!ids.length || typeof ask !== 'function') return new Map();
-  const refOf = await ask({ organisationId, invoiceIds: ids });
+  if (!ids.length) return new Map();
+  const refOf = await importedRefs(db, organisationId, ids);
   const refs = [...new Set(refOf.values())];
   if (!refs.length) return new Map();
   const found = await db.select().from(billingObligations)
@@ -416,7 +415,7 @@ async function invoiceDetail(db, organisationId, invoiceId, accounting = null, w
     jobChangeDetail(db, organisationId, invoiceId, work),
   ]);
   const viewed = await invoiceView(db, organisationId, invoice, { accounting });
-  const tied = (await tiedJobs(db, organisationId, accounting, [invoice])).get(invoiceId) ?? [];
+  const tied = (await tiedJobs(db, organisationId, [invoice])).get(invoiceId) ?? [];
   return {
     jobChange,
     ...invoice,
@@ -558,7 +557,7 @@ export function createInvoicingRouter({
       .where(and(...where))
       .orderBy(sql`coalesce(case when ${invoices.origin} <> 'flow' then ${invoices.issueDate}::timestamptz end, ${invoices.createdAt}) desc`, desc(invoices.createdAt), desc(invoices.id));
     const jobs = await jobsByInvoice(db, organisationId, lightRows.map((r) => r.id));
-    for (const [id, tied] of await tiedJobs(db, organisationId, system, lightRows)) jobs.set(id, tied[0]);
+    for (const [id, tied] of await tiedJobs(db, organisationId, lightRows)) jobs.set(id, tied[0]);
     const customOn = filterRows(view).some((f) => fieldIdOf(f.field));
     const [fieldDefs, fieldValues] = customOn
       ? await Promise.all([

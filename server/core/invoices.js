@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, ne, sql } from 'drizzle-orm';
 import { billingObligations, contacts, invoiceLines, invoices, invoiceVersions, invoicingSettings, obligationEvents, organisations, priceItems } from '../db/schema.js';
 import { FlowError, notFound } from './errors.js';
 import { invoiceTotals, lineTotals } from './money.js';
@@ -461,6 +461,18 @@ export async function getInvoice(db, organisationId, invoiceId) {
   const lines = await db.select().from(invoiceLines)
     .where(eq(invoiceLines.invoiceId, invoice.id)).orderBy(asc(invoiceLines.position));
   return { ...invoice, lines };
+}
+
+// The accounting reference of each imported invoice: Map(invoiceId -> ref),
+// from the source its issued version's document names. It is in the core's
+// own tables, so a job stays tied to an imported invoice, and an invoice no
+// job holds keeps its built job, when the accounting adapter is off.
+export async function importedRefs(db, organisationId, invoiceIds = null) {
+  if (invoiceIds && !invoiceIds.length) return new Map();
+  const rows = await db.select({ id: invoices.id, ref: sql`${invoiceVersions.document}->'source'->>'invoiceId'` }).from(invoices)
+    .innerJoin(invoiceVersions, and(eq(invoiceVersions.invoiceId, invoices.id), eq(invoiceVersions.version, invoices.issuedVersion)))
+    .where(and(eq(invoices.organisationId, organisationId), ne(invoices.origin, 'flow'), invoiceIds ? inArray(invoices.id, invoiceIds) : undefined));
+  return new Map(rows.filter((r) => r.ref).map((r) => [r.id, r.ref]));
 }
 
 // An imported invoice has no rows in Flow's line table: its lines are the
