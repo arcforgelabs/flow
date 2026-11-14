@@ -52,7 +52,7 @@ function adapterBeforeMove(adapter) {
   const journal = JSON.parse(readFileSync(journalFile, 'utf8'));
   journal.entries = journal.entries.filter((entry) => entry.idx < from);
   writeFileSync(journalFile, JSON.stringify(journal));
-  const tables = adapter.schema.tables.filter((table) => !['xero_contact_sync', 'xero_invoice_link_history'].includes(table));
+  const tables = adapter.schema.tables.filter((table) => !['xero_contact_sync', 'xero_invoice_link_history', 'xero_import_batches'].includes(table));
   return { ...adapter, schema: { ...adapter.schema, migrationsFolder: folder, tables } };
 }
 
@@ -156,7 +156,7 @@ function xeroBeforeMigration(index, laterTables) {
 test('the Xero pair history upgrade keeps every invoice, version, override, push and link row', { skip: skipWithoutDatabase }, async () => {
   const handle = await freshDatabase();
   // Release 2026.11.19: the Xero adapter up to migration 0016.
-  const before = xeroBeforeMigration(17, ['xero_invoice_link_history']);
+  const before = xeroBeforeMigration(17, ['xero_invoice_link_history', 'xero_import_batches']);
   try {
     await migrateAdapterSchema(handle.db, before);
     assert.equal((await inSchema(handle.pool, 'flow')).includes('xero_invoice_link_history'), false);
@@ -187,7 +187,13 @@ test('the Xero pair history upgrade keeps every invoice, version, override, push
 
     await migrateEverything(handle.db);
     await migrateEverything(handle.db);
-    assert.deepEqual(await stored(), old, 'the upgrade changes no existing row');
+    // The history import's columns on a link (migration 0019) start empty.
+    const now = await stored();
+    now.xero_invoice_links = now.xero_invoice_links.map(({ batch_id, copy_hash, ...link }) => {
+      assert.deepEqual([batch_id, copy_hash], [null, null]);
+      return link;
+    });
+    assert.deepEqual(now, old, 'the upgrade changes no existing value');
     assert.deepEqual((await handle.pool.query('select count(*)::int as n from xero_invoice_link_history')).rows, [{ n: 0 }]);
     assert.equal((await getInvoice(handle.db, organisation.id, invoice.id)).status, 'issued');
   } finally {

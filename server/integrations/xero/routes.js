@@ -11,6 +11,7 @@ import { recordXeroEvidence, recordXeroPayments } from './ledger.js';
 import { IMPORT_STATES, importOverview, linkXeroInvoice, makeFlowInvoice, matchXero, releaseXeroLink, saveImportSettings, useXeroInvoice } from './links.js';
 import { queueHistoryImport, resetImport } from './import.js';
 import { importPlan, reconcileCover } from './import-plan.js';
+import { listImportBatches, releaseImportBatch, runImportBatch } from './import-history.js';
 import { MIRROR_RESOURCES, mirrorStatus, mirrorXero, readInvoiceFromXero, rereadCopy } from './mirror.js';
 import { accountingStatus, checkSentInvoices } from './reconcile.js';
 import { CUSTOM_CONNECTION, decryptToken, deleteConnection, describeConnection, readConnection, saveConnection } from './connections.js';
@@ -454,6 +455,29 @@ export function createXeroRouter({ db, personAuth, runtime, log = console, butto
   router.get('/import/cover', ...signedIn, handle(log, async (req, res) => {
     const organisationId = await requireOrganisation(db, req.query.organisationId);
     res.json({ ok: true, ...(await reconcileCover(db, organisationId)) });
+  }));
+
+  // The history import (import-history.js): batches by year, each with an
+  // undo. Flow's database only. Owner or admin.
+  router.get('/import/history', ...signedIn, handle(log, async (req, res) => {
+    const organisationId = await requireOrganisation(db, req.query.organisationId);
+    res.json({ ok: true, batches: await listImportBatches(db, organisationId) });
+  }));
+
+  router.post('/import/history', ...manager, handle(log, async (req, res) => {
+    const organisationId = await requireOrganisation(db, req.body?.organisationId);
+    const year = req.body?.year == null ? null : Number(req.body.year);
+    const batch = await runImportBatch(db, organisationId, { year, actor: `person:${req.person.id}` });
+    log.info?.(`[xero] organisation ${organisationId}: person ${req.person.id} imported Xero history (${year ?? 'every year'}): ${JSON.stringify(batch.counts)}`);
+    res.json({ ok: true, batch });
+  }));
+
+  router.post('/import/history/:batchId/release', ...manager, handle(log, async (req, res) => {
+    const organisationId = await requireOrganisation(db, req.body?.organisationId);
+    const [batchId] = requireInvoiceIds([req.params.batchId], 'batchId');
+    const batch = await releaseImportBatch(db, organisationId, batchId, { actor: `person:${req.person.id}` });
+    log.info?.(`[xero] organisation ${organisationId}: person ${req.person.id} released import batch ${batchId}: ${batch.removed} invoices removed`);
+    res.json({ ok: true, batch });
   }));
 
   router.post('/import/match', ...manager, handle(log, async (req, res) => {

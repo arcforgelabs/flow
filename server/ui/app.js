@@ -1035,13 +1035,13 @@ function xeroImportSection(organisations) {
     return button;
   };
   const autoLink = switchFor('autoLink', 'Link sure matches');
-  const makeUnmatched = switchFor('makeUnmatched', 'Make Flow invoices for the rest');
+  const makeUnmatched = switchFor('makeUnmatched', 'Import Xero history');
   const section = h('section', { class: 'fx-set fx-int-section fx-card', style: { padding: '8px 20px 16px' } },
     h('h2', { class: 'fx-set__title' }, 'Import'),
     settingRow({ label: 'To check', help: 'Xero invoices that fit a Flow invoice or a Flow job.',
       control: h('span', { class: 'fx-row' }, count, h('a', { class: 'fx-btn fx-btn--sm fx-btn--primary', href: '/xero-import', onclick: navigate }, 'Review')) }),
     settingRow({ label: 'Link sure matches', help: 'Same client, total and week, and only one fit. Flow links them.', control: autoLink }),
-    settingRow({ label: 'Make Flow invoices for the rest', help: 'Off: they stay in the Xero history.', control: makeUnmatched }),
+    settingRow({ label: 'Import Xero history', help: 'Off: Flow keeps only its own invoices.', control: makeUnmatched }),
     settingRow({ label: 'Xero history', hint: copied, help: 'Every Xero invoice Flow copied. A search makes no Xero call.', control: h('a', { class: 'fx-btn fx-btn--sm', href: '/xero-import?show=all', onclick: navigate }, 'Search') }));
   if (organisationId) {
     flow(`/api/xero/import?organisationId=${organisationId}&show=check&limit=1`)

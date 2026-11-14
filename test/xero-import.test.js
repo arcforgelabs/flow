@@ -221,20 +221,15 @@ describe('Xero import: Xero invoices against Flow invoices', { skip: skipWithout
     assert.match(kept.body.error, /Flow sent/);
   });
 
-  test('nothing fits: it stays in the copy, until the setting makes Flow invoices', async () => {
+  test('nothing fits: it stays in the copy; the match step makes no invoice, with the import switch on or off', async () => {
     const id = await copy(6, { contact: XC2, issuedOn: '2026-07-01' });
     assert.equal((await stateOf(id)).state, 'none');
     assert.equal((await matchXero(handle.db, org())).made, 0, 'off by default');
     const saved = await call('/import/settings', { method: 'PUT', body: { organisationId: org(), makeUnmatched: true } });
     assert.equal(saved.body.settings.makeUnmatched, true);
-    const result = await matchXero(handle.db, org());
-    assert.equal(result.made, 2, 'this one, and INV-2, whose only fit a person gave to INV-3');
-    const row = await stateOf(id);
-    assert.equal(row.link.matchedBy, 'made');
-    const page = await call(`/import?organisationId=${org()}&show=linked&q=INV-6`);
-    assert.equal(page.status, 200);
-    assert.deepEqual(page.body.rows.map((r) => r.number), ['INV-6']);
-    assert.ok(page.body.counts.linked >= 4);
+    // The switch belongs to the history import (test/xero-import-history.test.js).
+    assert.equal((await matchXero(handle.db, org())).made, 0);
+    assert.equal((await stateOf(id)).state, 'none');
     await call('/import/settings', { method: 'PUT', body: { organisationId: org(), makeUnmatched: false } });
   });
 

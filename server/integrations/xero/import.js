@@ -6,6 +6,7 @@ import { lastSync, syncCatalogue } from './catalogue.js';
 import { syncContactsForAll } from './contact-sync.js';
 import { mirrorState } from './lookup.js';
 import { MIRROR_RESOURCES, mirrorXero } from './mirror.js';
+import { followImports } from './import-history.js';
 import { matchXero } from './links.js';
 import { checkSentInvoices } from './reconcile.js';
 import { runWebhookWork, WEBHOOK_REFRESH_MS, webhooksActive } from './webhooks.js';
@@ -85,11 +86,13 @@ export async function runImportSlice(db, runtime, job, { maxPages = SLICE_PAGES 
   const sent = invoices && (invoices.inserted || invoices.changed || job.payload?.reason !== 'changes')
     ? await checkSentInvoices(db, runtime, job.organisationId)
     : null;
-  // Each Xero invoice against Flow's own (links.js): sure fits are linked, and
-  // with the Import setting on, a Flow invoice is made for each with no fit.
+  // Each Xero invoice against Flow's own (links.js): sure fits are linked.
   // Flow's database only.
   const matched = sent ? await matchXero(db, job.organisationId) : null;
-  return { results, more: stopped, ...(sent ? { sent } : {}), ...(matched ? { matched } : {}) };
+  // Each imported invoice follows its Xero invoice, and a year the history
+  // import covers takes the invoices Xero made since (import-history.js).
+  const followed = sent ? await followImports(db, job.organisationId) : null;
+  return { results, more: stopped, ...(sent ? { sent } : {}), ...(matched ? { matched } : {}), ...(followed ? { followed } : {}) };
 }
 
 // Claims and runs one due import job, then queues the next slice when one is

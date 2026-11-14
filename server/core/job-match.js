@@ -19,6 +19,10 @@ const JOB_GAP = and(
   ne(billingObligations.holdState, 'held'),
 );
 
+// An imported invoice belongs to its accounting system: it is never a job's
+// own invoice (ledger.js, linkJobToInvoice), so this page never offers one.
+const OWN = eq(invoices.origin, 'flow');
+
 const hasJob = sql`exists (select 1 from billing_obligations o
   where o.organisation_id = ${invoices.organisationId} and o.invoice_id = ${invoices.id})`;
 
@@ -106,7 +110,7 @@ export async function listReconcile(db, organisationId) {
     unclear: sql`${billingObligations.accountingState} in ('ambiguous', 'voided', 'deleted') and ${billingObligations.invoiceId} is null`.mapWith(Boolean),
     possible: sql`(select count(*) from invoices i
       where i.organisation_id = ${billingObligations.organisationId} and i.contact_id = ${billingObligations.contactId}
-        and i.status <> 'void' and i.total_cents = ${billingObligations.totalCents}
+        and i.status <> 'void' and i.origin = 'flow' and i.total_cents = ${billingObligations.totalCents}
         and not exists (select 1 from billing_obligations x where x.organisation_id = i.organisation_id and x.invoice_id = i.id))`.mapWith(Number),
   }).from(billingObligations)
     .leftJoin(contacts, eq(contacts.id, billingObligations.contactId))
@@ -124,7 +128,7 @@ export async function listReconcile(db, organisationId) {
         and o.invoice_id is null and o.accounting_ref is null and o.total_cents = ${invoices.totalCents})`.mapWith(Number),
   }).from(invoices)
     .leftJoin(contacts, eq(contacts.id, invoices.contactId))
-    .where(and(eq(invoices.organisationId, organisationId), ne(invoices.status, 'void'), sql`not ${hasJob}`))
+    .where(and(eq(invoices.organisationId, organisationId), OWN, ne(invoices.status, 'void'), sql`not ${hasJob}`))
     .orderBy(sql`${invoices.issueDate} asc nulls last`, asc(invoices.createdAt));
   return { jobs, invoices: lonely };
 }
@@ -159,7 +163,7 @@ export async function jobMatchDetail(db, organisationId, obligationId, { referen
   };
 
   const search = String(q ?? '').trim();
-  const where = [eq(invoices.organisationId, organisationId), ne(invoices.status, 'void')];
+  const where = [eq(invoices.organisationId, organisationId), OWN, ne(invoices.status, 'void')];
   if (search) where.push(searchInvoices(search));
   else {
     if (!o.contactId) return { job, invoices: [] };
@@ -193,7 +197,7 @@ export async function invoiceMatchDetail(db, organisationId, invoiceId, { q = ''
   const d = (await invoiceFacts(db, organisationId, [i])).get(i.id);
   const invoice = {
     id: i.id, number: i.number, clientName: row.clientName, issueDate: i.issueDate, date: dateOf(i), status: i.status, reference: i.reference,
-    lines: d.lines, totalCents: i.totalCents, jobs: d.jobs, open: d.jobs.length === 0 && i.status !== 'void',
+    lines: d.lines, totalCents: i.totalCents, jobs: d.jobs, open: d.jobs.length === 0 && i.status !== 'void' && i.origin === 'flow',
   };
   const search = String(q ?? '').trim();
   const where = [eq(billingObligations.organisationId, organisationId), isNull(billingObligations.invoiceId), isNull(billingObligations.accountingRef)];
