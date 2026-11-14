@@ -1,13 +1,14 @@
 import { and, eq, sql } from 'drizzle-orm';
 import { createContact } from '../../core/contacts.js';
 import { FlowError } from '../../core/errors.js';
-import { mirrorWrite, removeImportedInvoice } from '../../core/invoices.js';
+import { mirrorWrite, removeImportedInvoice, removeUnsentInvoice } from '../../core/invoices.js';
+import { recordAccountingEvidence } from '../../core/ledger.js';
 import { invoices, invoiceVersions } from '../../db/schema.js';
 import { normaliseName } from './catalogue.js';
 import { forgetXeroInvoice } from './delete-invoice.js';
 import { IMPORTED_STATUSES as IMPORTED, oddLineReasons } from './import-plan.js';
 import { readImportSettings } from './links.js';
-import { mirrorState } from './lookup.js';
+import { findInvoices, mirrorState } from './lookup.js';
 
 // The history import (docs/XERO_IMPORT.md, "The full ledger"): Flow keeps a
 // full ledger, so each Xero sales invoice a customer saw becomes a Flow
@@ -153,7 +154,8 @@ async function importOne(db, organisationId, x, { batchId, actor, resolve, count
   try {
     const invoice = await db.transaction(async (tx) => {
       await importLock(tx, organisationId);
-      const { rows: [live] } = await tx.execute(sql`select 1 from xero_import_batches where id = ${batchId} and released_at is null`);
+      // The conversion of a made invoice has no batch.
+      const { rows: [live] } = batchId ? await tx.execute(sql`select 1 from xero_import_batches where id = ${batchId} and released_at is null`) : { rows: [true] };
       if (!live) throw SKIP();
       contact = await resolve(tx, x);
       if (!contact) return null;
@@ -332,6 +334,136 @@ export async function followImports(db, organisationId, { actor = IMPORT_ACTOR }
     if (batch.year === null) break;
   }
   if (result.imported) await bumpNextNumber(db, organisationId);
+  return result;
+}
+
+// Flow invoices made earlier from a Xero invoice (the Import page's Make,
+// links.js) are Flow's own invoices with a Flow number. In a full ledger each
+// is the Xero invoice itself, so each becomes an imported invoice with the
+// Xero number: the made copy is removed (it was only Flow's copy, so nothing
+// is voided), the pair stays as a record (xero_invoice_link_history, reason
+// `converted_to_import`), and the Xero invoice is imported in its place. The
+// job the copy billed stays tied to the Xero invoice by its accounting
+// reference, so Flow does not draft it again.
+//
+// All in one transaction: every copy leaves before any import, because one
+// copy's Flow number can be another copy's Xero number. A copy stays as it is
+// (`skipped`) when Flow sent it, an owner's override holds it, it is not
+// issued, it is void in Flow while Xero's is not, Xero's is not one the import
+// takes, its job follows another Xero invoice, or a Flow invoice that stays
+// holds its Xero number. Flow's database only; no Xero call. `dryRun` does the
+// same work and keeps none of it.
+const CONVERT_REASON = 'converted_to_import';
+const DRY_RUN = Symbol('dry run');
+
+function convertSkip(r) {
+  if (r.sent) return 'sent';
+  if (r.override) return 'override';
+  if (!['issued', 'void'].includes(r.flow_status)) return 'notIssued';
+  if (!IMPORTED.includes(r.status)) return 'notImported';
+  if (r.flow_status === 'void' && r.status !== 'VOIDED') return 'voidInFlow';
+  if (!r.invoice_number) return 'noNumber';
+  if (r.job_ref && r.job_ref !== r.xero_invoice_id) return 'jobElsewhere';
+  return null;
+}
+
+export async function convertMadeInvoices(db, organisationId, { actor, dryRun = false, now = new Date() }) {
+  if (!actor) throw new FlowError('invalid', 'actor is required');
+  await readyToImport(db, organisationId, now);
+  const result = {
+    dryRun: Boolean(dryRun), candidates: 0, converted: 0, void: 0, jobsKept: 0, contactsMade: 0,
+    skipped: { sent: 0, override: 0, notIssued: 0, notImported: 0, voidInFlow: 0, noNumber: 0, jobElsewhere: 0, numberTaken: 0 },
+    invoices: [],
+  };
+  const note = (r, extra) => result.invoices.push({ xeroInvoiceId: r.xero_invoice_id, number: r.invoice_number, flowNumber: r.flow_number, jobId: r.job_id ?? null, ...extra });
+  try {
+    await db.transaction(async (tx) => {
+      await importLock(tx, organisationId);
+      const { rows } = await tx.execute(sql`
+        select l.xero_invoice_id, l.invoice_id, i.number as flow_number, i.status as flow_status, i.total_cents as flow_total_cents,
+          k.id as flow_contact_id, k.name as flow_contact_name, k.email as flow_contact_email,
+          x.invoice_number, x.reference, x.status, x.issued_on, x.due_on, x.currency, x.subtotal_cents, x.tax_cents, x.total_cents,
+          x.xero_contact_id, x.lines, x.record_hash, c.name as contact_name, c.email as contact_email,
+          exists (select 1 from xero_invoice_pushes p where p.organisation_id = l.organisation_id
+            and (p.invoice_id = l.invoice_id or p.xero_invoice_id = l.xero_invoice_id)) as sent,
+          exists (select 1 from send_overrides s where s.invoice_id = l.invoice_id) as override,
+          j.id as job_id, j.accounting_ref as job_ref
+        from xero_invoice_links l
+        join invoices i on i.organisation_id = l.organisation_id and i.id = l.invoice_id and i.origin = 'flow'
+        join contacts k on k.organisation_id = i.organisation_id and k.id = i.contact_id
+        join xero_invoices x on x.organisation_id = l.organisation_id and x.xero_invoice_id = l.xero_invoice_id
+        left join xero_contacts c on c.organisation_id = x.organisation_id and c.xero_contact_id = x.xero_contact_id
+        left join billing_obligations j on j.organisation_id = l.organisation_id and j.invoice_id = l.invoice_id
+        where l.organisation_id = ${organisationId} and l.matched_by = 'made' and l.released_at is null
+        order by x.issued_on nulls last, x.invoice_number, l.xero_invoice_id
+        for update of l, i`);
+      result.candidates = rows.length;
+      let set = [];
+      for (const r of rows) {
+        const reason = convertSkip(r);
+        if (!reason) set.push(r);
+        else {
+          result.skipped[reason] += 1;
+          note(r, { skipped: reason });
+        }
+      }
+      // A copy that stays keeps its Flow number, which can be the Xero number
+      // of another copy: that one stays too. So until nothing more drops.
+      for (;;) {
+        if (!set.length) break;
+        const { rows: held } = await tx.execute(sql`select number from invoices where organisation_id = ${organisationId}
+          and number = any(${sql.param(set.map((r) => r.invoice_number))}::text[]) and id <> all(${sql.param(set.map((r) => r.invoice_id))}::uuid[])`);
+        const taken = new Set(held.map((h) => h.number));
+        const next = set.filter((r) => {
+          if (!taken.has(r.invoice_number)) return taken.add(r.invoice_number);
+          result.skipped.numberTaken += 1;
+          note(r, { skipped: 'numberTaken' });
+          return false;
+        });
+        if (next.length === set.length) break;
+        set = next;
+      }
+      if (!set.length) return;
+      for (const r of set) {
+        await forgetXeroInvoice(tx, organisationId, r.invoice_id, { actor, reason: CONVERT_REASON });
+        await removeUnsentInvoice(tx, organisationId, { id: r.invoice_id, number: r.flow_number, totalCents: num(r.flow_total_cents), origin: 'flow' }, actor,
+          { reason: CONVERT_REASON, xeroInvoiceId: r.xero_invoice_id });
+      }
+      // The customer is Flow's contact for the Xero contact, as for every
+      // imported invoice; where that has no one answer, the customer the made
+      // copy had (a person or Flow chose it for this Xero invoice).
+      const resolve = await contactResolver(tx, organisationId);
+      const had = new Map(set.map((r) => [r.xero_invoice_id, { id: r.flow_contact_id, name: r.flow_contact_name, email: r.flow_contact_email }]));
+      const pick = async (inner, x) => (await resolve(inner, x)) ?? had.get(x.xero_invoice_id);
+      pick.remember = resolve.remember;
+      const counts = emptyCounts();
+      for (const r of set) {
+        const invoice = await importOne(tx, organisationId, r, { batchId: null, actor, resolve: pick, counts });
+        // Nothing here is expected to block: the copies left first.
+        if (!invoice) throw refused('convert_blocked', `Flow cannot import Xero invoice ${r.invoice_number} in place of ${r.flow_number}. Nothing was changed.`);
+        note(r, { invoiceId: invoice.id });
+      }
+      // Each job keeps the Xero invoice as its accounting evidence, from the
+      // copy, in the same step: it shows billed or paid, and is never drafted
+      // again.
+      const jobs = set.filter((r) => r.job_id);
+      if (jobs.length) {
+        const { invoices: copies } = await findInvoices(tx, organisationId, { invoiceIds: jobs.map((r) => r.xero_invoice_id) });
+        const stateOf = new Map(copies.map((copy) => [copy.id, copy.state]));
+        for (const r of jobs) {
+          const state = stateOf.get(r.xero_invoice_id);
+          if (state) await recordAccountingEvidence(tx, organisationId, r.job_id, { state, accountingRef: r.xero_invoice_id, matchedBy: 'accounting_ref', actor });
+        }
+      }
+      await bumpNextNumber(tx, organisationId);
+      Object.assign(result, { converted: counts.imported, void: counts.void, jobsKept: jobs.length, contactsMade: counts.contactsMade });
+      if (dryRun) throw DRY_RUN;
+    });
+  } catch (error) {
+    if (error !== DRY_RUN) throw error;
+    // The invoices a dry run made are gone with it.
+    for (const row of result.invoices) delete row.invoiceId;
+  }
   return result;
 }
 
