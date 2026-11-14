@@ -8,7 +8,7 @@ import { linkJobToInvoice, recordAccountingEvidence, releaseAccountingRef } from
 import { normaliseName } from './catalogue.js';
 import { findInvoices } from './lookup.js';
 import { canFit, markRivals, scoreFit, sureFits } from './fit.js';
-import { everInXero } from './delete-invoice.js';
+import { everInXero, forgetXeroInvoice } from './delete-invoice.js';
 
 // The Import page (docs/XERO_IMPORT.md): each sales invoice in Flow's copy of
 // Xero against Flow's own invoices. Flow's own records are the ones it works
@@ -304,7 +304,11 @@ export async function useXeroInvoice(db, organisationId, invoiceId, { xeroInvoic
         evidence: { invoiceId, number: invoice.number, reason: 'used_xero_invoice', removed: unsent, xeroInvoiceId, xeroNumber: row.number ?? null },
       });
     }
-    if (unsent) await deleteUnsentRows(tx, organisationId, invoiceId);
+    if (unsent) {
+      // A released link of the copy goes with it; its record stays (forgetXeroInvoice).
+      await forgetXeroInvoice(tx, organisationId, invoiceId, { actor, reason: 'used_xero_invoice' });
+      await deleteUnsentRows(tx, organisationId, invoiceId);
+    }
     // The new Flow invoice stays with the client of the one it replaces.
     const made = await makeFrom(tx, organisationId, row, { jobId: jobs[0]?.id ?? null, contactId: invoice.contact_id, actor });
     return { [unsent ? 'removed' : 'voided']: { id: invoiceId, number: invoice.number }, invoice: { id: made.invoice.id, number: made.invoice.number }, xeroInvoiceId, jobId: jobs[0]?.id ?? null };
@@ -392,8 +396,9 @@ export async function matchXero(db, organisationId, { actor = 'automation:xero-i
 // them again. Nothing is voided: void is only for what a customer saw
 // (owner rule, 14 November 2026), and the Xero invoice stays as it is. A Flow
 // invoice made from this Xero invoice (matched_by 'made') was only Flow's
-// copy of it, so it is removed with its link; a copy an owner's override
-// holds, or a void copy, stays. Any other Flow invoice stays, now not in
+// copy of it, so it is removed with its link, and the pair, who made it and
+// who released it stay as a record (xero_invoice_link_history); a copy an
+// owner's override holds, or a void copy, stays. Any other Flow invoice stays, now not in
 // Xero: a person sends it or deletes it. One Flow sent to this Xero invoice
 // is that invoice, so its link cannot be released.
 export async function releaseXeroLink(db, organisationId, xeroInvoiceId, { actor, reason }) {
@@ -417,7 +422,9 @@ export async function releaseXeroLink(db, organisationId, xeroInvoiceId, { actor
     if (copy) {
       const { rows: [invoice] } = await tx.execute(sql`select id, number, total_cents as "totalCents" from invoices
         where organisation_id = ${organisationId} and id = ${link.invoice_id} for update`);
-      await tx.execute(sql`delete from xero_invoice_links where organisation_id = ${organisationId} and invoice_id = ${link.invoice_id}`);
+      // The pair, who made it and who released it stay as a record
+      // (xero_invoice_link_history); the link row goes with the copy.
+      await forgetXeroInvoice(tx, organisationId, link.invoice_id, { actor, reason: reason.trim() });
       await removeUnsentInvoice(tx, organisationId, invoice, actor, { reason: 'released_xero_copy', xeroInvoiceId });
       removed = true;
     }

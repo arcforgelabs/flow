@@ -373,11 +373,15 @@ becomes `deleted` (or `voided` when Xero had already voided it). When Flow
 removes its invoice, the push and link rows go with it (`forgetInvoice` on
 the port, in the same transaction), and the job's history keeps the number,
 total, who and the Xero id (`draft_deleted`, `removed: true`,
-`reason: deleted_in_accounting`). When Flow voids it, the push and link
+`reason: deleted_in_accounting`). Each pair stays as a row in
+`xero_invoice_link_history`: the Xero invoice, the Flow invoice's number,
+who made, released or deleted the pair, and who removed the Flow invoice
+and why. Rows there are only added. When Flow voids it, the push and link
 record who and when, and the issued versions stay.
 
 Xero migration `0011_xero_invoice_deleted` adds `deleted_by` and `deleted_at`
-on the push and the link. It is the Xero adapter's own migration.
+on the push and the link, and `0017_xero_link_history` adds the history
+table. They are the Xero adapter's own migrations.
 
 ## The mirror
 

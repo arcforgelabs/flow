@@ -16,7 +16,7 @@ export const CAPABILITIES = Object.freeze([
   'pushInvoice', // send an issued invoice; the Flow record id is the idempotency key
   'pushInvoices', // send several issued invoices in one pass (Send all ready, server/core/sending.js)
   'deleteInvoice', // { organisationId, invoiceId, actor }: read the accounting invoice live, then delete it only while it is still a draft. Answers { state: deleted | gone | voided | approved | unavailable, status, message? }. deleted: it was deleted now. gone: it was already deleted, and nothing was written. voided: it was voided there, and nothing was written. approved: it is approved or paid; nothing was written. unavailable: it cannot be deleted. After deleted or gone the core removes the Flow invoice (no customer saw it); after voided it voids the Flow invoice.
-  'forgetInvoice', // { tx, organisationId, invoiceId }: inside the core's transaction, drop the adapter's own rows for a Flow invoice the core is removing (its draft was deleted in the accounting system, so no customer saw it)
+  'forgetInvoice', // { tx, organisationId, invoiceId, actor, reason }: inside the core's transaction, drop the adapter's own rows for a Flow invoice the core is removing (no customer saw it), and keep the adapter's record of the pair
   'everSent', // { organisationId, invoiceId }: true when the invoice ever reached the accounting system (a send started, or a link). false: the core deletes it in Flow instead of voiding it.
   'checkDrafts', // the accounting system's problems with Flow drafts, from its copy; null while not connected
   'invoiceStages', // { organisationId, invoiceIds? }: Map(invoiceId -> draft | approved | sent | paid | void | pending) for issued invoices, from its copy

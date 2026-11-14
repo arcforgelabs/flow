@@ -206,10 +206,14 @@ export async function voidInvoice(db, organisationId, invoiceId, { accounting = 
   if (accounting) {
     const current = await loadInvoice(db, organisationId, invoiceId);
     if (current.status !== 'void' && current.issuedVersion > 0) {
-      if (await neverSent(accounting, organisationId, invoiceId)) {
+      if (!(await neverSent(accounting, organisationId, invoiceId))) {
+        throw new FlowError('void_in_accounting', `${current.number} is in ${accounting.name}. Void it in ${accounting.name}: Flow follows.`);
+      }
+      // An owner's override record keeps its invoice, so that one cannot be
+      // deleted: Flow voids it here, and the record stays.
+      if (!(await hasSendOverride(db, invoiceId))) {
         throw new FlowError('delete_instead', `${current.number} never reached ${accounting.name}, so no customer saw it. Delete it instead.`);
       }
-      throw new FlowError('void_in_accounting', `${current.number} is in ${accounting.name}. Void it in ${accounting.name}: Flow follows.`);
     }
   }
   return db.transaction(async (tx) => {
@@ -305,7 +309,9 @@ async function deleteInAccounting(accounting, organisationId, invoiceId, actor) 
 
 // Removes a draft that was never issued, and frees its job. An issued or void
 // invoice that never reached the accounting system (a send that failed, or
-// one never sent) is removed too (removeUnsentInvoice). Any other issued
+// one never sent) is removed too (removeUnsentInvoice); one of those that an
+// owner's override record holds is voided in Flow instead, with no accounting
+// call. Any other issued
 // invoice goes only after its accounting adapter deletes the draft there, or
 // reports it already gone: a draft no customer saw, so Flow removes its
 // invoice as well. When the accounting system says it was voided there (a
@@ -314,15 +320,31 @@ async function deleteInAccounting(accounting, organisationId, invoiceId, actor) 
 // the accounting invoice is approved or paid, nothing in Flow changes.
 export async function deleteDraft(db, organisationId, invoiceId, { actor = null, accounting = null } = {}) {
   const current = await loadInvoice(db, organisationId, invoiceId);
-  if (current.issuedVersion > 0 && await neverSent(accounting, organisationId, invoiceId) && !(await hasSendOverride(db, invoiceId))) {
-    return db.transaction(async (tx) => {
-      const invoice = await loadInvoice(tx, organisationId, invoiceId, { lock: true });
-      if (invoice.sendState === 'queued') {
-        throw new FlowError('conflict', `${invoice.number} is on its way to ${accounting.name}. Wait for the send to finish, then delete it.`);
-      }
-      await removeUnsentInvoice(tx, organisationId, invoice, actor, { reason: 'never_sent' });
-      return { ...invoice, removed: true };
-    });
+  if (current.issuedVersion > 0 && await neverSent(accounting, organisationId, invoiceId)) {
+    const held = await hasSendOverride(db, invoiceId);
+    if (!held || current.status !== 'void') {
+      const forget = accounting.capabilities.forgetInvoice;
+      return db.transaction(async (tx) => {
+        const invoice = await loadInvoice(tx, organisationId, invoiceId, { lock: true });
+        if (invoice.sendState === 'queued') {
+          throw new FlowError('conflict', `${invoice.number} is on its way to ${accounting.name}. Wait for the send to finish, then delete it.`);
+        }
+        // An owner's override record keeps its invoice: Flow voids it, the
+        // record stays, and the job is free again.
+        if (held) {
+          if (invoice.status === 'void') return invoice;
+          const [row] = await tx.update(invoices).set({ status: 'void', updatedAt: sql`now()` })
+            .where(eq(invoices.id, invoice.id)).returning();
+          await freeJobs(tx, organisationId, row, actor);
+          return row;
+        }
+        // The adapter's own rows for it (a released link) go first, and the
+        // adapter keeps its record of the pair.
+        if (typeof forget === 'function') await forget({ tx, organisationId, invoiceId: invoice.id, actor, reason: 'never_sent' });
+        await removeUnsentInvoice(tx, organisationId, invoice, actor, { reason: 'never_sent' });
+        return { ...invoice, removed: true };
+      });
+    }
   }
   if (current.status === 'void') throw new FlowError('conflict', 'a void invoice is final');
   if (current.status === 'draft' && current.issuedVersion === 0) {
@@ -353,7 +375,7 @@ export async function deleteDraft(db, organisationId, invoiceId, { actor = null,
       throw new FlowError('was_issued', 'an invoice that was issued cannot be deleted; void it');
     }
     if (answer.state !== 'voided' && typeof forget === 'function' && !(await hasSendOverride(tx, invoice.id))) {
-      const forgotten = await forget({ tx, organisationId, invoiceId: invoice.id });
+      const forgotten = await forget({ tx, organisationId, invoiceId: invoice.id, actor, reason: 'deleted_in_accounting' });
       await removeUnsentInvoice(tx, organisationId, invoice, actor, { reason: 'deleted_in_accounting', accountingStatus: answer.status ?? null, accountingRef: forgotten?.accountingRef ?? null });
       return { ...invoice, removed: true };
     }

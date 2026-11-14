@@ -192,6 +192,10 @@ describe('Xero import: Xero invoices against Flow invoices', { skip: skipWithout
     assert.equal(released.body.invoice.removed, true);
     assert.deepEqual(released.body.jobs, [wrong.id]);
     assert.deepEqual(await handle.db.select().from(invoices).where(eq(invoices.id, made.body.invoice.id)), []);
+    // The released pair stays as a record after its link row went with the copy.
+    const { rows: pairs } = await handle.db.execute(sql`select xero_invoice_id, invoice_number, matched_by, released_by is not null as released, removed_by is not null as removed, reason
+      from xero_invoice_link_history where invoice_id = ${made.body.invoice.id}`);
+    assert.deepEqual(pairs, [{ xero_invoice_id: theirs, invoice_number: made.body.invoice.number, matched_by: 'made', released: true, removed: true, reason: 'wrong pair: another job' }]);
     const { rows: [{ voids }] } = await handle.db.execute(sql`select count(*)::int as voids from invoices where organisation_id = ${org()} and status = 'void'`);
     assert.equal(voids, 0);
     const [freed] = await handle.db.select().from(billingObligations).where(eq(billingObligations.id, wrong.id));

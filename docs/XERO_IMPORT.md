@@ -124,7 +124,8 @@ another job. Release the Xero invoice (`POST
 void is only for what a customer saw, and the Xero invoice stays as it is.
 
 - A Flow invoice made from that Xero invoice (`made`) was only Flow's copy,
-  so it is removed, and its job is freed.
+  so it is removed, and its job is freed. The pair stays as a record
+  (`xero_invoice_link_history`): who made it, who released it and why.
 - Any other Flow invoice stays, now not in Xero: a person sends or deletes
   it. Its job keeps it, and lets go of the Xero invoice.
 - A Flow invoice Flow sent to that Xero invoice is that invoice, so release

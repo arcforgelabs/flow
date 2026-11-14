@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { after, before, beforeEach, describe, test } from 'node:test';
 import { eq, sql } from 'drizzle-orm';
 import { createContact, createPriceItem } from '../server/core/directory.js';
-import { createDraftInvoice, deleteDraft, issueInvoice, listInvoiceVersions, reviseInvoice } from '../server/core/invoices.js';
+import { createDraftInvoice, deleteDraft, issueInvoice, listInvoiceVersions, reviseInvoice, voidInvoice } from '../server/core/invoices.js';
 import { observeJob } from '../server/core/ledger.js';
 import { billingObligations, invoices } from '../server/db/schema.js';
 import { APPROVED_MESSAGE, deleteXeroInvoice } from '../server/integrations/xero/delete-invoice.js';
@@ -97,6 +97,9 @@ describe('delete an issued invoice and its Xero draft', { skip: skipWithoutDatab
   const flowRow = async (id) => (await handle.db.select().from(invoices).where(eq(invoices.id, id)))[0];
   const xeroRows = async (id) => (await handle.db.execute(sql`select (select count(*)::int from xero_invoice_pushes where invoice_id = ${id}) as pushes,
     (select count(*)::int from xero_invoice_links where invoice_id = ${id}) as links`)).rows[0];
+  // The adapter's record of a pair whose Flow invoice was removed.
+  const history = async (id) => (await handle.db.execute(sql`select xero_invoice_id, invoice_number, matched_by, linked_by, released_by, deleted_by, removed_by, reason
+    from xero_invoice_link_history where invoice_id = ${id} order by removed_at, matched_by`)).rows;
   const pushRow = async (id) => (await handle.db.execute(sql`select xero_status, deleted_by, deleted_at from xero_invoice_pushes where invoice_id = ${id}`)).rows[0];
   const copyStatus = async (xeroId) => (await handle.db.execute(sql`select status from xero_invoices where xero_invoice_id = ${xeroId}`)).rows[0].status;
   const lanes = async (xeroId) => (await handle.db.execute(sql`select lane from xero_calls where request_path like ${`%${xeroId}`} order by id`)).rows.map((r) => r.lane);
@@ -130,6 +133,9 @@ describe('delete an issued invoice and its Xero draft', { skip: skipWithoutDatab
     assert.equal(event.evidence.reason, 'deleted_in_accounting');
     assert.equal(event.evidence.accountingRef, xeroId);
     assert.equal(event.evidence.removed, true);
+    // The pair stays as a record after its push row went with the invoice.
+    assert.deepEqual(await history(invoice.id), [{ xero_invoice_id: xeroId, invoice_number: invoice.number, matched_by: 'sent', linked_by: null,
+      released_by: null, deleted_by: actor(), removed_by: actor(), reason: 'deleted_in_accounting' }]);
     return invoice;
   }
 
@@ -196,6 +202,8 @@ describe('delete an issued invoice and its Xero draft', { skip: skipWithoutDatab
     assert.deepEqual(await xeroRows(invoice.id), { pushes: 0, links: 0 });
     assert.equal(await flowRow(invoice.id), undefined);
     assert.equal(await copyStatus('x-link'), 'DELETED');
+    const [kept] = await history(invoice.id);
+    assert.deepEqual([kept.xero_invoice_id, kept.matched_by, kept.linked_by, kept.deleted_by, kept.removed_by], ['x-link', 'made', actor(), actor(), actor()]);
   });
 
   test('a revised invoice whose sent draft Xero deleted is removed with its issued version', async () => {
@@ -271,6 +279,41 @@ describe('delete an issued invoice and its Xero draft', { skip: skipWithoutDatab
     assert.equal((await remove(invoice)).removed, true);
     assert.equal(replay.calls.length, 0);
     assert.equal(await flowRow(invoice.id), undefined);
+  });
+
+  test('an invoice whose only link was released never reached Xero: it is deleted, and the released pair stays as a record', async () => {
+    const invoice = await sent('x-released', { linkOnly: true });
+    await handle.db.execute(sql`update xero_invoice_links set released_by = ${actor()}, released_at = now() where invoice_id = ${invoice.id}`);
+    const replay = xero.script([]);
+    assert.equal((await remove(invoice)).removed, true);
+    assert.equal(replay.calls.length, 0);
+    assert.equal(await flowRow(invoice.id), undefined);
+    assert.deepEqual(await xeroRows(invoice.id), { pushes: 0, links: 0 });
+    assert.deepEqual(await history(invoice.id), [{ xero_invoice_id: 'x-released', invoice_number: invoice.number, matched_by: 'made', linked_by: actor(),
+      released_by: actor(), deleted_by: null, removed_by: actor(), reason: 'never_sent' }]);
+  });
+
+  test('an override invoice that never reached Xero can still be resolved: Flow voids it and the override record stays', async () => {
+    const overridden = async () => {
+      const draft = await createDraftInvoice(handle.db, org(), { contactId: practice.id, reference: `CASE-${++n}`, lines: [{ priceItemId: crown.id }] });
+      const invoice = await issueInvoice(handle.db, org(), draft.id, { issuedBy: 'user:test', issueDate: '2026-10-18' });
+      await handle.db.execute(sql`insert into send_overrides (organisation_id, invoice_id, version, document_hash, problems, reason_code, person_id)
+        values (${org()}, ${invoice.id}, 1, 'hash', '[]'::jsonb, 'one_off', ${lab.owner.id})`);
+      return invoice;
+    };
+    const overrides = async (id) => (await handle.db.execute(sql`select count(*)::int as n from send_overrides where invoice_id = ${id}`)).rows[0].n;
+    const replay = xero.script([]);
+    // Delete: the record keeps the invoice, so Flow voids it and frees its job.
+    const first = await overridden();
+    const job = await attachJob(first);
+    assert.equal((await remove(first)).status, 'void');
+    assert.equal((await flowRow(first.id)).status, 'void');
+    assert.equal((await handle.db.select().from(billingObligations).where(eq(billingObligations.id, job.id)))[0].invoiceId, null);
+    // Void: allowed for this one case, though Flow sends to Xero.
+    const second = await overridden();
+    assert.equal((await voidInvoice(handle.db, org(), second.id, { accounting: accounting() })).status, 'void');
+    assert.deepEqual([await overrides(first.id), await overrides(second.id)], [1, 1]);
+    assert.equal(replay.calls.length, 0, 'Xero is not called');
   });
 
   test('a 504 leaves Flow unchanged; the retry reads first and does not post again', async () => {

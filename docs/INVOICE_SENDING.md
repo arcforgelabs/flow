@@ -251,9 +251,10 @@ again. An owner or admin can also **Delete** it:
   (`draft_deleted`, `removed: true`). The number is not used again.
 - An invoice on its way (`send_state` queued) is refused until the send
   finishes.
-- An invoice with an owner's override record (below) keeps the old rule.
-  The override is a record that stays, so its invoice is voided, never
-  deleted.
+- An invoice with an owner's override record (below) is voided, never
+  deleted: the override is a record that stays. One that never reached Xero
+  is voided in Flow with no Xero call, by **Delete** or by
+  `POST /invoices/:id/void`, and its job is free again.
 - Every other issued invoice is removed only after Xero deletes its draft
   (no customer saw it). When Xero already voided it, a customer may have
   seen it, so Flow voids it too. What a customer was sent stays a record.
@@ -265,7 +266,9 @@ Void is only for an invoice a customer has seen (owner rule, 14 November 2026).
 - With Xero connected, only Xero sends invoices to customers. Flow has no
   **Void** button then: `POST /invoices/:id/void` answers `delete_instead`
   for an invoice that never reached Xero, and `void_in_accounting` for one
-  that did. Void it in Xero; Flow's Void tab follows Xero's copy.
+  that did. Void it in Xero; Flow's Void tab follows Xero's copy. The one
+  exception is an invoice an owner's override record holds that never
+  reached Xero: it cannot be deleted, so Flow voids it.
 - A Xero draft deleted in Xero never reached a customer: its Flow invoice
   goes to Pending (`deleted_in_xero`), where a person deletes it or sends it
   again. It never shows as void.

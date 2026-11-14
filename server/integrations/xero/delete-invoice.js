@@ -45,12 +45,26 @@ export async function everInXero(db, organisationId, invoiceId) {
   return rows[0]?.sent === true;
 }
 
-// The core is removing a Flow invoice whose Xero draft was deleted (no
-// customer saw it). Inside the core's transaction, its push and link rows go
-// with it; Flow's copy keeps the Xero row with status DELETED, and the job's
-// history keeps the Xero id. Answers { accountingRef }.
-export async function forgetXeroInvoice(tx, organisationId, invoiceId) {
+// The core is removing a Flow invoice no customer saw: its Xero draft was
+// deleted, or it never reached Xero. Inside the core's transaction, its push
+// and link rows go with it, a released link too. Each pair stays as a row in
+// xero_invoice_link_history, with who made, released, deleted and removed
+// it. Flow's copy keeps the Xero row, and the job's history keeps the Xero
+// id. Answers { accountingRef }.
+export async function forgetXeroInvoice(tx, organisationId, invoiceId, { actor = null, reason = 'removed' } = {}) {
   const accountingRef = await linkedXeroId(tx, organisationId, invoiceId);
+  await tx.execute(sql`
+    insert into xero_invoice_link_history (organisation_id, xero_invoice_id, invoice_id, invoice_number, matched_by, linked_by, linked_at,
+      released_by, released_at, deleted_by, deleted_at, removed_by, reason)
+    select l.organisation_id, l.xero_invoice_id, l.invoice_id, i.number, l.matched_by, l.linked_by, l.created_at,
+      l.released_by, l.released_at, l.deleted_by, l.deleted_at, ${actor}, ${reason}
+    from xero_invoice_links l join invoices i on i.organisation_id = l.organisation_id and i.id = l.invoice_id
+    where l.organisation_id = ${organisationId} and l.invoice_id = ${invoiceId}
+    union all
+    select p.organisation_id, p.xero_invoice_id, p.invoice_id, i.number, 'sent', p.pushed_by::text, p.first_dispatched_at,
+      null, null, p.deleted_by, p.deleted_at, ${actor}, ${reason}
+    from xero_invoice_pushes p join invoices i on i.organisation_id = p.organisation_id and i.id = p.invoice_id
+    where p.organisation_id = ${organisationId} and p.invoice_id = ${invoiceId}`);
   await tx.execute(sql`delete from xero_invoice_links where organisation_id = ${organisationId} and invoice_id = ${invoiceId}`);
   await tx.execute(sql`delete from xero_invoice_pushes where organisation_id = ${organisationId} and invoice_id = ${invoiceId}`);
   return { accountingRef };

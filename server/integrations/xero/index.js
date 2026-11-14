@@ -21,7 +21,7 @@ import { readChangesFirst } from './webhooks.js';
 // XERO_MODE says which Xero it acts on. Its tables are created only while it
 // is on (docs/INTEGRATIONS.md).
 
-export const XERO_TABLES = Object.freeze(['xero_connections', 'xero_contacts', 'xero_items', 'xero_sync_runs', 'xero_invoice_pushes', 'xero_payment_cursors', 'xero_invoices', 'xero_credit_notes', 'xero_payments', 'xero_mirror_cursors', 'xero_call_guard', 'xero_calls', 'xero_webhook_events', 'xero_daily_checks', 'xero_invoice_links', 'xero_import_settings', 'xero_contact_sync']);
+export const XERO_TABLES = Object.freeze(['xero_connections', 'xero_contacts', 'xero_items', 'xero_sync_runs', 'xero_invoice_pushes', 'xero_payment_cursors', 'xero_invoices', 'xero_credit_notes', 'xero_payments', 'xero_mirror_cursors', 'xero_call_guard', 'xero_calls', 'xero_webhook_events', 'xero_daily_checks', 'xero_invoice_links', 'xero_import_settings', 'xero_contact_sync', 'xero_invoice_link_history']);
 
 // What an owner enters in Settings, Integrations (server/integrations/setup.js).
 // The refresh token's key comes from Flow's secrets key.
@@ -143,7 +143,7 @@ export function createXeroAdapter({ runtime: given = null } = {}) {
       everSent: ({ organisationId, invoiceId }) => everInXero(database, organisationId, invoiceId),
       // Drop the push and link rows of a Flow invoice the core is removing,
       // inside its transaction (delete-invoice.js).
-      forgetInvoice: ({ tx, organisationId, invoiceId }) => forgetXeroInvoice(tx, organisationId, invoiceId),
+      forgetInvoice: ({ tx, organisationId, invoiceId, actor, reason }) => forgetXeroInvoice(tx, organisationId, invoiceId, { actor, reason }),
       // Several issued invoices, in batches of MAX_BATCH (drafts.js).
       pushInvoices: ({ organisationId, invoiceIds, pushedBy = null, accepted = null, mayWrite = null }) => pushInvoices(database, current(), { organisationId, invoiceIds, pushedBy, accepted, mayWrite }),
       // The Invoices page tab of each issued invoice (reconcile.js), from
