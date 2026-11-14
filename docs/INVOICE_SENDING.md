@@ -257,7 +257,10 @@ again. An owner or admin can also **Delete** it:
   `POST /invoices/:id/void`, and its job is free again.
 - Every other issued invoice is removed only after Xero deletes its draft
   (no customer saw it). When Xero already voided it, a customer may have
-  seen it, so Flow voids it too. What a customer was sent stays a record.
+  seen it, so Flow voids it too. The same when a customer may have seen an
+  earlier version (its Xero invoice was approved, paid, voided or emailed):
+  Flow voids the invoice and keeps every version. What a customer was sent
+  stays a record.
 
 ## Void
 

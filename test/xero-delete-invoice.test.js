@@ -218,6 +218,48 @@ describe('delete an issued invoice and its Xero draft', { skip: skipWithoutDatab
     assert.equal((await handle.db.execute(sql`select count(*)::int as n from invoice_versions where invoice_id = ${invoice.id}`)).rows[0].n, 0);
   });
 
+  // Version 1 went to one Xero invoice; after a revision, version 2 went to a
+  // new Xero draft (`second`). `first` says what became of the first one.
+  async function sentTwice(first, second, { status, emailed = false }) {
+    const invoice = await sent(first);
+    await handle.db.execute(sql`update xero_invoice_pushes set xero_status = ${status}, email_state = ${emailed ? 'sent' : null} where invoice_id = ${invoice.id}`);
+    await handle.db.execute(sql`update xero_invoices set status = ${status} where xero_invoice_id = ${first}`);
+    await reviseInvoice(handle.db, org(), invoice.id);
+    const again = await issueInvoice(handle.db, org(), invoice.id, { issuedBy: 'user:test', issueDate: '2026-10-20' });
+    assert.equal(again.issuedVersion, 2);
+    await handle.db.execute(sql`insert into xero_invoice_pushes (organisation_id, invoice_id, version, state, idempotency_key, request_body, body_hash, xero_invoice_id, xero_invoice_number, xero_status, verified)
+      values (${org()}, ${invoice.id}, 2, 'created', ${`key-${n}-2`}, '{}', 'hash', ${second}, ${`INV-${second}`}, 'DRAFT', true)`);
+    return invoice;
+  }
+
+  test('a version a customer saw stays: when Xero deletes the later draft, Flow voids the invoice and keeps every version', async () => {
+    // Xero approved and emailed version 1, then voided it for the revision.
+    const invoice = await sentTwice('x-seen-1', 'x-seen-2', { status: 'VOIDED', emailed: true });
+    const job = await attachJob(invoice);
+    xero.script([live('x-seen-2', 'DRAFT'), posted('x-seen-2')]);
+    const row = await remove(invoice);
+    assert.equal(row.removed, undefined);
+    assert.equal((await flowRow(invoice.id)).status, 'void');
+    assert.deepEqual((await listInvoiceVersions(handle.db, org(), invoice.id)).map((v) => v.version), [1, 2], 'the version the customer got stays');
+    assert.deepEqual(await xeroRows(invoice.id), { pushes: 2, links: 0 }, 'the record of both sends stays');
+    assert.deepEqual(await history(invoice.id), []);
+    assert.equal((await handle.db.select().from(billingObligations).where(eq(billingObligations.id, job.id)))[0].invoiceId, null, 'the job is free');
+
+    // The same when the later Xero draft is already gone.
+    const gone = await sentTwice('x-seen-3', 'x-seen-4', { status: 'VOIDED' });
+    xero.script([live('x-seen-4', 'DELETED')]);
+    assert.equal((await remove(gone)).status, 'void');
+    assert.equal((await listInvoiceVersions(handle.db, org(), gone.id)).length, 2);
+  });
+
+  test('two versions that were only ever Xero drafts are removed together', async () => {
+    const invoice = await sentTwice('x-unseen-1', 'x-unseen-2', { status: 'DELETED' });
+    xero.script([live('x-unseen-2', 'DRAFT'), posted('x-unseen-2')]);
+    assert.equal((await remove(invoice)).removed, true);
+    assert.equal(await flowRow(invoice.id), undefined);
+    assert.deepEqual((await history(invoice.id)).map((h) => h.xero_invoice_id).sort(), ['x-unseen-1', 'x-unseen-2']);
+  });
+
   test('an invoice an owner override holds is voided, not removed: the override record stays', async () => {
     const invoice = await sent('x-override');
     await handle.db.execute(sql`insert into send_overrides (organisation_id, invoice_id, version, document_hash, problems, reason_code, person_id)
@@ -311,8 +353,17 @@ describe('delete an issued invoice and its Xero draft', { skip: skipWithoutDatab
     assert.equal((await handle.db.select().from(billingObligations).where(eq(billingObligations.id, job.id)))[0].invoiceId, null);
     // Void: allowed for this one case, though Flow sends to Xero.
     const second = await overridden();
-    assert.equal((await voidInvoice(handle.db, org(), second.id, { accounting: accounting() })).status, 'void');
-    assert.deepEqual([await overrides(first.id), await overrides(second.id)], [1, 1]);
+    const secondJob = await attachJob(second);
+    assert.equal((await voidInvoice(handle.db, org(), second.id, { accounting: accounting(), actor: actor() })).status, 'void');
+    assert.equal((await handle.db.select().from(billingObligations).where(eq(billingObligations.id, secondJob.id)))[0].invoiceId, null, 'the job is free after Void too');
+    // The route names the person, so it frees the job the same way.
+    const third = await overridden();
+    const thirdJob = await attachJob(third);
+    const res = await request(app, `/api/invoicing/invoices/${third.id}/void`, { method: 'POST', token: lab.ownerToken, body: { organisationId: org() } });
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    assert.equal(res.body.invoice.status, 'void');
+    assert.equal((await handle.db.select().from(billingObligations).where(eq(billingObligations.id, thirdJob.id)))[0].invoiceId, null);
+    assert.deepEqual([await overrides(first.id), await overrides(second.id), await overrides(third.id)], [1, 1, 1]);
     assert.equal(replay.calls.length, 0, 'Xero is not called');
   });
 

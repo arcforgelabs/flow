@@ -95,9 +95,11 @@ obligation, reference })` answers whether the accounting system holds an invoice
 billable job, in the ledger's evidence shape; it is the live check before
 Flow drafts a job's invoice (`POST /api/invoicing/jobs/:id/draft`).
 `deleteInvoice({ organisationId, invoiceId, actor })` reads that system's
-invoice live and answers `{ state, status }`: `deleted`, `gone`, `approved`
-or `unavailable`. The core voids an issued Flow invoice only after `deleted`
-or `gone` (`docs/XERO.md`, "Deleting a draft"). `everSent({ organisationId,
+invoice live and answers `{ state, status }`: `deleted`, `gone`, `voided`,
+`approved` or `unavailable`. After `deleted` or `gone` the core removes the
+Flow invoice (no customer saw it); after `voided`, or with `customerSaw:
+true` (a customer may have seen an earlier version), it voids the Flow
+invoice and keeps every version (`docs/XERO.md`, "Deleting a draft"). `everSent({ organisationId,
 invoiceId })` answers false only when the invoice never reached that system
 (no send started, no link); the core then deletes it in Flow instead of
 voiding it (`docs/INVOICE_SENDING.md`, "A send that failed"). An adapter declares only the ones it has, and

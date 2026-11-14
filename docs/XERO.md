@@ -365,6 +365,13 @@ link). Then:
 | `AUTHORISED` or `PAID` | No Xero write, and nothing in Flow changes. The message is `Approved in Xero. Void it in Xero first.` Flow does not void it in Xero. |
 | No connection, or writes off | No Xero call, and nothing in Flow changes. Writes off uses the same message as Send. With no accounting system, an issued invoice answers `accounting_unavailable`. |
 
+One case keeps the invoice. An earlier version of the same Flow invoice went
+to another Xero invoice, and that one was approved, paid or voided in Xero,
+or emailed: a customer may have seen that version. The answer then carries
+`customerSaw: true`, and Flow voids the invoice. Every version and both
+push rows stay. Two versions that were only ever Xero drafts are removed
+together.
+
 A timeout or a 5xx leaves Flow unchanged. The next Delete reads Xero again
 and does not post a second delete when Xero already shows it gone.
 

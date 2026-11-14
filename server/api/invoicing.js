@@ -736,7 +736,7 @@ export function createInvoicingRouter({
   router.post('/invoices/:id/void', ...manager, handle(log, async (req, res) => {
     const invoiceId = pathId(req.params.id, 'invoice');
     const organisationId = await organisationOf(req);
-    await voidInvoice(db, organisationId, invoiceId, { accounting: accounting() });
+    await voidInvoice(db, organisationId, invoiceId, { accounting: accounting(), actor: `person:${req.person.id}` });
     log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} voided invoice ${invoiceId}`);
     res.json({ ok: true, invoice: await invoiceDetail(db, organisationId, invoiceId, accounting(), work()) });
   }));
