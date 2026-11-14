@@ -128,6 +128,8 @@ steps. This section says what is in place.
 owns it. Any other value names the accounting system the import copied it
 from. That system owns it:
 
+- It is an invoice a customer saw: issued or void, never a draft. A Xero
+  draft waits in the copy until Xero approves it.
 - Flow shows it, and never changes, sends, voids or deletes it. Each such
   route answers `409 imported`.
 - A job is tied to it by the job's accounting reference, as the matcher ties
@@ -140,8 +142,9 @@ from. That system owns it:
 The database refuses what the code missed (core migration `0041`, Xero
 migration `0018`): a change or a delete of an imported invoice outside the
 import's own transaction, a job that takes one as its own invoice, a push row
-for one, and any change of `origin`. A contact merge still moves an imported
-or void invoice to the kept contact.
+for one, any change of `origin`, and an imported invoice that is a draft (so
+its lines never change: lines change only under a draft). A contact merge
+still moves an imported or void invoice to the kept contact.
 
 ### Dry run
 
@@ -151,7 +154,7 @@ would do. It reads Flow's database only and writes nothing.
 | Field | Meaning |
 | --- | --- |
 | `canRun`, `copy` | The import runs only on a copy that is complete and fresh. |
-| `invoices` | Counts by Xero status and by year, how many Flow has already, how many to import. A removed Xero draft (`DELETED`) is left out. |
+| `invoices` | Counts by Xero status and by year, how many Flow has already (`inFlow`), how many to import (`toImport`), and how many wait as a Xero draft (`notYet`). A removed Xero draft (`DELETED`) is left out. |
 | `blocked` | Invoices the import cannot take yet: no number, a number another Flow invoice holds, a number two Xero invoices hold, no contact in the copy. |
 | `numbers` | The clashes, and Flow's next number now and after (above the highest Xero number). |
 | `madeEarlier` | Flow invoices made earlier from a Xero invoice, and how many have another number. |
@@ -159,10 +162,10 @@ would do. It reads Flow's database only and writes nothing.
 | `oddLines` | Invoices with a line Flow's own line table cannot hold (quantity 0 or less, part quantity, discount, negative amount, another tax type). The import keeps the Xero document as it is; a person looks at these. |
 | `credited` | Invoices with a credit note applied. |
 | `jobs` | Invoices that jobs hold by accounting reference already. |
-| `money` | Count, total and amount due for each tab (`paid`, `awaiting`, `void`, `draft`), from the copy. After a batch, each tab must show the same. |
+| `money` | Count, total and amount due for each tab (`paid`, `awaiting`, `void`, `draft`), from the copy. `draft` is what waits in Xero. After a batch, each other tab must show the same. |
 
-A Xero `DRAFT` or `SUBMITTED` invoice shows as a draft, never as void: no
-customer saw it.
+A Xero `DRAFT` or `SUBMITTED` invoice is a draft, never a void: no customer
+saw it. The import takes it when Xero approves it.
 
 ### Reconcile cover
 

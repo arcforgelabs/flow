@@ -1,5 +1,14 @@
 ALTER TABLE "invoices" ADD COLUMN IF NOT EXISTS "origin" text DEFAULT 'flow' NOT NULL;
 --> statement-breakpoint
+-- The import takes an invoice a customer saw (approved, paid or voided in the
+-- accounting system), so an imported invoice is issued or void, never a
+-- draft. Its lines therefore never change: flow_invoice_lines_draft_only
+-- (migration 0001) lets lines change only under a draft.
+DO $flow_guard$ BEGIN
+	ALTER TABLE "invoices" ADD CONSTRAINT "invoices_imported_not_draft" CHECK ("invoices"."origin" = 'flow' or "invoices"."status" <> 'draft');
+EXCEPTION WHEN duplicate_object OR duplicate_table OR invalid_table_definition THEN NULL;
+END $flow_guard$;
+--> statement-breakpoint
 -- An imported invoice (origin is not 'flow') belongs to the accounting system
 -- it was copied from. Only the import changes or removes it: its code sets
 -- flow.mirror_write to the invoice's id for its own transaction

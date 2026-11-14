@@ -33,19 +33,16 @@ describe('an imported invoice', { skip: skipWithoutDatabase }, () => {
   let seq = 0;
   const org = () => lab.organisation.id;
 
-  // One imported invoice, as the import stores it: the accounting number, and
-  // for an issued one a first version that holds the accounting document.
+  // One imported invoice, as the import stores it: issued, with the
+  // accounting number and a first version that holds the accounting document.
   async function imported({ status = 'issued' } = {}) {
     seq += 1;
     const number = `XR-${String(seq).padStart(4, '0')}`;
-    const issued = status !== 'draft';
     const [row] = await db.insert(invoices).values({
-      organisationId: org(), contactId: practice.id, origin: 'xero', number, status: issued ? 'issued' : 'draft',
-      issuedVersion: issued ? 1 : 0, issueDate: '2024-03-01', subtotalCents: 25000, taxCents: 2500, totalCents: 27500,
+      organisationId: org(), contactId: practice.id, origin: 'xero', number, status: 'issued',
+      issuedVersion: 1, issueDate: '2024-03-01', subtotalCents: 25000, taxCents: 2500, totalCents: 27500,
     }).returning();
-    if (issued) {
-      await db.insert(invoiceVersions).values({ organisationId: org(), invoiceId: row.id, version: 1, issuedBy: 'automation:xero-import', document: { number, totalCents: 27500, lines: [] } });
-    }
+    await db.insert(invoiceVersions).values({ organisationId: org(), invoiceId: row.id, version: 1, issuedBy: 'automation:xero-import', document: { number, totalCents: 27500, lines: [] } });
     if (status === 'void') {
       await db.transaction((tx) => mirrorWrite(tx, row.id, () => tx.update(invoices).set({ status: 'void' }).where(eq(invoices.id, row.id))));
     }
@@ -76,21 +73,20 @@ describe('an imported invoice', { skip: skipWithoutDatabase }, () => {
 
   test('the core refuses every change, send, void and delete', async () => {
     const issued = await imported();
-    const draft = await imported({ status: 'draft' });
     const books = { name: 'Books', capabilities: { everSent: async () => false, deleteInvoice: async () => assert.fail('the accounting system is never called') } };
     const code = { code: 'imported' };
-    await assert.rejects(updateDraftInvoice(db, org(), draft.id, { reference: 'changed' }), code);
-    await assert.rejects(issueInvoice(db, org(), draft.id, { issuedBy: 'user:test', issueDate: '2026-11-14' }), code);
+    await assert.rejects(updateDraftInvoice(db, org(), issued.id, { reference: 'changed' }), code);
+    await assert.rejects(issueInvoice(db, org(), issued.id, { issuedBy: 'user:test', issueDate: '2026-11-14' }), code);
     await assert.rejects(reviseInvoice(db, org(), issued.id), code);
     await assert.rejects(voidInvoice(db, org(), issued.id), code);
     await assert.rejects(voidInvoice(db, org(), issued.id, { accounting: books }), code);
     await assert.rejects(deleteDraft(db, org(), issued.id, { actor: 'person:test', accounting: books }), code);
-    await assert.rejects(deleteDraft(db, org(), draft.id, { actor: 'person:test', accounting: books }), code);
-    await assert.rejects(markReady(db, org(), [draft.id], { personId: null }), { code: 'not_draft' });
+    await assert.rejects(markReady(db, org(), [issued.id], { personId: null }), { code: 'not_draft' });
     await db.transaction((tx) => mirrorWrite(tx, issued.id, () => tx.update(invoices).set({ sendState: 'failed' }).where(eq(invoices.id, issued.id))));
     const sends = { name: 'Books', capabilities: { sendStatus: async () => ({ connected: true, writesAllowed: true }) } };
     assert.deepEqual(await sendAgain(db, org(), { accounting: sends, personId: null, invoiceIds: [issued.id] }), { queued: 0 });
-    assert.deepEqual([(await stored(issued.id)).status, (await stored(draft.id)).status], ['issued', 'draft'], 'nothing changed');
+    const after = await stored(issued.id);
+    assert.deepEqual([after.status, after.reference, after.issuedVersion], ['issued', issued.reference, 1], 'nothing changed');
   });
 
   test('a job is never given an imported invoice as its own', async () => {
@@ -123,6 +119,26 @@ describe('an imported invoice', { skip: skipWithoutDatabase }, () => {
       values (${org()}, ${issued.id}, 1, 'dispatching', 'key-imported', '{}', 'hash')`), refused(/never sent to Xero/));
     const own = await createDraftInvoice(db, org(), { contactId: practice.id, lines: [{ priceItemId: crown.id }] });
     await assert.rejects(db.execute(sql`update invoices set origin = 'xero' where id = ${own.id}`), refused(/origin of an invoice never changes/));
+  });
+
+  test('the database keeps an imported invoice issued or void, and its lines closed', async () => {
+    const notDraft = (error) => /invoices_imported_not_draft/.test(`${error.message} ${error.cause?.message ?? ''}`);
+    await assert.rejects(db.execute(sql`insert into invoices (organisation_id, contact_id, origin, status) values (${org()}, ${practice.id}, 'xero', 'draft')`), notDraft);
+    const issued = await imported();
+    // The import cannot make it a draft either.
+    await assert.rejects(db.transaction((tx) => mirrorWrite(tx, issued.id, () => tx.execute(sql`update invoices set status = 'draft' where id = ${issued.id}`))), notDraft);
+    // No draft parent, so no line is added, changed or removed (migration 0001).
+    await assert.rejects(db.execute(sql`insert into invoice_lines (organisation_id, invoice_id, position, description, quantity, unit_amount_cents, tax_code, line_amount_cents, tax_cents)
+      values (${org()}, ${issued.id}, 1, 'Crown', 1, 25000, 'GST', 25000, 2500)`), refused(/lines change only while the invoice is a draft/));
+  });
+
+  test('a write that failed and was caught does not leave the import scope open', async () => {
+    const issued = await imported();
+    await assert.rejects(db.transaction(async (tx) => {
+      await mirrorWrite(tx, issued.id, async () => { throw new Error('the import stopped here'); }).catch(() => {});
+      await tx.update(invoices).set({ reference: 'late' }).where(eq(invoices.id, issued.id));
+    }), refused(/follows its accounting system/));
+    assert.equal((await stored(issued.id)).reference, issued.reference);
   });
 
   test('a contact merge still moves an imported or void invoice to the kept contact', async () => {

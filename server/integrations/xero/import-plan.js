@@ -18,6 +18,9 @@ import { normaliseName } from './catalogue.js';
 
 // A removed draft in Xero was never an invoice: the import leaves it out.
 const LEFT_OUT = ['DELETED'];
+// What the import takes: an invoice a customer saw. A Xero draft waits in the
+// copy and is imported when Xero approves it.
+export const IMPORTED_STATUSES = Object.freeze(['AUTHORISED', 'PAID', 'VOIDED']);
 // The tab an imported invoice shows in, from its Xero status. A draft no
 // customer saw is a draft, never a void (owner rule, 14 November 2026).
 export const TAB_OF_STATUS = Object.freeze({ PAID: 'paid', AUTHORISED: 'awaiting', VOIDED: 'void', DRAFT: 'draft', SUBMITTED: 'draft' });
@@ -59,7 +62,9 @@ export async function importPlan(db, organisationId, { now = new Date() } = {}) 
     where x.organisation_id = ${organisationId} and x.type = 'ACCREC'
     order by x.issued_on nulls last, x.invoice_number`);
   const all = rows.filter((r) => !LEFT_OUT.includes(r.status));
-  const pending = all.filter((r) => !r.flow_invoice_id);
+  const waits = (r) => !r.flow_invoice_id && !IMPORTED_STATUSES.includes(r.status);
+  const pending = all.filter((r) => !r.flow_invoice_id && !waits(r));
+  const notYet = all.filter(waits).length;
 
   // Status and year.
   const byStatus = {};
@@ -69,7 +74,8 @@ export async function importPlan(db, organisationId, { now = new Date() } = {}) 
     const year = r.issued_on ? String(r.issued_on instanceof Date ? r.issued_on.toISOString() : r.issued_on).slice(0, 4) : 'none';
     const y = years.get(year) ?? { year, total: 0, toImport: 0, inFlow: 0, void: 0 };
     y.total += 1;
-    y[r.flow_invoice_id ? 'inFlow' : 'toImport'] += 1;
+    if (r.flow_invoice_id) y.inFlow += 1;
+    else if (!waits(r)) y.toImport += 1;
     if (r.status === 'VOIDED') y.void += 1;
     years.set(year, y);
   }
@@ -144,7 +150,8 @@ export async function importPlan(db, organisationId, { now = new Date() } = {}) 
     // The import refuses to run on a copy that is not complete and fresh.
     canRun: copy.complete && copy.fresh,
     switchOn: settings.makeUnmatched,
-    invoices: { total: all.length, inFlow: all.length - pending.length, toImport: pending.length, leftOut: rows.length - all.length, byStatus, byYear: [...years.values()] },
+    // notYet: Xero drafts, which no customer saw. leftOut: removed drafts.
+    invoices: { total: all.length, inFlow: all.length - pending.length - notYet, toImport: pending.length, notYet, leftOut: rows.length - all.length, byStatus, byYear: [...years.values()] },
     blocked,
     numbers: {
       taken: { count: taken.length, sample: taken.slice(0, SAMPLE).map((r) => ({ xeroInvoiceId: r.id, number: r.number, linkedFlowNumber: r.flow_number ?? null })) },

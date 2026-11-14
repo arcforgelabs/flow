@@ -164,6 +164,8 @@ export const invoices = pgTable('invoices', {
   check('invoices_issued_has_number', sql`${t.status} = 'draft' or ${t.number} is not null`),
   check('invoices_send_state_valid', sql`${t.sendState} is null or ${t.sendState} in ('queued', 'sent', 'failed')`),
   check('invoices_send_mode_valid', sql`${t.sendMode} is null or ${t.sendMode} in ('accounting_draft', 'approve_and_email')`),
+  // An imported invoice is one a customer saw: issued or void, never a draft.
+  check('invoices_imported_not_draft', sql`${t.origin} = 'flow' or ${t.status} <> 'draft'`),
 ]);
 
 // Each invoice's tab on the Invoices page (server/core/invoice-status.js), as

@@ -101,7 +101,8 @@ describe('Xero import: the dry run and reconcile cover', { skip: skipWithoutData
     // No full read of Xero was recorded: the import would refuse to run.
     assert.deepEqual([plan.copy.complete, plan.canRun, plan.switchOn], [false, false, false]);
     assert.deepEqual(plan.invoices.byStatus, { AUTHORISED: 2, PAID: 5, VOIDED: 1, DRAFT: 1 });
-    assert.deepEqual([plan.invoices.total, plan.invoices.inFlow, plan.invoices.toImport, plan.invoices.leftOut], [9, 2, 7, 1]);
+    // The Xero draft waits: no customer saw it. The removed draft is left out.
+    assert.deepEqual([plan.invoices.total, plan.invoices.inFlow, plan.invoices.toImport, plan.invoices.notYet, plan.invoices.leftOut], [9, 2, 6, 1, 1]);
     assert.deepEqual(plan.invoices.byYear.find((y) => y.year === '2024'), { year: '2024', total: 3, toImport: 2, inFlow: 1, void: 1 });
     assert.deepEqual(plan.invoices.byYear.map((y) => y.year), ['2022', '2023', '2024', '2025', '2026']);
     // INV-0002 is a Xero number that a Flow invoice of another Xero invoice holds.

@@ -296,10 +296,18 @@ export async function deleteUnsentRows(tx, organisationId, invoiceId) {
 // transaction names that one invoice (migration 0041). Answers what `write`
 // answers.
 export async function mirrorWrite(tx, invoiceId, write) {
-  await tx.execute(sql`select set_config('flow.mirror_write', ${String(invoiceId)}, true)`);
-  // A write that fails ends the transaction, and the setting ends with it.
-  const result = await write();
-  await tx.execute(sql`select set_config('flow.mirror_write', '', true)`);
+  const name = (id) => tx.execute(sql`select set_config('flow.mirror_write', ${id}, true)`);
+  await name(String(invoiceId));
+  let result;
+  try {
+    result = await write();
+  } catch (error) {
+    // A caller that catches this and goes on must not keep the scope. When a
+    // statement failed, the transaction is over and the setting went with it.
+    await name('').catch(() => {});
+    throw error;
+  }
+  await name('');
   return result;
 }
 
