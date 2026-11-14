@@ -136,6 +136,11 @@ from. That system owns it:
   it. It is never the job's own invoice (`invoice_id`), so several jobs can
   share one accounting invoice and the import changes no job.
   The Reconcile page (jobs against Flow's own invoices) never offers it.
+- The Invoices page shows it in its tab, in its place by its own date, with
+  an "Imported" mark. Its lines are the accounting document's (a line can
+  have no quantity or unit price). The page offers no Send, Revise, Void or
+  Delete. The Linked card shows the Xero invoice and each job tied to it
+  (`tiedJobs`; the port's `importedRefs` gives each invoice's reference).
 - Only the import writes it (`mirrorWrite`) or removes it
   (`removeImportedInvoice`, `server/core/invoices.js`). Removing it calls no
   accounting system: it was only Flow's copy.
@@ -234,7 +239,8 @@ the Paid tab with 2,800 invoices answers in under 0.3 seconds
 (`test/xero-import-history.test.js`).
 
 Not in place yet: a page for the batches (an agent or a script calls the
-routes), and the change of earlier made invoices to their Xero numbers.
+routes), a job in the Jobs list for a Xero invoice that has no job from the
+work system, and the change of earlier made invoices to their Xero numbers.
 
 ### Reconcile cover
 

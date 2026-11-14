@@ -127,3 +127,52 @@ test('an issued invoice that Xero refused shows the reason and Open in Xero', as
   assert.equal(link.getAttribute('href'), `https://go.xero.com/AccountsReceivable/View.aspx?InvoiceID=${XERO_ID}`);
   assert.match(main.textContent, /Xero INV-2449 has the same client and reference at 235\.00/);
 });
+
+test('an imported invoice offers no change, and shows each job tied to it', async () => {
+  const base = {
+    id: '33333333-3333-4333-8333-333333333333',
+    status: 'issued',
+    number: 'INV-1042',
+    tab: 'paid',
+    sendState: 'none',
+    sendsTo: 'Xero',
+    reference: null,
+    issueDate: '2024-05-10',
+    dueDate: '2024-05-24',
+    subtotalCents: 25000,
+    taxCents: 2500,
+    totalCents: 27500,
+    contact: { id: '22222222-2222-4222-8222-222222222222', name: 'Example Practice', email: null },
+    // A line as Xero gave it: no quantity and no unit price.
+    lines: [{ description: 'Crown', quantity: null, unitAmountCents: null, taxCode: 'GST', lineAmountCents: 25000 }],
+    versions: [{ version: 1, issuedAt: '2026-11-14T00:00:00.000Z' }],
+    problems: [],
+    job: null,
+    linksTo: [{ id: 'worksystem', name: 'Work system', kind: 'work' }],
+  };
+  const draw = async (invoice) => {
+    const flow = (path) => {
+      if (path === '/api/invoicing/context') return Promise.resolve({ canIssue: true, sendsTo: 'Xero', organisations: [{ id: 'lab' }] });
+      if (path === `/api/invoicing/invoices/${invoice.id}`) return Promise.resolve({ invoice });
+      return Promise.resolve({});
+    };
+    const main = document.createElement('main');
+    await renderInvoice(main, { h, notice, flow, toast() {}, go() {}, dialog: async () => false }, invoice.id);
+    return main;
+  };
+  const buttons = (main) => main.querySelectorAll('button').map((el) => el.textContent);
+
+  const own = await draw(base);
+  assert.ok(buttons(own).includes('Revise'), 'an invoice Flow made can be revised');
+  assert.ok(!own.querySelectorAll('.fx-status').some((el) => el.textContent === 'Imported'));
+
+  const job = (ref) => ({ id: ref, sourceSystem: 'worksystem', sourceJobRef: ref, caseRef: ref, systemName: 'Work system', link: null });
+  const imported = await draw({ ...base, imported: true, job: job('CASE-1'), tiedJobs: [job('CASE-1'), job('CASE-2')] });
+  const chip = imported.querySelectorAll('.fx-status').find((el) => el.textContent === 'Imported');
+  assert.ok(chip, imported.textContent);
+  assert.match(chip.getAttribute('title'), /Xero owns this invoice/);
+  for (const label of ['Revise', 'Void', 'Delete']) assert.ok(!buttons(imported).includes(label), `no ${label}`);
+  assert.ok(!buttons(imported).some((label) => /Send|Xero/.test(label)), buttons(imported).join(', '));
+  assert.deepEqual(imported.querySelectorAll('.fx-linked__ref').map((el) => el.textContent), ['CASE-1', 'CASE-2']);
+  assert.match(imported.querySelector('.fx-lines__table').textContent, /Crown——GST/);
+});

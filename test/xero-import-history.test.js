@@ -142,6 +142,29 @@ describe('Xero import: the history import', { skip: skipWithoutDatabase }, () =>
     assert.deepEqual([again.status, again.body.code], [409, 'batch_exists']);
   });
 
+  test('the Invoices page shows an imported invoice: its Xero lines, its jobs, and its place by date', async () => {
+    const paid = await imported('INV-0004');
+    const res = await request(app, `/api/invoicing/invoices/${paid.id}?organisationId=${org()}`, { token: lab.ownerToken });
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    const invoice = res.body.invoice;
+    assert.deepEqual([invoice.imported, invoice.tab, invoice.contact.name], [true, 'paid', 'Example Practice']);
+    assert.deepEqual(invoice.lines.map((l) => [l.description, l.quantity, l.unitAmountCents, l.taxCode, l.lineAmountCents]), [['Crown', 1, 25000, 'GST', 25000]]);
+    // The job stays tied by its accounting reference, and the page shows it.
+    assert.deepEqual(invoice.tiedJobs.map((j) => j.sourceJobRef), ['JOB-A']);
+    assert.equal(invoice.job.sourceJobRef, 'JOB-A');
+    assert.equal(invoice.canOverride, false);
+    const pdf = await request(app, `/api/invoicing/invoices/${paid.id}/pdf?organisationId=${org()}`, { token: lab.ownerToken });
+    assert.equal(pdf.status, 200);
+
+    const list = await request(app, `/api/invoicing/invoices?organisationId=${org()}&limit=200`, { token: lab.ownerToken });
+    const rows = list.body.invoices;
+    assert.deepEqual(rows.filter((i) => i.imported).map((i) => i.number).sort(), ['INV-0004', 'INV-0005', 'INV-0011', 'INV-0120']);
+    assert.equal(rows.find((i) => i.number === 'INV-0004').job.sourceJobRef, 'JOB-A');
+    assert.equal(rows.find((i) => i.number === own.number).imported, false);
+    // Newest first by the invoice's own date, not by the day Flow copied it.
+    assert.deepEqual(rows.map((i) => i.number), ['INV-0002', 'INV-0011', 'INV-0120', 'INV-0001', 'INV-0004', 'INV-0005']);
+  });
+
   test('the Reconcile page never offers an imported invoice as a job\'s own', async () => {
     const job = await observeJob(handle.db, org(), { sourceSystem: 'worksystem', sourceJobRef: 'JOB-B', caseRef: 'JOB-B', contactId: practice.id, shippedOn: '2023-05-11', jobDate: '2023-05-11', lines: [{ itemCode: 'CROWN' }] });
     await setReady(handle.db, org(), job.id, { actor: 'person:test' });

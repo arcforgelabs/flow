@@ -7,7 +7,7 @@ import { FlowError } from '../core/errors.js';
 import { listReview } from '../core/review.js';
 import { createActionGuard } from '../integrations/call-guard.js';
 import {
-  createDraftInvoice, deleteDraft, getInvoice, issueInvoice, listInvoiceVersions, reviseInvoice, updateDraftInvoice, voidInvoice,
+  createDraftInvoice, deleteDraft, getInvoice, isImported, issueInvoice, listInvoiceVersions, reviseInvoice, updateDraftInvoice, voidInvoice,
 } from '../core/invoices.js';
 import { listAutomations, saveAutomation, workStatuses } from '../core/automations.js';
 import {
@@ -305,6 +305,24 @@ async function jobsByInvoice(db, organisationId, invoiceIds) {
   return new Map(rows.map((o) => [o.invoiceId, jobOf(o)]));
 }
 
+// The jobs tied to imported invoices: Map(invoiceId -> [job], oldest first).
+// A job holds an imported invoice by its accounting reference, never as its
+// own invoice, so several jobs can share one and the import changes no job.
+async function tiedJobs(db, organisationId, accounting, rows) {
+  const ask = accounting?.capabilities?.importedRefs;
+  const ids = rows.filter(isImported).map((r) => r.id);
+  if (!ids.length || typeof ask !== 'function') return new Map();
+  const refOf = await ask({ organisationId, invoiceIds: ids });
+  const refs = [...new Set(refOf.values())];
+  if (!refs.length) return new Map();
+  const found = await db.select().from(billingObligations)
+    .where(and(eq(billingObligations.organisationId, organisationId), inArray(billingObligations.accountingRef, refs)))
+    .orderBy(asc(billingObligations.jobDate), asc(billingObligations.createdAt));
+  const byRef = new Map();
+  for (const o of found) byRef.set(o.accountingRef, [...(byRef.get(o.accountingRef) ?? []), jobOf(o)]);
+  return new Map([...refOf].filter(([, ref]) => byRef.has(ref)).map(([id, ref]) => [id, byRef.get(ref)]));
+}
+
 // The job changed after its invoice was made (ledger.js, jobChangeFor): what
 // changed, with customer names, and the work system's link to the job.
 async function jobChangeDetail(db, organisationId, invoiceId, work) {
@@ -394,10 +412,16 @@ async function invoiceDetail(db, organisationId, invoiceId, accounting = null, w
     jobChangeDetail(db, organisationId, invoiceId, work),
   ]);
   const viewed = await invoiceView(db, organisationId, invoice, { accounting });
+  const tied = (await tiedJobs(db, organisationId, accounting, [invoice])).get(invoiceId) ?? [];
   return {
     jobChange,
     ...invoice,
     ...viewed,
+    // The accounting system owns an imported invoice: Flow shows it, and
+    // every route that changes it answers 409 imported.
+    imported: isImported(invoice),
+    // Every job tied to an imported invoice by its accounting reference.
+    tiedJobs: tied.map((job) => withLink(job, work)),
     tab: await tabOfInvoice(db, organisationId, invoice, viewed.view, accounting),
     // Where a draft goes when it is sent, and how: this customer's send mode.
     sendsTo: accounting?.name ?? null,
@@ -405,7 +429,7 @@ async function invoiceDetail(db, organisationId, invoiceId, accounting = null, w
       ? { mode: await sendModeFor(db, organisationId, invoice.contactId), otherCustomers: 0, ...(await accounting.capabilities.sendStatus({ organisationId })) }
       : null,
     contact: contact ?? null,
-    job: withLink(jobs.get(invoiceId) ?? null, work),
+    job: withLink(jobs.get(invoiceId) ?? tied[0] ?? null, work),
     // Lines this invoice has and its job in the work system does not (a
     // rule's added shipping, for example). Flow cannot write lines to the
     // work system, so the page shows the gap until the work system has them.
@@ -519,14 +543,17 @@ export function createInvoicingRouter({
     // First the columns the filter and sort read, for every row; then the
     // whole rows of the one page. A job column and a custom field read the
     // invoice's job, so those values are on every row before the page is cut.
+    // Newest first by the invoice's own date: an imported invoice was issued
+    // long before Flow copied it.
     const lightRows = await db.select({
       id: invoices.id, number: invoices.number, reference: invoices.reference, issueDate: invoices.issueDate,
-      dueDate: invoices.dueDate, createdAt: invoices.createdAt, totalCents: invoices.totalCents, contactName: contacts.name,
+      dueDate: invoices.dueDate, createdAt: invoices.createdAt, totalCents: invoices.totalCents, contactName: contacts.name, origin: invoices.origin,
     }).from(invoices)
       .leftJoin(contacts, eq(contacts.id, invoices.contactId))
       .where(and(...where))
-      .orderBy(desc(invoices.createdAt), desc(invoices.id));
+      .orderBy(sql`coalesce(${invoices.issueDate}, ${invoices.createdAt}::date) desc`, desc(invoices.createdAt), desc(invoices.id));
     const jobs = await jobsByInvoice(db, organisationId, lightRows.map((r) => r.id));
+    for (const [id, tied] of await tiedJobs(db, organisationId, system, lightRows)) jobs.set(id, tied[0]);
     const customOn = filterRows(view).some((f) => fieldIdOf(f.field));
     const [fieldDefs, fieldValues] = customOn
       ? await Promise.all([
@@ -568,6 +595,7 @@ export function createInvoicingRouter({
       invoices: rows.map(({ invoice, contactName }) => ({
         ...invoice,
         contactName,
+        imported: isImported(invoice),
         job: withLink(jobs.get(invoice.id) ?? null, systems),
         tab: tabs.tabOf.get(invoice.id) ?? null,
         // Awaiting payment: the accounting system emailed it to the customer.
