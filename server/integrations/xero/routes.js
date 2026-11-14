@@ -11,7 +11,7 @@ import { recordXeroEvidence, recordXeroPayments } from './ledger.js';
 import { IMPORT_STATES, importOverview, linkXeroInvoice, makeFlowInvoice, matchXero, releaseXeroLink, saveImportSettings, useXeroInvoice } from './links.js';
 import { queueHistoryImport, resetImport } from './import.js';
 import { importPlan, reconcileCover } from './import-plan.js';
-import { listImportBatches, releaseImportBatch, runImportBatch } from './import-history.js';
+import { convertMadeInvoices, listImportBatches, releaseImportBatch, runImportBatch } from './import-history.js';
 import { MIRROR_RESOURCES, mirrorStatus, mirrorXero, readInvoiceFromXero, rereadCopy } from './mirror.js';
 import { accountingStatus, checkSentInvoices } from './reconcile.js';
 import { CUSTOM_CONNECTION, decryptToken, deleteConnection, describeConnection, readConnection, saveConnection } from './connections.js';
@@ -470,6 +470,17 @@ export function createXeroRouter({ db, personAuth, runtime, log = console, butto
     const batch = await runImportBatch(db, organisationId, { year, actor: `person:${req.person.id}` });
     log.info?.(`[xero] organisation ${organisationId}: person ${req.person.id} imported Xero history (${year ?? 'every year'}): ${JSON.stringify(batch.counts)}`);
     res.json({ ok: true, batch });
+  }));
+
+  // Each Flow invoice made earlier from a Xero invoice becomes that Xero
+  // invoice, imported with its Xero number. `dryRun` answers what would
+  // change and keeps nothing.
+  router.post('/import/history/convert', ...manager, handle(log, async (req, res) => {
+    const organisationId = await requireOrganisation(db, req.body?.organisationId);
+    const dryRun = req.body?.dryRun === true;
+    const result = await convertMadeInvoices(db, organisationId, { actor: `person:${req.person.id}`, dryRun });
+    log.info?.(`[xero] organisation ${organisationId}: person ${req.person.id} ${dryRun ? 'tried' : 'ran'} the change of made invoices to imported ones: ${result.converted} of ${result.candidates}, skipped ${JSON.stringify(result.skipped)}`);
+    res.json({ ok: true, ...result });
   }));
 
   router.post('/import/history/:batchId/release', ...manager, handle(log, async (req, res) => {

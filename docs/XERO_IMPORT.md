@@ -244,7 +244,48 @@ the Paid tab with 2,800 invoices answers in under 0.3 seconds
 (`test/xero-import-history.test.js`).
 
 Not in place yet: a page for the batches (an agent or a script calls the
-routes), and the change of earlier made invoices to their Xero numbers.
+routes).
+
+### Made invoices become imported ones
+
+Before the history import, **Make** on the Import page made Flow's own
+invoice from a Xero invoice, with a Flow number. In a full ledger that
+invoice is the Xero invoice itself. `POST /api/xero/import/history/convert`
+(owner or admin) changes each one:
+
+1. The made copy is removed, with its versions. It was only Flow's copy, so
+   nothing is voided and Xero is not called.
+2. The pair stays as a record (`xero_invoice_link_history`, reason
+   `converted_to_import`), with the Flow number the copy had.
+3. The Xero invoice is imported in its place, with the Xero number, as the
+   history import does it. It belongs to no batch, so no undo of a year
+   removes it.
+4. The job the copy billed stays tied to the Xero invoice by its accounting
+   reference, with the state from the copy (billed, paid). Flow does not
+   draft it again. Its history keeps the Flow number and who ran the change.
+
+All of it is one step: every copy leaves before any import, because one
+copy's Flow number can be another copy's Xero number. If one import fails,
+nothing changes (`409 convert_blocked`). It needs the switch on and a
+complete, fresh copy, as a batch does.
+
+A copy stays as it is, and is counted in `skipped`, when:
+
+| `skipped` | The copy |
+| --- | --- |
+| `sent` | Flow sent it to Xero. |
+| `override` | An owner's override holds it. |
+| `notIssued` | It is not issued. |
+| `notImported` | Its Xero invoice is a draft or is deleted. |
+| `voidInFlow` | It is void in Flow, and Xero's is not void. A person looks at that pair. |
+| `noNumber` | Its Xero invoice has no number. |
+| `jobElsewhere` | Its job follows another Xero invoice. |
+| `numberTaken` | An invoice that stays in Flow holds its Xero number. |
+
+With `dryRun: true` Flow does the same work and keeps none of it. The answer
+is what the real run would give: the counts, and one row for each copy
+(`xeroInvoiceId`, `number`, `flowNumber`, `jobId`, and `skipped` with the
+reason). A second run finds only the copies that were skipped.
 
 ### A job for every Xero invoice
 
@@ -318,6 +359,7 @@ Xero".
 | GET | `/api/xero/import/history?organisationId` (the import batches, newest first) | |
 | POST | `/api/xero/import/history` (import one year, or every year; owner or admin) | `organisationId`, `year?` |
 | POST | `/api/xero/import/history/:batchId/release` (undo of one batch; owner or admin) | `organisationId` |
+| POST | `/api/xero/import/history/convert` (made invoices become imported ones; owner or admin) | `organisationId`, `dryRun?` |
 | POST | `/api/xero/import/match` | `organisationId` |
 | PUT | `/api/xero/import/settings` | `organisationId`, `autoLink?`, `makeUnmatched?` |
 | POST | `/api/xero/import/:xeroInvoiceId/link` | `organisationId`, `invoiceId` |
