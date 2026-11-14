@@ -547,15 +547,16 @@ export function createInvoicingRouter({
     // First the columns the filter and sort read, for every row; then the
     // whole rows of the one page. A job column and a custom field read the
     // invoice's job, so those values are on every row before the page is cut.
-    // Newest first by the invoice's own date: an imported invoice was issued
-    // long before Flow copied it.
+    // Newest first. An invoice Flow made keeps its place by the time Flow
+    // made it. An imported invoice was issued long before Flow copied it, so
+    // it takes its place by its own date.
     const lightRows = await db.select({
       id: invoices.id, number: invoices.number, reference: invoices.reference, issueDate: invoices.issueDate,
       dueDate: invoices.dueDate, createdAt: invoices.createdAt, totalCents: invoices.totalCents, contactName: contacts.name, origin: invoices.origin,
     }).from(invoices)
       .leftJoin(contacts, eq(contacts.id, invoices.contactId))
       .where(and(...where))
-      .orderBy(sql`coalesce(${invoices.issueDate}, ${invoices.createdAt}::date) desc`, desc(invoices.createdAt), desc(invoices.id));
+      .orderBy(sql`coalesce(case when ${invoices.origin} <> 'flow' then ${invoices.issueDate}::timestamptz end, ${invoices.createdAt}) desc`, desc(invoices.createdAt), desc(invoices.id));
     const jobs = await jobsByInvoice(db, organisationId, lightRows.map((r) => r.id));
     for (const [id, tied] of await tiedJobs(db, organisationId, system, lightRows)) jobs.set(id, tied[0]);
     const customOn = filterRows(view).some((f) => fieldIdOf(f.field));

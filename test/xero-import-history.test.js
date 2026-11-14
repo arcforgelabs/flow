@@ -161,8 +161,10 @@ describe('Xero import: the history import', { skip: skipWithoutDatabase }, () =>
     assert.deepEqual(rows.filter((i) => i.imported).map((i) => i.number).sort(), ['INV-0004', 'INV-0005', 'INV-0011', 'INV-0120']);
     assert.equal(rows.find((i) => i.number === 'INV-0004').job.sourceJobRef, 'JOB-A');
     assert.equal(rows.find((i) => i.number === own.number).imported, false);
-    // Newest first by the invoice's own date, not by the day Flow copied it.
-    assert.deepEqual(rows.map((i) => i.number), ['INV-0002', 'INV-0011', 'INV-0120', 'INV-0001', 'INV-0004', 'INV-0005']);
+    // Newest first. An invoice Flow made keeps its place by the time Flow
+    // made it (INV-0001 has an issue date of June 2023). An imported one is
+    // in its place by its own date, not by the day Flow copied it.
+    assert.deepEqual(rows.map((i) => i.number), ['INV-0002', 'INV-0001', 'INV-0011', 'INV-0120', 'INV-0004', 'INV-0005']);
   });
 
   test('every imported invoice has a job: the tied one, or one built from the invoice', async () => {

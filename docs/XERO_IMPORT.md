@@ -136,7 +136,8 @@ from. That system owns it:
   it. It is never the job's own invoice (`invoice_id`), so several jobs can
   share one accounting invoice and the import changes no job.
   The Reconcile page (jobs against Flow's own invoices) never offers it.
-- The Invoices page shows it in its tab, in its place by its own date, with
+- The Invoices page shows it in its tab, in its place by its own date (an
+  invoice Flow made keeps its place by the time Flow made it), with
   an "Imported" mark. Its lines are the accounting document's (a line can
   have no quantity or unit price). The page offers no Send, Revise, Void or
   Delete. The Linked card shows the Xero invoice and each job tied to it
