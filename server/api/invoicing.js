@@ -139,7 +139,7 @@ const MAX_UNIT_CENTS = 100_000_000;
 const ERROR_STATUS = {
   invalid: 400, organisation_required: 400, not_found: 404, not_draft: 409, not_issued: 409,
   never_issued: 409, was_issued: 409, not_ready: 409, live_check_unavailable: 409, conflict: 409,
-  accounting_not_connected: 409, accounting_writes_off: 409, accounting_unavailable: 409, accounting_approved: 409,
+  accounting_not_connected: 409, accounting_writes_off: 409, accounting_unavailable: 409, accounting_approved: 409, delete_instead: 409, void_in_accounting: 409,
   not_overridable: 409, override_stale: 409,
   conflict: 409,
 };
@@ -736,7 +736,7 @@ export function createInvoicingRouter({
   router.post('/invoices/:id/void', ...manager, handle(log, async (req, res) => {
     const invoiceId = pathId(req.params.id, 'invoice');
     const organisationId = await organisationOf(req);
-    await voidInvoice(db, organisationId, invoiceId);
+    await voidInvoice(db, organisationId, invoiceId, { accounting: accounting() });
     log.info?.(`[invoicing] organisation ${organisationId}: person ${req.person.id} voided invoice ${invoiceId}`);
     res.json({ ok: true, invoice: await invoiceDetail(db, organisationId, invoiceId, accounting(), work()) });
   }));

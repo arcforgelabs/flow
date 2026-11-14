@@ -95,6 +95,8 @@ describe('delete an issued invoice and its Xero draft', { skip: skipWithoutDatab
   }
 
   const flowRow = async (id) => (await handle.db.select().from(invoices).where(eq(invoices.id, id)))[0];
+  const xeroRows = async (id) => (await handle.db.execute(sql`select (select count(*)::int from xero_invoice_pushes where invoice_id = ${id}) as pushes,
+    (select count(*)::int from xero_invoice_links where invoice_id = ${id}) as links`)).rows[0];
   const pushRow = async (id) => (await handle.db.execute(sql`select xero_status, deleted_by, deleted_at from xero_invoice_pushes where invoice_id = ${id}`)).rows[0];
   const copyStatus = async (xeroId) => (await handle.db.execute(sql`select status from xero_invoices where xero_invoice_id = ${xeroId}`)).rows[0].status;
   const lanes = async (xeroId) => (await handle.db.execute(sql`select lane from xero_calls where request_path like ${`%${xeroId}`} order by id`)).rows.map((r) => r.lane);
@@ -104,29 +106,34 @@ describe('delete an issued invoice and its Xero draft', { skip: skipWithoutDatab
     const job = await attachJob(invoice);
     const replay = xero.script([live(xeroId, from), posted(xeroId)]);
     const row = await remove(invoice);
-    assert.equal(row.status, 'void');
+    // No customer saw a Xero draft, so Flow removes its invoice: it is not
+    // void (void is only for what a customer saw).
+    assert.equal(row.removed, true);
     const [post] = posts(replay);
     assert.equal(post.path.endsWith(`/Invoices/${xeroId}`), true);
     assert.deepEqual(post.body, { InvoiceID: xeroId, Status: 'DELETED' });
     assert.equal(post.headers['Idempotency-Key'], undefined);
-    assert.equal((await flowRow(invoice.id)).status, 'void');
-    assert.equal((await listInvoiceVersions(handle.db, org(), invoice.id)).length, 1);
+    assert.equal(await flowRow(invoice.id), undefined);
+    assert.equal((await handle.db.execute(sql`select count(*)::int as n from invoice_versions where invoice_id = ${invoice.id}`)).rows[0].n, 0);
+    assert.deepEqual(await xeroRows(invoice.id), { pushes: 0, links: 0 });
     const [obligation] = await handle.db.select().from(billingObligations).where(eq(billingObligations.id, job.id));
     assert.equal(obligation.invoiceId, null);
     assert.equal(obligation.draftBasis, null);
     assert.equal(obligation.accountingState, 'deleted');
-    const push = await pushRow(invoice.id);
-    assert.equal(push.xero_status, 'DELETED');
-    assert.equal(push.deleted_by, actor());
-    assert.ok(push.deleted_at);
     assert.equal(await copyStatus(xeroId), 'DELETED');
     assert.deepEqual(await lanes(xeroId), ['reads', 'writes']);
-    const [event] = (await handle.db.execute(sql`select kind from obligation_events where obligation_id = ${job.id} order by created_at desc limit 1`)).rows;
+    // The job's history keeps who removed which invoice, and its Xero id.
+    const [event] = (await handle.db.execute(sql`select kind, actor, evidence from obligation_events where obligation_id = ${job.id} order by created_at desc limit 1`)).rows;
     assert.equal(event.kind, 'draft_deleted');
+    assert.equal(event.actor, actor());
+    assert.equal(event.evidence.number, invoice.number);
+    assert.equal(event.evidence.reason, 'deleted_in_accounting');
+    assert.equal(event.evidence.accountingRef, xeroId);
+    assert.equal(event.evidence.removed, true);
     return invoice;
   }
 
-  test('an issued invoice whose Xero copy is DRAFT is deleted in Xero, then voided in Flow', async () => {
+  test('an issued invoice whose Xero copy is DRAFT is deleted in Xero, then removed in Flow (no customer saw it)', async () => {
     await deletedInXero('x-draft', 'DRAFT');
   });
 
@@ -134,19 +141,19 @@ describe('delete an issued invoice and its Xero draft', { skip: skipWithoutDatab
     await deletedInXero('x-submitted', 'SUBMITTED');
   });
 
-  test('a Xero invoice already DELETED needs no write, and Flow still voids', async () => {
+  test('a Xero invoice already DELETED needs no write, and Flow still removes its invoice', async () => {
     const invoice = await sent('x-gone');
     const replay = xero.script([live('x-gone', 'DELETED')]);
     const row = await remove(invoice);
-    assert.equal(row.status, 'void');
+    assert.equal(row.removed, true);
     assert.equal(posts(replay).length, 0);
     assert.equal(replay.calls.length, 1);
     assert.equal(replay.calls[0].method, 'GET');
-    assert.equal((await pushRow(invoice.id)).xero_status, 'DELETED');
-    assert.equal((await pushRow(invoice.id)).deleted_by, actor());
+    assert.equal(await flowRow(invoice.id), undefined);
+    assert.equal(await copyStatus('x-gone'), 'DELETED');
   });
 
-  test('a Xero invoice already VOIDED needs no write; the ledger records voided', async () => {
+  test('a Xero invoice already VOIDED needs no write; a customer may have seen it, so Flow voids and the ledger records voided', async () => {
     const invoice = await sent('x-voided');
     const job = await attachJob(invoice);
     const replay = xero.script([live('x-voided', 'VOIDED')]);
@@ -180,28 +187,36 @@ describe('delete an issued invoice and its Xero draft', { skip: skipWithoutDatab
     assert.equal((await flowRow(invoice.id)).status, 'issued');
   });
 
-  test('a link with no push is deleted the same way, and the link records who and when', async () => {
+  test('a link with no push is deleted the same way, and its link goes with the Flow invoice', async () => {
     const invoice = await sent('x-link', { linkOnly: true });
     const replay = xero.script([live('x-link', 'DRAFT'), posted('x-link')]);
-    assert.equal((await remove(invoice)).status, 'void');
+    assert.equal((await remove(invoice)).removed, true);
     assert.equal(posts(replay).length, 1);
     assert.deepEqual(posts(replay)[0].body, { InvoiceID: 'x-link', Status: 'DELETED' });
-    const [link] = (await handle.db.execute(sql`select deleted_by, deleted_at from xero_invoice_links where invoice_id = ${invoice.id}`)).rows;
-    assert.equal(link.deleted_by, actor());
-    assert.ok(link.deleted_at);
+    assert.deepEqual(await xeroRows(invoice.id), { pushes: 0, links: 0 });
+    assert.equal(await flowRow(invoice.id), undefined);
     assert.equal(await copyStatus('x-link'), 'DELETED');
   });
 
-  test('a revised invoice is voided and keeps its issued version', async () => {
+  test('a revised invoice whose sent draft Xero deleted is removed with its issued version', async () => {
     const invoice = await sent('x-revised');
     const revised = await reviseInvoice(handle.db, org(), invoice.id);
     assert.equal(revised.status, 'draft');
     assert.equal(revised.issuedVersion, 1);
     xero.script([live('x-revised', 'DRAFT'), posted('x-revised')]);
     const row = await remove(invoice);
-    assert.equal(row.status, 'void');
-    assert.equal((await flowRow(invoice.id)).issuedVersion, 1);
-    assert.equal((await listInvoiceVersions(handle.db, org(), invoice.id)).length, 1);
+    assert.equal(row.removed, true);
+    assert.equal(await flowRow(invoice.id), undefined);
+    assert.equal((await handle.db.execute(sql`select count(*)::int as n from invoice_versions where invoice_id = ${invoice.id}`)).rows[0].n, 0);
+  });
+
+  test('an invoice an owner override holds is voided, not removed: the override record stays', async () => {
+    const invoice = await sent('x-override');
+    await handle.db.execute(sql`insert into send_overrides (organisation_id, invoice_id, version, document_hash, problems, reason_code, person_id)
+      values (${org()}, ${invoice.id}, 1, 'hash', '[]'::jsonb, 'one_off', ${lab.owner.id})`);
+    xero.script([live('x-override', 'DRAFT'), posted('x-override')]);
+    assert.equal((await remove(invoice)).status, 'void');
+    assert.equal((await flowRow(invoice.id)).status, 'void');
   });
 
   test('writes off refuses before any accounting call, and Flow stays issued', async () => {
@@ -268,14 +283,14 @@ describe('delete an issued invoice and its Xero draft', { skip: skipWithoutDatab
     assert.equal((await pushRow(invoice.id)).xero_status, 'DRAFT');
 
     const retry = xero.script([live('x-timeout', 'DELETED')]);
-    assert.equal((await remove(invoice)).status, 'void');
+    assert.equal((await remove(invoice)).removed, true);
     assert.equal(retry.calls.length, 1);
     assert.equal(retry.calls[0].method, 'GET');
     assert.equal(posts(retry).length, 0);
-    assert.equal((await pushRow(invoice.id)).xero_status, 'DELETED');
+    assert.equal(await flowRow(invoice.id), undefined);
   });
 
-  test('one draft and one approved: the draft is voided and the approved invoice is refused', async () => {
+  test('one draft and one approved: the draft is removed and the approved invoice is refused', async () => {
     const draft = await sent('x-mix-d');
     const approved = await sent('x-mix-a');
     const replay = xero.script([
@@ -294,7 +309,7 @@ describe('delete an issued invoice and its Xero draft', { skip: skipWithoutDatab
     assert.deepEqual(results, ['deleted', `refused: ${APPROVED_MESSAGE}`]);
     assert.equal(posts(replay).length, 1);
     assert.deepEqual(posts(replay)[0].body, { InvoiceID: 'x-mix-d', Status: 'DELETED' });
-    assert.equal((await flowRow(draft.id)).status, 'void');
+    assert.equal(await flowRow(draft.id), undefined);
     assert.equal((await flowRow(approved.id)).status, 'issued');
   });
 
@@ -307,6 +322,6 @@ describe('delete an issued invoice and its Xero draft', { skip: skipWithoutDatab
     const res = await request(app, `/api/invoicing/invoices/${invoice.id}`, { method: 'DELETE', token: lab.ownerToken });
     assert.equal(res.status, 200, JSON.stringify(res.body));
     assert.equal(res.body.ok, true);
-    assert.equal((await flowRow(invoice.id)).status, 'void');
+    assert.equal(await flowRow(invoice.id), undefined);
   });
 });

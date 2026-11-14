@@ -4,7 +4,7 @@ import { sql } from 'drizzle-orm';
 import { createContact, createPriceItem } from '../server/core/directory.js';
 import { createDraftInvoice, issueInvoice, voidInvoice } from '../server/core/invoices.js';
 import { mapInvoice } from '../server/integrations/xero/mirror.js';
-import { checkSentInvoices, OUT_OF_SYNC, sentDifferences, stageOf } from '../server/integrations/xero/reconcile.js';
+import { checkSentInvoices, invoiceStages, OUT_OF_SYNC, sentDifferences, stageOf } from '../server/integrations/xero/reconcile.js';
 import { request } from './support/clerk.js';
 import { freshDatabase, skipWithoutDatabase } from './support/db.js';
 import { bootFlow, connectDirectly, scriptedXero, seedLab, xeroAnswer } from './support/xero.js';
@@ -33,7 +33,7 @@ test('the Invoices page tab of an issued invoice follows its Xero stage', () => 
   assert.deepEqual(['not_sent', 'sending', 'not_copied', 'draft'].map((s) => at(s)), ['draft', 'draft', 'draft', 'draft']);
   assert.equal(at('approved'), 'approved');
   assert.equal(at('approved', { xero: { sentToContact: true } }), 'sent');
-  assert.deepEqual([at('part_paid'), at('paid'), at('voided'), at('deleted')], ['approved', 'paid', 'void', 'void']);
+  assert.deepEqual([at('part_paid'), at('paid'), at('voided'), at('deleted')], ['approved', 'paid', 'void', 'pending']);
   assert.equal(at('part_paid', { xero: { sentToContact: true } }), 'sent');
   assert.equal(at('approved', { finding: 'edited_in_xero' }), 'pending', 'out of sync: a person looks');
   assert.equal(mapInvoice({ InvoiceID: 'x', Status: 'AUTHORISED', SentToContact: true }).sentToContact, true);
@@ -106,9 +106,10 @@ describe('sent invoices against the Xero copy', { skip: skipWithoutDatabase }, (
     assert.equal(replay.calls.length, 0);
   });
 
-  test('an edit in Xero, a void in Xero and a void in Flow each open one alert; a repeat does not add one', async () => {
+  test('an edit in Xero, a draft Xero deleted and a void in Flow each open one alert; a void in Xero opens none; a repeat does not add one', async () => {
     const edited = await sent('x-edited', { total: 30000, sub: 27273, tax: 2727 });
     const voidedInXero = await sent('x-void', { status: 'VOIDED' });
+    const deletedInXero = await sent('x-deleted', { status: 'DELETED' });
     const voidedInFlow = await sent('x-live', { status: 'AUTHORISED' });
     await voidInvoice(handle.db, org(), voidedInFlow.id);
 
@@ -117,7 +118,13 @@ describe('sent invoices against the Xero copy', { skip: skipWithoutDatabase }, (
     const items = await openItems();
     const finding = (invoice) => items.filter((i) => i.flow_id === invoice.id).map((i) => i.evidence.finding);
     assert.deepEqual(finding(edited), ['differs']);
-    assert.deepEqual(finding(voidedInXero), ['voided_in_xero']);
+    // Void is only for what a customer saw: Flow follows Xero's void (Void
+    // tab), and a deleted draft goes to a person, never to Void.
+    assert.deepEqual(finding(voidedInXero), []);
+    assert.deepEqual(finding(deletedInXero), ['deleted_in_xero']);
+    const stages = await invoiceStages(handle.db, xero.runtime, org(), [voidedInXero.id, deletedInXero.id]);
+    assert.equal(stages.get(voidedInXero.id), 'void');
+    assert.equal(stages.get(deletedInXero.id), 'pending');
     assert.deepEqual(finding(voidedInFlow), ['voided_in_flow']);
     const [differs] = items.filter((i) => i.flow_id === edited.id);
     assert.deepEqual(differs.evidence.differences.map((d) => d.field), ['subtotal', 'tax', 'total']);

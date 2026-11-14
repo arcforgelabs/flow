@@ -35,13 +35,25 @@ async function linkedXeroId(db, organisationId, invoiceId) {
 }
 
 // False only when this Flow invoice never reached Xero: no send was started
-// (no push row, not even one in flight) and no link was ever made. The core
-// then deletes it in Flow instead of voiding it.
+// (no push row, not even one in flight) and no link holds it. A released link
+// was a wrong pair, so it does not count. The core then deletes it in Flow
+// instead of voiding it.
 export async function everInXero(db, organisationId, invoiceId) {
   const { rows } = await db.execute(sql`
     select exists (select 1 from xero_invoice_pushes where organisation_id = ${organisationId} and invoice_id = ${invoiceId})
-      or exists (select 1 from xero_invoice_links where organisation_id = ${organisationId} and invoice_id = ${invoiceId}) as sent`);
+      or exists (select 1 from xero_invoice_links where organisation_id = ${organisationId} and invoice_id = ${invoiceId} and released_at is null) as sent`);
   return rows[0]?.sent === true;
+}
+
+// The core is removing a Flow invoice whose Xero draft was deleted (no
+// customer saw it). Inside the core's transaction, its push and link rows go
+// with it; Flow's copy keeps the Xero row with status DELETED, and the job's
+// history keeps the Xero id. Answers { accountingRef }.
+export async function forgetXeroInvoice(tx, organisationId, invoiceId) {
+  const accountingRef = await linkedXeroId(tx, organisationId, invoiceId);
+  await tx.execute(sql`delete from xero_invoice_links where organisation_id = ${organisationId} and invoice_id = ${invoiceId}`);
+  await tx.execute(sql`delete from xero_invoice_pushes where organisation_id = ${organisationId} and invoice_id = ${invoiceId}`);
+  return { accountingRef };
 }
 
 // Who deleted it, and the status Xero confirmed, on the push, the link and
@@ -98,7 +110,9 @@ export async function deleteXeroInvoice(db, runtime, { organisationId, invoiceId
     }
     if (GONE.has(status)) {
       await recordDeletion(db, organisationId, invoiceId, xeroId, status, actor);
-      return { state: 'gone', status };
+      // A void in Xero was approved first, so a customer may have seen it:
+      // Flow voids its invoice too. A deleted one was only ever a draft.
+      return { state: status === 'VOIDED' ? 'voided' : 'gone', status };
     }
     if (APPROVED.has(status)) return { state: 'approved', status, message: APPROVED_MESSAGE };
     if (!DRAFTS.has(status)) return { state: 'unavailable', status };

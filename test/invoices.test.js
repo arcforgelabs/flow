@@ -127,6 +127,20 @@ describe('invoices', { skip: skipWithoutDatabase }, () => {
     await assert.rejects(handle.pool.query("UPDATE invoices SET status = 'issued' WHERE id = $1", [draft.id]), /void invoice cannot change/);
   });
 
+  test('with an accounting system, Flow refuses to void: delete what never reached it, void the rest there', async () => {
+    const system = (everSent) => ({ name: 'Books', capabilities: { everSent: async () => everSent } });
+    const draft = await createDraftInvoice(db, lab.id, { contactId: practice.id, lines: [{ priceItemId: crown.id }] });
+    // A draft that was never issued is refused as before, whatever the system says.
+    await assert.rejects(voidInvoice(db, lab.id, draft.id, { accounting: system(false) }), { code: 'never_issued' });
+    await issueInvoice(db, lab.id, draft.id, { issuedBy: 'user:test', issueDate: '2026-10-16' });
+    await assert.rejects(voidInvoice(db, lab.id, draft.id, { accounting: system(false) }), { code: 'delete_instead', message: /never reached Books/ });
+    await assert.rejects(voidInvoice(db, lab.id, draft.id, { accounting: system(true) }), { code: 'void_in_accounting', message: /Void it in Books/ });
+    const [row] = (await handle.pool.query('SELECT status FROM invoices WHERE id = $1', [draft.id])).rows;
+    assert.equal(row.status, 'issued', 'a refused void changes nothing');
+    // With no accounting system Flow sent the invoice itself, so Flow voids it.
+    assert.equal((await voidInvoice(db, lab.id, draft.id)).status, 'void');
+  });
+
   test('a never-issued draft can be deleted; an issued invoice needs an accounting system', async () => {
     const draft = await createDraftInvoice(db, lab.id, { contactId: practice.id, lines: [{ priceItemId: crown.id }] });
     await deleteDraft(db, lab.id, draft.id);

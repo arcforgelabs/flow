@@ -2,9 +2,9 @@ import assert from 'node:assert/strict';
 import { after, before, describe, test } from 'node:test';
 import { and, eq, sql } from 'drizzle-orm';
 import { createContact, createPriceItem } from '../server/core/directory.js';
-import { createDraftInvoice, issueInvoice, voidInvoice } from '../server/core/invoices.js';
+import { createDraftInvoice, issueInvoice } from '../server/core/invoices.js';
 import { saveCustomerBilling } from '../server/core/invoicing-rules.js';
-import { freeVoidedJob, linkJobToInvoice, observeJob, recordAccountingEvidence, setReady } from '../server/core/ledger.js';
+import { linkJobToInvoice, observeJob, recordAccountingEvidence, setReady } from '../server/core/ledger.js';
 import { billingObligations, invoices } from '../server/db/schema.js';
 import { importOverview, matchXero, useXeroInvoice } from '../server/integrations/xero/links.js';
 import { findInvoices } from '../server/integrations/xero/lookup.js';
@@ -172,7 +172,7 @@ describe('Xero import: Xero invoices against Flow invoices', { skip: skipWithout
     await saveCustomerBilling(handle.db, org(), member.id, { billToContactId: null });
   });
 
-  test('a wrong pair is released: the void Flow invoice lets go of the Xero invoice, and both jobs can be paired again', async () => {
+  test('a wrong pair is released: Flow\'s copy of the Xero invoice is removed, never voided, and both jobs can be paired again', async () => {
     const job = (ref, day) => observeJob(handle.db, org(), { sourceSystem: 'worksystem', sourceJobRef: ref, caseRef: ref, contactId: practice.id, shippedOn: day, jobDate: day, lines: [{ itemCode: 'CROWN' }] });
     const wrong = await job('JOB-W1', '2026-09-17');
     const right = await job('JOB-W2', '2026-09-18');
@@ -182,15 +182,18 @@ describe('Xero import: Xero invoices against Flow invoices', { skip: skipWithout
     const made = await call(`/import/${theirs}/make`, { method: 'POST', body: { organisationId: org(), jobId: wrong.id } });
     assert.equal(made.status, 200, JSON.stringify(made.body));
     const release = (body) => call(`/import/${theirs}/release`, { method: 'POST', body: { organisationId: org(), reason: 'wrong pair: another job', ...body } });
-    assert.match((await release()).body.error, /void it first/);
-    await voidInvoice(handle.db, org(), made.body.invoice.id);
-    await freeVoidedJob(handle.db, org(), wrong.id, { actor: 'person:test', reason: 'wrong pair' });
     const refused = await call(`/import/${own}/make`, { method: 'POST', body: { organisationId: org(), jobId: wrong.id } });
-    assert.match(refused.body.error, /linked to an accounting invoice already/, 'before the release, the job still points at the other bill');
+    assert.match(refused.body.error, /already/, 'before the release, the job still holds the other bill');
     assert.equal((await release({ reason: '' })).status, 400);
+    // Void is only for what a customer saw: the made invoice was only Flow's
+    // copy of the Xero one, so the release removes it. Nothing is voided.
     const released = await release();
     assert.equal(released.status, 200, JSON.stringify(released.body));
+    assert.equal(released.body.invoice.removed, true);
     assert.deepEqual(released.body.jobs, [wrong.id]);
+    assert.deepEqual(await handle.db.select().from(invoices).where(eq(invoices.id, made.body.invoice.id)), []);
+    const { rows: [{ voids }] } = await handle.db.execute(sql`select count(*)::int as voids from invoices where organisation_id = ${org()} and status = 'void'`);
+    assert.equal(voids, 0);
     const [freed] = await handle.db.select().from(billingObligations).where(eq(billingObligations.id, wrong.id));
     assert.deepEqual([freed.accountingRef, freed.accountingState], [null, 'unknown']);
     const { rows: rejected } = await handle.db.execute(sql`select external_id from link_rejections where obligation_id = ${wrong.id}`);
@@ -204,7 +207,14 @@ describe('Xero import: Xero invoices against Flow invoices', { skip: skipWithout
     }
     const { rows: history } = await handle.db.execute(sql`select released_by from xero_invoice_links where xero_invoice_id = ${theirs}`);
     assert.deepEqual(history.map((r) => r.released_by), [null], 'one row: the new link took the released one\'s place');
-    assert.equal((await release()).status, 400, 'a live Flow invoice keeps its link');
+    // A Flow invoice Flow sent to that Xero invoice is that invoice: its link stays.
+    const { rows: [link] } = await handle.db.execute(sql`select invoice_id from xero_invoice_links where xero_invoice_id = ${own}`);
+    const { rows: [version] } = await handle.db.execute(sql`select version from invoice_versions where invoice_id = ${link.invoice_id} order by version desc limit 1`);
+    await handle.db.execute(sql`insert into xero_invoice_pushes (organisation_id, invoice_id, version, state, idempotency_key, request_body, body_hash, xero_invoice_id)
+      values (${org()}, ${link.invoice_id}, ${version.version}, 'created', 'key-sent', '{}', 'hash', ${own})`);
+    const kept = await call(`/import/${own}/release`, { method: 'POST', body: { organisationId: org(), reason: 'try' } });
+    assert.equal(kept.status, 400);
+    assert.match(kept.body.error, /Flow sent/);
   });
 
   test('nothing fits: it stays in the copy, until the setting makes Flow invoices', async () => {
@@ -285,16 +295,15 @@ describe('Xero import: Xero invoices against Flow invoices', { skip: skipWithout
     assert.equal(second.jobId, job2.id);
     assert.equal(second.removed.id, voidedEarlier.id);
     // A send that started (in flight, no Xero id yet) may have reached Xero:
-    // that copy is voided, as before.
+    // it is refused, never voided (void is only for what a customer saw).
     const job3 = await observeJob(handle.db, org(), { sourceSystem: 'worksystem', sourceJobRef: 'JOB-F', caseRef: 'CASE-F', contactId: practice.id, shippedOn: '2026-10-22', jobDate: '2026-10-22', lines: [{ itemCode: 'CROWN' }] });
     const inFlight = await flowInvoice('2026-10-22');
     await linkJobToInvoice(handle.db, org(), job3.id, { invoiceId: inFlight.id, actor: 'person:test' });
     await handle.db.execute(sql`insert into xero_invoice_pushes (organisation_id, invoice_id, version, state, idempotency_key, request_body, body_hash)
       values (${org()}, ${inFlight.id}, 1, 'ambiguous', 'key-in-flight', '{}', 'hash')`);
     const id4 = await copy(26, { issuedOn: '2026-10-22', total: 29000 });
-    const third = await useXeroInvoice(handle.db, org(), inFlight.id, { xeroInvoiceId: id4, actor: 'person:test' });
-    assert.equal(third.voided.id, inFlight.id);
-    assert.equal((await handle.db.select().from(invoices).where(eq(invoices.id, inFlight.id)))[0].status, 'void');
+    await assert.rejects(useXeroInvoice(handle.db, org(), inFlight.id, { xeroInvoiceId: id4, actor: 'person:test' }), /already in Xero/);
+    assert.equal((await handle.db.select().from(invoices).where(eq(invoices.id, inFlight.id)))[0].status, 'issued');
     // Gone, it cannot give way again.
     const id3 = await copy(24, { issuedOn: '2026-10-21', total: 29000 });
     await assert.rejects(useXeroInvoice(handle.db, org(), voidedEarlier.id, { xeroInvoiceId: id3, actor: 'person:test' }), /not found/);
