@@ -13,13 +13,27 @@ import { invoiceTotals, lineTotals } from './money.js';
 // confirms (docs/XERO.md, "Deleting a draft"). With no accounting system, an
 // issued invoice answers accounting_unavailable.
 
-async function loadInvoice(tx, organisationId, invoiceId, { lock = false } = {}) {
+// An imported invoice (origin is not 'flow') was copied from the accounting
+// system, which owns it: Flow shows it and never changes, sends, voids or
+// deletes it. Only the import writes it (mirrorWrite). The database refuses
+// every other change too (migration 0041).
+export const isImported = (invoice) => (invoice?.origin ?? 'flow') !== 'flow';
+
+export function requireOwn(invoice) {
+  if (isImported(invoice)) {
+    throw Object.assign(new FlowError('imported', `${invoice.number ?? 'This invoice'} came from the accounting system. Change it there: Flow follows.`), { status: 409 });
+  }
+  return invoice;
+}
+
+// `own`: refuse an imported invoice, for every path that changes one.
+async function loadInvoice(tx, organisationId, invoiceId, { lock = false, own = false } = {}) {
   let query = tx.select().from(invoices)
     .where(and(eq(invoices.organisationId, organisationId), eq(invoices.id, invoiceId)));
   if (lock) query = query.for('update');
   const [row] = await query;
   if (!row) throw notFound('invoice');
-  return row;
+  return own ? requireOwn(row) : row;
 }
 
 // Whether the lab's prices include GST (Settings, Invoicing). A new invoice
@@ -101,7 +115,7 @@ export async function createDraftInvoice(db, organisationId, { contactId, refere
 
 export async function updateDraftInvoice(db, organisationId, invoiceId, changes) {
   return db.transaction(async (tx) => {
-    const invoice = await loadInvoice(tx, organisationId, invoiceId, { lock: true });
+    const invoice = await loadInvoice(tx, organisationId, invoiceId, { lock: true, own: true });
     if (invoice.status !== 'draft') throw new FlowError('not_draft', 'only a draft invoice can change; revise it first');
     const fields = {};
     if ('contactId' in changes && changes.contactId !== invoice.contactId) {
@@ -140,7 +154,7 @@ export async function issueInvoice(db, organisationId, invoiceId, { issuedBy, is
   if (!issuedBy) throw new FlowError('invalid', 'issuedBy is required');
   if (!/^\d{4}-\d{2}-\d{2}$/.test(issueDate ?? '')) throw new FlowError('invalid', 'issueDate must be YYYY-MM-DD');
   return db.transaction(async (tx) => {
-    const invoice = await loadInvoice(tx, organisationId, invoiceId, { lock: true });
+    const invoice = await loadInvoice(tx, organisationId, invoiceId, { lock: true, own: true });
     if (invoice.status !== 'draft') throw new FlowError('not_draft', 'only a draft invoice can be issued');
     // Each line with its price item's code, so the document says which item
     // was sold even if the price list changes later.
@@ -187,7 +201,7 @@ export async function issueInvoice(db, organisationId, invoiceId, { issuedBy, is
 // Opens an issued invoice for change. The sent versions are not touched.
 export async function reviseInvoice(db, organisationId, invoiceId) {
   return db.transaction(async (tx) => {
-    const invoice = await loadInvoice(tx, organisationId, invoiceId, { lock: true });
+    const invoice = await loadInvoice(tx, organisationId, invoiceId, { lock: true, own: true });
     if (invoice.status !== 'issued') throw new FlowError('not_issued', 'only an issued invoice can be revised');
     // A revision is a new version: what happened to the last send no longer applies.
     const [row] = await tx.update(invoices).set({ status: 'draft', readyAt: null, readyBy: null, sendState: null, sendError: null, updatedAt: sql`now()` })
@@ -205,7 +219,7 @@ export async function reviseInvoice(db, organisationId, invoiceId) {
 export async function voidInvoice(db, organisationId, invoiceId, { accounting = null, actor = null } = {}) {
   let unseen = false;
   if (accounting) {
-    const current = await loadInvoice(db, organisationId, invoiceId);
+    const current = await loadInvoice(db, organisationId, invoiceId, { own: true });
     if (current.status !== 'void' && current.issuedVersion > 0) {
       if (!(await neverSent(accounting, organisationId, invoiceId))) {
         throw new FlowError('void_in_accounting', `${current.number} is in ${accounting.name}. Void it in ${accounting.name}: Flow follows.`);
@@ -219,7 +233,7 @@ export async function voidInvoice(db, organisationId, invoiceId, { accounting = 
     }
   }
   return db.transaction(async (tx) => {
-    const invoice = await loadInvoice(tx, organisationId, invoiceId, { lock: true });
+    const invoice = await loadInvoice(tx, organisationId, invoiceId, { lock: true, own: true });
     if (invoice.status === 'void') return invoice;
     if (invoice.issuedVersion === 0) throw new FlowError('never_issued', 'delete a draft that was never issued; do not void it');
     if (unseen && !(await stillUnsent(accounting, organisationId, invoice, 'void'))) {
@@ -261,6 +275,7 @@ async function freeJobs(tx, organisationId, invoice, actor, evidence = {}) {
 // issued versions and tab go with it. The job's history keeps the number,
 // total and who deleted it. The number is not used again.
 export async function removeUnsentInvoice(tx, organisationId, invoice, actor, evidence = {}) {
+  requireOwn(invoice);
   await freeJobs(tx, organisationId, invoice, actor, { number: invoice.number, totalCents: invoice.totalCents, removed: true, ...evidence });
   await deleteUnsentRows(tx, organisationId, invoice.id);
 }
@@ -274,6 +289,33 @@ export async function deleteUnsentRows(tx, organisationId, invoiceId) {
   await tx.delete(invoiceVersions).where(and(eq(invoiceVersions.organisationId, organisationId), eq(invoiceVersions.invoiceId, invoiceId)));
   await tx.delete(invoices).where(and(eq(invoices.organisationId, organisationId), eq(invoices.id, invoiceId)));
   await tx.execute(sql`select set_config('flow.remove_unsent', '', true)`);
+}
+
+// The import's own writes to an imported invoice, inside the caller's
+// transaction: the database lets a change or a delete through only while the
+// transaction names that one invoice (migration 0041). Answers what `write`
+// answers.
+export async function mirrorWrite(tx, invoiceId, write) {
+  await tx.execute(sql`select set_config('flow.mirror_write', ${String(invoiceId)}, true)`);
+  // A write that fails ends the transaction, and the setting ends with it.
+  const result = await write();
+  await tx.execute(sql`select set_config('flow.mirror_write', '', true)`);
+  return result;
+}
+
+// Removes an imported invoice and its versions: the import's release of a
+// batch, or a draft the accounting system deleted. It was only Flow's copy,
+// so nothing is voided and the accounting system is never called. No job
+// holds it as its own invoice (the database refuses that), so no job changes.
+// An invoice Flow made is refused: deleteDraft owns those.
+export async function removeImportedInvoice(tx, organisationId, invoiceId) {
+  const invoice = await loadInvoice(tx, organisationId, invoiceId, { lock: true });
+  if (!isImported(invoice)) throw new FlowError('invalid', 'Flow made this invoice; only an imported invoice is removed this way');
+  await mirrorWrite(tx, invoice.id, async () => {
+    await tx.delete(invoiceVersions).where(and(eq(invoiceVersions.organisationId, organisationId), eq(invoiceVersions.invoiceId, invoice.id)));
+    await tx.delete(invoices).where(and(eq(invoices.organisationId, organisationId), eq(invoices.id, invoice.id)));
+  });
+  return invoice;
 }
 
 // An owner's override (send_overrides) is a record that stays: its row
@@ -338,7 +380,7 @@ async function deleteInAccounting(accounting, organisationId, invoiceId, actor) 
 // the issued versions stay. With no accounting delete, or when
 // the accounting invoice is approved or paid, nothing in Flow changes.
 export async function deleteDraft(db, organisationId, invoiceId, { actor = null, accounting = null } = {}) {
-  const current = await loadInvoice(db, organisationId, invoiceId);
+  const current = await loadInvoice(db, organisationId, invoiceId, { own: true });
   if (current.issuedVersion > 0 && await neverSent(accounting, organisationId, invoiceId)) {
     const held = await hasSendOverride(db, invoiceId);
     if (!held || current.status !== 'void') {

@@ -65,7 +65,7 @@ test('Flow\'s tables live in "flow"', { skip: skipWithoutDatabase }, async (t) =
       assert.deepEqual(await functionsIn(handle.pool, 'public'), []);
       const flow = await inSchema(handle.pool, 'flow');
       for (const table of ['organisations', 'invoices', 'captures', 'xero_calls', 'seazona_orders']) assert.ok(flow.includes(table), table);
-      assert.deepEqual(await functionsIn(handle.pool, 'flow'), ['flow_invoice_lines_draft_only', 'flow_invoice_rules', 'flow_invoice_versions_append_only', 'flow_refuse_change']);
+      assert.deepEqual(await functionsIn(handle.pool, 'flow'), ['flow_invoice_lines_draft_only', 'flow_invoice_rules', 'flow_invoice_versions_append_only', 'flow_job_invoice_is_own', 'flow_refuse_change', 'xero_push_own_invoice_only']);
     } finally {
       await handle.close();
     }
@@ -247,8 +247,9 @@ test('send mode and shown email upgrade keeps old invoices on their customer\'s 
     await migrateDatabase(handle.db);
     await migrateDatabase(handle.db);
     const { rows: [upgraded] } = await handle.pool.query('select to_jsonb(i) as data from invoices i where id = $1', [old.data.id]);
-    const { send_mode, send_email, ...unchanged } = upgraded.data;
+    const { send_mode, send_email, origin, ...unchanged } = upgraded.data;
     assert.deepEqual([send_mode, send_email], [null, null], 'an old invoice keeps its customer\'s send mode and has no shown email');
+    assert.equal(origin, 'flow', 'an invoice from before the origin column is Flow\'s own');
     assert.deepEqual(unchanged, old.data, 'the upgrade changes no existing value');
     const loaded = await getInvoice(handle.db, organisation.id, old.data.id);
     assert.deepEqual([loaded.sendState, loaded.sendMode, loaded.sendEmail], ['queued', null, null]);

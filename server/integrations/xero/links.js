@@ -3,7 +3,7 @@ import { billingObligations, contacts, invoices, obligationEvents, priceItems } 
 import { payersOf } from '../../core/contacts.js';
 import { createContact } from '../../core/directory.js';
 import { FlowError } from '../../core/errors.js';
-import { createDraftInvoice, deleteUnsentRows, hasSendOverride, issueInvoice, removeUnsentInvoice } from '../../core/invoices.js';
+import { createDraftInvoice, deleteUnsentRows, hasSendOverride, issueInvoice, removeUnsentInvoice, requireOwn } from '../../core/invoices.js';
 import { linkJobToInvoice, recordAccountingEvidence, releaseAccountingRef } from '../../core/ledger.js';
 import { normaliseName } from './catalogue.js';
 import { findInvoices } from './lookup.js';
@@ -44,7 +44,7 @@ const near = (a, b) => {
 };
 
 // Every sales invoice in the copy, and what in Flow fits it.
-async function classify(db, organisationId) {
+export async function classify(db, organisationId) {
   const { rows: xero } = await db.execute(sql`
     select x.xero_invoice_id, x.invoice_number, x.reference, x.status, x.issued_on, x.total_cents, x.amount_due_cents,
       x.xero_contact_id, x.lines, c.name as contact_name, c.email as contact_email
@@ -251,8 +251,9 @@ async function rowFor(db, organisationId, xeroInvoiceId) {
 // same client with no Xero invoice may be picked, not only a fit.
 export async function linkXeroInvoice(db, organisationId, xeroInvoiceId, { invoiceId, actor }) {
   await rowFor(db, organisationId, xeroInvoiceId);
-  const { rows } = await db.execute(sql`select id, status from invoices where organisation_id = ${organisationId} and id = ${invoiceId}`);
+  const { rows } = await db.execute(sql`select id, number, status, origin from invoices where organisation_id = ${organisationId} and id = ${invoiceId}`);
   if (!rows.length) throw new FlowError('not_found', 'Flow invoice not found');
+  requireOwn(rows[0]);
   if (rows[0].status === 'void') throw new FlowError('invalid', 'the Flow invoice is void');
   const { rows: pushed } = await db.execute(sql`select 1 from xero_invoice_pushes where organisation_id = ${organisationId} and invoice_id = ${invoiceId} and xero_invoice_id is not null limit 1`);
   if (pushed.length) throw new FlowError('invalid', 'Flow sent that invoice to Xero already');
@@ -272,9 +273,10 @@ export async function useXeroInvoice(db, organisationId, invoiceId, { xeroInvoic
   if (!actor) throw new FlowError('invalid', 'actor is required');
   const row = await rowFor(db, organisationId, xeroInvoiceId);
   return db.transaction(async (tx) => {
-    const { rows: [invoice] } = await tx.execute(sql`select id, number, status, contact_id from invoices
+    const { rows: [invoice] } = await tx.execute(sql`select id, number, status, contact_id, origin from invoices
       where organisation_id = ${organisationId} and id = ${invoiceId} for update`);
     if (!invoice) throw new FlowError('not_found', 'Flow invoice not found');
+    requireOwn(invoice);
     // A copy voided earlier, still holding its job, gives way the same way.
     if (!['issued', 'void'].includes(invoice.status)) throw new FlowError('invalid', 'only an approved or void Flow invoice can give way to a Xero invoice');
     const payers = await payersOf(tx, organisationId, [invoice.contact_id, row.contactId]);
@@ -405,10 +407,12 @@ export async function releaseXeroLink(db, organisationId, xeroInvoiceId, { actor
   if (!actor) throw new FlowError('invalid', 'actor is required');
   if (!reason?.trim()) throw new FlowError('invalid', 'say why the link is released');
   return db.transaction(async (tx) => {
-    const { rows: [link] } = await tx.execute(sql`select l.invoice_id, l.matched_by, i.number, i.status from xero_invoice_links l
+    const { rows: [link] } = await tx.execute(sql`select l.invoice_id, l.matched_by, i.number, i.status, i.origin from xero_invoice_links l
       join invoices i on i.organisation_id = l.organisation_id and i.id = l.invoice_id
       where l.organisation_id = ${organisationId} and l.xero_invoice_id = ${xeroInvoiceId} and l.released_at is null for update of l`);
     if (!link) throw new FlowError('not_found', 'the Xero invoice has no link to release');
+    // An imported invoice is this Xero invoice: only its import removes it.
+    requireOwn(link);
     const { rows: pushed } = await tx.execute(sql`select 1 from xero_invoice_pushes
       where organisation_id = ${organisationId} and invoice_id = ${link.invoice_id} and xero_invoice_id = ${xeroInvoiceId} limit 1`);
     if (pushed.length) throw new FlowError('invalid', `Flow sent ${link.number ?? 'that invoice'} to Xero: it is this Xero invoice, so the link stays`);

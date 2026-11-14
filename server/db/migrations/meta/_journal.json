@@ -288,6 +288,13 @@
       "when": 1794582205406,
       "tag": "0040_invoice_send_email",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1794629998082,
+      "tag": "0041_invoice_origin",
+      "breakpoints": true
     }
   ]
 }

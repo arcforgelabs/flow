@@ -145,6 +145,11 @@ export const invoices = pgTable('invoices', {
   // With approve_and_email: the client email the person saw in the Send
   // dialog, lower case. Flow emails only when Xero's contact still has it.
   sendEmail: text('send_email'),
+  // Which system made the invoice. 'flow': Flow made it and owns it. Any
+  // other value names the accounting system the import copied it from: that
+  // system owns it, and Flow shows it but never changes or sends it
+  // (docs/XERO_IMPORT.md, "An imported invoice"). It never changes.
+  origin: text('origin').notNull().default('flow'),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 }, (t) => [

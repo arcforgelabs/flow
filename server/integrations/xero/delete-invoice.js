@@ -126,6 +126,10 @@ export async function deleteXeroInvoice(db, runtime, { organisationId, invoiceId
   if (!writesAllowed(runtime.settings)) return { state: 'unavailable', status: null };
   const connection = await readConnection(db, organisationId);
   if (!connection || connection.mode !== runtime.settings.mode) return { state: 'unavailable', status: null };
+  // An imported invoice is Xero's own record: Flow never deletes it there.
+  // The core refuses first (requireOwn); this is the stop for a direct call.
+  const { rows: [own] } = await db.execute(sql`select origin from invoices where organisation_id = ${organisationId} and id = ${invoiceId}`);
+  if (own && own.origin !== 'flow') return { state: 'unavailable', status: null, message: 'This invoice came from Xero. Flow does not delete it there.' };
   const xeroId = await linkedXeroId(db, organisationId, invoiceId);
   if (!xeroId) return { state: 'unavailable', status: null };
 
