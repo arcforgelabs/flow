@@ -1,11 +1,11 @@
 import { randomUUID } from 'node:crypto';
-import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, ne, sql } from 'drizzle-orm';
 import { billingObligations, contacts, invoiceLines, invoices, people, priceItems, SEND_MODES } from '../db/schema.js';
 import { FlowError } from './errors.js';
 import { accountingItemsFor, listRules, ruleExceptionsFor, ruleNonChargeable, rulePending, rulePricesFor, ruleSkip } from './invoice-rules.js';
 import { customerBillingByContact, effectiveSettings, readInvoicingSettings } from './invoicing-rules.js';
 import { HISTORY_HOLD_REASON, isHistoryHeld, ruleReleasedHistory } from './history.js';
-import { getInvoice, issueInvoice } from './invoices.js';
+import { getInvoice, issueInvoice, requireOwn } from './invoices.js';
 import { CHANGED_REASON, diffJobLines, sourceBillingProblems, STATUS_BACK_REASON } from './ledger.js';
 import { soleOrganisation } from './pipeline.js';
 import { needsRead, readAccountingFirst, readBeforeAct, READS_PER_PASS } from './read-before-act.js';
@@ -39,6 +39,18 @@ export const SEND_BATCH = 100;
 // Drafts checked for Ready and Problem, oldest first.
 export const CHECK_LIMIT = 500;
 const WORKER_BATCH = 25;
+// Flow readies, issues and sends only invoices it made. An imported invoice
+// (server/core/invoices.js, isImported) is in none of these lists.
+const OWN = eq(invoices.origin, 'flow');
+
+// A person who names an imported invoice gets the reason (409 imported), not
+// an empty answer.
+async function refuseImported(db, organisationId, invoiceIds) {
+  if (!invoiceIds?.length) return;
+  const [found] = await db.select({ number: invoices.number, origin: invoices.origin }).from(invoices)
+    .where(and(eq(invoices.organisationId, organisationId), inArray(invoices.id, invoiceIds), ne(invoices.origin, 'flow'))).limit(1);
+  requireOwn(found);
+}
 const WORKER_EVERY_MS = 30 * 1000;
 const LEASE_MS = 15 * 60 * 1000;
 // One error report names this many refused invoices. The count still says
@@ -182,7 +194,7 @@ const nonChargeableOf = (found) => found.filter((p) => p.code === 'non_chargeabl
 // problems: Map(id -> problems), nonChargeable: Map(id -> rules), sending: Set(ids) }.
 export async function invoiceViews(db, organisationId, { accounting = null } = {}) {
   const drafts = await db.select({ id: invoices.id, totalCents: invoices.totalCents, readyAt: invoices.readyAt }).from(invoices)
-    .where(and(eq(invoices.organisationId, organisationId), eq(invoices.status, 'draft')))
+    .where(and(eq(invoices.organisationId, organisationId), eq(invoices.status, 'draft'), OWN))
     .orderBy(asc(invoices.createdAt), asc(invoices.id))
     .limit(CHECK_LIMIT);
   const problems = await checkDrafts(db, organisationId, drafts, accounting);
@@ -195,7 +207,7 @@ export async function invoiceViews(db, organisationId, { accounting = null } = {
   }
   const sending = new Set();
   const issued = await db.select({ id: invoices.id, sendState: invoices.sendState, sendError: invoices.sendError }).from(invoices)
-    .where(and(eq(invoices.organisationId, organisationId), eq(invoices.status, 'issued'), inArray(invoices.sendState, ['queued', 'failed'])))
+    .where(and(eq(invoices.organisationId, organisationId), eq(invoices.status, 'issued'), OWN, inArray(invoices.sendState, ['queued', 'failed'])))
     .orderBy(desc(invoices.sendUpdatedAt));
   for (const row of issued) {
     if (row.sendState === 'queued') sending.add(row.id);
@@ -230,9 +242,10 @@ export async function invoiceView(db, organisationId, invoice, { accounting = nu
 // Mark ready: a person checked these drafts. A draft with a problem stays
 // where it is. Answers { marked, refused: [{ invoiceId, problems }] }.
 export async function markReady(db, organisationId, invoiceIds, { personId, accounting = null }) {
+  await refuseImported(db, organisationId, invoiceIds);
   const drafts = await db.select({ id: invoices.id, totalCents: invoices.totalCents }).from(invoices)
-    .where(and(eq(invoices.organisationId, organisationId), eq(invoices.status, 'draft'), inArray(invoices.id, invoiceIds)));
-  if (drafts.length !== new Set(invoiceIds).size) throw new FlowError('not_draft', 'only a draft can be marked ready');
+    .where(and(eq(invoices.organisationId, organisationId), eq(invoices.status, 'draft'), OWN, inArray(invoices.id, invoiceIds)));
+  if (drafts.length !== new Set(invoiceIds).size) throw new FlowError('not_draft', 'only a draft Flow made can be marked ready');
   const problems = await checkDrafts(db, organisationId, drafts, accounting);
   const good = drafts.filter((d) => !problems.has(d.id)).map((d) => d.id);
   if (good.length) {
@@ -245,8 +258,9 @@ export async function markReady(db, organisationId, invoiceIds, { personId, acco
 // Back to drafts: the drafts need another look before they go. The new
 // updatedAt keeps "Ready when drafted" (automations.js) off them.
 export async function markNotReady(db, organisationId, invoiceIds) {
+  await refuseImported(db, organisationId, invoiceIds);
   const rows = await db.update(invoices).set({ readyAt: null, readyBy: null, updatedAt: sql`now()` })
-    .where(and(eq(invoices.organisationId, organisationId), eq(invoices.status, 'draft'), inArray(invoices.id, invoiceIds)))
+    .where(and(eq(invoices.organisationId, organisationId), eq(invoices.status, 'draft'), OWN, inArray(invoices.id, invoiceIds)))
     .returning({ id: invoices.id });
   return { moved: rows.length };
 }
@@ -330,6 +344,7 @@ function stoppedSendMessage({ accountingWaiting, accountingReason, stops, waitin
 export async function sendAllReady(db, organisationId, { accounting = null, work = null, personId, issueDate, invoiceIds = null, sendMode = null, recipients = null, now = new Date() }) {
   if (sendMode !== null && !SEND_MODES.includes(sendMode)) throw new FlowError('invalid', `sendMode must be one of ${SEND_MODES.join(', ')}`);
   const seen = seenRecipients(recipients);
+  await refuseImported(db, organisationId, invoiceIds);
   await assertCanSend(accounting, organisationId);
   // Issue #45: the accounting copy reads its latest changes first, so the
   // draft checks below see an invoice someone made there meanwhile.
@@ -411,7 +426,7 @@ export async function sendAnyway(db, organisationId, invoiceId, {
   const reason = readReason(reasonCode, note);
   if (!Array.isArray(acknowledged) || acknowledged.some((key) => typeof key !== 'string')) throw new FlowError('invalid', 'acknowledged must list the warnings the person ticked');
   await assertCanSend(accounting, organisationId);
-  let invoice = await getInvoice(db, organisationId, invoiceId);
+  let invoice = requireOwn(await getInvoice(db, organisationId, invoiceId));
   if (invoice.status !== 'draft') throw new FlowError('not_draft', 'Only a draft can be sent with a warning.');
   const accountingRead = await readAccountingFirst(db, organisationId, { accounting, work, now });
   if (accountingRead.outcome === 'waiting') {
@@ -442,9 +457,10 @@ export async function sendAnyway(db, organisationId, invoiceId, {
 // Send again: issued invoices that failed go back on the queue. With no ids,
 // every failed one.
 export async function sendAgain(db, organisationId, { accounting = null, personId, invoiceIds = null }) {
+  await refuseImported(db, organisationId, invoiceIds);
   await assertCanSend(accounting, organisationId);
   if (!accounting) throw new FlowError('accounting_not_connected', 'No accounting system is on. Nothing to send.');
-  const where = [eq(invoices.organisationId, organisationId), eq(invoices.status, 'issued'), eq(invoices.sendState, 'failed')];
+  const where = [eq(invoices.organisationId, organisationId), eq(invoices.status, 'issued'), OWN, eq(invoices.sendState, 'failed')];
   if (invoiceIds) where.push(inArray(invoices.id, invoiceIds));
   const rows = await db.select({ id: invoices.id }).from(invoices).where(and(...where));
   await queue(db, organisationId, rows.map((r) => r.id), personId);
@@ -541,7 +557,7 @@ async function requesterRefusal(db, personId) {
 // One pass of the send worker: up to `limit` queued invoices, oldest first.
 export async function sendQueued(db, organisationId, { accounting, limit = WORKER_BATCH }) {
   const rows = await db.select({ id: invoices.id, number: invoices.number, by: invoices.sendRequestedBy }).from(invoices)
-    .where(and(eq(invoices.organisationId, organisationId), eq(invoices.status, 'issued'), eq(invoices.sendState, 'queued')))
+    .where(and(eq(invoices.organisationId, organisationId), eq(invoices.status, 'issued'), OWN, eq(invoices.sendState, 'queued')))
     .orderBy(asc(invoices.sendUpdatedAt), asc(invoices.id))
     .limit(limit);
   const summary = { sent: 0, failed: 0, waiting: 0 };

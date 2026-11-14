@@ -116,6 +116,76 @@ the Flow invoice the import linked to it.
 - A linked Flow invoice shows its Xero status and payments, as a sent one does.
 - Only an owner or admin links, makes, matches or changes the setting.
 
+## The full ledger
+
+Flow keeps a full ledger: every Xero sales invoice, with its status, and a
+job for each (owner rule, 14 November 2026). The history import is built in
+steps. This section says what is in place.
+
+### An imported invoice
+
+`invoices.origin` says which system made an invoice. `flow`: Flow made it and
+owns it. Any other value names the accounting system the import copied it
+from. That system owns it:
+
+- It is an invoice a customer saw: issued or void, never a draft. A Xero
+  draft waits in the copy until Xero approves it.
+- Flow shows it, and never changes, sends, voids or deletes it. Each such
+  route answers `409 imported`.
+- A job is tied to it by the job's accounting reference, as the matcher ties
+  it. It is never the job's own invoice (`invoice_id`), so several jobs can
+  share one accounting invoice and the import changes no job.
+- Only the import writes it (`mirrorWrite`) or removes it
+  (`removeImportedInvoice`, `server/core/invoices.js`). Removing it calls no
+  accounting system: it was only Flow's copy.
+
+The database refuses what the code missed (core migration `0041`, Xero
+migration `0018`): a change or a delete of an imported invoice outside the
+import's own transaction, a job that takes one as its own invoice, a push row
+or a send override for one (a new row, or a row moved to it), any change of
+`origin`, and an imported invoice that is a draft (so its lines never change:
+lines change only under a draft). A contact merge
+still moves an imported or void invoice to the kept contact.
+
+### Dry run
+
+`GET /api/xero/import/dry-run` says what importing every Xero sales invoice
+would do. It reads Flow's database only and writes nothing.
+
+| Field | Meaning |
+| --- | --- |
+| `canRun`, `copy` | The import runs only on a copy that is complete and fresh. |
+| `invoices` | Counts by Xero status and by year, how many Flow has already (`inFlow`), how many to import (`toImport`), and how many wait as a Xero draft (`notYet`). A removed Xero draft (`DELETED`) is left out. |
+| `blocked` | Invoices the import cannot take yet: no number, a number another Flow invoice holds, a number two Xero invoices hold, no contact in the copy. |
+| `numbers` | The clashes, and Flow's next number now and after (above the highest Xero number). |
+| `madeEarlier` | Flow invoices made earlier from a Xero invoice, and how many have another number. |
+| `contacts` | Xero contacts Flow has by link or by name, and how many the import makes. |
+| `oddLines` | Invoices with a line Flow's own line table cannot hold (quantity 0 or less, part quantity, discount, negative amount, another tax type). The import keeps the Xero document as it is; a person looks at these. |
+| `credited` | Invoices with a credit note applied. |
+| `jobs` | Invoices that jobs hold by accounting reference already. |
+| `money` | Count, total and amount due for each tab (`paid`, `awaiting`, `void`, `draft`), from the copy. `draft` is what waits in Xero. After a batch, each other tab must show the same. |
+
+A Xero `DRAFT` or `SUBMITTED` invoice is a draft, never a void: no customer
+saw it. The import takes it when Xero approves it.
+
+### Reconcile cover
+
+`GET /api/xero/import/cover` says where every record stands, on both sides.
+It is the measure before and after each batch.
+
+| Side | Count | Meaning |
+| --- | --- | --- |
+| `invoices` | `inFlow` | A Flow invoice is this Xero invoice. |
+| | `tied` | No Flow invoice, but a job holds its accounting reference. |
+| | `fits` | Something in Flow may fit. A person checks. |
+| | `none` | Nothing in Flow fits. |
+| | `void` | Voided in Xero. |
+| `jobs` | `invoiced` | The job has its own Flow invoice. |
+| | `tied` | No Flow invoice, but it holds an accounting reference. |
+| | `noCharge` | A rule or a person said no charge. |
+| | `needsPerson` | No invoice found, or more than one fits. |
+| | `open` | Not checked or not billed yet. |
+
 ## Release a wrong pair
 
 A pair can be wrong: a Flow invoice was made from a Xero invoice that bills
@@ -141,6 +211,8 @@ Xero".
 | Method | Path | Body |
 | --- | --- | --- |
 | GET | `/api/xero/import?organisationId&show&q&offset&limit` (`show`: a state, `check` or `all`) | |
+| GET | `/api/xero/import/dry-run?organisationId` (what the full import would do; writes nothing) | |
+| GET | `/api/xero/import/cover?organisationId` (reconcile cover, both sides) | |
 | POST | `/api/xero/import/match` | `organisationId` |
 | PUT | `/api/xero/import/settings` | `organisationId`, `autoLink?`, `makeUnmatched?` |
 | POST | `/api/xero/import/:xeroInvoiceId/link` | `organisationId`, `invoiceId` |

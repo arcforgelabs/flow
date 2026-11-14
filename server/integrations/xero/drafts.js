@@ -3,7 +3,7 @@ import { and, eq, inArray, sql } from 'drizzle-orm';
 import { isCallsStopped } from '../call-guard.js';
 import { billedContact } from '../../core/contacts.js';
 import { readInvoicingSettings } from '../../core/invoicing-rules.js';
-import { getInvoice, listInvoiceVersions } from '../../core/invoices.js';
+import { getInvoice, isImported, listInvoiceVersions } from '../../core/invoices.js';
 import { sendModeFor } from '../../core/invoicing-rules.js';
 import { contacts as flowContacts, invoices as flowInvoices, priceItems } from '../../db/schema.js';
 import { readConnection } from './connections.js';
@@ -611,6 +611,9 @@ function guarded(db, client, mayWrite) {
 async function pushOne(db, runtime, client, organisationId, invoiceId, { pushedBy, allowExisting, accepted = [], mayWrite = null }) {
   client = guarded(db, client, mayWrite);
   const { invoice, version, document } = await documentFor(db, organisationId, invoiceId);
+  // An imported invoice is Xero's own: Flow never sends it back. The database
+  // refuses its push row too (Xero migration 0018).
+  if (isImported(invoice)) throw xeroError('imported', `${invoice.number ?? 'This invoice'} came from Xero. Flow does not send it back.`, { status: 409 });
   if (invoice.status === 'void') throw xeroError('invoice_void', 'This invoice is void. Flow does not send it to Xero.', { status: 409 });
   if (invoice.status !== 'issued') throw xeroError('invoice_not_issued', 'Only an issued invoice goes to Xero. Issue it first.', { status: 409 });
 

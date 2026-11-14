@@ -10,6 +10,7 @@ import { describePush, listPushes, MAX_BATCH, previewDrafts, pushDrafts } from '
 import { recordXeroEvidence, recordXeroPayments } from './ledger.js';
 import { IMPORT_STATES, importOverview, linkXeroInvoice, makeFlowInvoice, matchXero, releaseXeroLink, saveImportSettings, useXeroInvoice } from './links.js';
 import { queueHistoryImport, resetImport } from './import.js';
+import { importPlan, reconcileCover } from './import-plan.js';
 import { MIRROR_RESOURCES, mirrorStatus, mirrorXero, readInvoiceFromXero, rereadCopy } from './mirror.js';
 import { accountingStatus, checkSentInvoices } from './reconcile.js';
 import { CUSTOM_CONNECTION, decryptToken, deleteConnection, describeConnection, readConnection, saveConnection } from './connections.js';
@@ -441,6 +442,18 @@ export function createXeroRouter({ db, personAuth, runtime, log = console, butto
     const offset = Math.max(0, Math.min(Number.parseInt(req.query.offset, 10) || 0, 1_000_000));
     const limit = Math.max(1, Math.min(Number.parseInt(req.query.limit, 10) || 50, 100));
     res.json({ ok: true, ...(await importOverview(db, organisationId, { show, q, limit, offset })) });
+  }));
+
+  // The dry run of the full history import, and reconcile cover
+  // (import-plan.js). Counts only; nothing is written and Xero is not called.
+  router.get('/import/dry-run', ...signedIn, handle(log, async (req, res) => {
+    const organisationId = await requireOrganisation(db, req.query.organisationId);
+    res.json({ ok: true, ...(await importPlan(db, organisationId)) });
+  }));
+
+  router.get('/import/cover', ...signedIn, handle(log, async (req, res) => {
+    const organisationId = await requireOrganisation(db, req.query.organisationId);
+    res.json({ ok: true, ...(await reconcileCover(db, organisationId)) });
   }));
 
   router.post('/import/match', ...manager, handle(log, async (req, res) => {

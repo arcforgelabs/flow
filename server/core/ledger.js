@@ -4,7 +4,7 @@ import {
   billingObligations, invoices, linkRejections, linkSuggestions, obligationEvents, obligationPayments, obligationWritebacks, priceItems,
 } from '../db/schema.js';
 import { FlowError, notFound } from './errors.js';
-import { createDraftInvoice, getInvoice, pricesIncludeTax, updateDraftInvoice } from './invoices.js';
+import { createDraftInvoice, getInvoice, isImported, pricesIncludeTax, updateDraftInvoice } from './invoices.js';
 import { invoiceTotals, lineTotals } from './money.js';
 import { openReview, resolveReviewFor } from './review.js';
 
@@ -1060,9 +1060,12 @@ export async function linkJobToInvoice(db, organisationId, obligationId, { invoi
     const obligation = await loadObligation(tx, organisationId, obligationId, { lock: true });
     if (obligation.invoiceId) throw new FlowError('invalid', 'the job has an invoice already');
     if (obligation.accountingRef && obligation.accountingRef !== accountingRef) throw new FlowError('invalid', 'the job is linked to an accounting invoice already');
-    const [invoice] = await tx.select({ id: invoices.id, status: invoices.status, contactId: invoices.contactId }).from(invoices)
+    const [invoice] = await tx.select({ id: invoices.id, status: invoices.status, contactId: invoices.contactId, origin: invoices.origin }).from(invoices)
       .where(and(eq(invoices.organisationId, organisationId), eq(invoices.id, invoiceId)));
     if (!invoice) throw notFound('invoice');
+    // A job's own invoice is one Flow made. An imported invoice lists the
+    // jobs that hold its accounting reference (recordAccountingEvidence).
+    if (isImported(invoice)) throw new FlowError('imported', 'that invoice came from the accounting system; the job is tied to it by its accounting reference');
     if (invoice.status === 'void') throw new FlowError('invalid', 'the invoice is void');
     const rejected = await rejectSuggestions(tx, obligation, { actor });
     // A job that waited for a person (no invoice found, or more than one fit)

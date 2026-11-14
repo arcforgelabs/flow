@@ -140,7 +140,7 @@ const ERROR_STATUS = {
   invalid: 400, organisation_required: 400, not_found: 404, not_draft: 409, not_issued: 409,
   never_issued: 409, was_issued: 409, not_ready: 409, live_check_unavailable: 409, conflict: 409,
   accounting_not_connected: 409, accounting_writes_off: 409, accounting_unavailable: 409, accounting_approved: 409, delete_instead: 409, void_in_accounting: 409,
-  not_overridable: 409, override_stale: 409,
+  not_overridable: 409, override_stale: 409, imported: 409,
   conflict: 409,
 };
 
