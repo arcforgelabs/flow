@@ -34,14 +34,55 @@ async function linkedXeroId(db, organisationId, invoiceId) {
   return links[0]?.xero_invoice_id ?? null;
 }
 
+// True when an earlier version of this Flow invoice went to another Xero
+// invoice that was approved, paid or voided there, or emailed: a customer may
+// have seen that version. Flow then keeps the invoice and its versions (it
+// voids the invoice), though the newest Xero invoice was only a draft.
+async function earlierVersionSeen(db, organisationId, invoiceId, xeroId) {
+  const { rows } = await db.execute(sql`
+    select 1 from xero_invoice_pushes p
+    left join xero_invoices x on x.organisation_id = p.organisation_id and x.xero_invoice_id = p.xero_invoice_id
+    where p.organisation_id = ${organisationId} and p.invoice_id = ${invoiceId}
+      and p.xero_invoice_id is not null and p.xero_invoice_id <> ${xeroId}
+      and (p.email_state = 'sent' or coalesce(x.status, p.xero_status) = any(${sql.param(['AUTHORISED', 'PAID', 'VOIDED'])}::text[]))
+    limit 1`);
+  return rows.length > 0;
+}
+
 // False only when this Flow invoice never reached Xero: no send was started
-// (no push row, not even one in flight) and no link was ever made. The core
-// then deletes it in Flow instead of voiding it.
+// (no push row, not even one in flight) and no link holds it. A released link
+// was a wrong pair, so it does not count. The core then deletes it in Flow
+// instead of voiding it.
 export async function everInXero(db, organisationId, invoiceId) {
   const { rows } = await db.execute(sql`
     select exists (select 1 from xero_invoice_pushes where organisation_id = ${organisationId} and invoice_id = ${invoiceId})
-      or exists (select 1 from xero_invoice_links where organisation_id = ${organisationId} and invoice_id = ${invoiceId}) as sent`);
+      or exists (select 1 from xero_invoice_links where organisation_id = ${organisationId} and invoice_id = ${invoiceId} and released_at is null) as sent`);
   return rows[0]?.sent === true;
+}
+
+// The core is removing a Flow invoice no customer saw: its Xero draft was
+// deleted, or it never reached Xero. Inside the core's transaction, its push
+// and link rows go with it, a released link too. Each pair stays as a row in
+// xero_invoice_link_history, with who made, released, deleted and removed
+// it. Flow's copy keeps the Xero row, and the job's history keeps the Xero
+// id. Answers { accountingRef }.
+export async function forgetXeroInvoice(tx, organisationId, invoiceId, { actor = null, reason = 'removed' } = {}) {
+  const accountingRef = await linkedXeroId(tx, organisationId, invoiceId);
+  await tx.execute(sql`
+    insert into xero_invoice_link_history (organisation_id, xero_invoice_id, invoice_id, invoice_number, matched_by, linked_by, linked_at,
+      released_by, released_at, deleted_by, deleted_at, removed_by, reason)
+    select l.organisation_id, l.xero_invoice_id, l.invoice_id, i.number, l.matched_by, l.linked_by, l.created_at,
+      l.released_by, l.released_at, l.deleted_by, l.deleted_at, ${actor}, ${reason}
+    from xero_invoice_links l join invoices i on i.organisation_id = l.organisation_id and i.id = l.invoice_id
+    where l.organisation_id = ${organisationId} and l.invoice_id = ${invoiceId}
+    union all
+    select p.organisation_id, p.xero_invoice_id, p.invoice_id, i.number, 'sent', p.pushed_by::text, p.first_dispatched_at,
+      null, null, p.deleted_by, p.deleted_at, ${actor}, ${reason}
+    from xero_invoice_pushes p join invoices i on i.organisation_id = p.organisation_id and i.id = p.invoice_id
+    where p.organisation_id = ${organisationId} and p.invoice_id = ${invoiceId}`);
+  await tx.execute(sql`delete from xero_invoice_links where organisation_id = ${organisationId} and invoice_id = ${invoiceId}`);
+  await tx.execute(sql`delete from xero_invoice_pushes where organisation_id = ${organisationId} and invoice_id = ${invoiceId}`);
+  return { accountingRef };
 }
 
 // Who deleted it, and the status Xero confirmed, on the push, the link and
@@ -92,13 +133,18 @@ export async function deleteXeroInvoice(db, runtime, { organisationId, invoiceId
     const { client } = await runtime.clientFor(db, organisationId);
     const live = await readLive(client, xeroId);
     const status = live?.Status ?? null;
+    // This Xero invoice was only a draft, but a customer may have seen an
+    // earlier version: the core then voids the Flow invoice, never removes it.
+    const seenBefore = async () => (await earlierVersionSeen(db, organisationId, invoiceId, xeroId) ? { customerSaw: true } : {});
     if (!live) {
       await recordDeletion(db, organisationId, invoiceId, xeroId, 'DELETED', actor);
-      return { state: 'gone', status: null };
+      return { state: 'gone', status: null, ...(await seenBefore()) };
     }
     if (GONE.has(status)) {
       await recordDeletion(db, organisationId, invoiceId, xeroId, status, actor);
-      return { state: 'gone', status };
+      // A void in Xero was approved first, so a customer may have seen it:
+      // Flow voids its invoice too. A deleted one was only ever a draft.
+      return status === 'VOIDED' ? { state: 'voided', status } : { state: 'gone', status, ...(await seenBefore()) };
     }
     if (APPROVED.has(status)) return { state: 'approved', status, message: APPROVED_MESSAGE };
     if (!DRAFTS.has(status)) return { state: 'unavailable', status };
@@ -109,6 +155,6 @@ export async function deleteXeroInvoice(db, runtime, { organisationId, invoiceId
       throw xeroError('xero_uncertain', 'Xero did not confirm the invoice was deleted. Nothing was changed in Flow.', { status: 502 });
     }
     await recordDeletion(db, organisationId, invoiceId, xeroId, 'DELETED', actor);
-    return { state: 'deleted', status: 'DELETED' };
+    return { state: 'deleted', status: 'DELETED', ...(await seenBefore()) };
   });
 }

@@ -196,13 +196,39 @@ export async function reviseInvoice(db, organisationId, invoiceId) {
   });
 }
 
-export async function voidInvoice(db, organisationId, invoiceId) {
+// Void is only for an invoice a customer has seen (owner rule, 14 November 2026).
+// With an accounting system, only that system sends invoices to customers:
+// Flow never voids there. An invoice that never reached it is deleted
+// (deleteDraft); one that did is voided in the accounting system, and Flow's
+// Void tab follows it. Without one, Flow sent the invoice itself, so Flow
+// voids it.
+export async function voidInvoice(db, organisationId, invoiceId, { accounting = null, actor = null } = {}) {
+  let unseen = false;
+  if (accounting) {
+    const current = await loadInvoice(db, organisationId, invoiceId);
+    if (current.status !== 'void' && current.issuedVersion > 0) {
+      if (!(await neverSent(accounting, organisationId, invoiceId))) {
+        throw new FlowError('void_in_accounting', `${current.number} is in ${accounting.name}. Void it in ${accounting.name}: Flow follows.`);
+      }
+      // An owner's override record keeps its invoice, so that one cannot be
+      // deleted: Flow voids it here, and the record stays.
+      if (!(await hasSendOverride(db, invoiceId))) {
+        throw new FlowError('delete_instead', `${current.number} never reached ${accounting.name}, so no customer saw it. Delete it instead.`);
+      }
+      unseen = true;
+    }
+  }
   return db.transaction(async (tx) => {
     const invoice = await loadInvoice(tx, organisationId, invoiceId, { lock: true });
     if (invoice.status === 'void') return invoice;
     if (invoice.issuedVersion === 0) throw new FlowError('never_issued', 'delete a draft that was never issued; do not void it');
+    if (unseen && !(await stillUnsent(accounting, organisationId, invoice, 'void'))) {
+      throw new FlowError('void_in_accounting', `${invoice.number} is in ${accounting.name}. Void it in ${accounting.name}: Flow follows.`);
+    }
     const [row] = await tx.update(invoices).set({ status: 'void', updatedAt: sql`now()` })
       .where(eq(invoices.id, invoice.id)).returning();
+    // No customer saw it, so its job is free again, as after Delete.
+    if (unseen) await freeJobs(tx, organisationId, row, actor);
     return row;
   });
 }
@@ -264,6 +290,17 @@ async function neverSent(accounting, organisationId, invoiceId) {
   return (await accounting.capabilities.everSent({ organisationId, invoiceId })) === false;
 }
 
+// Under the invoice's lock, before Flow treats it as never sent. A send that
+// is on its way stops the step: the worker took the invoice as issued and
+// will make it in the accounting system. A send that finished since the
+// caller's first check answers false.
+async function stillUnsent(accounting, organisationId, invoice, verb) {
+  if (invoice.sendState === 'queued') {
+    throw new FlowError('conflict', `${invoice.number} is on its way to ${accounting.name}. Wait for the send to finish, then ${verb} it.`);
+  }
+  return neverSent(accounting, organisationId, invoice.id);
+}
+
 // Same words as the Send gate (server/core/sending.js): writes that are off,
 // or a system that is not connected, stop before anything changes. An issued
 // invoice with no accounting delete answers accounting_unavailable.
@@ -284,28 +321,49 @@ async function deleteInAccounting(accounting, organisationId, invoiceId, actor) 
   if (answer?.state === 'approved') {
     throw new FlowError('accounting_approved', answer.message || 'Approved in the accounting system. Void it there first.');
   }
-  if (answer?.state === 'deleted' || answer?.state === 'gone') return answer;
+  if (['deleted', 'gone', 'voided'].includes(answer?.state)) return answer;
   throw new FlowError('accounting_unavailable', answer?.message || 'The accounting system cannot delete this invoice. Nothing was changed.');
 }
 
 // Removes a draft that was never issued, and frees its job. An issued or void
 // invoice that never reached the accounting system (a send that failed, or
-// one never sent) is removed too (removeUnsentInvoice). Any other issued
-// invoice is voided only after its accounting adapter deletes the draft
-// there, or reports it already gone. The issued versions stay. With no
-// accounting delete, or when the accounting invoice is approved or paid,
-// nothing in Flow changes.
+// one never sent) is removed too (removeUnsentInvoice); one of those that an
+// owner's override record holds is voided in Flow instead, with no accounting
+// call. Any other issued
+// invoice goes only after its accounting adapter deletes the draft there, or
+// reports it already gone: a draft no customer saw, so Flow removes its
+// invoice as well. When the accounting system says it was voided there (a
+// customer may have seen it), or that a customer saw an earlier version
+// (`customerSaw`), or an owner's override record holds it, Flow voids it and
+// the issued versions stay. With no accounting delete, or when
+// the accounting invoice is approved or paid, nothing in Flow changes.
 export async function deleteDraft(db, organisationId, invoiceId, { actor = null, accounting = null } = {}) {
   const current = await loadInvoice(db, organisationId, invoiceId);
-  if (current.issuedVersion > 0 && await neverSent(accounting, organisationId, invoiceId) && !(await hasSendOverride(db, invoiceId))) {
-    return db.transaction(async (tx) => {
-      const invoice = await loadInvoice(tx, organisationId, invoiceId, { lock: true });
-      if (invoice.sendState === 'queued') {
-        throw new FlowError('conflict', `${invoice.number} is on its way to ${accounting.name}. Wait for the send to finish, then delete it.`);
-      }
-      await removeUnsentInvoice(tx, organisationId, invoice, actor, { reason: 'never_sent' });
-      return { ...invoice, removed: true };
-    });
+  if (current.issuedVersion > 0 && await neverSent(accounting, organisationId, invoiceId)) {
+    const held = await hasSendOverride(db, invoiceId);
+    if (!held || current.status !== 'void') {
+      const forget = accounting.capabilities.forgetInvoice;
+      return db.transaction(async (tx) => {
+        const invoice = await loadInvoice(tx, organisationId, invoiceId, { lock: true });
+        if (!(await stillUnsent(accounting, organisationId, invoice, 'delete'))) {
+          throw new FlowError('conflict', `${invoice.number} reached ${accounting.name} while this ran. Delete it again.`);
+        }
+        // An owner's override record keeps its invoice: Flow voids it, the
+        // record stays, and the job is free again.
+        if (held) {
+          if (invoice.status === 'void') return invoice;
+          const [row] = await tx.update(invoices).set({ status: 'void', updatedAt: sql`now()` })
+            .where(eq(invoices.id, invoice.id)).returning();
+          await freeJobs(tx, organisationId, row, actor);
+          return row;
+        }
+        // The adapter's own rows for it (a released link) go first, and the
+        // adapter keeps its record of the pair.
+        if (typeof forget === 'function') await forget({ tx, organisationId, invoiceId: invoice.id, actor, reason: 'never_sent' });
+        await removeUnsentInvoice(tx, organisationId, invoice, actor, { reason: 'never_sent' });
+        return { ...invoice, removed: true };
+      });
+    }
   }
   if (current.status === 'void') throw new FlowError('conflict', 'a void invoice is final');
   if (current.status === 'draft' && current.issuedVersion === 0) {
@@ -327,12 +385,18 @@ export async function deleteDraft(db, organisationId, invoiceId, { actor = null,
   }
   // Read and delete outside the Flow transaction. A timeout or a refusal
   // throws here, and the invoice stays as it was. The next try reads again.
-  await deleteInAccounting(accounting, organisationId, invoiceId, actor);
+  const answer = await deleteInAccounting(accounting, organisationId, invoiceId, actor);
+  const forget = accounting.capabilities.forgetInvoice;
   return db.transaction(async (tx) => {
     const invoice = await loadInvoice(tx, organisationId, invoiceId, { lock: true });
     if (invoice.status === 'void') return invoice;
     if (invoice.issuedVersion === 0) {
       throw new FlowError('was_issued', 'an invoice that was issued cannot be deleted; void it');
+    }
+    if (answer.state !== 'voided' && !answer.customerSaw && typeof forget === 'function' && !(await hasSendOverride(tx, invoice.id))) {
+      const forgotten = await forget({ tx, organisationId, invoiceId: invoice.id, actor, reason: 'deleted_in_accounting' });
+      await removeUnsentInvoice(tx, organisationId, invoice, actor, { reason: 'deleted_in_accounting', accountingStatus: answer.status ?? null, accountingRef: forgotten?.accountingRef ?? null });
+      return { ...invoice, removed: true };
     }
     const [row] = await tx.update(invoices).set({ status: 'void', updatedAt: sql`now()` })
       .where(eq(invoices.id, invoice.id)).returning();

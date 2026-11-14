@@ -67,21 +67,25 @@ export function sentDifferences(sent, document, copy) {
 }
 
 // The finding for one invoice, or null when Flow and Xero agree.
-//   differs         Xero's copy no longer matches the version Flow sent
-//   voided_in_xero  Xero voided or deleted it; the Flow invoice is still issued
-//   voided_in_flow  Flow voided it; Xero's invoice is still live
+//   differs          Xero's copy no longer matches the version Flow sent
+//   deleted_in_xero  Xero deleted the draft (no customer saw it); the Flow
+//                    invoice is still issued: a person deletes it in Flow or
+//                    sends it again
+//   voided_in_flow   Flow voided it; Xero's invoice is still live
+// A void in Xero is no finding: Flow follows Xero, and the invoice shows in
+// the Void tab (void is only for what a customer saw, Samuel 14 November 2026).
 function findingFor(status) {
   if (!status.xero) return null;
   const live = !GONE.has(status.xero.status);
   if (status.flowStatus === 'void' && live) return 'voided_in_flow';
-  if (status.flowStatus === 'issued' && status.current && !live) return 'voided_in_xero';
+  if (status.flowStatus === 'issued' && status.current && status.xero.status === 'DELETED') return 'deleted_in_xero';
   if (live && status.differences.length) return 'differs';
   return null;
 }
 
 const MESSAGES = {
   differs: 'Xero no longer matches the invoice Flow sent.',
-  voided_in_xero: 'Xero voided or deleted this invoice. It is still issued in Flow.',
+  deleted_in_xero: 'Xero deleted this draft, so no customer saw it. Delete it in Flow, or send it again.',
   voided_in_flow: 'This invoice is void in Flow. Xero still holds it as a live invoice.',
 };
 
@@ -157,8 +161,8 @@ export async function accountingStatus(db, runtime, organisationId, invoiceIds =
 // The Invoices page tab of each issued Flow invoice, from Flow's copy of
 // Xero (no calls): draft (on its way, or a Xero DRAFT), approved (AUTHORISED
 // or part paid, not emailed to the customer), sent (the same, emailed), paid
-// (paid in full), void (voided or deleted in Xero), or pending (out of sync: a
-// person looks). Answers Map(invoiceId -> stage); the status rule
+// (paid in full), void (voided in Xero), or pending (out of sync, or a draft
+// Xero deleted: a person looks). Answers Map(invoiceId -> stage); the status rule
 // (server/core/invoice-status.js) turns it into a tab.
 export async function invoiceStages(db, runtime, organisationId, invoiceIds = null) {
   const statuses = await accountingStatus(db, runtime, organisationId, invoiceIds);
@@ -171,12 +175,14 @@ export async function invoiceStages(db, runtime, organisationId, invoiceIds = nu
 }
 
 // Approved (not paid in full) is `sent` once Xero emailed it to the
-// customer; paid in full is `paid`.
+// customer; paid in full is `paid`. Voided in Xero is `void`. A draft Xero
+// deleted never reached a customer, so it is not void: a person looks.
 export function stageOf(status) {
   if (status.finding) return 'pending';
   if (status.state === 'paid') return 'paid';
   if (['approved', 'part_paid'].includes(status.state)) return status.xero?.sentToContact ? 'sent' : 'approved';
-  if (['voided', 'deleted'].includes(status.state)) return 'void';
+  if (status.state === 'voided') return 'void';
+  if (status.state === 'deleted') return 'pending';
   return 'draft';
 }
 

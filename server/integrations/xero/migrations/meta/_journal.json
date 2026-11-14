@@ -120,6 +120,13 @@
       "when": 1792590000000,
       "tag": "0016_xero_copy_version",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1794630000000,
+      "tag": "0017_xero_link_history",
+      "breakpoints": true
     }
   ]
 }

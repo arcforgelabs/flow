@@ -3,7 +3,7 @@ import { sql } from 'drizzle-orm';
 import { listReview } from '../../core/review.js';
 import { guardAlerts } from '../call-guard.js';
 import { CONTACT_DIFFERS } from './contact-sync.js';
-import { deleteXeroInvoice, everInXero } from './delete-invoice.js';
+import { deleteXeroInvoice, everInXero, forgetXeroInvoice } from './delete-invoice.js';
 import { createCustomer } from './create-contact.js';
 import { checkDrafts, documentFacts, pushInvoice, pushInvoices } from './drafts.js';
 import { readConnection } from './connections.js';
@@ -21,7 +21,7 @@ import { readChangesFirst } from './webhooks.js';
 // XERO_MODE says which Xero it acts on. Its tables are created only while it
 // is on (docs/INTEGRATIONS.md).
 
-export const XERO_TABLES = Object.freeze(['xero_connections', 'xero_contacts', 'xero_items', 'xero_sync_runs', 'xero_invoice_pushes', 'xero_payment_cursors', 'xero_invoices', 'xero_credit_notes', 'xero_payments', 'xero_mirror_cursors', 'xero_call_guard', 'xero_calls', 'xero_webhook_events', 'xero_daily_checks', 'xero_invoice_links', 'xero_import_settings', 'xero_contact_sync']);
+export const XERO_TABLES = Object.freeze(['xero_connections', 'xero_contacts', 'xero_items', 'xero_sync_runs', 'xero_invoice_pushes', 'xero_payment_cursors', 'xero_invoices', 'xero_credit_notes', 'xero_payments', 'xero_mirror_cursors', 'xero_call_guard', 'xero_calls', 'xero_webhook_events', 'xero_daily_checks', 'xero_invoice_links', 'xero_import_settings', 'xero_contact_sync', 'xero_invoice_link_history']);
 
 // What an owner enters in Settings, Integrations (server/integrations/setup.js).
 // The refresh token's key comes from Flow's secrets key.
@@ -135,11 +135,15 @@ export function createXeroAdapter({ runtime: given = null } = {}) {
       // and version are the idempotency key.
       pushInvoice: ({ organisationId, invoiceId, pushedBy = null }) => pushInvoice(database, current(), { organisationId, invoiceId, pushedBy }),
       // Read the linked Xero invoice, and delete it only while it is a draft
-      // (delete-invoice.js). The core voids in Flow after deleted or gone.
+      // (delete-invoice.js). The core removes the Flow invoice after deleted
+      // or gone, and voids it after voided.
       deleteInvoice: ({ organisationId, invoiceId, actor = null }) => deleteXeroInvoice(database, current(), { organisationId, invoiceId, actor }),
       // Did this Flow invoice ever reach Xero (a push or a link)? From Flow's
       // tables, no Xero call (delete-invoice.js).
       everSent: ({ organisationId, invoiceId }) => everInXero(database, organisationId, invoiceId),
+      // Drop the push and link rows of a Flow invoice the core is removing,
+      // inside its transaction (delete-invoice.js).
+      forgetInvoice: ({ tx, organisationId, invoiceId, actor, reason }) => forgetXeroInvoice(tx, organisationId, invoiceId, { actor, reason }),
       // Several issued invoices, in batches of MAX_BATCH (drafts.js).
       pushInvoices: ({ organisationId, invoiceIds, pushedBy = null, accepted = null, mayWrite = null }) => pushInvoices(database, current(), { organisationId, invoiceIds, pushedBy, accepted, mayWrite }),
       // The Invoices page tab of each issued invoice (reconcile.js), from

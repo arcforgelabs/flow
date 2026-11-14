@@ -68,8 +68,9 @@ The result stays until the person closes it.
 An issued invoice whose accounting copy is a draft also has **Delete** (owner
 or admin), before Void. The confirm says `Also deletes the draft in Xero.`
 Flow reads that invoice live, deletes it there while it is still a draft,
-then voids it in Flow. The issued versions stay, and the job is freed the
-same way. Delete is hidden when the copy says Approved or Paid. With no
+then removes it in Flow: no customer saw a Xero draft, so it is not a void.
+The job is freed the same way, and its history keeps the number, total, who
+and the Xero id. Delete is hidden when the copy says Approved or Paid. With no
 accounting system, Delete of an issued invoice, including one opened to revise,
 is refused and the invoice stays as it is.
 
@@ -249,12 +250,37 @@ again. An owner or admin can also **Delete** it:
   decide. The job's history keeps the number, total, who deleted it and why
   (`draft_deleted`, `removed: true`). The number is not used again.
 - An invoice on its way (`send_state` queued) is refused until the send
-  finishes.
-- An invoice with an owner's override record (below) keeps the old rule.
-  The override is a record that stays, so its invoice is voided, never
-  deleted.
-- Every other issued invoice keeps the old rule: it is voided only after
-  Xero deletes its draft. What a customer was sent stays a record.
+  finishes (`409 conflict`), by **Delete** and by the void route. Flow checks
+  this with the invoice locked, and asks again there whether a send reached
+  Xero, so a send that finished meanwhile also stops the step.
+- An invoice with an owner's override record (below) is voided, never
+  deleted: the override is a record that stays. One that never reached Xero
+  is voided in Flow with no Xero call, by **Delete** or by
+  `POST /invoices/:id/void`, and its job is free again.
+- Every other issued invoice is removed only after Xero deletes its draft
+  (no customer saw it). When Xero already voided it, a customer may have
+  seen it, so Flow voids it too. The same when a customer may have seen an
+  earlier version (its Xero invoice was approved, paid, voided or emailed):
+  Flow voids the invoice and keeps every version. What a customer was sent
+  stays a record.
+
+## Void
+
+Void is only for an invoice a customer has seen (owner rule, 14 November 2026).
+
+- With Xero connected, only Xero sends invoices to customers. Flow has no
+  **Void** button then: `POST /invoices/:id/void` answers `delete_instead`
+  for an invoice that never reached Xero, and `void_in_accounting` for one
+  that did. Void it in Xero; Flow's Void tab follows Xero's copy. The one
+  exception is an invoice an owner's override record holds that never
+  reached Xero: it cannot be deleted, so Flow voids it.
+- A Xero draft deleted in Xero never reached a customer: its Flow invoice
+  goes to Pending (`deleted_in_xero`), where a person deletes it or sends it
+  again. It never shows as void.
+- Release of a wrong pair and **Use Xero invoice** never void: a copy that
+  never reached Xero is deleted; one that did is refused.
+- With no accounting system, Flow sends invoices itself, so it voids a sent
+  invoice (never deletes it) to take it back.
 - The database holds this rule too (migration 0039): it refuses to delete an
   issued invoice or its versions unless the transaction names that one
   invoice, which Flow does only after the check above.
@@ -369,7 +395,9 @@ Xero's `SentToContact` flag.
   accounting system is removed the same way ("A send that failed"); the
   answer's log names it. Any other invoice that was issued is deleted only when its
   accounting adapter deletes the draft there, or reports it already gone:
-  Flow then voids the invoice (the issued versions stay) and frees the job.
+  Flow then removes the invoice and frees the job (no customer saw it). When
+  the adapter says it was voided there, Flow voids it (the issued versions
+  stay).
   Approved or paid answers `accounting_approved` (`Approved in Xero. Void it in Xero first.` when the adapter is Xero) and changes nothing.
   Not connected or writes off answers `accounting_not_connected` or
   `accounting_writes_off`, and changes nothing. With no accounting system,

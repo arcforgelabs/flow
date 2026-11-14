@@ -286,7 +286,9 @@ The rules:
   Flow reads Xero's changes, deletes its own copy (it never reached Xero;
   [INVOICE_SENDING.md](INVOICE_SENDING.md#a-send-that-failed)), makes its
   Flow invoice from the Xero one and gives it to the job. A copy whose send
-  started (a push row, even in flight) or that has a link is voided instead.
+  started (a push row, even in flight) or that has a link is refused, never
+  voided (void is only for what a customer saw); only a copy an owner's
+  override holds is voided.
   The Xero invoice must be the same client's, and the copy must bill one job.
   A copy voided by hand earlier whose job still points at it is cleaned up
   the same way.
@@ -348,31 +350,45 @@ pushedBy })` sends one issued invoice and answers as one entry above.
 Delete on an issued Flow invoice whose Xero copy is still a draft also
 deletes that Xero draft (`deleteInvoice` on the integration port,
 `server/integrations/xero/delete-invoice.js`). The core stays free of Xero
-statuses. It calls the port and voids in Flow only after the answer is
-`deleted` or `gone`.
+statuses. It calls the port and removes the Flow invoice only after the
+answer is `deleted` or `gone` (a Xero draft: no customer saw it), or voids it
+after `voided`.
 
 Flow reads the Xero invoice live by its id first (the push, or the Import
 link). Then:
 
 | Xero status | What Flow does |
 | --- | --- |
-| `DRAFT` or `SUBMITTED` | `POST Invoices/{id}` with `Status: DELETED` only. After Xero confirms `DELETED`, Flow voids the invoice and frees its job. |
-| `DELETED` or `VOIDED` | No Xero write. Flow voids the invoice and frees its job. |
+| `DRAFT` or `SUBMITTED` | `POST Invoices/{id}` with `Status: DELETED` only. After Xero confirms `DELETED`, Flow removes the invoice and frees its job. |
+| `DELETED` | No Xero write. Flow removes the invoice and frees its job. |
+| `VOIDED` | No Xero write. A customer may have seen it, so Flow voids the invoice and frees its job. |
 | `AUTHORISED` or `PAID` | No Xero write, and nothing in Flow changes. The message is `Approved in Xero. Void it in Xero first.` Flow does not void it in Xero. |
 | No connection, or writes off | No Xero call, and nothing in Flow changes. Writes off uses the same message as Send. With no accounting system, an issued invoice answers `accounting_unavailable`. |
+
+One case keeps the invoice. An earlier version of the same Flow invoice went
+to another Xero invoice, and that one was approved, paid or voided in Xero,
+or emailed: a customer may have seen that version. The answer then carries
+`customerSaw: true`, and Flow voids the invoice. Every version and both
+push rows stay. Two versions that were only ever Xero drafts are removed
+together.
 
 A timeout or a 5xx leaves Flow unchanged. The next Delete reads Xero again
 and does not post a second delete when Xero already shows it gone.
 
-The push (`xero_invoice_pushes`) and the Import link (`xero_invoice_links`)
-record who deleted it and when, and the push stores Xero's status. Flow's
-copy of the invoice takes that status too. The job's ledger state becomes
-`deleted` (or `voided` when Xero had already voided it), and the Flow invoice
-link is cleared the same way as deleting a draft that was never issued. The
-issued versions stay. The invoice's History gains a Void line.
+Flow's copy of the Xero invoice takes Xero's status. The job's ledger state
+becomes `deleted` (or `voided` when Xero had already voided it). When Flow
+removes its invoice, the push and link rows go with it (`forgetInvoice` on
+the port, in the same transaction), and the job's history keeps the number,
+total, who and the Xero id (`draft_deleted`, `removed: true`,
+`reason: deleted_in_accounting`). Each pair stays as a row in
+`xero_invoice_link_history`: the Xero invoice, the Flow invoice's number,
+who made, released or deleted the pair, and who removed the Flow invoice
+and why. Rows there are only added. When Flow voids it, the push and link
+record who and when, and the issued versions stay.
 
 Xero migration `0011_xero_invoice_deleted` adds `deleted_by` and `deleted_at`
-on the push and the link. It is the Xero adapter's own migration.
+on the push and the link, and `0017_xero_link_history` adds the history
+table. They are the Xero adapter's own migrations.
 
 ## The mirror
 
@@ -576,7 +592,10 @@ Xero's copy of it. No Xero calls.
 | Finding | When |
 | --- | --- |
 | `differs` | Xero's copy no longer matches the version Flow sent: client, subtotal, GST, total, line count, item codes or date |
-| `voided_in_xero` | Xero voided or deleted the invoice; the Flow invoice is still issued |
+| `deleted_in_xero` | Xero deleted the draft (no customer saw it); the Flow invoice is still issued. It shows on Pending. |
+
+A void in Xero is no finding: Flow follows Xero, and the invoice shows in the
+Void tab.
 | `voided_in_flow` | Flow voided the invoice; Xero still holds it live |
 
 - Each finding is one review item (`invoice.accounting_differs`) with both

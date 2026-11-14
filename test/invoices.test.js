@@ -127,6 +127,20 @@ describe('invoices', { skip: skipWithoutDatabase }, () => {
     await assert.rejects(handle.pool.query("UPDATE invoices SET status = 'issued' WHERE id = $1", [draft.id]), /void invoice cannot change/);
   });
 
+  test('with an accounting system, Flow refuses to void: delete what never reached it, void the rest there', async () => {
+    const system = (everSent) => ({ name: 'Books', capabilities: { everSent: async () => everSent } });
+    const draft = await createDraftInvoice(db, lab.id, { contactId: practice.id, lines: [{ priceItemId: crown.id }] });
+    // A draft that was never issued is refused as before, whatever the system says.
+    await assert.rejects(voidInvoice(db, lab.id, draft.id, { accounting: system(false) }), { code: 'never_issued' });
+    await issueInvoice(db, lab.id, draft.id, { issuedBy: 'user:test', issueDate: '2026-10-16' });
+    await assert.rejects(voidInvoice(db, lab.id, draft.id, { accounting: system(false) }), { code: 'delete_instead', message: /never reached Books/ });
+    await assert.rejects(voidInvoice(db, lab.id, draft.id, { accounting: system(true) }), { code: 'void_in_accounting', message: /Void it in Books/ });
+    const [row] = (await handle.pool.query('SELECT status FROM invoices WHERE id = $1', [draft.id])).rows;
+    assert.equal(row.status, 'issued', 'a refused void changes nothing');
+    // With no accounting system Flow sent the invoice itself, so Flow voids it.
+    assert.equal((await voidInvoice(db, lab.id, draft.id)).status, 'void');
+  });
+
   test('a never-issued draft can be deleted; an issued invoice needs an accounting system', async () => {
     const draft = await createDraftInvoice(db, lab.id, { contactId: practice.id, lines: [{ priceItemId: crown.id }] });
     await deleteDraft(db, lab.id, draft.id);
@@ -180,15 +194,16 @@ describe('invoices', { skip: skipWithoutDatabase }, () => {
     await deleteDraft(db, lab.id, voided.id, { actor: 'person:test', accounting });
     await assert.rejects(getInvoice(db, lab.id, voided.id), { code: 'not_found' });
 
-    // An owner's override record stays, so its invoice is never deleted: the
-    // old rules apply (here: the test system is not connected, so nothing changes).
+    // An owner's override record stays, so its invoice is never deleted:
+    // Flow voids it, and the accounting system is not asked.
     const held = await createDraftInvoice(db, lab.id, { contactId: practice.id, lines: [{ priceItemId: crown.id }] });
     const heldIssued = await issueInvoice(db, lab.id, held.id, { issuedBy: 'user:test', issueDate: '2026-10-16' });
     const { rows: [person] } = await handle.pool.query("INSERT INTO people (email, role, status) VALUES ('override-owner@example.test', 'owner', 'active') RETURNING id");
     await handle.pool.query("INSERT INTO send_overrides (organisation_id, invoice_id, version, document_hash, problems, reason_code, person_id) VALUES ($1, $2, $3, 'sample', '[]', 'one_off', $4)",
       [lab.id, held.id, heldIssued.issuedVersion, person.id]);
-    await assert.rejects(deleteDraft(db, lab.id, held.id, { actor: 'person:test', accounting }), { code: 'accounting_not_connected' });
-    assert.equal((await getInvoice(db, lab.id, held.id)).status, 'issued');
+    assert.equal((await deleteDraft(db, lab.id, held.id, { actor: 'person:test', accounting })).status, 'void');
+    assert.equal((await getInvoice(db, lab.id, held.id)).status, 'void');
+    assert.equal((await handle.pool.query('SELECT 1 FROM send_overrides WHERE invoice_id = $1', [held.id])).rows.length, 1);
 
     // One the accounting system has (a send started, or a link) keeps the old rules.
     sent = true;
@@ -197,6 +212,43 @@ describe('invoices', { skip: skipWithoutDatabase }, () => {
     await voidInvoice(db, lab.id, real.id);
     await assert.rejects(deleteDraft(db, lab.id, real.id, { actor: 'person:test', accounting }), /void invoice is final/);
     assert.equal((await getInvoice(db, lab.id, real.id)).status, 'void');
+  });
+
+  test('a send on its way, or one that finished meanwhile, stops the void and the delete of an unsent invoice', async () => {
+    // What the accounting system answers to "did it ever reach you", in order.
+    const answers = [];
+    const accounting = { name: 'Books', capabilities: { everSent: async () => answers.shift() ?? false, deleteInvoice: async () => assert.fail('the accounting system is not asked to delete') } };
+    const job = await observeJob(db, lab.id, { sourceSystem: 'worksystem', sourceJobRef: 'JOB-RACE', caseRef: 'CASE-RACE', contactId: practice.id, shippedOn: '2026-10-16', jobDate: '2026-10-16', lines: [{ itemCode: 'CROWN', description: 'Crown', quantity: 1, unitAmountCents: 22000 }] });
+    const draft = await createDraftInvoice(db, lab.id, { contactId: practice.id, lines: [{ priceItemId: crown.id }] });
+    const issued = await issueInvoice(db, lab.id, draft.id, { issuedBy: 'user:test', issueDate: '2026-10-16' });
+    await linkJobToInvoice(db, lab.id, job.id, { invoiceId: draft.id, actor: 'person:test' });
+    // An owner's override: the one case Flow voids with an accounting system.
+    const { rows: [person] } = await handle.pool.query("INSERT INTO people (email, role, status) VALUES ('race-owner@example.test', 'owner', 'active') RETURNING id");
+    await handle.pool.query("INSERT INTO send_overrides (organisation_id, invoice_id, version, document_hash, problems, reason_code, person_id) VALUES ($1, $2, $3, 'sample', '[]', 'one_off', $4)",
+      [lab.id, draft.id, issued.issuedVersion, person.id]);
+    const run = { actor: 'person:test', accounting };
+
+    // The send waits in the queue: the worker may hold the invoice as issued.
+    await handle.pool.query("UPDATE invoices SET send_state = 'queued' WHERE id = $1", [draft.id]);
+    await assert.rejects(voidInvoice(db, lab.id, draft.id, run), { code: 'conflict', message: /on its way to Books\. Wait for the send to finish, then void it/ });
+    await assert.rejects(deleteDraft(db, lab.id, draft.id, run), { code: 'conflict', message: /then delete it/ });
+
+    // The send finished between the first check and the lock on the invoice.
+    await handle.pool.query("UPDATE invoices SET send_state = 'sent' WHERE id = $1", [draft.id]);
+    answers.push(false, true);
+    await assert.rejects(voidInvoice(db, lab.id, draft.id, run), { code: 'void_in_accounting' });
+    answers.push(false, true);
+    await assert.rejects(deleteDraft(db, lab.id, draft.id, run), { code: 'conflict', message: /reached Books while this ran/ });
+    assert.equal(answers.length, 0);
+    assert.equal((await getInvoice(db, lab.id, draft.id)).status, 'issued', 'nothing changed');
+    const [tied] = await db.select().from(billingObligations).where(eq(billingObligations.id, job.id));
+    assert.equal(tied.invoiceId, draft.id, 'the job keeps its invoice');
+
+    // The send failed and nothing reached the accounting system: Flow voids it.
+    await handle.pool.query("UPDATE invoices SET send_state = 'failed' WHERE id = $1", [draft.id]);
+    assert.equal((await voidInvoice(db, lab.id, draft.id, run)).status, 'void');
+    const [freed] = await db.select().from(billingObligations).where(eq(billingObligations.id, job.id));
+    assert.equal(freed.invoiceId, null);
   });
 
   test('an invoice goes only to a customer contact', async () => {

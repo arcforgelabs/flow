@@ -3,12 +3,12 @@ import { billingObligations, contacts, invoices, obligationEvents, priceItems } 
 import { payersOf } from '../../core/contacts.js';
 import { createContact } from '../../core/directory.js';
 import { FlowError } from '../../core/errors.js';
-import { createDraftInvoice, deleteUnsentRows, hasSendOverride, issueInvoice } from '../../core/invoices.js';
+import { createDraftInvoice, deleteUnsentRows, hasSendOverride, issueInvoice, removeUnsentInvoice } from '../../core/invoices.js';
 import { linkJobToInvoice, recordAccountingEvidence, releaseAccountingRef } from '../../core/ledger.js';
 import { normaliseName } from './catalogue.js';
 import { findInvoices } from './lookup.js';
 import { canFit, markRivals, scoreFit, sureFits } from './fit.js';
-import { everInXero } from './delete-invoice.js';
+import { everInXero, forgetXeroInvoice } from './delete-invoice.js';
 
 // The Import page (docs/XERO_IMPORT.md): each sales invoice in Flow's copy of
 // Xero against Flow's own invoices. Flow's own records are the ones it works
@@ -287,9 +287,15 @@ export async function useXeroInvoice(db, organisationId, invoiceId, { xeroInvoic
     if (jobs.length > 1) throw new FlowError('invalid', 'the Flow invoice bills more than one job; link each by hand');
     if (invoice.status === 'void' && !jobs.length) throw new FlowError('invalid', 'the void Flow invoice holds no job');
     // A copy that never reached Xero is deleted, not voided (Samuel, 13
-    // November 2026). A send in flight, a link, or an owner's override record
-    // keeps the old void.
-    const unsent = !(await everInXero(tx, organisationId, invoiceId)) && !(await hasSendOverride(tx, invoiceId));
+    // November 2026). Void is only for what a customer saw (14 November): a
+    // copy linked to another Xero invoice, or a send in flight, is refused.
+    // Only an owner's override record keeps the old void.
+    const override = await hasSendOverride(tx, invoiceId);
+    const reached = await everInXero(tx, organisationId, invoiceId);
+    if (reached && !override && invoice.status === 'issued') {
+      throw new FlowError('invalid', `Flow invoice ${invoice.number} is already in Xero (a link or a send). Release that link first if it is the wrong pair.`);
+    }
+    const unsent = !reached && !override;
     if (invoice.status === 'issued' && !unsent) await tx.update(invoices).set({ status: 'void', updatedAt: sql`now()` }).where(eq(invoices.id, invoiceId));
     for (const job of jobs) {
       await tx.update(billingObligations).set({ invoiceId: null, draftBasis: null, updatedAt: sql`now()` }).where(eq(billingObligations.id, job.id));
@@ -298,7 +304,11 @@ export async function useXeroInvoice(db, organisationId, invoiceId, { xeroInvoic
         evidence: { invoiceId, number: invoice.number, reason: 'used_xero_invoice', removed: unsent, xeroInvoiceId, xeroNumber: row.number ?? null },
       });
     }
-    if (unsent) await deleteUnsentRows(tx, organisationId, invoiceId);
+    if (unsent) {
+      // A released link of the copy goes with it; its record stays (forgetXeroInvoice).
+      await forgetXeroInvoice(tx, organisationId, invoiceId, { actor, reason: 'used_xero_invoice' });
+      await deleteUnsentRows(tx, organisationId, invoiceId);
+    }
     // The new Flow invoice stays with the client of the one it replaces.
     const made = await makeFrom(tx, organisationId, row, { jobId: jobs[0]?.id ?? null, contactId: invoice.contact_id, actor });
     return { [unsent ? 'removed' : 'voided']: { id: invoiceId, number: invoice.number }, invoice: { id: made.invoice.id, number: made.invoice.number }, xeroInvoiceId, jobId: jobs[0]?.id ?? null };
@@ -382,23 +392,54 @@ export async function matchXero(db, organisationId, { actor = 'automation:xero-i
 // A person releases a wrong pair: the Xero invoice is linked to a Flow invoice
 // that was voided, and is another job's bill. The link stays as a record
 // (released_by, released_at) and the Xero invoice can link again. Each job
-// that points at the Xero invoice and no longer holds a Flow invoice lets go
-// of it, and the matcher never pairs them again. A live Flow invoice keeps
-// its link: void it first.
+// that points at the Xero invoice lets go of it, and the matcher never pairs
+// them again. Nothing is voided: void is only for what a customer saw
+// (owner rule, 14 November 2026), and the Xero invoice stays as it is. A Flow
+// invoice made from this Xero invoice (matched_by 'made') was only Flow's
+// copy of it, so it is removed with its link, and the pair, who made it and
+// who released it stay as a record (xero_invoice_link_history); a copy an
+// owner's override holds, or a void copy, stays. Any other Flow invoice stays, now not in
+// Xero: a person sends it or deletes it. One Flow sent to this Xero invoice
+// is that invoice, so its link cannot be released.
 export async function releaseXeroLink(db, organisationId, xeroInvoiceId, { actor, reason }) {
   if (!actor) throw new FlowError('invalid', 'actor is required');
   if (!reason?.trim()) throw new FlowError('invalid', 'say why the link is released');
   return db.transaction(async (tx) => {
-    const { rows: [link] } = await tx.execute(sql`select l.invoice_id, i.number, i.status from xero_invoice_links l
+    const { rows: [link] } = await tx.execute(sql`select l.invoice_id, l.matched_by, i.number, i.status from xero_invoice_links l
       join invoices i on i.organisation_id = l.organisation_id and i.id = l.invoice_id
       where l.organisation_id = ${organisationId} and l.xero_invoice_id = ${xeroInvoiceId} and l.released_at is null for update of l`);
     if (!link) throw new FlowError('not_found', 'the Xero invoice has no link to release');
-    if (link.status !== 'void') throw new FlowError('invalid', `Flow invoice ${link.number ?? link.invoice_id} is ${link.status}: void it first`);
+    const { rows: pushed } = await tx.execute(sql`select 1 from xero_invoice_pushes
+      where organisation_id = ${organisationId} and invoice_id = ${link.invoice_id} and xero_invoice_id = ${xeroInvoiceId} limit 1`);
+    if (pushed.length) throw new FlowError('invalid', `Flow sent ${link.number ?? 'that invoice'} to Xero: it is this Xero invoice, so the link stays`);
     await tx.execute(sql`update xero_invoice_links set released_by = ${actor}, released_at = now()
       where organisation_id = ${organisationId} and xero_invoice_id = ${xeroInvoiceId}`);
+    const held = await tx.select({ id: billingObligations.id }).from(billingObligations)
+      .where(and(eq(billingObligations.organisationId, organisationId), eq(billingObligations.invoiceId, link.invoice_id)));
+    const copy = link.matched_by === 'made' && link.status === 'issued' && !(await hasSendOverride(tx, link.invoice_id))
+      && !(await everInXero(tx, organisationId, link.invoice_id));
+    let removed = false;
+    if (copy) {
+      const { rows: [invoice] } = await tx.execute(sql`select id, number, total_cents as "totalCents" from invoices
+        where organisation_id = ${organisationId} and id = ${link.invoice_id} for update`);
+      // The pair, who made it and who released it stay as a record
+      // (xero_invoice_link_history); the link row goes with the copy.
+      await forgetXeroInvoice(tx, organisationId, link.invoice_id, { actor, reason: reason.trim() });
+      await removeUnsentInvoice(tx, organisationId, invoice, actor, { reason: 'released_xero_copy', xeroInvoiceId });
+      removed = true;
+    }
+    // A job with no Flow invoice, or one still holding the Flow invoice that
+    // stays, lets go of this Xero invoice.
     const { rows: jobs } = await tx.execute(sql`select id from billing_obligations
-      where organisation_id = ${organisationId} and accounting_ref = ${xeroInvoiceId} and invoice_id is null`);
-    for (const job of jobs) await releaseAccountingRef(tx, organisationId, job.id, { accountingRef: xeroInvoiceId, system: 'xero', actor, reason });
-    return { xeroInvoiceId, invoice: { id: link.invoice_id, number: link.number }, jobs: jobs.map((j) => j.id) };
+      where organisation_id = ${organisationId} and accounting_ref = ${xeroInvoiceId}
+        and (invoice_id is null or invoice_id = ${link.invoice_id})`);
+    for (const job of jobs) {
+      await releaseAccountingRef(tx, organisationId, job.id, { accountingRef: xeroInvoiceId, system: 'xero', actor, reason, keepInvoice: !removed });
+    }
+    return {
+      xeroInvoiceId,
+      invoice: { id: link.invoice_id, number: link.number, removed },
+      jobs: [...new Set([...jobs.map((j) => j.id), ...(removed ? held.map((j) => j.id) : [])])],
+    };
   });
 }

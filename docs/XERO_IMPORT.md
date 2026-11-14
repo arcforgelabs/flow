@@ -119,17 +119,22 @@ the Flow invoice the import linked to it.
 ## Release a wrong pair
 
 A pair can be wrong: a Flow invoice was made from a Xero invoice that bills
-another job. To repair it:
+another job. Release the Xero invoice (`POST
+/api/xero/import/:xeroInvoiceId/release`, with a reason). Nothing is voided:
+void is only for what a customer saw, and the Xero invoice stays as it is.
 
-1. Void the Flow invoice, and free its job (`POST /api/invoicing/jobs/:id/free`).
-2. Release the Xero invoice (`POST /api/xero/import/:xeroInvoiceId/release`,
-   with a reason).
+- A Flow invoice made from that Xero invoice (`made`) was only Flow's copy,
+  so it is removed, and its job is freed. The pair stays as a record
+  (`xero_invoice_link_history`): who made it, who released it and why.
+- Any other Flow invoice stays, now not in Xero: a person sends or deletes
+  it. Its job keeps it, and lets go of the Xero invoice.
+- A Flow invoice Flow sent to that Xero invoice is that invoice, so release
+  is refused.
 
-Release frees the Xero invoice, so it can link to its own job. Each job that
-points at it, with no Flow invoice, lets go of it: the job is unchecked
-again, and the matcher never pairs the two again. The link row stays, with
-who released it and when, until a new link takes its place. A Flow invoice
-that is not void keeps its link.
+Each job that pointed at the Xero invoice is unchecked again, and the
+matcher never pairs the two again (`link_rejections`). The Xero invoice can
+then link to its own job. A released link no longer counts as "reached
+Xero".
 
 ## API
 
@@ -140,5 +145,5 @@ that is not void keeps its link.
 | PUT | `/api/xero/import/settings` | `organisationId`, `autoLink?`, `makeUnmatched?` |
 | POST | `/api/xero/import/:xeroInvoiceId/link` | `organisationId`, `invoiceId` |
 | POST | `/api/xero/import/:xeroInvoiceId/make` | `organisationId`, `jobId?` |
-| POST | `/api/xero/import/:xeroInvoiceId/release` (a wrong pair; the Flow invoice is void) | `organisationId`, `reason` |
+| POST | `/api/xero/import/:xeroInvoiceId/release` (a wrong pair; removes a made copy, voids nothing) | `organisationId`, `reason` |
 | POST | `/api/xero/import/:xeroInvoiceId/read` (the invoice as Xero has it now; refreshes the copy) | `organisationId` |

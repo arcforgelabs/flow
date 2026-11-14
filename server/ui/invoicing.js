@@ -372,7 +372,9 @@ export async function renderInvoiceList(main, ui) {
     apply.push({ icon: 'download', label: 'Export', iconOnly: true, title: 'Export CSV', run: () => exportCsv(rows) });
     if (numbered) apply.push({ icon: 'file-down', label: 'PDFs', iconOnly: true, title: 'Download PDFs', run: () => downloadPdfs(rows) });
     const danger = [];
-    const voidable = rows.filter((i) => i.status === 'issued');
+    // Void is only for what a customer saw: with an accounting system, it
+    // sends to customers and voids there; Flow follows (Samuel, 14 Nov 2026).
+    const voidable = to ? [] : rows.filter((i) => i.status === 'issued');
     if (['draft', 'awaiting_payment', 'paid'].includes(state.status) && context.canIssue && voidable.length) {
       danger.push({
         icon: 'ban', label: 'Void', iconOnly: true, tone: 'danger', title: 'Void',
@@ -1603,7 +1605,9 @@ function issuedView(invoice, ui, context, redraw) {
       h('p', {}, 'The number stays used. A void invoice cannot be used again.'),
       live ? h('p', { class: 'fx-problem' }, `Xero still holds it as ${xeroStatus.label.replace(/ in Xero$/, '').toLowerCase()}${xeroStatus.xero.number ? ` (${xeroStatus.xero.number})` : ''}. Flow does not change Xero: void it in Xero too.`) : null);
   };
-  const voidButton = invoice.status === 'issued' && context.canIssue ? h('button', {
+  // With an accounting system, Flow never voids: it voids there, and Flow
+  // follows. Flow voids only what it sent itself (no accounting system).
+  const voidButton = invoice.status === 'issued' && context.canIssue && !(invoice.sendsTo ?? context.sendsTo) ? h('button', {
     class: 'fx-btn fx-btn--ghost fx-btn--danger', type: 'button',
     onclick: () => act('void', `${invoice.number} is void.`, { title: `Void ${invoice.number}?`, body: voidBody(), confirm: 'Void', tone: 'danger' }),
   }, 'Void') : null;
