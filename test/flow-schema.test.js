@@ -13,7 +13,7 @@ import { adapters } from '../server/integrations/adapters.js';
 import { migrateAdapterSchema } from '../server/integrations/schema.js';
 import { freshDatabase, skipWithoutDatabase, testDatabaseUrl } from './support/db.js';
 import { explainObligation } from '../server/core/ledger.js';
-import { getInvoice } from '../server/core/invoices.js';
+import { getInvoice, issueInvoice, updateDraftInvoice, voidInvoice } from '../server/core/invoices.js';
 
 async function inSchema(pool, schema) {
   const { rows } = await pool.query(
@@ -192,6 +192,50 @@ test('the Xero pair history upgrade keeps every invoice, version, override, push
     assert.equal((await getInvoice(handle.db, organisation.id, invoice.id)).status, 'issued');
   } finally {
     rmSync(before.schema.migrationsFolder, { recursive: true, force: true });
+    await handle.close();
+  }
+});
+
+test('the invoice origin upgrade keeps every invoice, line and version of release 2026.11.19, and they still work', { skip: skipWithoutDatabase }, async () => {
+  const handle = await freshDatabase();
+  // Release 2026.11.19: the core up to migration 0040.
+  const before = coreBeforeMigration(41);
+  try {
+    await handle.pool.query('DROP SCHEMA IF EXISTS drizzle CASCADE; DROP SCHEMA IF EXISTS flow CASCADE; DROP SCHEMA public CASCADE; CREATE SCHEMA public;');
+    await migrateDatabase(handle.db, { folder: before });
+    const one = async (text, values) => (await handle.pool.query(text, values)).rows[0];
+    const organisation = await one("insert into organisations (name) values ('Sample Upgrade Lab') returning id");
+    const contact = await one("insert into contacts (organisation_id, kind, name) values ($1, 'customer', 'Sample Practice') returning id", [organisation.id]);
+    const draft = await one('insert into invoices (organisation_id, contact_id, subtotal_cents, tax_cents, total_cents) values ($1, $2, 10000, 1000, 11000) returning id', [organisation.id, contact.id]);
+    await handle.pool.query(`insert into invoice_lines (organisation_id, invoice_id, position, description, quantity, unit_amount_cents, tax_code, line_amount_cents, tax_cents)
+      values ($1, $2, 1, 'Sample crown', 1, 10000, 'GST', 10000, 1000)`, [organisation.id, draft.id]);
+    const issued = await one(`insert into invoices (organisation_id, contact_id, number, status, issued_version, issue_date, subtotal_cents, tax_cents, total_cents, send_state)
+      values ($1, $2, 'INV-0901', 'issued', 1, '2026-11-01', 10000, 1000, 11000, 'sent') returning id`, [organisation.id, contact.id]);
+    const gone = await one(`insert into invoices (organisation_id, contact_id, number, status, issued_version, issue_date, subtotal_cents, tax_cents, total_cents)
+      values ($1, $2, 'INV-0902', 'void', 1, '2026-11-01', 10000, 1000, 11000) returning id`, [organisation.id, contact.id]);
+    for (const id of [issued.id, gone.id]) {
+      await handle.pool.query(`insert into invoice_versions (organisation_id, invoice_id, version, issued_by, document) values ($1, $2, 1, 'user:sample', '{"totalCents": 11000}')`, [organisation.id, id]);
+    }
+    const tables = ['invoices', 'invoice_lines', 'invoice_versions'];
+    const stored = async () => Object.fromEntries(await Promise.all(tables.map(async (table) => [table,
+      (await handle.pool.query(`select to_jsonb(t) - 'origin' as data from ${table} t order by to_jsonb(t)::text`)).rows.map((row) => row.data)])));
+    const old = await stored();
+    assert.deepEqual(tables.map((table) => old[table].length), [3, 1, 2]);
+    assert.equal((await handle.pool.query("select 1 from information_schema.columns where table_schema = 'flow' and table_name = 'invoices' and column_name = 'origin'")).rowCount, 0);
+
+    await migrateDatabase(handle.db);
+    await migrateDatabase(handle.db);
+    assert.deepEqual(await stored(), old, 'the upgrade changes no existing value');
+    assert.deepEqual((await handle.pool.query('select distinct origin from invoices')).rows, [{ origin: 'flow' }], 'every invoice from before is Flow\'s own');
+    // The old invoices work as before: the draft changes and is issued, the
+    // issued one is voided, and the void one stays closed.
+    await updateDraftInvoice(handle.db, organisation.id, draft.id, { reference: 'Sample reference' });
+    await handle.pool.query('update invoice_lines set description = $2 where invoice_id = $1', [draft.id, 'Sample crown, shade A2']);
+    assert.equal((await issueInvoice(handle.db, organisation.id, draft.id, { issuedBy: 'user:sample', issueDate: '2026-11-14' })).status, 'issued');
+    assert.equal((await voidInvoice(handle.db, organisation.id, issued.id)).status, 'void');
+    await assert.rejects(handle.pool.query("update invoices set reference = 'late' where id = $1", [gone.id]), /void invoice cannot change/);
+  } finally {
+    rmSync(before, { recursive: true, force: true });
     await handle.close();
   }
 });

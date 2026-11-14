@@ -6,7 +6,7 @@ import {
   createDraftInvoice, deleteDraft, isImported, issueInvoice, mirrorWrite, removeImportedInvoice, reviseInvoice, updateDraftInvoice, voidInvoice,
 } from '../server/core/invoices.js';
 import { linkJobToInvoice, observeJob } from '../server/core/ledger.js';
-import { markReady, sendAgain } from '../server/core/sending.js';
+import { markNotReady, markReady, sendAgain, sendAllReady } from '../server/core/sending.js';
 import { invoices, invoiceVersions } from '../server/db/schema.js';
 import { linkXeroInvoice, releaseXeroLink, useXeroInvoice } from '../server/integrations/xero/links.js';
 import { request } from './support/clerk.js';
@@ -81,10 +81,17 @@ describe('an imported invoice', { skip: skipWithoutDatabase }, () => {
     await assert.rejects(voidInvoice(db, org(), issued.id), code);
     await assert.rejects(voidInvoice(db, org(), issued.id, { accounting: books }), code);
     await assert.rejects(deleteDraft(db, org(), issued.id, { actor: 'person:test', accounting: books }), code);
-    await assert.rejects(markReady(db, org(), [issued.id], { personId: null }), { code: 'not_draft' });
+    // Named with one of Flow's own drafts: the whole press is refused.
+    const own = await createDraftInvoice(db, org(), { contactId: practice.id, lines: [{ priceItemId: crown.id }] });
+    await assert.rejects(markReady(db, org(), [own.id, issued.id], { personId: null }), code);
+    await assert.rejects(markNotReady(db, org(), [issued.id]), code);
     await db.transaction((tx) => mirrorWrite(tx, issued.id, () => tx.update(invoices).set({ sendState: 'failed' }).where(eq(invoices.id, issued.id))));
     const sends = { name: 'Books', capabilities: { sendStatus: async () => ({ connected: true, writesAllowed: true }) } };
-    assert.deepEqual(await sendAgain(db, org(), { accounting: sends, personId: null, invoiceIds: [issued.id] }), { queued: 0 });
+    await assert.rejects(sendAgain(db, org(), { accounting: sends, personId: null, invoiceIds: [issued.id] }), code);
+    await assert.rejects(sendAllReady(db, org(), { accounting: sends, personId: null, issueDate: '2026-11-14', invoiceIds: [own.id, issued.id] }), code);
+    // With no invoice named, an imported one is in no list: nothing goes.
+    assert.deepEqual(await sendAgain(db, org(), { accounting: sends, personId: null }), { queued: 0 });
+    assert.equal((await stored(own.id)).readyAt, null);
     const after = await stored(issued.id);
     assert.deepEqual([after.status, after.reference, after.issuedVersion], ['issued', issued.reference, 1], 'nothing changed');
   });
@@ -172,7 +179,10 @@ describe('an imported invoice', { skip: skipWithoutDatabase }, () => {
   test('the API answers 409 imported', async () => {
     const issued = await imported();
     const call = (path, method = 'POST') => request(app, `/api/invoicing/invoices/${issued.id}${path}`, { token: lab.ownerToken, method, body: { organisationId: org() } });
-    for (const res of [await call('/void'), await call('/revise'), await call('', 'DELETE')]) {
+    const press = (path) => request(app, `/api/invoicing/invoices/${path}`, { token: lab.ownerToken, method: 'POST', body: { organisationId: org(), invoiceIds: [issued.id] } });
+    const answers = [await call('/void'), await call('/revise'), await call('', 'DELETE'),
+      await press('mark-ready'), await press('mark-not-ready'), await press('send-ready'), await press('send-again')];
+    for (const res of answers) {
       assert.equal(res.status, 409, JSON.stringify(res.body));
       assert.equal(res.body.code, 'imported');
     }
