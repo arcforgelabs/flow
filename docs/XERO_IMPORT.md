@@ -142,8 +142,9 @@ from. That system owns it:
 The database refuses what the code missed (core migration `0041`, Xero
 migration `0018`): a change or a delete of an imported invoice outside the
 import's own transaction, a job that takes one as its own invoice, a push row
-for one, any change of `origin`, and an imported invoice that is a draft (so
-its lines never change: lines change only under a draft). A contact merge
+or a send override for one (a new row, or a row moved to it), any change of
+`origin`, and an imported invoice that is a draft (so its lines never change:
+lines change only under a draft). A contact merge
 still moves an imported or void invoice to the kept contact.
 
 ### Dry run

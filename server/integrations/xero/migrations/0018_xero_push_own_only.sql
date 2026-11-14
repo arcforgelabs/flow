@@ -1,7 +1,7 @@
 -- Flow sends only its own invoices to Xero. An imported invoice (invoices.origin
 -- is not 'flow') came from the accounting system, so a push row for one is
 -- refused here, whatever code asked for it (docs/XERO_IMPORT.md, "An imported
--- invoice").
+-- invoice"): a new row, and a row moved to an imported invoice.
 CREATE OR REPLACE FUNCTION xero_push_own_invoice_only() RETURNS trigger LANGUAGE plpgsql
 SET search_path = flow, public AS $$
 BEGIN
@@ -14,5 +14,5 @@ END;
 $$;
 --> statement-breakpoint
 CREATE OR REPLACE TRIGGER xero_invoice_pushes_own_only
-  BEFORE INSERT ON "xero_invoice_pushes"
+  BEFORE INSERT OR UPDATE OF invoice_id ON "xero_invoice_pushes"
   FOR EACH ROW EXECUTE FUNCTION xero_push_own_invoice_only();

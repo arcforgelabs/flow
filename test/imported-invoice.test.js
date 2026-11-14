@@ -128,6 +128,24 @@ describe('an imported invoice', { skip: skipWithoutDatabase }, () => {
     await assert.rejects(db.execute(sql`update invoices set origin = 'xero' where id = ${own.id}`), refused(/origin of an invoice never changes/));
   });
 
+  test('the database refuses a send override for an imported invoice, and a push row or an override moved to one', async () => {
+    const issued = await imported();
+    const draft = await createDraftInvoice(db, org(), { contactId: practice.id, lines: [{ priceItemId: crown.id }] });
+    const own = await issueInvoice(db, org(), draft.id, { issuedBy: 'user:test', issueDate: '2026-11-14' });
+    await db.execute(sql`insert into xero_invoice_pushes (organisation_id, invoice_id, version, state, idempotency_key, request_body, body_hash)
+      values (${org()}, ${own.id}, 1, 'dispatching', 'key-own', '{}', 'hash')`);
+    await assert.rejects(db.execute(sql`update xero_invoice_pushes set invoice_id = ${issued.id} where invoice_id = ${own.id}`), refused(/never sent to Xero/));
+    const override = sql`(${org()}, ${own.id}, 1, 'sample', '[]', 'one_off', ${lab.owner.id})`;
+    await assert.rejects(db.execute(sql`insert into send_overrides (organisation_id, invoice_id, version, document_hash, problems, reason_code, person_id)
+      values (${org()}, ${issued.id}, 1, 'sample', '[]', 'one_off', ${lab.owner.id})`), refused(/has no send override/));
+    await db.execute(sql`insert into send_overrides (organisation_id, invoice_id, version, document_hash, problems, reason_code, person_id) values ${override}`);
+    // An override row never changes, so none moves to an imported invoice.
+    await assert.rejects(db.execute(sql`update send_overrides set invoice_id = ${issued.id} where invoice_id = ${own.id}`), refused(/append-only/));
+    // Nothing holds the imported invoice, so its import can still remove it.
+    await db.transaction((tx) => removeImportedInvoice(tx, org(), issued.id));
+    assert.equal(await stored(issued.id), undefined);
+  });
+
   test('the database keeps an imported invoice issued or void, and its lines closed', async () => {
     const notDraft = (error) => /invoices_imported_not_draft/.test(`${error.message} ${error.cause?.message ?? ''}`);
     await assert.rejects(db.execute(sql`insert into invoices (organisation_id, contact_id, origin, status) values (${org()}, ${practice.id}, 'xero', 'draft')`), notDraft);

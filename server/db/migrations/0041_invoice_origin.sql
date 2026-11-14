@@ -100,3 +100,22 @@ $$;
 CREATE OR REPLACE TRIGGER billing_obligations_invoice_is_own
   BEFORE INSERT OR UPDATE OF invoice_id ON flow.billing_obligations
   FOR EACH ROW EXECUTE FUNCTION flow.flow_job_invoice_is_own();
+--> statement-breakpoint
+-- An override is an owner's yes to a send by Flow. An imported invoice is
+-- never sent by Flow, and an override row stays for ever (migration 0037), so
+-- it would keep the import from removing its copy. A row for one is refused.
+-- No row moves to one: an override row never changes.
+CREATE OR REPLACE FUNCTION flow.flow_override_invoice_is_own() RETURNS trigger LANGUAGE plpgsql
+SET search_path = flow, public AS $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM invoices WHERE id = NEW.invoice_id AND origin <> 'flow') THEN
+    RAISE EXCEPTION 'flow: an imported invoice is never sent by Flow, so it has no send override'
+      USING ERRCODE = 'restrict_violation';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+--> statement-breakpoint
+CREATE OR REPLACE TRIGGER send_overrides_invoice_is_own
+  BEFORE INSERT ON flow.send_overrides
+  FOR EACH ROW EXECUTE FUNCTION flow.flow_override_invoice_is_own();
