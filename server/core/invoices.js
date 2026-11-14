@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, ne, sql } from 'drizzle-orm';
 import { billingObligations, contacts, invoiceLines, invoices, invoiceVersions, invoicingSettings, obligationEvents, organisations, priceItems } from '../db/schema.js';
 import { FlowError, notFound } from './errors.js';
 import { invoiceTotals, lineTotals } from './money.js';
@@ -457,9 +457,44 @@ export async function deleteDraft(db, organisationId, invoiceId, { actor = null,
 
 export async function getInvoice(db, organisationId, invoiceId) {
   const invoice = await loadInvoice(db, organisationId, invoiceId);
+  if (isImported(invoice)) return { ...invoice, lines: await importedLines(db, invoice) };
   const lines = await db.select().from(invoiceLines)
     .where(eq(invoiceLines.invoiceId, invoice.id)).orderBy(asc(invoiceLines.position));
   return { ...invoice, lines };
+}
+
+// The accounting reference of each imported invoice: Map(invoiceId -> ref),
+// from the source its issued version's document names. It is in the core's
+// own tables, so a job stays tied to an imported invoice, and an invoice no
+// job holds keeps its built job, when the accounting adapter is off.
+export async function importedRefs(db, organisationId, invoiceIds = null) {
+  if (invoiceIds && !invoiceIds.length) return new Map();
+  const rows = await db.select({ id: invoices.id, ref: sql`${invoiceVersions.document}->'source'->>'invoiceId'` }).from(invoices)
+    .innerJoin(invoiceVersions, and(eq(invoiceVersions.invoiceId, invoices.id), eq(invoiceVersions.version, invoices.issuedVersion)))
+    .where(and(eq(invoices.organisationId, organisationId), ne(invoices.origin, 'flow'), invoiceIds ? inArray(invoices.id, invoiceIds) : undefined));
+  return new Map(rows.filter((r) => r.ref).map((r) => [r.id, r.ref]));
+}
+
+// An imported invoice has no rows in Flow's line table: its lines are the
+// accounting document's, as its newest version holds them. A quantity or a
+// unit price can be null or a part number, as the accounting system gave it.
+async function importedLines(db, invoice) {
+  const [row] = await db.select({ document: invoiceVersions.document }).from(invoiceVersions)
+    .where(and(eq(invoiceVersions.invoiceId, invoice.id), eq(invoiceVersions.version, invoice.issuedVersion)));
+  return (row?.document?.lines ?? []).map((l, index) => ({
+    position: l.position ?? index + 1,
+    priceItemId: null,
+    itemCode: l.itemCode ?? null,
+    description: l.description ?? '',
+    quantity: l.quantity ?? null,
+    unitAmountCents: l.unitAmountCents ?? null,
+    taxCode: l.taxCode ?? 'GST_FREE',
+    taxType: l.taxType ?? null,
+    discountRate: l.discountRate ?? null,
+    accountCode: l.accountCode ?? null,
+    lineAmountCents: l.lineAmountCents ?? 0,
+    taxCents: l.taxCents ?? 0,
+  }));
 }
 
 export async function listInvoiceVersions(db, organisationId, invoiceId) {

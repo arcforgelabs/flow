@@ -1253,6 +1253,10 @@ th:hover > .fx-th-grip::after { background: var(--t-brd-hi); }
   /* A short number (FL-0001) shows whole; the status pill is compact beside it. */
   .fx-record .fx-ph__text .fx-status { flex: none; padding-inline: 8px; font-size: 12px; }
   .fx-record .fx-ph__text .fx-status::before { display: none; }
+  /* The bar has room for the number and one status. A second mark (Imported)
+     would cut the number, so it is not in the bar: the Linked card names
+     the accounting system's invoice. */
+  .fx-record .fx-ph__text .fx-status[data-mark] { display: none; }
   .fx-record__end { display: flex; flex: none; align-items: center; }
   .fx-record__foot:not([hidden]) {
     display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: 5; gap: 8px;

@@ -136,6 +136,16 @@ from. That system owns it:
   it. It is never the job's own invoice (`invoice_id`), so several jobs can
   share one accounting invoice and the import changes no job.
   The Reconcile page (jobs against Flow's own invoices) never offers it.
+- The Invoices page shows it in its tab, in its place by its own date (an
+  invoice Flow made keeps its place by the time Flow made it), with
+  an "Imported" mark. On a phone the bar shows the number and the status
+  only, so the number is never cut; the Linked card names the Xero invoice.
+  Its lines are the accounting document's (a line can have no quantity or
+  unit price). The page offers no Send, Revise, Void or
+  Delete. The Linked card shows the Xero invoice and each job tied to it
+  (`tiedJobs`). The reference is in the invoice's own document
+  (`source.invoiceId`; `importedRefs`, `server/core/invoices.js`), so the
+  jobs stay on the page when the Xero adapter is off.
 - Only the import writes it (`mirrorWrite`) or removes it
   (`removeImportedInvoice`, `server/core/invoices.js`). Removing it calls no
   accounting system: it was only Flow's copy.
@@ -235,6 +245,30 @@ the Paid tab with 2,800 invoices answers in under 0.3 seconds
 
 Not in place yet: a page for the batches (an agent or a script calls the
 routes), and the change of earlier made invoices to their Xero numbers.
+
+### A job for every Xero invoice
+
+Every imported invoice has a job (`server/core/built-jobs.js`):
+
+- A job from the work system that holds the invoice's accounting reference
+  is its job. The invoice page lists each one.
+- An imported invoice that no such job holds has a built job: Flow builds it
+  from the invoice on each read. It is not stored, so Flow never holds two
+  jobs for the same work. When a work system's job takes the reference, the
+  built job is gone and that job answers.
+
+`GET /api/invoicing/jobs?history=include` lists the built jobs after the
+stored ones, with `built: true` and `counts.built`. `built=only` lists only
+them. `offset` pages through the list. A built job has the shape of a
+stored job: its `id` and `accountingRef` are the Xero invoice id,
+`importedInvoiceId` is the Flow invoice, and its `view` is `paid`,
+`invoiced` (awaiting payment) or `held` (voided in Xero). It is past work,
+so the Jobs board does not show it. It is read only: a job route that
+writes answers `404` for it.
+
+The built jobs do not need the Xero adapter: the reference and the lines are
+in the invoice's own document. With the adapter off, Flow cannot read if an
+invoice is paid, so a built job that is not void reads as `invoiced`.
 
 ### Reconcile cover
 

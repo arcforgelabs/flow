@@ -7,7 +7,7 @@ import { FlowError } from '../core/errors.js';
 import { listReview } from '../core/review.js';
 import { createActionGuard } from '../integrations/call-guard.js';
 import {
-  createDraftInvoice, deleteDraft, getInvoice, issueInvoice, listInvoiceVersions, reviseInvoice, updateDraftInvoice, voidInvoice,
+  createDraftInvoice, deleteDraft, getInvoice, importedRefs, isImported, issueInvoice, listInvoiceVersions, reviseInvoice, updateDraftInvoice, voidInvoice,
 } from '../core/invoices.js';
 import { listAutomations, saveAutomation, workStatuses } from '../core/automations.js';
 import {
@@ -21,6 +21,7 @@ import {
   saveCustomerBilling, saveInvoicingSettings, sendModeFor, sendModeSummary,
 } from '../core/invoicing-rules.js';
 import { boardJobs, describeObligations } from '../core/job-board.js';
+import { builtJobs } from '../core/built-jobs.js';
 import { readBeforeAct } from '../core/read-before-act.js';
 import { invoiceMatchDetail, jobMatchDetail, listReconcile } from '../core/job-match.js';
 import { jobReference } from '../core/references.js';
@@ -73,9 +74,12 @@ import {
 //                                     Frees its job, and the lab's rules then decide.
 //   GET   /contacts?q=&limit=         customers, by name (hidden=true: the contacts that are not clients)
 //   GET   /price-items?q=             the price list, by code
-//   GET   /jobs?view=&limit=          billable jobs (the obligation ledger), with counts by view;
+//   GET   /jobs?view=&limit=&offset=  billable jobs (the obligation ledger), with counts by view;
 //                                     a job with no invoice lists the invoicing rules it waits on;
-//                                     a job with an invoice has its Invoices page view and problems
+//                                     a job with an invoice has its Invoices page view and problems.
+//                                     history=include adds the held history jobs and, after them,
+//                                     a job built from each imported invoice no job is tied to
+//                                     (`built: true`, server/core/built-jobs.js); built=only lists those
 //   GET   /board                      the Jobs board: the work system's jobs by its own statuses,
 //                                     each with its billing obligation (server/core/job-board.js)
 //   GET   /settings                  the invoicing settings (server/core/invoicing-rules.js)
@@ -305,6 +309,23 @@ async function jobsByInvoice(db, organisationId, invoiceIds) {
   return new Map(rows.map((o) => [o.invoiceId, jobOf(o)]));
 }
 
+// The jobs tied to imported invoices: Map(invoiceId -> [job], oldest first).
+// A job holds an imported invoice by its accounting reference, never as its
+// own invoice, so several jobs can share one and the import changes no job.
+async function tiedJobs(db, organisationId, rows) {
+  const ids = rows.filter(isImported).map((r) => r.id);
+  if (!ids.length) return new Map();
+  const refOf = await importedRefs(db, organisationId, ids);
+  const refs = [...new Set(refOf.values())];
+  if (!refs.length) return new Map();
+  const found = await db.select().from(billingObligations)
+    .where(and(eq(billingObligations.organisationId, organisationId), inArray(billingObligations.accountingRef, refs)))
+    .orderBy(asc(billingObligations.jobDate), asc(billingObligations.createdAt));
+  const byRef = new Map();
+  for (const o of found) byRef.set(o.accountingRef, [...(byRef.get(o.accountingRef) ?? []), jobOf(o)]);
+  return new Map([...refOf].filter(([, ref]) => byRef.has(ref)).map(([id, ref]) => [id, byRef.get(ref)]));
+}
+
 // The job changed after its invoice was made (ledger.js, jobChangeFor): what
 // changed, with customer names, and the work system's link to the job.
 async function jobChangeDetail(db, organisationId, invoiceId, work) {
@@ -394,10 +415,16 @@ async function invoiceDetail(db, organisationId, invoiceId, accounting = null, w
     jobChangeDetail(db, organisationId, invoiceId, work),
   ]);
   const viewed = await invoiceView(db, organisationId, invoice, { accounting });
+  const tied = (await tiedJobs(db, organisationId, [invoice])).get(invoiceId) ?? [];
   return {
     jobChange,
     ...invoice,
     ...viewed,
+    // The accounting system owns an imported invoice: Flow shows it, and
+    // every route that changes it answers 409 imported.
+    imported: isImported(invoice),
+    // Every job tied to an imported invoice by its accounting reference.
+    tiedJobs: tied.map((job) => withLink(job, work)),
     tab: await tabOfInvoice(db, organisationId, invoice, viewed.view, accounting),
     // Where a draft goes when it is sent, and how: this customer's send mode.
     sendsTo: accounting?.name ?? null,
@@ -405,7 +432,7 @@ async function invoiceDetail(db, organisationId, invoiceId, accounting = null, w
       ? { mode: await sendModeFor(db, organisationId, invoice.contactId), otherCustomers: 0, ...(await accounting.capabilities.sendStatus({ organisationId })) }
       : null,
     contact: contact ?? null,
-    job: withLink(jobs.get(invoiceId) ?? null, work),
+    job: withLink(jobs.get(invoiceId) ?? tied[0] ?? null, work),
     // Lines this invoice has and its job in the work system does not (a
     // rule's added shipping, for example). Flow cannot write lines to the
     // work system, so the page shows the gap until the work system has them.
@@ -519,14 +546,18 @@ export function createInvoicingRouter({
     // First the columns the filter and sort read, for every row; then the
     // whole rows of the one page. A job column and a custom field read the
     // invoice's job, so those values are on every row before the page is cut.
+    // Newest first. An invoice Flow made keeps its place by the time Flow
+    // made it. An imported invoice was issued long before Flow copied it, so
+    // it takes its place by its own date.
     const lightRows = await db.select({
       id: invoices.id, number: invoices.number, reference: invoices.reference, issueDate: invoices.issueDate,
-      dueDate: invoices.dueDate, createdAt: invoices.createdAt, totalCents: invoices.totalCents, contactName: contacts.name,
+      dueDate: invoices.dueDate, createdAt: invoices.createdAt, totalCents: invoices.totalCents, contactName: contacts.name, origin: invoices.origin,
     }).from(invoices)
       .leftJoin(contacts, eq(contacts.id, invoices.contactId))
       .where(and(...where))
-      .orderBy(desc(invoices.createdAt), desc(invoices.id));
+      .orderBy(sql`coalesce(case when ${invoices.origin} <> 'flow' then ${invoices.issueDate}::timestamptz end, ${invoices.createdAt}) desc`, desc(invoices.createdAt), desc(invoices.id));
     const jobs = await jobsByInvoice(db, organisationId, lightRows.map((r) => r.id));
+    for (const [id, tied] of await tiedJobs(db, organisationId, lightRows)) jobs.set(id, tied[0]);
     const customOn = filterRows(view).some((f) => fieldIdOf(f.field));
     const [fieldDefs, fieldValues] = customOn
       ? await Promise.all([
@@ -568,6 +599,7 @@ export function createInvoicingRouter({
       invoices: rows.map(({ invoice, contactName }) => ({
         ...invoice,
         contactName,
+        imported: isImported(invoice),
         job: withLink(jobs.get(invoice.id) ?? null, systems),
         tab: tabs.tabOf.get(invoice.id) ?? null,
         // Awaiting payment: the accounting system emailed it to the customer.
@@ -815,16 +847,24 @@ export function createInvoicingRouter({
     const view = text(req.query.view);
     if (view && !VIEWS.includes(view)) throw invalid(`view must be one of ${VIEWS.join(', ')}`);
     const limit = limitOf(req.query.limit, 200, 500);
+    const offset = req.query.offset === undefined ? 0 : Number(text(req.query.offset));
+    if (!Number.isInteger(offset) || offset < 0) throw invalid('offset must be a whole number, 0 or more');
+    const builtOnly = req.query.built === 'only';
     const listedAll = await listObligations(db, organisationId, { accounting: Boolean(liveCheckFor(organisationId)) });
     // Held history jobs (core/history.js) are left out unless asked for: they
-    // are past work, listed in the history import's own reconciliation.
-    const withHistory = req.query.history === 'include';
-    const all = withHistory ? listedAll : listedAll.filter((entry) => !isHistoryHeld(entry.obligation));
+    // are past work, listed in the history import's own reconciliation. So
+    // are the jobs Flow builds from imported invoices (core/built-jobs.js).
+    const withHistory = req.query.history === 'include' || builtOnly;
+    const built = withHistory ? await builtJobs(db, organisationId, { accounting: accounting() }) : [];
+    const stored = builtOnly ? [] : withHistory ? listedAll : listedAll.filter((entry) => !isHistoryHeld(entry.obligation));
+    const all = [...stored, ...built.map((job) => ({ built: job, view: job.view }))];
     const counts = Object.fromEntries(VIEWS.map((v) => [v, 0]));
     counts.history = listedAll.length - listedAll.filter((entry) => !isHistoryHeld(entry.obligation)).length;
+    if (withHistory) counts.built = built.length;
     for (const entry of all) counts[entry.view] += 1;
-    const listed = (view ? all.filter((entry) => entry.view === view) : all).slice(0, limit);
-    res.json({ ok: true, jobs: await describeObligations(db, organisationId, listed, { accounting: accounting() }), counts });
+    const listed = (view ? all.filter((entry) => entry.view === view) : all).slice(offset, offset + limit);
+    const described = await describeObligations(db, organisationId, listed.filter((entry) => !entry.built), { accounting: accounting() });
+    res.json({ ok: true, jobs: [...described, ...listed.filter((entry) => entry.built).map((entry) => entry.built)], counts });
   }));
 
   // The Jobs board: the work system's jobs, by its own statuses, each with

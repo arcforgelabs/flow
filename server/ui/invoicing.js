@@ -374,7 +374,8 @@ export async function renderInvoiceList(main, ui) {
     const danger = [];
     // Void is only for what a customer saw: with an accounting system, it
     // sends to customers and voids there; Flow follows (Samuel, 14 Nov 2026).
-    const voidable = to ? [] : rows.filter((i) => i.status === 'issued');
+    // An imported invoice belongs to its accounting system: no Void, no Delete.
+    const voidable = to ? [] : rows.filter((i) => i.status === 'issued' && !i.imported);
     if (['draft', 'awaiting_payment', 'paid'].includes(state.status) && context.canIssue && voidable.length) {
       danger.push({
         icon: 'ban', label: 'Void', iconOnly: true, tone: 'danger', title: 'Void',
@@ -388,10 +389,10 @@ export async function renderInvoiceList(main, ui) {
     // (a send that failed) is deleted too, never voided. A mix runs every
     // ticked row and reports each one.
     const fresh = rows.filter((i) => i.status === 'draft' && i.issuedVersion === 0);
-    const issuedXero = rows.filter((i) => i.status === 'issued' && xeroById.has(i.id));
+    const issuedXero = rows.filter((i) => i.status === 'issued' && !i.imported && xeroById.has(i.id));
     const xeroDraft = issuedXero.filter((i) => xeroById.get(i.id)?.state === 'draft');
     const xeroApproved = issuedXero.filter((i) => ['approved', 'part_paid', 'paid'].includes(xeroById.get(i.id)?.state));
-    const notSent = rows.filter((i) => i.issuedVersion > 0 && i.status !== 'draft' && i.sendState !== 'queued' && xeroById.get(i.id)?.state === 'not_sent');
+    const notSent = rows.filter((i) => i.issuedVersion > 0 && !i.imported && i.status !== 'draft' && i.sendState !== 'queued' && xeroById.get(i.id)?.state === 'not_sent');
     const deletable = [...fresh, ...xeroDraft, ...xeroApproved, ...notSent];
     const onDraftTabs = ['pending', 'ready', 'non_chargeable'].includes(state.status) && fresh.length;
     if (context.canIssue && (onDraftTabs || xeroDraft.length || notSent.length)) {
@@ -934,10 +935,13 @@ function linkedCard(ui, invoice, accountingStatus = null) {
     state ? h('span', { class: 'fx-status', 'data-tone': tone ?? 'mute' }, state) : null,
     none ? h('span', { class: 'fx-dim' }, none) : null,
     url ? h('a', { class: 'fx-linked__open', href: url, target: '_blank', rel: 'noopener', title: `Open in ${system.name}` }, 'Open ↗') : null);
-  const rows = systems.map((system) => {
+  // An imported invoice can hold several jobs: one row for each.
+  const jobs = invoice?.tiedJobs?.length ? invoice.tiedJobs : job ? [job] : [];
+  const rows = systems.flatMap((system) => {
     if (system.kind === 'work') {
-      return job?.sourceSystem === system.id
-        ? row(system, { tone: 'success', ref: jobRef(job), url: job.link?.url ?? null })
+      const linked = jobs.filter((j) => j.sourceSystem === system.id);
+      return linked.length
+        ? linked.map((j) => row(system, { tone: 'success', ref: jobRef(j), url: j.link?.url ?? null }))
         : row(system, { none: 'No job linked' });
     }
     const status = accountingStatus;
@@ -1573,7 +1577,10 @@ function issuedView(invoice, ui, context, redraw) {
   const xeroHost = h('div');
   const linkedHost = h('div', {}, linkedCard(ui, invoice) ?? '');
   let xeroStatus = null;
-  const send = invoice.status === 'issued' && context.canIssue ? sendToXero(invoice, ui, context) : null;
+  // An imported invoice belongs to its accounting system: Flow shows it, and
+  // offers no Send, Revise, Void or Delete (each would answer 409 imported).
+  const own = !invoice.imported;
+  const send = own && invoice.status === 'issued' && context.canIssue ? sendToXero(invoice, ui, context) : null;
   let actionBar = null;
   let deleteButton = null;
   let recordSync = () => {};
@@ -1586,7 +1593,7 @@ function issuedView(invoice, ui, context, redraw) {
     // Delete while Flow's copy says Draft, or when the invoice never reached
     // Xero (issued or void; a send that failed). Approved and paid stay.
     const notSent = invoice.sendState !== 'queued' && xeroStatus?.state === 'not_sent';
-    const canDelete = context.canIssue && ((invoice.status === 'issued' && xeroStatus?.state === 'draft') || notSent);
+    const canDelete = own && context.canIssue && ((invoice.status === 'issued' && xeroStatus?.state === 'draft') || notSent);
     const remove = actionBar?.querySelector('[data-delete]');
     if (canDelete && !remove && actionBar) {
       deleteButton = deleteControl(ui, invoice, { xeroDraft: !notSent, notSent });
@@ -1607,11 +1614,11 @@ function issuedView(invoice, ui, context, redraw) {
   };
   // With an accounting system, Flow never voids: it voids there, and Flow
   // follows. Flow voids only what it sent itself (no accounting system).
-  const voidButton = invoice.status === 'issued' && context.canIssue && !(invoice.sendsTo ?? context.sendsTo) ? h('button', {
+  const voidButton = own && invoice.status === 'issued' && context.canIssue && !(invoice.sendsTo ?? context.sendsTo) ? h('button', {
     class: 'fx-btn fx-btn--ghost fx-btn--danger', type: 'button',
     onclick: () => act('void', `${invoice.number} is void.`, { title: `Void ${invoice.number}?`, body: voidBody(), confirm: 'Void', tone: 'danger' }),
   }, 'Void') : null;
-  const reviseButton = invoice.status === 'issued' && context.canIssue
+  const reviseButton = own && invoice.status === 'issued' && context.canIssue
     ? h('button', { class: 'fx-btn', type: 'button', onclick: () => act('revise', `${invoice.number} is a draft again.`) }, 'Revise') : null;
   const preview = previewButton(ui, invoice.id);
   actionBar = h('div', { class: 'fx-ph__actions' }, [voidButton, reviseButton, preview, send].filter(Boolean));
@@ -1653,7 +1660,8 @@ function issuedView(invoice, ui, context, redraw) {
   const header = h('header', { class: 'fx-ph' },
     h('div', { class: 'fx-ph__text' },
       h('h1', { class: 'fx-title' }, invoice.number),
-      h('span', { class: 'fx-status', 'data-tone': TAB_TONE[invoice.tab] }, TAB_LABEL[invoice.tab] ?? 'Approved')),
+      h('span', { class: 'fx-status', 'data-tone': TAB_TONE[invoice.tab] }, TAB_LABEL[invoice.tab] ?? 'Approved'),
+      own ? null : h('span', { class: 'fx-status', 'data-tone': 'mute', 'data-mark': 'imported', title: `${invoice.sendsTo ?? 'The accounting system'} owns this invoice. Change it there: Flow follows.` }, 'Imported')),
     actionBar);
   const chrome = mountRecord(ui, invoice, header, () => send, (skip) => [
     menuEntry(deleteButton, 'trash-2', skip),
@@ -1692,8 +1700,8 @@ function issuedView(invoice, ui, context, redraw) {
             h('thead', {}, h('tr', {}, h('th', {}, 'Description'), h('th', { class: 'fx-num' }, 'Qty'), h('th', { class: 'fx-num' }, 'Unit price'), h('th', {}, 'Tax'), h('th', { class: 'fx-num' }, 'Amount'))),
             h('tbody', {}, invoice.lines.map((line) => h('tr', {},
               h('td', { 'data-area': 'desc' }, line.description),
-              h('td', { class: 'fx-num', 'data-area': 'qty', 'data-label': 'Qty' }, String(line.quantity)),
-              h('td', { class: 'fx-num', 'data-area': 'price', 'data-label': 'Unit price' }, formatCents(line.unitAmountCents)),
+              h('td', { class: 'fx-num', 'data-area': 'qty', 'data-label': 'Qty' }, String(line.quantity ?? '—')),
+              h('td', { class: 'fx-num', 'data-area': 'price', 'data-label': 'Unit price' }, line.unitAmountCents == null ? '—' : formatCents(line.unitAmountCents)),
               h('td', { class: 'fx-dim', 'data-area': 'gst', 'data-label': 'Tax' }, line.taxCode === 'GST' ? 'GST' : 'GST free'),
               h('td', { class: 'fx-num fx-strong', 'data-area': 'amount', 'data-end': '' }, formatCents(line.lineAmountCents)))))), LINE_CARD_READ),
           h('div', { class: 'fx-lines__foot' }, h('span'), totalsBox(ui, invoice)))),
