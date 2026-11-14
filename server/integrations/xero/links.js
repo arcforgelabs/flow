@@ -26,8 +26,8 @@ import { everInXero, forgetXeroInvoice } from './delete-invoice.js';
 //                 same client and total within a week. A person makes the Flow
 //                 invoice from the Xero one and links the job.
 //   none          nothing in Flow fits. The Xero invoice stays in the copy; a
-//                 person can make its Flow invoice at any time, or the
-//                 `make_unmatched` setting makes one for each.
+//                 person can make its Flow invoice at any time, and the
+//                 history import (import-history.js) imports it as it is.
 //
 // It reads only Flow's database: no Xero call.
 
@@ -205,7 +205,7 @@ export async function importOverview(db, organisationId, { show = 'all', q = '',
 }
 
 // `autoLink` (on): the import links each sure fit. `makeUnmatched` (off):
-// it also makes a Flow invoice for each Xero invoice nothing fits.
+// "Import Xero history", the switch of the history import (import-history.js).
 export async function readImportSettings(db, organisationId) {
   const { rows } = await db.execute(sql`select auto_link, make_unmatched from xero_import_settings where organisation_id = ${organisationId}`);
   return { autoLink: rows[0] ? Boolean(rows[0].auto_link) : true, makeUnmatched: Boolean(rows[0]?.make_unmatched) };
@@ -374,18 +374,17 @@ async function makeFrom(db, organisationId, row, { jobId = null, contactId: chos
   });
 }
 
-// With `autoLink` on, links each sure fit; with `makeUnmatched` on, makes a Flow invoice for
-// each Xero invoice nothing fits. Answers counts. The history import runs it
-// after each read of the copy; a person can run it from the page.
+// With `autoLink` on, links each sure fit. Answers counts. The read of the
+// copy runs it each time; a person can run it from the page. The
+// `makeUnmatched` setting ("Import Xero history") belongs to the history
+// import (import-history.js), which makes no Flow invoice of Flow's own.
 export async function matchXero(db, organisationId, { actor = 'automation:xero-import' } = {}) {
   const rows = await classify(db, organisationId);
-  const { autoLink, makeUnmatched } = await readImportSettings(db, organisationId);
+  const { autoLink } = await readImportSettings(db, organisationId);
   const result = { linked: 0, made: 0, failed: 0 };
   for (const row of rows) {
     if (row.sure && autoLink) {
       await insertLink(db, organisationId, { xeroInvoiceId: row.xeroInvoiceId, invoiceId: row.invoices[0].id, matchedBy: 'auto', actor }).then(() => { result.linked += 1; }, () => { result.failed += 1; });
-    } else if (makeUnmatched && row.state === 'none') {
-      await makeFrom(db, organisationId, row, { actor }).then(() => { result.made += 1; }, () => { result.failed += 1; });
     }
   }
   return result;

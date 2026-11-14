@@ -106,7 +106,7 @@ the Flow invoice the import linked to it.
 | Setting | Default | On |
 | --- | --- | --- |
 | `auto_link` "Link sure matches" | on | The import links each sure fit. Off: each waits on Review. |
-| `make_unmatched` "Make Flow invoices for the rest" | off | The import makes a Flow invoice for each Xero invoice that nothing fits. Off: they stay in the history, and a person can make one later. |
+| `make_unmatched` "Import Xero history" | off | The switch of the history import ("The full ledger" below). Off: Flow keeps only its own invoices, the Xero invoices stay in the copy, and a person can make a Flow invoice from one. |
 
 ## Rules
 
@@ -135,6 +135,7 @@ from. That system owns it:
 - A job is tied to it by the job's accounting reference, as the matcher ties
   it. It is never the job's own invoice (`invoice_id`), so several jobs can
   share one accounting invoice and the import changes no job.
+  The Reconcile page (jobs against Flow's own invoices) never offers it.
 - Only the import writes it (`mirrorWrite`) or removes it
   (`removeImportedInvoice`, `server/core/invoices.js`). Removing it calls no
   accounting system: it was only Flow's copy.
@@ -167,6 +168,73 @@ would do. It reads Flow's database only and writes nothing.
 
 A Xero `DRAFT` or `SUBMITTED` invoice is a draft, never a void: no customer
 saw it. The import takes it when Xero approves it.
+
+### History import
+
+With "Import Xero history" on, an owner or admin imports the history in
+batches: one year, or every year (`POST /api/xero/import/history`). A batch
+reads Flow's copy of Xero only. It calls no Xero and changes no job. It runs
+only on a copy that is complete and fresh (`409 copy_not_ready`), and only
+with the switch on (`409 import_off`).
+
+| Xero status | In Flow |
+| --- | --- |
+| `AUTHORISED`, `PAID` | An issued invoice of origin `xero`. Its tab follows the copy (Awaiting payment, Paid). |
+| `VOIDED` | A void invoice: a customer saw it. |
+| `DRAFT`, `SUBMITTED` | Not imported yet. |
+| `DELETED` | Never imported. |
+
+Each imported invoice keeps the Xero number and Xero's totals. Its first
+version holds the Xero document as Xero gave it (lines with a quantity of 0,
+a part quantity, a discount or another tax type are kept, not refused), with
+`source: { system: 'xero', invoiceId, contactId }`. Its link row
+(`xero_invoice_links`, `made`) holds the batch and the hash of the copy it
+was read from.
+
+- The customer is Flow's contact for the Xero contact: by the identity link,
+  then by a name one customer holds, else the import makes the customer.
+- The batch counts what it cannot take, and goes on: no number, a number
+  another Flow invoice holds, no contact (`counts.blocked`).
+- Flow's next invoice number moves above the highest Xero number.
+- A year can have one live batch (`409 batch_exists`). The database keeps
+  this rule (`xero_import_batches_one_live`), so of two requests at the same
+  time one gets the batch.
+
+After each read of Xero, each imported invoice follows its Xero invoice
+(`followImports`): a void in Xero voids it, and a change of number, date,
+contact, lines or totals adds a version (the earlier versions stay). A void
+invoice is final. An invoice Flow cannot follow is counted as `failed`,
+nothing of it changes, and the next read tries it again: its new number is
+one another Flow invoice holds, or its new contact has a name two customers
+hold (it follows after a person links the Xero contact to one customer). A
+void in Xero voids it in each case. With
+the switch on, an imported year also takes the invoices Xero made since. With
+the switch off, no new invoice comes; the imported ones still follow.
+
+Undo: `POST /api/xero/import/history/:batchId/release` removes each invoice
+the batch imported, with its versions and its link. Nothing is voided and
+Xero is not called: they were only Flow's copies. Each pair stays as a
+record (`xero_invoice_link_history`, reason `import_batch_released`). No job
+changes. A customer the batch made stays. The year can then be imported
+again. A release is one transaction: all of the batch goes, or none.
+
+One import step runs at a time for an organisation (a database lock): a
+step that writes an imported invoice, or a release. So a release and a read
+of Xero at the same time leave no invoice in a released batch.
+
+An installation that had the switch on before the history import (release
+2026.11.19 and earlier, where the switch made a Flow invoice of Flow's own
+for each Xero invoice with no fit) keeps the switch on and keeps those
+invoices as they are. A read of Xero makes no invoice for it after the
+upgrade: an imported invoice comes only when a person starts a batch
+(`test/flow-schema.test.js`).
+
+Measured on a test database: 3,001 invoices import in about 11 seconds, and
+the Paid tab with 2,800 invoices answers in under 0.3 seconds
+(`test/xero-import-history.test.js`).
+
+Not in place yet: a page for the batches (an agent or a script calls the
+routes), and the change of earlier made invoices to their Xero numbers.
 
 ### Reconcile cover
 
@@ -213,6 +281,9 @@ Xero".
 | GET | `/api/xero/import?organisationId&show&q&offset&limit` (`show`: a state, `check` or `all`) | |
 | GET | `/api/xero/import/dry-run?organisationId` (what the full import would do; writes nothing) | |
 | GET | `/api/xero/import/cover?organisationId` (reconcile cover, both sides) | |
+| GET | `/api/xero/import/history?organisationId` (the import batches, newest first) | |
+| POST | `/api/xero/import/history` (import one year, or every year; owner or admin) | `organisationId`, `year?` |
+| POST | `/api/xero/import/history/:batchId/release` (undo of one batch; owner or admin) | `organisationId` |
 | POST | `/api/xero/import/match` | `organisationId` |
 | PUT | `/api/xero/import/settings` | `organisationId`, `autoLink?`, `makeUnmatched?` |
 | POST | `/api/xero/import/:xeroInvoiceId/link` | `organisationId`, `invoiceId` |

@@ -14,6 +14,8 @@ import { migrateAdapterSchema } from '../server/integrations/schema.js';
 import { freshDatabase, skipWithoutDatabase, testDatabaseUrl } from './support/db.js';
 import { explainObligation } from '../server/core/ledger.js';
 import { getInvoice, issueInvoice, updateDraftInvoice, voidInvoice } from '../server/core/invoices.js';
+import { followImports, runImportBatch } from '../server/integrations/xero/import-history.js';
+import { matchXero, readImportSettings } from '../server/integrations/xero/links.js';
 
 async function inSchema(pool, schema) {
   const { rows } = await pool.query(
@@ -52,7 +54,7 @@ function adapterBeforeMove(adapter) {
   const journal = JSON.parse(readFileSync(journalFile, 'utf8'));
   journal.entries = journal.entries.filter((entry) => entry.idx < from);
   writeFileSync(journalFile, JSON.stringify(journal));
-  const tables = adapter.schema.tables.filter((table) => !['xero_contact_sync', 'xero_invoice_link_history'].includes(table));
+  const tables = adapter.schema.tables.filter((table) => !['xero_contact_sync', 'xero_invoice_link_history', 'xero_import_batches'].includes(table));
   return { ...adapter, schema: { ...adapter.schema, migrationsFolder: folder, tables } };
 }
 
@@ -156,7 +158,7 @@ function xeroBeforeMigration(index, laterTables) {
 test('the Xero pair history upgrade keeps every invoice, version, override, push and link row', { skip: skipWithoutDatabase }, async () => {
   const handle = await freshDatabase();
   // Release 2026.11.19: the Xero adapter up to migration 0016.
-  const before = xeroBeforeMigration(17, ['xero_invoice_link_history']);
+  const before = xeroBeforeMigration(17, ['xero_invoice_link_history', 'xero_import_batches']);
   try {
     await migrateAdapterSchema(handle.db, before);
     assert.equal((await inSchema(handle.pool, 'flow')).includes('xero_invoice_link_history'), false);
@@ -187,9 +189,69 @@ test('the Xero pair history upgrade keeps every invoice, version, override, push
 
     await migrateEverything(handle.db);
     await migrateEverything(handle.db);
-    assert.deepEqual(await stored(), old, 'the upgrade changes no existing row');
+    // The history import's columns on a link (migration 0019) start empty.
+    const now = await stored();
+    now.xero_invoice_links = now.xero_invoice_links.map(({ batch_id, copy_hash, ...link }) => {
+      assert.deepEqual([batch_id, copy_hash], [null, null]);
+      return link;
+    });
+    assert.deepEqual(now, old, 'the upgrade changes no existing value');
     assert.deepEqual((await handle.pool.query('select count(*)::int as n from xero_invoice_link_history')).rows, [{ n: 0 }]);
     assert.equal((await getInvoice(handle.db, organisation.id, invoice.id)).status, 'issued');
+  } finally {
+    rmSync(before.schema.migrationsFolder, { recursive: true, force: true });
+    await handle.close();
+  }
+});
+
+// Release 2026.11.19 made a Flow invoice of Flow's own for each Xero invoice
+// with no fit, when "Import Xero history" (make_unmatched) was on. The switch
+// now belongs to the history import, which runs in batches a person starts.
+test('an installation with "Import Xero history" on at release 2026.11.19 keeps the switch and the invoices it made, and imports only in a batch', { skip: skipWithoutDatabase }, async () => {
+  const handle = await freshDatabase();
+  const before = xeroBeforeMigration(17, ['xero_invoice_link_history', 'xero_import_batches']);
+  try {
+    await migrateAdapterSchema(handle.db, before);
+    const one = async (text, values) => (await handle.pool.query(text, values)).rows[0];
+    const organisation = await one("insert into organisations (name) values ('Sample Upgrade Lab') returning id");
+    const contact = await one("insert into contacts (organisation_id, kind, name) values ($1, 'customer', 'Sample Practice') returning id", [organisation.id]);
+    await handle.pool.query("insert into xero_import_settings (organisation_id, auto_link, make_unmatched, updated_by) values ($1, true, true, 'person:sample')", [organisation.id]);
+    await handle.pool.query(`insert into xero_contacts (organisation_id, xero_contact_id, name, status, is_customer, is_supplier, sales_tracking, synced_at)
+      values ($1, 'sample-c1', 'Sample Practice', 'ACTIVE', true, false, '[]'::jsonb, now())`, [organisation.id]);
+    // The invoice the old switch made from Xero invoice INV-0801, and Xero
+    // invoice INV-0802, which Flow does not have yet.
+    const made = await one(`insert into invoices (organisation_id, contact_id, number, status, issued_version, issue_date, subtotal_cents, tax_cents, total_cents)
+      values ($1, $2, 'INV-0801', 'issued', 1, '2026-11-01', 10000, 1000, 11000) returning id`, [organisation.id, contact.id]);
+    await handle.pool.query(`insert into invoice_versions (organisation_id, invoice_id, version, issued_by, document) values ($1, $2, 1, 'automation:xero-import', '{"totalCents": 11000}')`, [organisation.id, made.id]);
+    await handle.pool.query(`insert into xero_invoices (organisation_id, xero_invoice_id, type, invoice_number, xero_contact_id, status, issued_on, subtotal_cents, tax_cents, total_cents, lines, record_hash)
+      values ($1, 'sample-x1', 'ACCREC', 'INV-0801', 'sample-c1', 'PAID', '2026-11-01', 10000, 1000, 11000, '[]', 'h1'),
+             ($1, 'sample-x2', 'ACCREC', 'INV-0802', 'sample-c1', 'PAID', '2026-11-02', 20000, 2000, 22000, '[]', 'h2')`, [organisation.id]);
+    await handle.pool.query(`insert into xero_invoice_links (organisation_id, xero_invoice_id, invoice_id, matched_by, linked_by)
+      values ($1, 'sample-x1', $2, 'made', 'automation:xero-import')`, [organisation.id, made.id]);
+    const tables = ['xero_import_settings', 'invoices', 'invoice_versions', 'xero_invoices', 'xero_invoice_links'];
+    const stored = async () => Object.fromEntries(await Promise.all(tables.map(async (table) => [table,
+      (await handle.pool.query(`select to_jsonb(t) - 'batch_id' - 'copy_hash' as data from ${table} t order by to_jsonb(t)::text`)).rows.map((row) => row.data)])));
+    const old = await stored();
+    assert.deepEqual(tables.map((table) => old[table].length), [1, 1, 1, 2, 1]);
+
+    await migrateEverything(handle.db);
+    await migrateEverything(handle.db);
+    assert.deepEqual(await stored(), old, 'the upgrade changes no existing value');
+    assert.deepEqual(await readImportSettings(handle.db, organisation.id), { autoLink: true, makeUnmatched: true }, 'the switch stays on');
+    // A read of Xero makes no invoice now: no batch was started.
+    assert.deepEqual(await matchXero(handle.db, organisation.id), { linked: 0, made: 0, failed: 0 });
+    assert.deepEqual(await followImports(handle.db, organisation.id), { changed: 0, voided: 0, removed: 0, imported: 0, failed: 0 });
+    assert.deepEqual(await stored(), old, 'a read of Xero after the upgrade changes nothing');
+    // A person starts the batch: it takes the Xero invoice Flow does not have.
+    await handle.pool.query(`insert into xero_mirror_cursors (organisation_id, resource, passes, last_pass_finished_at)
+      values ($1, 'invoices', 1, now()), ($1, 'credit_notes', 1, now())`, [organisation.id]);
+    const batch = await runImportBatch(handle.db, organisation.id, { year: 2026, actor: 'person:sample' });
+    assert.equal(batch.counts.imported, 1);
+    assert.deepEqual((await handle.pool.query('select number, origin, status, total_cents from invoices order by number')).rows,
+      [{ number: 'INV-0801', origin: 'flow', status: 'issued', total_cents: 11000 }, { number: 'INV-0802', origin: 'xero', status: 'issued', total_cents: 22000 }]);
+    // The invoice the old switch made is Flow's own, as before, and its link stays.
+    assert.equal((await getInvoice(handle.db, organisation.id, made.id)).status, 'issued');
+    assert.deepEqual((await stored()).xero_invoice_links.filter((link) => link.invoice_id === made.id), old.xero_invoice_links);
   } finally {
     rmSync(before.schema.migrationsFolder, { recursive: true, force: true });
     await handle.close();

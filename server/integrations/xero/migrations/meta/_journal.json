@@ -134,6 +134,13 @@
       "when": 1794630600000,
       "tag": "0018_xero_push_own_only",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1794631200000,
+      "tag": "0019_xero_import_batches",
+      "breakpoints": true
     }
   ]
 }
