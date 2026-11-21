@@ -1,0 +1,54 @@
+Ready statuses: menu position and Owner edits
+
+Real Flow page, fake sign-in, fresh local PostgreSQL and synthetic data only.
+The test replaces only the work-status list. Saves and reloads use the real
+server routes and database. Seazona is off. No integration credentials or
+remote Seazona calls are used.
+
+Screenshots: Chromium, Meridian light, 1280 x 852 and 390 x 852 viewports.
+Full-page images can be taller than the viewport.
+
+- before-1280.png and before-390.png: base f7a5fe6, before the style fix.
+- after-1280.png and after-390.png: the same page with the stray brace removed.
+
+Cause: server/ui/flow.css had an unmatched closing brace immediately before
+.fx-multi. The browser discarded that selector's rule. The picker thus used
+position:static, so its absolute menu used the viewport as its containing
+block. With an 852 px viewport, the menu started at y=856, outside the view.
+Commit 9d711ee (#343) removed the old phone rules but kept their closing brace.
+
+The fix removes that one brace. The menu now opens 4 px below its control.
+The Owner can add and remove statuses, then reload to see the saved choices.
+The role check already matches the server's Owner/Admin guard.
+
+Regression:
+FLOW_TEST_DATABASE_URL=<throwaway local database> node --test test/ready-status-picker.test.js
+
+Before: fails, control bottom 495.25, menu top 856. An earlier click-only
+probe passed because Playwright scrolled to the offscreen checkbox. The
+regression now checks menu placement before any checkbox action.
+After: passes at both widths; adds and removes a status and checks reload.
+
+To capture new images, also set READY_STATUS_SCREENSHOTS to an output folder.
+Use a throwaway database. The test resets its schema.
+
+Remaining risk: each tick saves at once. An added status can mark old jobs
+ready on the next pipeline run. Later routines can draft them and mark the
+invoices Ready. Removing a status does not clear existing ready marks.
+There is no preview or undo. The safe editor and its open product questions
+remain follow-up work under https://github.com/arcforgelabs/flow/issues/391.
+
+No live app or connected Seazona test ran. These results prove this source
+and synthetic local flow, not a production change.
+
+Additional checks:
+- npm test: 938 passed, 0 failed, 0 skipped, with the local test database.
+- npm run test:mobile -- --grep integration-seazona --project phone-chromium-meridian-light --project desk-chromium-meridian-light --ignore-snapshots: 2 passed.
+  Layout budgets and phone rules passed. Saved-image comparisons were not
+  run locally; the repository requires the fixed build image for those.
+  The full phone matrix and WebKit were not run locally.
+- git diff --check: passed.
+
+Simplification review: one production line removed, no new runtime state,
+permission policy or save path. One browser test owns the layout regression
+and its save/reload flow. Existing server tests retain role enforcement.

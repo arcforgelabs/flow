@@ -36,6 +36,15 @@ jobs at each (`GET /api/invoicing/work-statuses`). Each lab's Seazona can use
 its own statuses, so the menu follows the lab's data. A status picked earlier
 stays in the menu when no job has it now.
 
+An Owner or Admin can change the automation settings. Each tick saves at
+once. The list must contain 1 to 20 statuses. At least one status must stay
+selected. To stop the automation, turn it off.
+
+An added status can mark old jobs ready on the next pipeline run. A removed
+status does not clear existing ready marks. There is no preview or undo for
+these changes. Issue [#391](https://github.com/arcforgelabs/flow/issues/391)
+tracks the proposed safe editor and its open questions.
+
 ## People decide first
 
 - A person can mark a job ready, or put it back in work, at
