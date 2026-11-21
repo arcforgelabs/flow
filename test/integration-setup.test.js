@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { after, before, describe, test } from 'node:test';
 import { createApp } from '../server/app.js';
 import { createPersonAuth } from '../server/auth/session.js';
-import { openSecret, resolveSecretsKey, sealSecret } from '../server/core/secrets.js';
+import { decodeKey, openSecret, resolveSecretsKey, sealSecret } from '../server/core/secrets.js';
 import { adapters as shippedAdapters } from '../server/integrations/adapters.js';
 import { createIntegrations } from '../server/integrations/index.js';
 import { createSeazonaAdapter } from '../server/integrations/seazona/index.js';
@@ -18,12 +18,28 @@ const KEY = 'cd'.repeat(32);
 const SECRET = 'synthetic-client-secret-0001';
 
 describe('the secrets key', () => {
+  test('a key accepts hex or base64 for exactly 32 bytes', () => {
+    const bytes = Buffer.from(KEY, 'hex');
+    for (const raw of [KEY.toUpperCase(), ` \n${KEY}\t`, bytes.toString('base64'), bytes.toString('base64').replace(/=$/, '')]) {
+      assert.ok(decodeKey(raw)?.equals(bytes), 'the decoded key must keep the original bytes');
+    }
+    for (const raw of [undefined, null, '', '  ', 'g'.repeat(64), 'ab'.repeat(31), 'ab'.repeat(33), Buffer.alloc(31).toString('base64'), Buffer.alloc(33).toString('base64')]) {
+      assert.equal(decodeKey(raw), null, 'an invalid key must be refused');
+    }
+  });
+
   test('FLOW_SECRETS_KEY wins; a long SESSION_SECRET is the fallback; a bad key stops boot', () => {
-    assert.equal(resolveSecretsKey({ FLOW_SECRETS_KEY: KEY }).source, 'FLOW_SECRETS_KEY');
-    assert.equal(resolveSecretsKey({ SESSION_SECRET: 'x'.repeat(40) }).source, 'SESSION_SECRET');
-    assert.equal(resolveSecretsKey({ SESSION_SECRET: 'short' }), null);
+    const explicit = resolveSecretsKey({ FLOW_SECRETS_KEY: ` ${KEY} `, SESSION_SECRET: 'x'.repeat(40) });
+    assert.equal(explicit.source, 'FLOW_SECRETS_KEY');
+    assert.ok(explicit.key.equals(Buffer.from(KEY, 'hex')), 'the explicit key must win over the session secret');
+    const fallback = resolveSecretsKey({ FLOW_SECRETS_KEY: ' ', SESSION_SECRET: ` ${'x'.repeat(32)} ` });
+    assert.equal(fallback.source, 'SESSION_SECRET');
+    assert.equal(resolveSecretsKey({ SESSION_SECRET: 'x'.repeat(31) }), null);
     assert.equal(resolveSecretsKey({}), null);
-    assert.throws(() => resolveSecretsKey({ FLOW_SECRETS_KEY: 'nope' }), /FLOW_SECRETS_KEY must be/);
+    assert.throws(() => resolveSecretsKey({ FLOW_SECRETS_KEY: 'nope', SESSION_SECRET: 'x'.repeat(40) }), /FLOW_SECRETS_KEY must be/);
+    const sealed = sealSecret(fallback, SECRET, 'integration:xero:XERO_CLIENT_SECRET');
+    const restarted = resolveSecretsKey({ SESSION_SECRET: 'x'.repeat(32) });
+    assert.equal(openSecret(restarted, sealed, 'integration:xero:XERO_CLIENT_SECRET'), SECRET);
   });
 
   test('a sealed value opens only with the same key and the same setting', () => {
@@ -31,9 +47,28 @@ describe('the secrets key', () => {
     const sealed = sealSecret(secrets, SECRET, 'integration:seazona:SEAZONA_API_CLIENT_SECRET');
     assert.doesNotMatch(JSON.stringify(sealed), /synthetic-client-secret/);
     assert.equal(openSecret(secrets, sealed, 'integration:seazona:SEAZONA_API_CLIENT_SECRET'), SECRET);
+    assert.throws(() => openSecret(secrets, sealed, 'integration:seazona:SEAZONA_API_CLIENT_ID'), (e) => e.code === 'secret_unreadable');
     assert.throws(() => openSecret(secrets, sealed, 'integration:xero:XERO_CLIENT_SECRET'), (e) => e.code === 'secret_unreadable');
     const other = resolveSecretsKey({ FLOW_SECRETS_KEY: 'ef'.repeat(32) });
     assert.throws(() => openSecret(other, sealed, 'integration:seazona:SEAZONA_API_CLIENT_SECRET'), (e) => e.code === 'secret_unreadable');
+  });
+
+  test('a changed sealed value is refused, and repeated seals use fresh nonces', () => {
+    const secrets = resolveSecretsKey({ FLOW_SECRETS_KEY: KEY });
+    const context = 'integration:xero:XERO_CLIENT_SECRET';
+    const sealed = sealSecret(secrets, SECRET, context);
+    const repeated = sealSecret(secrets, SECRET, context);
+    assert.notEqual(repeated.iv, sealed.iv);
+    assert.equal(openSecret(secrets, repeated, context), SECRET);
+    for (const field of ['data', 'tag', 'iv']) {
+      const bytes = Buffer.from(sealed[field], 'base64');
+      bytes[0] ^= 1;
+      assert.throws(
+        () => openSecret(secrets, { ...sealed, [field]: bytes.toString('base64') }, context),
+        (error) => error.code === 'secret_unreadable',
+      );
+    }
+    assert.throws(() => openSecret(secrets, { ...sealed, v: 2 }, context), (error) => error.code === 'secret_unreadable');
   });
 
   test('the host environment wins over stored settings, and a derived key appears only with a secrets key', () => {
