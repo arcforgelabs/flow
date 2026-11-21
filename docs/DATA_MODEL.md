@@ -94,7 +94,12 @@ system's status; each move of it is a `status_changed` event.
 `billing_obligations.shipped_on` is the work system's shipped date. A work
 system without one (Seazona) gives the day Flow sees the job's status move
 to a shipped one, in `FLOW_TIME_ZONE` (default `Australia/Sydney`). A job Flow
-first sees already shipped has none. `automations` holds each organisation's choices for Flow's
+first sees already shipped takes its Seazona invoice date (the lab invoices
+the work when it ships it), else none. `POST /api/seazona/ship-days` (owner
+or admin) fills the jobs that have none from Flow's copy: the history
+export's ship date, else the invoice date. It is a dry run unless
+`{ "apply": true }`; each day it sets is a `shipped_day` event that names
+its source. `automations` holds each organisation's choices for Flow's
 routines, such as marking a job ready from that status (`docs/AUTOMATIONS.md`).
 `invoice_rules` holds the checks each lab builds on a ready job: When, If,
 Then (`docs/INVOICE_RULES.md`).
